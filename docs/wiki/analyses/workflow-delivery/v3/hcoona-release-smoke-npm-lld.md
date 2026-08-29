@@ -4,7 +4,8 @@
 
 Architecture version: **v3**.
 
-Review state: **Approved for implementation on 2026-08-06**.
+Review state: **Approved for implementation on 2026-08-06; normal Live
+activation design refined on 2026-08-29**.
 
 This brief low-level design realizes the confirmed
 [requirements](./requirements.md),
@@ -958,10 +959,12 @@ Environments:
 - `workflow-delivery-v3-buddy-smoke-github-packages`: capability boundary used
   only by the publisher job.
 
-The approval Environment prevents self-review and administrator bypass where
-the actual repository plan and GitHub tier expose those controls. Rollout must
-record the real settings and any unavailable control; the LLD does not claim an
-unavailable guarantee.
+The approval Environment uses sole reviewer `hcoona` with
+`prevent_self_review: false` under the confirmed single-maintainer exception
+and disables administrator bypass where the actual repository plan and GitHub
+tier expose that control. Rollout must record the real settings and any
+unavailable control; the LLD does not claim an unavailable guarantee or
+independent review.
 
 The approval job is the separate human gate and has no credentials. The
 publisher Environment is the downstream capability boundary and need not
@@ -1863,31 +1866,203 @@ recorded:
   Environment are verified removed;
 - a human explicitly accepts the bounded residual risk.
 
-The implementation PR merge is the direct v1 Buddy-to-v3 Buddy cutover. The
-merge lands the complete v3 code with `live_enabled: false`, removes both legacy
-Buddy workflow files, and does not create `legacy-buddy.yml` or preserve
-unrelated v1 Buddy routes. Immediately after merge, Governance freezes Buddy
-dispatch, disables both old workflow identities, cancels or drains every
-queued, waiting, approval-pending, and running execution, and verifies disabled
-state, removal, and old-ref dispatch rejection before acceptance. It then runs
-and captures the temporary protected acceptance probes, removes and verifies
-removal of the acceptance workflow/bypass/Environment, and only then uses an
-authorized protected commit to set `live_enabled: true`. v3 live supports only
-the named smoke package. Former Buddy projects are unsupported and blocked until
-explicitly migrated. v1 Official and CI assets remain unchanged. Legacy Buddy
-workflows, Buddy-specific tests and matrices, and Buddy documentation are
-excluded from that preservation and are retired or rewritten. The mandatory
-sequence creates an intentional brief Buddy outage.
+### Gate State After Retry 5
 
-If acceptance fails before normal enablement, `live_enabled` remains false and
-all Buddy publication remains disabled.
-Governance removes the temporary workflow, bypass, and Environment, keeps both
-legacy Buddy identities retired, retains failure evidence, and routes any
-created or ambiguous package state to reconciliation or Break-Glass. A retry
-requires a newly reviewed one-time workflow invocation and a new fixed
-disposable coordinate/version; no reusable bypass remains. There is no
-compatibility rollback. Restoring legacy Buddy requires a separate user-approved
-rollback PR.
+As of the design inventory at `main@7e04c5c2`, the direct cutover and
+destination-acceptance prerequisites are complete:
+
+- legacy `buddy.yml` and `release-buddy.yml` sources are absent, while workflow
+  identities `216311758` and `269749708` remain repository-wide
+  `disabled_manually`;
+- retry-5 destination acceptance completed successfully and its temporary
+  workflow, Environment, refs, and deployment were retired through cleanup and
+  closure;
+- the normal caller and callee are active as workflow IDs `340952169` and
+  `340952170`, but the protected attestation remains `live_enabled: false`;
+- the normal approval and capability Environments do not yet exist. GitHub
+  would auto-create either referenced name without the intended protection;
+- the current direct collaborator inventory contains only `hcoona`, and the
+  attestation records `hcoona` as the sole accepted writer; and
+- normal Live activation and external configuration remain unauthorized by the
+  completed acceptance-only work.
+
+Acceptance resolved the platform behavior needed by this slice but did not
+execute the normal Release path. It is a prerequisite for the separate
+activation sequence below, not authority to skip it.
+
+### Readiness Repair While Disabled
+
+Before either permanent Environment is created, one narrow protected repair
+must land with `live_enabled: false`:
+
+- remove the unused and incorrect
+  `approval-finalizer.outputs.attempt-artifact-id` mapping, which currently
+  exposes the Intent artifact ID under an Attempt name;
+- add
+  `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-smoke-approval/v1`
+  as the literal first executable check in the approval job, mapped through
+  step `env` and compared by a quoted case-sensitive shell operation;
+- add
+  `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-smoke-github-packages/v1`
+  as the literal first executable check in the publisher job under the same
+  comparison rule;
+- set no `continue-on-error` on either marker check and explicitly require
+  `steps.<marker-check>.outcome == 'success'` together with normal success on
+  every later operational step;
+- permit no checkout, setup, artifact download, preflight, mutation marker, or
+  publish step after a missing or mismatched marker;
+- ensure any `always()` cleanup or finalization path remains non-mutating and
+  classifies the failed prerequisite rather than masking it; and
+- add static contract tests for exact and case-altered marker values,
+  first-step ordering, forbidden `continue-on-error`, explicit downstream
+  gating, non-mutating exceptional paths, unchanged Environment names, no
+  credential expansion, and the removed misleading output.
+
+The markers are configuration sentinels, not reviewer or security proof. They
+protect the repaired revision and descendants, not historical selected-ref
+code. They rely on authenticated rollout inspection proving that repository-
+and organization-scoped variables with the same names are absent.
+
+### Permanent Environment Contract
+
+Delivery Governance must explicitly create and read back these Environments
+before a preparation or activation change:
+
+| Environment                                        | Required configuration                                                                                                                                                                                                                             |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workflow-delivery-v3-buddy-smoke-approval`        | Sole reviewer `hcoona`; `prevent_self_review: false` under the confirmed single-maintainer exception; zero wait; no stored secrets or credentials; no branch/tag restriction; administrator bypass disabled where available; exact approval marker |
+| `workflow-delivery-v3-buddy-smoke-github-packages` | No reviewer; zero wait; no stored secrets or credentials; no branch/tag restriction; administrator bypass disabled where available; exact capability marker                                                                                        |
+
+The documented public Environment API does not currently expose a stable write
+contract for administrator bypass. For each Environment, an administrator
+therefore disables bypass in the authenticated GitHub UI, saves the setting,
+reloads the page, and retains durable post-save evidence identifying the
+repository, Environment, and disabled control. The authenticated REST response
+is retained as supplemental evidence. If it exposes the undocumented
+`can_admins_bypass` field, the value must be exactly false; omission is not
+interpreted as false, and any disagreement with the UI blocks activation.
+
+No branch restriction is intentional because `WD-SLICE-001` permits any
+same-repository selected ref. The first activation Attempt is nevertheless
+constrained operationally to `main` at the exact activation merge SHA.
+
+The single-maintainer exception is limited to repository `hcoona/three`,
+package `@hcoona/hcoona-release-smoke-npm`, this approval Environment, and the
+human-attested effective writer and reviewer set exactly equal to `hcoona`.
+The review is operator self-confirmation against mistakes, not independent
+approval or a security boundary. Any writer, reviewer, role, team, package,
+repository, Manage Actions, or relevant authority change requires an immediate
+protected false state and a new Governance decision.
+
+Authenticated readback records exact Environment IDs and names, protection
+rules, reviewer identity, self-review behavior, administrator-bypass UI
+evidence and any corroborating API field, wait timers, deployment branch/tag
+policy, secrets and credential absence, marker values, and same-name
+repository/organization variable absence. Marker success never substitutes for
+this inspection.
+
+### Protected Activation Sequence
+
+Normal activation uses three independently reviewable delivery boundaries:
+
+1. **Readiness repair PR:** land the workflow and contract repair above while
+   false.
+2. **Preparation PR:** after Environment creation and complete read-only
+   inventory, record one-to-one evidence for every Activation Gate bullet,
+   refresh the protected attestation's issuer, inspection time, expiry,
+   accepted writers, and access inventory or evidence digest, and keep false.
+3. **Activation PR:** after preparation merge and final review, freeze all
+   other `main` writes, automated merges, and normal Buddy dispatch. Merge only
+   the minimal protected change that sets true and updates the exact
+   current-state contract and documentation. Do not bypass the Ruleset.
+
+The freeze remains in force until the first Attempt is terminal and reconciled,
+except for the minimal protected false change required after a lesser or
+ambiguous outcome. After the activation merge, rollout preflight must freshly
+prove:
+
+- the exact activation merge is still `refs/heads/main`, all required checks
+  passed, and no later commit exists;
+- the protected Governance source is canonical, fresh, bound to the named
+  policy/package, and true at that exact commit;
+- both Environment configurations and markers still match the permanent
+  contract, and same-name repository/organization variables remain absent;
+- the human-attested effective writer/access inventory remains unchanged;
+- the permanent no-consumer gate passes on the exact tree;
+- the normal caller/callee identities are active, legacy and acceptance
+  identities remain retired, and no normal Buddy run or deployment is
+  nonterminal;
+- the exact NBGV package coordinate and `buddy-sha-<target>` tag derived from
+  the activation merge have the required observed pre-state;
+- acceptance cleanup, package/repository isolation, actual token reach,
+  Official/production denial evidence, 45-day retention, and every existing
+  Activation Gate item remain satisfied; and
+- the pre-dispatch run set and a bounded dispatch-correlation time are retained.
+
+This is the **rollout preflight**. It is distinct from the Attempt-bound
+publisher preflight, which cannot exist before Publication Snapshot,
+Authorization, Capability Decision, and artifact identities exist.
+
+The operator dispatches `workflow-delivery-v3-buddy-smoke.yml` exactly once
+with `ref=main`. A successful or ambiguous API response is followed only by
+read-only correlation. Exactly one new run must match workflow ID `340952169`,
+event `workflow_dispatch`, actor `hcoona`, branch `main`, the exact activation
+merge SHA, `run_attempt == 1`, and the dispatch time window. Any zero,
+duplicate, or ambiguous match blocks approval and does not permit a second
+dispatch. `main` must not advance while the Attempt is nonterminal except for
+the fail-closed protected false change. That change intentionally produces a
+fresh Governance-source identity mismatch that blocks any Capability Admission
+not already complete.
+
+Only after unique correlation and successful qualification/observation does
+`hcoona` inspect the immutable reviewer artifact and self-approve that exact
+deployment. The approval must confirm target/ref, package coordinate, artifact
+digest and manifest, lifecycle scripts, action set, and no unexpected
+destination state.
+
+### Completion, Disablement, and Recovery
+
+The first normal Live launch is complete only when:
+
+- the correlated attempt-1 run is terminal successful;
+- canonical finalization admits the exact Attempt Outcome with result
+  `success`;
+- all required immutable records, artifact IDs, and GitHub-recorded digests are
+  retained and exact;
+- Authorization binds the Publication Snapshot, reviewer artifact, action set,
+  artifact, resource keys, and Attempt;
+- the disposition is either action-bearing publication with a matching
+  Capability Admission Decision, durable capability-group result, and required
+  Receipt or canonical exact-satisfied no-action with no Capability Admission
+  Decision, capability-group result, or Receipt;
+- authenticated destination readback proves exact coordinate, owner, tarball
+  SHA-512, in-package target witness, and target-derived tag; and
+- no incomplete, unknown, conflicting, or possibly-mutated state remains.
+
+A green workflow or exact destination state alone cannot retroactively upgrade
+an incomplete Attempt. Only after the complete predicate holds may Governance
+release the `main`/dispatch freeze and retain true.
+
+For every lesser outcome, Governance:
+
+1. keeps new dispatch and unrelated `main` writes frozen;
+2. inventories all normal Live runs, jobs, deployments, and pending approvals;
+3. promptly merges a protected false change and verifies fresh protected-source
+   observation;
+4. cancels or drains pre-capability work only when platform facts preserve the
+   correct no-side-effect classification;
+5. allows capability-started work to reach terminal state where possible and
+   otherwise retains possibly-mutated classification; and
+6. reconciles artifacts, platform state, and destination state read-only after
+   all relevant executions are terminal.
+
+Flag-off controls future admission and is not package rollback or instantaneous
+capability revocation. A publisher already past its final Governance check may
+finish. No normal flow deletes, restores, overwrites, or silently repairs
+package state. A later whole-run replay or new dispatch requires an explicit
+post-classification decision, protected reactivation, and a fresh Attempt. The
+original Attempt remains append-only. Legacy restoration and mutation-based
+remediation remain separately approved Break-Glass concerns.
 
 The protected attestation field is only a normal-flow rollout gate, not a
 malicious-writer security boundary. Failure of any gate leaves live Buddy
@@ -1982,11 +2157,20 @@ unchanged.
 
 ## Open LLD Decisions
 
-No additional product or architecture decision is requested.
-Platform acceptance must determine whether GitHub Packages supplies only
-create-only conflict semantics or a provable atomic create-or-exact result. That
-finding changes Adapter capability classification, not the confirmed domain
-model.
+No additional product or architecture decision remains for the design-only
+normal Live scope.
 
-The LLD approval gate is satisfied. Implementation and acceptance remain
-subject to the dependency order and activation gates above.
+Retry-5 platform evidence and the production Adapter retain create-only conflict
+semantics. An identical publish race fails the current Attempt with
+`no-side-effect`; a later fresh whole Attempt may pre-observe exact state and
+take the canonical no-action path. A differing race also fails the current
+Attempt with `no-side-effect`, but a later Attempt normally observes conflict
+and requires reconciliation. Neither case authorizes overwrite, delete,
+restore, or retroactive success. Lost response remains incomplete and possibly
+mutated unless authoritative current-Attempt evidence proves otherwise.
+
+The normal Live activation design gate is satisfied. This design does not
+authorize readiness implementation, Environment creation, the protected
+preparation/activation changes, dispatch, approval, package mutation, retry, or
+Break-Glass. Each remains subject to the protected sequence and explicit future
+authorization above.

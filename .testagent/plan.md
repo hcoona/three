@@ -6665,3 +6665,83 @@ historical retry-5 replay tests, authoritative docs/wiki files, Git refs, and
 external resources remain unchanged.
 
 <!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-plan -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-normal-live-design-plan -->
+
+## Workflow Delivery v3 normal Live future delivery plan
+
+Status: **DESIGN ONLY. ALL EXECUTION ITEMS REMAIN UNAUTHORIZED.**
+
+### Phase 1: readiness repair while disabled
+
+- [ ] Remove the unused misbound
+  `approval-finalizer.outputs.attempt-artifact-id` output.
+- [ ] Add distinct exact Environment-scoped marker checks as the first
+  executable steps in the approval and publisher jobs.
+- [ ] Prove missing/wrong markers stop all later executable and mutating steps,
+  and prove no same-name repository/organization variable is accepted as
+  rollout configuration.
+- [ ] Keep `live_enabled: false`; run focused/full validation, hooks,
+  independent review/adjudication, and protected PR delivery without bypass.
+
+### Phase 2: permanent Environment preparation
+
+- [ ] Create `workflow-delivery-v3-buddy-smoke-approval` with sole reviewer
+  `hcoona`, `prevent_self_review: false` under the confirmed exception, zero
+  wait, no branch restriction, no stored credential, administrator bypass
+  disabled where available, and exact approval marker.
+- [ ] Create `workflow-delivery-v3-buddy-smoke-github-packages` with no
+  reviewer, zero wait, no branch restriction, no stored credential,
+  administrator bypass disabled where available, and exact capability marker.
+- [ ] Authenticated-read both Environments and retain exact IDs/settings.
+- [ ] Confirm same-name repository/organization variables absent.
+
+### Phase 3: protected preparation while disabled
+
+- [ ] Revalidate every existing Activation Gate item one-to-one: contracts,
+  Adapter/concurrency/replay/permission tests, acceptance evidence,
+  no-consumer policy, token/package reach, Official/production isolation,
+  Ruleset/protected source, retention, writer/access inventory, Environment
+  configuration, legacy retirement, destination state, and residual-risk
+  acceptance.
+- [ ] Refresh the Governance attestation/evidence through a protected PR while
+  preserving `live_enabled: false`.
+- [ ] Complete post-merge checks and fresh read-only reconciliation.
+
+### Phase 4: minimal activation
+
+- [ ] Freeze every other `main` write, automated merge, and normal Buddy
+  dispatch.
+- [ ] Deliver a separate protected activation PR containing the reviewed
+  false-to-true change and required current-state contract/documentation
+  updates only.
+- [ ] Keep the freeze after merge; record the exact activation merge SHA.
+- [ ] Run the defined rollout preflight against that exact SHA and derive its
+  exact NBGV coordinate and target tag.
+
+### Phase 5: first normal Attempt
+
+- [ ] Capture the pre-dispatch run set and bounded dispatch time.
+- [ ] Dispatch `workflow-delivery-v3-buddy-smoke.yml` once with `ref=main`.
+- [ ] Correlate exactly one new attempt-1 run by `hcoona` at the activation SHA;
+  do not resend an ambiguous dispatch.
+- [ ] Inspect the immutable reviewer artifact and self-approve only the exact
+  correlated deployment.
+- [ ] Wait for terminal state and retain every immutable artifact and platform
+  fact.
+
+### Phase 6: reconciliation and closure
+
+- [ ] Leave true and release the freeze only after canonical complete Outcome,
+  exact bindings, Receipt or exact no-action disposition, and exact destination
+  reconciliation.
+- [ ] On any lesser outcome, retain the freeze, inventory all runs/deployments,
+  promptly restore false through protected review, drain or cancel according to
+  capability startedness, and reconcile read-only after terminal state.
+- [ ] Do not delete, restore, overwrite, claim rollback, retroactively upgrade
+  an incomplete Attempt, restore legacy Buddy, or invoke Break-Glass without a
+  separate decision.
+- [ ] Treat any later whole-run replay or new dispatch as a separately approved
+  post-classification Attempt.
+
+<!-- END APPEND: 2026-08-29-wdv3-normal-live-design-plan -->

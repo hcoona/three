@@ -6197,3 +6197,83 @@ workflow source was the one-item inventory in both nodes. After the two
 authorized deletions, the unchanged command produced `2 passed in 0.59s`.
 
 <!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-research -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-normal-live-design-research -->
+
+## Workflow Delivery v3 normal Live design research
+
+Scope is requirements and design only. No workflow, source, Governance
+attestation, Environment, Git ref, workflow run, deployment, package, tag,
+approval, or Break-Glass state was mutated.
+
+Current repository and platform facts:
+
+- Design base is fresh `origin/main@7e04c5c2`.
+- Retry-5 destination acceptance, cleanup, closure, and final reconciliation
+  are complete.
+- Governance remains `live_enabled: false`; its current attestation identifies
+  sole accepted writer `hcoona` and expires at `2026-11-12T17:19:12Z`.
+- Normal caller workflow ID `340952169` and callee workflow ID `340952170` are
+  active. Legacy workflow IDs `216311758` and `269749708` remain
+  `disabled_manually`.
+- The required permanent approval and capability Environments are absent.
+  GitHub would implicitly create either referenced name without the intended
+  reviewer or protection settings.
+- The direct collaborator inventory contains only `hcoona`.
+- The active `main` Ruleset requires linear protected PR delivery, specified CI
+  checks, CodeQL, resolved review threads, and Copilot review-on-push; the
+  delivery design continues to prohibit bypass.
+- Actions default permissions are read-only; workflow code provides the
+  existing bounded `packages: write` ceiling and effective publisher grant.
+
+Normative and implementation findings:
+
+- Existing Requirements/HLD/MLDs already constrain normal Live to the named
+  disposable smoke package and GitHub Packages. Official and every other
+  package/destination remain excluded.
+- The caller has no custom inputs. The first activation run can be bounded to
+  future activation merge `main`, while the architecture retains its confirmed
+  any-same-repository-ref model.
+- Governance is read before Attempt creation, after approval, at publisher
+  preflight, and immediately before npm. Flag-off blocks future admission after
+  fresh observation but cannot revoke a publisher already past the final check.
+- The user selected a slice-scoped single-maintainer exception: sole accepted
+  writer/reviewer `hcoona` may self-approve with
+  `prevent_self_review: false`. This is process confirmation, not independent
+  review or a security boundary.
+- `approval-finalizer.outputs.attempt-artifact-id` incorrectly exposes the
+  Intent artifact ID and has no consumer. Future readiness repair should remove
+  the unused output rather than preserve a misleading interface.
+- Neither Environment job has a missing-Environment guard. Distinct
+  Environment-scoped marker variables can fail before Authorization or
+  mutation when a name is implicitly created, provided same-name
+  repository/organization variables are absent. Markers do not prove native
+  reviewer, bypass, branch, secret, or credential settings.
+- Retry-5 platform evidence and current production code resolve the former
+  Adapter choice as create-only conflict semantics. An identical conflict fails
+  the current Attempt with no side effect and may become exact/no-op only on a
+  later whole Attempt. A differing conflict remains reconciliation-required.
+- Existing workflow/unit/contract coverage is broad but intentionally proves a
+  disabled normal path. No normal enabled end-to-end run exists; the first
+  activation run must therefore remain uniquely correlated, synchronously
+  monitored, and fully reconciled.
+
+Design review corrections adopted:
+
+- amend normative self-review language before any activation;
+- make native Environment readback and the full existing activation checklist
+  authoritative, with markers described only as sentinels;
+- freeze both other `main` writes and normal dispatch through the first
+  terminal Attempt;
+- distinguish rollout preflight from the later Attempt-bound publisher
+  preflight;
+- correlate a single dispatch by workflow, event, actor, branch, exact head
+  SHA, attempt, and bounded time, without blind resend;
+- require canonical complete Outcome, exact artifact/authorization/capability
+  bindings, Receipt or exact no-action disposition, and exact destination
+  readback rather than relying on a green run alone; and
+- on any lesser result, preserve append-only failure, restore false through
+  protected review, account for capability-started work, and reconcile
+  read-only.
+
+<!-- END APPEND: 2026-08-29-wdv3-normal-live-design-research -->

@@ -4,7 +4,8 @@
 
 Architecture version: **v3**.
 
-Review state: **Confirmed; Release identity model reconfirmed on 2026-08-05**.
+Review state: **Confirmed; normal Live activation requirements refined on
+2026-08-29**.
 
 This page is the normative product and system requirements baseline for the
 clean v3 implementation line. It defines what Workflow Delivery must achieve,
@@ -438,12 +439,24 @@ against implementation and maintenance cost.
   artifact digest and manifest, package lifecycle scripts, and exact action
   summary. The Authorization Record must bind the Publication Snapshot digest
   and immutable reviewer-summary artifact identity and digest. Self-review
-  prevention must be enabled where available. The normal v3 live path must keep
-  this credential-free human approval job separate from the downstream
-  Environment-referencing capability job. The capability Environment need not
-  require a second reviewer. A preceding credential-free approval Finalizer must
-  admit the capability group, and its success alone may schedule the publisher.
-  The publisher must revalidate the Authorization Record and exact Snapshot,
+  prevention must be enabled where available unless a separately confirmed
+  slice-scoped single-maintainer exception applies. For
+  repository `hcoona/three`, package
+  `@hcoona/hcoona-release-smoke-npm`, and approval Environment
+  `workflow-delivery-v3-buddy-smoke-approval`, the confirmed exception permits
+  sole accepted writer and reviewer `hcoona` to approve their own dispatch with
+  `prevent_self_review: false`. This approval is explicit operator
+  self-confirmation and process control, not independent review or an
+  independent security boundary. The exception is valid only while the
+  human-attested effective Write/Maintain/Admin and required-reviewer sets
+  remain exactly `hcoona`; any relevant actor, reviewer, role, team, or access
+  change requires `live_enabled: false` and a new Governance decision before
+  another dispatch. The normal v3 live path must keep this credential-free
+  human approval job separate from the downstream Environment-referencing
+  capability job. The capability Environment need not require a second
+  reviewer. A preceding credential-free approval Finalizer must admit the
+  capability group, and its success alone may schedule the publisher. The
+  publisher must revalidate the Authorization Record and exact Snapshot,
   summary artifact, action, artifact, resource-key, and group bindings before
   using `packages: write`.
 - **WD-SLICE-003:** After approval and successful credential-free Capability
@@ -562,6 +575,61 @@ against implementation and maintenance cost.
   path, keeps legacy Buddy retired, and enters reconciliation without restoring
   a reusable bypass. Restoring legacy Buddy requires a separate user-approved
   rollback PR. The procedure therefore includes an expected brief Buddy outage.
+- **WD-SLICE-011:** Normal Live activation requires the permanent approval
+  Environment `workflow-delivery-v3-buddy-smoke-approval` and capability
+  Environment `workflow-delivery-v3-buddy-smoke-github-packages` to be
+  explicitly created, configured, and read back before `live_enabled` may
+  become true. GitHub's implicit creation of a missing Environment is not
+  accepted configuration. The repaired activation revision and its descendants
+  must treat distinct exact Environment-scoped configuration markers as the
+  first executable check in the two Environment jobs. Each check must map the
+  marker through step `env`, perform a quoted case-sensitive shell comparison,
+  and disallow `continue-on-error`; GitHub expression equality is not an exact
+  comparison. Missing or mismatched markers must stop Authorization or
+  publication before checkout, setup, artifact download, preflight, mutation
+  marking, or publish. Every later operational step must require marker-check
+  success. Any exceptional finalizer that can run after failure must remain
+  non-mutating and must classify rather than mask the marker failure.
+  Repository- and organization-scoped variables with the same names must be
+  absent. These markers are configuration sentinels only: they do not prove
+  reviewer, self-review, administrator-bypass, branch-policy, secret, or
+  credential settings. Delivery Governance must still inspect and retain
+  authenticated readback of those native settings. When a documented public
+  API cannot configure or authoritatively read back a required control, the
+  operator must retain authenticated post-save UI evidence; undocumented API
+  fields may corroborate but cannot replace that evidence or be inferred false
+  when absent. Historical selected refs remain within the accepted writer TCB
+  and do not gain a repository-wide enforcement claim from revision-local
+  marker checks.
+- **WD-SLICE-012:** Successful destination acceptance and cleanup make the named
+  slice eligible for a later production decision; they do not authorize or
+  automatically activate normal Live. Readiness repair and permanent
+  Environment configuration occur while `live_enabled` remains false. A
+  protected preparation change must record fresh activation-gate evidence and
+  refresh the Governance attestation while preserving false. A later,
+  separately authorized protected activation change may set true. Before that
+  activation change merges, operators must freeze all other `main` writes and
+  normal Buddy dispatch. After merge they must bind rollout preflight to the
+  exact activation merge SHA, preserve the freeze, capture the pre-dispatch run
+  set, and dispatch `main` exactly once. Exactly one new
+  `workflow_dispatch` run by the authorized operator must correlate to that
+  SHA with `run_attempt == 1`; ambiguity blocks approval and must not cause a
+  blind second dispatch. Normal Live remains enabled after the first run only
+  if the canonical Attempt Outcome has result `success`; every required
+  artifact and disposition-specific binding is retained; the disposition is
+  either action-bearing publication with exact Capability Admission, durable
+  result, and Receipt or canonical exact-satisfied no-action with no capability
+  or Receipt lineage; destination ownership, bytes, in-package target witness,
+  and target tag are exact; and no incomplete, unknown, conflicting, or
+  possibly-mutated state remains.
+  Otherwise operators freeze new dispatch, inventory every nonterminal run and
+  deployment, promptly restore false through a protected change, drain or
+  cancel only with correct capability-startedness classification, wait for
+  terminal platform state, and reconcile read-only. Flag-off prevents future
+  admission after fresh observation; it is not destination rollback and cannot
+  revoke a publisher already past its final Governance check. Any later retry
+  requires explicit reactivation and a fresh whole Attempt. It must not rewrite
+  the original Attempt as successful.
 
 ### Evidence, Decisions, and Explanation
 
