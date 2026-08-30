@@ -2699,3 +2699,30 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   user authorization; no Environment, marker variable, deployment, normal Live
   dispatch, approval, package, tag, acceptance ref, legacy, or Break-Glass
   mutation occurred.
+
+## [2026-08-30] query | Provision permanent normal Live Environments
+
+- Treated the user's explicit continuation after implementation closure as
+  authorization for Environment creation and authenticated readback only;
+  preparation, activation, dispatch, approval, package mutation, retry,
+  legacy, and Break-Glass remained excluded.
+- Revalidated `main@bbff05e3`, protected Governance
+  `live_enabled: false`, absent final/transitional Environments and
+  deployments, absent repository markers, and zero runs for normal workflow
+  IDs `340952169` and `340952170`.
+- Created approval Environment `workflow-delivery-v3-buddy-approval` as ID
+  `20895030723` with required-reviewer rule `64124473`, sole reviewer
+  `hcoona` / `712433`, self-review permitted, zero wait, all branches, no
+  secrets, and exact approval marker.
+- Created capability Environment
+  `workflow-delivery-v3-buddy-github-packages` as ID `20895037877` with no
+  reviewer or protection rule, zero wait, all branches, no secrets, and exact
+  capability marker.
+- Supplemental API readback reports `can_admins_bypass: false` for both. The
+  authenticated owner saved and reloaded both settings pages and confirmed that
+  administrator bypass remained unchecked. Same-name repository variables are
+  absent, organization-variable scope is not applicable to the User-owned
+  repository, and no deployment or normal workflow run was created.
+- Protected Governance and the exact nine-version package/dist-tag inventory
+  remained unchanged. The next preparation and activation boundaries require
+  separate authorization.

@@ -225,8 +225,8 @@ Normal Live activation uses this separate ordered procedure:
    replaces every transitional approval/capability Environment and marker
    binding across workflow, source, records, formatters, validators, tests, and
    current-state contracts with the final profile mappings;
-3. only after that rename, separately authorize and create the first slice's two
-   permanent profile mappings explicitly:
+3. retain the separately authorized creation and authenticated readback of the
+   first slice's two permanent profile mappings:
    `workflow-delivery-v3-buddy-approval` for the shared Buddy Approval
    Environment Profile and `workflow-delivery-v3-buddy-github-packages` for the
    Buddy GitHub Packages Capability Environment Profile. The approval

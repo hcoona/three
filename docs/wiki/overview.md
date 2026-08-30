@@ -419,12 +419,16 @@ have changed.
     `workflow-delivery-v3-buddy-approval` and
     `workflow-delivery-v3-buddy-github-packages`. All required implementation
     PR checks and its 18/18-file Copilot review passed. Exact post-merge CodeQL
-    and the non-overlapping successor `main` CI and CodeQL passed. Both
-    permanent Environments remain absent; Governance stays false; provisioning,
-    preparation, activation, dispatch, self-approval, package mutation, retry,
-    and Break-Glass remain unauthorized. The accepted single-maintainer
-    exception remains package-specific and does not make approval an
-    independent security boundary.
+    and the non-overlapping successor `main` CI and CodeQL passed. After
+    separate explicit authorization, permanent approval Environment
+    `20895030723` and capability Environment `20895037877` were created with
+    exact markers and authenticated-read settings. API and saved/reloaded UI
+    evidence agree that administrator bypass is disabled. Governance stays
+    false; no deployment or normal workflow run exists; and preparation,
+    activation, dispatch, self-approval, package mutation, retry, and
+    Break-Glass remain unauthorized. The accepted single-maintainer exception
+    remains package-specific and does not make approval an independent
+    security boundary.
 
 ## Related Pages
 
