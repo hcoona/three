@@ -6745,3 +6745,64 @@ Status: **DESIGN ONLY. ALL EXECUTION ITEMS REMAIN UNAUTHORIZED.**
   post-classification Attempt.
 
 <!-- END APPEND: 2026-08-29-wdv3-normal-live-design-plan -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-plan -->
+
+## Workflow Delivery v3 normal Live readiness-repair implementation plan
+
+Status: **READINESS REPAIR ONLY. ACTIVATION AND EXTERNAL MUTATION ARE
+UNAUTHORIZED.**
+
+### Phase 1: tests-first contracts
+
+- [ ] Add a parameterized executable-shell contract for both Environment
+  guards and exact, missing, wrong, and case-altered marker values.
+- [ ] Add exact structural contracts for first-step ordering, stable IDs,
+  Environment variable bindings, quoted case-sensitive comparison, absence of
+  `continue-on-error`, and unchanged Environment names.
+- [ ] Add a downstream-gating contract that distinguishes ordinary steps,
+  failure-retention steps, and the sole non-mutating propagation handler.
+- [ ] Add a no-credential-before-guard assertion and a contract proving the
+  misleading output and any consumer reference are absent.
+- [ ] Run the exact new nodes before workflow modification and retain the
+  expected RED evidence.
+
+### Phase 2: minimal workflow repair
+
+- [ ] Add the approval and capability marker guards as literal first steps.
+- [ ] Gate every later ordinary step on normal success plus marker success.
+- [ ] Preserve required `always()` failure retention while adding marker
+  success, and make propagation fail explicitly on marker failure.
+- [ ] Remove only the unused misbound approval-finalizer output.
+- [ ] Keep `live_enabled: false` and preserve all existing Environment names,
+  any-ref architecture, publication ordering, and finalization behavior.
+- [ ] Re-run the exact new nodes and the complete
+  `test_buddy_workflows.py` file to GREEN.
+
+### Phase 3: bounded completion gates
+
+- [ ] Run the relevant Workflow Delivery v3 package suite, Actionlint, Ruff,
+  Ruff format-check, Pyrefly, `git diff --check`, and unstaged/staged HK gates.
+- [ ] Invoke `test-gap-analysis` and `assertion-quality`; fix every confirmed
+  gap or weak assertion.
+- [ ] Run independent workflow, test-quality, and authority-boundary reviews;
+  independently adjudicate every finding and iterate to no findings.
+- [ ] Append exact results to `.testagent/status.md`.
+- [ ] Deliver through a protected PR without bypass and verify post-merge state
+  while leaving both permanent Environments absent, Governance false, normal
+  Live undispatched, and package state untouched.
+
+### Requirement traceability
+
+| Requirement | Planned evidence |
+| --- | --- |
+| Exact first-step guards and Environment bindings | `test_normal_live_environment_marker_guards_are_first_and_exact` |
+| Missing/wrong/case-altered rejection | `test_normal_live_environment_marker_guard_executes_case_sensitive` |
+| Ordinary and failure-retention downstream gating | `test_normal_live_environment_marker_success_gates_downstream_steps` |
+| Non-mutating failure classification | `test_normal_live_environment_marker_success_gates_downstream_steps` |
+| No pre-guard checkout/token operation | `test_normal_live_environment_marker_guards_are_first_and_exact` |
+| Misbound output removal and no consumers | `test_approval_finalizer_has_no_misbound_attempt_output` |
+| Environment names and topology preserved | Existing `test_live_attempt_dag_environments_and_capability_gate_are_exact` plus the new first-step contract |
+| Governance and external-state boundary | Exact changed-path review, protected Governance byte comparison, and read-only post-merge inventory |
+
+<!-- END APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-plan -->

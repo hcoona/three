@@ -11810,3 +11810,96 @@ Status: **DESIGN COMPLETE; EXECUTION REMAINS UNAUTHORIZED.**
   was approved, and package state was not touched.
 
 <!-- END APPEND: 2026-08-29-wdv3-normal-live-design-status -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-status -->
+
+## Workflow Delivery v3 normal Live readiness-repair status
+
+Status: **IMPLEMENTED AND VALIDATED; INDEPENDENT REVIEW PENDING.**
+
+- The user separately authorized readiness repair only. This bounded change
+  includes the normal Live workflow guard, tightly coupled contract tests,
+  append-only ledgers, and necessary current-state documentation. It does not
+  authorize Environment creation or mutation, preparation attestation,
+  `live_enabled: true`, workflow dispatch, deployment approval, package
+  mutation, legacy restoration, Official activation, or Break-Glass.
+- The existing Buddy workflow contract file passed its 146-test baseline.
+  Twelve new marker, ordering, gating, and output contracts then failed in the
+  intentional RED run and passed after the minimal workflow repair. A
+  mutation-oriented follow-up added four executable propagation cases, bringing
+  the final Buddy workflow contract result to **162 passed**.
+- The approval and publisher jobs now start with credential-free guards for
+  their exact Environment-scoped markers. Each guard receives the marker
+  through step `env`, compares it with a quoted case-sensitive Bash condition,
+  fails on missing, wrong, or case-altered values, and has no
+  `continue-on-error`.
+- Later approval and publisher operations explicitly require their marker
+  guard to succeed. Publisher evidence-retention paths still run after ordinary
+  downstream failures only when the capability marker passed. The sole
+  unconditional publisher handler remains non-mutating and converts any
+  non-success marker outcome into job failure.
+- The unused and incorrectly bound
+  `approval-finalizer.outputs.attempt-artifact-id` declaration was removed. No
+  caller consumed that output, and the finalizer's existing Authorization
+  Record upload and Capability Admission responsibilities remain unchanged.
+- Final validation passed:
+    - Buddy workflow contracts: **162 passed**.
+    - Complete v3 control suite through the unstaged HK gate:
+      **4,230 passed in 583.26 seconds**.
+    - Ruff check and format check, Pyrefly, Actionlint, scoped Prettier,
+      markdownlint, and `git diff --check`.
+    - `uv build --package three-workflow-delivery-v3`; the two disposable build
+      artifacts were then removed.
+- An earlier repeat validation exhausted the shared `/tmp` inode budget, and a
+  private-disk retry timed out on slow I/O while leaving child test processes.
+  Only the exact task-owned process IDs and temporary paths were terminated or
+  removed. The final HK run used an isolated fixed `TMPDIR` with automatic
+  cleanup, completed successfully, and left no task-owned pytest process or
+  test tree behind.
+- This repair changed no Governance document or external resource.
+  `live_enabled` remains false; both permanent normal Live Environments remain
+  absent; no normal Live workflow was dispatched; no deployment was approved;
+  and no package or tag state was mutated.
+
+<!-- END APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-status -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-review -->
+
+## Workflow Delivery v3 normal Live readiness-repair review closure
+
+Status: **INDEPENDENT REVIEW CLEAN; FINAL STAGED GATE PASSED.**
+
+- The workflow-semantics review returned **No findings**.
+- The first test review identified guard-step conditional bypass,
+  propagation `continue-on-error`, and credential-alias coverage concerns. Four
+  independent adjudications retained only contract-bounded corrections:
+    - marker guards must have no step-level `if`;
+    - guarded jobs must not schedule on their Environment marker variable;
+    - the non-mutating propagation step must have no `continue-on-error`;
+    - each guard shell is exactly the four-line comparison/failure script.
+- The adjudications rejected broad ambient-runner credential modeling and
+  blanket job-level `continue-on-error` assertions as unnecessary defensive
+  expansion. The final test re-review returned **No findings**.
+- The documentation review correctly found that `approval-finalizer` is not
+  Authorization-only. The status wording now preserves both its Authorization
+  Record upload and Capability Admission responsibilities. The fresh
+  documentation re-review returned **No findings**.
+- A final post-restoration review returned no workflow or documentation
+  findings. Six broader test/documentation concerns were independently
+  adjudicated as false positives because they would expand the job-local
+  contract or misread append-only chronology. One further test re-review
+  correctly found that GitHub configuration variable names are case-insensitive,
+  so the same-marker scheduling assertion now case-folds both sides. Independent
+  adjudication retained this bounded fix, and fresh re-review returned **No
+  findings**.
+- A stale same-workspace Copilot process concurrently wrote an unauthorized
+  `marker-valid` propagation expansion during review. The user selected removal
+  of that expansion. PID `2397159` and its defunct child tree were terminated,
+  the affected files were restored from exact pre-concurrency rewind snapshots,
+  and only the adjudicated bounded fixes were replayed.
+- The restored and corrected Buddy workflow contract file passes
+  **162 tests** with Ruff check, Ruff format check, and `git diff --check`
+  clean. The final staged HK gate over the exact nine-file diff passed with
+  **4,230 tests** and all configured checks.
+
+<!-- END APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-review -->

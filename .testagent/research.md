@@ -6277,3 +6277,82 @@ Design review corrections adopted:
   read-only.
 
 <!-- END APPEND: 2026-08-29-wdv3-normal-live-design-research -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-research -->
+
+## Workflow Delivery v3 normal Live readiness-repair research
+
+### Authority and boundary
+
+- The user separately authorized **readiness repair only** after the design
+  merge at `main@cda7e2d617ffe1877fb8a389dee336270ec06cda`.
+- The implementation branch is
+  `workflow-delivery-v3-normal-live-readiness-repair`.
+- Authorized changes are limited to the normal Live workflow, its tightly
+  coupled static contract tests, append-only `.testagent` ledgers, and directly
+  required current-state documentation.
+- `live_enabled` must remain false. This phase must not create or update GitHub
+  Environments, dispatch or approve a workflow, mutate package state, restore a
+  legacy path, or perform an activation/preparation change.
+
+### Current workflow findings
+
+- The approval Environment job currently starts by fetching the selected
+  revision and formatting Authorization. It has no missing-Environment
+  configuration sentinel.
+- The publisher Environment job currently starts with checkout and then
+  installs tools, downloads artifacts, performs the Attempt-bound preflight,
+  creates the mutation marker, and publishes. It has no configuration
+  sentinel.
+- Publisher failure retention intentionally uses `always()` for Receipt upload,
+  capability-result formation/upload, and final propagation. These paths must
+  remain available after a later publisher failure but must not run after a
+  failed Environment marker, except for the non-mutating propagation step that
+  classifies the marker failure.
+- `approval-finalizer.outputs.attempt-artifact-id` maps
+  `inputs.intent-artifact-id` under an incorrect Attempt name. Repository-wide
+  search found no consumer of
+  `needs.approval-finalizer.outputs.attempt-artifact-id`; removal is the
+  smallest safe correction.
+- The canonical static-contract location is
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`.
+  It parses workflow YAML with `yaml.safe_load`, uses exact step/name/order
+  assertions, and executes selected Bash `run` blocks with a bounded local
+  subprocess harness.
+
+### Test/source pairing result
+
+The required one-time polyglot static pairing scan over
+`src/public/lib/three-workflow-delivery-v3` found 40 Python source files, 42
+test files, 38 paired source files, two unpaired package `__init__.py` files,
+and zero orphan tests. `test_buddy_workflows.py` is paired to multiple v3 source
+modules. This is a parse-only source-symbol heuristic; GitHub Actions YAML is
+outside its language model and the result is not line or branch coverage.
+
+### Acceptance checklist
+
+1. The approval guard is the literal first step, has a stable ID, maps only
+   `vars.WDV3_APPROVAL_ENVIRONMENT_MARKER` into step `env`, compares against
+   `workflow-delivery-v3-buddy-smoke-approval/v1` with a quoted
+   case-sensitive Bash operation, has no `continue-on-error`, and rejects
+   missing, wrong, and case-altered values.
+2. The publisher guard provides the same guarantees for
+   `vars.WDV3_CAPABILITY_ENVIRONMENT_MARKER` and
+   `workflow-delivery-v3-buddy-smoke-github-packages/v1`.
+3. Every later ordinary approval/publisher step explicitly requires normal
+   success and marker success. Publisher failure-retention steps explicitly
+   require marker success while retaining their required `always()` behavior.
+4. The only post-marker-failure handler is non-mutating publication-status
+   propagation; it explicitly fails when the guard outcome is not success and
+   cannot mask the guard failure.
+5. No checkout, setup, download, artifact production, package-token use,
+   preflight, mutation marker, or publish operation can run after guard failure.
+6. The exact approval and capability Environment names, any-ref workflow
+   architecture, existing publisher/finalizer ordering, and canonical
+   cancellation/finalization semantics remain unchanged.
+7. The unused misbound `approval-finalizer` Attempt output and every possible
+   consumer reference are absent.
+8. The protected Governance document remains byte-for-byte unchanged with
+   `live_enabled: false`; no external resource changes.
+
+<!-- END APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-research -->
