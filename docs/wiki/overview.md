@@ -174,10 +174,12 @@ historical acceptance result, and `.1`-`.12` remain consumed.
   the complete same-revision workflow, Planner, Finalizer, Provider, Adapter,
   compiler, client, catalog, capability-declaration, and publisher stack without
   owner-reviewed eligibility. After exact Publication Snapshot creation, the
-  normal path uses dedicated Buddy Environment approval, keeps workflow-level
-  permissions empty or read-only, and declares `packages: write` only on the
-  `run-live-attempt` `uses`-only caller job as the reusable-workflow ceiling and
-  on the called Environment-referencing publisher job as effective capability.
+  normal path requires human approval of the current Attempt's fresh deployment
+  to the Environment identity mapped from its Governance-selected Buddy Approval
+  Environment Profile, keeps workflow-level permissions empty or read-only, and
+  declares `packages: write` only on the `run-live-attempt` `uses`-only caller job
+  as the reusable-workflow ceiling and on the called Environment-referencing
+  publisher job as effective capability.
   `evaluate-live-eligibility` receives only `contents: read`; effective
   `actions: read` is confined to history admission and explicit
   `packages: read` to the observer. Every other job remains explicitly
