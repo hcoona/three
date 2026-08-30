@@ -12037,3 +12037,39 @@ Status: **PR REVIEW REMEDIATION COMPLETE; PUSH PENDING.**
   remains the delivery boundary.
 
 <!-- END APPEND: 2026-08-30-wdv3-environment-identity-pr-review-closure -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-second-review -->
+
+## Workflow Delivery v3 Environment identity second PR review
+
+Status: **SECOND REVIEW REMEDIATION COMPLETE; FINAL PUSH PENDING.**
+
+- Copilot's rereview of pushed head
+  `06ca725e6e24db990ab43ddf609ec5a3420867ac` covered all 15 PR paths and
+  reported two additional comments. CI, Workflow Delivery v3 CI, and CodeQL
+  subsequently passed on that head.
+- The overview still used `dedicated Buddy Environment approval`. Independent
+  adjudication retained this as a true current-state contradiction. The summary
+  now requires approval of the current Attempt's fresh deployment to the
+  Environment identity mapped from its Governance-selected Buddy Approval
+  Environment Profile.
+- The scope comment was partially true. The earlier 14-path statement remains
+  accurate historical evidence for pushed head
+  `a756281913201a7f61accb8f6e16308476e54b92`, and its seven-document
+  normative/design category included `migration-strategy.md`. Review
+  remediation added `shared-foundation-mld.md`, so the current PR scope is 15
+  Markdown paths: eight normative/design documents, three current-state
+  documents, `docs/wiki/log.md`, and the three append-only test-agent ledgers.
+  This append supersedes only the old entry's use as a current-head inventory;
+  the historical entry remains unchanged.
+- The explicit current-worktree 15-path HK gate uses the NUL-delimited
+  `origin/main...HEAD` path list, and the complete current-worktree diff check
+  compares against `origin/main`. Both pass before the final corrective commit.
+  The committed-range gate must pass again after that commit before the review
+  thread is closed.
+- No workflow, source, test, protected Governance, marker variable, Environment,
+  deployment, workflow run, package, tag, ref, legacy, or Break-Glass mutation
+  was authorized or performed. `live_enabled: false` remains the delivery
+  boundary.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-second-review -->
