@@ -109,10 +109,11 @@ Before v3 activation, inventory:
 - GitHub Packages permissions;
 - the exact dedicated `hcoona-release-smoke-npm` package and GitHub Packages
   destination;
-- the permanent approval and capability Environments, their exact names and
-  IDs, reviewers, single-maintainer self-review exception,
-  administrator-bypass behavior, wait timers, branch/tag policies, absence of
-  stored credentials, and distinct Environment-scoped configuration markers;
+- the exact Approval and Capability Environment Profiles selected by the
+  Release policy, their stable platform names and IDs, reviewers,
+  single-maintainer self-review exception, administrator-bypass behavior, wait
+  timers, branch/tag policies, credential and access policy, and distinct
+  Environment-scoped configuration markers;
 - absence of repository- or organization-scoped variables with the same marker
   names, so implicit creation of a missing Environment cannot satisfy a marker
   check;
@@ -174,12 +175,15 @@ Activation requires explicit human Governance inspection and acceptance of the
 bounded branch-controlled publisher risk. This exception is recorded only for
 the first live Buddy GitHub Packages slice; Official and future Buddy
 destinations or production packages remain blocked until their own governance
-and threat decisions are confirmed. The confirmed single-maintainer exception
-allows sole accepted writer and reviewer `hcoona` to approve their own
-dispatch with `prevent_self_review: false`. This is explicit operator
-self-confirmation, not independent review. Any effective writer, reviewer,
-role, team, or relevant access change blocks the live slice through
-`live_enabled: false` until human Governance makes a new decision. Any
+and threat decisions are confirmed. A separately governed Release policy may
+reuse an existing Environment identity only when its complete Approval or
+Capability Environment Profile is identical; reuse does not inherit this
+exception, an approval, or package eligibility. The confirmed
+single-maintainer exception allows sole accepted writer and reviewer `hcoona`
+to approve their own dispatch with `prevent_self_review: false`. This is
+explicit operator self-confirmation, not independent review. Any effective
+writer, reviewer, role, team, or relevant access change blocks the live slice
+through `live_enabled: false` until human Governance makes a new decision. Any
 membership change that leaves an untrusted actor with Write, Maintain, or Admin
 access also blocks the slice until either that actor's repository access is
 reduced below Write/Maintain/Admin or package-write Capability and destination
@@ -210,37 +214,48 @@ do not authorize normal Live or set `live_enabled` true.
 
 Normal Live activation uses this separate ordered procedure:
 
-1. merge a narrow readiness repair while false. Its Environment jobs validate
+1. retain the merged narrow readiness repair while false. Its Environment jobs
+   validate
    distinct Environment-scoped markers through quoted case-sensitive shell
    comparisons as their first executable steps, use no `continue-on-error`,
    explicitly gate every later operational step on marker success, leave
    exceptional handlers non-mutating, and remove the unused misbound
    approval-finalizer Attempt output;
-2. create both permanent Environments explicitly. The approval Environment has
-   sole reviewer `hcoona`, the documented self-review exception, no stored
-   credential, zero wait, no branch restriction, and administrator bypass
-   disabled where available. The capability Environment has no reviewer or
-   stored credential, zero wait, no branch restriction, and the same
-   administrator-bypass posture. Authenticated readback verifies both markers
-   and all native settings. Administrator bypass is configured and
-   authenticated-read through the saved Environment UI when no documented
-   public API supports that control; an undocumented API response field is
-   corroborating evidence only, and omission is not false;
-3. capture every activation-gate item, then merge a protected preparation
+2. merge a protected implementation change while false that replaces every
+   transitional approval/capability Environment and marker binding across
+   workflow, source, records, formatters, validators, tests, and current-state
+   contracts with the final profile mappings;
+3. only after that rename, separately authorize and create the first slice's two
+   permanent profile mappings explicitly:
+   `workflow-delivery-v3-buddy-approval` for the shared Buddy Approval
+   Environment Profile and `workflow-delivery-v3-buddy-github-packages` for the
+   Buddy GitHub Packages Capability Environment Profile. The approval
+   Environment has sole reviewer `hcoona`, the documented self-review
+   exception, no stored credential, zero wait, no branch restriction, and
+   administrator bypass disabled where available. The capability Environment
+   has no reviewer or stored credential, zero wait, no branch restriction, and
+   the same administrator-bypass posture. Authenticated readback verifies both
+   markers and all native Environment settings. The Governance-approved
+   profile-to-name mapping together with that readback and the other required
+   policy evidence establishes exact profile compatibility. Administrator bypass
+   is configured and authenticated-read through the saved Environment UI when no
+   documented public API supports that control; an undocumented API response
+   field is corroborating evidence only, and omission is not false;
+4. capture every activation-gate item, then merge a protected preparation
    change that refreshes the attestation and evidence while keeping false;
-4. freeze every other `main` write and normal Buddy dispatch. Merge only the
+5. freeze every other `main` write and normal Buddy dispatch. Merge only the
    minimal protected activation change that sets true, and retain the freeze
    except for the minimal protected false change required by a lesser outcome;
-5. run read-only rollout preflight against the exact activation merge SHA. It
+6. run read-only rollout preflight against the exact activation merge SHA. It
    rechecks all gate evidence, derives that SHA's NBGV coordinate and target
    tag, proves the expected destination pre-state, and captures the existing
    normal-run set;
-6. dispatch `main` exactly once and correlate exactly one new
+7. dispatch `main` exactly once and correlate exactly one new
    `workflow_dispatch` attempt-1 run by `hcoona` at that SHA. An ambiguous
    response is reconciled read-only and is never blindly resent;
-7. inspect the immutable reviewer summary and self-approve only the correlated
+8. inspect the immutable reviewer summary and self-approve only the correlated
    deployment; and
-8. retain true and release the freeze only after a canonical Attempt Outcome
+9. retain true and release the freeze only after a canonical Attempt Outcome
    with result `success`, exact artifacts and disposition-specific bindings,
    either action-bearing publication with Capability Admission, durable
    capability-group result, and Receipt or canonical exact-satisfied no-action

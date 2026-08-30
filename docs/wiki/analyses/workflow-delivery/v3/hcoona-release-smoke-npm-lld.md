@@ -954,10 +954,22 @@ Admission and publisher validation fail closed on any mismatch.
 
 Environments:
 
-- `workflow-delivery-v3-buddy-smoke-approval`: human reviewer, no credentials,
-  used only by `approval`;
-- `workflow-delivery-v3-buddy-smoke-github-packages`: capability boundary used
-  only by the publisher job.
+- `workflow-delivery-v3-buddy-approval`: shared Buddy Approval Environment
+  Profile, human reviewer, no credentials, used only by `approval`;
+- `workflow-delivery-v3-buddy-github-packages`: shared Buddy GitHub Packages
+  Capability Environment Profile, used only by the publisher job.
+
+These are policy-scoped repository identities, not package-scoped identities.
+Environment Profile compatibility and identity reuse are governed solely by
+`WD-AUTH-006` and the Governance Integration MLD. This LLD records only the
+first-slice profile-to-name mappings and their usage constraints. Another
+Release policy may reuse either identity only after Delivery Governance confirms
+complete-profile compatibility and that policy receives its own Governance and
+threat decision. Reuse never transfers this slice's approval, Authorization,
+Capability, or package eligibility. Any job reusing either identity must
+consume its exact Environment-scoped marker through the same
+first-executable-step fail-closed guard. That usage contract belongs to the
+profile-to-name mapping and is not an Environment Profile equality dimension.
 
 The approval Environment uses sole reviewer `hcoona` with
 `prevent_self_review: false` under the confirmed single-maintainer exception
@@ -967,10 +979,11 @@ unavailable control; the LLD does not claim an unavailable guarantee or
 independent review.
 
 The approval job is the separate human gate and has no credentials. The
-publisher Environment is the downstream capability boundary and need not
-require a second reviewer. `approval-finalizer` is the credential-free
-Capability Admission Gate between them. An additional destination reviewer is
-optional.
+publisher Environment is the downstream capability boundary, has no required
+reviewer, and performs no human approval. `approval-finalizer` is the
+credential-free Capability Admission Gate between them. No additional
+destination reviewer is configured for this slice; a reviewer-bearing
+destination requires a new architecture decision.
 
 Because GitHub jobs do not share a workspace, the credential-free approval job
 obtains control code through an anonymous public Git fetch of the exact selected
@@ -1841,8 +1854,8 @@ recorded:
 - actual token permissions and package/repository grants are recorded; known
   Official and production reach is absent; safe denial probes pass for the
   enumerated unrelated assets;
-- the dedicated approval and capability Environments and actual reviewer,
-  self-review, and administrator-bypass behavior are inspected;
+- the exact selected Approval and Capability Environment Profiles and actual
+  reviewer, self-review, and administrator-bypass behavior are inspected;
 - repository policy permits 45-day Release control and artifact retention;
 - every Write/Maintain/Admin actor and relevant package/repository/Manage
   Actions access is human-inspected and accepted in the publisher TCB; a
@@ -1868,7 +1881,7 @@ recorded:
 
 ### Gate State After Retry 5
 
-As of the design inventory at `main@7e04c5c2`, the direct cutover and
+As of the design inventory at `main@bc33defe`, the direct cutover and
 destination-acceptance prerequisites are complete:
 
 - legacy `buddy.yml` and `release-buddy.yml` sources are absent, while workflow
@@ -1881,6 +1894,11 @@ destination-acceptance prerequisites are complete:
   `340952170`, but the protected attestation remains `live_enabled: false`;
 - the normal approval and capability Environments do not yet exist. GitHub
   would auto-create either referenced name without the intended protection;
+- the merged workflow, source, records, and tests still reference the
+  transitional `workflow-delivery-v3-buddy-smoke-approval` and
+  `workflow-delivery-v3-buddy-smoke-github-packages` identities and PR #624's
+  corresponding marker values. The final profile-name implementation rename has
+  not yet landed;
 - the current direct collaborator inventory contains only `hcoona`, and the
   attestation records `hcoona` as the sole accepted writer; and
 - normal Live activation and external configuration remain unauthorized by the
@@ -1890,48 +1908,58 @@ Acceptance resolved the platform behavior needed by this slice but did not
 execute the normal Release path. It is a prerequisite for the separate
 activation sequence below, not authority to skip it.
 
-### Readiness Repair While Disabled
+### Merged Readiness Repair and Pending Environment-Contract Rename
 
-Before either permanent Environment is created, one narrow protected repair
-must land with `live_enabled: false`:
+PR #624 merged the readiness mechanism as
+`2db88a56df58e3e957fb366390882a6089cebfe1` while `live_enabled` remained
+false. It:
 
-- remove the unused and incorrect
-  `approval-finalizer.outputs.attempt-artifact-id` mapping, which currently
-  exposes the Intent artifact ID under an Attempt name;
-- add
-  `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-smoke-approval/v1`
-  as the literal first executable check in the approval job, mapped through
-  step `env` and compared by a quoted case-sensitive shell operation;
-- add
-  `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-smoke-github-packages/v1`
-  as the literal first executable check in the publisher job under the same
-  comparison rule;
-- set no `continue-on-error` on either marker check and explicitly require
+- removed the unused and incorrect
+  `approval-finalizer.outputs.attempt-artifact-id` mapping that exposed the
+  Intent artifact ID under an Attempt name;
+- added literal first executable approval and publisher marker checks using the
+  then-current `buddy-smoke` Environment names and marker values;
+- set no `continue-on-error` on either marker check and explicitly required
   `steps.<marker-check>.outcome == 'success'` together with normal success on
   every later operational step;
-- permit no checkout, setup, artifact download, preflight, mutation marker, or
-  publish step after a missing or mismatched marker;
-- ensure any `always()` cleanup or finalization path remains non-mutating and
-  classifies the failed prerequisite rather than masking it; and
-- add static contract tests for exact and case-altered marker values,
+- permitted no checkout, setup, artifact download, preflight, mutation marker,
+  or publish step after a missing or mismatched marker;
+- kept every `always()` cleanup or finalization path non-mutating and classified
+  the failed prerequisite rather than masking it; and
+- added static contract tests for exact and case-altered marker values,
   first-step ordering, forbidden `continue-on-error`, explicit downstream
-  gating, non-mutating exceptional paths, unchanged Environment names, no
-  credential expansion, and the removed misleading output.
+  gating, non-mutating exceptional paths, no credential expansion, and the
+  removed misleading output.
 
-The markers are configuration sentinels, not reviewer or security proof. They
-protect the repaired revision and descendants, not historical selected-ref
+The mechanism is final; its names are transitional. Before either final
+Environment is created, a separate protected implementation PR must:
+
+- replace the approval Environment and expected marker with
+  `workflow-delivery-v3-buddy-approval` and
+  `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`;
+- replace the capability Environment and expected marker with
+  `workflow-delivery-v3-buddy-github-packages` and
+  `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1`;
+- update every corresponding workflow, source, record, formatter, validator,
+  test, and current-state contract in the same protected change; and
+- preserve the first-step, exact-comparison, downstream-gating, non-mutating
+  failure, and no-credential-expansion behavior already merged by PR #624.
+
+The markers remain configuration sentinels, not reviewer or security proof.
+They protect the renamed revision and descendants, not historical selected-ref
 code. They rely on authenticated rollout inspection proving that repository-
 and organization-scoped variables with the same names are absent.
 
 ### Permanent Environment Contract
 
-Delivery Governance must explicitly create and read back these Environments
-before a preparation or activation change:
+After the protected implementation rename merges while false, Delivery
+Governance must separately authorize, explicitly create, and read back these
+Environments before a preparation or activation change:
 
-| Environment                                        | Required configuration                                                                                                                                                                                                                             |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `workflow-delivery-v3-buddy-smoke-approval`        | Sole reviewer `hcoona`; `prevent_self_review: false` under the confirmed single-maintainer exception; zero wait; no stored secrets or credentials; no branch/tag restriction; administrator bypass disabled where available; exact approval marker |
-| `workflow-delivery-v3-buddy-smoke-github-packages` | No reviewer; zero wait; no stored secrets or credentials; no branch/tag restriction; administrator bypass disabled where available; exact capability marker                                                                                        |
+| Environment                                  | Required configuration                                                                                                                                                                                                                             |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workflow-delivery-v3-buddy-approval`        | Sole reviewer `hcoona`; `prevent_self_review: false` under the confirmed single-maintainer exception; zero wait; no stored secrets or credentials; no branch/tag restriction; administrator bypass disabled where available; exact approval marker |
+| `workflow-delivery-v3-buddy-github-packages` | No reviewer; zero wait; no stored secrets or credentials; no branch/tag restriction; administrator bypass disabled where available; exact capability marker                                                                                        |
 
 The documented public Environment API does not currently expose a stable write
 contract for administrator bypass. For each Environment, an administrator
@@ -1947,12 +1975,14 @@ same-repository selected ref. The first activation Attempt is nevertheless
 constrained operationally to `main` at the exact activation merge SHA.
 
 The single-maintainer exception is limited to repository `hcoona/three`,
-package `@hcoona/hcoona-release-smoke-npm`, this approval Environment, and the
-human-attested effective writer and reviewer set exactly equal to `hcoona`.
-The review is operator self-confirmation against mistakes, not independent
-approval or a security boundary. Any writer, reviewer, role, team, package,
-repository, Manage Actions, or relevant authority change requires an immediate
-protected false state and a new Governance decision.
+package `@hcoona/hcoona-release-smoke-npm`, this approval Environment Profile,
+and the human-attested effective writer and reviewer set exactly equal to
+`hcoona`. Sharing the Environment identity with another separately governed
+Release policy does not transfer this exception. The review is operator
+self-confirmation against mistakes, not independent approval or a security
+boundary. Any writer, reviewer, role, team, package, repository, Manage
+Actions, or relevant authority change requires an immediate protected false
+state and a new Governance decision.
 
 Authenticated readback records exact Environment IDs and names, protection
 rules, reviewer identity, self-review behavior, administrator-bypass UI
@@ -1963,12 +1993,14 @@ this inspection.
 
 ### Protected Activation Sequence
 
-Normal activation uses three independently reviewable delivery boundaries:
+After the completed readiness repair, normal activation uses three independently
+reviewable protected delivery boundaries:
 
-1. **Readiness repair PR:** land the workflow and contract repair above while
-   false.
-2. **Preparation PR:** after Environment creation and complete read-only
-   inventory, record one-to-one evidence for every Activation Gate bullet,
+1. **Environment-contract implementation PR:** update every executable and
+   contract surface to the final profile names and markers above while false.
+2. **Preparation PR:** after separately authorized Environment creation and
+   complete authenticated/read-only inventory, record one-to-one evidence for
+   every Activation Gate bullet,
    refresh the protected attestation's issuer, inspection time, expiry,
    accepted writers, and access inventory or evidence digest, and keep false.
 3. **Activation PR:** after preparation merge and final review, freeze all
@@ -2150,10 +2182,12 @@ unchanged.
     reviewed invocation with a new disposable coordinate/version after failure;
     keep normal live and all Buddy publication disabled, legacy Buddy retired,
     and reconcile incomplete/unknown probe state.**
-14. **After separate human approval, activate v3 live only for the named smoke
-    package through a protected commit setting `live_enabled: true`; former
-    Buddy projects remain unsupported, while v1 Official and CI assets remain
-    unchanged.**
+14. **After the protected Environment-contract implementation rename,
+    separately authorized Environment creation/readback, protected preparation,
+    and separate human production approval, activate v3 live only for the named
+    smoke package through a protected commit setting `live_enabled: true`;
+    former Buddy projects remain unsupported, while v1 Official and CI assets
+    remain unchanged.**
 
 ## Open LLD Decisions
 
@@ -2169,8 +2203,9 @@ and requires reconciliation. Neither case authorizes overwrite, delete,
 restore, or retroactive success. Lost response remains incomplete and possibly
 mutated unless authoritative current-Attempt evidence proves otherwise.
 
-The normal Live activation design gate is satisfied. This design does not
-authorize readiness implementation, Environment creation, the protected
+The normal Live activation design gate is satisfied, and readiness repair is
+already delivered. This design does not itself implement the protected
+Environment-contract rename or authorize Environment creation, the protected
 preparation/activation changes, dispatch, approval, package mutation, retry, or
 Break-Glass. Each remains subject to the protected sequence and explicit future
 authorization above.
