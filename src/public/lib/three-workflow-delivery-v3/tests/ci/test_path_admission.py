@@ -89,3 +89,24 @@ def test_workflow_documentation_is_repository_only() -> None:
     ):
         assert is_repository_only_path(workflow)
         assert is_consumer_policy_surface_path(workflow)
+
+
+def test_scholarly_publication_admission_stays_package_bounded() -> None:
+    """Admit scholarly package surfaces without admitting sibling packages."""
+    paths = (
+        ".agents/skills/scholarly-pdf-reconstruction/SKILL.md",
+        ".agents/skills/scholarly-print-assembly/scripts/assemble_print.py",
+        ".agents/skills/scholarly-render-qa/assets/release-manifest.schema.json",
+        ".typos.toml",
+        "apm.lock.yaml",
+        "apm.yml",
+        "src/private/lib/scholarly-publication/tests/test_validate_package.py",
+    )
+
+    assert all(is_repository_only_path(path) for path in paths)
+    assert not is_repository_only_path(
+        "src/private/lib/unrelated-package/source.py"
+    )
+    assert not is_repository_only_path(
+        ".agents/skills/scholarly-unrelated/SKILL.md"
+    )

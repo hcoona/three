@@ -9,14 +9,19 @@ from three_workflow_delivery_v3.release.consumer_policy import (
 )
 
 _REPOSITORY_ONLY_PREFIXES = (
+    ".agents/skills/scholarly-pdf-reconstruction/",
+    ".agents/skills/scholarly-print-assembly/",
+    ".agents/skills/scholarly-render-qa/",
     ".testagent/",
     "docs/",
     "eng/",
     "LICENSES/",
+    "src/private/lib/scholarly-publication/",
     "tests/",
 )
 _REPOSITORY_ONLY_PATHS = frozenset(
     {
+        ".typos.toml",
         "AGENTS.md",
         "COPYING",
         "COPYING.LESSER",
@@ -24,6 +29,8 @@ _REPOSITORY_ONLY_PATHS = frozenset(
         "Directory.Build.targets",
         "LICENSE",
         "README.md",
+        "apm.lock.yaml",
+        "apm.yml",
         "biome.jsonc",
         "dirs.proj",
         "global.json",

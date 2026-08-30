@@ -298,6 +298,38 @@ def test_repository_only_change_selects_root_hk(path: str) -> None:
     assert plan.selected_outputs == ()
 
 
+def test_scholarly_publication_change_set_selects_complete_scope() -> None:
+    """Classify the scholarly change set with its global toolchain input."""
+    plan = _plan(
+        changed_paths=(
+            ".agents/skills/scholarly-pdf-reconstruction/SKILL.md",
+            ".agents/skills/scholarly-print-assembly/scripts/assemble_print.py",
+            (
+                ".agents/skills/scholarly-render-qa/assets/"
+                "release-manifest.schema.json"
+            ),
+            ".typos.toml",
+            "apm.lock.yaml",
+            "apm.yml",
+            "mise.toml",
+            "pyproject.toml",
+            (
+                "src/private/lib/scholarly-publication/tests/"
+                "test_validate_package.py"
+            ),
+        )
+    )
+
+    assert plan.ready
+    assert _selected_lanes(plan) == CI_LANE_IDS
+    assert plan.selected_project_nodes == (FIRST_SLICE_PACKAGE,)
+    assert plan.selected_release_units == (FIRST_SLICE_RELEASE_UNIT,)
+    assert plan.selected_variants == ("npm-package",)
+    assert plan.selected_outputs == (
+        ("npm-tarball", "primary-package", "npm-tarball"),
+    )
+
+
 @pytest.mark.parametrize(
     ("path", "selected_lanes"),
     [
@@ -311,8 +343,10 @@ def test_repository_only_change_selects_root_hk(path: str) -> None:
         (".github/workflows/REFACTOR_PLAN.md", ("root-hk",)),
         ("hk.pkl", ("root-hk",)),
         (
-            "src/public/lib/three-workflow-delivery-v3/src/"
-            "three_workflow_delivery_v3/cli.py",
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/cli.py"
+            ),
             CI_LANE_IDS,
         ),
         (
