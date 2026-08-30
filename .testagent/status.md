@@ -11903,3 +11903,89 @@ Status: **INDEPENDENT REVIEW CLEAN; FINAL STAGED GATE PASSED.**
   **4,230 tests** and all configured checks.
 
 <!-- END APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-review -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-design-status -->
+
+## Workflow Delivery v3 Environment identity design correction
+
+Status: **DESIGN COMPLETE; INDEPENDENT REVIEW CLEAN; DELIVERY PENDING.**
+
+### Final design
+
+- Delivery Governance now owns Environment Profile compatibility and stable
+  profile-to-name mappings. Release requests and consumes those mappings; the
+  first-slice LLD records exact mappings and usage constraints without
+  duplicating the compatibility schema.
+- Buddy Approval Environment identity is reusable only for an identical
+  Approval Environment Profile. GitHub Packages capability identity is
+  reusable only for an identical destination, credential identity, permission,
+  access, and native-protection profile.
+- Capability reviewer policy is fixed to `none` under the current architecture.
+  An Attempt that reaches the approval gate requires one fresh current-Attempt
+  human approval, and package-bound Authorization is emitted only after
+  successful approval. A reviewer-bearing destination requires a new
+  architecture decision.
+- The first slice maps to
+  `workflow-delivery-v3-buddy-approval` and
+  `workflow-delivery-v3-buddy-github-packages`, with exact marker contracts
+  `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`
+  and
+  `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1`.
+- Shared Environment identities aggregate GitHub Environment deployment
+  history but do not transfer Governance eligibility, approval, Authorization,
+  Capability, package authorization, or Attempt/package lineage.
+- No persistent Profile-ID or mirrored Profile-record subsystem was added.
+  Compatibility remains a Governance design/provisioning decision evidenced by
+  the LLD mapping, authenticated native readback, and other required policy
+  evidence. Marker values and first-step guards remain mapping/consumer
+  contracts rather than Profile identity dimensions.
+
+### Ordered delivery boundary
+
+- PR #624 remains the completed fail-closed readiness mechanism under the
+  transitional `buddy-smoke` identities.
+- Before either final Environment is created, one protected implementation PR
+  must atomically update workflow, source, record, formatter, validator, test,
+  marker, and current-state contracts while `live_enabled` remains false.
+- The earlier unchecked plan items that named permanent `buddy-smoke`
+  Environments are explicitly canceled through an append-only supersession.
+- External Environment creation/readback remains separately unauthorized.
+  Preparation, activation, dispatch, deployment approval, package/tag mutation,
+  retry, legacy restoration, and Break-Glass also remain unauthorized.
+
+### Review and validation
+
+- Three initial independent reviews covered architecture/overdesign,
+  authority/operability, and cross-document consistency. Every finding was
+  independently adjudicated; true positives were corrected and proposals for a
+  persistent Profile registry or marker-based identity key were rejected as
+  overdesign.
+- Repeated architecture and documentation rereviews continued until the final
+  two independent closure reviewers both returned **No findings**.
+- OCR delegation preview reported all 13 changed files and excluded all 13 as
+  unsupported Markdown extensions; deterministic scope accounting was retained,
+  and the host reviews above performed the actual design review.
+- `pnpm exec -- prettier --check -- <11 changed normative/current-state docs>`:
+  exit 0.
+- `pnpm exec -- markdownlint-cli2 -- <11 changed normative/current-state
+  docs>`: exit 0; 0 issues.
+- `hk check --no-progress --unstaged`: exit 0 across all applicable checks for
+  the final 14 changed paths.
+- `git diff --check`: exit 0.
+
+### Scope and external-state evidence
+
+- Exactly 14 Markdown paths are changed: the seven normative/design documents,
+  three current-state documents, `docs/wiki/log.md`, and the append-only
+  research/plan/status ledgers after this entry.
+- Workflow, Python source, tests, protected Governance, manifests, and lockfiles
+  are unchanged. The protected Governance diff is empty and
+  `live_enabled` remains false with expiry `2026-11-12T17:19:12Z`.
+- Read-only GitHub reconciliation found the final and transitional approval and
+  capability Environment names all absent. Both repository marker variables are
+  absent.
+- Normal workflow IDs `340952169` and `340952170` remain active and have no
+  runs. No Environment, deployment, workflow run, package, tag, ref, legacy, or
+  Break-Glass mutation occurred.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-design-status -->

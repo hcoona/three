@@ -6806,3 +6806,75 @@ UNAUTHORIZED.**
 | Governance and external-state boundary | Exact changed-path review, protected Governance byte comparison, and read-only post-merge inventory |
 
 <!-- END APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-plan -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-design-plan -->
+
+## Workflow Delivery v3 Environment identity design plan
+
+### Phase 1: correct the normative hierarchy
+
+- [x] Add a requirements-level Environment Profile and exact compatibility
+  contract.
+- [x] Define Approval Environment identity by reviewer/Governance policy and
+  Capability Environment identity by destination/credential/access policy.
+- [x] Make reuse preserve fresh per-Attempt approval and package-bound
+  Governance, Authorization, Capability, and Attempt/package lineage.
+- [x] Map the first slice to `workflow-delivery-v3-buddy-approval` and
+  `workflow-delivery-v3-buddy-github-packages`.
+- [x] Preserve the package-specific smoke risk exception and the rule that
+  future destinations require their own threat and cost decision.
+
+### Phase 2: synchronize current truth
+
+- [x] Update the v3 glossary, migration strategy, README, handoff, and top-level
+  overview.
+- [x] Record that PR #624 merged readiness repair while both permanent
+  Environments remained absent and Governance remained false.
+- [x] State explicitly that merged workflow/source contracts still use the
+  earlier names until a separate implementation PR lands.
+- [x] Keep this phase documentation-only and perform no Environment, workflow
+  run, deployment, package, tag, legacy, or Break-Glass mutation.
+
+### Phase 3: validate and deliver the design
+
+- [ ] Run scoped formatting, markdown, link, and repository checks already
+  configured for the changed files.
+- [ ] Run independent Requirements/HLD/MLD/LLD consistency and
+  overdesign/abstraction review.
+- [ ] Independently adjudicate every finding and iterate to no findings.
+- [ ] Append final evidence to `.testagent/status.md`.
+- [ ] Commit the normative design and current-state/ledger updates in
+  human-reviewable commits.
+- [ ] Push a protected design PR, resolve CI and Copilot review, and merge
+  without bypass.
+
+### Follow-up boundaries
+
+1. After design merge, atomically update workflow, source, record, formatter,
+   validator, test, marker, and current-state contracts to the exact final names
+   while `live_enabled` remains false.
+2. After implementation merge, request separate authorization before creating
+   or configuring either permanent Environment.
+3. Preparation, activation, dispatch, approval, package mutation, and terminal
+   rollout remain separately gated.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-design-plan -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-creation-supersession -->
+
+### Supersession of obsolete Environment-creation items
+
+The unchecked Phase 2 Environment-creation items in the 2026-08-29 normal Live
+future delivery plan are retained for history but are canceled and must not be
+executed. The `workflow-delivery-v3-buddy-smoke-approval` and
+`workflow-delivery-v3-buddy-smoke-github-packages` permanent Environments must
+not be created.
+
+Those items are superseded by the protected all-surface rename while
+`live_enabled: false`, followed by separate explicit authorization to create,
+configure, and read back only `workflow-delivery-v3-buddy-approval` and
+`workflow-delivery-v3-buddy-github-packages`.
+
+This clarification authorizes no external mutation.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-creation-supersession -->
