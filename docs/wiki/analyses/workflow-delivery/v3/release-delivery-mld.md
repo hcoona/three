@@ -644,8 +644,10 @@ The Planner does not query reviews or re-adjudicate Rulesets.
 
 A structurally valid target is not thereby authorized to publish.
 For the first-slice Buddy exception, no protected-ref or CODEOWNERS-approved
-eligibility is required; the later approval through its exact Buddy Approval
-Environment Profile is the explicit trust elevation.
+eligibility is required; the later successful human approval of the current
+Attempt's deployment to the exact Environment identity mapped from its
+Governance-selected Buddy Approval Environment Profile is the explicit trust
+elevation.
 
 ### Live Authority
 
@@ -672,7 +674,8 @@ This bounded risk decision was reopened and reconfirmed before LLD on
   from the exact selected target revision without owner-reviewed eligibility;
 - control is not substituted from protected main;
 - every Attempt seals the exact Publication Snapshot before requesting approval
-  through its exact Buddy Approval Environment Profile;
+  for its deployment to the exact Environment identity mapped from its
+  Governance-selected Buddy Approval Environment Profile;
 - the normal reusable live path keeps workflow-level permissions empty or
   read-only and declares `packages: write` only on the `uses`-only caller job as
   the reusable-workflow ceiling and on the called Environment-referencing
@@ -1309,9 +1312,11 @@ decision; the channel-level Authorization Record never bypasses destination
 Governance.
 
 The channel approval job and destination capability job remain separate. The
-first-slice Capability Environment Profile has no required reviewer and performs
-no human approval; the Approval Environment supplies the Attempt's sole human
-approval. A reviewer-bearing destination is unsupported by this architecture.
+first-slice Capability Environment Profile fixes reviewer policy to `none`. Its
+mapped Environment has no required reviewer, so its deployment adds no human
+approval. Approval of the current Attempt's deployment to the mapped Approval
+Environment is the Attempt's sole human approval. A reviewer-bearing destination
+is unsupported by this architecture.
 
 GitHub and destination platforms may scope credentials only to an Environment,
 workflow identity, repository, package, or destination account. The trusted

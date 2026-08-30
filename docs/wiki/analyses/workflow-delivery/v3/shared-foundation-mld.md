@@ -1118,9 +1118,11 @@ unprivileged execution classes.
 No runtime that evaluates or executes target-defined product/build content
 receives publication capability. The context-owned, explicitly accepted
 `hcoona-release-smoke-npm` live Buddy GitHub Packages exception runs
-target-revision control and publisher code after dedicated Environment
-approval, but does not execute target-defined product/build code in that
-side-effect invocation. That target-revision publisher remains a
+target-revision control and publisher code after human approval of the current
+Attempt's deployment to the Environment identity mapped from the
+Governance-selected Buddy Approval Environment Profile, but does not execute
+target-defined product/build code in that side-effect invocation. That
+target-revision publisher remains a
 `privileged-side-effect` invocation and validates exact bindings by contract,
 but is not an independent adversarial boundary. Every repository writer is
 inside the slice publisher TCB and may author alternate write-capable workflow

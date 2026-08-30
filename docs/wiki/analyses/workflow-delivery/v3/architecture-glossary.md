@@ -93,8 +93,9 @@ capability only after qualification and governance approval.
 It consumes verified immutable artifacts and a fully materialized publish
 request. It normally must not check out or execute code from the release target.
 The First-Slice Buddy Risk Exception instead runs target-revision publisher code
-after dedicated Environment approval. Its output is a publication receipt for
-reconciliation.
+after human approval of the current Attempt's deployment to the Environment
+identity mapped from the Governance-selected Buddy Approval Environment
+Profile. Its output is a publication receipt for reconciliation.
 
 ### Buddy
 
@@ -127,10 +128,12 @@ dedicated disposable `hcoona-release-smoke-npm` package to GitHub Packages.
 It was reopened and reconfirmed before LLD on 2026-08-06.
 
 The exact selected target supplies workflow, control, Planner, Finalizer, and
-publisher code. After the exact Publication Snapshot is sealed, a dedicated
-protected Buddy Environment provides human trust elevation. Only after approval
-does the target-revision side-effect job receive short-lived `GITHUB_TOKEN` with
-minimum `packages: write`; it receives no PAT and no `id-token: write`.
+publisher code. After the exact Publication Snapshot is sealed, the current
+Attempt's deployment to the protected Environment identity mapped from the
+Governance-selected Buddy Approval Environment Profile requires human approval.
+Only after that approval does the target-revision side-effect job receive
+short-lived `GITHUB_TOKEN` with minimum `packages: write`; it receives no PAT and
+no `id-token: write`.
 
 Approval is not cryptographic or independent semantic validation. A protected
 independent publisher does not constrain malicious target code after approval.
@@ -1507,10 +1510,11 @@ actual platform identity used.
 
 For the First-Slice Buddy Risk Exception, that executor is target-revision code
 and is not an independent adversarial enforcement boundary. It validates exact
-bindings by contract. Its dedicated Environment and minimum normal-flow
-`GITHUB_TOKEN` scope govern ordinary execution but do not constrain a trusted
-malicious repository writer from authoring alternate write-capable workflow
-jobs.
+bindings by contract. The Environment identity mapped from the
+Governance-selected Buddy GitHub Packages Capability Environment Profile and the
+minimum normal-flow `GITHUB_TOKEN` scope govern ordinary execution but do not
+constrain a trusted malicious repository writer from authoring alternate
+write-capable workflow jobs.
 
 Qualification declares Capability requirements but cannot request, approve, or
 create a live Capability. Only an authorized side-effect capability group may
@@ -1558,10 +1562,11 @@ credential format cannot encode every such binding.
     never injects newer control code into an older target.
 11. The normal flow separates target execution from publication Capability,
     except for the explicitly accepted first-slice Buddy target-revision
-    publisher after dedicated Environment approval and credential-free
-    Capability Admission. Environment remains a mandatory process control, not
-    a security boundary against a trusted malicious repository writer who
-    authors an alternate workflow.
+    publisher after human approval of the current Attempt's deployment to the
+    Environment identity mapped from the Governance-selected Buddy Approval
+    Environment Profile and credential-free Capability Admission. Environment
+    remains a mandatory process control, not a security boundary against a
+    trusted malicious repository writer who authors an alternate workflow.
 12. CI Qualification and Release Delivery have no runtime evidence, artifact, or
     verdict dependency on each other.
 13. CI builds all publishable variants of every affected Release Unit by using

@@ -74,9 +74,10 @@ The first-slice Buddy trust decision was reopened and reconfirmed before LLD on
 2026-08-06 as a bounded risk exception. Any same-repository selected ref may
 supply the complete same-revision release stack, including workflow, Planner,
 Finalizer, Providers, Adapters, compiler, clients, catalogs, capability
-declarations, and publisher, without owner-reviewed eligibility. Dedicated
-Buddy Environment approval after Publication Snapshot creation governs the
-normal path. Workflow-level permissions remain empty or read-only;
+declarations, and publisher, without owner-reviewed eligibility. Approval
+of the current Attempt's deployment to the Environment identity mapped from the
+selected Buddy Approval Environment Profile after Publication Snapshot creation
+governs the normal path. Workflow-level permissions remain empty or read-only;
 `packages: write` is declared only on the `run-live-attempt` `uses`-only caller
 job as the reusable-workflow ceiling and on the called
 Environment-referencing publisher job as effective capability. The publisher

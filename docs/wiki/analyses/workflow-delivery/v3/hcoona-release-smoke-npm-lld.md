@@ -1418,7 +1418,8 @@ SHA-512, tarball manifest, lifecycle scripts, and exact action summary.
    Record produces approval-contract failure; no workflow watchdog fabricates
    another timeout.
 5. The arbitrary same-repository feature-ref flow uses its exact complete
-   target-revision v3 stack and reaches the dedicated approval Environment.
+   target-revision v3 stack and reaches the Environment identity mapped from the
+   selected Buddy Approval Environment Profile.
 6. The `run-live-attempt` uses-only caller holds the permission ceiling without
    token-using steps while the caller workflow has no workflow-wide package
    write. `evaluate-live-eligibility` receives only `contents: read`. In the

@@ -11989,3 +11989,51 @@ Status: **DESIGN COMPLETE; INDEPENDENT REVIEW CLEAN; DELIVERY PENDING.**
   Break-Glass mutation occurred.
 
 <!-- END APPEND: 2026-08-30-wdv3-environment-identity-design-status -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-pr-review-closure -->
+
+## Workflow Delivery v3 Environment identity PR review closure
+
+Status: **PR REVIEW REMEDIATION COMPLETE; PUSH PENDING.**
+
+- PR #629 is open from
+  `workflow-delivery-v3-environment-identity-design`; all CI, Workflow Delivery
+  v3 CI, and CodeQL checks on pushed head
+  `a756281913201a7f61accb8f6e16308476e54b92` passed.
+- Copilot reviewed all 14 pushed design paths and reported three mandatory
+  comments where permanent normal-Live Environments were still described as
+  per-slice dedicated resources. Independent adjudication retained all three as
+  true positives.
+- Repository-wide follow-up found and corrected the same stale model in the
+  README, shared-foundation MLD, Governance/Release wording, and agent handoff.
+  Historical temporary acceptance Environments and the dedicated disposable
+  package remain described as dedicated because those resources are
+  intentionally one-purpose.
+- A later independent review found residual logical-Profile/runtime-object
+  conflation and an activation condition that incorrectly required the reusable
+  Environment identity itself to be isolated. Independent adjudications retained
+  the normative defects, rejected the finding against the Release MLD Scope
+  summary because that summary is acceptable at design level, and corrected the
+  retained findings.
+- Approval wording now consistently attributes human approval to the fresh
+  current-Attempt deployment created after the approval job binds the stable
+  Environment identity mapped from the Governance-selected Approval Environment
+  Profile. Capability Profile policy fixes reviewer policy to `none`; the mapped
+  capability Environment deployment adds no human approval, and the
+  Environment-referencing destination job is the runtime capability boundary.
+- Environment identity reuse remains limited to complete applicable Profile
+  compatibility and transfers no Governance eligibility, approval,
+  Authorization, Capability, package authorization, first-slice exception, or
+  Attempt/package lineage. Isolation remains attached to the package,
+  destination, token/permission, and no-consumer boundaries rather than to
+  per-slice Environment identity.
+- OCR delegation preview accounted for all nine Markdown review-fix paths and
+  excluded them as unsupported extensions. Two independent closure reviews then
+  split the normative and supporting-document diffs; both returned **No
+  findings**.
+- No workflow, source, test, protected Governance, marker variable, Environment,
+  deployment, workflow run, package, tag, ref, legacy, or Break-Glass mutation
+  was authorized or performed during review closure. `live_enabled: false`
+  remains the delivery boundary.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-pr-review-closure -->
