@@ -216,17 +216,42 @@ reconciliation. The bootstrap is never retained as a reusable bypass.
 
 The separately authorized transition that follows successful destination
 acceptance and cleanup for the named disposable Buddy package. Readiness repair,
-permanent Environment creation, platform inspection, and a protected
-preparation attestation all complete while `live_enabled: false`. A later
-minimal protected change may set true only after explicit production approval.
-The first run remains bounded by a `main`/dispatch freeze, exact activation-SHA
-rollout preflight, one uniquely correlated attempt-1 dispatch, explicit
-Environment approval, canonical terminal evidence, and exact destination
-reconciliation.
+the protected all-surface Environment-contract rename, permanent Environment
+creation, platform inspection, and a protected preparation attestation all
+complete while `live_enabled: false`. A later minimal protected change may set
+true only after explicit production approval. The first run remains bounded by
+a `main`/dispatch freeze, exact activation-SHA rollout preflight, one uniquely
+correlated attempt-1 dispatch, explicit Environment approval, canonical
+terminal evidence, and exact destination reconciliation.
 
 Normal Live activation is not a rollback boundary. A protected false change
 blocks future admission after fresh observation but cannot revoke a publisher
 already past its final Governance check or reverse package state.
+
+### Environment Profile
+
+A Delivery Governance policy that selects a stable repository Environment
+identity by authority semantics rather than by package or slice name alone.
+
+An Approval Environment Profile is keyed by repository, channel, exact reviewer
+and self-review policy, wait and branch/tag policy, administrator-bypass
+posture, and credential-free behavior. A Capability Environment Profile is
+keyed by repository, channel, destination trust boundary, credential source
+including its identity contract, GitHub permission and destination-access
+policy, reviewer policy fixed to `none`, wait and branch/tag policy, and
+administrator-bypass posture.
+
+Multiple Release policies may reuse one Environment identity only when the
+complete applicable profile is identical. Each Attempt that reaches a
+referenced Environment gate creates a fresh deployment for that gate. For the
+first slice, exactly one human review occurs on the Approval Environment
+deployment, its package-bound Authorization Record is emitted only after
+successful approval, and the Capability Environment has no required reviewer.
+GitHub aggregates Environment-level deployment history, while Governance
+eligibility, approval, Authorization, Capability, package authorization, and
+Attempt/package lineage remain independent. An incompatible policy requires a
+distinct Environment identity. A reviewer-bearing destination is outside this
+one-approval architecture and requires a new architecture decision.
 
 ### Environment Configuration Sentinel
 
@@ -247,7 +272,9 @@ The first-slice decision that permits sole accepted writer and reviewer
 `hcoona` to approve their own normal Buddy deployment with
 `prevent_self_review: false`. It applies only to repository `hcoona/three`,
 package `@hcoona/hcoona-release-smoke-npm`, and approval Environment
-`workflow-delivery-v3-buddy-smoke-approval`. Approval remains explicit operator
+`workflow-delivery-v3-buddy-approval`. Reusing that Environment identity for a
+separately governed compatible Release policy does not transfer this
+package-specific exception. Approval remains explicit operator
 self-confirmation against mistakes, not independent review or a security
 boundary. Any effective writer, reviewer, role, team, or relevant access change
 requires `live_enabled: false` and a new Governance decision.

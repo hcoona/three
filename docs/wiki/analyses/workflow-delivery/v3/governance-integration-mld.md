@@ -156,6 +156,45 @@ such as:
 Those references do not become a second authority source. The actual platform
 configuration remains authoritative.
 
+### Environment Identity and Reuse
+
+Delivery Governance owns logical Environment Profiles and maps them to stable
+repository Environment identities.
+
+An Approval Environment Profile consists of:
+
+- repository and channel;
+- exact reviewer set and review rule;
+- self-review behavior;
+- wait and deployment branch/tag policy;
+- administrator-bypass posture; and
+- credential-free behavior, including absence of destination credentials.
+
+A Capability Environment Profile consists of:
+
+- repository, channel, and destination trust boundary;
+- credential source and identity contract;
+- GitHub permission ceiling and destination-access policy;
+- reviewer policy fixed to `none` under this architecture;
+- wait and deployment branch/tag policy; and
+- administrator-bypass posture.
+
+Multiple Release policies may reference one Environment identity only when the
+complete applicable profile is identical. The Environment is shared
+configuration, not shared authority: each Attempt that reaches a referenced
+Environment gate creates a fresh deployment for that gate, any required review
+is current-Attempt only, and its Governance attestation, Publication Snapshot,
+Authorization Record, Capability Admission Decision, and package bindings
+remain independent. A package or slice name is part of Environment identity
+only when it changes an applicable reviewer, destination, credential,
+permission, access, or native protection policy. Any profile difference
+requires a distinct Environment. Delivery Governance owns each mapping;
+LLD/platform configuration records the exact profile-to-name mapping and does
+not redefine these reuse semantics. Compatibility is a Governance design and
+provisioning decision evidenced by that mapping plus authenticated native
+readback. Runtime records bind the selected Environment and job rather than
+mirroring the complete profile.
+
 ## Runtime Permission Model
 
 ### CI Qualification
@@ -196,9 +235,13 @@ freshness.
 ### Channel Approval and Authorization Record
 
 A Release requests one channel-level approval after the exact Publication
-Snapshot is sealed. The approval gate:
+Snapshot is sealed. Each Attempt that reaches approval creates a fresh Approval
+Environment deployment requiring that Attempt's sole human approval, even when
+multiple Release policies share the same Environment identity. The approval
+gate:
 
-- binds the Buddy or Official channel Environment;
+- resolves and binds the exact Environment identity mapped from the
+  Governance-selected Buddy or Official Approval Environment Profile;
 - receives no destination credentials or OIDC permission;
 - verifies the Publication Snapshot digest; and
 - exposes the immutable digest-bound reviewer-summary artifact through the
@@ -255,7 +298,9 @@ Each destination-specific capability group executes in a dedicated job.
 
 That job:
 
-- binds the exact channel and destination Environment;
+- resolves and binds the exact Environment identity mapped from the
+  Governance-selected channel and Capability Environment Profile for the
+  destination;
 - receives only the GitHub permissions required by that destination;
 - receives `id-token: write` only when OIDC is required;
 - obtains destination capability just in time;
@@ -277,14 +322,16 @@ elevate beyond the caller-job ceiling. Independent capability groups may run in
 parallel only after their credential-free admissions succeed. Actions within a
 group remain ordered and fail-stop.
 
-The human-gated approval job and destination capability job are separate. A
-destination Environment need not repeat the channel reviewer; it may act only
-as the capability-delivery boundary after the separate admission gate succeeds.
+The human-gated approval job and destination capability job are separate. The
+first-slice Capability Environment Profile has no required reviewer and performs
+no human approval; it acts only as the capability-delivery boundary after the
+separate admission gate succeeds. A reviewer-bearing destination is unsupported
+by this architecture and requires a new architecture decision.
 The publisher may repeat the same `contents: read` admitted-binding and
 Governance-freshness checks immediately before mutation as defense in depth.
 That repeat uses no new credential or service and does not turn the
 branch-controlled publisher into a malicious-writer boundary. Additional
-destination approval remains optional policy.
+destination approval is unsupported under this architecture.
 
 ### First-Slice Buddy GitHub Packages Exception
 
@@ -310,7 +357,7 @@ This bounded risk exception was reopened and reconfirmed before LLD on
 
 For repository `hcoona/three`, package
 `@hcoona/hcoona-release-smoke-npm`, and approval Environment
-`workflow-delivery-v3-buddy-smoke-approval`, the accepted-writer and reviewer
+`workflow-delivery-v3-buddy-approval`, the accepted-writer and reviewer
 set is exactly `hcoona`. The confirmed single-maintainer exception therefore
 uses `prevent_self_review: false`. Approval is explicit operator
 self-confirmation, not independent review, semantic validation, or a security
@@ -347,16 +394,23 @@ author alternate workflows with `packages: write`.
 
 The approval surface must show target SHA, selected branch or ref, exact package
 coordinate, artifact digest and manifest, package lifecycle scripts, and exact
-action summary. Rollout must verify the dedicated package and destination,
-separate Buddy Environment, smallest package/repository permission boundary,
-absence of normal developer/CI/production consumers, and absence of planned or
-ordinary delete, restore, permission, visibility, or admin actions. Package
-deletion or restore uses Break-Glass Governance. Rollout records latent
-repository/package admin authority as accepted trusted-writer misuse risk; it
-does not require proving that authority is absent.
+action summary. Rollout must verify the dedicated package and destination, the
+exact selected Approval and Capability Environment Profiles, smallest
+package/repository permission boundary, absence of normal
+developer/CI/production consumers, and absence of planned or ordinary delete,
+restore, permission, visibility, or admin actions. Package deletion or restore
+uses Break-Glass Governance. Rollout records latent repository/package admin
+authority as accepted trusted-writer misuse risk; it does not require proving
+that authority is absent. Sharing a compatible Environment identity never
+extends this package-specific exception to another Release policy.
 
-The permanent approval and capability Environments must be explicitly created
-and authenticated-read before activation. Native platform configuration is
+The first slice maps its Approval Environment Profile to
+`workflow-delivery-v3-buddy-approval` and its GitHub Packages Capability
+Environment Profile to `workflow-delivery-v3-buddy-github-packages`. Both
+permanent Environments must be explicitly created and authenticated-read only
+after a protected implementation change updates every transitional workflow,
+source, record, formatter, validator, test, marker, and current-state binding to
+those final mappings while false. Native platform configuration is
 authoritative. Distinct exact Environment-scoped variables act only as
 configuration sentinels and must be the first executable checks in their jobs.
 The checks map the variables through step `env`, use quoted case-sensitive shell
@@ -636,22 +690,25 @@ user-approved rollback PR.
 After successful acceptance cleanup, activation follows a separate governed
 sequence:
 
-1. merge readiness repair while false;
-2. create and authenticated-read both permanent Environments and their markers;
-3. capture every existing activation-gate item, including contract and
+1. retain the merged readiness repair while false;
+2. merge the protected all-surface Environment-contract rename to the final
+   profile mappings while false;
+3. create and authenticated-read both permanent Environments and their markers
+   only after that rename;
+4. capture every existing activation-gate item, including contract and
    permission-negative tests, permanent no-consumer policy, protected-source
    provenance, effective writer/access inventory, actual token and package
    reach, Official/production isolation, 45-day retention, legacy retirement,
    and explicit residual-risk acceptance;
-4. merge a protected preparation change that refreshes the attestation but
+5. merge a protected preparation change that refreshes the attestation but
    remains false;
-5. freeze all other `main` writes and normal Buddy dispatch, then merge a
+6. freeze all other `main` writes and normal Buddy dispatch, then merge a
    separate minimal protected true change;
-6. perform read-only rollout preflight at the exact activation merge SHA and
+7. perform read-only rollout preflight at the exact activation merge SHA and
    capture the pre-dispatch run set;
-7. dispatch `main` once, correlate exactly one new attempt-1 run, inspect the
+8. dispatch `main` once, correlate exactly one new attempt-1 run, inspect the
    immutable summary, and self-approve only that deployment; and
-8. retain true only after a canonical Attempt Outcome with result `success` and
+9. retain true only after a canonical Attempt Outcome with result `success` and
    exact destination reconciliation.
 
 An ambiguous dispatch response is reconciled read-only and never blindly
@@ -781,7 +838,8 @@ Governance integration is not ready for activation when:
 
 ## Deferred LLD Decisions
 
-- exact Environment names;
+- exact Environment names and profile-to-name mappings other than the fixed
+  first-slice Buddy Approval and GitHub Packages Capability mappings;
 - exact CODEOWNERS patterns and final-match owner resolution tests;
 - exact Ruleset configuration;
 - exact GitHub job permissions by destination;

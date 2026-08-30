@@ -35,6 +35,8 @@ This MLD owns:
 - artifact identity, internal provenance, and external attestation projections;
 - destination observation and publication action planning;
 - release-level authorization and destination-specific capabilities;
+- requesting approval and capability through the exact Environment Profiles
+  selected and mapped by Delivery Governance;
 - capability-scoped side-effect execution and Receipt admission;
 - Release completion, replay, reconciliation, and Break-Glass Remediation;
 - GitHub-native execution serialization and duplicate request coalescing; and
@@ -74,6 +76,9 @@ This MLD does not own:
     distributed correctness lock.
 11. Security controls address the repository's governed single-writer model and
     do not invent unavailable destination transaction features.
+12. Environment identity follows reviewer or destination authority policy, not
+    Release Unit or package identity alone. Reusing an exact profile never
+    reuses an approval, Authorization Record, Capability, or Attempt.
 
 ## Domain Model
 
@@ -557,8 +562,8 @@ define Destination Adapter mutable-resource keys.
 
 Delivery Governance owns:
 
-- approval Environments;
-- destination Environments;
+- Approval Environment Profiles and their platform mappings;
+- Capability Environment Profiles and their platform mappings;
 - required reviewers;
 - GitHub job permissions;
 - OIDC trust;
@@ -639,8 +644,8 @@ The Planner does not query reviews or re-adjudicate Rulesets.
 
 A structurally valid target is not thereby authorized to publish.
 For the first-slice Buddy exception, no protected-ref or CODEOWNERS-approved
-eligibility is required; the later dedicated Buddy Environment approval is the
-explicit trust elevation.
+eligibility is required; the later approval through its exact Buddy Approval
+Environment Profile is the explicit trust elevation.
 
 ### Live Authority
 
@@ -667,7 +672,7 @@ This bounded risk decision was reopened and reconfirmed before LLD on
   from the exact selected target revision without owner-reviewed eligibility;
 - control is not substituted from protected main;
 - every Attempt seals the exact Publication Snapshot before requesting approval
-  through the dedicated protected Buddy Environment;
+  through its exact Buddy Approval Environment Profile;
 - the normal reusable live path keeps workflow-level permissions empty or
   read-only and declares `packages: write` only on the `uses`-only caller job as
   the reusable-workflow ceiling and on the called Environment-referencing
@@ -766,16 +771,20 @@ expected.
 
 ### Normal Live Activation Control
 
-Readiness repair, Environment provisioning, and a fresh preparation attestation
-must complete while false. Both permanent Environment jobs begin with distinct
-Environment-scoped marker checks that map the value through step `env`, use
-quoted case-sensitive shell comparison, and disallow `continue-on-error`. Every
-later operational step explicitly requires marker success; exceptional handlers
-that can run after failure remain non-mutating and classify the failure. The
-markers detect missing or misconfigured named Environments only under the
-verified absence of same-name repository and organization variables; they
-neither validate native protection settings nor constrain historical target
-revisions. External Governance inspection remains authoritative.
+Readiness repair, the protected all-surface Environment-contract rename,
+Environment provisioning, and a fresh preparation attestation must complete
+while false. The rename replaces every transitional workflow, source, record,
+formatter, validator, test, marker, and current-state binding with the final
+profile mappings before either permanent Environment is created. Both permanent
+Environment jobs then begin with distinct Environment-scoped marker checks that
+map the value through step `env`, use quoted case-sensitive shell comparison,
+and disallow `continue-on-error`. Every later operational step explicitly
+requires marker success; exceptional handlers that can run after failure remain
+non-mutating and classify the failure. The markers detect missing or
+misconfigured named Environments only under the verified absence of same-name
+repository and organization variables; they neither validate native protection
+settings nor constrain historical target revisions. External Governance
+inspection remains authoritative.
 
 After the protected preparation change, operators freeze all other `main`
 writes and normal Buddy dispatch. A separate minimal protected activation
@@ -1194,12 +1203,16 @@ artifact IDs and verify name metadata, producer, `github.run_id`,
 ### Channel-Level Approval
 
 One approval job represents the human decision for the complete Publication
-Snapshot.
+Snapshot. Sharing an Approval Environment identity across compatible Release
+policies does not share the decision: each Attempt that reaches approval creates
+a fresh Environment deployment, and its Authorization Record is emitted only
+after successful approval.
 
 The job:
 
 - depends on the sealed Snapshot;
-- binds a Buddy or Official approval Environment;
+- resolves and binds the exact Environment identity mapped from the
+  Governance-selected Buddy or Official Approval Environment Profile;
 - has no publication credentials or `id-token: write`;
 - cannot start until GitHub Environment protection passes; and
 - emits an Authorization Record only after successful approval.
@@ -1278,7 +1291,8 @@ Each admitted active capability group then:
   `contents: read` fixed-source Governance check immediately before mutation as
   defense in depth;
 - binds its exact action ID set;
-- enters its destination-specific Environment;
+- resolves and binds the exact Environment identity mapped from its
+  Governance-selected Capability Environment Profile;
 - receives only required GitHub permissions;
 - requests OIDC or another destination capability just in time; and
 - cannot execute actions from another group.
@@ -1289,14 +1303,15 @@ capability-admission jobs never request live Capability. Publisher-side repeat
 validation, when used, adds no new credential or service and is not an independent
 malicious-writer boundary.
 
-Destination policy may impose an additional approval. The channel-level
-Authorization Record does not bypass destination Governance.
+The current architecture admits no additional human approval at a destination
+capability boundary. A reviewer-bearing destination requires a new architecture
+decision; the channel-level Authorization Record never bypasses destination
+Governance.
 
 The channel approval job and destination capability job remain separate. The
-first-slice publisher Environment need not repeat the human review already
-performed by the approval Environment; it gates capability delivery after the
-credential-free admission decision. A second destination reviewer is optional
-policy, not a required second approval.
+first-slice Capability Environment Profile has no required reviewer and performs
+no human approval; the Approval Environment supplies the Attempt's sole human
+approval. A reviewer-bearing destination is unsupported by this architecture.
 
 GitHub and destination platforms may scope credentials only to an Environment,
 workflow identity, repository, package, or destination account. The trusted
@@ -1307,11 +1322,11 @@ Independent trusted executors enforce the exact bindings for normal
 destinations. The first-slice Buddy group is the bounded exception: its
 target-revision publisher validates the Authorization Record and bindings by
 contract, but is not an independent adversarial boundary and trusted repository
-writers can disregard or bypass that contract. The dedicated Environment,
-reviewer-visible inputs, disposable package, and minimum short-lived
-`GITHUB_TOKEN` scope govern the normal flow; they do not impose a ceiling on a
-malicious writer. That group uses `packages: write` without PAT or
-`id-token: write`.
+writers can disregard or bypass that contract. The exact selected Environment
+Profiles, reviewer-visible inputs, disposable package, and minimum short-lived
+`GITHUB_TOKEN` scope govern the normal flow; sharing a compatible Environment
+identity does not share this exception or impose a ceiling on a malicious
+writer. That group uses `packages: write` without PAT or `id-token: write`.
 
 ## Publication Execution
 
@@ -2097,9 +2112,11 @@ unprotected same-repository feature branch.
 - No protected-ref or CODEOWNERS eligibility check blocks the Attempt.
 - Build, qualification, observation, and exact Publication Snapshot creation
   run without package-write Capability.
-- The dedicated Buddy Environment shows target SHA and ref, exact GitHub
-  Packages coordinate, artifact digest and manifest, lifecycle scripts, and
-  exact action summary.
+- The approval deployment for the exact Environment identity mapped from the
+  Governance-selected Buddy Approval Environment Profile exposes target SHA and
+  ref, exact GitHub Packages coordinate, artifact digest and manifest, lifecycle
+  scripts, and exact action summary through the deployment URL and completed
+  producer-job summary.
 - Approval creates the Authorization Record. The credential-free admission gate
   validates all group bindings; only its success starts the target-revision
   side-effect job with short-lived `GITHUB_TOKEN` and only `packages: write`.

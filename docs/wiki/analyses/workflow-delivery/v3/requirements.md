@@ -389,14 +389,31 @@ against implementation and maintenance cost.
   Release execution must not receive live capability until the target revision
   satisfies applicable policy. Official requires protected-ref and Environment
   policy. The first-slice live Buddy exception requires the exact Publication
-  Snapshot and successful approval through its dedicated protected Buddy
-  Environment, but not protected-ref eligibility.
+  Snapshot and successful approval through its selected Buddy Approval
+  Environment Profile, but not protected-ref eligibility.
 - **WD-AUTH-005:** Delivery Governance must control protected target
   eligibility, control-code review, protected environment review, OIDC and
   destination trust, capability grant and revocation, and Break-Glass
   Remediation approval. Protected target eligibility and owner-reviewed live
   control code remain mandatory for Official but are explicitly waived only for
   the named first-slice Buddy exception.
+- **WD-AUTH-006:** Delivery Governance must select GitHub Environment
+  identities by authority policy rather than by Release Unit, package, or slice
+  name alone. An Approval Environment Profile is keyed by repository, channel,
+  reviewer and self-review policy, wait and branch/tag policy,
+  administrator-bypass posture, and credential-free behavior. A Capability
+  Environment Profile is keyed by repository, channel, destination trust
+  boundary, credential source including its identity contract, GitHub permission
+  and destination-access policy, reviewer policy fixed to `none`, wait and
+  branch/tag policy, and administrator-bypass posture. Release policies may
+  reuse an Environment identity only when the complete applicable profile is
+  identical. Reuse never transfers Governance eligibility, an Environment
+  approval, an Authorization Record, Capability, Attempt history, or package
+  authorization. Any incompatible profile requires a distinct Environment
+  identity. A destination that requires human approval at the capability
+  boundary needs a new architecture decision rather than a reviewer-bearing
+  Capability Environment Profile. Exact platform names and profile mappings are
+  Delivery Governance-owned lower-layer configuration contracts.
 
 ### Trust and Capability Isolation
 
@@ -433,8 +450,9 @@ against implementation and maintenance cost.
   selected target supplies workflow, control, Planner, Finalizer, and publisher
   code. The architecture must not substitute protected-main control code.
 - **WD-SLICE-002:** Every such Attempt must seal its exact Publication Snapshot
-  and receive human approval through a dedicated protected Buddy Environment
-  before any package-write Capability exists. Reviewer-visible approval context
+  and receive human approval through the Buddy approval Environment selected by
+  its exact Approval Environment Profile before any package-write Capability
+  exists. Reviewer-visible approval context
   must include target SHA, selected branch or ref, exact package coordinate,
   artifact digest and manifest, package lifecycle scripts, and exact action
   summary. The Authorization Record must bind the Publication Snapshot digest
@@ -443,7 +461,7 @@ against implementation and maintenance cost.
   slice-scoped single-maintainer exception applies. For
   repository `hcoona/three`, package
   `@hcoona/hcoona-release-smoke-npm`, and approval Environment
-  `workflow-delivery-v3-buddy-smoke-approval`, the confirmed exception permits
+  `workflow-delivery-v3-buddy-approval`, the confirmed exception permits
   sole accepted writer and reviewer `hcoona` to approve their own dispatch with
   `prevent_self_review: false`. This approval is explicit operator
   self-confirmation and process control, not independent review or an
@@ -453,12 +471,14 @@ against implementation and maintenance cost.
   change requires `live_enabled: false` and a new Governance decision before
   another dispatch. The normal v3 live path must keep this credential-free
   human approval job separate from the downstream Environment-referencing
-  capability job. The capability Environment need not require a second
-  reviewer. A preceding credential-free approval Finalizer must admit the
-  capability group, and its success alone may schedule the publisher. The
-  publisher must revalidate the Authorization Record and exact Snapshot,
-  summary artifact, action, artifact, resource-key, and group bindings before
-  using `packages: write`.
+  capability job. The first-slice Capability Environment has no required
+  reviewer and performs no human approval. A reviewer-bearing destination is
+  unsupported by this architecture and requires a new architecture decision. A
+  preceding credential-free approval Finalizer must admit the capability group,
+  and its success alone may schedule the publisher. The publisher must
+  revalidate the Authorization Record and exact Snapshot, summary artifact,
+  action, artifact, resource-key, and group bindings before using
+  `packages: write`.
 - **WD-SLICE-003:** After approval and successful credential-free Capability
   Admission, the target-revision side-effect job may receive only a short-lived
   `GITHUB_TOKEN` with the minimum `packages: write` permission needed for the
@@ -493,12 +513,14 @@ against implementation and maintenance cost.
   reach; other package operations reachable under the smallest configured
   repository/package grants remain accepted writer-TCB risk.
 - **WD-SLICE-006:** Rollout must bind the exception to the exact dedicated
-  disposable smoke package and GitHub Packages destination, separate Buddy
-  Environment, smallest package/repository access, no normal consumer, no
-  planned or ordinary delete, restore, permission, visibility, or admin action,
-  Break-Glass handling for package deletion or restore, and explicit human
-  Governance inspection. The rollout need not prove absence of latent admin
-  authority already held by trusted repository/package actors. Any future Buddy
+  disposable smoke package and GitHub Packages destination, the exact selected
+  Approval and Capability Environment Profiles, smallest package/repository
+  access, no normal consumer, no planned or ordinary delete, restore,
+  permission, visibility, or admin action, Break-Glass handling for package
+  deletion or restore, and explicit human Governance inspection. Reusing a
+  compatible Environment identity does not extend this package-specific
+  exception. The rollout need not prove absence of latent admin authority
+  already held by trusted repository/package actors. Any future Buddy
   destination requires its own threat and cost decision. A permanent
   repository-wide HK dependency-policy gate must scan dependency manifests,
   lockfiles, workflows, install scripts, and dependency configuration for
@@ -576,42 +598,52 @@ against implementation and maintenance cost.
   a reusable bypass. Restoring legacy Buddy requires a separate user-approved
   rollback PR. The procedure therefore includes an expected brief Buddy outage.
 - **WD-SLICE-011:** Normal Live activation requires the permanent approval
-  Environment `workflow-delivery-v3-buddy-smoke-approval` and capability
-  Environment `workflow-delivery-v3-buddy-smoke-github-packages` to be
+  Environment `workflow-delivery-v3-buddy-approval` and capability Environment
+  `workflow-delivery-v3-buddy-github-packages` to be
   explicitly created, configured, and read back before `live_enabled` may
   become true. GitHub's implicit creation of a missing Environment is not
-  accepted configuration. The repaired activation revision and its descendants
-  must treat distinct exact Environment-scoped configuration markers as the
-  first executable check in the two Environment jobs. Each check must map the
-  marker through step `env`, perform a quoted case-sensitive shell comparison,
-  and disallow `continue-on-error`; GitHub expression equality is not an exact
-  comparison. Missing or mismatched markers must stop Authorization or
-  publication before checkout, setup, artifact download, preflight, mutation
-  marking, or publish. Every later operational step must require marker-check
-  success. Any exceptional finalizer that can run after failure must remain
-  non-mutating and must classify rather than mask the marker failure.
-  Repository- and organization-scoped variables with the same names must be
-  absent. These markers are configuration sentinels only: they do not prove
-  reviewer, self-review, administrator-bypass, branch-policy, secret, or
-  credential settings. Delivery Governance must still inspect and retain
+  accepted configuration. Before either final Environment is created, a
+  protected implementation change while false must replace the transitional
+  `workflow-delivery-v3-buddy-smoke-approval` and
+  `workflow-delivery-v3-buddy-smoke-github-packages` names and marker values
+  across workflow, source, record, formatter, validator, test, and current-state
+  contracts with the final profile mappings. The resulting activation revision
+  and its descendants must treat distinct exact Environment-scoped
+  configuration markers as the first executable check in the two Environment
+  jobs. Each check must map the marker through step `env`, perform a quoted
+  case-sensitive shell comparison, and disallow `continue-on-error`; GitHub
+  expression equality is not an exact comparison. Missing or mismatched markers
+  must stop Authorization or publication before checkout, setup, artifact
+  download, preflight, mutation marking, or publish. Every later operational
+  step must require marker-check success. Any exceptional finalizer that can run
+  after failure must remain non-mutating and must classify rather than mask the
+  marker failure. Repository- and organization-scoped variables with the same
+  names must be absent. These markers are configuration sentinels only: they do
+  not prove reviewer, self-review, administrator-bypass, branch-policy, secret,
+  or credential settings. Delivery Governance must still inspect and retain
   authenticated readback of those native settings. When a documented public
   API cannot configure or authoritatively read back a required control, the
   operator must retain authenticated post-save UI evidence; undocumented API
   fields may corroborate but cannot replace that evidence or be inferred false
   when absent. Historical selected refs remain within the accepted writer TCB
   and do not gain a repository-wide enforcement claim from revision-local
-  marker checks.
+  marker checks. These names are the first-slice mappings of the shared Buddy
+  approval profile and Buddy GitHub Packages capability profile. A future
+  Release policy may reuse either identity only after its own Governance and
+  threat decision and an exact profile-compatibility check; the shared
+  Environment never supplies package eligibility or reusable approval.
 - **WD-SLICE-012:** Successful destination acceptance and cleanup make the named
   slice eligible for a later production decision; they do not authorize or
-  automatically activate normal Live. Readiness repair and permanent
-  Environment configuration occur while `live_enabled` remains false. A
-  protected preparation change must record fresh activation-gate evidence and
-  refresh the Governance attestation while preserving false. A later,
-  separately authorized protected activation change may set true. Before that
-  activation change merges, operators must freeze all other `main` writes and
-  normal Buddy dispatch. After merge they must bind rollout preflight to the
-  exact activation merge SHA, preserve the freeze, capture the pre-dispatch run
-  set, and dispatch `main` exactly once. Exactly one new
+  automatically activate normal Live. Readiness repair, the protected
+  Environment-contract implementation rename, and permanent Environment
+  configuration occur while `live_enabled` remains false. A protected
+  preparation change must record fresh activation-gate evidence and refresh the
+  Governance attestation while preserving false. A later, separately authorized
+  protected activation change may set true. Before that activation change
+  merges, operators must freeze all other `main` writes and normal Buddy
+  dispatch. After merge they must bind rollout preflight to the exact activation
+  merge SHA, preserve the freeze, capture the pre-dispatch run set, and dispatch
+  `main` exactly once. Exactly one new
   `workflow_dispatch` run by the authorized operator must correlate to that
   SHA with `run_attempt == 1`; ambiguity blocks approval and must not cause a
   blind second dispatch. Normal Live remains enabled after the first run only
@@ -816,6 +848,9 @@ against implementation and maintenance cost.
   normally require an adapter and policy mapping, not changes to cross-system
   authority semantics. A future Buddy destination must still make its own
   explicit threat and cost decision and cannot inherit `WD-SLICE-*`.
+  Environment identities should be reused through exact Approval or Capability
+  Environment Profile matching rather than duplicated for every package or
+  slice; a policy difference requires a distinct profile and identity.
 - **WD-NFR-004 - Recoverability:** Retry and remediation must preserve identity,
   authority, and append-only history across partial external side effects.
 - **WD-NFR-005 - CI latency:** Ordinary pull-request CI has a P95 12-minute
