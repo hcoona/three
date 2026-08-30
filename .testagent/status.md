@@ -12073,3 +12073,84 @@ Status: **SECOND REVIEW REMEDIATION COMPLETE; FINAL PUSH PENDING.**
   boundary.
 
 <!-- END APPEND: 2026-08-30-wdv3-environment-identity-second-review -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-implementation-status -->
+
+## Workflow Delivery v3 Environment identity implementation
+
+Status: **IMPLEMENTATION COMPLETE; INDEPENDENT REVIEW CLEAN; DELIVERY PENDING.**
+
+### Implementation
+
+- Environment identity design PR #629 rebase-merged as
+  `d2de3356b744e39d31bb4ac0038bdee438c5592d`; post-merge Continuous
+  Integration run `33331702348` passed.
+- The live Attempt workflow now binds
+  `workflow-delivery-v3-buddy-approval` and
+  `workflow-delivery-v3-buddy-github-packages`. Its exact marker values are
+  `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`
+  and
+  `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1`.
+- The same final approval identity now binds the dependency-free
+  exact-revision Authorization formatter, the Release helper, and the
+  Authorization Record validator. Existing workflow, CLI, Release boundary,
+  scenario, and record tests use the final mappings.
+- The rename preserves guard IDs, literal first-step ordering, quoted
+  case-sensitive Bash comparison, downstream marker-success gates,
+  non-mutating exceptional handling, permissions, workflow topology, and
+  capability timing. It adds no Profile registry or runtime Profile object.
+- Current-state README, handoff, LLD, migration, overview, log, research, and
+  plan now treat the all-surface rename as the implementation target rather
+  than as a still-pending design step. Normative Requirements and append-only
+  history retain the old names only where they describe the required transition
+  or exact historical revisions.
+
+### Test and review evidence
+
+- The focused workflow/CLI/Release contract command passed **464 tests** before
+  test-gap completion and passed again after lint compatibility corrections.
+- The first complete Workflow Delivery v3 package run passed **4,230 tests**.
+  Pseudo-mutation review then found two real gaps: the direct formatter test did
+  not assert its emitted Environment, and the record validator lacked exact
+  rejection cases for the old, capability, and case-altered identities.
+- The existing formatter test now asserts the final Environment. The existing
+  record substitution table now rejects all three non-exact identities.
+  Focused generated-test validation passed **22 tests**, and independent
+  assertion-quality review returned **No assertion-quality findings**.
+- The final complete package run passed **4,233 tests**.
+- Actionlint passed for the live workflow. Ruff 0.16.5 check and format check
+  pass for all eight changed Python files, and Pyrefly reports **0 errors**.
+  Minimal parentheses, inline Ruff suppressions, and one existing invalid-value
+  test type suppression resolve diagnostics exposed on otherwise unchanged
+  lines without changing behavior.
+- Prettier and markdownlint pass for every changed workflow/current-state
+  document to which they apply, and `git diff --check` passes.
+- Independent runtime, test-contract, and authority/current-state reviewers
+  split the changed files and all returned **No findings** after the two
+  confirmed test gaps were corrected.
+- OCR delegation preview recognized the workflow and excluded eight Markdown
+  paths, but omitted the eight changed Python paths. Git's exact 17-path
+  pre-status inventory and the split host reviews therefore remained the
+  authoritative review scope.
+- Final `hk check --no-progress --unstaged` and
+  `hk check --no-progress --staged` gates pass across the exact 18-path
+  implementation diff, including this append.
+
+### Scope and external-state boundary
+
+- Exactly 18 paths change: one workflow, three production Python files, five
+  existing Python test files, six current-state documents, and three
+  append-only test-agent ledgers.
+- Protected Governance is unchanged and remains `live_enabled: false` with
+  expiry `2026-11-12T17:19:12Z`.
+- Final and transitional approval/capability Environments, related deployments,
+  and both repository marker variables remain absent. Normal workflow IDs
+  `340952169` and `340952170` remain active with zero runs.
+- The smoke package retains exactly nine acceptance versions, with retry-5
+  `.17` through `.20` newest. No Environment, variable, deployment, workflow
+  run, preparation, activation, approval, package, tag, ref, legacy, or
+  Break-Glass mutation was authorized or performed.
+- Permanent Environment creation remains blocked until this implementation
+  merges and the user gives separate explicit authorization.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-status -->

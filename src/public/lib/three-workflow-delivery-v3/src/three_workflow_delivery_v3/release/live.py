@@ -1173,7 +1173,7 @@ def form_authorization_record(
         run_attempt=attempt.run_attempt,
         approval_job_id=approval_job_id,
         approval_job="approval",
-        environment="workflow-delivery-v3-buddy-smoke-approval",
+        environment="workflow-delivery-v3-buddy-approval",
         channel="buddy",
         completed_at=completed_at,
         producer="approval",
@@ -1254,8 +1254,10 @@ def admit_live_capability(
         ("content-sha256", "sha256:" + ("2" * 64)),
         (
             "path",
-            ".github/workflow-delivery/governance/"
-            "hcoona-release-smoke-npm.json",
+            (
+                ".github/workflow-delivery/governance/"
+                "hcoona-release-smoke-npm.json"
+            ),
         ),
         ("ref", "refs/heads/main"),
         ("repository", "hcoona/three"),

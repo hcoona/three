@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-# ruff: noqa: D103
+# ruff: noqa: D103, ISC004
 from dataclasses import FrozenInstanceError, fields, replace
 
 import pytest
@@ -256,7 +256,7 @@ def _authorization() -> AuthorizationRecord:
         run_attempt=ATTEMPT.run_attempt,
         approval_job_id=711,
         approval_job="approval",
-        environment="workflow-delivery-v3-buddy-smoke-approval",
+        environment="workflow-delivery-v3-buddy-approval",
         channel="buddy",
         completed_at="2026-08-13T16:00:00Z",
         producer="approval",
@@ -531,6 +531,27 @@ def test_commit8_records_round_trip_through_closed_transport(record) -> None:
             "history_snapshot_artifact_digest",
         ),
         (_authorization(), "run_attempt", 3, "current Attempt"),
+        pytest.param(
+            _authorization(),
+            "environment",
+            "workflow-delivery-v3-buddy-smoke-approval",
+            "Authorization approval producer/job/Environment is not exact",
+            id="authorization-old-transitional-environment",
+        ),
+        pytest.param(
+            _authorization(),
+            "environment",
+            "workflow-delivery-v3-buddy-github-packages",
+            "Authorization approval producer/job/Environment is not exact",
+            id="authorization-capability-environment",
+        ),
+        pytest.param(
+            _authorization(),
+            "environment",
+            "Workflow-delivery-v3-buddy-approval",
+            "Authorization approval producer/job/Environment is not exact",
+            id="authorization-case-altered-environment",
+        ),
         (
             _capability_decision(),
             "governance_live_enabled",
@@ -954,7 +975,7 @@ def test_replayable_no_side_effect_outcome_requires_exact_safe_state(
         ValueError,
         match="Replayable no-side-effect outcome is not exact",
     ):
-        replace(outcome, **{field: value})
+        replace(outcome, **{field: value})  # type: ignore[bad-argument-type]
 
 
 def test_buddy_execution_identity_document_and_concurrency_key_are_exact() -> (

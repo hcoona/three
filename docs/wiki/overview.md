@@ -406,23 +406,24 @@ have changed.
     exact `.17`-`.20` versions and tags retained. No post-deletion dispatch
     occurred. Destination acceptance and cleanup are complete, but normal Live
     and `live_enabled: true` remain unauthorized.
-11. PR #623 merged the normal Live design as `cda7e2d6`, and PR #624 merged
-    its disabled readiness repair as `2db88a56`. The user then confirmed that
-    Environment identity follows authority policy rather than package/slice
-    naming: Buddy approval may be shared only across an identical
-    reviewer/Governance profile, while capability identity is shared only
-    across an identical destination, credential, permission, and access
-    profile with reviewer policy fixed to `none`. A reviewer-bearing
+11. PR #623 merged the normal Live design as `cda7e2d6`, PR #624 merged its
+    disabled readiness repair as `2db88a56`, and PR #629 merged the Environment
+    identity design as `d2de3356`. Environment identity follows authority
+    policy rather than package/slice naming: Buddy approval may be shared only
+    across an identical reviewer/Governance profile, while capability identity
+    is shared only across an identical destination, credential, permission,
+    and access profile with reviewer policy fixed to `none`. A reviewer-bearing
     destination requires a new architecture decision. The first-slice mappings
-    become
+    are
     `workflow-delivery-v3-buddy-approval` and
-    `workflow-delivery-v3-buddy-github-packages`. A protected implementation
-    rename must land before external creation. Both permanent Environments
-    remain absent; Governance stays false; provisioning, preparation,
-    activation, dispatch, self-approval, package mutation, retry, and
-    Break-Glass remain unauthorized. The accepted single-maintainer exception
-    remains package-specific and does not make approval an independent security
-    boundary.
+    `workflow-delivery-v3-buddy-github-packages`. The protected implementation
+    rename now updates all workflow, source, record, formatter, validator, test,
+    marker, and current-state bindings to those mappings while false. Both
+    permanent Environments remain absent; Governance stays false; provisioning,
+    preparation, activation, dispatch, self-approval, package mutation, retry,
+    and Break-Glass remain unauthorized. The accepted single-maintainer
+    exception remains package-specific and does not make approval an independent
+    security boundary.
 
 ## Related Pages
 

@@ -1880,10 +1880,12 @@ recorded:
   Environment are verified removed;
 - a human explicitly accepts the bounded residual risk.
 
-### Gate State After Retry 5
+### Gate State After Retry 5 and Environment Identity Design
 
-As of the design inventory at `main@bc33defe`, the direct cutover and
-destination-acceptance prerequisites are complete:
+As of the implementation baseline at
+`main@d2de3356b744e39d31bb4ac0038bdee438c5592d`, the direct cutover,
+destination-acceptance, and Environment identity design prerequisites are
+complete:
 
 - legacy `buddy.yml` and `release-buddy.yml` sources are absent, while workflow
   identities `216311758` and `269749708` remain repository-wide
@@ -1895,11 +1897,10 @@ destination-acceptance prerequisites are complete:
   `340952170`, but the protected attestation remains `live_enabled: false`;
 - the normal approval and capability Environments do not yet exist. GitHub
   would auto-create either referenced name without the intended protection;
-- the merged workflow, source, records, and tests still reference the
-  transitional `workflow-delivery-v3-buddy-smoke-approval` and
-  `workflow-delivery-v3-buddy-smoke-github-packages` identities and PR #624's
-  corresponding marker values. The final profile-name implementation rename has
-  not yet landed;
+- this protected implementation change replaces every operational
+  workflow, source, record, formatter, validator, test, marker, and
+  current-state binding with `workflow-delivery-v3-buddy-approval` and
+  `workflow-delivery-v3-buddy-github-packages` plus their `/v1` marker values;
 - the current direct collaborator inventory contains only `hcoona`, and the
   attestation records `hcoona` as the sole accepted writer; and
 - normal Live activation and external configuration remain unauthorized by the
@@ -1909,7 +1910,7 @@ Acceptance resolved the platform behavior needed by this slice but did not
 execute the normal Release path. It is a prerequisite for the separate
 activation sequence below, not authority to skip it.
 
-### Merged Readiness Repair and Pending Environment-Contract Rename
+### Merged Readiness Repair and Environment-Contract Rename
 
 PR #624 merged the readiness mechanism as
 `2db88a56df58e3e957fb366390882a6089cebfe1` while `live_enabled` remained
@@ -1932,19 +1933,22 @@ false. It:
   gating, non-mutating exceptional paths, no credential expansion, and the
   removed misleading output.
 
-The mechanism is final; its names are transitional. Before either final
-Environment is created, a separate protected implementation PR must:
+The readiness mechanism and fail-closed ordering are final. This protected
+implementation change, while `live_enabled` remains false:
 
-- replace the approval Environment and expected marker with
+- replaces the approval Environment and expected marker with
   `workflow-delivery-v3-buddy-approval` and
   `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`;
-- replace the capability Environment and expected marker with
+- replaces the capability Environment and expected marker with
   `workflow-delivery-v3-buddy-github-packages` and
   `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1`;
-- update every corresponding workflow, source, record, formatter, validator,
+- updates every corresponding workflow, source, record, formatter, validator,
   test, and current-state contract in the same protected change; and
-- preserve the first-step, exact-comparison, downstream-gating, non-mutating
+- preserves the first-step, exact-comparison, downstream-gating, non-mutating
   failure, and no-credential-expansion behavior already merged by PR #624.
+
+It creates no Environment or repository variable, dispatches no workflow, and
+changes no permission, approval, capability, or publication behavior.
 
 The markers remain configuration sentinels, not reviewer or security proof.
 They protect the renamed revision and descendants, not historical selected-ref
@@ -1953,8 +1957,8 @@ and organization-scoped variables with the same names are absent.
 
 ### Permanent Environment Contract
 
-After the protected implementation rename merges while false, Delivery
-Governance must separately authorize, explicitly create, and read back these
+The protected implementation rename must merge while false. Delivery Governance
+must then separately authorize, explicitly create, and read back these
 Environments before a preparation or activation change:
 
 | Environment                                  | Required configuration                                                                                                                                                                                                                             |

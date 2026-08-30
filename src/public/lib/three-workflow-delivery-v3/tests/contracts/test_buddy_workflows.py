@@ -32,8 +32,8 @@ APPROVAL_CORRELATION_NAME = (
 PUBLISHER_CORRELATION_NAME = (
     "Run same-revision Buddy live Attempt / Publish to GitHub Packages"
 )
-APPROVAL_ENVIRONMENT_NAME = "workflow-delivery-v3-buddy-smoke-approval"
-CAPABILITY_ENVIRONMENT_NAME = "workflow-delivery-v3-buddy-smoke-github-packages"
+APPROVAL_ENVIRONMENT_NAME = "workflow-delivery-v3-buddy-approval"
+CAPABILITY_ENVIRONMENT_NAME = "workflow-delivery-v3-buddy-github-packages"
 APPROVAL_ENVIRONMENT_MARKER = f"{APPROVAL_ENVIRONMENT_NAME}/v1"
 CAPABILITY_ENVIRONMENT_MARKER = f"{CAPABILITY_ENVIRONMENT_NAME}/v1"
 _WORKFLOW_CANCELLATION_AUTHORITIES = (
@@ -581,13 +581,13 @@ def test_live_attempt_dag_environments_and_capability_gate_are_exact() -> None:
         "approval",
     }
     assert jobs["approval"]["environment"]["name"] == (
-        "workflow-delivery-v3-buddy-smoke-approval"
+        "workflow-delivery-v3-buddy-approval"
     )
     assert jobs["approval"]["environment"]["url"].startswith("${{ needs.")
     publisher = jobs["publish-github-packages"]
     assert publisher["needs"] == "approval-finalizer"
     assert publisher["environment"] == (
-        "workflow-delivery-v3-buddy-smoke-github-packages"
+        "workflow-delivery-v3-buddy-github-packages"
     )
     assert "success" in publisher["if"]
     assert publisher["concurrency"]["cancel-in-progress"] is False

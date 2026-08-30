@@ -3107,7 +3107,7 @@ class AuthorizationRecord:
         _string(self.environment, field="authorization.environment")
         if (
             self.approval_job != "approval"
-            or self.environment != "workflow-delivery-v3-buddy-smoke-approval"
+            or self.environment != "workflow-delivery-v3-buddy-approval"
             or self.producer != "approval"
         ):
             message = (

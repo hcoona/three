@@ -1290,7 +1290,7 @@ jobs:
     timeout-minutes: 30
     permissions: {}
     environment:
-      name: workflow-delivery-v3-buddy-smoke-approval
+      name: workflow-delivery-v3-buddy-approval
       url: ${{ needs.materialize-publication.outputs.reviewer-artifact-url }}
     outputs:
       authorization-artifact-name: ${{ steps.authorize.outputs.authorization-artifact-name }}
@@ -1333,7 +1333,7 @@ jobs:
         env:
           ACTUAL_ENVIRONMENT_MARKER: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
         run: |
-          if [[ "${ACTUAL_ENVIRONMENT_MARKER}" != "workflow-delivery-v3-buddy-smoke-approval/v1" ]]; then
+          if [[ "${ACTUAL_ENVIRONMENT_MARKER}" != "workflow-delivery-v3-buddy-approval/v1" ]]; then
             echo "::error::Environment marker does not match the approval Environment contract" >&2
             exit 1
           fi
@@ -1630,7 +1630,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    environment: workflow-delivery-v3-buddy-smoke-github-packages
+    environment: workflow-delivery-v3-buddy-github-packages
     concurrency:
       group: wdv3-resource-${{ needs.approval-finalizer.outputs.resource-concurrency-key }}
       cancel-in-progress: false
@@ -1652,7 +1652,7 @@ jobs:
         env:
           ACTUAL_ENVIRONMENT_MARKER: ${{ vars.WDV3_CAPABILITY_ENVIRONMENT_MARKER }}
         run: |
-          if [[ "${ACTUAL_ENVIRONMENT_MARKER}" != "workflow-delivery-v3-buddy-smoke-github-packages/v1" ]]; then
+          if [[ "${ACTUAL_ENVIRONMENT_MARKER}" != "workflow-delivery-v3-buddy-github-packages/v1" ]]; then
             echo "::error::Environment marker does not match the capability Environment contract" >&2
             exit 1
           fi

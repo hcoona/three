@@ -132,7 +132,7 @@ def _main() -> int:
         "run-attempt": arguments.run_attempt,
         "approval-job-id": arguments.approval_job_id,
         "approval-job": "approval",
-        "environment": "workflow-delivery-v3-buddy-smoke-approval",
+        "environment": "workflow-delivery-v3-buddy-approval",
         "channel": "buddy",
         "completed-at": arguments.completed_at,
         "producer": "approval",

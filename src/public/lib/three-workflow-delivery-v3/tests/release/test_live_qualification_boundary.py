@@ -188,7 +188,7 @@ def _rebind_observation_basis(
     )
 
 
-def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: PLR0913, PLR0915
+def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: PLR0913, PLR0915, PLR0917
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     qualified_simulation,
@@ -864,7 +864,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         run_attempt=live_intent.run_attempt,
         approval_job_id=711,
         approval_job="approval",
-        environment="workflow-delivery-v3-buddy-smoke-approval",
+        environment="workflow-delivery-v3-buddy-approval",
         channel="buddy",
         completed_at="2026-08-13T16:00:00Z",
         producer="approval",
@@ -1025,7 +1025,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
 
 
 @pytest.mark.parametrize("classification", ["absent", "exact-satisfied"])
-def test_materialize_publication_cli_renders_complete_reviewer_context(  # noqa: PLR0913
+def test_materialize_publication_cli_renders_complete_reviewer_context(  # noqa: PLR0913, PLR0917
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     qualified_simulation,
@@ -1657,7 +1657,7 @@ _PARTIAL_OPTIONAL_TRANSPORT_CASES = [
     ("group", "selected_member", "provided_member_mode"),
     _PARTIAL_OPTIONAL_TRANSPORT_CASES,
 )
-def test_finalize_live_rejects_each_partial_optional_transport_group(  # noqa: PLR0913
+def test_finalize_live_rejects_each_partial_optional_transport_group(  # noqa: PLR0913, PLR0917
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -1806,7 +1806,7 @@ def test_finalize_live_rejects_each_partial_optional_transport_group(  # noqa: P
         ),
     ],
 )
-def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform_facts(  # noqa: E501, PLR0913, PLR0915
+def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform_facts(  # noqa: E501, PLR0913, PLR0915, PLR0917
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     live_intent,
@@ -1874,7 +1874,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         run_attempt=attempt.run_attempt,
         approval_job_id=912,
         approval_job="approval",
-        environment="workflow-delivery-v3-buddy-smoke-approval",
+        environment="workflow-delivery-v3-buddy-approval",
         channel="buddy",
         completed_at="2026-08-19T08:00:00Z",
         producer="approval",
