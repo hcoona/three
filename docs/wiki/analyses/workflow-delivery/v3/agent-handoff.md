@@ -745,9 +745,11 @@ If it conflicts with the
   selected by `workflow_dispatch` may supply the same-revision workflow,
   Planner, Finalizer, Providers, Adapters, compiler, clients, catalogs,
   capability declarations, and publisher without protected-ref or CODEOWNERS
-  eligibility. Every Attempt still requires dedicated protected Buddy
-  Environment approval after Publication Snapshot creation. The normal live
-  workflow keeps workflow-level permissions empty or read-only. It declares
+  eligibility. Every Attempt that reaches the approval gate still requires
+  fresh human approval of its deployment to the Environment identity mapped
+  from its selected Buddy Approval Environment Profile after Publication
+  Snapshot creation. The normal live workflow keeps workflow-level permissions
+  empty or read-only. It declares
   `packages: write` only on the `run-live-attempt` `uses`-only caller job as the
   reusable-workflow ceiling and on the called Environment-referencing publisher
   job as effective capability, with no PAT and no `id-token: write`.
@@ -761,10 +763,12 @@ If it conflicts with the
   publisher TCB and can author alternate write-capable workflow jobs;
   Environment approval controls mistakes and the normal process, not that
   adversary. The exception is bounded by the dedicated disposable package,
-  isolated destination and Environment, minimum normal-flow permissions,
-  reviewer-visible target/coordinate/artifact/lifecycle/action details, no
-  normal consumers, forbidden ordinary admin actions, and Break-Glass
-  delete/restore handling. An untrusted Write/Maintain/Admin actor blocks the
+  isolated destination, exact selected Approval and Capability Environment
+  Profiles, minimum normal-flow permissions, reviewer-visible
+  target/coordinate/artifact/lifecycle/action details, no normal consumers,
+  forbidden ordinary admin actions, and Break-Glass delete/restore handling.
+  Reuse of either mapped Environment identity does not transfer this
+  package-specific exception. An untrusted Write/Maintain/Admin actor blocks the
   slice until that actor's access is reduced below those roles or an
   independently enforced publisher boundary makes package-write Capability and
   destination access unavailable to writer-authored workflows. Ref narrowing,

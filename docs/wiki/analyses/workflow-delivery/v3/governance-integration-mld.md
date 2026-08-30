@@ -323,10 +323,12 @@ parallel only after their credential-free admissions succeed. Actions within a
 group remain ordered and fail-stop.
 
 The human-gated approval job and destination capability job are separate. The
-first-slice Capability Environment Profile has no required reviewer and performs
-no human approval; it acts only as the capability-delivery boundary after the
-separate admission gate succeeds. A reviewer-bearing destination is unsupported
-by this architecture and requires a new architecture decision.
+first-slice Capability Environment Profile fixes reviewer policy to `none`. Its
+mapped Environment has no required reviewer, so no human approval occurs for its
+deployment; the Environment-referencing destination capability job is the
+capability-delivery boundary after the separate admission gate succeeds. A
+reviewer-bearing destination is unsupported by this architecture and requires a
+new architecture decision.
 The publisher may repeat the same `contents: read` admitted-binding and
 Governance-freshness checks immediately before mutation as defense in depth.
 That repeat uses no new credential or service and does not turn the
@@ -342,8 +344,10 @@ disposable smoke package:
   Finalizer, Providers, Adapters, compiler, authenticated clients, static
   catalogs, capability declarations, and publisher code;
 - no protected-ref or CODEOWNERS-approved eligibility is required;
-- the exact Publication Snapshot must exist before the dedicated protected
-  Buddy Environment requests human approval;
+- the exact Publication Snapshot must exist before the Buddy approval job binds
+  the exact Environment identity mapped from its Governance-selected Buddy
+  Approval Environment Profile and requests human approval of the resulting
+  current-Attempt deployment;
 - the normal v3 live path requests no package-write Capability before successful
   approval and successful credential-free capability admission;
 - the approved target-revision side-effect job receives short-lived
@@ -469,9 +473,11 @@ Buddy and Official use distinct:
 - destination namespaces, identities, or prerelease channels; and
 - destination permissions.
 
-The first-slice Buddy job uses its dedicated approval tier, but it cannot obtain
+The first-slice Buddy job binds the Environment identity mapped from its
+Governance-selected Buddy Approval Environment Profile, but it cannot obtain
 Official capability. Official retains protected authoritative refs,
-owner-reviewed control code, its isolated Environment, and destination trust.
+owner-reviewed control code, distinct Governance-selected Approval and
+Capability Environment Profiles, and destination trust.
 
 ## Platform Enforcement Outcomes
 
@@ -802,8 +808,10 @@ Governance integration is not ready for activation when:
   lack required owner review;
 - a build or qualification job can obtain publication capability;
 - CI owns or executes complete Official dry-run planning;
-- the first-slice Buddy package, destination, Environment, token scope, or
-  no-consumer constraint is not exact and isolated;
+- the first-slice Buddy package or destination is not exact and isolated from
+  Official or known production use, the selected Approval or Capability
+  Environment Profile or profile-to-name mapping is not exact, or the token
+  scope or no-consumer boundary does not provide the required isolation;
 - any repository actor with Write, Maintain, or Admin access is not trusted as a
   Buddy publisher;
 - either `buddy.yml` or `release-buddy.yml` remains enabled, an old-ref dispatch

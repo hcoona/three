@@ -274,7 +274,8 @@ The architecture has three runtime trust zones:
 The zone separation above remains normative for CI, Official, simulation, and
 future destinations unless separately approved. The first live Buddy
 `hcoona-release-smoke-npm` GitHub Packages slice is a bounded exception: after
-approval through its selected Buddy Approval Environment Profile and
+successful human approval of the current Attempt's deployment to the Environment
+identity mapped from its selected Buddy Approval Environment Profile and
 credential-free Capability Admission,
 its target-revision side-effect job runs target-revision publisher code with
 short-lived `GITHUB_TOKEN` and minimum

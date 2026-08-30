@@ -389,8 +389,9 @@ against implementation and maintenance cost.
   Release execution must not receive live capability until the target revision
   satisfies applicable policy. Official requires protected-ref and Environment
   policy. The first-slice live Buddy exception requires the exact Publication
-  Snapshot and successful approval through its selected Buddy Approval
-  Environment Profile, but not protected-ref eligibility.
+  Snapshot and successful human approval of the current Attempt's deployment to
+  the Environment identity mapped from its selected Buddy Approval Environment
+  Profile, but not protected-ref eligibility.
 - **WD-AUTH-005:** Delivery Governance must control protected target
   eligibility, control-code review, protected environment review, OIDC and
   destination trust, capability grant and revocation, and Break-Glass
@@ -450,15 +451,15 @@ against implementation and maintenance cost.
   selected target supplies workflow, control, Planner, Finalizer, and publisher
   code. The architecture must not substitute protected-main control code.
 - **WD-SLICE-002:** Every such Attempt must seal its exact Publication Snapshot
-  and receive human approval through the Buddy approval Environment selected by
-  its exact Approval Environment Profile before any package-write Capability
-  exists. Reviewer-visible approval context
-  must include target SHA, selected branch or ref, exact package coordinate,
-  artifact digest and manifest, package lifecycle scripts, and exact action
-  summary. The Authorization Record must bind the Publication Snapshot digest
-  and immutable reviewer-summary artifact identity and digest. Self-review
-  prevention must be enabled where available unless a separately confirmed
-  slice-scoped single-maintainer exception applies. For
+  and receive human approval of its fresh deployment to the exact Buddy approval
+  Environment identity mapped from its Governance-selected Approval Environment
+  Profile before any package-write Capability exists. Reviewer-visible approval
+  context must include target SHA, selected branch or ref, exact package
+  coordinate, artifact digest and manifest, package lifecycle scripts, and exact
+  action summary. The Authorization Record must bind the Publication Snapshot
+  digest and immutable reviewer-summary artifact identity and digest.
+  Self-review prevention must be enabled where available unless a separately
+  confirmed slice-scoped single-maintainer exception applies. For
   repository `hcoona/three`, package
   `@hcoona/hcoona-release-smoke-npm`, and approval Environment
   `workflow-delivery-v3-buddy-approval`, the confirmed exception permits
