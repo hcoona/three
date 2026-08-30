@@ -11,7 +11,7 @@ classifiers = ["Private :: Do Not Upload"]
 
 [dependency-groups]
 # Preserve the validated lint baseline until the Ruff 0.16 migration.
-dev = ["hatchling>=1.25.0", "pyrefly>=1.0.0", "pytest>=8.3.4", "ruff==0.16.4"]
+dev = ["hatchling>=1.25.0", "pyrefly>=1.0.0", "pytest>=8.3.4", "ruff==0.16.5"]
 
 [tool.uv.workspace]
 # The current Python workspace is rooted under src/; legacy OnePython paths are retired.
