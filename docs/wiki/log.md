@@ -2634,3 +2634,24 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   artifact ID as an Attempt artifact ID, with no consumer replacement.
 - Kept protected Governance false and made no Environment, workflow-run,
   deployment, package, tag, legacy, or Break-Glass mutation.
+
+## [2026-08-30] query | Define normal Live Environment identity profiles
+
+- Reopened the Environment naming question before external provisioning and
+  found that the MLDs deferred exact names without defining resource reuse or
+  cardinality.
+- Confirmed the repository's single-maintainer operating model: pull-request-
+  only contributors remain outside the writer TCB, while a later
+  Write/Maintain/Admin grant is a Governance change.
+- Defined policy-scoped reuse: Buddy approval identity follows the exact
+  reviewer/Governance profile, and capability identity follows the exact
+  destination, credential, permission, access, and native-protection profile
+  with reviewer policy fixed to `none`; a reviewer-bearing destination requires
+  a new architecture decision.
+- Mapped the first slice to `workflow-delivery-v3-buddy-approval` and
+  `workflow-delivery-v3-buddy-github-packages`. Sharing never transfers
+  package eligibility, an approval, Authorization, Capability, or
+  Attempt/package lineage; GitHub's Environment-level deployment history is
+  shared.
+- Kept `live_enabled: false`; no workflow, source, test, Environment,
+  deployment, package, tag, legacy, or Break-Glass mutation occurred.

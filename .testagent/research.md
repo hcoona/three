@@ -6356,3 +6356,133 @@ outside its language model and the result is not line or branch coverage.
    `live_enabled: false`; no external resource changes.
 
 <!-- END APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-research -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-design-research -->
+
+## Workflow Delivery v3 Environment identity design research
+
+### Trigger and current facts
+
+- The user stopped permanent Environment provisioning before any external
+  resource existed and challenged whether the `buddy-smoke` names were final
+  first-slice identities or placeholders for a shared control plane.
+- Fresh read-only inventory found only `hcoona` with direct repository
+  Write/Maintain/Admin authority. Pull-request-only contributors are outside
+  the writer TCB and cannot normally dispatch the live workflow or approve its
+  Environment.
+- Both intended permanent normal Live Environments remain absent.
+  `live_enabled` remains false, normal caller/callee workflow IDs `340952169`
+  and `340952170` remain active, and same-name repository marker variables are
+  absent. Owner `hcoona` is a user account, so no organization-variable scope
+  exists for this repository.
+
+### Layer trace and design gap
+
+- Requirements and the first-slice LLD fixed two permanent `buddy-smoke`
+  Environment names and bound the single-maintainer exception to the smoke
+  package and approval Environment.
+- Requirements also stated that future Buddy destinations cannot inherit the
+  first-slice risk exception, but did not require either Environment reuse or
+  per-slice duplication.
+- Governance Integration MLD deferred exact Environment names to LLD. Release
+  Delivery MLD excluded exact names from its scope. Neither MLD defined the
+  logical Environment reuse key or resource cardinality.
+- The current first-slice design was therefore internally executable but left
+  future Environment reuse topology undefined. Treating the LLD's package name
+  as a universal platform identity would be incorrect, while mechanically
+  creating two new Environments for every package would add maintenance cost
+  without matching the repository's authority model.
+
+### Confirmed Environment identity model
+
+- Delivery Governance selects Environment identity by authority policy, not by
+  Release Unit, package, or slice name alone.
+- An Approval Environment Profile is keyed by repository, channel, exact
+  reviewer and self-review policy, wait and branch/tag policy,
+  administrator-bypass posture, and credential-free behavior.
+- A Capability Environment Profile is keyed by repository, channel,
+  destination trust boundary, credential source including its identity
+  contract, GitHub permission and destination-access policy, reviewer policy
+  fixed to `none`, wait and branch/tag policy, and
+  administrator-bypass posture.
+- Multiple Release policies may reuse an Environment identity only when the
+  complete profile is identical. Each Attempt that reaches a referenced
+  Environment gate creates a fresh deployment for that gate, any required
+  review is current-Attempt only, and the Authorization Record remains
+  package-bound. Reuse never transfers Governance eligibility, approval,
+  Authorization, Capability, package authorization, or Attempt/package lineage.
+  GitHub aggregates deployment history under the shared Environment identity.
+- The first slice maps the shared Buddy approval profile to
+  `workflow-delivery-v3-buddy-approval` and the Buddy GitHub Packages capability
+  profile to `workflow-delivery-v3-buddy-github-packages`.
+- The smoke package's accepted-risk exception remains package-specific even
+  though its Environment identities are policy-scoped and may later be reused
+  by a separately governed compatible Release policy.
+
+### Delivery boundary
+
+- This phase changes design and current-state documentation only.
+- A later protected implementation PR must update workflow, source, record,
+  formatter, validator, tests, marker values, and current-state contracts from
+  the `buddy-smoke` names to the confirmed profile names.
+- Permanent Environment creation and authenticated readback remain a separate
+  external-state phase after implementation merge and explicit authorization.
+- Preparation, `live_enabled: true`, dispatch, deployment approval, package or
+  tag mutation, retry, legacy restoration, and Break-Glass remain unauthorized.
+
+### Independent review and adjudication
+
+- Architecture, authority-boundary, and cross-document reviewers independently
+  identified conflicting ownership because Release Delivery claimed Profile
+  selection/reuse while Delivery Governance owned authority. Adjudication
+  confirmed the finding. Delivery Governance now solely owns compatibility and
+  mappings; Release requests and consumes the selected mapping.
+- Reviewers found exact Profile dimensions were inconsistent across layers.
+  Adjudication confirmed missing channel and credential identity-contract
+  wording, but rejected adding unrelated dimensions. The normative hierarchy
+  and first-slice LLD now use the same typed dimensions.
+- Reviewers found activation sequences skipped the mandatory implementation
+  rename between PR #624 and external creation. Adjudication confirmed that
+  GitHub could otherwise implicitly create the still-referenced transitional
+  Environments before a first-step guard runs. Every normative sequence now
+  requires the protected all-surface rename while false before creation.
+- Reviewers found that unqualified "history" and "fresh deployment review"
+  wording obscured GitHub's shared Environment deployment history and the
+  reviewer-free capability deployment. Adjudication confirmed the findings.
+  The design now specifies one human review on the Approval Environment per
+  Attempt, no capability reviewer for the first slice, shared
+  Environment-level deployment history, and independent Attempt/package
+  lineage.
+- Adjudication rejected proposals for canonical persistent Profile records or
+  stable Profile IDs as overdesign. Compatibility remains a Governance design
+  and provisioning decision evidenced by the LLD mapping and authenticated
+  native readback; runtime binds the selected Environment/job without mirroring
+  the full platform configuration.
+- Adjudication also rejected treating marker value or first-step guard ordering
+  as Profile identity dimensions. They remain mapping/consumer enforcement
+  contracts, so marker rotation does not create a new authority identity.
+- Clean rereview found that optional future capability reviewers contradicted
+  the confirmed one-human-approval-per-Attempt model. Adjudication confirmed the
+  conflict. Capability reviewer policy is now fixed to `none`; a
+  reviewer-bearing destination requires a new architecture decision.
+- Clean rereview also confirmed four documentation-completeness issues: the LLD
+  duplicated Governance-owned compatibility dimensions, exact marker variable
+  keys were missing, fixed first-slice mappings remained broadly deferred, and
+  an older unchecked ledger entry still named obsolete Environments. The LLD
+  now consumes the MLD contract, exact key/value markers are restored, the
+  deferral is scoped to future mappings, and an append-only supersession follows
+  the current plan.
+- Final rereview found four remaining precision issues, each independently
+  confirmed: approval and Authorization wording was unconditional, Release
+  still described runtime as binding/displaying a Profile, the handoff omitted
+  source and validator rename surfaces, and migration overclaimed native
+  readback as complete compatibility proof. The final wording makes approval
+  and Authorization conditional, binds the mapped Environment deployment,
+  restores the complete atomic rename list, and combines native readback with
+  the Governance mapping and other policy evidence.
+- Closure review confirmed two final summary-level omissions: the handoff used
+  "receives approval" for rejected/pending gate outcomes, and README/plan
+  abbreviated the atomic rename surface. The final text now requires rather
+  than assumes successful approval and repeats the complete all-surface rename.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-design-research -->

@@ -387,37 +387,56 @@ If it conflicts with the
   and accepted writer `hcoona`, and the protected attestation still
   `live_enabled: false` with expiry `2026-11-12T17:19:12Z`.
 - On 2026-08-30, the user separately authorized **readiness repair only**.
-  Workflow and static contract-test changes are permitted while false. No
-  Environment creation/readback, preparation attestation, activation,
-  dispatch, deployment approval, package mutation, retry, legacy restoration,
-  or Break-Glass action is authorized.
+  PR #624 rebase-merged that repair as
+  `2db88a56df58e3e957fb366390882a6089cebfe1`. It added the exact first-step
+  marker guards, preserved job-local fail-closed behavior, and removed the
+  unused misbound finalizer output while false. No Environment,
+  preparation-attestation, dispatch, deployment-approval, package, tag, legacy,
+  or Break-Glass mutation occurred.
+- The user then confirmed the missing Environment identity/reuse policy for the
+  repository's single-maintainer model. The Buddy Approval Environment is
+  shared only across Release policies with an identical reviewer/Governance
+  profile. A Capability Environment is shared only across an identical
+  destination, credential, permission, access, and native-protection profile,
+  with reviewer policy fixed to `none`. Pull-request-only contributors remain
+  outside the writer TCB; a Write/Maintain/Admin grant is a Governance change.
+  Every Attempt that reaches the approval gate requires a fresh current-Attempt
+  human approval; its package-bound Authorization is emitted only after
+  successful approval. Sharing an Environment never transfers package
+  eligibility, an approval, Capability, or Attempt/package lineage; GitHub's
+  Environment-level deployment history is shared. A reviewer-bearing capability
+  destination requires a new architecture decision.
 - The confirmed normal Live governance choice is a narrowly scoped
   single-maintainer exception: approval Environment
-  `workflow-delivery-v3-buddy-smoke-approval` has sole reviewer `hcoona` and
+  `workflow-delivery-v3-buddy-approval` has sole reviewer `hcoona` and
   `prevent_self_review: false`. Approval is explicit operator
   self-confirmation, not independent review or a security boundary. Any
-  effective writer, reviewer, role, team, or relevant access change requires
-  false and a new Governance decision.
-- Future delivery remains ordered. Only the first phase is now authorized:
-  disabled readiness repair. Explicit creation and authenticated readback of
-  both permanent Environments, protected preparation evidence while false,
-  freeze of other `main` writes and normal dispatch, minimal protected
-  activation, exact activation-SHA rollout preflight, one uniquely correlated
-  attempt-1 `main` dispatch, immutable-summary review and self-approval, and
-  terminal reconciliation remain unauthorized until separately approved. A
-  non-complete result retains the freeze, restores false through protected
-  review, accounts for all in-flight work, and reconciles read-only. Flag-off
-  is not package rollback or instantaneous capability revocation.
-- The readiness-repair candidate removes the unused misbound
-  `approval-finalizer.outputs.attempt-artifact-id` output and adds distinct exact
-  Environment-scoped marker checks as the first executable steps in the approval
-  and publisher jobs. Every later operational step explicitly requires marker
-  success; the publisher's non-mutating propagation step classifies marker
-  failure. Markers only detect missing/misbound configuration for the repaired
-  revision and descendants; native Environment settings remain externally
-  inspected authority. Production Adapter semantics remain create-only
-  conflict: an identical conflict may become exact/no-op only in a later whole
-  Attempt, while a differing conflict remains reconciliation-required.
+  effective writer, reviewer, role, team, package, destination-access, or
+  relevant policy change requires false and a new Governance decision.
+- The first slice's final profile mappings are
+  `workflow-delivery-v3-buddy-approval` and
+  `workflow-delivery-v3-buddy-github-packages`. The merged workflow and source
+  still contain the earlier `buddy-smoke` identities. A separately reviewed
+  implementation PR must update workflow, source, record, formatter, validator,
+  test, marker, and current-state contracts before external creation.
+- Future delivery remains ordered: merge this design correction, merge the
+  implementation rename while false, then separately authorize explicit
+  creation and authenticated readback of both permanent Environments.
+  Protected preparation evidence while false, freeze of other `main` writes
+  and normal dispatch, minimal protected activation, exact activation-SHA
+  rollout preflight, one uniquely correlated attempt-1 `main` dispatch,
+  immutable-summary review and self-approval, and terminal reconciliation all
+  remain separately gated. A non-complete result retains the freeze, restores
+  false through protected review, accounts for all in-flight work, and
+  reconciles read-only. Flag-off is not package rollback or instantaneous
+  capability revocation.
+- The merged readiness repair remains valid in mechanism but its old marker
+  values are transitional until the implementation rename. Markers only detect
+  missing/misbound configuration for the exact named Environment and repaired
+  revision; native settings remain externally inspected authority. Production
+  Adapter semantics remain create-only conflict: an identical conflict may
+  become exact/no-op only in a later whole Attempt, while a differing conflict
+  remains reconciliation-required.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

@@ -324,13 +324,21 @@ Next:
    normal Live activation remains a separate production decision and is not
    authorized by this acceptance-only execution; and
 10. retain the normal Live design merged by PR #623 as
-    `cda7e2d617ffe1877fb8a389dee336270ec06cda`. On 2026-08-30 the user
-    separately authorized only its disabled readiness-repair phase. The
-    readiness candidate removes the unused misbound approval-finalizer output
-    and adds exact first-step approval/capability Environment marker guards,
-    downstream guard-success gating, and non-mutating marker-failure
-    propagation. The confirmed single-maintainer exception remains design
-    authority for a later phase, not current activation authority. Governance
-    remains false, both permanent Environments remain absent, and Environment
-    creation/readback, preparation, activation, dispatch, approval, package
-    mutation, retry, and Break-Glass remain unauthorized.
+    `cda7e2d617ffe1877fb8a389dee336270ec06cda` and the readiness repair merged
+    by PR #624 as `2db88a56df58e3e957fb366390882a6089cebfe1`.
+    On 2026-08-30 the user confirmed a policy-scoped Environment identity
+    model for the repository's single-maintainer operation: Buddy approval is
+    shared only across Release policies with the same reviewer/Governance
+    profile, while capability Environments are shared only across the same
+    destination, credential, permission, and access profile, with reviewer
+    policy fixed to `none` under the current one-approval architecture. The
+    first slice maps those profiles to `workflow-delivery-v3-buddy-approval`
+    and `workflow-delivery-v3-buddy-github-packages`. Sharing never transfers
+    package Governance, approval, Authorization, Capability, or Attempt/package
+    lineage; GitHub's Environment-level deployment history is shared.
+    A follow-up implementation PR must atomically update workflow, source,
+    record, formatter, validator, test, marker, and current-state contracts
+    before either Environment is created. Governance remains false, both
+    permanent Environments remain absent, and Environment creation/readback,
+    preparation, activation, dispatch, approval, package mutation, retry, and
+    Break-Glass remain unauthorized.
