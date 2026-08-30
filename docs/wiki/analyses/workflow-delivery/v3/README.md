@@ -342,7 +342,12 @@ Next:
     PR #630 rebase-merged the protected atomic implementation rename as
     `9c9901cc38297d212de48d4b51349872ef60d5b4` while false. All required PR
     checks and the 18/18-file Copilot review passed. Exact post-merge CodeQL
-    and the non-overlapping successor `main` CI and CodeQL passed. Governance
-    remains false, both permanent Environments remain absent, and Environment
-    creation/readback, preparation, activation, dispatch, approval, package
-    mutation, retry, and Break-Glass remain unauthorized.
+    and the non-overlapping successor `main` CI and CodeQL passed.
+    After separate explicit authorization, the permanent approval Environment
+    `20895030723` and capability Environment `20895037877` were created with
+    their exact markers and authenticated-read configurations. API readback
+    reports `can_admins_bypass: false`, and both authenticated UI settings were
+    saved and reloaded with the bypass control still unchecked. Governance
+    remains false; no deployment or normal workflow run exists; and
+    preparation, activation, dispatch, approval, package mutation, retry, and
+    Break-Glass remain unauthorized.

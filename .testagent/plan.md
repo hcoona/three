@@ -6966,3 +6966,35 @@ dispatch, approval, package, tag, acceptance ref, retry, legacy, or Break-Glass
 mutation.
 
 <!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-closure-plan -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-plan -->
+
+## Workflow Delivery v3 permanent Environment provisioning
+
+### Authorized scope
+
+- [x] Interpret the user's continuation after implementation closure as
+  authorization for permanent Environment creation and authenticated readback
+  only.
+- [x] Revalidate `main`, Governance false, absent final/transitional
+  Environments and deployments, absent repository markers, zero normal
+  workflow runs, and unchanged package/tag state.
+- [x] Create the approval and capability Environments with their exact
+  reviewer, wait, branch-policy, secret, marker, and administrator-bypass
+  configurations.
+- [x] Complete API readback and authenticated UI save/reload confirmation for
+  administrator bypass.
+- [ ] Deliver the provisioning evidence through a protected documentation PR,
+  required checks, Copilot review, merge without bypass, and post-merge
+  read-only reconciliation.
+
+### Next gated phase
+
+- [ ] Obtain separate explicit authorization before opening or executing the
+  protected preparation phase.
+
+This plan authorizes no Governance refresh, preparation, activation, normal
+Live dispatch, approval, package/tag mutation, acceptance ref, retry, legacy,
+or Break-Glass operation.
+
+<!-- END APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-plan -->

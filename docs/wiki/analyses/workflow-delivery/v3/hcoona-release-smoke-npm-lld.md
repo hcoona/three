@@ -1959,14 +1959,28 @@ and organization-scoped variables with the same names are absent.
 
 PR #630 rebase-merged the protected implementation rename while false as
 `9c9901cc38297d212de48d4b51349872ef60d5b4`. The merge prerequisite is
-satisfied. Delivery Governance must still separately authorize, explicitly
-create, and read back these Environments before a preparation or activation
-change:
+satisfied. After separate explicit user authorization, the two Environments
+were explicitly created and authenticated-read before any preparation or
+activation change:
 
 | Environment                                  | Required configuration                                                                                                                                                                                                                             |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `workflow-delivery-v3-buddy-approval`        | Sole reviewer `hcoona`; `prevent_self_review: false` under the confirmed single-maintainer exception; zero wait; no stored secrets or credentials; no branch/tag restriction; administrator bypass disabled where available; exact approval marker |
 | `workflow-delivery-v3-buddy-github-packages` | No reviewer; zero wait; no stored secrets or credentials; no branch/tag restriction; administrator bypass disabled where available; exact capability marker                                                                                        |
+
+Approval Environment ID `20895030723` has required-reviewer rule `64124473`,
+sole reviewer `hcoona` / `712433`, and `prevent_self_review: false`.
+Capability Environment ID `20895037877` has no protection rules. The creation
+requests set zero wait and all-branch deployment policy; readback exposes no
+wait-timer rule and `deployment_branch_policy: null`. Each Environment has
+zero secrets and exactly one Environment-scoped marker:
+
+- `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`;
+- `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1`.
+
+Same-name repository variables are absent. Organization-variable scope is not
+applicable because repository owner `hcoona` is a User. No related deployment
+or normal workflow run exists.
 
 The documented public Environment API does not currently expose a stable write
 contract for administrator bypass. For each Environment, an administrator
@@ -1976,6 +1990,12 @@ repository, Environment, and disabled control. The authenticated REST response
 is retained as supplemental evidence. If it exposes the undocumented
 `can_admins_bypass` field, the value must be exactly false; omission is not
 interpreted as false, and any disagreement with the UI blocks activation.
+
+The creation request supplied the supplemental undocumented
+`can_admins_bypass: false` field, and authenticated API readback returns false
+for both Environments. The owner saved and reloaded both authenticated settings
+pages and confirmed that "Allow administrators to bypass configured protection
+rules" remained unchecked. The UI and supplemental API evidence agree.
 
 No branch restriction is intentional because `WD-SLICE-001` permits any
 same-repository selected ref. The first activation Attempt is nevertheless

@@ -426,17 +426,32 @@ If it conflicts with the
   advanced `main` to `abe6d5b6e76ef64e4b7be26b5d7211e9323934d8`; successor
   Continuous Integration run `33336305571` and CodeQL run `33336305602`
   passed.
-- The implementation merge prerequisite is complete. Future delivery remains
-  ordered: separately authorize explicit creation and authenticated readback
-  of both permanent Environments.
-  Protected preparation evidence while false, freeze of other `main` writes
-  and normal dispatch, minimal protected activation, exact activation-SHA
-  rollout preflight, one uniquely correlated attempt-1 `main` dispatch,
-  immutable-summary review and self-approval, and terminal reconciliation all
-  remain separately gated. A non-complete result retains the freeze, restores
-  false through protected review, accounts for all in-flight work, and
-  reconciles read-only. Flag-off is not package rollback or instantaneous
-  capability revocation.
+- After the implementation closure merged as
+  `bbff05e32bc1e74861ffd44bbf610c154406e1d8`, the user separately authorized
+  permanent Environment creation and authenticated readback only. Approval
+  Environment `workflow-delivery-v3-buddy-approval` was created as ID
+  `20895030723` with required-reviewer rule `64124473`, sole reviewer
+  `hcoona` / `712433`, and `prevent_self_review: false`. Capability
+  Environment `workflow-delivery-v3-buddy-github-packages` was created as ID
+  `20895037877` with no protection rules. Both have zero wait, no branch/tag
+  restriction, no secrets, and exactly one corresponding Environment-scoped
+  marker. Same-name repository variables are absent; organization variable
+  scope is not applicable because repository owner `hcoona` is a User.
+- Authenticated API readback reports `can_admins_bypass: false` for both
+  Environments. Because that write field remains undocumented, the owner also
+  saved and reloaded both authenticated settings pages, confirming that
+  "Allow administrators to bypass configured protection rules" remained
+  unchecked. No deployment was created, both normal workflows retain zero runs,
+  protected Governance remains false, and package/tag state is unchanged.
+- The Environment-creation prerequisite is complete. Future delivery remains
+  ordered, but is not authorized by this phase: protected preparation evidence
+  while false, freeze of other `main` writes and normal dispatch, minimal
+  protected activation, exact activation-SHA rollout preflight, one uniquely
+  correlated attempt-1 `main` dispatch, immutable-summary review and
+  self-approval, and terminal reconciliation remain separately gated. A
+  non-complete result retains the freeze, restores false through protected
+  review, accounts for all in-flight work, and reconciles read-only. Flag-off
+  is not package rollback or instantaneous capability revocation.
 - The merged readiness repair remains valid in mechanism. The implementation
   rename rotates its transitional names and marker values to the final mappings
   without changing first-step guards, downstream gates, permissions, or

@@ -6574,3 +6574,44 @@ The implementation merge prerequisite is complete. Permanent Environment
 creation remains blocked pending separate explicit user authorization.
 
 <!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-closure-research -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-research -->
+
+## Workflow Delivery v3 permanent Environment provisioning research
+
+### Authority and API boundary
+
+- The user explicitly continued after being told permanent Environment creation
+  required separate authorization. The phase was bounded in advance to
+  creation and authenticated readback only, excluding preparation, activation,
+  dispatch, approval, and package mutation.
+- GitHub's documented Environment update API supports required reviewers,
+  `prevent_self_review`, wait timer, and all-branch policy. The documented
+  Actions-variable API supports exact Environment-scoped markers.
+- The current public Environment API documentation still omits
+  `can_admins_bypass`; the request and API response can therefore corroborate
+  false but cannot replace the contract's authenticated UI observation.
+
+### Exact observed configuration
+
+- Approval Environment `workflow-delivery-v3-buddy-approval`:
+  ID `20895030723`; required-reviewer rule `64124473`; reviewer `hcoona` /
+  `712433`; `prevent_self_review: false`; no wait-timer rule; all branches;
+  zero secrets; exact approval marker.
+- Capability Environment `workflow-delivery-v3-buddy-github-packages`:
+  ID `20895037877`; no protection rules; all branches; zero secrets; exact
+  capability marker.
+- Both creation requests supplied `can_admins_bypass: false`, and repeated
+  authenticated API readback returns false. The owner saved and reloaded both
+  settings pages and confirmed that the administrator-bypass checkbox remained
+  unchecked.
+- Same-name repository variables are absent. Organization-variable scope is
+  not applicable because `hcoona` is a User rather than an Organization.
+- No related deployment exists, and normal workflow IDs `340952169` and
+  `340952170` retain zero runs.
+
+Protected Governance remains false and package/tag state is unchanged. The
+Environment configuration is ready for a separately authorized preparation
+decision; it grants no preparation or activation authority by itself.
+
+<!-- END APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-research -->

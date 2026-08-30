@@ -12201,3 +12201,44 @@ creation and authenticated readback remain blocked pending separate explicit
 user authorization.
 
 <!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-closure-status -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-status -->
+
+## Workflow Delivery v3 permanent Environment provisioning
+
+### Preflight
+
+- Work base: `main@bbff05e32bc1e74861ffd44bbf610c154406e1d8`.
+- Protected Governance: `live_enabled: false`, expiry
+  `2026-11-12T17:19:12Z`.
+- Final and transitional Environment names and related deployments: absent.
+- Same-name repository markers: absent; organization scope not applicable to
+  User owner `hcoona`.
+- Normal workflow IDs `340952169` and `340952170`: active, zero runs.
+
+### Created configuration
+
+| Environment | ID | Protection | Marker |
+| --- | ---: | --- | --- |
+| `workflow-delivery-v3-buddy-approval` | `20895030723` | Rule `64124473`; sole reviewer `hcoona` / `712433`; self-review permitted | `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1` |
+| `workflow-delivery-v3-buddy-github-packages` | `20895037877` | No reviewer or protection rule | `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1` |
+
+Both Environments have all-branch policy, no wait-timer rule, zero secrets, and
+exactly one Environment-scoped marker. Repeated API readback returns
+`can_admins_bypass: false`. The authenticated owner saved and reloaded both
+settings pages and confirmed that "Allow administrators to bypass configured
+protection rules" remained unchecked.
+
+### Post-creation boundary
+
+- Related deployments remain absent.
+- Both normal workflows retain zero runs.
+- Protected Governance and the nine-version package/dist-tag inventory are
+  unchanged.
+- No preparation, activation, normal Live dispatch, approval, package/tag
+  mutation, acceptance ref, retry, legacy, or Break-Glass operation occurred.
+
+Environment creation and native-setting readback are complete. Protected
+preparation remains blocked pending separate explicit authorization.
+
+<!-- END APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-status -->
