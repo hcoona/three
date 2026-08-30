@@ -339,9 +339,10 @@ Next:
     and `workflow-delivery-v3-buddy-github-packages`. Sharing never transfers
     package Governance, approval, Authorization, Capability, or Attempt/package
     lineage; GitHub's Environment-level deployment history is shared.
-    The protected implementation rename now atomically updates workflow,
-    source, record, formatter, validator, test, marker, and current-state
-    contracts to those final mappings while false. Governance remains false,
-    both permanent Environments remain absent, and Environment
+    PR #630 rebase-merged the protected atomic implementation rename as
+    `9c9901cc38297d212de48d4b51349872ef60d5b4` while false. All required PR
+    checks and the 18/18-file Copilot review passed. Exact post-merge CodeQL
+    and the non-overlapping successor `main` CI and CodeQL passed. Governance
+    remains false, both permanent Environments remain absent, and Environment
     creation/readback, preparation, activation, dispatch, approval, package
     mutation, retry, and Break-Glass remain unauthorized.

@@ -1957,9 +1957,11 @@ and organization-scoped variables with the same names are absent.
 
 ### Permanent Environment Contract
 
-The protected implementation rename must merge while false. Delivery Governance
-must then separately authorize, explicitly create, and read back these
-Environments before a preparation or activation change:
+PR #630 rebase-merged the protected implementation rename while false as
+`9c9901cc38297d212de48d4b51349872ef60d5b4`. The merge prerequisite is
+satisfied. Delivery Governance must still separately authorize, explicitly
+create, and read back these Environments before a preparation or activation
+change:
 
 | Environment                                  | Required configuration                                                                                                                                                                                                                             |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

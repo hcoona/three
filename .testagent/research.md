@@ -6537,3 +6537,40 @@ outside its language model and the result is not line or branch coverage.
   legacy, or Break-Glass mutation.
 
 <!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-research -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-implementation-closure-research -->
+
+## Workflow Delivery v3 Environment identity implementation closure research
+
+### Merge and check interpretation
+
+- PR #630 rebase-merged without bypass as
+  `9c9901cc38297d212de48d4b51349872ef60d5b4` after all required PR checks
+  passed and Copilot reviewed 18/18 files with no comments.
+- Exact post-merge CodeQL run `33336241756` passed. Exact-SHA Continuous
+  Integration run `33336241729` was canceled by the repository's `main`
+  concurrency only after dependency PR #631 advanced `main` to
+  `abe6d5b6e76ef64e4b7be26b5d7211e9323934d8`.
+- PR #631 changes only six package-manifest/lockfile paths and does not overlap
+  any of the 18 Environment-identity implementation paths. Its successor
+  Continuous Integration run `33336305571` and CodeQL run `33336305602`
+  passed, so current `main` retains the implementation under green checks.
+
+### Authoritative external-state correction
+
+- Fresh registry readback shows nine total package versions, not nine
+  acceptance versions. The exact inventory is eight `wdv3-acceptance`
+  versions (`.1`, `.5`, `.9`, `.13`, and `.17`-`.20`) plus pre-existing
+  version `1.0.0-beta.255.g9fa9b96`.
+- The `latest` npm dist-tag still names the beta, and the eight exact
+  `wdv3-acceptance-*` tags still name their corresponding versions. The earlier
+  implementation research phrase "nine retained acceptance versions" is
+  therefore superseded by this authoritative count.
+- Governance remains `live_enabled: false`; final and transitional
+  Environments, related deployments, and repository marker variables remain
+  absent; and both normal workflow identities remain active with zero runs.
+
+The implementation merge prerequisite is complete. Permanent Environment
+creation remains blocked pending separate explicit user authorization.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-closure-research -->
