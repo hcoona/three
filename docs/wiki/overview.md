@@ -404,16 +404,15 @@ have changed.
     exact `.17`-`.20` versions and tags retained. No post-deletion dispatch
     occurred. Destination acceptance and cleanup are complete, but normal Live
     and `live_enabled: true` remain unauthorized.
-11. A design-only normal Live decision now defines the next bounded delivery
-    without authorizing it. Current inventory at `main@7e04c5c2` finds both
-    permanent normal Environments absent and sole direct collaborator
-    `hcoona`. The accepted single-maintainer exception permits explicit
-    self-approval by `hcoona` without claiming independent review. Future work
-    must keep Governance false through readiness repair, pre-create and verify
-    both Environments, refresh preparation evidence while false, then separate
-    activation, exact-SHA rollout preflight, one correlated attempt-1 `main`
-    dispatch, and terminal reconciliation. Any non-complete result restores
-    false and reconciles read-only; flag-off is not package rollback.
+11. PR #623 merged the normal Live design as `cda7e2d6`. The user then
+    separately authorized only its readiness-repair phase: add exact
+    first-step Environment marker guards and remove the unused misbound
+    approval-finalizer output while Governance stays false. Both permanent
+    Environments remain absent. Environment provisioning, preparation,
+    activation, dispatch, self-approval, package mutation, retry, and
+    Break-Glass remain unauthorized. The accepted single-maintainer exception
+    remains bounded future-phase authority and does not make approval an
+    independent security boundary.
 
 ## Related Pages
 

@@ -2616,3 +2616,21 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   native settings remain externally inspected authority. Closed GitHub Packages
   production behavior as create-only conflict semantics and preserved
   append-only failure/reconciliation rules.
+
+## [2026-08-30] query | Implement normal Live readiness repair
+
+- Recorded the user's separate authorization for readiness repair only after
+  PR #623 merged the design as `cda7e2d6`; later Environment, preparation,
+  activation, dispatch, approval, package, retry, legacy, and Break-Glass
+  phases remain unauthorized.
+- Added distinct approval and capability Environment marker checks as the
+  literal first steps of their Environment jobs. The checks use exact
+  case-sensitive Bash comparison, no `continue-on-error`, and explicit
+  downstream marker-success gates.
+- Preserved publisher failure evidence while preventing Receipt/result
+  artifact work after marker failure; the sole unconditional propagation step
+  is non-mutating and fails explicitly for any non-success marker outcome.
+- Removed the unused approval-finalizer output that mislabeled the Intent
+  artifact ID as an Attempt artifact ID, with no consumer replacement.
+- Kept protected Governance false and made no Environment, workflow-run,
+  deployment, package, tag, legacy, or Break-Glass mutation.

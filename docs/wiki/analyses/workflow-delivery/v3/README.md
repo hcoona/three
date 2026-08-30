@@ -323,15 +323,14 @@ Next:
 9. keep `live_enabled: false`. Destination acceptance is successful, but
    normal Live activation remains a separate production decision and is not
    authorized by this acceptance-only execution; and
-10. retain the normal Live design-only decision confirmed on 2026-08-29.
-    Current inventory at `main@7e04c5c2` finds the normal caller/callee active,
-    both permanent normal Environments absent, the direct collaborator and
-    accepted-writer set limited to `hcoona`, and Governance still false. The
-    confirmed single-maintainer exception permits explicit self-approval by
-    `hcoona` without claiming independent review. Future delivery must first
-    land the disabled readiness repair, pre-create and read back both permanent
-    Environments, refresh preparation evidence while false, then use a separate
-    protected activation change, exact-SHA rollout preflight, one correlated
-    attempt-1 `main` dispatch, and terminal reconciliation. This design does not
-    authorize implementation, Environment creation, activation, dispatch,
-    approval, package mutation, retry, or Break-Glass.
+10. retain the normal Live design merged by PR #623 as
+    `cda7e2d617ffe1877fb8a389dee336270ec06cda`. On 2026-08-30 the user
+    separately authorized only its disabled readiness-repair phase. The
+    readiness candidate removes the unused misbound approval-finalizer output
+    and adds exact first-step approval/capability Environment marker guards,
+    downstream guard-success gating, and non-mutating marker-failure
+    propagation. The confirmed single-maintainer exception remains design
+    authority for a later phase, not current activation authority. Governance
+    remains false, both permanent Environments remain absent, and Environment
+    creation/readback, preparation, activation, dispatch, approval, package
+    mutation, retry, and Break-Glass remain unauthorized.

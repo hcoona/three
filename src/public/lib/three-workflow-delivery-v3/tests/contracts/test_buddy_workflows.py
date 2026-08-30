@@ -32,6 +32,10 @@ APPROVAL_CORRELATION_NAME = (
 PUBLISHER_CORRELATION_NAME = (
     "Run same-revision Buddy live Attempt / Publish to GitHub Packages"
 )
+APPROVAL_ENVIRONMENT_NAME = "workflow-delivery-v3-buddy-smoke-approval"
+CAPABILITY_ENVIRONMENT_NAME = "workflow-delivery-v3-buddy-smoke-github-packages"
+APPROVAL_ENVIRONMENT_MARKER = f"{APPROVAL_ENVIRONMENT_NAME}/v1"
+CAPABILITY_ENVIRONMENT_MARKER = f"{CAPABILITY_ENVIRONMENT_NAME}/v1"
 _WORKFLOW_CANCELLATION_AUTHORITIES = (
     "admit",
     "qualification-finalizer",
@@ -595,6 +599,266 @@ def test_live_attempt_dag_environments_and_capability_gate_are_exact() -> None:
         *_WORKFLOW_CANCELLATION_AUTHORITIES,
         "workflow-cancellation",
     )
+
+
+@pytest.mark.parametrize(
+    (
+        "job_name",
+        "step_name",
+        "step_id",
+        "variable_name",
+        "expected_value",
+    ),
+    [
+        pytest.param(
+            "approval",
+            "Verify approval Environment marker",
+            "approval-environment-marker",
+            "WDV3_APPROVAL_ENVIRONMENT_MARKER",
+            APPROVAL_ENVIRONMENT_MARKER,
+            id="approval",
+        ),
+        pytest.param(
+            "publish-github-packages",
+            "Verify capability Environment marker",
+            "capability-environment-marker",
+            "WDV3_CAPABILITY_ENVIRONMENT_MARKER",
+            CAPABILITY_ENVIRONMENT_MARKER,
+            id="capability",
+        ),
+    ],
+)
+def test_normal_live_environment_marker_guards_are_first_and_exact(
+    job_name: str,
+    step_name: str,
+    step_id: str,
+    variable_name: str,
+    expected_value: str,
+) -> None:
+    job = _document(CALLEE)["jobs"][job_name]
+    steps = _steps(job)
+    guard = _step(job, step_name)
+    environment = job["environment"]
+    actual_environment_name = (
+        environment["name"] if isinstance(environment, dict) else environment
+    )
+    expected_environment_name = expected_value.removesuffix("/v1")
+
+    assert actual_environment_name == expected_environment_name
+    assert steps[0] is guard
+    assert guard["id"] == step_id
+    assert guard["shell"] == "bash"
+    assert "if" not in guard
+    assert guard["env"] == {
+        "ACTUAL_ENVIRONMENT_MARKER": f"${{{{ vars.{variable_name} }}}}"
+    }
+    assert variable_name.casefold() not in str(job.get("if", "")).casefold()
+    assert "continue-on-error" not in guard
+    assert "uses" not in guard
+    command = _run(guard)
+    contract_name = "approval" if job_name == "approval" else "capability"
+    assert command.splitlines() == [
+        (
+            f'if [[ "${{ACTUAL_ENVIRONMENT_MARKER}}" != '
+            f'"{expected_value}" ]]; then'
+        ),
+        (
+            '  echo "::error::Environment marker does not match the '
+            f'{contract_name} Environment contract" >&2'
+        ),
+        "  exit 1",
+        "fi",
+    ]
+
+
+@pytest.mark.parametrize(
+    "guard_case",
+    [
+        pytest.param(
+            (
+                "approval",
+                "Verify approval Environment marker",
+                APPROVAL_ENVIRONMENT_MARKER,
+            ),
+            id="approval",
+        ),
+        pytest.param(
+            (
+                "publish-github-packages",
+                "Verify capability Environment marker",
+                CAPABILITY_ENVIRONMENT_MARKER,
+            ),
+            id="capability",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("marker_case", "expected_status"),
+    [
+        pytest.param("exact", 0, id="exact"),
+        pytest.param("missing", 1, id="missing"),
+        pytest.param("wrong", 1, id="wrong"),
+        pytest.param("case-altered", 1, id="case-altered"),
+    ],
+)
+def test_normal_live_environment_marker_guard_executes_case_sensitive(
+    tmp_path: Path,
+    guard_case: tuple[str, str, str],
+    marker_case: str,
+    expected_status: int,
+) -> None:
+    job_name, step_name, expected_value = guard_case
+    guard = _step(_document(CALLEE)["jobs"][job_name], step_name)
+    actual_value = {
+        "exact": expected_value,
+        "missing": "",
+        "wrong": "wrong-environment/v1",
+        "case-altered": expected_value.upper(),
+    }[marker_case]
+
+    execution = _phase3_execute_workflow_run(
+        tmp_path,
+        _run(guard),
+        {},
+        environment={"ACTUAL_ENVIRONMENT_MARKER": actual_value},
+    )
+
+    assert execution["status"] == expected_status
+    assert ("Environment marker does not match" in execution["output"]) is (
+        expected_status != 0
+    )
+
+
+def test_normal_live_environment_marker_success_gates_downstream_steps() -> (
+    None
+):
+    jobs = _document(CALLEE)["jobs"]
+    approval = jobs["approval"]
+    publisher = jobs["publish-github-packages"]
+    publisher_steps = _steps(publisher)
+    approval_gate = (
+        "success() && steps.approval-environment-marker.outcome == 'success'"
+    )
+    publisher_gate = (
+        "success() && steps.capability-environment-marker.outcome == 'success'"
+    )
+    publisher_always_gate = (
+        "always() && steps.capability-environment-marker.outcome == 'success'"
+    )
+
+    assert [step["name"] for step in _steps(approval)] == [
+        "Verify approval Environment marker",
+        "Fetch exact public target and format Authorization",
+    ]
+    assert _steps(approval)[1]["if"] == approval_gate
+
+    ordinary_steps = (
+        "Check out exact selected target",
+        "Install uv",
+        "Install exact toolchain",
+        "Download publisher closure by artifact ID",
+        "Preflight publication without npm mutation",
+        "Form mutation may-have-started marker",
+        "Upload mutation may-have-started marker",
+        "Publish create-only package action",
+    )
+    retention_conditions = {
+        "Upload exact Receipt": (
+            f"{publisher_always_gate} && "
+            "steps.publish.outputs.receipt-artifact-name != ''"
+        ),
+        "Form Capability Group Result Bundle": publisher_always_gate,
+        "Upload Capability Group Result Bundle": (
+            f"{publisher_always_gate} && "
+            "steps.form-bundle.outputs."
+            "capability-group-bundle-artifact-name != ''"
+        ),
+    }
+    expected_names = {
+        "Verify capability Environment marker",
+        *ordinary_steps,
+        *retention_conditions,
+        "Propagate publication status",
+    }
+    assert {step["name"] for step in publisher_steps} == expected_names
+    for step_name in ordinary_steps:
+        assert _step(publisher, step_name)["if"] == publisher_gate
+    for step_name, expected_condition in retention_conditions.items():
+        assert _step(publisher, step_name)["if"] == expected_condition
+
+    propagate = _step(publisher, "Propagate publication status")
+    assert propagate["if"] == "always()"
+    assert "continue-on-error" not in propagate
+    assert "uses" not in propagate
+    assert "env" not in propagate
+    propagation = _run(propagate)
+    assert (
+        '"${{ steps.capability-environment-marker.outcome }}" != "success"'
+        in propagation
+    )
+    for forbidden in (
+        "GITHUB_TOKEN",
+        "github.token",
+        "npm publish",
+        "publish-github-packages",
+        "mark-github-packages-mutation-start",
+        "actions/upload-artifact",
+    ):
+        assert forbidden not in propagation
+
+    for step in publisher_steps[1:]:
+        if step is propagate:
+            continue
+        assert (
+            "steps.capability-environment-marker.outcome == 'success'"
+            in step["if"]
+        )
+
+
+@pytest.mark.parametrize(
+    ("marker_outcome", "expected_status"),
+    [
+        pytest.param("success", 0, id="success"),
+        pytest.param("failure", 1, id="failure"),
+        pytest.param("skipped", 1, id="skipped"),
+        pytest.param("cancelled", 1, id="cancelled"),
+    ],
+)
+def test_normal_live_capability_marker_failure_propagates(
+    tmp_path: Path,
+    marker_outcome: str,
+    expected_status: int,
+) -> None:
+    propagate = _step(
+        _document(CALLEE)["jobs"]["publish-github-packages"],
+        "Propagate publication status",
+    )
+    execution = _phase3_execute_workflow_run(
+        tmp_path,
+        _run(propagate),
+        {
+            "steps.capability-environment-marker.outcome": marker_outcome,
+            "steps.form-bundle.outcome": "success",
+            "steps.mark-mutation.outcome": "success",
+            "steps.preflight.outcome": "success",
+            "steps.publish.outcome": "success",
+            "steps.upload-mutation-marker.outcome": "success",
+            "steps.upload.outcome": "success",
+        },
+    )
+
+    assert execution["status"] == expected_status
+    assert execution["output"] == ""
+
+
+def test_approval_finalizer_has_no_misbound_attempt_output() -> None:
+    document = _document(CALLEE)
+    approval_finalizer = document["jobs"]["approval-finalizer"]
+    raw = CALLEE.read_text(encoding="utf-8")
+
+    assert "attempt-artifact-id" not in approval_finalizer["outputs"]
+    assert "needs.approval-finalizer.outputs.attempt-artifact-id" not in raw
+    assert "attempt-artifact-id: ${{ inputs.intent-artifact-id }}" not in raw
 
 
 def test_shared_qualification_commands_admit_live_purpose_explicitly() -> None:
@@ -1824,10 +2088,13 @@ def test_commit8_failed_capability_forms_and_uploads_exactly_one_bundle() -> (
 
     assert publish["continue-on-error"] is True
     assert "publish-cli-status=${status}" in _run(publish)
-    assert form["if"] == "always()"
+    assert form["if"] == (
+        "always() && steps.capability-environment-marker.outcome == 'success'"
+    )
     assert len(uploads) == 1
     assert uploads[0]["if"] == (
         "always() && "
+        "steps.capability-environment-marker.outcome == 'success' && "
         "steps.form-bundle.outputs.capability-group-bundle-artifact-name != ''"
     )
     assert "steps.publish.outcome" in _run(form)
@@ -2216,6 +2483,7 @@ def test_user_item12_failed_publication_uploads_nonempty_bundle_before_propagati
     assert "capability-group-bundle-digest" in form_command
     assert upload["if"] == (
         "always() && "
+        "steps.capability-environment-marker.outcome == 'success' && "
         "steps.form-bundle.outputs.capability-group-bundle-artifact-name != ''"
     )
     assert upload["with"]["path"].endswith(
