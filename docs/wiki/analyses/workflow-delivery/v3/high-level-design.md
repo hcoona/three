@@ -274,12 +274,44 @@ The architecture has three runtime trust zones:
 The zone separation above remains normative for CI, Official, simulation, and
 future destinations unless separately approved. The first live Buddy
 `hcoona-release-smoke-npm` GitHub Packages slice is a bounded exception: after
-dedicated Buddy Environment approval and credential-free Capability Admission,
+approval through its selected Buddy Approval Environment Profile and
+credential-free Capability Admission,
 its target-revision side-effect job runs target-revision publisher code with
 short-lived `GITHUB_TOKEN` and minimum
 `packages: write`; this exception permits target-revision control and publisher
 code, not execution of target-defined product/build code. It receives no PAT
 and no `id-token: write`.
+
+### Environment Identity Profiles
+
+Delivery Governance selects Environment identities by authority policy, not by
+package or slice name alone.
+
+- An Approval Environment Profile is keyed by repository, channel, reviewer and
+  self-review policy, wait and branch/tag policy, administrator-bypass posture,
+  and credential-free behavior.
+- A Capability Environment Profile is keyed by repository, channel,
+  destination trust boundary, credential source including its identity
+  contract, GitHub permission and destination-access policy, reviewer policy
+  fixed to `none`, wait and branch/tag policy, and administrator-bypass posture.
+- Release policies with identical profiles may share the same Environment
+  identity. Each Release Attempt that reaches a referenced Environment gate
+  creates a fresh deployment for that gate. For an Approval Environment, any
+  human review is current-Attempt only, and the package-bound Authorization
+  Record is emitted only after successful approval. GitHub aggregates
+  Environment-level deployment history, but sharing never transfers
+  eligibility, approval, Capability, or Attempt/package lineage.
+- Any profile difference requires a distinct Environment identity. Exact names
+  and profile mappings are Delivery Governance-owned LLD/platform
+  configuration contracts.
+- A destination that requires human approval at the capability boundary is
+  outside this one-approval architecture and requires a new architecture
+  decision.
+
+For the repository's single-maintainer model, pull-request-only contributors
+remain outside the writer TCB and do not change the shared approval profile.
+Granting Write, Maintain, or Admin access is a Governance change and blocks
+affected Live policies until reinspection.
 
 For that slice, Environment approval is the trust elevation for
 branch-controlled publication code. The architecture does not claim an
@@ -305,20 +337,23 @@ not impose a non-bypassable `GITHUB_TOKEN` permission ceiling against a
 malicious repository writer. Such a trusted writer can create alternate
 workflow YAML or jobs with `packages: write`.
 
-The exception is limited to the dedicated disposable smoke package and isolated
-GitHub Packages destination and Buddy Environment. The package has no normal
-developer, CI, or production consumers. Access is minimized; delete, restore,
-and planned permission, visibility, or admin actions are excluded from ordinary
-publication; deletion and restore require Break-Glass handling. Latent
-repository/package admin authority held by trusted actors remains accepted
-misuse risk. Correct isolation prevents Official capability and known
-Official/production package access. Rollout records actual token permissions
-and package/repository grants and uses safe denial probes only for enumerated
-unrelated assets; it does not claim universal negative reach proof. Other
-reachable package operations under the smallest configured grants remain
-accepted writer-TCB risk. Optional workflow-execution protections may reduce
-who can execute workflows but are not required and are not treated as per-job
-permission ceilings. If repository membership changes so that any
+The exception is limited to the dedicated disposable smoke package, isolated
+GitHub Packages destination, and exact selected Approval and Capability
+Environment Profiles. Sharing a compatible Environment identity with a future
+separately governed policy does not broaden or transfer this package-specific
+exception. The package has no normal developer, CI, or production consumers.
+Access is minimized; delete, restore, and planned permission, visibility, or
+admin actions are excluded from ordinary publication; deletion and restore
+require Break-Glass handling. Latent repository/package admin authority held by
+trusted actors remains accepted misuse risk. Correct isolation prevents
+Official capability and known Official/production package access. Rollout
+records actual token permissions and package/repository grants and uses safe
+denial probes only for enumerated unrelated assets; it does not claim universal
+negative reach proof. Other reachable package operations under the smallest
+configured grants remain accepted writer-TCB risk. Optional workflow-execution
+protections may reduce who can execute workflows but are not required and are
+not treated as per-job permission ceilings. If repository membership changes so
+that any
 Write/Maintain/Admin actor is not trusted to publish, the slice blocks until
 either that actor's repository access is reduced below Write/Maintain/Admin or
 package-write Capability and destination access are placed behind an
@@ -387,32 +422,37 @@ workflow input:
    permanent Environment jobs, explicit marker-success gating for every later
    operational step, non-mutating exceptional handlers, and removal of any
    misleading unused interface;
-2. Delivery Governance explicitly creates and reads back the approval and
-   capability Environments. The approval Environment has sole reviewer
+2. before either final Environment is created, a protected implementation
+   change replaces every transitional approval/capability Environment and marker
+   binding across workflow, source, records, validators, formatters, tests, and
+   current-state contracts with the final profile mappings while false;
+3. Delivery Governance explicitly creates and reads back the approval and
+   capability Environments selected by the first slice's exact profiles. The
+   approval Environment has sole reviewer
    `hcoona` under the confirmed self-review exception. The capability
-   Environment has no second reviewer. Neither stores a publication credential.
-   Both preserve the any-same-repository-ref contract, and administrator bypass
-   is disabled where the platform exposes that control. Where no documented
-   public API configures or authoritatively reads that control, authenticated
-   post-save UI evidence is retained and any undocumented API field is
-   corroborating evidence only;
-3. distinct Environment-scoped markers make accidental implicit Environment
+   Environment has no required reviewer and performs no human approval. Neither
+   stores a publication credential. Both preserve the any-same-repository-ref
+   contract, and administrator bypass is disabled where the platform exposes
+   that control. Where no documented public API configures or authoritatively
+   reads that control, authenticated post-save UI evidence is retained and any
+   undocumented API field is corroborating evidence only;
+4. distinct Environment-scoped markers make accidental implicit Environment
    creation fail before Authorization or mutation. They are not native-setting
    proof, do not protect historical selected-ref code, and cannot replace
    authenticated platform inspection or writer-TCB attestation;
-4. a protected preparation change records one-to-one evidence for every
+5. a protected preparation change records one-to-one evidence for every
    activation-gate item and refreshes the attestation while keeping false;
-5. operators freeze every other `main` write and normal Buddy dispatch, then a
+6. operators freeze every other `main` write and normal Buddy dispatch, then a
    separate minimal protected activation change sets true;
-6. rollout preflight binds the exact activation merge SHA, current Governance
+7. rollout preflight binds the exact activation merge SHA, current Governance
    source, Environments, access inventory, no-consumer result, workflow/run
    inventory, package coordinate/tag pre-state, legacy retirement, acceptance
    cleanup, retention, and checks. It is distinct from the Attempt-bound
    post-approval publisher preflight;
-7. the operator captures the existing run set, dispatches `main` once, requires
+8. the operator captures the existing run set, dispatches `main` once, requires
    one uniquely correlated attempt-1 run at the activation SHA, inspects the
    immutable reviewer summary, and explicitly approves that deployment; and
-8. only a canonical Attempt Outcome with result `success` plus exact
+9. only a canonical Attempt Outcome with result `success` plus exact
    destination reconciliation releases the `main`/dispatch freeze and leaves
    true. Any lesser outcome keeps dispatch and unrelated `main` writes frozen,
    permits only the minimal protected false change before terminal state,
