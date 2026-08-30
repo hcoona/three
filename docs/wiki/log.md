@@ -2675,3 +2675,27 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   dispatch, approval, package, tag, legacy, or Break-Glass mutation. Permanent
   Environment creation remains blocked pending implementation merge and
   separate explicit authorization.
+
+## [2026-08-30] query | Close normal Live Environment identity implementation
+
+- Rebase-merged implementation PR #630 without bypass as
+  `9c9901cc38297d212de48d4b51349872ef60d5b4`. All required PR checks passed,
+  and Copilot reviewed 18/18 files with no comments.
+- Exact post-merge CodeQL run `33336241756` passed. Exact-SHA Continuous
+  Integration run `33336241729` was canceled only when non-overlapping
+  dependency PR #631 advanced `main` to
+  `abe6d5b6e76ef64e4b7be26b5d7211e9323934d8`; successor Continuous
+  Integration run `33336305571` and CodeQL run `33336305602` passed.
+- Fresh authenticated read-only reconciliation found protected Governance
+  unchanged at `live_enabled: false`; final and transitional Environments,
+  related deployments, and both marker variables absent; and active normal
+  workflow IDs `340952169` and `340952170` still at zero runs.
+- Corrected the package inventory wording: the registry retains nine total
+  versions, comprising eight `wdv3-acceptance` versions
+  (`.1`, `.5`, `.9`, `.13`, and `.17`-`.20`) plus the pre-existing
+  `1.0.0-beta.255.g9fa9b96`; every corresponding npm dist-tag is unchanged.
+- The implementation merge prerequisite is satisfied. Permanent Environment
+  creation and authenticated readback remain blocked pending separate explicit
+  user authorization; no Environment, marker variable, deployment, normal Live
+  dispatch, approval, package, tag, acceptance ref, legacy, or Break-Glass
+  mutation occurred.

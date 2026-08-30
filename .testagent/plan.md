@@ -6929,3 +6929,40 @@ preparation, activation, dispatch, approval, package mutation, retry, legacy
 restoration, or Break-Glass.
 
 <!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-plan -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-implementation-closure-plan -->
+
+## Workflow Delivery v3 Environment identity implementation closure
+
+This closure supersedes the unchecked execution boxes in the immediately
+preceding implementation plan without rewriting that append-only planning
+record.
+
+### Completed implementation delivery
+
+- [x] Passed the focused and complete Workflow Delivery v3 test suites,
+  Actionlint, Ruff, Ruff format, Pyrefly, Prettier, markdownlint, diff checks,
+  and exact unstaged/staged HK gates.
+- [x] Completed independent runtime, test-contract, authority/current-state,
+  test-gap, assertion-quality, and final changed-file reviews with no remaining
+  findings.
+- [x] Committed and pushed the atomic implementation, opened protected PR #630,
+  passed all required checks, received a clean 18/18-file Copilot review, and
+  rebase-merged without bypass as
+  `9c9901cc38297d212de48d4b51349872ef60d5b4`.
+- [x] Reconciled exact post-merge CodeQL and the non-overlapping successor
+  `main` CI/CodeQL, Governance false, absent final/transitional Environments,
+  deployments, and markers, zero normal Live runs, and unchanged package/tag
+  state.
+
+### Remaining external gate
+
+- [ ] Obtain separate explicit user authorization before creating or reading
+  back either permanent Environment.
+
+The implementation merge prerequisite is complete. This closure authorizes no
+Environment, marker variable, deployment, preparation, activation, normal Live
+dispatch, approval, package, tag, acceptance ref, retry, legacy, or Break-Glass
+mutation.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-closure-plan -->

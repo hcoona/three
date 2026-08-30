@@ -407,23 +407,24 @@ have changed.
     occurred. Destination acceptance and cleanup are complete, but normal Live
     and `live_enabled: true` remain unauthorized.
 11. PR #623 merged the normal Live design as `cda7e2d6`, PR #624 merged its
-    disabled readiness repair as `2db88a56`, and PR #629 merged the Environment
-    identity design as `d2de3356`. Environment identity follows authority
-    policy rather than package/slice naming: Buddy approval may be shared only
-    across an identical reviewer/Governance profile, while capability identity
-    is shared only across an identical destination, credential, permission,
-    and access profile with reviewer policy fixed to `none`. A reviewer-bearing
+    disabled readiness repair as `2db88a56`, PR #629 merged the Environment
+    identity design as `d2de3356`, and PR #630 merged the atomic implementation
+    rename as `9c9901cc`. Environment identity follows authority policy rather
+    than package/slice naming: Buddy approval may be shared only across an
+    identical reviewer/Governance profile, while capability identity is shared
+    only across an identical destination, credential, permission, and access
+    profile with reviewer policy fixed to `none`. A reviewer-bearing
     destination requires a new architecture decision. The first-slice mappings
     are
     `workflow-delivery-v3-buddy-approval` and
-    `workflow-delivery-v3-buddy-github-packages`. The protected implementation
-    rename now updates all workflow, source, record, formatter, validator, test,
-    marker, and current-state bindings to those mappings while false. Both
+    `workflow-delivery-v3-buddy-github-packages`. All required implementation
+    PR checks and its 18/18-file Copilot review passed. Exact post-merge CodeQL
+    and the non-overlapping successor `main` CI and CodeQL passed. Both
     permanent Environments remain absent; Governance stays false; provisioning,
     preparation, activation, dispatch, self-approval, package mutation, retry,
     and Break-Glass remain unauthorized. The accepted single-maintainer
-    exception remains package-specific and does not make approval an independent
-    security boundary.
+    exception remains package-specific and does not make approval an
+    independent security boundary.
 
 ## Related Pages
 

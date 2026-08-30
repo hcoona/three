@@ -417,12 +417,18 @@ If it conflicts with the
   `workflow-delivery-v3-buddy-approval` and
   `workflow-delivery-v3-buddy-github-packages`. PR #629 rebase-merged the
   design as `d2de3356b744e39d31bb4ac0038bdee438c5592d`; post-merge Continuous
-  Integration run `33331702348` passed. The protected implementation rename
-  now updates workflow, source, record, formatter, validator, test, marker, and
-  current-state contracts to those mappings while false.
-- Future delivery remains ordered: after the implementation rename merges,
-  separately authorize explicit creation and authenticated readback of both
-  permanent Environments.
+  Integration run `33331702348` passed. PR #630 rebase-merged the protected
+  atomic implementation rename as
+  `9c9901cc38297d212de48d4b51349872ef60d5b4`. All required PR checks passed,
+  and Copilot reviewed 18/18 files with no comments. Exact post-merge CodeQL
+  run `33336241756` passed. Exact-SHA Continuous Integration run
+  `33336241729` was canceled only because non-overlapping dependency PR #631
+  advanced `main` to `abe6d5b6e76ef64e4b7be26b5d7211e9323934d8`; successor
+  Continuous Integration run `33336305571` and CodeQL run `33336305602`
+  passed.
+- The implementation merge prerequisite is complete. Future delivery remains
+  ordered: separately authorize explicit creation and authenticated readback
+  of both permanent Environments.
   Protected preparation evidence while false, freeze of other `main` writes
   and normal dispatch, minimal protected activation, exact activation-SHA
   rollout preflight, one uniquely correlated attempt-1 `main` dispatch,
