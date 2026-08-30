@@ -415,13 +415,14 @@ If it conflicts with the
   relevant policy change requires false and a new Governance decision.
 - The first slice's final profile mappings are
   `workflow-delivery-v3-buddy-approval` and
-  `workflow-delivery-v3-buddy-github-packages`. The merged workflow and source
-  still contain the earlier `buddy-smoke` identities. A separately reviewed
-  implementation PR must update workflow, source, record, formatter, validator,
-  test, marker, and current-state contracts before external creation.
-- Future delivery remains ordered: merge this design correction, merge the
-  implementation rename while false, then separately authorize explicit
-  creation and authenticated readback of both permanent Environments.
+  `workflow-delivery-v3-buddy-github-packages`. PR #629 rebase-merged the
+  design as `d2de3356b744e39d31bb4ac0038bdee438c5592d`; post-merge Continuous
+  Integration run `33331702348` passed. The protected implementation rename
+  now updates workflow, source, record, formatter, validator, test, marker, and
+  current-state contracts to those mappings while false.
+- Future delivery remains ordered: after the implementation rename merges,
+  separately authorize explicit creation and authenticated readback of both
+  permanent Environments.
   Protected preparation evidence while false, freeze of other `main` writes
   and normal dispatch, minimal protected activation, exact activation-SHA
   rollout preflight, one uniquely correlated attempt-1 `main` dispatch,
@@ -430,13 +431,15 @@ If it conflicts with the
   false through protected review, accounts for all in-flight work, and
   reconciles read-only. Flag-off is not package rollback or instantaneous
   capability revocation.
-- The merged readiness repair remains valid in mechanism but its old marker
-  values are transitional until the implementation rename. Markers only detect
-  missing/misbound configuration for the exact named Environment and repaired
-  revision; native settings remain externally inspected authority. Production
-  Adapter semantics remain create-only conflict: an identical conflict may
-  become exact/no-op only in a later whole Attempt, while a differing conflict
-  remains reconciliation-required.
+- The merged readiness repair remains valid in mechanism. The implementation
+  rename rotates its transitional names and marker values to the final mappings
+  without changing first-step guards, downstream gates, permissions, or
+  failure behavior. Markers only detect missing/misbound configuration for the
+  exact named Environment and repaired revision; native settings remain
+  externally inspected authority. Production Adapter semantics remain
+  create-only conflict: an identical conflict may become exact/no-op only in a
+  later whole Attempt, while a differing conflict remains
+  reconciliation-required.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

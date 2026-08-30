@@ -2655,3 +2655,23 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   shared.
 - Kept `live_enabled: false`; no workflow, source, test, Environment,
   deployment, package, tag, legacy, or Break-Glass mutation occurred.
+
+## [2026-08-30] query | Implement normal Live Environment identity mappings
+
+- Reconciled Environment identity design PR #629 after its protected
+  rebase-merge as `d2de3356b744e39d31bb4ac0038bdee438c5592d`; post-merge
+  Continuous Integration run `33331702348` passed.
+- Atomically replaced the transitional approval and GitHub Packages capability
+  Environment names across the live workflow, marker values, Authorization
+  producer and validator paths, existing tests, and current-state contracts.
+- Preserved the readiness repair's first-step exact marker checks, explicit
+  downstream success gates, non-mutating failure handling, permissions, and
+  workflow topology without adding a profile registry or runtime abstraction.
+- Kept protected Governance `live_enabled: false`. Both final and transitional
+  Environments, both marker variables, and all related deployments remain
+  absent; normal workflow IDs `340952169` and `340952170` remain active with
+  zero runs.
+- Created no Environment or variable and performed no preparation, activation,
+  dispatch, approval, package, tag, legacy, or Break-Glass mutation. Permanent
+  Environment creation remains blocked pending implementation merge and
+  separate explicit authorization.

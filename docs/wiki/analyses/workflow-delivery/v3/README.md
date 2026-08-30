@@ -327,6 +327,8 @@ Next:
 10. retain the normal Live design merged by PR #623 as
     `cda7e2d617ffe1877fb8a389dee336270ec06cda` and the readiness repair merged
     by PR #624 as `2db88a56df58e3e957fb366390882a6089cebfe1`.
+    PR #629 rebase-merged the Environment identity design as
+    `d2de3356b744e39d31bb4ac0038bdee438c5592d`.
     On 2026-08-30 the user confirmed a policy-scoped Environment identity
     model for the repository's single-maintainer operation: Buddy approval is
     shared only across Release policies with the same reviewer/Governance
@@ -337,9 +339,9 @@ Next:
     and `workflow-delivery-v3-buddy-github-packages`. Sharing never transfers
     package Governance, approval, Authorization, Capability, or Attempt/package
     lineage; GitHub's Environment-level deployment history is shared.
-    A follow-up implementation PR must atomically update workflow, source,
-    record, formatter, validator, test, marker, and current-state contracts
-    before either Environment is created. Governance remains false, both
-    permanent Environments remain absent, and Environment creation/readback,
-    preparation, activation, dispatch, approval, package mutation, retry, and
-    Break-Glass remain unauthorized.
+    The protected implementation rename now atomically updates workflow,
+    source, record, formatter, validator, test, marker, and current-state
+    contracts to those final mappings while false. Governance remains false,
+    both permanent Environments remain absent, and Environment
+    creation/readback, preparation, activation, dispatch, approval, package
+    mutation, retry, and Break-Glass remain unauthorized.

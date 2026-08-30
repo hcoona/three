@@ -6486,3 +6486,54 @@ outside its language model and the result is not line or branch coverage.
   than assumes successful approval and repeats the complete all-surface rename.
 
 <!-- END APPEND: 2026-08-30-wdv3-environment-identity-design-research -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-implementation-research -->
+
+## Workflow Delivery v3 Environment identity implementation research
+
+### Protected baseline
+
+- Environment identity design PR #629 rebase-merged as
+  `d2de3356b744e39d31bb4ac0038bdee438c5592d`; post-merge Continuous
+  Integration run `33331702348` passed.
+- Protected Governance remains `live_enabled: false` with expiry
+  `2026-11-12T17:19:12Z`, and the design merge did not change the protected
+  Governance source.
+- Final and transitional approval/capability Environments, their deployments,
+  and repository marker variables are absent. Normal workflow IDs `340952169`
+  and `340952170` remain active with zero runs.
+- The smoke package still has exactly nine retained acceptance versions; the
+  newest are `.17` through `.20` from retry 5. No normal package or tag mutation
+  followed the design merge.
+
+### Exact implementation surface
+
+- The live Attempt workflow owns the approval and publisher Environment names
+  and exact `/v1` marker values. Marker variable keys, guard IDs, first-step
+  ordering, exact Bash comparison, and downstream success gates do not change.
+- The same approval Environment identity is intentionally repeated by the
+  dependency-free same-revision Authorization formatter, the Release helper
+  that forms an Authorization Record, and the record validator. All three must
+  move together so a target revision cannot emit or accept a mixed identity.
+- Existing CLI, Release boundary, scenario, record, and workflow contract tests
+  carry the same identity as executable evidence. No new test architecture is
+  required; this change updates the existing locked contract.
+- Current-state README, handoff, LLD, migration, overview, log, and append-only
+  ledgers must stop describing the implementation rename as pending. Normative
+  Requirements retain the transitional names because they specify the
+  before-creation replacement condition. Historical ledgers retain old names as
+  evidence of the exact revisions they describe.
+
+### Design discipline
+
+- The implementation is a literal contract rename, not a new Profile registry,
+  runtime Profile object, shared configuration module, or environment-discovery
+  mechanism.
+- Deliberate literal duplication across the dependency-free formatter and the
+  validator remains fail-closed revision-local authority rather than accidental
+  duplication to abstract away.
+- The change creates no Environment or variable, requests no deployment, and
+  performs no preparation, activation, dispatch, approval, package, tag,
+  legacy, or Break-Glass mutation.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-research -->

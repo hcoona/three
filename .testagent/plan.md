@@ -6878,3 +6878,54 @@ configure, and read back only `workflow-delivery-v3-buddy-approval` and
 This clarification authorizes no external mutation.
 
 <!-- END APPEND: 2026-08-30-wdv3-environment-creation-supersession -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-implementation-plan -->
+
+## Workflow Delivery v3 Environment identity implementation plan
+
+### Phase 1: atomically rename the contract
+
+- [x] Reconcile design PR #629 and confirm post-merge CI, Governance false,
+  absent final/transitional Environments and markers, zero normal workflow
+  runs, and unchanged package state.
+- [x] Replace approval and capability Environment names and marker values in
+  the live Attempt workflow without changing guards, gates, permissions, or
+  topology.
+- [x] Replace the approval identity in the exact-revision Authorization
+  formatter, Release helper, record validator, and all existing executable
+  tests.
+- [x] Synchronize current-state README, handoff, LLD, migration, overview, log,
+  research, and plan contracts while preserving normative and historical
+  references.
+
+### Phase 2: validate and review
+
+- [ ] Run the focused workflow, CLI, Release boundary, scenario, and record test
+  set, then the complete Workflow Delivery v3 package suite.
+- [ ] Run Actionlint, Ruff, Ruff format check, Pyrefly, Prettier, markdownlint,
+  `git diff --check`, and unstaged/staged HK gates already configured for the
+  changed paths.
+- [ ] Run independent workflow/runtime, test-contract, authority-boundary, and
+  documentation reviews. Independently adjudicate every finding and iterate
+  until closure reviewers return no findings.
+- [ ] Append exact implementation and validation evidence to
+  `.testagent/status.md`.
+
+### Phase 3: protected delivery
+
+- [ ] Commit the atomic implementation and its current-state evidence in
+  human-reviewable commits.
+- [ ] Push a protected implementation PR, resolve CI and Copilot review, and
+  merge without bypass.
+- [ ] Reconcile post-merge CI, Governance false, absent final/transitional
+  Environments and marker variables, zero normal Live runs, and unchanged
+  package/tag state.
+
+### External-state boundary
+
+Permanent Environment creation remains blocked until implementation merge and
+separate explicit authorization. This plan does not authorize configuration,
+preparation, activation, dispatch, approval, package mutation, retry, legacy
+restoration, or Break-Glass.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-plan -->

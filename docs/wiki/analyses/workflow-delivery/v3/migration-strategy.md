@@ -221,10 +221,10 @@ Normal Live activation uses this separate ordered procedure:
    explicitly gate every later operational step on marker success, leave
    exceptional handlers non-mutating, and remove the unused misbound
    approval-finalizer Attempt output;
-2. merge a protected implementation change while false that replaces every
-   transitional approval/capability Environment and marker binding across
-   workflow, source, records, formatters, validators, tests, and current-state
-   contracts with the final profile mappings;
+2. retain the protected implementation rename merged while false, which
+   replaces every transitional approval/capability Environment and marker
+   binding across workflow, source, records, formatters, validators, tests, and
+   current-state contracts with the final profile mappings;
 3. only after that rename, separately authorize and create the first slice's two
    permanent profile mappings explicitly:
    `workflow-delivery-v3-buddy-approval` for the shared Buddy Approval
