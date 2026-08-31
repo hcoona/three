@@ -2726,3 +2726,21 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Protected Governance and the exact nine-version package/dist-tag inventory
   remained unchanged. The next preparation and activation boundaries require
   separate authorization.
+
+## [2026-08-31] query | Close permanent Environment provisioning
+
+- Rebased provisioning evidence PR #635 over non-overlapping dependency PRs
+  #633 and #634, then rebase-merged it without bypass as
+  `5cae672c139de1956a96e75f02f224c826c06939`.
+- All required checks passed. Exact-head Copilot review covered 9/9 files with
+  zero comments and requested only final human verification of external UI
+  evidence; authenticated owner comment `5472131067` records the completed
+  save/reload confirmation.
+- Post-merge Continuous Integration run `33343870709` passed. Fresh
+  authenticated readback reconfirmed exact Environment settings and markers,
+  zero secrets, zero deployments, absent same-name repository variables, and
+  zero normal workflow runs.
+- Protected Governance remains `live_enabled: false`, and package/dist-tag
+  state is unchanged. Permanent Environment provisioning is complete;
+  protected preparation remains blocked pending separate explicit
+  authorization.

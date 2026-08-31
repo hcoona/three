@@ -12242,3 +12242,39 @@ Environment creation and native-setting readback are complete. Protected
 preparation remains blocked pending separate explicit authorization.
 
 <!-- END APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-status -->
+
+<!-- BEGIN APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-status -->
+
+## Workflow Delivery v3 permanent Environment provisioning closure
+
+### Protected delivery
+
+- Evidence commit was rebased to exact head
+  `7f9782ff4ee3d2199d6c03f78de017a38a756d4d` after non-overlapping PRs #633
+  and #634 advanced `main`.
+- All required PR checks passed.
+- Exact-head Copilot review covered 9/9 files and generated zero comments. Its
+  human-verification request was satisfied by authenticated owner comment
+  `5472131067`, which records save/reload confirmation for both Environment
+  bypass controls.
+- PR #635 rebase-merged without bypass as
+  `5cae672c139de1956a96e75f02f224c826c06939`.
+- Post-merge Continuous Integration run `33343870709` passed.
+
+### Final read-only reconciliation
+
+- Approval Environment `20895030723` retains rule `64124473`, sole reviewer
+  `hcoona` / `712433`, self-review permitted, all branches, zero secrets,
+  exact marker, and supplemental `can_admins_bypass: false`.
+- Capability Environment `20895037877` retains no protection rule, all
+  branches, zero secrets, exact marker, and supplemental
+  `can_admins_bypass: false`.
+- Related deployments and same-name repository variables remain absent.
+- Normal workflow IDs `340952169` and `340952170` remain active with zero runs.
+- Protected Governance remains `live_enabled: false`; package and dist-tag
+  inventory is unchanged.
+
+Permanent Environment provisioning and evidence delivery are complete.
+Protected preparation remains blocked pending separate explicit authorization.
+
+<!-- END APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-status -->

@@ -423,7 +423,8 @@ have changed.
     separate explicit authorization, permanent approval Environment
     `20895030723` and capability Environment `20895037877` were created with
     exact markers and authenticated-read settings. API and saved/reloaded UI
-    evidence agree that administrator bypass is disabled. Governance stays
+    evidence agree that administrator bypass is disabled. Provisioning evidence
+    PR #635 merged as `5cae672c`, and post-merge CI passed. Governance stays
     false; no deployment or normal workflow run exists; and preparation,
     activation, dispatch, self-approval, package mutation, retry, and
     Break-Glass remain unauthorized. The accepted single-maintainer exception
