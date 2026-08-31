@@ -5,11 +5,13 @@
 Architecture version: **v3**.
 
 This is the normative glossary for the clean v3 implementation line. It records
-terms and principles confirmed during architecture review before comparison
-with v1 or v2 implementation details.
+the approved current architecture rather than completed rollout or retry
+ceremony.
 
-Confirmed entries should remain stable. Open terms are explicitly identified and
-must not be treated as settled architecture.
+The current implementation remains disabled with `live_enabled: false`.
+
+Confirmed entries should remain stable. Any unresolved term is identified
+inline and must not be treated as settled architecture.
 
 ## System Framing
 
@@ -38,7 +40,8 @@ publication side effects.
 
 The business system that accepts an explicit release intent for an immutable
 revision, rebuilds the release outputs, performs its own required quality checks,
-obtains authorization, publishes outputs, and records the resulting external state.
+reconciles destination state, obtains authorization when a publication action
+is required, and records the resulting external state.
 
 Release Delivery does not reuse artifacts produced by pull request builds and does
 not consume CI check results as release evidence.
@@ -93,9 +96,12 @@ capability only after qualification and governance approval.
 It consumes verified immutable artifacts and a fully materialized publish
 request. It normally must not check out or execute code from the release target.
 The First-Slice Buddy Risk Exception instead runs target-revision publisher code
-after human approval of the current Attempt's deployment to the Environment
-identity mapped from the Governance-selected Buddy Approval Environment
-Profile. Its output is a publication receipt for reconciliation.
+after human approval through the literal Approval Environment
+`workflow-delivery-v3-buddy-approval`. Before mutation, the publisher validates
+the complete Publication Authorization and persists the
+mutation-may-have-started marker. A successful `published` Publication Result
+embeds exactly one Receipt; a controlled failed Result after the marker may
+omit the Receipt while preserving mutation classification and diagnostics.
 
 ### Buddy
 
@@ -106,9 +112,14 @@ Buddy may produce externally installable outputs. Normally its target
 eligibility is channel policy. For the first `hcoona-release-smoke-npm` live
 GitHub Packages slice, any same-repository ref selected by
 `workflow_dispatch` is eligible without protected-ref or CODEOWNERS approval.
-It uses the same Release planning, build, qualification, evidence, and
-side-effect lifecycle as Official, but publishes only through isolated channel,
-destination, package-coordinate, and Capability boundaries.
+Its selected-revision control must strictly admit the active protected
+Governance schema; an older incompatible ref fails before Execution lookup,
+Attempt creation, or any Environment job. Compatible refs use the same Release
+planning, build, qualification, evidence, and side-effect lifecycle as
+Official. The normal intended action names the dedicated smoke coordinate,
+while Official credentials and destinations remain separate. The first-slice
+GitHub Packages token is repository-scoped and is not isolated to that
+coordinate.
 
 Buddy does not occupy an Official canonical destination or create an
 authoritative production release record.
@@ -123,151 +134,109 @@ for dry-run.
 
 ### First-Slice Buddy Risk Exception
 
-The explicitly accepted bounded trust exception for live publication of the
-dedicated disposable `hcoona-release-smoke-npm` package to GitHub Packages.
-It was reopened and reconfirmed before LLD on 2026-08-06.
+The explicitly accepted first-slice trust exception for live publication of
+the dedicated `hcoona-release-smoke-npm` coordinate to GitHub Packages.
 
-The exact selected target supplies workflow, control, Planner, Finalizer, and
-publisher code. After the exact Publication Snapshot is sealed, the current
-Attempt's deployment to the protected Environment identity mapped from the
-Governance-selected Buddy Approval Environment Profile requires human approval.
-Only after that approval does the target-revision side-effect job receive
-short-lived `GITHUB_TOKEN` with minimum `packages: write`; it receives no PAT and
-no `id-token: write`.
+The selected same-repository ref resolves to one exact SHA that supplies the
+workflow, control, Planner, Finalizer, publisher, and Release target. Protected
+Governance is fetched independently from `main`. The replacement uses exact
+schema `workflow-delivery/v3/normal-live-governance-attestation-v1` as a
+compatibility fence: superseded selected-revision parsers fail before any
+Environment job. An action-bearing Attempt uses the literal Approval
+Environment `workflow-delivery-v3-buddy-approval`; after approval and complete
+Publication Authorization, the target-revision publisher receives short-lived
+repository `GITHUB_TOKEN` with effective `packages: write`, no PAT, and no
+`id-token: write`.
 
-Approval is not cryptographic or independent semantic validation. A protected
-independent publisher does not constrain malicious target code after approval.
-Environment approval is mandatory against mistakes and ordinary process
-violations, but is not a non-bypassable `GITHUB_TOKEN` permission ceiling
-against a malicious repository writer.
+`hcoona` is the sole accepted writer and publisher TCB member. Controls against
+outsiders, accidental operators, and mistakes remain relevant. A malicious
+accepted writer is not constrained by protected `main`, Environment approval,
+workflow permissions, static-reference policy, or exact action validation.
 
-Every repository actor with Write, Maintain, or Admin access is inside the Buddy
-trusted publisher TCB. External/fork contributors and actors without repository
-write are outside it and cannot manually dispatch the live path under normal
-permissions. A trusted writer can create alternate workflow YAML or jobs with
-`packages: write`. Optional workflow-execution protections are defense in depth,
-not a required dependency or permission ceiling. Reviewer context,
-package/destination isolation, minimum normal-flow permissions, no-consumer
-policy, forbidden ordinary admin actions, and Break-Glass handling bound rather
-than eliminate the risk. Activation records actual token permissions and
-package/repository grants, verifies Official and known production isolation,
-and uses safe denial probes only for enumerated unrelated assets. It does not
-claim universal negative reach proof; other reachable package operations under
-the smallest configured grants are accepted writer-TCB risk. If any writer is
-no longer trusted to publish, the slice blocks until that actor's repository
-access is reduced below
-Write/Maintain/Admin or package-write Capability and destination access are
-placed behind an independently enforced publisher boundary unavailable to
-writer-authored workflows. Ref narrowing, Environment branch restrictions,
-CODEOWNERS, and workflow-execution protections are insufficient remediation by
-themselves while an untrusted writer can author alternate workflows with
-`packages: write`. Official and future Buddy destinations or production
-packages do not inherit the exception.
+The GitHub Packages credential principal is repository `hcoona/three`. Every
+package whose package-side Actions grant authorizes that repository is in the
+effective publisher blast radius. The exact smoke coordinate/action contract
+governs intended operation and reconciliation; it is not token or package
+isolation. Official npmjs PAT, OIDC, secret, and destination boundaries remain
+separate and unchanged.
 
-The no-consumer policy is permanently enforced through repository-wide HK
-scanning of dependency manifests, lockfiles, workflows, install scripts, and
-dependency configuration on dependency-surface changes and every
-`slice-validation`. Human Governance re-attests writer-TCB membership and
-package/repository/Manage Actions access at least every 90 days and after
-relevant role, team, or permission changes. An authorized human promptly
-commits `live_enabled: false` to the policy-fixed protected attestation pending
-reacceptance, while attestation expiry independently bounds stale normal flows.
-Protected review, merge, and fresh-read latency make this bounded operational
-response rather than instantaneous platform disablement.
+The bounded static-reference policy proves only that no prohibited direct
+reference was found in its closed supported catalog. It does not prove absence
+of every runtime consumer or constrain `GITHUB_TOKEN` reach. Ordinary delete,
+restore, permission, visibility, and admin actions remain outside normal
+publication; deletion or restoration requires Break-Glass Remediation. Official
+and future Buddy destinations or production packages do not inherit this
+exception.
 
-Activation also requires direct repository-wide legacy Buddy retirement. The
-implementation PR lands with `live_enabled: false`, removes both legacy Buddy
-workflow files, and preserves no compatibility route. Governance freezes Buddy
-dispatch, disables both `buddy.yml` and `release-buddy.yml`, drains or cancels
-queued, waiting, approval-pending, and running executions, and verifies disabled
-state, removal, and old-ref dispatch rejection before destination acceptance.
-New-YAML-only rejection cannot close old selected refs. Former Buddy projects
-are unsupported until migrated. v1 Official and CI assets remain unchanged;
-legacy Buddy workflows, Buddy-specific tests and matrices, and Buddy
-documentation are excluded from that preservation and are retired or rewritten.
-Failed destination acceptance leaves all Buddy publication disabled and does
-not restore legacy Buddy without a separate user-approved rollback PR, so an
-intentional brief Buddy outage is expected.
+Protected Governance identifies the accepted writer and relevant access
+inspection, expires within 90 days, and uses `live_enabled` for fresh admission
+and publisher-final-check control. A later protected-path touch invalidates the
+current Attempt even after a byte-for-byte revert. Disablement cannot revoke a
+publisher already past its final fresh check.
 
-### First-Slice Destination Acceptance Bootstrap
+### First Proving Run
 
-A temporary protected Governance workflow used once to validate GitHub Packages
-semantics while normal v3 live publication remains disabled. Its purpose is
-separate from live Release. It is hard-bound to an approved target SHA, fixed
-acceptance-only coordinates in the same disposable package, explicit operator
-confirmation, and a dedicated reviewer-protected acceptance Environment.
-Package-write permission exists only in probe jobs.
+The first normal-Live run after Activation. It is dispatched from then-current
+protected `main` through an explicitly supported REST API version whose success
+response includes `workflow_run_id`.
 
-The bootstrap accepts no normal Release inputs and creates no Product,
-Execution, Attempt, Authorization, Receipt, or live Release history. After
-legacy cutover, every probe independently requires `github.run_attempt == 1`.
-The terminal evidence-capture job runs with
-`always() && github.run_attempt == 1` or an exact equivalent so first-attempt
-probe failures, skipped or canceled dependencies, and ambiguous mutation
-evidence are persisted and incomplete or unknown state enters reconciliation.
-The evidence job still rejects non-first attempts. A partial rerun cannot reuse
-an earlier Environment review or coordinate, and retry requires a new reviewed
-workflow invocation and new fixed disposable coordinate/version. Governance
-captures its evidence, removes the workflow, bypass, and Environment, verifies
-removal, and only then makes a separately authorized protected normal Live
-activation permissible. It does not itself authorize or set
-`live_enabled: true`. Failure leaves `live_enabled: false` and all Buddy
-publication disabled, removes the temporary path, and sends any probe state to
-reconciliation. The bootstrap is never retained as a reusable bypass.
+The operator validates the response schema and reads back the returned workflow
+and run identity, actor, `workflow_dispatch` event, exact actual head SHA,
+`refs/heads/main`, and `run_attempt == 1`. A lost response or ambiguous
+correlation is reconciled read-only and is never blindly redispatched. Later
+normal Buddy runs may select arbitrary same-repository refs whose
+selected-revision control strictly admits the active Governance schema.
+
+Every authoritative normal-Live job independently rejects
+`github.run_attempt != 1`. This includes eligibility and planning, the Approval
+job, exact-satisfied no-op finalization, publisher, and Finalizer. The value is
+a platform guard and diagnostic, not domain identity or a record, artifact, or
+Publication Authorization binding.
 
 ### First-Slice Normal Live Activation
 
-The separately authorized transition that follows successful destination
-acceptance and cleanup for the named disposable Buddy package. Readiness repair,
-the protected all-surface Environment-contract rename, permanent Environment
-creation, platform inspection, and a protected preparation attestation all
-complete while `live_enabled: false`. A later minimal protected change may set
-true only after explicit production approval. The first run remains bounded by
-a `main`/dispatch freeze, exact activation-SHA rollout preflight, one uniquely
-correlated attempt-1 dispatch, explicit Environment approval, canonical
-terminal evidence, and exact destination reconciliation.
+The separately authorized transition from the independently delivered disabled
+implementation to normal Live. It uses one small protected Activation PR that
+sets `live_enabled: true`. There is no separate Preparation PR, repository-wide
+`main` freeze, pre-pinned Activation SHA, or activation tag.
 
-Normal Live activation is not a rollback boundary. A protected false change
-blocks future admission after fresh observation but cannot revoke a publisher
-already past its final Governance check or reverse package state.
+The first proving run is dispatched from then-current protected `main` and is
+correlated by the REST-returned `workflow_run_id` plus readback of its actual
+identity and revision.
 
-### Environment Profile
+Normal Live activation is not a rollback boundary. Setting protected Governance
+to `live_enabled: false` blocks future admission after fresh observation but
+cannot revoke a publisher already past its final Governance check or reverse
+package state.
 
-A Delivery Governance policy that selects a stable repository Environment
-identity by authority semantics rather than by package or slice name alone.
+### Approval Environment
 
-An Approval Environment Profile is keyed by repository, channel, exact reviewer
-and self-review policy, wait and branch/tag policy, administrator-bypass
-posture, and credential-free behavior. A Capability Environment Profile is
-keyed by repository, channel, destination trust boundary, credential source
-including its identity contract, GitHub permission and destination-access
-policy, reviewer policy fixed to `none`, wait and branch/tag policy, and
-administrator-bypass posture.
+The one first-slice authority-bearing GitHub Environment:
+`workflow-delivery-v3-buddy-approval`.
 
-Multiple Release policies may reuse one Environment identity only when the
-complete applicable profile is identical. Each Attempt that reaches a
-referenced Environment gate creates a fresh deployment for that gate. For the
-first slice, exactly one human review occurs on the Approval Environment
-deployment, its package-bound Authorization Record is emitted only after
-successful approval, and the Capability Environment has no required reviewer.
-GitHub aggregates Environment-level deployment history, while Governance
-eligibility, approval, Authorization, Capability, package authorization, and
-Attempt/package lineage remain independent. An incompatible policy requires a
-distinct Environment identity. A reviewer-bearing destination is outside this
-one-approval architecture and requires a new architecture decision.
+It has required reviewer `hcoona`, the confirmed self-review setting, and one
+exact Environment-scoped marker. The Approval job has no publication
+capability. Its post-approval output is the complete Publication Authorization
+for one action-bearing Attempt.
+
+There is no first-slice Capability Environment. A generic Environment Profile
+is deferred until a concrete second policy demonstrates independent semantics.
+A future OIDC channel may introduce a channel-specific Environment only when
+external destination trust validates its OIDC claims.
 
 ### Environment Configuration Sentinel
 
-A fixed non-secret Environment-scoped variable whose exact value is mapped
-through step `env` and checked by quoted case-sensitive shell comparison as the
-first executable step of an Environment job. The check disallows
-`continue-on-error`; later operational steps explicitly require marker success,
-while exceptional handlers remain non-mutating. It makes accidental GitHub
-implicit creation of a missing named Environment fail before Authorization or
-mutation when same-name repository and organization variables are absent. It
-does not prove reviewer, self-review, administrator-bypass, branch-policy,
-secret, credential, or Environment-identity settings and never replaces
-authenticated native configuration inspection.
+A fixed non-secret Environment-scoped variable whose exact value the Approval
+job validates as its first authority-critical executable check before it emits
+Publication Authorization. The job sees the resolved value and cannot determine
+its source scope or prove whether same-name repository or organization
+variables exist. Their absence is authenticated native
+Governance/provisioning/activation readback and attestation evidence. Only
+under that externally verified precondition does marker validation make
+accidental GitHub implicit creation of a missing named Environment fail closed.
+The marker does not prove reviewer, self-review, administrator-bypass,
+branch-policy, secret, credential, or Environment-identity settings and never
+replaces authenticated native configuration inspection.
 
 ### Single-Maintainer Approval Exception
 
@@ -275,9 +244,7 @@ The first-slice decision that permits sole accepted writer and reviewer
 `hcoona` to approve their own normal Buddy deployment with
 `prevent_self_review: false`. It applies only to repository `hcoona/three`,
 package `@hcoona/hcoona-release-smoke-npm`, and approval Environment
-`workflow-delivery-v3-buddy-approval`. Reusing that Environment identity for a
-separately governed compatible Release policy does not transfer this
-package-specific exception. Approval remains explicit operator
+`workflow-delivery-v3-buddy-approval`. Approval remains explicit operator
 self-confirmation against mistakes, not independent review or a security
 boundary. Any effective writer, reviewer, role, team, or relevant access change
 requires `live_enabled: false` and a new Governance decision.
@@ -332,10 +299,47 @@ The repository-root HK gate owns this assertion as one opaque composite Quality
 Definition. CI binds the candidate and definition identity but does not inspect
 HK profiles, steps, file applicability, batching, or internal planning.
 
-The first-slice root HK implementation includes a path-triggered v3 control
-package pytest step and runs it unconditionally for manual `slice-validation`.
-That step remains internal to Source-Tree Conformance and does not create a
-separate CI obligation, Evidence record, or job.
+Whenever root HK runs, its lightweight static-reference policy runs in the
+caller-selected `index` or `worktree` feedback mode. Separately, the first-slice
+root HK implementation includes an expensive path-selected v3 control package
+pytest step and runs that suite unconditionally only for manual
+`slice-validation`. Both remain internal to Source-Tree Conformance and do not
+create separate CI obligations, Evidence records, or jobs.
+
+### Static-Reference Policy
+
+The new-version bounded repository policy that reports prohibited direct static
+references to the exact smoke package coordinate within a closed supported
+catalog.
+
+Supported families are manifests, lockfiles, workflows, dependency and
+configuration files, composite actions, and conventional install/bootstrap
+automation. The policy rejects direct, versioned, aliased, workspace, and
+subpath coordinate forms. In manifest and lock dependency positions, it also
+rejects `file:`, `link:`, and `workspace:` paths that resolve to the known
+producer root. The producer path is not globally prohibited because workflows
+may legitimately build it. Only the top-level `package.json` `name` at an exact
+known producer path is allowed to equal the package name.
+
+The canonical source kinds are exactly:
+
+- `git-target`: enumerates and reads exact blobs from an explicit full commit
+  SHA; only this source kind is admissible Live Eligibility evidence.
+- `index`: enumerates and reads stage-0 Git index entries for staged or
+  pre-commit candidate feedback.
+- `worktree`: enumerates tracked plus eligible untracked paths and reads
+  filesystem bytes for manual developer feedback.
+
+Every result binds its source kind. Index or worktree bytes are never
+represented as `HEAD` or commit identity. The result also binds schema/result,
+the exact target when applicable, policy ID and digest, and sorted findings.
+Counts are diagnostics only.
+
+A finding is a prohibited reference, not a proven consumer. A clean result
+proves only that no prohibited direct reference was found in the supported
+catalog. Encoded or split construction, arbitrary runtime downloads, external
+configuration, novel layouts, and universal consumer discovery are non-goals.
+The policy does not constrain `GITHUB_TOKEN` reach.
 
 ### Affected-System Qualification
 
@@ -479,8 +483,8 @@ mapping.
 
 ### Release Execution Identity
 
-The identity used for Release Execution lookup, request coalescing, and Attempt
-lineage.
+The deterministic identity used for Release Execution lookup, concurrency, and
+request coalescing.
 
 - Official Release Execution Identity is Official Product Identity plus
   immutable target.
@@ -493,27 +497,17 @@ coordinate. Overlapping live actions serialize on complete Adapter-declared
 mutable-resource keys. Durable destination state determines absent, exact, or
 conflict; failed pre-mutation Attempts reserve nothing.
 
-Plan digests, artifact digests, and workflow attempts are Attempt bindings
-rather than Product or Execution Identity fields. Successful approval binds and
-retains an Authorization Record. A completed rejection whose explicit platform
-contract is proven may bind and retain Approval Outcome Evidence instead; the
-first-slice GitHub path has no such contract. GitHub
-cancellation or platform expiry while approval remains pending may end the run
-before a separate record or Finalizer outcome exists. When no capability group
-started, the platform conclusion is sufficient no-side-effect terminal evidence
-and the Attempt is incomplete and replayable. If a capability job may have
-started, the Attempt is incomplete and possibly mutated and replay must
-reobserve. Tags, branches, and workflow run IDs are indexes.
+An Attempt is identified by Release Execution Identity plus its unique
+`workflow_run_id`. Plan and artifact digests are immutable bindings created
+inside that Attempt. `github.run_attempt` is a platform guard and diagnostic,
+not an identity or record field. Tags and branches are indexes.
 
-Before live eligibility, identity lookup, coalescing, or admission, each
-candidate run attempt branches to live release or release simulation. Each
-branch compiles exactly one same-revision, request-local Repository Model
-Snapshot for its own purpose and reuses it throughout the resulting live
-Attempt or simulation pass. The Snapshot and every admitted Fact Bundle bind
-purpose, request identity, `github.run_id`, `github.run_attempt`, target,
-producer, and control identity. Prior-run-attempt and cross-purpose artifacts
-are rejected. A replay or other new run attempt compiles a new Snapshot even
-when request identity, `github.run_id`, and target remain unchanged.
+Before live eligibility, identity lookup, coalescing, or admission, each request
+branches to live release or release simulation. Each branch compiles one
+same-revision, request-local Repository Model Snapshot for its purpose and
+reuses it throughout that pass. The Snapshot binds purpose, request,
+`workflow_run_id`, target, producer, and control identity. Cross-purpose and
+prior-Attempt artifacts are rejected.
 
 For the live branch, Official Product and Execution identities use the
 Snapshot's target-bound canonical NBGV facts. Buddy Execution Identity needs
@@ -521,93 +515,63 @@ only channel, Release Unit, and target. The Snapshot already contains
 authoritative native facts, including `npmPackageVersion`; Buddy identity
 ignores them.
 
-### Execution History Admission Snapshot
+### Native Actions History Diagnostics
 
-The immutable history-only snapshot created during live `admit`, under the
-whole-Execution concurrency slot and before the current Attempt binding. Release
-uses read-only Actions APIs with complete pagination to discover retained runs
-and run attempts, artifacts, Attempt bindings, outcomes, and platform
-conclusions for the same Release Execution Identity.
+GitHub's native workflow and job history used for operator inspection only.
 
-Each admitted historical record authoritatively retains only artifact
-ID/digest, source workflow run ID, head SHA, payload integrity, and platform
-metadata exposed by the Artifact/Run APIs. Jobs/Run APIs separately supply
-attempt/job/phase facts. Payload producer, exact attempt, reusable-workflow,
-purpose, and control claims are diagnostic self-assertions. The Snapshot binds
-the admitted platform identities/digests and separately queried facts for
-current finalization and explanation. Historical records cannot satisfy
-current-Attempt Evidence, authorization, eligibility, artifacts, Receipts, or
-outcomes. API denial, incomplete pagination, malformed records, or duplicate or
-conflicting platform bindings block admission.
-Retention expiry is not a ledger failure: current provably absent or exact
-destination state may proceed, while partial, conflicting, unknown, or
-unprovable state requires reconciliation.
+Workflow Delivery does not exhaustively discover, admit, snapshot, or aggregate
+prior runs, reruns, artifacts, Attempt bindings, or outcomes as publication
+authority. History does not establish current Evidence, eligibility,
+Publication Authorization, artifact identity, Receipt, Attempt Outcome,
+aggregate Execution state, or exhaustive Attempt lineage.
 
-Artifact and record admission has two caller-selected modes. The payload cannot
-select or influence the mode. `current-authority` requires exact current
-purpose, request, run, run attempt, Attempt, target, producer, control,
-artifact, and digest bindings and rejects prior attempts.
-`execution-history` is allowed only during pre-Attempt admission; its source may
-be a different workflow run or an earlier run attempt of the current run. It
-binds the limited platform facts above and separately queried phase facts,
-including existence of the earlier attempt for same-run history; payload
-lineage claims do not become artifact-to-attempt or artifact-to-job provenance.
-The resulting Snapshot binds the current request/run/attempt,
-exhaustive query basis, and sorted admitted platform IDs/digests with an
-explicit history-only marker. It cannot satisfy current Evidence,
-authorization, eligibility, artifacts, Receipts, or outcomes. Strict historical
-workflow/attempt provenance is unsupported until Artifact Attestations or OIDC
-are separately approved; the first slice enables no `id-token`.
+Recovery starts from a new Release Intent and fresh destination observation.
+Native history may explain what GitHub displayed, but missing, incomplete, or
+expired history does not alter the current admission contract.
 
 ### Live Eligibility Decision
 
 The immutable Release-owned pre-Attempt decision for the named live Buddy
 slice. It is produced after exact target pinning and request-local Repository
-Model compilation and before Execution lookup, concurrency, history admission,
-or Attempt creation.
+Model compilation and before Execution lookup, concurrency, or Attempt creation.
 
-It binds live purpose, request, current run and attempt, selected ref and target
-SHA, Repository Model digest, producer/control, consumer policy and catalog
-digests, exact scanned dependency surfaces and exceptions, the attestation's
-required boolean `live_enabled` value, and Governance attestation repository,
-fixed protected ref, resolved commit, path, Git blob OID, canonical content
-SHA-256, and result. For the first slice, the immutable source contract is
-repository `hcoona/three`, ref
+It binds live purpose, request, `workflow_run_id`, selected ref and target SHA,
+Repository Model digest, producer/control, exact static-reference policy result,
+and protected Governance result. It does not bind `github.run_attempt`.
+
+The static-reference evidence contains schema/result, source kind `git-target`,
+exact full target, policy ID and digest, and sorted findings. A clean result
+means only that no prohibited direct static reference was found in the closed
+supported catalog.
+
+The Governance source contract is repository `hcoona/three`, ref
 `refs/heads/main`, and path
 `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`. The
-attestation is a non-executable human-inspection snapshot with explicit accepted
-writer and package/repository/Manage Actions access inventory or evidence
-digest, policy/package bindings, issuer, inspection time, acknowledged
-limitations, expiry of at most 90 days, and `live_enabled`. Using
-`contents: read`, the evaluator freshly verifies ref protection, resolves the
-ref, reads the document at the resolved commit, and validates its provenance
-and content. The evaluator receives no `actions: read`, package-read, or
-package-write permission; effective Actions-history read is confined to
-history admission and explicit package read to destination observation. The
-payload does not self-reference Git provenance; the Decision
-binds that provenance externally. Runtime does not enumerate current writers or
-GitHub Packages grants. Current-attempt success is required; CI HK, history, or
-an older decision cannot substitute. Missing, unreadable, malformed, expired,
-provenance-mismatched, `live_enabled: false`, or consumer-positive state blocks
-without creating an Attempt. Changes require a prompt authorized protected
-commit setting `live_enabled: false`, followed by update and re-attestation
-before re-enablement; expiry bounds normal-flow staleness.
+attestation identifies sole accepted writer/publisher `hcoona`, binds policy and
+package, records relevant access inspection, issuer, inspection time and
+limitations, expires within 90 days, and carries `live_enabled`.
+
+The Decision binds repository/ref/path and attestation blob/content identity or
+explicit generation. It does not require equality of the complete resolved
+`main` commit. Missing, unreadable, malformed, expired, disabled, or
+binding-mismatched state blocks without creating an Attempt. Any later commit
+touching the protected path invalidates the Attempt, even if later content
+reverts.
 
 ### Governance Freshness Revalidation
 
-The immediate pre-Capability re-read that prevents an approval wait from
-outliving or bypassing live Governance state.
+The protected Governance validation performed by the Approval job and repeated
+by the publisher immediately before mutation.
 
-Using `contents: read`, it freshly resolves the policy-fixed protected ref and
-reads the attestation document again, verifies ref protection, schema,
-canonical content, bindings, current expiry, and `live_enabled: true`, and
-requires repository/ref/path plus commit/blob/content provenance and content
-identity to match the current Attempt's Live Eligibility Decision. A false
-`live_enabled` value, expiry, changed or invalidated source/content, or binding
-mismatch blocks publication and requires a new Attempt after Governance is
-restored. The publisher may repeat the same `contents: read` check immediately
-before mutation only as defense in depth; the repeat adds no credential or
-service and is not a malicious-writer boundary.
+It verifies repository/ref/path, schema and policy bindings, current expiry,
+`live_enabled: true`, the admitted blob/content identity or generation, and
+the absence of any protected Governance-path touch since eligibility. An
+unrelated `main` commit does not invalidate the Attempt. A path touch does,
+including change-then-revert, and restoration requires a new dispatch.
+
+A false flag blocks fresh admission and the publisher's final fresh check. It
+cannot revoke a publisher already past that check. This control adds no
+independent malicious-writer boundary.
 
 ### Package Target Witness
 
@@ -668,15 +632,18 @@ version, or use fallback version fields.
 
 ### Reproducible Release Build
 
-A Release Unit business contract requiring the same target commit, Build
-Definition, toolchain, and declared inputs to produce bit-for-bit identical
-release artifacts.
+For the first-slice npm Release Unit, the contract requiring the same target
+commit, frozen inputs, Build Definition, and toolchain to produce bit-for-bit
+identical release artifacts.
 
 The delivery system does not certify reproducibility by performing duplicate
 builds. Remote observation records artifact digests and refuses to continue
 when destination state conflicts with the current Attempt's snapshot-bound
 desired projection state. That integrity check is not a general
 reproducible-build certification.
+
+A nondeterministic Release Unit requires a future explicit sealed-artifact
+publication-resume design and is unsupported by this slice.
 
 ### Semantic Plan Finality
 
@@ -707,8 +674,8 @@ For Release, the Qualification Snapshot closes build and qualification scope
 and the deterministic pre-observation publication basis before build execution.
 After qualification and observation, the Publication Snapshot closes exact
 artifacts, desired and observed state, materialized actions and inputs, complete
-mutation key sets, capability groups and requirements, Receipt contracts, and
-the authorization basis before side effects.
+mutation key sets, the zero-or-one first-slice Publication Action,
+Result/Receipt contract, and authorization basis before side effects.
 
 CI and Release have separate Planners because they select different scope,
 obligations, identities, and side effects.
@@ -724,6 +691,9 @@ but it does not select the verdict.
 
 The CI Finalizer considers required obligations only. Advisory obligations use
 a separate non-authoritative Reporter.
+
+The Release Finalizer is read-only and best effort. GitHub cancellation or
+transport failure may prevent it from persisting an Attempt Outcome.
 
 ### Advisory Reporter
 
@@ -741,13 +711,13 @@ It is not a substitute for ecosystem-native publication projection. Official
 publication and dry-run freeze and use the exact required native NBGV
 projection unchanged.
 
-Each immutable target has a distinct Official Release Execution Identity and
-append-only Attempt history. No permanent global Product Identity-to-target
-ledger is required. Replay recompiles the request-local Repository Model and
-creates new Attempt-specific Qualification and Publication Snapshots. Existing
-destination state is accepted only when it matches snapshot-bound desired
-projection state; a differing coordinate, ownership, target binding, or artifact
-digest requires reconciliation.
+Each immutable target has a distinct Official Release Execution Identity. No
+permanent global Product Identity-to-target ledger is required. A new manual
+dispatch recompiles the request-local Repository Model and creates new
+Attempt-specific Qualification and Publication Snapshots. Existing destination
+state is accepted only when it matches snapshot-bound desired projection state;
+a differing coordinate, ownership, target binding, or artifact digest requires
+reconciliation.
 
 ### Buddy Execution Semantics
 
@@ -870,7 +840,7 @@ The terminal qualification state of one obligation:
 
 - `satisfied`;
 - `failed`;
-- `incomplete`, including skipped, cancelled, timed out, missing, or lost
+- `incomplete`, including skipped, canceled, timed out, missing, or lost
   execution; or
 - `conflicted`, including inconsistent Evidence or artifact identity.
 
@@ -893,11 +863,11 @@ not replace the append-only Decision history.
 
 Release authorization does not bind this generic Final Decision or a generic
 Plan digest. After Release qualification and remote-state observation,
-authorization binds the exact Publication Snapshot digest, including the
-Qualification Decision, qualified artifacts, observations, and materialized
-actions, keys, capabilities, and Receipt contracts as applicable. An in-progress
-side-effect execution cannot switch automatically to a later Snapshot or
-Decision.
+the Publication Authorization binds the exact Publication Snapshot, including
+Qualification Decision, qualified artifacts, observations, the one materialized
+action, complete resource keys, Governance bindings, and Result/Receipt
+contract. An in-progress side-effect execution cannot switch to a later
+Snapshot or Decision.
 
 ### Runtime-Decoupled Delivery Systems
 
@@ -913,25 +883,26 @@ runtime dependency on CI status.
 
 ### Release Intent
 
-The request to deliver exactly one Release Unit through exactly one channel.
+The request to deliver exactly one Release Unit through exactly one channel and
+one immutable target.
 
-Manual initiation uses the GitHub-selected workflow ref as the target. An
-independent target SHA or ref input is forbidden. The workflow pins the resolved
-`github.sha`, and every Plan, artifact, Evidence object, action, and record binds
-that same revision.
+For normal Buddy, manual initiation selects a same-repository ref that resolves
+to one exact SHA. That SHA is both workflow/control revision and Release target;
+there is no independent target input or second source identity.
 
 Intent is request identity, not Product, Execution, or package identity.
 Multiple admitted Intents may address the same Release Execution Identity.
 
 ### Release Execution
 
-The channel-specific business execution for one immutable Release Execution
-Identity. It contains append-only whole-release Attempts and may be initiated by
-multiple separate Release Intents that address that identity.
+The conceptual channel-specific scope for one immutable Release Execution
+Identity. Multiple Release Intents may address the same identity, and each
+admitted dispatch creates a distinct Attempt.
 
-Its state is one of `in-progress`, `replayable`,
-`reconciliation-required`, or `completed`. Platform retention limits how long
-its operational records remain replayable.
+The first slice does not maintain an authoritative aggregate Execution state or
+exhaustive append-only Attempt lineage. Caller-held concurrency serializes the
+identity; current-Attempt records and fresh destination observation supply
+authority.
 
 ### Release Simulation
 
@@ -942,7 +913,7 @@ entering the Buddy or Official Release lineage.
 Simulation branches before live eligibility, Product or Execution Identity
 lookup, coalescing, admission, or Attempt creation. It first compiles and
 validates one simulation-purpose Repository Model Snapshot binding request
-identity, `github.run_id`, `github.run_attempt`, target, channel, Release Unit,
+identity, `workflow_run_id`, `github.run_attempt`, target, channel, Release Unit,
 canonical and native version facts, producer, and control identity.
 
 Only after that validation does the Planner derive the separately namespaced,
@@ -950,9 +921,12 @@ request-scoped Simulation Identity from the validated bindings. Later simulation
 planning records bind both the Simulation Identity and Repository Model Snapshot
 digest. A Buddy simulation uses the same target-derived native NBGV version
 projection and hypothetical destination coordinate as live Buddy planning. It
-never contains or acquires a live Product, Release Execution, or Attempt
-identity, Authorization Record, Capability, Receipt, or mutation. It may emit
-hypothetical requirements and actions and a Simulation Outcome.
+retains `github.run_attempt` as part of its request-scoped identity so a rerun
+is a distinct simulation pass; the normal-Live first-attempt-only contraction
+does not apply. It never contains or acquires a live Product, Release Execution,
+or Attempt identity, Publication Authorization, Capability, Receipt, or
+mutation. It may emit hypothetical requirements and actions and a Simulation
+Outcome.
 
 Shared schemas may be reused only with an explicit purpose discriminator.
 Cross-purpose admission always rejects the record.
@@ -971,29 +945,29 @@ Release Unit, target commit, channel, version, Project Node and declared-input
 closure, build dependencies, the complete Release Unit artifact variant set,
 Build Definitions, selected Release quality policy, required quality
 obligations, complete destination projections and coordinates, Adapter and
-version bindings, logical operations, potential action and dependency schema,
-capability policy, and deterministic complete mutable-resource-key derivation
-and enforceability basis.
+version bindings, logical operations, potential action schema, publication
+policy, and deterministic complete mutable-resource-key derivation and
+enforceability basis.
 
 It authorizes only unprivileged build and qualification work. It does not
-freeze actual mutation actions or actual action key sets before artifacts and
-remote disposition are known.
+freeze an actual mutation action before artifacts and remote disposition are
+known.
 
 ### Publication Snapshot
 
 The second sealed snapshot in a Release Plan Lineage. It references the
 Qualification Snapshot digest, preserves every frozen semantic field, and adds
 actual artifact identities, content digests, provenance, snapshot-bound desired
-projection state, destination observations, exact materialized action DAG and
-inputs, complete Adapter-declared key set for each actual mutation, capability
-groups and requirements, Qualification Decision, and Receipt contracts.
+projection state, destination observations, the exact zero-or-one first-slice
+Publication Action and inputs, its complete Adapter-declared mutable-resource
+keys, Qualification Decision, and Publication Result/Receipt contract.
 
-After successful approval, an Authorization Record binds Governance approval to
-the Publication Snapshot digest and immutable reviewer-summary artifact ID and
-digest. A finalizer verifies that no Qualification Snapshot field changed and
-that the summary artifact matches the approved Snapshot.
+For an action-bearing Snapshot, the Approval Bundle binds the Snapshot and
+immutable reviewer-summary artifact. After approval, the Approval job validates
+the complete closure and emits the Publication Authorization. A zero-action
+Snapshot bypasses approval and may finalize as `exact-satisfied`.
 
-GitHub transports the snapshots as separate attempt-specific artifacts even
+GitHub transports the snapshots as separate Attempt-specific artifacts even
 though they share one logical Release Plan lineage.
 
 ### Publication Preparation Interruption
@@ -1003,84 +977,71 @@ Decision but before a durable Publication Snapshot exists.
 
 Observation, Snapshot materialization, Snapshot upload, or platform
 cancellation may produce this condition only when direct platform facts prove
-that the capability-bearing path did not start and no Authorization, Capability
-Admission Decision, mutation marker, capability-group result bundle, or Receipt
-exists. Missing Snapshot transport alone is not proof.
+that the publisher did not start and no Publication Authorization or mutation
+marker exists. Missing Snapshot transport alone is not proof.
 
-The sole Release Finalizer records terminal phase `publication-preparation`,
-result `incomplete`, uncertainty about unfinished planning,
-`possibly_mutated: false`, and next action `new-attempt`. It does not fabricate a
-Publication Snapshot or create a domain Evidence record that merely copies
-GitHub job results. A durably persisted Publication Snapshot ends this phase;
-later reviewer or approval-input failure retains that Snapshot and uses the
-Snapshot-bound lifecycle. Raw job results remain retained human diagnostics
-rather than canonical Attempt Outcome fields.
+When the sole Release Finalizer runs and the direct facts suffice, it may record
+terminal phase `publication-preparation`, replayable
+`failed-before-publication` disposition, `possibly_mutated: false`, and next
+action `new-dispatch`. It does not fabricate a Publication Snapshot or create
+domain Evidence from GitHub job results. A durably persisted Publication
+Snapshot ends this phase. GitHub cancellation or transport failure may prevent
+the Finalizer from retaining any Outcome.
 
 ### Release Attempt
 
-One coherent plan, build, qualification, authorization, publication, and
-reporting pass within a Release Execution.
+One coherent planning, build, qualification, observation, and reporting pass
+within a Release Execution, with authorization and publication only when its
+Publication Snapshot contains an action.
 
-An Attempt is identified by Release Execution Identity, `github.run_id`, and
-`github.run_attempt`. It also binds the originating Release Intent and request
-identity. Those are required immutable bindings, not additional Attempt Identity
-components. Its Qualification Snapshot, Publication Snapshot, artifact digests,
-and conditional approval record are immutable bindings created within that
-Attempt when the corresponding job completes: Authorization Record after
-success, or Approval Outcome Evidence after contract-proven rejection on a
-supporting platform. The first-slice GitHub rejection creates neither.
-Platform cancellation or expiry may terminate the Attempt without either
-context-owned record.
+An Attempt is identified by Release Execution Identity and unique
+`workflow_run_id`. It binds its Release Intent, request identity, Repository
+Model Snapshot, Qualification Snapshot, Publication Snapshot when formed, and
+conditional Publication Authorization and Result. `github.run_attempt` is not
+part of the identity or any normal-Live record binding.
 
-Every admitted, non-coalesced manual request for an existing Release Execution
-Identity creates a new Attempt, but is not a replay of the earlier request. A
-pending dispatch replaced or coalesced before execution is not admitted and
-creates no Attempt. A GitHub `Re-run all jobs` is a replay of its existing
-request. Both admitted paths first compile a new request-local Repository Model
-Snapshot, then independently replan, rebuild, qualify, observe, obtain approval,
-and finalize. For `Re-run all jobs`, the Snapshot binds the new
-`github.run_attempt` even though request identity, `github.run_id`, and target
-remain unchanged. Within one admitted request, later planning reuses that
-request's Snapshot rather than recomputing it.
-
-An Attempt does not combine successful jobs, artifacts, approvals, or evidence
-from multiple GitHub run attempts as if they formed one atomic pass.
+Every admitted, non-coalesced manual dispatch creates a new Attempt. GitHub
+rerun commands are unsupported for normal Live. Every authoritative job
+independently rejects `github.run_attempt != 1`, so partial reruns cannot form
+authority from a mixed job graph.
 
 An Attempt Outcome records qualification, observation, authorization, action,
-Receipt, and reporting results without replacing the Release Execution state.
+the Receipt when publication succeeds, and reporting results with an explicit
+disposition. Finalization is best effort and may be absent.
 
-### Whole-Release Replay
+### New-Dispatch Retry
 
-The supported retry model for a failed Release Attempt.
+The supported retry model for a failed or incomplete Release Attempt.
 
-Every replay reruns planning, the complete Release build, Release
-qualification, observation, authorization, and reporting. The planner observes
-every projection again: exact satisfied state skips its side effect, absent
-state may publish, and unknown, projection-internal partial, or conflicting
-state requires reconciliation.
+Retry is a new manual dispatch with a new `workflow_run_id`. It recompiles,
+rebuilds, requalifies, reobserves, and reapproves when an action remains. It
+reuses no prior Snapshot, Environment approval, Publication Authorization,
+artifact, or Receipt.
 
-GitHub `Re-run failed jobs` is not a supported Release recovery protocol because
-it produces a mixed-attempt job graph. A normal transient retry uses `Re-run all
-jobs`. A workflow or control-code fix creates a new target revision; ordinary
-replay of an older target continues to use that target's original code.
-
-Each live side-effect job obtains a new attempt-scoped Publication Capability.
+For the first-slice npm Release Unit, the same target, frozen inputs, and
+toolchain must reproduce identical bytes. Differing destination bytes fail
+closed into reconciliation and separately authorized remediation.
+Nondeterministic Release Units require a future sealed-artifact
+publication-resume design and are unsupported here.
 
 ### Remote-State Observation
 
 The mandatory read-only pre-authorization planning step in every Release
-Attempt, including the first attempt.
+Attempt, including the first attempt. Build and qualification receive no
+destination credential or publication capability. Observation may use public
+APIs or the minimum read-only destination authority required for exact-state
+readback, but receives no destination write authority, PAT, `id-token: write`,
+Approval Environment, or publication capability.
 
 Each logical publication projection is classified atomically against its
 snapshot-bound desired projection state, not Product or Execution Identity.
-Desired state is
-derived from the Qualification Snapshot and admitted qualified artifacts and
-includes exact destination coordinate, expected ownership, target binding, and
-artifact bytes or digest. Each Observation Record binds its Release Attempt,
-logical projection, immutable desired-state basis, and canonical remote response
-and observed facts. It cannot bind a future Publication Snapshot. The later
-Publication Snapshot seals admitted Observation Records with the resulting
-desired state and materialized actions:
+Desired state is derived from the Qualification Snapshot and admitted qualified
+artifacts and includes exact destination coordinate, expected ownership, target
+binding, and artifact bytes or digest. Each Observation Record binds its Release
+Attempt, logical projection, immutable desired-state basis, and canonical
+remote response and observed facts. It cannot bind a future Publication
+Snapshot. The later Publication Snapshot seals admitted Observation Records
+with the resulting desired state and materialized actions:
 
 - absent state may produce a publish action;
 - exact satisfied state produces no side effect;
@@ -1091,18 +1052,25 @@ An absent coordinate remains a legitimate initial-publication state when no
 operational Release lineage is retained. It does not require a tag witness,
 binding index, or permanent ledger. After authorization, registry publication
 uses the destination's atomic non-overwriting create contract. Pre-observed
-exact state produces no action. Atomic create-or-exact may accept a concurrently
-created exact state without mutation, but differing state fails without
-mutation. It is never read-then-upsert, overwrite, or delete-and-recreate. A
-pure create-only conflict is reobserved on whole-release replay.
+exact state produces no action and may finalize as `exact-satisfied` success
+without approval or publication lineage. Atomic create-or-exact may accept a
+concurrently created exact state without mutation, but differing state fails
+without mutation. It is never read-then-upsert, overwrite, or
+delete-and-recreate. A pure create-only conflict is reobserved on a new
+dispatch.
 
 Cancellation does not create a separate reconciliation workflow. A later
-whole-release replay performs the same normal Remote-State Observation before
-any new write.
+manual dispatch performs the same Remote-State Observation before any new
+write.
 
 The initial architecture assumes Delivery Governance is the only normal writer.
 It does not require a second observation after authorization and accepts
-out-of-band mutation between observation and publication as a residual risk.
+out-of-band mutation between observation and publication as a residual risk
+only when the destination mutation primitive still enforces atomic
+non-overwriting behavior at linearization. Repository concurrency, another
+read, or post-action readback cannot substitute for that primitive. Standard
+`npm publish --tag` can move a conflicting tag and is not an admitted primitive
+for the complete first-slice projection.
 
 ### Publication Projection
 
@@ -1110,71 +1078,98 @@ A channel-selected logical remote product that must become exact as one unit,
 such as a registry package version or a GitHub Release with its required assets.
 
 The Release Unit selects projections, the Destination Adapter defines their
-mechanics and action expansion, and Delivery Governance grants the necessary
-Capability. A projection may expand into multiple ordered actions, but
-projection-internal partial state is not ordinary replayable state.
+mechanics, and Delivery Governance grants authority only when an action exists.
+For the first slice, an exact projection materializes zero actions and requests
+no Capability; an absent projection may materialize one compound action only
+after the destination primitive has passed the required conditional
+non-overwrite acceptance. The current GitHub Packages npm primitive has not
+passed and keeps normal Live disabled. Multiple ordered actions and
+projection-internal partial progression require a future explicit design.
 
-### Capability Group
+### Approval Bundle
 
-An execution group whose actions share one destination-specific authorization
-and credential boundary.
+The immutable reviewer and machine-admission payload prepared before the
+first-slice Environment wait.
 
-Independent groups may run in parallel after channel approval. Actions within a
-group run in order and stop after the first failure. Every action retains its
-own identity and Receipt.
+It closes the selected ref and target, Qualification Decision, Publication
+Snapshot, reviewer summary, artifact identities and digests, manifest and
+lifecycle information, and the exact Publication Action with its complete
+mutable-resource keys. The Approval job strictly re-admits this bundle;
+human-readable summary alone is not authority.
 
-### Capability Admission Gate
+### Approval Job
 
-The credential-free decision boundary between successful approval and a
-credential-bearing capability group. It validates the Authorization Record,
-Publication Snapshot, reviewer-summary artifact, planned actions, artifacts,
-complete resource keys, group manifest, and Governance Freshness Revalidation.
-Only its successful admission may schedule or start the publisher. The
-publisher may repeat those checks as defense-in-depth rather than serving as
-the first admission boundary.
+The publication-credential-free authoritative job that references
+`workflow-delivery-v3-buddy-approval`.
 
-### Authorization Record
+It validates the resolved exact Environment marker value as its first
+authority-critical executable check, has no publication capability, freshly
+validates protected Governance including path-touch anti-rollback, and strictly
+admits the Approval Bundle, Publication Snapshot, artifact, action, and resource
+closure. Its `contents: read` access for the protected Governance reread means
+it is not fully credential-free. It cannot determine marker source scope or
+prove same-name broader-variable absence; authenticated native
+Governance/provisioning/activation readback and attestation provide that
+evidence. After Environment approval, it durably emits one Publication
+Authorization.
 
-The append-only record that binds one channel-level approval to one exact
-Publication Snapshot digest and immutable reviewer-summary artifact ID and
-digest.
+The publisher has an ordinary success dependency on this job. There is no
+approval-finalizer or separate Capability Admission Decision.
 
-That Snapshot includes the Qualification Decision, qualified artifacts and
-digests, remote-state observations, and exact materialized actions, inputs,
-complete mutation key sets, capability requirements, groups, and Receipt
-contracts as applicable.
+### Publication Authorization
 
-It authorizes capability-group execution but does not itself contain or replace
-destination credentials. Each capability group independently obtains its
-short-lived Capability through its configured Governance boundary.
+The complete post-approval admission record for one action-bearing Attempt.
 
-It exists only after successful approval. Capability groups require a valid
-Authorization Record and cannot treat approval failure Evidence as authority.
+It binds the Attempt, selected ref and target, Live Eligibility Decision and
+fresh Governance state, Approval Bundle, Publication Snapshot, reviewer
+artifact, exact artifact identities and digests, the one action, and its
+complete mutable-resource keys. It does not contain credentials and does not
+bind `github.run_attempt`.
 
-### Approval Outcome Evidence
+A zero-action exact-satisfied Attempt has no Publication Authorization.
 
-The platform-derived terminal record for a denial only when the platform
-supplies documented exact current-attempt, approval-job, Snapshot, and terminal
-result bindings. Workflow Delivery does not manufacture an approval timeout or
-watchdog outcome.
+### Mutation-May-Have-Started Marker
 
-GitHub Environment `DeploymentReview` does not provide authoritative
-`run_attempt` or approval-job binding and has no documented append-only
-consistency contract that makes review-ID delta inference safe. Therefore the
-first-slice GitHub workflow admits no Approval Outcome Evidence for rejection or
-denial. Observable review data may appear only as a non-authoritative human
-diagnostic. Rejection is unknown approval-contract failure, leaves a replayable
-incomplete Attempt, and starts no Capability.
+The durable record persisted immediately before the publisher's first mutating
+destination operation. Failure to persist the marker blocks mutation.
 
-It proves governed failure and grants no Capability. GitHub cancellation or
-platform expiry while approval is pending may instead terminate the run without
-this record or a Finalizer outcome. If no capability group started, the platform
-run/job conclusion itself proves no side effect and leaves a replayable,
-incomplete Attempt. If a capability job may have started, cancellation does not
-prove absence of mutation; replay must reobserve. When finalization runs and has
-neither valid authorization nor applicable admissible terminal evidence,
-approval state is unknown and the outcome is approval-contract failure rather
-than governed denial.
+Once present, absence of a later Publication Result means mutation status is
+unknown and possibly mutated. The next dispatch must reobserve the destination.
+
+### Publication Result
+
+The durable result of the first slice's one attempted or completed Publication
+Action. It binds the Publication Authorization, exact action and resources,
+and actual destination outcome. A successful `published` Result embeds exactly
+one Receipt. A controlled failed Result after the mutation marker may omit the
+Receipt and must preserve mutation classification and diagnostics.
+
+The first-slice Publication Snapshot admits exactly zero or one action. An
+action-bearing Attempt may durably retain at most one Result rather than a
+capability-group bundle. A Result cannot precede the mutation marker for an
+action that may mutate. A marker without a durable Result remains unknown and
+possibly mutated.
+
+### Attempt Outcome
+
+The best-effort read-only final record for one Attempt.
+
+Successful outcomes have an explicit disposition:
+
+- `exact-satisfied`: destination state was already exact; no approval,
+  Publication Authorization, publisher, destination write or publication
+  credential, Publication Capability, marker, Publication Result, or Receipt
+  exists; only minimum read-only Observation authority may have been used, and
+  a fresh protected Governance continuity proof was admitted immediately
+  before success; or
+- `published`: the complete Publication Authorization and a successful
+  Publication Result with exactly one embedded Receipt exist and validate.
+
+Incomplete, unknown, conflicting, partial, or possibly mutated state is not
+successful reconciliation. If current-DAG facts prove the publisher never
+started, the Finalizer may emit replayable `failed-before-publication` without
+reconstructing an Environment rejection reason. GitHub cancellation or
+Finalizer transport failure may leave no durable Attempt Outcome.
 
 ### Release Reconciliation
 
@@ -1186,10 +1181,10 @@ Existing successful publication is not automatically rolled back.
 
 ### Release Execution Serialization
 
-The best-effort GitHub boundaries that serialize Release lineage and access to
+The best-effort GitHub boundaries that serialize Release identity and access to
 externally visible mutable resources.
 
-- Release Execution lineage and pending-request coalescing use the complete
+- Release Execution concurrency and pending-request coalescing use the complete
   Release Execution Identity.
 - Every live mutating action binds the complete deterministic resource-key set
   declared by its Destination Adapter.
@@ -1221,8 +1216,9 @@ Executions as duplicates.
 Request-local Repository Model compilation occurs before this execution
 concurrency boundary. The surviving concurrency-scoped caller invokes one
 same-revision reusable live-Attempt workflow and holds the Release Execution
-identity slot continuously from admission through finalization. A superseded
-pending caller never enters admission and creates no Attempt.
+identity slot through terminal workflow state, including the read-only Finalizer
+when it runs. A superseded pending caller never enters admission and creates no
+Attempt.
 
 GitHub concurrency is not a distributed lock, durable queue, or protection
 against external writers. Correctness still depends on observation,
@@ -1268,11 +1264,12 @@ environment, or alternate workflow identity.
 
 A small structured object required to establish delivery correctness, including
 a frozen Plan, admitted Evidence, artifact identity and provenance, Final
-Decision, Publication Receipt, or Remediation Record.
+Decision, Publication Authorization, mutation-may-have-started marker,
+Publication Result and its Receipt when published, or Remediation Record.
 
 Authoritative Delivery Records must be persisted before a later stage relies on
-them. If a publication succeeds but its Receipt cannot be persisted, the
-Attempt stops before additional destination side effects and a later replay
+them. If the mutation marker exists but the Publication Result cannot be
+persisted, the Attempt is unknown and possibly mutated; a later dispatch
 observes remote state.
 
 Performance metrics, optional diagnostic logs, dashboards, and notifications
@@ -1289,17 +1286,21 @@ operational records available only within the configured Actions retention
 window. In this public repository, GitHub supports at most 90 days. The
 first-slice LLD uses 45 days for Release control and artifacts so retention
 exceeds the platform Environment gate-expiry window, currently up to 30 days;
-activation blocks if repository policy cannot provide that margin. Retention or
-pending approval does not freeze the protected document's `live_enabled` value
-or extend the at-most-90-day Governance attestation; capability admission
-freshly verifies the field and source provenance/content.
+activation blocks if repository policy cannot provide that margin. Fresh
+authenticated preactivation and post-merge readback must prove the effective
+repository setting permits at least 45 days. Retention or pending approval does
+not freeze the protected document's `live_enabled` value or extend the
+at-most-90-day Governance attestation. Approval and publisher checks freshly
+verify repository/ref/path, blob/content identity or generation, path-touch
+anti-rollback, expiry, and the flag. Unrelated `main` commits do not invalidate
+the Attempt.
 
 Longer-lived release identity and provenance rely on Git tags, registry
 package/version records, GitHub Release objects when selected, and GitHub
 Artifact Attestations with public Sigstore transparency-log publication.
 
-After Actions records expire, a replay may use only facts still provable from
-those platforms. Unprovable exact state fails closed.
+After Actions records expire, a new dispatch may use only facts still provable
+from current records and the destination. Unprovable exact state fails closed.
 
 The first architecture does not add an external Durable Release Ledger or
 require every Release Unit to create a GitHub Release audit anchor. A future
@@ -1346,20 +1347,22 @@ The immutable transport wrapper emitted by a target-evaluating Provider around
 one Provider Result.
 
 It binds the Provider Result digest, producer job, request identity, explicit
-purpose, `github.run_id` and `github.run_attempt`, target, control identity,
+purpose, `workflow_run_id`, target, control identity,
 request artifact, immutable transport identity, and Bundle digest. Admission
-requires the current purpose and run attempt and rejects a cross-purpose or
-prior-attempt Bundle. It contains no CI or Release policy.
+requires the current purpose and workflow run and rejects a cross-purpose or
+prior-Attempt Bundle. For normal Live it does not bind `github.run_attempt`. It
+contains no CI or Release policy.
 
 ### Provider Request Manifest
 
 The closed authoritative list of Provider requests required for one Repository
 Model compilation.
 
-It binds request identity, purpose, `github.run_id`, `github.run_attempt`, exact
-target, producer and control identities, static catalog, Provider implementation
-and execution mode, request digests, and expected terminal result identities.
-Compilation requires exactly one terminal Provider Result per entry.
+It binds request identity, purpose, `workflow_run_id`, exact target, producer
+and control identities, static catalog, Provider implementation and execution
+mode, request digests, and expected terminal result identities. Normal-Live
+records do not bind `github.run_attempt`. Compilation requires exactly one
+terminal Provider Result per entry.
 
 ### Build Adapter
 
@@ -1398,12 +1401,12 @@ CI and Release may share the structure while applying independent admission.
 A CI Artifact Reference cannot satisfy Release solely because its bytes or
 logical output role match.
 
-Actions artifact names are deterministic non-authoritative indexes unique
-across the complete workflow run with overwrite disabled. Every physical name
-includes the run attempt directly or through its deterministic hash preimage.
-Producers capture immutable artifact ID, digest, and URL. Consumers fetch only
-by ID and verify name metadata, producer, run ID, run attempt, and digest.
-Prior-attempt IDs, name fallback, and latest-artifact selection are invalid.
+Actions artifact names are non-authoritative, collision-safe indexes within one
+workflow run, with overwrite disabled. Producers capture immutable artifact ID,
+digest, and URL. Current-Attempt consumers fetch only by ID and verify record
+kind, producer, `workflow_run_id`, target, purpose, payload identity, and
+digest. Normal-Live artifacts do not bind `github.run_attempt`. Name fallback,
+latest-artifact selection, and history-derived authority are invalid.
 
 ### Mechanical Result
 
@@ -1430,9 +1433,9 @@ A machine contract intentionally produced by one control-code revision and
 consumed by another.
 
 It carries stable kind, explicit contract version, producer repository,
-workflow, ref, run, attempt, job and revision, original domain lineage, payload
-digest, and compatibility rules. Same-revision, same-attempt internal records
-do not require a universal API version.
+workflow, ref, job and revision, context-required request and run identity,
+original domain lineage, payload digest, and compatibility rules.
+Same-revision internal records do not require a universal API version.
 
 ### Independent Aggregate Roots
 
@@ -1503,26 +1506,26 @@ that the platform supports. The architecture does not assume that GitHub OIDC
 or a destination token cryptographically carries the Publication Snapshot
 digest, artifact digests, or exact action set.
 
-Independent trusted side-effect executors generally validate the Authorization
-Record, Publication Snapshot, artifact digests, action IDs, and Attempt before
-using capability. Receipts record both the authorized semantic action and the
-actual platform identity used.
+Independent trusted side-effect executors generally validate the Publication
+Authorization, Publication Snapshot, artifact digests, action IDs, and Attempt
+before using capability. Receipts record both the authorized semantic action
+and the actual platform identity used.
 
 For the First-Slice Buddy Risk Exception, that executor is target-revision code
 and is not an independent adversarial enforcement boundary. It validates exact
-bindings by contract. The Environment identity mapped from the
-Governance-selected Buddy GitHub Packages Capability Environment Profile and the
-minimum normal-flow `GITHUB_TOKEN` scope govern ordinary execution but do not
-constrain a trusted malicious repository writer from authoring alternate
-write-capable workflow jobs.
+bindings by contract. The publisher obtains the repository `GITHUB_TOKEN` only
+after the Approval job emits the complete Publication Authorization. There is
+no Capability Environment. Every package granting `hcoona/three` Actions access
+is within effective token reach, and the normal action contract does not
+constrain a malicious accepted writer.
 
 Qualification declares Capability requirements but cannot request, approve, or
-create a live Capability. Only an authorized side-effect capability group may
-request destination Capability after a credential-free Capability Admission
-Gate validates Authorization Record, Snapshot, summary, action, artifact,
-resource-key, and group bindings. Delivery Governance grants it through
-platform controls such as protected environments, job permissions, OIDC trust,
-and registry trusted-publishing policy.
+create a live Capability. In the first slice, only the publisher may use one,
+after ordinary success dependency on the Approval job and strict validation of
+Publication Authorization, Snapshot, summary, action, artifact, resource-key,
+and fresh Governance bindings. Delivery Governance grants capabilities through
+platform controls such as job permissions, OIDC trust, and registry
+trusted-publishing policy.
 
 Capabilities are destination-specific to the extent supported by the platform.
 Buddy cannot reach Official destinations, dry-run receives no live Capability,
@@ -1531,288 +1534,3 @@ and Break-Glass Remediation uses a separate remediation Capability.
 A Plan, artifact, attempt, or approval change invalidates the executor's
 authorization to use a previously obtained capability even when the external
 credential format cannot encode every such binding.
-
-## Confirmed Architecture Principles
-
-1. CI Qualification and Release Delivery are peer systems over a shared
-   mechanism-level foundation.
-2. Delivery Governance remains independent from both business systems and from the
-   Shared Foundation.
-3. Shared concepts must not collapse CI and Release into one universal plan or
-   evidence model.
-4. Pull request artifacts must not be reused or promoted by Release Delivery.
-5. Release Delivery independently reruns every obligation in its selected
-   channel-specific quality policy, and every such obligation is required.
-6. CI and Release may share quality definitions, build specifications, ecosystem
-   adapters, and execution capabilities.
-7. Release Qualification covers the complete Project Node and declared-input
-   closure required by the Release Unit Build Definitions, plus explicit
-   compatibility obligations.
-8. CI uses Planner and Finalizer code from the tested candidate revision. Live
-   Release uses code from the exact selected target revision. Official requires
-   a protected authoritative target. The first live Buddy smoke slice permits
-   any same-repository selected ref. Dry-run Release simulation uses code from
-   its exact selected simulation revision without approval or live publication
-   Capability.
-9. Planning, finalization, workflow, record-shape, and minimum-policy changes
-   require Governance-configured owner review except for target-revision control
-   and publisher code within the explicitly accepted first-slice Buddy
-   exception.
-10. Control-code changes create a new candidate or Release target; normal replay
-    never injects newer control code into an older target.
-11. The normal flow separates target execution from publication Capability,
-    except for the explicitly accepted first-slice Buddy target-revision
-    publisher after human approval of the current Attempt's deployment to the
-    Environment identity mapped from the Governance-selected Buddy Approval
-    Environment Profile and credential-free Capability Admission. Environment
-    remains a mandatory process control, not a security boundary against a
-    trusted malicious repository writer who authors an alternate workflow.
-12. CI Qualification and Release Delivery have no runtime evidence, artifact, or
-    verdict dependency on each other.
-13. CI builds all publishable variants of every affected Release Unit by using
-    the same Build Definitions used by Release Delivery. Artifact variants
-    belong to the Release Unit rather than to a channel.
-14. Buddy is a distributable preview channel whose complete channel,
-    destination, package-coordinate, and Capability boundaries are isolated
-    from Official; isolation does not require a different product-version
-    string.
-    The first Buddy smoke slice accepts branch-controlled publication risk only
-    for its dedicated disposable GitHub Packages package. Every repository
-    writer is inside that slice's trusted publisher TCB; an untrusted writer
-    blocks the slice until access is reduced below Write/Maintain/Admin or an
-    independently enforced publisher boundary makes package-write Capability
-    and destination access unavailable to writer-authored workflows. Ref
-    restrictions and workflow governance alone are insufficient remediation.
-    Future Buddy destinations do not inherit it.
-15. Official publication requires an authoritative target revision and an
-    Authorization Record bound to an immutable Publication Snapshot digest.
-16. Original Buddy and Official Attempts, Snapshots, Observations, Actions,
-    Receipts, and Outcomes remain immutable.
-17. Forced correction is modeled as a separately authorized Break-Glass
-    Remediation with append-only before-and-after evidence.
-18. CI decisions bind the actual GitHub candidate tree and, for pull requests,
-    its base and head commits.
-19. Release actions bind the target commit, Release Unit, frozen plan, artifact
-    digests, and plan-specific authorization.
-20. CI and Release Qualification Targets are fully closed before execution;
-    unresolved Project Nodes, Release Units, inputs, or obligations are blocking
-    rather than implicitly excluded.
-21. Executors may perform mechanical discovery but cannot change the semantic
-    content of an accepted Plan.
-22. Decision aggregation verifies Evidence ownership and integrity without
-    repeating the executor's quality check.
-23. Success requires a ready Plan and satisfied Evidence for every required
-    obligation; skipped, missing, unknown, cancelled, timed out, and conflicting
-    states cannot become success.
-24. Diagnostics explain structural state but never determine the verdict.
-25. Final Decisions are append-only; required reruns create new Decisions while
-    GitHub checks project the latest authoritative result. Advisory Evidence
-    remains outside the authoritative Decision.
-26. Publication credentials are externally granted through short-lived,
-    narrowly scoped platform Capabilities. For normal destinations, independent
-    trusted side-effect executors enforce exact immutable Plan, artifact,
-    Attempt, and action bindings. Under the named First-Slice Buddy Risk
-    Exception, the target-revision publisher validates by contract but is not an
-    independent adversarial enforcement boundary; trusted repository writers
-    may disregard or bypass it.
-27. Release retry uses whole-release replay rather than GitHub failed-job
-    resumption.
-28. Release builds are required to be bit-for-bit reproducible as a Release Unit
-    business contract; the delivery system does not certify reproducibility by
-    duplicate building.
-29. Partial publication is handled as an append-only Saga with
-    projection-atomic reconciliation rather than automatic rollback.
-30. Every Release Attempt performs read-only projection observation before
-    authorization; cancellation adds no separate recovery workflow. An absent
-    coordinate with no retained operational lineage is legitimate
-    initial-publication state.
-31. CI may cancel superseded candidate runs. Release lineage and request
-    coalescing use complete Release Execution Identity. Every live mutating
-    action binds complete deterministic Destination Adapter resource keys and
-    serializes against overlapping keys. Package keys include exact External
-    Package Coordinate; non-package keys are Adapter-defined. Release never
-    cancels in-progress publication.
-32. Cache availability may affect performance but never correctness, scope,
-    Evidence, or verdict.
-33. Publication Capabilities are requested just in time; their unavailability
-    blocks publication without triggering a credential fallback.
-34. Authoritative Plans, Evidence, Decisions, artifact identities, and Receipts
-    must persist; optional telemetry may fail without changing correctness.
-35. Record retention follows actual platform guarantees; Actions artifacts are
-    operational rather than permanent release records. Destination absence does
-    not require retained lineage or a permanent reservation record.
-36. Ordinary pull-request CI has a P95 12-minute Final Decision SLO without
-    weakening qualification semantics.
-37. Repository project and build facts, target-bound canonical and native NBGV
-    projections, quality execution, and destination behavior extend through
-    stable adapters while CI and Release keep separate aggregate roots.
-38. CI and Release Decisions include a structured, machine-readable explanation
-    that also drives the human GitHub summary.
-39. Each Release Attempt has one logical Plan lineage containing immutable
-    Qualification and Publication snapshots; in-place Plan backfill is forbidden.
-40. Architecture review begins from the ideal system direction and boundaries
-    before considering the current implementation.
-41. CI separates source-tree conformance from affected-system qualification.
-    The repository-root HK gate owns the former as one opaque composite
-    obligation.
-42. The CI Planner does not inspect HK profiles, steps, file applicability, or
-    internal planning and does not depend on HK plan serialization.
-43. Projects select ecosystem-specific, semantically versioned quality presets
-    or custom policy. Required semantic strengthening requires project opt-in.
-44. Effective project quality policy uses nearest-ancestor, ecosystem-matching
-    authoring without creating a directory domain object or cross-ecosystem
-    preset semantics.
-45. CI impact includes the full typed reverse Project Node closure and all
-    publishable variants of every affected Release Unit.
-46. Quality obligation identity is Quality Definition, concrete target, and
-    concrete dimensions. Execution batching and mechanical reuse do not change
-    that identity.
-47. Required and advisory obligations execute in separate lanes. The CI
-    Finalizer decides required obligations, while an Advisory Reporter presents
-    non-authoritative results.
-48. Incremental CI requires an authoritative comparison range. Schedule and
-    explicit manual full validation use complete repository qualification; an
-    invalid range does not silently fall back to full validation. During
-    first-slice coexistence, the v3 pull-request check is shadow-only and manual
-    `slice-validation` is non-authoritative and slice-scoped; neither is
-    canonical full validation or a Ruleset required check.
-49. A blocked CI Plan executes no authoritative partial obligations.
-50. A domain abstraction is introduced only when concrete scenarios demonstrate
-    independent behavior, identity, lifecycle, or policy responsibility.
-51. Manual Release dispatch uses the selected Git ref as the exact target;
-    independent target SHA or ref inputs are forbidden.
-52. One Release Execution contains append-only whole-release Attempts for one
-    Release Execution Identity. Official Product Identity is channel, Release
-    Unit, and canonical NBGV version; Official Execution Identity adds target.
-    Buddy Execution Identity is channel, Release Unit, and target. Separate
-    admitted requests for one Execution Identity retain separate Intent records
-    and initiate new Attempts in the same Execution. Every admitted,
-    non-coalesced request creates one distinct Attempt; a pending dispatch
-    replaced before execution creates none. A different target creates another
-    Execution. Dry-run branches before live identity or admission, uses a
-    separately namespaced request-scoped Simulation Identity, and never enters
-    live Release lineage.
-53. Buddy and Official each select a complete Release quality policy. Neither
-    implicitly inherits CI project policy or the other channel's policy.
-54. The Release Unit selects logical publication projections, Destination
-    Adapters define mechanics, Qualification declares Capability requirements,
-    and the normal v3 flow requests Governance-granted destination Capability
-    only after a credential-free Capability Admission Gate validates exact
-    authorization, Snapshot, summary, action, artifact, resource-key, group, and
-    current Governance-freshness bindings. The first-slice writer-TCB exception
-    does not make Environment a malicious-writer permission ceiling.
-55. Projection-internal partial state requires read-only reconciliation and, if
-    mutation is necessary, separately authorized Break-Glass Remediation.
-56. Successful channel-level approval produces an Authorization Record for the
-    exact Publication Snapshot. Terminal denial Evidence is admissible only with
-    documented exact attempt-bound proof; the first-slice GitHub Environment
-    surface does not provide it, so rejection is unknown, replayable, and
-    non-authorizing. Workflow Delivery adds no approval watchdog. Cancellation
-    or platform expiry while approval is pending may end the run without a
-    Finalizer outcome. With no capability group started, the platform conclusion
-    is sufficient no-side-effect evidence; possible capability execution instead
-    requires reobservation.
-57. Independent capability groups may execute in parallel. Actions within a
-    group remain ordered, fail-stop, and individually receipted.
-58. Release correctness relies on a documented lower-layer destination contract
-    for atomic non-overwriting creation and durable exact-state observation,
-    plus complete Adapter-declared resource-key serialization for
-    repository-controlled contenders. Package key sets include exact External
-    Package Coordinate and any additional Adapter-required keys. An incapable
-    destination is unsupported rather than emulated through an application-level
-    lock, tag witness, binding index, or permanent ledger.
-59. The Finalizer aggregates immutable result bundles and does not query remote
-    destinations again.
-60. Artifact final bytes are frozen before publication; the initial scope
-    excludes signing or notarization that changes artifact bytes.
-61. External provenance projections execute only after the Authorization Record
-    exists, even when they are prerequisites for other publication groups.
-62. Every live Release Attempt requires channel approval of its Publication
-    Snapshot, including an exact-satisfied no-op Attempt. A no-op Attempt
-    requires no destination Capability.
-63. Each action Receipt is persisted before a later mutation begins in the same
-    capability group. A group result bundle references those Receipts rather
-    than being their sole durable container.
-64. Break-Glass Remediation revalidates the complete expected remote state after
-    approval and immediately before mutation and reuses exactly the original
-    action's complete frozen Adapter-declared mutable-resource keys. It never
-    derives them from Product or Execution Identity. Normal Release does not add
-    the same second observation under the governed single-writer assumption.
-65. Buddy dry-run uses the unchanged target-derived native NBGV version and
-    hypothetical Buddy destination coordinate. It has a separately namespaced
-    request-scoped Simulation Identity derived only after Repository Model
-    Snapshot validation, purpose-discriminated records, and no live Product,
-    Execution, Attempt, authorization, Capability, Receipt, or mutation.
-66. Shared Foundation is a logical mechanism layer with no aggregate root,
-    independent business lifecycle, scheduler, authorization, or Finalizer.
-67. Shared Foundation exposes record primitives and binding helpers but no
-    universal CI/Release record envelope or Evidence model.
-68. Providers resolve normalized facts and capabilities; Adapters execute
-    closed family-specific mechanical invocations.
-69. CI and Release own scheduling, batching decisions, fail-stop, retries,
-    skips, and final aggregation. Foundation may expose compatibility hints only.
-70. Providers and Adapters emit Mechanical Results. The calling context forms
-    and admits authoritative Evidence, Observation Records, and Receipts.
-71. Artifact Reference and internal provenance primitives are shared, while CI
-    and Release apply independent purpose- and context-bound admission.
-72. Provider, Adapter, Definition, and client implementations use a
-    same-revision static catalog; initial scope has no dynamic plugin loading or
-    remote plugin ABI.
-73. A target-evaluating Provider runs in an unprivileged discovery boundary and
-    emits a target-bound Fact Bundle; only a pure Provider may run directly in
-    authoritative planning.
-74. Foundation declares execution classes and capability requirements but never
-    creates, grants, discovers, broadens, or downgrades credentials.
-75. Foundation owns mechanism Definition schemas and catalogs; context policy
-    selects Definitions and determines scope, requiredness, and projections.
-76. Destination projection, action, Receipt, replay, and remediation semantics
-    are Release-owned. Foundation provides generic client primitives only.
-77. CI and Release may share transparent non-authoritative caches, but each
-    rematerializes outputs and creates new context-specific provenance and
-    authoritative records.
-78. Foundation normalizes mechanical outcomes and diagnostics without emitting
-    CI or Release business verdicts.
-79. Explicit contract versioning is required only for intentional
-    cross-revision exchange contracts, such as old reconciliation requests
-    consumed by current remediation code.
-80. Repository Model compilation binds a closed Provider Request Manifest and
-    requires exactly one terminal Provider Result for every expected request.
-    Each Release candidate run attempt branches by purpose and compiles exactly
-    one same-revision request-local Snapshot. The resulting live Attempt or
-    simulation pass reuses it without recomputation. A new run attempt compiles
-    a new purpose-bound Snapshot, and cross-purpose admission is rejected.
-81. Solely for the named first-slice Buddy live Attempt, owner-reviewed
-    eligibility is waived for the selected-ref workflow, Planner, Finalizer,
-    Providers, Adapters, compiler, authenticated clients, static catalogs,
-    capability declarations, and publisher. CI and Official, future Buddy and
-    production scopes, protected cross-revision compatibility code, and
-    Break-Glass Remediation remain owner-reviewed or separately governed.
-82. Privileged cross-revision consumers admit protected producer and original
-    domain lineage; kind, version, and payload digest alone are insufficient.
-83. The named live Buddy slice creates no Attempt until a current-attempt,
-    exact-target Live Eligibility Decision proves consumer isolation and
-    validates the fixed-source, unexpired protected-ref Governance attestation
-    and `live_enabled: true`. Runtime does not claim complete writer or GitHub
-    Packages grant enumeration. Human protected-source change response plus
-    expiry bound staleness; CI and history cannot substitute. Immediately
-    before Capability Admission, Release uses `contents: read` to freshly
-    re-resolve and re-read that source and requires the boolean, provenance, and
-    content to remain valid and identical; failure requires a new Attempt.
-84. Exact first-slice npm package state requires matching coordinate,
-    ownership, in-package immutable target witness, and bytes. Detached
-    provenance is insufficient.
-85. History-only artifact attribution is limited to platform-exposed facts and
-    separately queried run/job phase data. Self-asserted historical producer or
-    attempt lineage is diagnostic and never current authority.
-86. First-slice npm publication is one compound version-and-routing-tag action.
-    The tag is target-specific routing rather than provenance; exact state
-    requires the tag-to-version mapping, while the in-package witness remains
-    authoritative for target provenance.
-87. Every physical Actions artifact name is deterministic and unique across its
-    workflow run, normally by including `github.run_attempt` directly or in the
-    hash preimage. Artifact IDs remain the only admission selector; same-run
-    prior-attempt artifacts remain history-only.
-
-## Open Decisions
-
-No unresolved top-level terminology decisions remain.

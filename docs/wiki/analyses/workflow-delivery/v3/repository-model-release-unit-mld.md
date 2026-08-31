@@ -4,7 +4,8 @@
 
 Architecture version: **v3**.
 
-Review state: **Confirmed; published version authority clarified on 2026-08-05**.
+Review state: **Confirmed; approved normal Live baseline incorporated on
+2026-08-31**.
 
 This middle-level design defines how Workflow Delivery discovers technical
 repository facts, authors Release Units, resolves build semantics, and compiles
@@ -22,7 +23,9 @@ This MLD owns:
 - Release Unit discovery and product/build authoring;
 - Project Node and dependency fact discovery;
 - Build Definition and artifact variant semantics;
+- first-slice Release Unit determinism support;
 - NBGV version authority resolution;
+- context-owned request and run binding for Repository Model records;
 - Repository Model compilation and validation; and
 - the graph needed by later CI affected-selection and Release planning.
 
@@ -47,6 +50,10 @@ This MLD does not own:
 6. Unknown or conflicting required facts block model compilation.
 7. Adapter correctness is validated during acceptance rather than repeatedly
    re-proved through expensive runtime inspection.
+8. Request and run-attempt fields follow the owning CI, normal-Live, or
+   simulation contract rather than one universal Repository Model schema.
+9. First-slice npm determinism is a Release Unit and Build Definition support
+   boundary, not duplicate-build certification.
 
 ## Model Overview
 
@@ -151,10 +158,19 @@ compilation.
 
 A target-evaluating Provider wraps the same Provider Result in an immutable Fact
 Bundle that additionally binds producer job, request identity, explicit
-purpose, `github.run_id` and `github.run_attempt`, target, producer and control
-identities, request artifact, and transport digest. Providers run without
-publication credentials. The Decision Zone consumes admitted Fact Bundles
-rather than evaluating target-controlled project systems directly.
+purpose, `workflow_run_id`, target, producer and control identities, request
+artifact, and transport digest. Run-attempt binding is contextual:
+
+- normal-Live Fact Bundles omit `github.run_attempt`; every authoritative
+  normal-Live job, including each producer and consumer, independently requires
+  `github.run_attempt == 1`;
+- simulation Fact Bundles bind `github.run_attempt`, and each rerun is a
+  distinct simulation pass; and
+- CI Fact Bundles retain CI's existing candidate and run-attempt contract.
+
+Providers run without publication credentials. The Decision Zone consumes
+admitted Fact Bundles rather than evaluating target-controlled project systems
+directly.
 
 When NBGV resolution requires target evaluation, the canonical version facts
 and every required native ecosystem projection travel in that Provider Result
@@ -275,6 +291,19 @@ independent builds.
 Each variant receives a complete normalized Build Definition. CI and Release
 materialize separate Build Requests from the same definition.
 
+### First-Slice npm Determinism
+
+The first-slice npm Release Unit may select only Build Definitions whose closed
+contract produces bit-for-bit identical artifact bytes for the same target,
+frozen inputs, Build Definition, and toolchain. That requirement covers every
+publishable variant of the Release Unit.
+
+Workflow Delivery records and validates the produced digest but does not
+certify determinism by performing a duplicate build. A Release Unit that cannot
+meet the contract is unsupported by the first slice. Publishing a
+nondeterministic unit requires a future explicit sealed-artifact
+publication-resume design.
+
 ### No Manual Project Membership
 
 A Release Unit does not maintain a list such as
@@ -344,14 +373,14 @@ that did not establish this contract.
 
 The Repository Model Compiler:
 
-1. resolves the effective NBGV `version.json` lineage for each Build Definition
-   entry point;
-2. requires all entry points in one Release Unit to resolve to one canonical
+1. validates the effective NBGV `version.json` lineage reported for each Build
+   Definition entry point;
+2. requires all entry points in one Release Unit to report one canonical
    lineage;
-3. computes the canonical version facts and required native ecosystem
-   projections for the immutable target commit once;
-4. records those values as authoritative NBGV outputs in the Repository Model
-   Snapshot; and
+3. admits the NBGV-owning Provider's canonical version facts and required
+   native ecosystem projections without recomputation;
+4. records those exact values as authoritative NBGV outputs in the Repository
+   Model Snapshot; and
 5. exposes them for exact selection and freezing by each CI or Release Plan and
    Build Request.
 
@@ -383,29 +412,35 @@ The compiler combines Release Unit declarations, a closed Provider Request
 Manifest, terminal Provider Results, and NBGV facts into one immutable
 Repository Model Snapshot.
 
-The Provider Request Manifest binds the caller request identity, purpose,
-`github.run_id`, `github.run_attempt`, target, producer and control identities,
-the caller-selected channel and Release Unit for simulation purpose, and every
-expected Provider request, execution mode, request digest, and expected result
-identity. Exactly one terminal Provider Result must exist for every request.
-Missing, duplicate, unexpected, or differently bound results block model
-compilation.
+Every Provider Request Manifest and Repository Model Snapshot binds request
+identity, purpose, `workflow_run_id`, target, producer and control identities,
+and the expected Provider request/result closure. Both the manifest and
+Snapshot also bind the caller-selected channel and Release Unit where the
+owning purpose requires them. The Snapshot binds the manifest identity and
+digest, every terminal Provider Result identity and digest, and each admitted
+Fact Bundle transport and payload identity and digest where applicable.
+Exactly one terminal Provider Result must exist for every request. Missing,
+duplicate, unexpected, or differently bound results block model compilation.
 
-The Repository Model Snapshot schema and digest bind that same request identity,
-purpose, `github.run_id`, `github.run_attempt`, target, producer, and control
-identity. Each candidate run attempt compiles exactly one authoritative Snapshot
-for its live-release or release-simulation purpose and reuses it throughout the
-resulting live Attempt or simulation pass. Before live Release Execution lookup,
-admission requires every Fact Bundle and the compiled Snapshot to match the
-current purpose and `github.run_attempt`; a Bundle or Snapshot from a prior run
-attempt or the other purpose is invalid even when request identity,
-`github.run_id`, and target are unchanged.
+Run-attempt binding follows the owning execution contract:
 
-For simulation purpose, the Snapshot binds request identity, run ID and attempt,
-target, channel, Release Unit, canonical and native version facts, producer, and
-control identity. It does not bind a Simulation Identity that does not yet
-exist. Release derives that separately namespaced Identity only after validating
-the Snapshot, then binds both into later simulation planning records.
+- **Normal Live:** the request-local Manifest, Fact Bundles, Snapshot, and
+  current-Attempt records and transports bind `workflow_run_id` and omit
+  `github.run_attempt`. Every authoritative normal-Live job, including each
+  producer and consumer, independently requires `github.run_attempt == 1`.
+  Release compiles one Snapshot for the current request before Execution lookup
+  and reuses it throughout the resulting Attempt.
+- **Release simulation:** the Manifest, Fact Bundles, and Snapshot bind
+  `github.run_attempt`, selected channel, and Release Unit. A rerun is a
+  distinct simulation pass with a new purpose-bound Snapshot. The Snapshot
+  does not bind the not-yet-created Simulation Identity; Release derives that
+  identity only after Snapshot validation.
+- **CI Qualification:** the Snapshot and Fact Bundles retain CI's approved
+  candidate and run-attempt contract.
+
+Every context rejects cross-purpose, other-request, and prior-Attempt
+Repository Model inputs. This is strict current-context admission, not custom
+Actions history discovery or prior-Attempt reconstruction.
 
 For each Release Unit, it:
 
@@ -455,11 +490,23 @@ Release ignores changed-path optimization. It selects one explicit Release Unit
 and uses the complete Project Node, declared-input, Build Definition, variant,
 and output closure compiled for that Release Unit.
 
-Each candidate Release request or run performs same-revision, request-local
-Repository Model compilation before Release Execution lookup, coalescing, or
-admission. The Snapshot is bound to that request, target, workflow run, and
-producer. Its canonical NBGV fact supplies Official Product Identity; its native
-facts remain authoritative later Attempt-planning selections.
+For normal Buddy, `workflow_dispatch` may select any same-repository ref. The
+ref resolves to one exact SHA that supplies both the workflow/control revision
+and the Release target. Protected Governance remains a separate read from
+`refs/heads/main`; it is not substituted for the selected same-revision
+Repository Model or control stack. The selected-revision control must strictly
+admit exact schema
+`workflow-delivery/v3/normal-live-governance-attestation-v1`; an incompatible
+ref fails before Release Execution lookup, Attempt creation, or any
+Environment job.
+
+Each Release request branches to live release or release simulation before
+live eligibility, Product or Execution lookup, coalescing, admission, or
+Attempt creation. The selected branch performs same-revision, request-local
+Repository Model compilation and binds the Snapshot to that request,
+`workflow_run_id`, target, producer, control revision, and purpose. Its
+canonical NBGV fact supplies Official Product Identity; its native facts remain
+authoritative later planning selections.
 
 Compilation must close descriptors, Project Nodes and dependency graph, Build
 Definitions, modeled variants and outputs, canonical and native NBGV facts, and
@@ -476,13 +523,14 @@ mutable-resource-key derivation and enforceability basis. Actual actions,
 inputs, and complete action key sets materialize only after build,
 qualification, and observation and freeze in the Publication Snapshot. Live
 Attempt planning or simulation planning does not recompute the Repository Model
-within the run attempt. Whole-release replay compiles a new request-local
-Snapshot and never adopts one from an older Attempt. GitHub `Re-run all jobs`
-preserves request
-identity, `github.run_id`, and target but increments `github.run_attempt`, so
-the replay reruns Provider requests as applicable and compiles a new Snapshot
-bound to that new run attempt. Release simulation follows the same one-Snapshot
-rule for its simulation pass but never supplies that Snapshot to live admission.
+within the current pass.
+
+Normal-Live retry is a new manual dispatch and `workflow_run_id`. It compiles a
+new request-local Snapshot and never adopts one from an older Attempt. GitHub
+rerun commands are unsupported for normal Live, and every authoritative job's
+attempt-1 guard prevents rerun formation of authority. Simulation retains its
+separate run-attempt identity and rerun behavior. Native Actions history may be
+used for diagnostics only; it is not Repository Model admission authority.
 
 Release rebuilds from the immutable target commit and never consumes CI build
 outputs or Evidence.
@@ -506,10 +554,14 @@ Repository Model compilation is blocked when:
 - a Provider reports unresolved required facts;
 - the model cannot establish a closed build and artifact scope;
 - a Provider Request, Fact Bundle, or Repository Model Snapshot is not bound to
-  the current purpose, request identity, `github.run_id`, `github.run_attempt`,
-  target, producer, and control identity; or
-- a Fact Bundle or Snapshot from a prior `github.run_attempt` is offered to the
-  current compilation or pre-Execution admission path; or
+  the current purpose, request identity, `workflow_run_id`, target, producer,
+  control identity, and context-required run-attempt contract;
+- an authoritative normal-Live job is not on `github.run_attempt == 1`;
+- a normal-Live record contains or requires `github.run_attempt` as authority;
+- a simulation or CI record omits or mismatches the run-attempt binding required
+  by its owning contract;
+- a Fact Bundle or Snapshot from another request or prior Attempt is offered to
+  the current compilation or pre-Execution admission path; or
 - a live-release compilation or admission path receives a simulation-purpose
   artifact, or a simulation pass receives a live-release artifact.
 
@@ -548,6 +600,8 @@ An npm Release Unit resolves a target-bound NBGV fact set.
 
 - The Repository Model Snapshot contains the canonical NBGV facts and native
   `npmPackageVersion`.
+- The Release Unit and selected Build Definition satisfy the first-slice
+  deterministic-byte contract without requiring a duplicate build.
 - Buddy Release Execution Identity ignores version. After admission, the
   Release Plan and Build Request select and freeze `npmPackageVersion` from the
   Snapshot before deriving package coordinates and projections.
@@ -580,17 +634,16 @@ Repository Model Snapshot and Build Request projection binding defined here.
 - descriptor basename and serialization format;
 - exact strict descriptor, Provider Result, Fact Bundle, target-bound NBGV fact,
   native projection, and Provider Request Manifest schemas, including explicit
-  request identity, purpose, `github.run_id`, `github.run_attempt`, target,
-  producer, and control bindings where applicable;
+  request identity, purpose, `workflow_run_id`, target, producer, control, and
+  context-selected run-attempt bindings;
 - canonical Project Node identity encoding;
 - Provider command lines and isolation details;
 - Build Definition digest canonicalization;
 - artifact output path conventions;
 - authoring helper syntax;
 - per-ecosystem Adapter package layout;
-- deterministic workflow-run-unique non-authoritative physical artifact names
-  with `github.run_attempt` directly or in the hash preimage, immutable artifact
-  ID/digest/URL transport, and ID-only admission;
+- context-appropriate collision-safe non-authoritative physical artifact names,
+  immutable artifact ID/digest/URL transport, and ID-only admission;
 - conformance fixtures proving Repository Model Snapshot and Fact Bundle
   preservation of canonical and native NBGV outputs;
 - NBGV Provider contract and control fixtures proving exact-target
@@ -602,13 +655,15 @@ Repository Model Snapshot and Build Request projection binding defined here.
   binding without run/Attempt IDs;
 - ready-versus-blocked completeness fixtures for descriptors, technical graph,
   Build Definitions, modeled variants and outputs, and build and artifact scope;
-- Release request-local Snapshot identity, run ID, run attempt, producer,
-  control, target, and purpose binding; exactly-once per-run-attempt
-  compilation and reuse; and replay recompilation contracts;
-- negative admission fixtures rejecting Provider Requests, Fact Bundles, and
-  Snapshots with mismatched or prior `github.run_attempt` bindings, including a
-  `Re-run all jobs` fixture proving the new attempt rejects the prior attempt's
-  artifacts and compiles a new Snapshot; and
+- normal-Live request-local Snapshot identity, `workflow_run_id`, producer,
+  control, target, and purpose binding; omission of `github.run_attempt`; and
+  independent attempt-1 guards on every authoritative job;
+- simulation Snapshot and Fact Bundle run-attempt binding, rerun identity, and
+  recompilation contracts;
+- CI candidate and run-attempt binding compatibility;
+- negative admission fixtures rejecting cross-purpose, other-request,
+  prior-Attempt, and context-mismatched Provider Requests, Fact Bundles, and
+  Snapshots;
 - purpose-binding fixtures proving live Release and simulation compile and
   reuse separate Snapshots, derive Simulation Identity only after Snapshot
   validation, and reject cross-purpose Provider Requests, Fact Bundles, and
