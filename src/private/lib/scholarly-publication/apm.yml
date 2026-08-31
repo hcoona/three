@@ -1,6 +1,6 @@
 name: scholarly-publication
 version: 0.1.0
-description: Reconstruct, assemble, and independently audit bounded scholarly publication units.
+description: Reconstruct authorized scholarly PDFs, assemble offline mixed-script print publications, and independently audit release artifacts.
 author: hcoona
 license: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
 targets:

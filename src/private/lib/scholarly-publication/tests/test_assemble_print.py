@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import copy
 import importlib
 import sys
 import tempfile
@@ -37,7 +38,6 @@ publication_test_support: Any = importlib.import_module(
     "publication_test_support"
 )
 MainResult = publication_test_support.MainResult
-apply_profile_mutation = publication_test_support.apply_profile_mutation
 asset_record = publication_test_support.asset_record
 copy_tree = publication_test_support.copy_tree
 detect_browser = publication_test_support.detect_browser
@@ -51,10 +51,6 @@ windows_short_path = publication_test_support.windows_short_path
 write_json = publication_test_support.write_json
 write_test_font = publication_test_support.write_test_font
 
-validate_package = import_by_path(
-    "scholarly_validate_package_for_assembly_tests",
-    PUBLICATION_ROOT / "scripts" / "validate_package.py",
-)
 assemble_print = import_by_path(
     "scholarly_assemble_print_under_test",
     SKILL / "scripts" / "assemble_print.py",
@@ -408,64 +404,55 @@ def create_fixture(root: Path) -> None:
 class PublicationProfileContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.profile = read_json(SKILL / "assets" / "publication-profile.json")
-        self.cases = read_json(SUPPORT_ROOT / "publication-profile-cases.json")[
-            "mutations"
-        ]
 
-    def test_package_validator_profile_shape_mutations(self) -> None:
-        for case in self.cases:
-            with (
-                self.subTest(case=case["id"]),
-                tempfile.TemporaryDirectory(
-                    prefix="scholarly-package-profile-"
-                ) as temporary,
-            ):
-                skills = Path(temporary)
-                write_json(
-                    skills
-                    / "scholarly-print-assembly"
-                    / "assets"
-                    / "publication-profile.json",
-                    apply_profile_mutation(self.profile, case),
-                )
-                with mock.patch.object(
-                    validate_package,
-                    "SKILLS_ROOT",
-                    skills,
-                ):
-                    if case["accepted"]:
-                        validate_package.validate_publication_profile()
-                    else:
-                        with self.assertRaises(  # noqa: PT027
-                            validate_package.ValidationError
-                        ):
-                            validate_package.validate_publication_profile()
-
-    def test_assembly_loader_profile_shape_mutations(self) -> None:
-        for case in self.cases:
-            with (
-                self.subTest(case=case["id"]),
-                tempfile.TemporaryDirectory(
-                    prefix="scholarly-assembly-profile-"
-                ) as temporary,
-            ):
-                assets = Path(temporary)
-                write_json(
-                    assets / "publication-profile.json",
-                    apply_profile_mutation(self.profile, case),
-                )
-                with mock.patch.object(assemble_print, "ASSETS", assets):
+    def load_profile(self, profile: dict[str, Any]) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="scholarly-assembly-profile-"
+        ) as temporary:
+            assets = Path(temporary)
+            write_json(assets / "publication-profile.json", profile)
+            with mock.patch.object(assemble_print, "ASSETS", assets):
+                assemble_print.load_profile.cache_clear()
+                try:
+                    assemble_print.load_profile()
+                finally:
                     assemble_print.load_profile.cache_clear()
-                    try:
-                        if case["accepted"]:
-                            assemble_print.load_profile()
-                        else:
-                            with self.assertRaises(  # noqa: PT027
-                                assemble_print.ContractError
-                            ):
-                                assemble_print.load_profile()
-                    finally:
-                        assemble_print.load_profile.cache_clear()
+
+    def test_assembly_loader_accepts_baseline_and_narrowing(self) -> None:
+        narrowed = copy.deepcopy(self.profile)
+        del narrowed["fragment_html"]["elements"]["abbr"]
+        narrowed["untrusted_stylesheet"]["properties"].remove("color")
+
+        self.load_profile(self.profile)
+        self.load_profile(narrowed)
+
+    def test_assembly_loader_rejects_profile_widening(self) -> None:
+        script_element = copy.deepcopy(self.profile)
+        script_element["fragment_html"]["elements"]["script"] = []
+        global_attribute = copy.deepcopy(self.profile)
+        global_attribute["fragment_html"]["global_attributes"].append(
+            "data-extra"
+        )
+        css_property = copy.deepcopy(self.profile)
+        css_property["untrusted_stylesheet"]["properties"].append("display")
+
+        for name, profile in (
+            ("script-element", script_element),
+            ("global-attribute", global_attribute),
+            ("css-property", css_property),
+        ):
+            with (
+                self.subTest(case=name),
+                self.assertRaises(assemble_print.ContractError),  # noqa: PT027
+            ):
+                self.load_profile(profile)
+
+    def test_assembly_loader_rejects_malformed_profile_shape(self) -> None:
+        malformed = copy.deepcopy(self.profile)
+        malformed["fragment_html"]["global_attributes"] = "id"
+
+        with self.assertRaises(assemble_print.ContractError):  # noqa: PT027
+            self.load_profile(malformed)
 
 
 class AssemblePrintReplacementTests(unittest.TestCase):

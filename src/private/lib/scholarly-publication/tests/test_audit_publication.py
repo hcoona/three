@@ -40,7 +40,6 @@ publication_test_support: Any = importlib.import_module(
 )
 MainResult = publication_test_support.MainResult
 PdfPage = publication_test_support.PdfPage
-apply_profile_mutation = publication_test_support.apply_profile_mutation
 add_pdf_javascript = publication_test_support.add_pdf_javascript
 add_pdf_type3_font = publication_test_support.add_pdf_type3_font
 add_pdf_vector_mark = publication_test_support.add_pdf_vector_mark
@@ -77,10 +76,6 @@ assemble_print = import_by_path(
     / "scholarly-print-assembly"
     / "scripts"
     / "assemble_print.py",
-)
-validate_package = import_by_path(
-    "scholarly_validate_package_for_qa_tests",
-    PUBLICATION_ROOT / "scripts" / "validate_package.py",
 )
 audit_publication = import_by_path(
     "scholarly_audit_publication_under_test",
@@ -706,50 +701,65 @@ class AuditPublicationContractTests(unittest.TestCase):
                 self.assertEqual(case["accepted"], not findings, findings)
 
     def test_fixed_publication_profile_ceilings_are_aligned(self) -> None:
-        expected = read_json(SUPPORT_ROOT / "publication-profile-cases.json")[
-            "fixed_ceiling"
-        ]
-        for name, module in (
-            ("package-validator", validate_package),
-            ("assembly", assemble_print),
-            ("qa", audit_publication),
-        ):
-            with self.subTest(runtime=name):
-                self.assertEqual(expected, fixed_profile_ceiling(module))
+        self.assertEqual(
+            fixed_profile_ceiling(assemble_print),
+            fixed_profile_ceiling(audit_publication),
+        )
 
-    def test_qa_loader_profile_shape_mutations(self) -> None:
-        profile = read_json(SKILL / "assets" / "publication-profile.json")
-        cases = read_json(SUPPORT_ROOT / "publication-profile-cases.json")[
-            "mutations"
-        ]
-        for case in cases:
-            with (
-                self.subTest(case=case["id"]),
-                tempfile.TemporaryDirectory(
-                    prefix="scholarly-qa-profile-"
-                ) as temporary,
+    def load_qa_profile(self, profile: dict[str, Any]) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="scholarly-qa-profile-"
+        ) as temporary:
+            profile_path = Path(temporary) / "publication-profile.json"
+            write_json(profile_path, profile)
+            with mock.patch.object(
+                audit_publication,
+                "PROFILE_PATH",
+                profile_path,
             ):
-                profile_path = Path(temporary) / "publication-profile.json"
-                write_json(
-                    profile_path,
-                    apply_profile_mutation(profile, case),
-                )
-                with mock.patch.object(
-                    audit_publication,
-                    "PROFILE_PATH",
-                    profile_path,
-                ):
+                audit_publication.load_profile.cache_clear()
+                try:
+                    audit_publication.load_profile()
+                finally:
                     audit_publication.load_profile.cache_clear()
-                    try:
-                        if case["accepted"]:
-                            audit_publication.load_profile()
-                        else:
-                            with self.assertRaises(  # noqa: PT027
-                                audit_publication.AuditError
-                            ):
-                                audit_publication.load_profile()
-                    finally:
-                        audit_publication.load_profile.cache_clear()
+
+    def test_qa_loader_accepts_baseline_and_narrowing(self) -> None:
+        profile = read_json(SKILL / "assets" / "publication-profile.json")
+        narrowed = copy.deepcopy(profile)
+        del narrowed["fragment_html"]["elements"]["abbr"]
+        narrowed["untrusted_stylesheet"]["properties"].remove("color")
+
+        self.load_qa_profile(profile)
+        self.load_qa_profile(narrowed)
+
+    def test_qa_loader_rejects_profile_widening(self) -> None:
+        profile = read_json(SKILL / "assets" / "publication-profile.json")
+        script_element = copy.deepcopy(profile)
+        script_element["fragment_html"]["elements"]["script"] = []
+        global_attribute = copy.deepcopy(profile)
+        global_attribute["fragment_html"]["global_attributes"].append(
+            "data-extra"
+        )
+        css_property = copy.deepcopy(profile)
+        css_property["untrusted_stylesheet"]["properties"].append("display")
+
+        for name, widened in (
+            ("script-element", script_element),
+            ("global-attribute", global_attribute),
+            ("css-property", css_property),
+        ):
+            with (
+                self.subTest(case=name),
+                self.assertRaises(audit_publication.AuditError),  # noqa: PT027
+            ):
+                self.load_qa_profile(widened)
+
+    def test_qa_loader_rejects_malformed_profile_shape(self) -> None:
+        profile = read_json(SKILL / "assets" / "publication-profile.json")
+        profile["fragment_html"]["global_attributes"] = "id"
+
+        with self.assertRaises(audit_publication.AuditError):  # noqa: PT027
+            self.load_qa_profile(profile)
 
     def test_inspect_pdf_has_no_aggregate_raster_budget(self) -> None:
         actual_page_pixels = math.ceil(

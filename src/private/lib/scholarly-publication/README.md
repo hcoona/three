@@ -64,11 +64,11 @@ Assembly and QA carry byte-identical
 policy identity, HTML/attribute allowlists, CSS property/at-rule/selector
 allowlists, and explicit global prohibitions. The profile may only narrow the
 fixed element/local-attribute, global-attribute, and CSS-property ceilings
-implemented independently by package validation, Assembly, and QA. The
-runtimes also implement fixed selector and CSS value semantics and exercise
-shared test-only conformance corpora. The assembler-generated document wrapper,
-figure/crop markup, font rules, and page CSS use a separate closed
-generated-output profile documented by the assembly and QA contracts.
+implemented independently by Assembly and QA. The runtimes also implement
+fixed selector and CSS value semantics and exercise shared test-only
+conformance corpora. The assembler-generated document wrapper, figure/crop
+markup, font rules, and page CSS use a separate closed generated-output profile
+documented by the assembly and QA contracts.
 
 Stable QA and release asset bindings state their relative path bases:
 `publication-root` for the assembly manifest, `evidence-root` for independent
@@ -88,14 +88,17 @@ because APM installs each declared skill directory recursively.
 From the repository root:
 
 ```powershell
-mise run scholarly-publication-plugin-check
+mise run scholarly-publication-plugin-source-check
+mise run scholarly-publication-plugin-runtime-check
 mise run scholarly-publication-plugin-spec
 mise run scholarly-publication-plugin-test
 mise run scholarly-publication-plugin-lint
 ```
 
 Contract/distribution validation covers canonical source, runtime includes,
-schema validity, shared-file identity, and deployed parity.
+schema validity, shared-file identity, root package registration, lock
+bindings, and deployed parity. Assembly and QA own publication-profile
+semantics.
 
 ## Runtime requirements
 

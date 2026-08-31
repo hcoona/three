@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import copy
 import ctypes
 import hashlib
 import importlib
@@ -113,32 +112,6 @@ def write_json(path: Path, value: Any) -> None:
 def read_json(path: Path) -> Any:
     """Read a UTF-8 JSON value."""
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def apply_profile_mutation(
-    profile: dict[str, Any],
-    case: dict[str, Any],
-) -> dict[str, Any]:
-    """Apply one declarative profile-shape mutation from the shared corpus."""
-    mutated = copy.deepcopy(profile)
-    path = case["path"]
-    target: Any = mutated
-    for part in path[:-1]:
-        target = target[part]
-    final = path[-1]
-    operation = case["operation"]
-    if operation == "set":
-        target[final] = copy.deepcopy(case["value"])
-    elif operation == "delete":
-        del target[final]
-    elif operation == "append":
-        target[final].append(case["value"])
-    elif operation == "remove":
-        target[final].remove(case["value"])
-    else:
-        message = f"unsupported profile mutation operation: {operation!r}"
-        raise ValueError(message)
-    return mutated
 
 
 def fixed_profile_ceiling(module: Any) -> dict[str, Any]:

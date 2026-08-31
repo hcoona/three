@@ -136,21 +136,16 @@ description = "Validate and reproduce the locked scan restoration plugin deploym
 depends = ["scan-restoration-plugin-check"]
 run = "apm install --frozen"
 
-[tasks.scholarly-publication-plugin-check]
-description = "Validate scholarly publication source and deployed runtime"
-shell = "pwsh -NoLogo -Command"
-run = "uv run --isolated --no-project --with jsonschema==4.25.1 python -B src/private/lib/scholarly-publication/scripts/validate_package.py"
-
 [tasks.scholarly-publication-plugin-source-check]
 description = "Validate canonical scholarly publication plugin source"
 shell = "pwsh -NoLogo -Command"
-run = "uv run --isolated --no-project --with jsonschema==4.25.1 python -B src/private/lib/scholarly-publication/scripts/validate_package.py --scope canonical"
+run = "uv run --script src/private/lib/scholarly-publication/scripts/validate_package.py --scope canonical"
 
 [tasks.scholarly-publication-plugin-runtime-check]
 description = "Validate deployed scholarly publication runtime parity"
 depends = ["scholarly-publication-plugin-source-check"]
 shell = "pwsh -NoLogo -Command"
-run = "uv run --isolated --no-project --with jsonschema==4.25.1 python -B src/private/lib/scholarly-publication/scripts/validate_package.py --scope runtime"
+run = "uv run --script src/private/lib/scholarly-publication/scripts/validate_package.py --scope runtime"
 
 [tasks.scholarly-publication-plugin-spec]
 description = "Validate scholarly publication skills with the Agent Skills reference library"
@@ -189,11 +184,11 @@ description = "Lint and type-check the scholarly publication plugin"
 depends = ["scholarly-publication-plugin-source-check"]
 shell = "pwsh -NoLogo -Command"
 run = '''
-uvx ruff==0.16.4 check src/private/lib/scholarly-publication
+uvx ruff==0.16.5 check src/private/lib/scholarly-publication
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-uvx ruff==0.16.4 format --check src/private/lib/scholarly-publication
+uvx ruff==0.16.5 format --check src/private/lib/scholarly-publication
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-uv run --isolated --no-project --with defusedxml==0.7.1 --with pymupdf==1.26.6 --with fonttools==4.60.1 --with html5lib==1.1 --with playwright==1.56.0 --with jsonschema==4.25.1 --with tinycss2==1.4.0 --with pyrefly==1.0.0 pyrefly check src/private/lib/scholarly-publication
+uv run --isolated --no-project --with defusedxml==0.7.1 --with pymupdf==1.26.6 --with fonttools==4.60.1 --with html5lib==1.1 --with playwright==1.56.0 --with jsonschema==4.25.1 --with PyYAML==6.0.2 --with tinycss2==1.4.0 --with pyrefly==1.0.0 pyrefly check src/private/lib/scholarly-publication
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 '''
 
@@ -213,7 +208,7 @@ shell = "pwsh -NoLogo -Command"
 run = '''
 apm install
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-uv run --isolated --no-project --with jsonschema==4.25.1 python -B src/private/lib/scholarly-publication/scripts/validate_package.py --scope runtime
+uv run --script src/private/lib/scholarly-publication/scripts/validate_package.py --scope runtime
 '''
 
 [tasks.scholarly-publication-plugin-install-frozen]
@@ -223,7 +218,7 @@ shell = "pwsh -NoLogo -Command"
 run = '''
 apm install --frozen
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-uv run --isolated --no-project --with jsonschema==4.25.1 python -B src/private/lib/scholarly-publication/scripts/validate_package.py --scope runtime
+uv run --script src/private/lib/scholarly-publication/scripts/validate_package.py --scope runtime
 '''
 
 [tasks.translation-agent-plugin-check]

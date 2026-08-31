@@ -151,7 +151,7 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
   "TRY004",  # Contract violations are uniformly surfaced as validation errors.
   "TRY301",  # CLI boundaries convert validation failures to exit status.
 ]
-"src/private/lib/scholarly-publication/**/scripts/*.py" = [
+"src/private/lib/scholarly-publication/skills/**/scripts/*.py" = [
   "ANN401",  # Contract records intentionally use open JSON value types.
   "C901",    # CLI contract validators keep related checks together.
   "D100",    # The skills document the script entry points.
