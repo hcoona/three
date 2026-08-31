@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import ctypes
 import importlib
 import sys
 import tempfile
@@ -42,6 +41,7 @@ import_by_path = publication_test_support.import_by_path
 invoke_main = publication_test_support.invoke_main
 read_json = publication_test_support.read_json
 tree_snapshot = publication_test_support.tree_snapshot
+windows_short_path = publication_test_support.windows_short_path
 write_json = publication_test_support.write_json
 write_pdf = publication_test_support.write_pdf
 
@@ -878,19 +878,9 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
         self.make_happy_source(suffix=" Nested source revision.")
         before = tree_snapshot(output)
 
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        get_short_path = kernel32.GetShortPathNameW
-        get_short_path.argtypes = [
-            ctypes.c_wchar_p,
-            ctypes.c_wchar_p,
-            ctypes.c_uint32,
-        ]
-        get_short_path.restype = ctypes.c_uint32
-        buffer = ctypes.create_unicode_buffer(32768)
-        length = get_short_path(str(output), buffer, len(buffer))
-        if length == 0 or length >= len(buffer):
+        short_output = windows_short_path(output)
+        if short_output is None:
             self.skipTest("Win32 short-name lookup is unavailable")
-        short_output = Path(buffer.value)
         if short_output.name.casefold() == output.name.casefold():
             self.skipTest("8.3 short names are disabled for this volume")
         self.assertTrue(output.samefile(short_output))

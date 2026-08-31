@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import copy
-import ctypes
 import importlib
 import json
 import math
@@ -59,6 +58,7 @@ resolve_stable_asset = publication_test_support.resolve_stable_asset
 scale_pdf_user_unit = publication_test_support.scale_pdf_user_unit
 sha256_bytes = publication_test_support.sha256_bytes
 tree_snapshot = publication_test_support.tree_snapshot
+windows_short_path = publication_test_support.windows_short_path
 write_json = publication_test_support.write_json
 write_pdf = publication_test_support.write_pdf
 
@@ -225,23 +225,6 @@ def pdf_action_observation(path: Path) -> dict[str, Any]:
     """Inspect only the bounded PDF action evidence."""
     with fitz.open(path) as document:
         return audit_publication.pdf_actions(document, fitz)
-
-
-def windows_short_path(path: Path) -> Path | None:
-    """Return the Win32 short path when the volume exposes one."""
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    get_short_path = kernel32.GetShortPathNameW
-    get_short_path.argtypes = [
-        ctypes.c_wchar_p,
-        ctypes.c_wchar_p,
-        ctypes.c_uint32,
-    ]
-    get_short_path.restype = ctypes.c_uint32
-    buffer = ctypes.create_unicode_buffer(32768)
-    length = get_short_path(str(path), buffer, len(buffer))
-    if length == 0 or length >= len(buffer):
-        return None
-    return Path(buffer.value)
 
 
 def windows_extended_alias(path: Path) -> Path:

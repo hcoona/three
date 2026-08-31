@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import ctypes
 import hashlib
 import importlib
 import importlib.util
@@ -258,6 +259,31 @@ def tree_snapshot(root: Path) -> dict[str, bytes]:
 def copy_tree(source: Path, destination: Path) -> None:
     """Copy a complete fixture tree to a new location."""
     shutil.copytree(source, destination)
+
+
+if sys.platform == "win32":
+
+    def windows_short_path(path: Path) -> Path | None:
+        """Return the Win32 short path when the volume exposes one."""
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        get_short_path = kernel32.GetShortPathNameW
+        get_short_path.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_uint32,
+        ]
+        get_short_path.restype = ctypes.c_uint32
+        buffer = ctypes.create_unicode_buffer(32768)
+        length = get_short_path(str(path), buffer, len(buffer))
+        if length == 0 or length >= len(buffer):
+            return None
+        return Path(buffer.value)
+
+else:
+
+    def windows_short_path(_path: Path) -> Path | None:
+        """Return no alias when Win32 short paths are unavailable."""
+        return None
 
 
 def _fitz() -> ModuleType:

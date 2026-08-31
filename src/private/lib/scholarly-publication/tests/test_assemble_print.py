@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import ctypes
 import importlib
 import sys
 import tempfile
@@ -48,6 +47,7 @@ read_json = publication_test_support.read_json
 sha256_bytes = publication_test_support.sha256_bytes
 tree_snapshot = publication_test_support.tree_snapshot
 visible_text_sha256 = publication_test_support.visible_text_sha256
+windows_short_path = publication_test_support.windows_short_path
 write_json = publication_test_support.write_json
 write_test_font = publication_test_support.write_test_font
 
@@ -1359,19 +1359,9 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         self.assertEqual(0, initial.exit_code, initial)
         before = tree_snapshot(output)
 
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        get_short_path = kernel32.GetShortPathNameW
-        get_short_path.argtypes = [
-            ctypes.c_wchar_p,
-            ctypes.c_wchar_p,
-            ctypes.c_uint32,
-        ]
-        get_short_path.restype = ctypes.c_uint32
-        buffer = ctypes.create_unicode_buffer(32768)
-        length = get_short_path(str(output), buffer, len(buffer))
-        if length == 0 or length >= len(buffer):
+        short_output = windows_short_path(output)
+        if short_output is None:
             self.skipTest("Win32 short-name lookup is unavailable")
-        short_output = Path(buffer.value)
         if short_output.name.casefold() == output.name.casefold():
             self.skipTest("8.3 short names are disabled for this volume")
         self.assertTrue(output.samefile(short_output))
