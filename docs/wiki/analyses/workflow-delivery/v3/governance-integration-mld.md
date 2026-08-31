@@ -4,16 +4,20 @@
 
 Architecture version: **v3**.
 
-Review state: **Confirmed; normal Live activation governance refined on
-2026-08-29**.
+Review state: **Confirmed; approved normal Live baseline incorporated on
+2026-08-31**.
 
-This middle-level design defines how CI Qualification and Release Delivery rely
-on GitHub and destination platforms for review, protected execution, identity,
-and publication authority.
+This middle-level design defines how CI Qualification and Release Delivery use
+GitHub and destination platforms for review, protected execution, identity, and
+publication authority.
 
-`Workflow Delivery` is an architecture-domain umbrella, not a runtime actor.
-Runtime responsibilities in this document belong explicitly to CI
-Qualification, Release Delivery, Shared Foundation, or Delivery Governance.
+It realizes the
+[Workflow Delivery v3 Requirements](./requirements.md),
+[High-Level Design](./high-level-design.md), and
+[Architecture Glossary](./architecture-glossary.md).
+
+The normal Live implementation is delivered but remains disabled through
+protected Governance with `live_enabled: false`.
 
 ## Scope
 
@@ -22,36 +26,40 @@ This MLD owns:
 - the authority boundary between repository code and external platforms;
 - same-revision control-code eligibility;
 - workflow permission and credential placement;
-- Buddy and Official capability isolation;
+- the first-slice Buddy accepted-risk boundary;
+- protected Governance admission and freshness;
+- the one Approval Environment contract;
+- Buddy and Official authority isolation;
 - platform-denial behavior; and
-- v3 governance rollout acceptance.
+- normal Live activation governance.
 
 This MLD does not own:
 
 - CI scope or obligation policy;
-- Release destination and action planning;
+- Release destination observation or action planning;
 - Repository Model discovery;
-- Registry-specific publication algorithms;
-- a repository mirror of platform governance state; or
-- a permanent governance service or audit ledger.
+- registry-specific publication mechanics;
+- Release outcome classification;
+- a repository mirror of platform governance state;
+- a permanent governance service or audit ledger; or
+- exhaustive discovery of GitHub Packages grants.
 
 ## Governing Principle
 
 GitHub and destination platforms own the guarantees they formally expose.
 
-CI and Release must use those abstractions correctly, but they must not
-reimplement weaker copies of:
+CI and Release use those guarantees but do not reimplement weaker copies of:
 
 - CODEOWNERS and required review;
 - Ruleset and protected-ref enforcement;
-- GitHub Environment approval;
+- GitHub Environment review;
 - workflow permission enforcement;
 - GitHub OIDC identity issuance; or
 - destination trusted-publisher and authorization policy.
 
-Application code validates identities and data bindings that it creates. It
-does not query platform state merely to reproduce a decision already enforced
-by the platform.
+Application code validates the identities and data bindings it creates. Native
+configuration readback and attestation establish platform facts that a workflow
+job cannot establish from its own resolved context.
 
 ## Authority Topology
 
@@ -63,19 +71,16 @@ Repository governance
              |
 CI Qualification                    Release Delivery
 same candidate revision             same selected target revision
-no publication capability           planning/build/qualification: no capability
-                                     Official: protected authoritative ref
-                                     first Buddy slice: any same-repository ref
+no publication capability           plan/build/qualify/observe: no write
                                      |
-                                     +-- channel approval gate
-                                           protected Environment
-                                           Authorization Record
+                                     +-- zero action
+                                     |     read-only exact reconciliation
                                      |
-                                     +-- destination-specific capability groups
-                                           destination Environment
-                                           minimal job permissions
-                                           OIDC identity
-                                           destination trust policy
+                                     +-- one action
+                                           Approval Bundle
+                                           literal Approval Environment
+                                           Publication Authorization
+                                           publisher with just-in-time capability
 ```
 
 Delivery Governance is the external authority boundary. CI and Release consume
@@ -83,21 +88,29 @@ its enforcement outcomes; they do not grant authority to themselves.
 
 ## Same-Revision Control
 
-CI planning and finalization use the code contained in the tested candidate
-revision.
+CI planning and finalization use the code in the tested candidate revision.
 
 Live Release planning, finalization, and side-effect orchestration use the code
-contained in the exact selected target revision. Official targets remain
-protected and authoritative. The `hcoona-release-smoke-npm` live Buddy GitHub
-Packages slice may use any same-repository ref selected by `workflow_dispatch`;
-its selected-ref workflow, Planner, Finalizer, Providers, Adapters, compiler,
-authenticated clients, static catalogs, capability declarations, and publisher
-require neither protected-ref eligibility nor a CODEOWNERS-approved merge.
+in the exact selected target revision. Official targets remain protected and
+authoritative. The `hcoona-release-smoke-npm` live Buddy slice may use any
+same-repository ref selected by `workflow_dispatch`. The selected ref resolves
+to one exact SHA that supplies the workflow, Planner, Finalizer, Providers,
+Adapters, compiler, clients, catalogs, capability declarations, publisher, and
+Release target.
 
-Release exclusively owns complete Official dry-run simulation. It uses planning
-and finalization code from the exact selected simulation revision and receives
-no approval, publication Environment, OIDC permission, or live publication
-Capability.
+Protected Governance is read independently from `refs/heads/main`. The design
+does not substitute protected-main control code for the selected target.
+
+The active protected document uses exact schema
+`workflow-delivery/v3/normal-live-governance-attestation-v1`. Selected-revision
+control must require it exactly. Superseded parsers therefore fail before
+Release Execution lookup, Attempt creation, or any Environment job. Arbitrary
+ref selection remains available to refs compatible with the active Governance
+contract.
+
+Release simulation uses its selected simulation revision and receives no
+approval or live Publication Capability. Its existing run-attempt identity and
+rerun semantics remain unchanged.
 
 There is no independently selected authority revision, control-code promotion
 protocol, or runtime control-code substitution.
@@ -105,97 +118,157 @@ protocol, or runtime control-code substitution.
 Governance normally requires owner review for changes to:
 
 - CI and Release planning or finalization;
-- workflow permissions and topology;
+- workflow permissions and authority-critical topology;
 - authoritative record shapes;
 - minimum qualification policy;
-- executable Providers, Build and Quality Adapters, and Repository Model
-  compiler code;
-- generic authenticated clients and Release Destination Adapters;
+- executable Providers, Adapters, and Repository Model compiler code;
+- authenticated clients;
 - static Definition and implementation catalogs;
 - execution-class and capability declarations;
-- cross-revision contract compatibility and migration code;
-- destination identity or Environment references; and
-- rollout and remediation controls.
+- cross-revision compatibility code;
+- destination identity and trust configuration; and
+- activation and remediation controls.
 
-That review requirement remains unchanged for CI and Official, future Buddy and
-production scopes, protected cross-revision compatibility code, and Break-Glass
-Remediation. Solely for the named Buddy live Attempt, it is waived for the
-selected-ref workflow, Planner, Finalizer, Providers, Adapters, compiler,
-authenticated clients, static catalogs, capability declarations, and publisher.
-It does not move control to protected main; same-revision execution remains
-mandatory.
-
-A merged control-code fix becomes available only in the new revision that
-contains it. Ordinary replay of an older Release target continues to use the
-older control code. External state left by an older target is handled through
-reconciliation or separately authorized remediation.
+That requirement remains unchanged for CI, Official, future Buddy and
+production scopes, protected cross-revision compatibility code, and
+Break-Glass Remediation. It is waived only for the selected-ref control and
+publisher surfaces in the accepted first-slice Buddy exception. A control-code
+fix becomes available only in the revision that contains it.
 
 ## Native Platform Configuration
 
-The following native configurations are authoritative:
+The following native settings are authoritative:
 
 - GitHub Rulesets and protected-ref settings;
 - CODEOWNERS and required reviewers;
 - GitHub workflow and job permissions;
-- GitHub Environments and required reviewers;
+- GitHub Environments and their reviewers, bypass posture, deployment policy,
+  wait timer, variables, and secrets;
 - GitHub OIDC token claims;
+- repository Actions artifact-retention policy;
 - destination trusted-publisher and identity policy; and
 - destination permissions and mutability controls.
 
-v3 does not introduce a central `governance` descriptor that mirrors those
-settings.
+Repository code may carry stable names and expected bindings needed to invoke
+those facilities. Those references do not become a second authority source.
 
-Repository code may reference stable platform interfaces needed for execution,
-such as:
+### Literal Approval Environment
 
-- Environment names;
-- expected OIDC audience and subject conventions;
-- destination identity; and
-- required GitHub job permissions.
+The first slice uses exactly one authority-bearing Environment:
+`workflow-delivery-v3-buddy-approval`.
 
-Those references do not become a second authority source. The actual platform
-configuration remains authoritative.
+Its approved configuration includes:
 
-### Environment Identity and Reuse
+- required reviewer `hcoona`;
+- the confirmed single-maintainer setting
+  `prevent_self_review: false`;
+- one exact Environment-scoped configuration sentinel; and
+- the native reviewer, bypass, branch or tag, wait, variable, and secret
+  settings accepted by Delivery Governance.
 
-Delivery Governance owns logical Environment Profiles and maps them to stable
-repository Environment identities.
+The Environment is used only by the action-bearing Approval job. An
+`exact-satisfied` zero-action Attempt does not create an Environment deployment
+or request approval.
 
-An Approval Environment Profile consists of:
+The first slice has no second publication Environment and no generic
+Environment Profile authority model. A future OIDC-backed channel may introduce
+a channel-specific Environment only when the external destination trust policy
+validates that Environment's OIDC claims. Reuse or symmetry alone is not a
+reason to add one.
 
-- repository and channel;
-- exact reviewer set and review rule;
-- self-review behavior;
-- wait and deployment branch/tag policy;
-- administrator-bypass posture; and
-- credential-free behavior, including absence of destination credentials.
+### Environment Configuration Sentinel
 
-A Capability Environment Profile consists of:
+The Approval job validates the resolved sentinel value as its first
+authority-critical executable check. A missing or mismatched value blocks the
+job before it forms Publication Authorization.
 
-- repository, channel, and destination trust boundary;
-- credential source and identity contract;
-- GitHub permission ceiling and destination-access policy;
-- reviewer policy fixed to `none` under this architecture;
-- wait and deployment branch/tag policy; and
-- administrator-bypass posture.
+The sentinel is only a configuration sentinel. The job:
 
-Multiple Release policies may reference one Environment identity only when the
-complete applicable profile is identical. The Environment is shared
-configuration, not shared authority: each Attempt that reaches a referenced
-Environment gate creates a fresh deployment for that gate, any required review
-is current-Attempt only, and its Governance attestation, Publication Snapshot,
-Authorization Record, Capability Admission Decision, and package bindings
-remain independent. A package or slice name is part of Environment identity
-only when it changes an applicable reviewer, destination, credential,
-permission, access, or native protection policy. Any profile difference
-requires a distinct Environment. Delivery Governance owns each mapping;
-LLD/platform configuration records the exact profile-to-name mapping and does
-not redefine these reuse semantics. Compatibility is a Governance design and
-provisioning decision evidenced by that mapping plus authenticated native
-readback. Runtime records bind the selected Environment and job rather than
-mirroring the complete profile.
+- can observe the resolved value;
+- cannot determine whether it came from Environment, repository, or
+  organization scope; and
+- cannot prove native reviewer, self-review, bypass, deployment-policy, secret,
+  credential, or Environment-identity settings.
 
-## Runtime Permission Model
+Authenticated native readback and Governance attestation must establish:
+
+- that the named Environment exists;
+- that its native settings match the approved configuration;
+- that its secrets and variables match the approved configuration; and
+- that no same-name repository or organization variable can shadow the
+  Environment-scoped sentinel.
+
+Only under those externally verified conditions does the runtime marker check
+detect accidental implicit Environment creation or marker misbinding.
+
+## First-Slice Trust Boundary
+
+### Accepted Writer and Publisher TCB
+
+`hcoona` is the sole accepted writer and publisher trusted-computing-base member
+for this slice. External or fork contributors and actors without repository
+write remain outside that TCB.
+
+The normal controls remain useful against:
+
+- outsiders;
+- accidental operators;
+- mistaken publication;
+- ordinary process violations; and
+- unintended authority propagation between Buddy and Official.
+
+They are not claimed to constrain a malicious accepted writer. Such a writer
+can author alternate workflow code or otherwise use repository-granted
+authority outside the intended path. Protected `main`, the Approval
+Environment, workflow permissions, static-reference checks, and exact action
+validation are not a security boundary against that actor.
+
+Any added Write, Maintain, or Admin actor, reviewer change, or relevant
+repository, package, or Manage Actions access change requires
+`live_enabled: false` and a new Governance decision.
+
+### GitHub Packages Principal and Reach
+
+The GitHub Packages credential principal is repository `hcoona/three`.
+
+Its effective publisher reach includes every package whose package-side GitHub
+Actions access grant authorizes that repository. The normal Publication Action
+names the dedicated smoke coordinate, but exact coordinate, artifact, action,
+and resource validation governs intended operation and reconciliation only. It
+does not isolate the token to that package.
+
+Governance records the relevant bounded access inspection and its limitations.
+The architecture does not claim exhaustive current package-grant enumeration,
+because GitHub does not expose a complete package-grant inventory suitable for
+that claim.
+
+Official npmjs PAT, OIDC, secret, and destination boundaries remain separate
+and unchanged.
+
+### Intended Action Boundary
+
+Normal first-slice publication permits only the dedicated compound GitHub
+Packages action for:
+
+- the exact package version; and
+- the target-derived routing tag.
+
+Normal publication does not permit delete, restore, permission, visibility, or
+administrative operations. Those operations require separately governed
+Break-Glass Remediation.
+
+This authority boundary does not prove that the destination can execute the
+compound action safely. Standard `npm publish --tag` can overwrite a
+conflicting tag introduced after Observation and is not an admitted
+normal-Live primitive. Activation remains blocked until a reviewed supported
+primitive passes the conditional non-overwrite race acceptance.
+
+The bounded static-reference policy reports prohibited direct references in
+its closed supported catalog. A clean result is an eligibility input, not proof
+that no runtime consumer exists and not evidence that the repository token can
+reach only the smoke package.
+
+## Runtime Permission and Authority Model
 
 ### CI Qualification
 
@@ -207,297 +280,258 @@ CI jobs:
 - do not bind live publication Environments; and
 - cannot request Buddy or Official Publication Capability.
 
-CI may perform artifact-shape or other validation-only work, but it does not own
-or execute complete Official dry-run planning. Official dry-run belongs
-exclusively to Release simulation under the Release permission boundary.
+Official dry-run remains a Release simulation responsibility rather than a CI
+publication path.
 
-### Release Planning and Qualification
+### Release Planning, Build, Qualification, and Observation
 
-Release planning, Repository Model discovery, build, quality, Evidence
-Admission, and qualification finalization:
+Release planning, Repository Model discovery, build, quality execution,
+Evidence Admission, qualification finalization, and destination observation:
 
-- receive no publication credentials;
-- receive no destination secrets;
+- receive no publication credential;
+- receive no destination write token;
 - do not receive `id-token: write`; and
-- do not bind live publication Environments.
+- do not bind the Approval Environment.
 
-Target-controlled build execution and publication authority therefore remain
-separate.
+Read-only observation may use the minimum destination read authority required
+by its Adapter. It cannot convert that access into publication authority.
 
-Qualification may declare Capability requirements but cannot request, approve,
-or create live Capability. The normal v3 live path may request destination
-Capability only in a side-effect capability group with a valid Authorization
-Record and successful credential-free Capability Admission Decision after
-validating the exact Publication Snapshot and action bindings and revalidating
-the protected attestation's `live_enabled` field and fixed-source Governance
-freshness.
+### Zero-Action Reconciliation
 
-### Channel Approval and Authorization Record
+A manual Release Intent plus valid protected Governance may authorize read-only
+reconciliation.
 
-A Release requests one channel-level approval after the exact Publication
-Snapshot is sealed. Each Attempt that reaches approval creates a fresh Approval
-Environment deployment requiring that Attempt's sole human approval, even when
-multiple Release policies share the same Environment identity. The approval
-gate:
+When the first-slice Publication Snapshot contains zero actions because the
+destination is already exact:
 
-- resolves and binds the exact Environment identity mapped from the
-  Governance-selected Buddy or Official Approval Environment Profile;
-- receives no destination credentials or OIDC permission;
-- verifies the Publication Snapshot digest; and
-- exposes the immutable digest-bound reviewer-summary artifact through the
-  deployment URL and completed producer-job summary; and
-- emits an append-only Authorization Record binding approval to the Snapshot
-  digest and reviewer-summary artifact ID/digest only after successful approval.
+- the no-op job repeats protected Governance ancestry, path-touch,
+  blob/content, expiry, and `live_enabled` validation and persists that fresh
+  proof for Finalizer admission;
+- no Environment approval is requested;
+- no Approval Bundle is sent through an Environment wait;
+- no Publication Authorization is formed;
+- no publisher or Publication Capability is used;
+- no mutation marker, Publication Result, or Receipt exists; and
+- the Attempt may finalize as `success` with disposition
+  `exact-satisfied`.
 
-The Authorization Record is not a credential and cannot authorize a different
-snapshot or reviewer-summary artifact. Binding mismatch fails closed.
+Unknown, partial, conflicting, or unprovable state is not a zero-action success.
 
-Terminal denial Evidence is admissible only where a platform supplies
-documented exact current-attempt and approval-job proof. GitHub Environment
-`DeploymentReview` lacks authoritative `run_attempt` and job binding and has no
-documented append-only/consistency contract suitable for review-ID delta proof.
-The first slice therefore admits no Approval Outcome Evidence for rejection or
-denial. Rejection is unknown approval-contract failure, leaves a replayable
-incomplete Attempt, starts no Capability, and may retain observable review data
-only as a non-authoritative human diagnostic.
+### Action-Bearing Approval
 
-GitHub cancellation or platform expiry while approval remains pending may
-terminate the run before a separate record or Finalizer outcome exists. If no
-capability group started, the platform run/job conclusion is sufficient
-no-side-effect terminal evidence and leaves a replayable incomplete Attempt. If
-any capability job may have started, cancellation is not no-side-effect proof;
-the Attempt is incomplete and possibly mutated, and replay reobserves. The
-system need not distinguish manual cancellation from expiry unless GitHub
-exposes it.
+When the Publication Snapshot contains the one permitted action, Release
+prepares one immutable Approval Bundle before the Environment wait. The bundle
+closes:
 
-The first-slice workflow relies on GitHub's platform run and Environment
-conclusions. Platform gate expiry is currently up to 30 days. Release control
-and artifact retention is 45 days and activation blocks if repository policy
-cannot provide that supported margin. Neither retention nor an approval already granted or still pending extends
-Governance validity. Capability admission must still freshly observe the
-protected attestation's `live_enabled` field as true and the admitted
-at-most-90-day document as unexpired.
+- the current Attempt, selected ref, and target;
+- the Qualification Decision;
+- the Publication Snapshot;
+- the immutable reviewer summary;
+- artifact identities, digests, and manifest;
+- lifecycle-script information;
+- the exact Publication Action; and
+- the complete mutable-resource keys and serialization projection.
 
-### Destination Capability Groups
+The Approval job:
 
-Before any destination job is scheduled, the credential-free capability
-admission job validates Authorization Record, Publication Snapshot,
-reviewer-summary artifact, actions, artifacts, complete resource keys, and the
-group manifest. Immediately before deciding, it uses `contents: read` to freshly
-resolve the policy-fixed protected ref and read the attestation document,
-verifies ref protection, schema, canonical content, policy/package bindings,
-current expiry, and `live_enabled: true`, and compares repository/ref/path plus
-commit/blob/content provenance and content identity to the current Attempt's
-admitted Live Eligibility Decision. A false `live_enabled` value, expiry,
-changed source or provenance, content or binding mismatch, or policy
-invalidation blocks publication. Governance restoration requires a new Attempt;
-the approved current Attempt cannot resume. Only success permits a
-credential-bearing job to start.
+- references `workflow-delivery-v3-buddy-approval`;
+- has no publication capability;
+- may use `contents: read` for fresh protected Governance;
+- performs the sentinel check before other authority-critical executable work;
+- validates path-touch anti-rollback and current Governance validity;
+- strictly admits the complete Approval Bundle, current Snapshot, reviewer,
+  artifact, action, and resource closure; and
+- durably emits the sole Publication Authorization.
 
-Each destination-specific capability group executes in a dedicated job.
+The reviewer-visible projection includes target SHA and selected ref, exact
+package coordinate, artifact digest and manifest, lifecycle scripts, and the
+exact action.
 
-That job:
+There is no separate post-approval finalizer or admission record. The semantic
+post-approval admission responsibility is fulfilled by the Approval job's
+complete validation and Publication Authorization, followed by publisher
+revalidation.
 
-- resolves and binds the exact Environment identity mapped from the
-  Governance-selected channel and Capability Environment Profile for the
-  destination;
-- receives only the GitHub permissions required by that destination;
-- receives `id-token: write` only when OIDC is required;
-- obtains destination capability just in time;
-- consumes verified immutable artifacts and the materialized publication
-  description;
-- does not check out or execute target-defined product/build source code; and
-- emits per-action Receipts and one capability-group result bundle.
+### Publisher
 
-The normal v3 workflow keeps workflow-level permissions empty or read-only. For
-a reusable live Attempt, `packages: write` appears only on the `uses`-only
-caller job as the reusable-workflow permission ceiling and on the called
-Environment-referencing publisher job as effective capability. The caller job
-has no steps or direct token use. `evaluate-live-eligibility` receives only
-`contents: read`; effective `actions: read` is confined to the called
-history-admission job, and explicit `packages: read` to the observer. Every
-other job explicitly remains least-privilege, and no job receives Actions
-history or package permission by inherited omission. The called workflow cannot
-elevate beyond the caller-job ceiling. Independent capability groups may run in
-parallel only after their credential-free admissions succeed. Actions within a
-group remain ordered and fail-stop.
+The publisher has an ordinary success dependency on the Approval job. It:
 
-The human-gated approval job and destination capability job are separate. The
-first-slice Capability Environment Profile fixes reviewer policy to `none`. Its
-mapped Environment has no required reviewer, so no human approval occurs for its
-deployment; the Environment-referencing destination capability job is the
-capability-delivery boundary after the separate admission gate succeeds. A
-reviewer-bearing destination is unsupported by this architecture and requires a
-new architecture decision.
-The publisher may repeat the same `contents: read` admitted-binding and
-Governance-freshness checks immediately before mutation as defense in depth.
-That repeat uses no new credential or service and does not turn the
-branch-controlled publisher into a malicious-writer boundary. Additional
-destination approval is unsupported under this architecture.
+- strictly validates the Publication Authorization and every bound current
+  Attempt input;
+- repeats the fresh protected Governance check immediately before mutation;
+- receives short-lived repository `GITHUB_TOKEN` with effective
+  `packages: write`;
+- receives no PAT fallback and no `id-token: write`;
+- executes no target-defined product or build code; and
+- persists the required mutation and result records around the action.
 
-### First-Slice Buddy GitHub Packages Exception
+The publisher is the only step-running job with effective `packages: write`.
+A `uses`-only reusable-workflow caller may declare `packages: write` solely as
+a non-elevating ceiling; that caller has no steps and does not use the token.
 
-For live Buddy publication of the dedicated `hcoona-release-smoke-npm`
-disposable smoke package:
+Target-revision publisher code is accepted by the first-slice TCB. Its binding
+checks govern the normal process but do not create an independent malicious-
+writer boundary.
 
-- the exact selected same-repository target revision supplies workflow, Planner,
-  Finalizer, Providers, Adapters, compiler, authenticated clients, static
-  catalogs, capability declarations, and publisher code;
-- no protected-ref or CODEOWNERS-approved eligibility is required;
-- the exact Publication Snapshot must exist before the Buddy approval job binds
-  the exact Environment identity mapped from its Governance-selected Buddy
-  Approval Environment Profile and requests human approval of the resulting
-  current-Attempt deployment;
-- the normal v3 live path requests no package-write Capability before successful
-  approval and successful credential-free capability admission;
-- the approved target-revision side-effect job receives short-lived
-  `GITHUB_TOKEN` with minimum `packages: write`;
-- the job receives no PAT fallback and no `id-token: write`; and
-- self-review prevention is enabled where GitHub supports it unless the
-  confirmed single-maintainer exception below applies.
+## Protected Governance
 
-This bounded risk exception was reopened and reconfirmed before LLD on
-2026-08-06.
+### Source and Attestation
 
-For repository `hcoona/three`, package
-`@hcoona/hcoona-release-smoke-npm`, and approval Environment
-`workflow-delivery-v3-buddy-approval`, the accepted-writer and reviewer
-set is exactly `hcoona`. The confirmed single-maintainer exception therefore
-uses `prevent_self_review: false`. Approval is explicit operator
-self-confirmation, not independent review, semantic validation, or a security
-boundary. Any effective Write/Maintain/Admin, reviewer, role, team, or relevant
-access change invalidates the exception and requires `live_enabled: false`
-until human Governance re-inspects and explicitly reaccepts the slice.
+The immutable Governance source contract is:
 
-Environment approval is the explicit trust elevation for branch-controlled
-publisher code. It is not cryptographic or independent semantic validation.
-Because the publisher code comes from the target revision, Governance does not
-claim that a separate protected executor enforces the authorized Snapshot or
-constrains malicious target code after approval.
+- repository: `hcoona/three`;
+- ref: `refs/heads/main`; and
+- path:
+  `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`.
 
-Every actor with repository Write, Maintain, or Admin access is inside the
-trusted publisher TCB for this bounded slice. External/fork contributors and
-actors without repository write are outside it and cannot manually dispatch the
-live path under normal GitHub permissions. GitHub Environment approval is a
-mandatory control against mistakes, accidental publication, and ordinary
-process violations; it is not a non-bypassable permission ceiling against a
-malicious repository writer. A trusted writer can create alternate workflow
-YAML or jobs with `packages: write`.
+The non-executable attestation:
 
-Optional GitHub workflow-execution protections may reduce who can execute
-workflows, but this design neither requires that preview feature nor treats it
-as a per-job permission ceiling. If repository membership changes so that any
-Write/Maintain/Admin actor is not trusted to publish, live Buddy becomes blocked
-until either that actor's repository access is reduced below
-Write/Maintain/Admin or package-write Capability and destination access are
-placed behind an independently enforced publisher boundary unavailable to
-writer-authored workflows. Ref narrowing, Environment branch restrictions,
-CODEOWNERS, and workflow-execution protections may remain defense in depth but
-are insufficient remediation by themselves while an untrusted writer can
-author alternate workflows with `packages: write`.
+- identifies `hcoona` as the sole accepted writer and publisher;
+- binds the policy and package;
+- records relevant repository and package-access inspection;
+- identifies the reviewed destination primitive and retained disposable-package
+  race acceptance that proves conditional non-overwriting version-and-tag
+  creation;
+- records authenticated repository Actions retention readback proving the
+  effective policy permits at least 45 days;
+- records issuer and inspection time;
+- acknowledges inspection and platform limitations;
+- expires no later than 90 days after inspection; and
+- carries top-level `live_enabled`.
 
-The approval surface must show target SHA, selected branch or ref, exact package
-coordinate, artifact digest and manifest, package lifecycle scripts, and exact
-action summary. Rollout must verify the dedicated package and destination, the
-exact selected Approval and Capability Environment Profiles, smallest
-package/repository permission boundary, absence of normal
-developer/CI/production consumers, and absence of planned or ordinary delete,
-restore, permission, visibility, or admin actions. Package deletion or restore
-uses Break-Glass Governance. Rollout records latent repository/package admin
-authority as accepted trusted-writer misuse risk; it does not require proving
-that authority is absent. Sharing a compatible Environment identity never
-extends this package-specific exception to another Release policy.
+It grants no Publication Capability by itself.
 
-The first slice maps its Approval Environment Profile to
-`workflow-delivery-v3-buddy-approval` and its GitHub Packages Capability
-Environment Profile to `workflow-delivery-v3-buddy-github-packages`. Both
-permanent Environments must be explicitly created and authenticated-read only
-after a protected implementation change updates every transitional workflow,
-source, record, formatter, validator, test, marker, and current-state binding to
-those final mappings while false. Native platform configuration is
-authoritative. Distinct exact Environment-scoped variables act only as
-configuration sentinels and must be the first executable checks in their jobs.
-The checks map the variables through step `env`, use quoted case-sensitive shell
-comparison, disallow `continue-on-error`, and explicitly gate every later
-operational step on marker success. Exceptional handlers that can run after
-failure remain non-mutating and classify the marker failure. The same variable
-names must be absent at repository and organization scope. Missing or
-mismatched sentinels stop Authorization or publication before any later
-operational step. They do not prove reviewer, self-review,
-administrator-bypass, branch-policy, secret, or credential settings. The
-approval Environment has sole reviewer `hcoona`, the documented self-review
-exception, no credentials, zero wait, and no branch restriction. The capability
-Environment has no reviewer, no stored credential, zero wait, and no branch
-restriction. Both disable administrator bypass where available. If the
-documented public API cannot configure or authoritatively read that control,
-the operator saves and reloads it through the authenticated Environment UI and
-retains durable evidence; any undocumented API response field is corroboration
-only, and omission cannot be treated as false. No branch restriction is
-intentional because the confirmed slice permits any selected same-repository
-ref.
+### Eligibility Binding
 
-A permanent repository-wide HK dependency-policy gate scans dependency
-manifests, lockfiles, workflows, install scripts, and dependency configuration
-for normal developer, CI, or production consumption of the disposable smoke
-package. Dependency-surface changes trigger it, and `slice-validation` runs it
-unconditionally. Any consumer fails the gate, disables live use, and reopens
-the exception for Governance review.
+Before live Execution lookup or Attempt creation, Release freshly reads the
+protected source and validates schema, policy, package, writer, expiry, and
+`live_enabled: true`.
 
-The accepted residual risk is that an approved malicious or mistaken branch can
-publish arbitrary or malicious bytes, squat reachable names or versions, create
-registry clutter or cost, or abuse package operations allowed by the
-repository/package token. Rollout inspects and records actual token permissions
-and package/repository grants, verifies that Official and known production
-assets are unreachable, and performs safe denial probes only against enumerated
-unrelated assets. It does not claim universal negative reach proof. Other
-reachable package operations under the smallest configured grants remain
-accepted writer-TCB risk. Future Buddy destinations require a new threat and
-cost decision, and production packages do not inherit the exception.
+The Live Eligibility Decision binds:
 
-The implementation PR merge is the direct repository-wide v1 Buddy-to-v3 Buddy
-cutover. It lands v3 disabled and creates no replacement compatibility
-workflow. Governance freezes Buddy dispatch, disables both legacy workflow
-identities (`buddy.yml` and `release-buddy.yml`), cancels or drains queued,
-waiting, approval-pending, and running executions, and verifies both disabled
-state and old-ref dispatch rejection. A rejection added only to new YAML is
-insufficient. All legacy Buddy publication routes retire; former Buddy projects
-remain unsupported until explicitly migrated into future v3 slices. v1 Official
-and CI remain unchanged unless separately covered.
+- repository, fully qualified ref, and path;
+- attestation blob and canonical content identity, or an explicit monotonically
+  governed attestation generation;
+- the protected-path lineage point used for anti-rollback;
+- the exact target and static-reference result; and
+- the current request and Repository Model bindings.
 
-### Buddy and Official Isolation
+It does not require the complete resolved `main` commit to remain equal.
+Unrelated commits on `main` are allowed.
 
-Buddy and Official use distinct:
+### Path-Touch Anti-Rollback
 
-- GitHub Environments;
-- OIDC trust subjects or equivalent identity constraints;
-- destination namespaces, identities, or prerelease channels; and
-- destination permissions.
+After eligibility, any commit that touches the protected Governance path
+invalidates the current Attempt, even when a later commit restores identical
+bytes.
 
-The first-slice Buddy job binds the Environment identity mapped from its
-Governance-selected Buddy Approval Environment Profile, but it cannot obtain
-Official capability. Official retains protected authoritative refs,
-owner-reviewed control code, distinct Governance-selected Approval and
-Capability Environment Profiles, and destination trust.
+Approval and publisher freshness checks must prove that no protected-path touch
+occurred after the eligibility lineage point. Comparing only current bytes,
+blob identity, or a later resolved `main` commit is insufficient.
+
+A newly issued or restored attestation requires a new manual dispatch and a new
+Attempt.
+
+### Disablement Semantics
+
+`live_enabled: false` blocks:
+
+- fresh live admission; and
+- a publisher that has not yet passed its final fresh Governance check.
+
+It is not package rollback or instantaneous capability revocation. It cannot
+stop a publisher that already passed the final fresh check, and it does not
+reverse destination state.
+
+Review, merge, and fresh-read latency therefore make disablement a bounded
+operational response. The 90-day maximum attestation age independently bounds
+normal-flow staleness.
+
+## Buddy and Official Isolation
+
+Buddy and Official retain distinct:
+
+- channel policy;
+- destinations and package coordinates;
+- credential or OIDC trust boundaries;
+- protected-target requirements;
+- approval policy; and
+- remediation authority.
+
+The first-slice Buddy repository token cannot obtain Official npmjs authority.
+Official retains protected authoritative targets and owner-reviewed control
+code. Simulation receives no live authority.
+
+The first-slice exception does not transfer to another Buddy destination,
+production package, or Official publication path.
 
 ## Platform Enforcement Outcomes
 
-CI and Release react to platform outcomes rather than reproducing platform
+CI and Release consume platform outcomes rather than recreating platform
 adjudication.
 
-- If a required review or Ruleset condition is not met, CI or Official does not
-  become eligible through the protected platform path. The named Buddy slice
-  does not require that path.
-- If a protected Environment is not approved, the side-effect job does not
-  proceed.
-- If OIDC identity cannot be obtained, the destination action fails.
-- If destination trust rejects the identity or requested operation, the action
-  fails.
-- No failure falls back to a long-lived token, personal token, weaker
-  Environment, alternate workflow, or alternate identity.
+- If required review or a Ruleset condition is not met, CI or Official does not
+  become eligible through the protected path.
+- If the Approval Environment is not approved, the Approval job does not run
+  and no Publication Authorization exists.
+- If required OIDC identity or destination capability cannot be obtained, the
+  affected side effect fails.
+- If destination trust rejects an identity or operation, the action fails.
+- No failure falls back to a PAT, weaker Environment, alternate identity,
+  alternate destination, or overwrite mode.
 
-The Release Finalizer treats missing or failed required side effects according
-to the Release state model. It does not reinterpret a platform denial as
-authorization.
+The read-only Release Finalizer may use current-DAG facts to classify the
+Attempt. It does not reinterpret a platform denial as authorization, and it
+need not reconstruct an exact Environment rejection reason.
+
+## Normal Live Activation
+
+Implementation and activation are separate deliveries. The implementation is
+delivered first and remains disabled with `live_enabled: false`.
+
+Activation uses one small protected Activation PR that enables the approved
+Governance document. There is:
+
+- no separate Preparation PR;
+- no freeze of other `main` writes or normal dispatch;
+- no pre-pinned Activation SHA; and
+- no activation tag.
+
+After the Activation PR merges, the first proving run is dispatched from
+then-current protected `main`. The operator uses an explicitly supported REST
+API version whose successful response contains `workflow_run_id`, validates the
+response schema, and reads back the returned:
+
+- workflow and run identity;
+- actor;
+- `workflow_dispatch` event;
+- actual head SHA;
+- `refs/heads/main`; and
+- `github.run_attempt == 1`.
+
+A lost response or ambiguous correlation triggers read-only reconciliation.
+The operator never blindly redispatches.
+
+Later normal Buddy runs retain the approved ability to select arbitrary
+same-repository refs whose selected-revision control strictly admits the active
+Governance schema.
+
+Before activation, authenticated repository inspection and compatibility
+fixtures prove that each retained dispatchable ref either implements the
+one-Environment contract or rejects the active schema before any Environment
+job or deployment. This prevents obsolete refs from implicitly recreating
+unprotected Environment names after cleanup.
+
+Fresh authenticated preactivation evidence must also prove that repository
+artifact retention permits at least 45 days and that the selected destination
+primitive has passed the complete version-and-tag conditional non-overwrite
+acceptance. Standard `npm publish --tag` does not satisfy that gate.
+
+Every authoritative normal-Live job independently fails closed unless
+`github.run_attempt == 1`. The value is a platform invariant and diagnostic,
+not a normal-Live domain identity, record field, artifact binding, or
+Publication Authorization input. Simulation retains its separate run-attempt
+contract.
 
 ## No Runtime Governance Shadow
 
@@ -505,399 +539,87 @@ CI and Release do not:
 
 - query reviews and decide whether they are sufficient;
 - re-evaluate Rulesets;
-- compare live Environment configuration with a repository mirror;
-- preflight OIDC merely to prove that a later side-effect job might receive a
-  token;
-- maintain an internal list of people authorized to approve publication; or
-- infer authorization from branch names when the platform gate has not granted
-  capability.
+- infer native Environment configuration from the sentinel;
+- compare live Environment settings with a repository policy mirror on every
+  run;
+- preflight OIDC merely to prove that a later publisher might receive a token;
+- maintain an internal approver database;
+- infer authorization from a branch name; or
+- claim exhaustive current package-grant enumeration.
 
-This avoids two policy engines with different behavior and ownership.
+Native readback and attestation are Governance evidence. Runtime validation is
+limited to the bindings and freshness decisions required by the current
+Attempt.
 
 ## Threat and Cost Balance
 
-The design addresses these concrete threats:
+| Threat                                                | Primary Control or Accepted Boundary                                 |
+| ----------------------------------------------------- | -------------------------------------------------------------------- |
+| Unreviewed change weakens CI or Official control code | CODEOWNERS, required review, and protected merge                     |
+| Target-controlled build code attempts publication     | No write capability in build or qualification                        |
+| Accidental first-slice publication                    | Immutable reviewer context and one Approval Environment              |
+| Outsider attempts to publish                          | Repository and platform access controls                              |
+| Accepted writer creates alternate write workflow      | Inside the explicit first-slice TCB; not claimed controlled          |
+| Repository token reaches another package grant        | Inside repository-principal blast radius; no package-isolation claim |
+| Buddy attempts Official publication                   | Separate Official credentials, trust, destination, and policy        |
+| Publisher uses stale or rolled-back Governance        | Fresh checks plus protected-path anti-rollback                       |
+| Credential acquisition fails                          | Fail closed without fallback                                         |
+| Environment is missing or marker is misbound          | Native readback plus first executable sentinel check                 |
 
-| Threat                                                         | Primary Control or Accepted Boundary                                                  |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Unreviewed change weakens CI or Official decision code         | CODEOWNERS, required review, and protected merge                                      |
-| Target-controlled build code attempts to publish outside slice | No credentials, Environment, or OIDC permission in execution jobs                     |
-| Approved first-slice Buddy target publishes malicious bytes    | Accepted bounded risk; reviewer context, disposable package, minimal token scope      |
-| Trusted repository writer creates an alternate write workflow  | Inside first-slice TCB; accepted risk, attested membership/grants, Official isolation |
-| First-slice Buddy target abuses reachable package operations   | Accepted bounded risk; isolated package/repository scope and Break-Glass admin        |
-| Buddy attempts to publish Official identity                    | Separate Environment, destination identity, permissions, and no Official token        |
-| Side-effect job publishes a different artifact or action       | Normally trusted executor; not guaranteed against approved slice target code          |
-| Credential acquisition fails                                   | Fail the side effect without fallback                                                 |
-| Platform governance is configured incorrectly during rollout   | Agent-guided rollout inspection and safe acceptance probes                            |
-
-The initial design does not add an external policy service, continuous
-governance reconciler, or duplicate approval database. Those controls would
-add deployment and maintenance cost without a current threat that justifies
-them.
-
-## Governance Rollout Acceptance
-
-Governance activation uses a repeatable, Agent-guided procedure rather than a
-fully automated permanent test system.
-
-### Agent Static Inspection
-
-The Agent inspects repository-controlled surfaces, including:
-
-- workflow-level and job-level permissions;
-- Environment references;
-- absence of publication capability in CI and qualification jobs;
-- separation of Buddy and Official workflow identities;
-- CODEOWNERS final-match resolution to `@hcoona` for the v3 package,
-  `eng/workflow-delivery/v3/**`, Release Unit and quality descriptors, HK
-  configuration/project, root Python workspace/lock inputs, workflows, actions,
-  scripts, and the exact protected Governance document
-  `/.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`,
-  including discovery of newly added descriptors and detection of missing or
-  overridden patterns; this merge-time coverage does not constrain arbitrary-ref
-  first-slice Buddy eligibility;
-- exact first-slice Buddy package, GitHub Packages destination, Environment,
-  `GITHUB_TOKEN` permissions, absence of PAT and OIDC, and consumer isolation;
-- exact quoted case-sensitive first-step approval and capability Environment
-  marker checks, no `continue-on-error`, no earlier executable steps, explicit
-  marker-success gating of all later operational steps, non-mutating
-  exceptional handlers, and absence of same-name repository or organization
-  variables;
-- actual token permissions and package/repository grants, Official and known
-  production isolation, and the bounded set of unrelated assets safe to probe;
-- repository Write/Maintain/Admin membership and explicit trusted-publisher TCB
-  acceptance;
-- protected-ref non-executable writer-TCB/access attestation, explicit accepted
-  writer and package/repository/Manage Actions access inventory or evidence
-  digest, issuer, inspection time/expiry, acknowledged limitations, and fixed
-  source provenance;
-- disabled `buddy.yml` and `release-buddy.yml` workflow identities, drained or
-  canceled executions, old-ref dispatch rejection, and absence of any legacy
-  Buddy compatibility route;
-- permanent HK dependency-policy coverage and current no-consumer result;
-- planned action catalogs excluding delete, restore, permission, visibility, and
-  admin operations, while recording latent trusted-writer admin authority as
-  accepted risk;
-  and
-- absence of credential fallback paths.
-
-### Agent Platform Inspection
-
-Using approved platform tools such as `gh` and destination APIs, the Agent
-collects the actual configuration that the operator is permitted to inspect:
-
-- relevant Rulesets and protected refs;
-- exact Environment IDs, names, reviewers, self-review behavior,
-  administrator-bypass behavior, deployment branch/tag policy, wait timer,
-  secrets, credentials, and Environment-scoped marker values;
-- workflow identity and OIDC claim expectations;
-- trusted-publisher registrations;
-- destination identities and permissions; and
-- existing v1 or v2 publication identities that can conflict with v3.
-
-The Agent reports mismatches and blocks rollout on unresolved required items.
-This inspection is rollout evidence, not a runtime authority mirror.
-Administrator-bypass evidence additionally includes the authenticated
-post-save Environment UI when no documented public API configures or
-authoritatively reads that control; an undocumented API response field may
-corroborate but never replace the UI evidence.
-
-### Human Gates
-
-A human performs actions that the platform intentionally reserves for human
-judgment, including:
-
-- protected Environment approval;
-- explicit single-maintainer self-confirmation by `hcoona` under the bounded
-  exception, without claiming independent review;
-- explicit acceptance of the first-slice branch-controlled publisher risk after
-  inspecting target/ref, package coordinate, artifact manifest/digest,
-  lifecycle scripts, and action summary;
-- acceptance of destination or organizational risk;
-- confirmation of settings unavailable through approved APIs; and
-- authorization of any production-impacting smoke action.
-
-The Agent records the result but does not simulate or bypass the gate.
-
-### Controlled Smoke Scenarios
-
-Where safe test identities or destinations already exist, the rollout may
-exercise a small set of scenarios:
-
-- an allowed Buddy publication using Buddy identity;
-- approved first-slice publication from a non-protected same-repository ref with
-  reviewer-visible target, coordinate, artifact, lifecycle-script, and action
-  details;
-- an allowed Official test publication using the Official Environment;
-- safe denial of Buddy identity at each enumerated Official, production, or
-  unrelated probe asset;
-- absence of OIDC permission in a qualification job; and
-- first-slice rejected approval producing unknown replayable incomplete state,
-  diagnostic-only review information, and no Authorization Record or Capability;
-- approval-pending cancellation or expiry proving no side effect from the
-  platform conclusion when no capability group started, without requiring a
-  separate Release outcome; and
-- successful Receipt capture for an authorized side effect.
-
-The rollout does not create risky production changes merely to prove a negative
-case. Unsupported or unsafe probes remain explicit human inspection items.
-
-### Temporary Destination-Acceptance Bootstrap
-
-Normal v3 live remains disabled while a temporary protected one-time workflow
-runs destination probes. Its purpose is distinct from normal Release dispatch.
-It:
-
-- runs only from an approved protected ref;
-- validates exact hard-bound target SHA, fixed acceptance-only coordinate in the
-  same disposable package, and explicit confirmation;
-- accepts no normal Release target, channel, version, destination, or force
-  inputs;
-- uses a dedicated reviewer-protected acceptance Environment;
-- grants `packages: write` only to probe jobs; and
-- emits Governance acceptance evidence, never live Product, Execution, Attempt,
-  Authorization, Receipt, or Release history.
-
-Every probe job independently fails closed unless
-`github.run_attempt == 1`. The terminal evidence-capture job uses
-`if: ${{ always() && github.run_attempt == 1 }}` or an exact equivalent. On the
-first attempt it therefore persists each dependency result, available response
-and diagnostic, and failed, skipped, canceled, incomplete, or ambiguously
-mutating probe disposition even when an upstream dependency fails. It
-classifies incomplete or unknown destination state for reconciliation. The
-evidence job still rejects non-first attempts. This prevents a partial rerun
-from reusing an earlier Environment review or disposable coordinate. A retry
-requires a new reviewed workflow invocation and a new fixed disposable
-coordinate/version.
-
-The fixed coordinates are disposable Governance probe fixtures, not NBGV
-product versions or Release projections.
-
-The ordered cutover is: merge v3 code with the protected attestation's
-`live_enabled` field false and both legacy Buddy workflow files removed; freeze
-Buddy dispatch; disable both legacy workflow identities; cancel or drain
-queued, waiting, approval-pending, and running executions; verify disabled
-state, removal, and old-ref dispatch rejection; run and capture acceptance
-probes; remove the acceptance workflow, temporary bypass, and Environment;
-verify their removal. That cleanup makes a later activation decision
-permissible but does not itself authorize true. v1 Official and CI assets
-remain unchanged; legacy Buddy workflows, Buddy-specific tests and matrices,
-and Buddy documentation are excluded from that preservation and are retired or
-rewritten. The sequence has an intentional Buddy outage. If acceptance fails,
-all Buddy publication stays disabled, the temporary path is removed, legacy
-Buddy remains retired, and any probe state is handled through reconciliation or
-Break-Glass. A later retry requires a newly reviewed one-time bootstrap
-invocation and a new fixed disposable coordinate/version. No reusable bypass or
-compatibility rollback remains; restoring legacy Buddy requires a separate
-user-approved rollback PR.
-
-### Normal Live Activation
-
-After successful acceptance cleanup, activation follows a separate governed
-sequence:
-
-1. retain the merged readiness repair while false;
-2. merge the protected all-surface Environment-contract rename to the final
-   profile mappings while false;
-3. create and authenticated-read both permanent Environments and their markers
-   only after that rename;
-4. capture every existing activation-gate item, including contract and
-   permission-negative tests, permanent no-consumer policy, protected-source
-   provenance, effective writer/access inventory, actual token and package
-   reach, Official/production isolation, 45-day retention, legacy retirement,
-   and explicit residual-risk acceptance;
-5. merge a protected preparation change that refreshes the attestation but
-   remains false;
-6. freeze all other `main` writes and normal Buddy dispatch, then merge a
-   separate minimal protected true change;
-7. perform read-only rollout preflight at the exact activation merge SHA and
-   capture the pre-dispatch run set;
-8. dispatch `main` once, correlate exactly one new attempt-1 run, inspect the
-   immutable summary, and self-approve only that deployment; and
-9. retain true only after a canonical Attempt Outcome with result `success` and
-   exact destination reconciliation.
-
-An ambiguous dispatch response is reconciled read-only and never blindly
-resent. Dispatch and unrelated `main` writes remain frozen through the terminal
-Attempt because a Governance-source advance while approval is pending
-invalidates the admitted identity. The sole pre-terminal exception is the
-minimal protected false change required after any lesser or ambiguous outcome;
-it intentionally blocks future admission after fresh observation. Governance
-then inventories every run and pending deployment and waits for terminal state
-before read-only reconciliation. Runs whose capability group may have started
-remain possibly mutated until proved otherwise. Flag-off does not revoke an
-already-admitted publisher.
-
-### Revalidation Triggers
-
-Relevant rollout checks are repeated when changes affect:
-
-- Rulesets or protected refs;
-- CODEOWNERS or required review;
-- workflow permissions or Environment bindings;
-- repository Write/Maintain/Admin membership or team trust;
-- OIDC trust;
-- destination identity or permissions;
-- Buddy/Official isolation; or
-- Break-Glass Remediation governance.
-
-Human Governance also re-attests repository Write/Maintain/Admin trust and
-package/repository/Manage Actions access at least every 90 days. Any listed
-change requires an authorized human to promptly commit `live_enabled: false` to
-the policy-fixed protected document pending inspection and explicit
-reacceptance. Protection, review, merge, and fresh-read latency mean this is a
-bounded operational response, not instantaneous platform disablement; expiry
-still blocks stale normal flows if the operational response is missed.
-
-The accepted result is a canonical, non-executable Governance attestation. It
-binds schema, a required top-level boolean `live_enabled`, explicit accepted
-writer inventory, explicit
-package/repository/Manage Actions access inventory or evidence digest,
-policy/package identity, issuer, inspection time, expiry no later than 90 days,
-and acknowledged limitations. The immutable first-slice Governance-source
-contract carried by the concrete Release policy or its selected static
-Governance-policy catalog is exactly:
-
-- repository: `hcoona/three`;
-- ref: `refs/heads/main`; and
-- path:
-  `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`.
-
-The attestation document is the authoritative normal-flow live-enable source,
-but it grants no Capability by itself.
-
-Before every first-slice live Attempt, Release uses `contents: read` to freshly
-verify ref protection, resolve the fixed ref to a full commit SHA, and read the
-attestation blob at that commit. It validates `live_enabled: true` and binds the
-boolean plus repository/ref/commit/path/Git blob OID/canonical content SHA-256
-into the exact-target Live Eligibility Decision. The payload need not
-self-reference this provenance. Any mismatch, expiry, malformed content, or
-false `live_enabled` state blocks.
-
-Immediately before Capability Admission, Release performs the same source read
-again rather than relying on the pre-Attempt observation or a cached blob. It
-uses `contents: read` to freshly resolve the protected ref and requires
-`live_enabled: true`, an unexpired valid document, unchanged policy source
-fields, and newly resolved commit/blob/content provenance and content identity
-identical to the Live Eligibility Decision. A newly issued valid attestation is
-intentionally a mismatch for the existing Attempt: after Governance
-restoration, a new Attempt must establish new eligibility and obtain new
-approval.
-
-Runtime does not enumerate current repository writers or GitHub Packages grants:
-the current `GITHUB_TOKEN` cannot provide the former and GitHub Packages exposes
-no complete grants API. Human inspection is therefore a bounded-staleness
-snapshot. Relevant role, grant, or Manage Actions changes require immediate
-protected-source disablement and a new attestation; the at-most-90-day expiry
-bounds normal-flow staleness. After inspection, an authorized human updates and
-re-attests the document before a later protected commit may restore
-`live_enabled: true`. Governance adds no repository variable, PAT, GitHub App,
-service identity, OIDC permission, ledger, or additional token permission. This
-process does not constrain a malicious actor already accepted into the writer
-TCB or stop a capability job that passed its final check before the disabling
-commit became visible.
-
-Ordinary CI and Release runs do not continuously compare platform configuration
-against a stored snapshot.
+The current design does not add an external policy service, continuous
+governance reconciler, duplicate approval database, or permanent grant ledger.
 
 ## Failure Conditions
 
-Governance integration is not ready for activation when:
+Governance integration fails closed when:
 
-- control surfaces that are not part of the named Buddy target-code exception
-  lack required owner review;
-- a build or qualification job can obtain publication capability;
-- CI owns or executes complete Official dry-run planning;
-- the first-slice Buddy package or destination is not exact and isolated from
-  Official or known production use, the selected Approval or Capability
-  Environment Profile or profile-to-name mapping is not exact, or the token
-  scope or no-consumer boundary does not provide the required isolation;
-- any repository actor with Write, Maintain, or Admin access is not trusted as a
-  Buddy publisher;
-- either `buddy.yml` or `release-buddy.yml` remains enabled, an old-ref dispatch
-  is accepted, a queued/waiting/approval-pending/running legacy execution is not
-  drained or canceled, or any compatibility Buddy route remains;
-- a former v1 Buddy project is accepted by v3 without an explicitly migrated
-  slice;
-- the permanent HK dependency-policy gate is absent, does not cover dependency
-  surfaces, or finds a normal smoke-package consumer;
-- writer-TCB or package/repository grant re-attestation is overdue or pending
-  after a relevant change;
-- the fixed-source attestation is missing, executable, unreadable, expired,
-  malformed, provenance-mismatched, or inconsistent with policy/package
-  bindings;
-- the temporary acceptance workflow accepts normal Release inputs, runs from an
-  unprotected ref, can emit live Release identity/history, leaves package-write
-  outside probe jobs, or remains present after acceptance;
-- the first-slice approval surface omits target/ref, package coordinate,
-  artifact digest/manifest, lifecycle scripts, or action summary;
-- the approval deployment URL, completed job summary, or Authorization Record
-  does not bind the same immutable reviewer-summary artifact ID/digest and
-  Publication Snapshot digest;
-- the normal first-slice capability job receives a PAT or `id-token: write`, or
-  inspection/probes establish reach to known Official or production assets;
-- the planned or ordinary first-slice action set includes delete, restore,
-  permission, visibility, or admin operations;
-- Buddy and Official share an identity capable of reaching Official state;
-- an Official side-effect job is not protected by the intended Environment;
-- destination trust accepts broader workflow identities than intended;
-- required platform configuration cannot be inspected or confirmed; or
-- a required acceptance item remains unresolved.
+- an owner-reviewed surface outside the named Buddy exception lacks required
+  review;
+- a CI, build, qualification, or observation job can publish;
+- the Approval Environment is missing or its native configuration is not
+  attested as approved;
+- the resolved sentinel is absent or mismatched;
+- same-name broader variables have not been excluded by authenticated native
+  readback;
+- repository Actions retention has not been authenticated as permitting at
+  least 45 days;
+- the selected destination primitive has not passed the complete version-and-
+  tag conditional non-overwrite acceptance;
+- the action-bearing Approval Bundle or any Snapshot, reviewer, artifact,
+  action, or resource binding is missing or inconsistent;
+- the Approval job can publish or the publisher can start without its successful
+  Publication Authorization;
+- any step-running job other than the publisher has effective
+  `packages: write`;
+- the publisher receives a PAT or `id-token: write`;
+- protected Governance is missing, unreadable, malformed, expired, disabled,
+  binding-mismatched, or touched after eligibility;
+- Governance freshness requires equality of unrelated `main` commits rather
+  than protected-path continuity;
+- a writer, reviewer, role, team, or relevant access change has not forced a
+  new Governance decision;
+- a normal action includes delete, restore, permission, visibility, or
+  administrative behavior;
+- Buddy can obtain Official authority;
+- a lost activation response causes blind redispatch; or
+- a non-first normal-Live run attempt can create or consume authority.
 
 ## Deferred LLD Decisions
 
-- exact Environment names and profile-to-name mappings other than the fixed
-  first-slice Buddy Approval and GitHub Packages Capability mappings;
-- exact CODEOWNERS patterns and final-match owner resolution tests;
-- exact Ruleset configuration;
-- exact GitHub job permissions by destination;
-- exact first-slice `GITHUB_TOKEN` permission and package/repository access
-  configuration;
-- repository-writer TCB and package/repository grant inventory, change-triggered
-  and periodic re-attestation procedure, and live-disable/reacceptance control;
-- optional workflow-execution protection evaluation without treating it as a
-  required dependency or permission ceiling;
-- reviewer-visible Buddy approval summary and lifecycle-script inspection
-  contract;
-- Break-Glass package deletion and restore procedure;
-- exact OIDC audience and subject claims;
-- destination-specific trusted-publisher setup;
-- first-slice rejection diagnostics and tests proving GitHub Deployment Review
-  data and review-ID deltas are not authoritative Approval Outcome Evidence;
-- CODEOWNERS tests resolving final-match ownership to `@hcoona` for every
-  governed file, including
-  `/.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`,
-  discovering new descriptors, and failing missing or overridden patterns
-  without adding runtime eligibility;
-- tests proving first-slice rejection grants no Capability and remains
-  replayable incomplete, approval-pending pre-capability cancellation/expiry may
-  lack a context-owned outcome, and possible post-capability cancellation
-  requires reobservation;
-- credential-free capability-admission validation and proof that no
-  package-write job can be scheduled before success;
-- exact 45-day first-slice Release retention configuration and policy check;
-- protected-ref non-executable attestation schema, exact source-field contract
-  for `hcoona/three`, `refs/heads/main`, and
-  `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`,
-  fixed-source provenance, canonical digest tests, exact-target Live
-  Eligibility Decision binding, and fail-closed missing/unreadable/expired/
-  changed/consumer-positive scenarios before Attempt creation;
-- post-approval Governance-freshness tests proving capability admission uses
-  `contents: read` to freshly resolve and read the fixed source, rejects
-  `live_enabled: false`, expiry during an approval wait,
-  ref/commit/blob/content or binding changes, and invalidation, requires a new
-  Attempt after restoration, and permits publisher-side repeat validation only
-  as defense in depth;
-- direct retirement of both legacy Buddy workflow identities, execution
-  drain/cancellation, old-ref rejection, outage communication, and
-  no-compatibility rollback checks;
-- permanent dependency-policy gate and no-consumer checks;
-- temporary protected acceptance-bootstrap workflow, fixed coordinates,
-  per-probe `github.run_attempt == 1` guards, terminal evidence capture with
-  `always() && github.run_attempt == 1`, non-first-attempt rejection,
-  dependency-failure and ambiguous-mutation evidence persistence,
-  incomplete/unknown reconciliation classification, partial-rerun rejection,
-  new-reviewed-invocation and new-coordinate retry, failure handling with legacy
-  Buddy retired, removal, and removal verification;
-- rollout checklist command sequence; and
-- safe smoke identities and cleanup procedures.
+Lower-layer design may define:
+
+- exact strict record and canonicalization schemas;
+- exact sentinel name and value;
+- exact authenticated readback and attestation evidence format;
+- exact protected-path history query and anti-rollback proof;
+- exact REST API version and response/readback validation commands;
+- exact job permission declarations and reusable-workflow ceiling;
+- exact reviewer-summary rendering;
+- destination-specific capability acquisition;
+- exact failure and diagnostic codes;
+- Break-Glass package deletion or restoration procedure; and
+- tests for every failure condition above.
+
+Lower-layer design must not introduce a first-slice second Environment,
+Environment Profile abstraction, separate post-approval admission authority,
+history-based authority, or exhaustive package-grant claim.

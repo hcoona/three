@@ -2,297 +2,258 @@
 
 ## Decision
 
-Build v3 on a clean implementation line and selectively port proven v2
-mechanisms. Do not refactor the v2 control architecture in place.
+Workflow Delivery v3 remains the only normative design line. Proven v2
+mechanisms may be extracted and revalidated behind v3 boundaries, but v2
+authority, identity, profile, promotion, and replay semantics are not an
+incremental implementation base.
 
-v1 remains the production compatibility baseline for CI and Official. Its
-Buddy routes retire when the first-slice implementation PR merges, before v3
-live activation. v2 never becomes an intermediate production architecture.
+This page defines the current transition policy. Git history and the append-only
+[`docs/wiki/log.md`](../../../log.md) carry completed chronology. Current-state
+documents describe current truth rather than replaying prior provisioning,
+retry, or rollout sequences.
+
+## Current State
+
+The normal-Live implementation is merged and disabled with
+`live_enabled: false`.
+
+Both permanent Environments created during prior provisioning currently exist:
+
+- `workflow-delivery-v3-buddy-approval`; and
+- `workflow-delivery-v3-buddy-github-packages`.
+
+The replacement design retains only
+`workflow-delivery-v3-buddy-approval` as an authority-bearing Environment.
+`workflow-delivery-v3-buddy-github-packages` is inert under that design, but it
+must not be deleted until:
+
+1. the replacement implementation is merged and exact repository inspection
+   proves that no workflow, executable source, schema, policy, formatter,
+   validator, or test treats it as an input or authority; current-state and
+   migration text may still name it solely to inventory and remove it safely;
+   and
+2. separate authorization permits external-resource cleanup.
+
+The direct v1 Buddy-to-v3 Buddy cutover and destination acceptance are complete
+historical facts. They do not authorize normal Live activation.
+
+Normal Live also remains activation-blocked because standard
+`npm publish --tag` cannot prove conditional non-overwriting creation of the
+complete version-and-tag projection. Resolving that platform capability gap
+requires a separately reviewed design and implementation while
+`live_enabled: false`; repository concurrency, another read, or post-action
+readback is not a substitute.
 
 ## Why v2 Is Not an Incremental Base
 
-v2 and v3 differ at their architectural roots:
+v2 and v3 differ at architectural boundaries:
 
-- v2 authority and promotion machinery versus GitHub-governed same-revision
-  context-owned planning and finalization;
-- project/profile-centric control types versus an explicit Release Unit domain
-  over normalized project and build facts;
-- one pre-build Release Plan versus a two-snapshot Plan lineage;
-- v2 shared publication identity versus v3 channel- and destination-isolated
-  publication coordinates over one NBGV-authoritative product version;
-- mixed control and execution boundaries versus three runtime trust zones; and
-- GitHub job rerun semantics versus whole-release replay.
+- external GitHub Governance and same-revision, context-owned planning replace
+  v2 promotion authority;
+- explicit Release Units over normalized repository facts replace
+  project/profile-centric control types;
+- Qualification and Publication Snapshots replace one mutable pre-build plan;
+- NBGV remains sole product-version authority while channels retain separate
+  destination and capability boundaries; and
+- current-Attempt records plus fresh destination observation replace
+  history-derived admission and aggregate replay state.
 
-Changing these in place would create long-lived intermediate states that mix
-incompatible authority, identity, Evidence, and replay contracts.
+Mixing those contracts would create an intermediate architecture with
+ambiguous authority and recovery semantics.
+
+## Replacement Delivery Order
+
+The replacement is delivered in this order:
+
+1. Merge the coherent design-document changes only.
+2. Implement the runtime and static-policy contraction while
+   `live_enabled: false`, including migration to exact Governance schema
+   `workflow-delivery/v3/normal-live-governance-attestation-v1`.
+3. Run the complete affected tests and HK gates, then complete independent
+   multi-reviewer review and atomic adjudication. Compatibility fixtures must
+   prove superseded selected-ref parsers reject the new schema before any
+   Environment job.
+4. Merge the validated implementation while it remains disabled.
+5. Separately authorize removal of
+   `workflow-delivery-v3-buddy-github-packages` only after exact no-authority-
+   reference proof, authenticated Environment readback, and repository
+   inspection proving every retained dispatchable ref either implements the
+   one-Environment contract or rejects the new Governance schema before any
+   Environment job or deployment.
+6. Before activation, merge a separately reviewed design and implementation
+   for a documented destination primitive and pass the conditional
+   non-overwrite race for the complete version-and-tag projection. Standard
+   `npm publish --tag` does not satisfy this gate.
+7. Gather fresh at-most-90-day Governance and native-platform evidence,
+   explicitly covering the one Approval Environment, the accepted residual
+   package reach, and authenticated repository Actions retention of at least
+   45 days, without merging a separate preparation change.
+8. Merge one small protected Activation PR that applies the refreshed
+   attestation and sets `live_enabled: true`.
+9. Perform authenticated post-merge readback of the protected Governance,
+   repository retention, and native platform state.
+10. Dispatch exactly once from then-current protected `main` through an
+    explicitly supported REST API version whose success response returns the
+    run ID. Validate the returned workflow and run identity, actor,
+    `workflow_dispatch` event, actual head SHA, `refs/heads/main`, and
+    `github.run_attempt == 1`. A lost response or ambiguous correlation requires
+    read-only reconciliation and never blind redispatch.
+11. Request human approval only when the Publication Snapshot contains an
+    action. Complete terminal and read-only reconciliation. Any activation
+    failure remains fail closed.
+
+There is no separate Preparation PR, repository-wide `main` freeze,
+pre-pinned Activation SHA, or activation tag.
+
+The first proving run starts from then-current protected `main`. Later normal
+Buddy operation retains the approved ability to select arbitrary
+same-repository refs under the accepted writer trusted-computing base when
+their selected-revision control strictly admits the active Governance schema.
 
 ## Implementation-Line Strategy
 
-1. Preserve the v2 commit as the full archive and mechanism source.
-2. Create the v3 branch from the current repository mainline for a clean diff;
-   this is a Git baseline choice, not architectural reuse of v1.
-3. Port this versioned v3 documentation first.
-4. Create new v3 CI, Release, and Shared Foundation namespaces with no imports
-   from v2 Plan, project, profile, proof, report, or control-plane types.
-5. Port mechanisms through anti-corruption adapters.
-6. Implement one vertical slice before expanding across ecosystems.
-7. Keep v3 live disabled until acceptance completes. For the confirmed first
-   slice, the implementation PR merge directly retires both legacy Buddy
-   workflow identities before destination acceptance, creating a controlled
-   outage; required CI checks, v1 Official, and v1 CI do not switch.
+### Static-Reference Policy Contraction
 
-## Documentation Selection
+The implementation phase introduces a new schema and policy ID. It must:
 
-### Port
+- use exact `git-target` enumeration and blob reads for Release Live
+  Eligibility;
+- keep `index` stage-0 and `worktree` tracked-plus-eligible-untracked modes as
+  separate HK feedback sources;
+- run the lightweight policy whenever root HK runs in the caller-selected
+  feedback mode;
+- preserve the expensive v3 pytest suite as path-selected, except that manual
+  `slice-validation` runs it unconditionally;
+- remove Tree-sitter dependencies, parser/dataflow/interpreter commitments,
+  whole-file digest exceptions, fixed inventory counts, scanned-surface digest
+  authority, and trigger-catalog authority; and
+- validate exact target, policy, source-kind, and finding behavior through
+  semantic tests rather than parser-branch or fixed-count assertions.
 
-- v3 requirements, HLD, glossary, and migration decisions;
-- current repository facts required to discover Project Nodes, dependencies,
-  build capabilities, and Release Units;
-- revalidated GitHub Actions and Registry platform observations;
-- mechanism behavior needed to specify adapter contracts; and
-- new v3 acceptance evidence.
+Those are implementation-phase changes. This documentation-only change does
+not modify the scanner, HK configuration, workflows, or tests.
 
-Ported version mechanisms must be adapted to the v3 target-bound Repository
-Model projection contract. In-build NBGV recomputation, alternative version
-derivation, and fallback fields are implementation facts to replace, not
-semantics to preserve.
+### Normal-Live Runtime Contraction
 
-### Rewrite
+The implementation phase removes these normal-Live mechanisms:
 
-- product and system requirements when the accepted baseline changes;
-- Project Node discovery and Release Unit authoring;
-- CI Qualification MLD and brief LLD;
-- Release Delivery MLD and brief LLD;
-- authority and governance MLD and brief LLD;
-- operator runbooks; and
-- implementation and rollout plans.
+- custom GitHub Actions history discovery and admission;
+- prior-Attempt reconstruction and history-derived aggregate Execution state;
+- `github.run_attempt` fields from normal-Live Provider Request Manifests, Fact
+  Bundles, Repository Model, Qualification, and Publication Snapshots,
+  current-Attempt records, Artifact References, and Publication Authorization;
+- the Capability Environment and Environment Profile abstraction;
+- `approval-finalizer` and Capability Admission;
+- capability groups, group manifests, group bundles, and group result bundles;
+  and
+- mandatory approval for a zero-action exact-satisfied Attempt.
 
-### Do Not Port
+It also replaces the current
+`workflow-delivery/v3/governance-attestation` schema with the exact incompatible
+schema `workflow-delivery/v3/normal-live-governance-attestation-v1`.
+Selected-revision control must reject every other schema before Release
+Execution lookup, Attempt creation, or any Environment job. A retained fixture
+of known stale dispatchable control must prove this negative path.
 
-- v2 normative requirements and design pages;
-- v2 implementation completion records;
-- v2 rollout readiness claims;
-- v2 wiki overview and index;
-- v2 workflow documentation as active guidance; and
-- the v2 wiki log as the v3 active chronology.
+Every authoritative normal-Live job still independently requires
+`github.run_attempt == 1`. Simulation retains its run-attempt binding and rerun
+identity. CI retains its existing candidate and run-attempt contract.
 
-### Extract and Revalidate
+The contraction preserves:
 
-Platform experiment pages must be rewritten as version-neutral observations.
-The extracted page must distinguish:
-
-- observed platform behavior;
-- observation date and workflow/run evidence;
-- assumptions that may expire;
-- v2-specific interpretation; and
-- the new v3 consequence.
-
-## Code and Test Selection
-
-Mechanism code may be ported when it can be expressed behind a v3 adapter
-without importing v2 domain types.
-
-Mechanism-level tests and fixtures may be ported with the code. Tests that assert
-v2 workflow topology, schema shape, project identity, Buddy promotion, or
-candidate-owned authority must remain in the v2 archive.
+- purpose-first request branching and same-revision request-local Repository
+  Model compilation;
+- Qualification and Publication Snapshots;
+- destination Observation and zero-or-one action formation;
+- the semantic Publication Authorization closure for an action-bearing
+  Attempt;
+- Release Execution and mutable-resource concurrency boundaries;
+- the mutation-may-have-started marker;
+- Publication Result and its embedded Receipt on successful publication;
+- read-only best-effort finalization, including the possibility that no durable
+  Attempt Outcome survives cancellation or transport failure; and
+- read-only reconciliation and separately authorized Break-Glass Remediation.
 
 ## External-State Inventory
 
-Before v3 activation, inventory:
+### Environment State
 
-- GitHub Rulesets and required-check names;
-- v1 required CI and the first-slice v3 shadow pull-request and
-  non-authoritative manual `slice-validation` check names;
-- protected Environments and reviewers;
-- OIDC workflow identities and claims;
-- Registry trusted-publisher registrations;
-- GitHub Packages permissions;
-- the exact dedicated `hcoona-release-smoke-npm` package and GitHub Packages
-  destination;
-- the exact Approval and Capability Environment Profiles selected by the
-  Release policy, their stable platform names and IDs, reviewers,
-  single-maintainer self-review exception, administrator-bypass behavior, wait
-  timers, branch/tag policies, credential and access policy, and distinct
-  Environment-scoped configuration markers;
-- absence of repository- or organization-scoped variables with the same marker
-  names, so implicit creation of a missing Environment cannot satisfy a marker
-  check;
-- maximum `GITHUB_TOKEN` package/repository reach, with proof of minimum
-  `packages: write`, no PAT fallback, and no `id-token: write`;
-- actual package/repository grants, known Official and production assets, and
-  the bounded set of unrelated assets safe for denial probes, without claiming
-  universal negative reach proof;
-- every repository actor with Write, Maintain, or Admin access and explicit
-  confirmation that each is trusted as a Buddy publisher;
-- protected-ref non-executable TCB attestation with explicit accepted writer and
-  package/repository/Manage Actions access inventory or evidence digest,
-  policy/package bindings, issuer, inspection time, expiry no later than 90
-  days, acknowledged limitations, exact source contract
-  `hcoona/three` + `refs/heads/main` +
-  `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`, and
-  fixed-source ref/commit/blob/content verification;
-- optional workflow-execution protections, documented only as defense in depth
-  rather than a required dependency or per-job permission ceiling;
-- reviewer-visible target/ref, coordinate, artifact manifest/digest, lifecycle
-  scripts, and action-summary surfaces;
-- all repository, CI, developer, and production dependency graphs to prove the
-  disposable smoke package has no normal consumer;
-- exact-target Release-owned eligibility scan surfaces, policy/catalog digests,
-  exceptions, immutable Decision transport, and pre-Attempt blocking behavior;
-- immediate pre-Capability `contents: read` re-resolution and re-read of the
-  fixed protected Governance source, including `live_enabled`, mandatory
-  new-Attempt recovery after disablement, expiry,
-  source/provenance/content change, or invalidation, and optional
-  publisher-side repeat validation as defense in depth only;
-- permanent HK dependency-policy coverage over manifests, lockfiles, workflows,
-  install scripts, and dependency configuration, including dependency-surface
-  triggers and unconditional `slice-validation`;
-- planned action catalogs proving no ordinary delete, restore, permission,
-  visibility, or admin action;
-- latent repository/package admin authority accepted within the writer TCB and
-  the Break-Glass deletion/restore path;
-- concurrency identities; and
-- any live v1 or experimental v2 publication state;
-- repository-level status of both legacy Buddy workflow identities,
-  `buddy.yml` and `release-buddy.yml`, all queued/waiting/approval-pending/running
-  executions, and old-ref dispatch behavior;
-- temporary destination-acceptance workflow/ref/Environment, hard-bound target
-  SHA and fixed probe coordinates, probe evidence, and verified removal state;
-  and
-- repository Actions retention policy sufficient for 45-day first-slice Release
-  control and artifact retention.
+The replacement authority model has one Environment:
+`workflow-delivery-v3-buddy-approval`, with the approved reviewer,
+self-review, bypass, deployment-policy, wait, variable, secret, and exact
+Environment-scoped sentinel settings.
 
-Acceptance also inventories the in-package npm target witness schema and proves
-build, qualification, and remote observation require coordinate, ownership,
-matching immutable target witness, and bytes. Detached sidecars are not accepted
-as destination provenance. It also proves explicit target-specific npm tag
-syntax/length, compound publish/tag behavior, identical and differing races,
-Receipt capture, and exact tag-to-version observation. Implicit `latest` and
-shared moving Buddy tags are forbidden; unsupported combined behavior blocks
-activation.
+Authenticated evidence must prove that no same-name broader variable can
+satisfy the lookup in place of the Environment-scoped sentinel. The runtime
+sentinel remains a narrow accidental-creation and misbinding check; it does not
+replace native configuration readback.
 
-Activation requires explicit human Governance inspection and acceptance of the
-bounded branch-controlled publisher risk. This exception is recorded only for
-the first live Buddy GitHub Packages slice; Official and future Buddy
-destinations or production packages remain blocked until their own governance
-and threat decisions are confirmed. A separately governed Release policy may
-reuse an existing Environment identity only when its complete Approval or
-Capability Environment Profile is identical; reuse does not inherit this
-exception, an approval, or package eligibility. The confirmed
-single-maintainer exception allows sole accepted writer and reviewer `hcoona`
-to approve their own dispatch with `prevent_self_review: false`. This is
-explicit operator self-confirmation, not independent review. Any effective
-writer, reviewer, role, team, or relevant access change blocks the live slice
-through `live_enabled: false` until human Governance makes a new decision. Any
-membership change that leaves an untrusted actor with Write, Maintain, or Admin
-access also blocks the slice until either that actor's repository access is
-reduced below Write/Maintain/Admin or package-write Capability and destination
-access are placed behind an independently enforced publisher boundary
-unavailable to writer-authored workflows. Ref narrowing, Environment branch
-restrictions, CODEOWNERS, and workflow-execution protections may remain defense
-in depth but are insufficient remediation by themselves while an untrusted
-writer can author alternate workflows with `packages: write`.
+The obsolete Capability Environment remains untouched until the ordered cleanup
+gate above is separately authorized.
 
-After activation, human Governance re-attests the writer TCB and
-package/repository/Manage Actions access after relevant role, team, or
-permission changes and at least every 90 days. Operators must immediately
-respond by having an authorized human promptly commit `live_enabled: false` to
-the policy-fixed protected attestation pending inspection and explicit
-reacceptance; attestation expiry blocks stale normal flows independently.
-Protection, review, merge, and fresh-read latency make this bounded operational
-response rather than instantaneous platform disablement. A pending or completed
-approval does not preserve stale Governance state: capability admission uses
-`contents: read` to freshly resolve and re-read the exact source, and any change
-requires a new Attempt after restoration.
+### GitHub Packages Access
 
-The direct v1 Buddy-to-v3 Buddy cutover has completed without a compatibility
-route. Both legacy Buddy workflow files are absent, their repository workflow
-identities remain disabled, destination acceptance retry 5 succeeded, and its
-temporary workflow, bypass, Environment, refs, and deployment were retired.
-Those facts make the named slice eligible for a later production decision; they
-do not authorize normal Live or set `live_enabled` true.
+This transition does not change package access.
 
-Normal Live activation uses this separate ordered procedure:
+The GitHub Packages credential principal is repository `hcoona/three`. Its
+known reach includes the real `hexo-renderer-asciidoc` package and disposable
+smoke packages. That reach is an accepted repository-principal blast radius,
+not package isolation and not an exhaustive package inventory.
 
-1. retain the merged narrow readiness repair while false. Its Environment jobs
-   validate
-   distinct Environment-scoped markers through quoted case-sensitive shell
-   comparisons as their first executable steps, use no `continue-on-error`,
-   explicitly gate every later operational step on marker success, leave
-   exceptional handlers non-mutating, and remove the unused misbound
-   approval-finalizer Attempt output;
-2. retain the protected implementation rename merged while false, which
-   replaces every transitional approval/capability Environment and marker
-   binding across workflow, source, records, formatters, validators, tests, and
-   current-state contracts with the final profile mappings;
-3. retain the separately authorized creation and authenticated readback of the
-   first slice's two permanent profile mappings:
-   `workflow-delivery-v3-buddy-approval` for the shared Buddy Approval
-   Environment Profile and `workflow-delivery-v3-buddy-github-packages` for the
-   Buddy GitHub Packages Capability Environment Profile. The approval
-   Environment has sole reviewer `hcoona`, the documented self-review
-   exception, no stored credential, zero wait, no branch restriction, and
-   administrator bypass disabled where available. The capability Environment
-   has no reviewer or stored credential, zero wait, no branch restriction, and
-   the same administrator-bypass posture. Authenticated readback verifies both
-   markers and all native Environment settings. The Governance-approved
-   profile-to-name mapping together with that readback and the other required
-   policy evidence establishes exact profile compatibility. Administrator bypass
-   is configured and authenticated-read through the saved Environment UI when no
-   documented public API supports that control; an undocumented API response
-   field is corroborating evidence only, and omission is not false;
-4. capture every activation-gate item, then merge a protected preparation
-   change that refreshes the attestation and evidence while keeping false;
-5. freeze every other `main` write and normal Buddy dispatch. Merge only the
-   minimal protected activation change that sets true, and retain the freeze
-   except for the minimal protected false change required by a lesser outcome;
-6. run read-only rollout preflight against the exact activation merge SHA. It
-   rechecks all gate evidence, derives that SHA's NBGV coordinate and target
-   tag, proves the expected destination pre-state, and captures the existing
-   normal-run set;
-7. dispatch `main` exactly once and correlate exactly one new
-   `workflow_dispatch` attempt-1 run by `hcoona` at that SHA. An ambiguous
-   response is reconciled read-only and is never blindly resent;
-8. inspect the immutable reviewer summary and self-approve only the correlated
-   deployment; and
-9. retain true and release the freeze only after a canonical Attempt Outcome
-   with result `success`, exact artifacts and disposition-specific bindings,
-   either action-bearing publication with Capability Admission, durable
-   capability-group result, and Receipt or canonical exact-satisfied no-action
-   with no capability or Receipt lineage, and exact destination reconciliation.
+Exact smoke coordinate, artifact, action, and mutable-resource validation
+governs intended operation and reconciliation only. It does not constrain a
+malicious accepted writer or narrow the repository token to one package.
+Official npmjs PAT, OIDC, secret, destination, CI, and simulation boundaries
+remain unchanged.
 
-Any lesser outcome keeps dispatch and unrelated `main` writes frozen,
-inventories all runs and pending deployments, permits only a minimal protected
-false change before terminal state, and waits for terminal platform state
-before read-only reconciliation.
-Pre-capability work may be canceled when platform evidence proves no
-side-effect path started. Capability-started work is drained where possible and
-remains possibly mutated until proved otherwise. Flag-off controls future
-admission; it is not package rollback or instantaneous capability revocation.
-A later whole-run replay or new dispatch requires a fresh explicit decision and
-Attempt. No legacy restoration, delete, restore, dashboard, alerting service,
-lock service, or new credential is part of this activation.
+### Governance Freshness
 
-The same cutover change removes both Buddy workflow files and removes or
-rewrites Buddy-only acceptance rows, node IDs, and tests. Mixed Buddy/Official
-assertions are split so Official coverage remains. Negative tests prove that no
-legacy Buddy route exists. Active v1 topology and rollout documentation plus
-`MEMORY.md` are updated to describe retired Buddy routes. Official workflows,
-CI, and shared Official/CI tests remain intact; Buddy-specific tests, matrices,
-and documentation do not. Root HK must pass before merge.
+The protected Governance source remains repository `hcoona/three`, ref
+`refs/heads/main`, and path
+`.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`.
 
-During CI coexistence, the first-slice v3 pull-request check remains shadow-only
-and manual `slice-validation` remains non-authoritative and slice-scoped. v1
-retains the required CI decision. Canonical v3 full validation and Ruleset
-cutover wait for complete repository modeling.
+Eligibility and fresh checks bind repository, ref, path, and attestation
+blob/content identity or an explicit monotonically governed generation. They
+do not require equality of the complete resolved `main` commit.
 
-The first implementation pull request precedes coexistence because its base
-does not yet contain the canonical v3 CI workflow. Its one-time bootstrap
-projection preserves the canonical blocked-Plan failure record while avoiding
-a permanently red diagnostic check caused only by paths outside the incomplete
-first-slice model. Exact base-tree detection self-disables the projection when
-the implementation merges; it is not keyed to a pull-request number, branch,
-or commit literal and cannot carry into later pull requests.
+Path-touch anti-rollback is mandatory: any commit touching the protected path
+after eligibility invalidates the Attempt, including a change followed by a
+byte-for-byte revert. Restoration requires a new dispatch and Attempt.
 
-Parallel implementation is allowed. Parallel authoritative CI decisions or
-parallel live publishers are not.
+## Code and Test Selection
+
+Mechanism code may be retained only when it conforms to the current v3
+contracts. The implementation contraction must preserve Repository Model
+Providers, Fact Bundles, Build Definitions, Release Units, NBGV authority,
+purpose isolation, CI and Official behavior, simulation identity, and
+destination and remediation boundaries.
+
+Tests should assert semantic outcomes and exact binding failures. They must not
+freeze non-authoritative job topology, shell choreography, parser branches,
+trigger inventory, or file/surface/finding counts.
+
+## Documentation Selection
+
+Current v3 requirements, HLD, glossary, MLDs, and concise transition policy are
+normative. Archived v1 and v2 material may supply mechanism evidence only when
+the v3 documents explicitly require extraction and revalidation.
+
+`docs/wiki/log.md` remains append-only. Historical provisioning and retry facts
+belong in Git and that log; current-state pages stay focused on current
+architecture, external state, residual risk, and next authorized boundary.
+
+## Explicit Non-Authorization
+
+This design-document change does not authorize:
+
+- workflow, source, scanner, HK, or test edits;
+- deletion or modification of either Environment;
+- package-access or package-permission changes;
+- Governance refresh or attestation mutation;
+- `live_enabled: true`;
+- activation or dispatch;
+- Environment approval; or
+- registry, tag, package, or other external mutation.
+
+Each later boundary requires the separate authorization identified in the
+replacement delivery order.
