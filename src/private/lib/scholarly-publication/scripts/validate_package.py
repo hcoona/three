@@ -847,6 +847,291 @@ def find_repository_root() -> Path:
     fail("cannot locate repository root for runtime deployment validation")
 
 
+def parse_simple_yaml_string(value: str) -> str | None:
+    """Parse one plain or simply quoted string without YAML extensions."""
+    if not value or value != value.strip():
+        return None
+    if value[0] not in {"'", '"'}:
+        if value[-1] in {"'", '"'}:
+            return None
+        return value
+    if len(value) < 2 or value[-1] != value[0]:
+        return None
+    inner = value[1:-1]
+    if value[0] in inner or "\\" in inner:
+        return None
+    return inner
+
+
+def strip_yaml_inline_comment(value: str) -> str:
+    """Remove a whitespace-delimited YAML comment outside quoted text."""
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(value):
+        if quote == '"':
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+            continue
+        if quote == "'":
+            if character == quote:
+                quote = None
+            continue
+        if character in {"'", '"'}:
+            quote = character
+        elif character == "#" and (
+            index == 0 or value[index - 1] in {" ", "\t"}
+        ):
+            return value[:index].rstrip()
+    return value
+
+
+def load_root_apm_local_dependencies(path: Path) -> tuple[str, ...]:
+    """Read local dependencies from the root dependencies.apm sequence."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        fail(f"cannot read root APM manifest {path}: {error}")
+
+    section: str | None = None
+    subsection: str | None = None
+    dependencies_seen = False
+    apm_seen = False
+    current_entry: dict[str, str] | None = None
+    local_paths: list[str] = []
+
+    def finish_apm_entry() -> None:
+        nonlocal current_entry
+        if current_entry is None:
+            return
+        if "git" in current_entry or "path" not in current_entry:
+            current_entry = None
+            return
+        if set(current_entry) != {"path"}:
+            fail(f"{path} local path dependencies must be single-key entries")
+        local_path = parse_simple_yaml_string(current_entry["path"])
+        if local_path is None:
+            fail(f"{path} has unsupported local dependency path syntax")
+        local_paths.append(local_path)
+        current_entry = None
+
+    for raw_line in lines:
+        line = raw_line.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith(" "):
+            finish_apm_entry()
+            match = re.fullmatch(
+                r"([A-Za-z][A-Za-z0-9]*):(?:\s*(.*))?",
+                line,
+            )
+            if not match:
+                fail(f"{path} uses unsupported top-level YAML syntax")
+            section = match.group(1)
+            subsection = None
+            if section == "dependencies":
+                if dependencies_seen:
+                    fail(f"{path} contains duplicate dependencies mappings")
+                dependencies_seen = True
+                value = strip_yaml_inline_comment(match.group(2) or "")
+                if value:
+                    section = None
+            continue
+        if line.startswith("  ") and not line.startswith("    "):
+            finish_apm_entry()
+            if section != "dependencies":
+                continue
+            match = re.fullmatch(
+                r"  ([A-Za-z][A-Za-z0-9]*):(?:\s*(.*))?",
+                line,
+            )
+            if not match:
+                fail(f"{path} uses unsupported dependencies YAML syntax")
+            subsection = match.group(1)
+            if subsection == "apm":
+                if apm_seen:
+                    fail(f"{path} contains duplicate dependencies.apm mappings")
+                apm_seen = True
+                value = strip_yaml_inline_comment(match.group(2) or "")
+                if value:
+                    subsection = None
+            continue
+        if section == "dependencies" and subsection == "apm":
+            if line.startswith("    - "):
+                finish_apm_entry()
+                match = re.fullmatch(
+                    r"    - ([A-Za-z][A-Za-z0-9_-]*):(?:\s*(.*))?",
+                    line,
+                )
+                current_entry = (
+                    {
+                        match.group(1): strip_yaml_inline_comment(
+                            match.group(2) or ""
+                        )
+                    }
+                    if match
+                    else None
+                )
+                continue
+            if current_entry is not None:
+                match = re.fullmatch(
+                    r"      ([A-Za-z][A-Za-z0-9_-]*):(?:\s*(.*))?",
+                    line,
+                )
+                if not match:
+                    fail(f"{path} uses unsupported dependencies.apm syntax")
+                key = match.group(1)
+                if key in current_entry:
+                    fail(
+                        f"{path} dependencies.apm entries must not contain "
+                        f"duplicate {key!r} keys"
+                    )
+                current_entry[key] = strip_yaml_inline_comment(
+                    match.group(2) or ""
+                )
+    finish_apm_entry()
+    return tuple(local_paths)
+
+
+def load_apm_lock_deployed_hashes(
+    path: Path,
+    expected_local_path: str,
+) -> dict[str, str]:
+    """Read deployed hashes from one local dependency in an APM v1 lock."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        fail(f"cannot read root APM lock {path}: {error}")
+
+    section: str | None = None
+    lock_version: str | None = None
+    dependencies_seen = False
+    current_entry: list[str] | None = None
+    dependency_entries: list[tuple[str, ...]] = []
+
+    def finish_dependency_entry() -> None:
+        nonlocal current_entry
+        if current_entry is not None:
+            dependency_entries.append(tuple(current_entry))
+            current_entry = None
+
+    for raw_line in lines:
+        line = raw_line.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        if "\t" in line:
+            fail(f"{path} uses unsupported tab indentation")
+        if not line.startswith(" "):
+            if line.startswith("- "):
+                if section == "dependencies":
+                    finish_dependency_entry()
+                    current_entry = [line]
+                continue
+            finish_dependency_entry()
+            match = re.fullmatch(
+                r"([A-Za-z][A-Za-z0-9_]*):(?:\s*(.*))?",
+                line,
+            )
+            if not match:
+                fail(f"{path} uses unsupported top-level YAML syntax")
+            section = match.group(1)
+            value = match.group(2) or ""
+            if section == "lockfile_version":
+                if lock_version is not None:
+                    fail(f"{path} contains duplicate lockfile_version fields")
+                lock_version = parse_simple_yaml_string(value)
+            elif section == "dependencies":
+                if dependencies_seen:
+                    fail(f"{path} contains duplicate dependencies mappings")
+                dependencies_seen = True
+                if value:
+                    fail(f"{path} dependencies must use block sequence syntax")
+            continue
+        if section == "dependencies":
+            if current_entry is None:
+                fail(f"{path} uses unsupported dependencies YAML syntax")
+            current_entry.append(line)
+    finish_dependency_entry()
+
+    if lock_version != "1":
+        fail(f"{path} must use lockfile_version '1'")
+    if not dependencies_seen:
+        fail(f"{path} must contain a dependencies mapping")
+
+    target_hashes: list[dict[str, str]] = []
+    for entry in dependency_entries:
+        fields: dict[str, str] = {}
+        blocks: dict[str, list[str]] = {}
+        active_block: str | None = None
+        for index, line in enumerate(entry):
+            match: re.Match[str] | None = None
+            if index == 0:
+                match = re.fullmatch(
+                    r"- ([A-Za-z][A-Za-z0-9_]*):(?:\s*(.*))?",
+                    line,
+                )
+            elif line.startswith("  ") and not line.startswith("    "):
+                if line.startswith("  - "):
+                    continue
+                match = re.fullmatch(
+                    r"  ([A-Za-z][A-Za-z0-9_]*):(?:\s*(.*))?",
+                    line,
+                )
+            elif line.startswith("    ") and active_block is not None:
+                blocks.setdefault(active_block, []).append(line)
+                continue
+            else:
+                fail(f"{path} uses unsupported dependency entry syntax")
+            if not match:
+                fail(f"{path} uses unsupported dependency entry syntax")
+            key = match.group(1)
+            if key in fields:
+                fail(
+                    f"{path} dependency entries must not contain duplicate "
+                    f"{key!r} keys"
+                )
+            value = match.group(2) or ""
+            fields[key] = value
+            active_block = key if not value else None
+
+        source = parse_simple_yaml_string(fields.get("source", ""))
+        local_path = parse_simple_yaml_string(fields.get("local_path", ""))
+        if source != "local" or local_path != expected_local_path:
+            continue
+        if fields.get("deployed_file_hashes") != "":
+            fail(
+                f"{path} has unsupported deployed_file_hashes syntax for "
+                f"{expected_local_path}"
+            )
+
+        hashes: dict[str, str] = {}
+        for line in blocks.get("deployed_file_hashes", []):
+            match = re.fullmatch(
+                r"    ([^\s:#][^:\s]*):\s+(sha256:[0-9a-f]{64})",
+                line,
+            )
+            if not match:
+                fail(
+                    f"{path} has invalid deployed_file_hashes entry for "
+                    f"{expected_local_path}"
+                )
+            deployed, digest = match.groups()
+            if deployed in hashes:
+                fail(f"{path} contains duplicate deployed hash for {deployed}")
+            hashes[deployed] = digest
+        target_hashes.append(hashes)
+
+    if len(target_hashes) != 1:
+        fail(
+            f"{path} must contain exactly one local dependency for "
+            f"{expected_local_path}"
+        )
+    return target_hashes[0]
+
+
 def deployment_path(repository_root: Path, include: str) -> Path:
     """Map one package include to its generated .agents path."""
     return repository_root / ".agents" / Path(include)
@@ -855,6 +1140,20 @@ def deployment_path(repository_root: Path, include: str) -> Path:
 def validate_runtime_deployment(includes: tuple[str, ...]) -> set[str]:
     """Validate generated .agents content and byte parity."""
     repository_root = find_repository_root()
+    try:
+        package_relative = PACKAGE_ROOT.relative_to(repository_root).as_posix()
+    except ValueError:
+        fail("canonical package must be beneath the repository root")
+    expected_local_path = f"./{package_relative}"
+    root_dependencies = load_root_apm_local_dependencies(
+        repository_root / "apm.yml"
+    )
+    if root_dependencies.count(expected_local_path) != 1:
+        fail(
+            "root apm.yml must register the scholarly publication package "
+            f"exactly once: {expected_local_path}"
+        )
+
     include_set = set(includes)
     expected_deployed = {
         deployment_path(repository_root, value)
@@ -866,6 +1165,11 @@ def validate_runtime_deployment(includes: tuple[str, ...]) -> set[str]:
 
     for skill_name in EXPECTED_SKILLS:
         skill_root = repository_root / ".agents" / "skills" / skill_name
+        relative_root = skill_root.relative_to(repository_root).as_posix()
+        if skill_root.is_symlink():
+            fail(
+                f"runtime deployment must not contain symlinks: {relative_root}"
+            )
         if not skill_root.is_dir():
             fail(f"runtime deployment is missing {skill_root}")
         for forbidden_name in sorted(CANONICAL_ONLY_DIRECTORIES):
@@ -896,34 +1200,36 @@ def validate_runtime_deployment(includes: tuple[str, ...]) -> set[str]:
         deployed = deployment_path(repository_root, include)
         if canonical.read_bytes() != deployed.read_bytes():
             fail(f"runtime deployment differs from canonical source: {include}")
-
     lock_path = repository_root / "apm.lock.yaml"
-    if lock_path.is_file():
-        lock_text = lock_path.read_text(encoding="utf-8")
-        for skill_name in EXPECTED_SKILLS:
-            for forbidden_name in CANONICAL_ONLY_DIRECTORIES:
-                forbidden = f".agents/skills/{skill_name}/{forbidden_name}/"
-                if forbidden in lock_text:
-                    fail(f"apm.lock.yaml retains non-runtime path {forbidden}")
-        absent_from_lock = sorted(
-            deployed
-            for deployed in expected_deployed
-            if deployed not in lock_text
+    if not lock_path.is_file():
+        fail("runtime deployment requires repository apm.lock.yaml")
+    lock_hashes = load_apm_lock_deployed_hashes(lock_path, expected_local_path)
+    absent_from_lock = sorted(
+        deployed
+        for deployed in expected_deployed
+        if deployed not in lock_hashes
+    )
+    if absent_from_lock:
+        fail(
+            "apm.lock.yaml omits deployed runtime files: "
+            + ", ".join(absent_from_lock)
         )
-        if absent_from_lock:
+    extra_in_lock = sorted(set(lock_hashes) - expected_deployed)
+    if extra_in_lock:
+        fail(
+            "apm.lock.yaml retains non-runtime deployed files: "
+            + ", ".join(extra_in_lock)
+        )
+    for deployed in sorted(expected_deployed):
+        deployed_path = repository_root / deployed
+        digest = (
+            f"sha256:{hashlib.sha256(deployed_path.read_bytes()).hexdigest()}"
+        )
+        if lock_hashes[deployed] != digest:
             fail(
-                "apm.lock.yaml omits deployed runtime files: "
-                + ", ".join(absent_from_lock)
+                "apm.lock.yaml has no exact deployed hash binding for "
+                f"{deployed}"
             )
-        for deployed in sorted(expected_deployed):
-            deployed_path = repository_root / deployed
-            digest = hashlib.sha256(deployed_path.read_bytes()).hexdigest()
-            binding = f"    {deployed}: sha256:{digest}"
-            if binding not in lock_text:
-                fail(
-                    "apm.lock.yaml has no exact deployed hash binding for "
-                    f"{deployed}"
-                )
     return actual_deployed
 
 

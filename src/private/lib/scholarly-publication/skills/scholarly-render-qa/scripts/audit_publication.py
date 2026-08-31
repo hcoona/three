@@ -1251,19 +1251,25 @@ def number_ok(
     minimum: float,
     maximum: float,
     maximum_percentage: float | None = None,
+    minimum_percentage: float | None = None,
 ) -> bool:
     if token.type == "dimension" and token.lower_unit in units:
         value = float(token.value)
+        lower = minimum
         upper = maximum
     elif token.type == "percentage" and maximum_percentage is not None:
         value = float(token.value)
+        lower = (
+            minimum if minimum_percentage is None else minimum_percentage
+        )
         upper = maximum_percentage
     elif token.type == "number" and float(token.value) == 0:
         value = 0.0
+        lower = minimum
         upper = maximum
     else:
         return False
-    return math.isfinite(value) and minimum <= value <= upper
+    return math.isfinite(value) and lower <= value <= upper
 def color_ok(token: Any) -> bool:
     if token.type == "ident":
         return token.value.casefold() in CSS_NAMED_COLORS
@@ -1385,7 +1391,14 @@ def css_value_ok(  # noqa: PLR0911
         if token.type == "number":
             value = float(token.value)
             return math.isfinite(value) and 0.8 <= value <= 4
-        return number_ok(token, CSS_LENGTH_UNITS, 0.8, 4, 4)
+        return number_ok(
+            token,
+            CSS_LENGTH_UNITS,
+            0.8,
+            4,
+            minimum_percentage=80,
+            maximum_percentage=400,
+        )
     if property_name in CSS_SIGNED_SPACING_PROPERTIES:
         return text == "normal" or number_ok(
             token, frozenset({"ch", "em", "ex", "pt", "px", "rem"}), -4, 16

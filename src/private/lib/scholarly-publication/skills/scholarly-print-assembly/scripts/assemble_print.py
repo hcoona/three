@@ -985,6 +985,7 @@ def validate_css_length(
     minimum: float = 0,
     maximum: float = 256,
     maximum_percentage: float | None = None,
+    minimum_percentage: float | None = None,
 ) -> None:
     if token.type == "number" and css_number(token, context) == 0:
         require(minimum <= 0 <= maximum, f"{context} zero is outside the allowed range")
@@ -994,7 +995,8 @@ def validate_css_length(
         require(minimum <= css_number(token, context) <= maximum, f"{context} length is outside the allowed range")
         return
     if maximum_percentage is not None and token.type == "percentage":
-        require(minimum <= css_number(token, context) <= maximum_percentage,
+        lower = minimum if minimum_percentage is None else minimum_percentage
+        require(lower <= css_number(token, context) <= maximum_percentage,
                 f"{context} percentage is outside the allowed range")
         return
     fail(f"{context} requires an allowed length value")
@@ -1112,7 +1114,14 @@ def validate_css_value(
         if token.type == "number":
             require(0.8 <= css_number(token, context) <= 4, f"{context} number is outside the allowed range")
         else:
-            validate_css_length(token, context, minimum=0.8, maximum=4, maximum_percentage=4)
+            validate_css_length(
+                token,
+                context,
+                minimum=0.8,
+                maximum=4,
+                minimum_percentage=80,
+                maximum_percentage=400,
+            )
     elif property_name in CSS_SIGNED_SPACING_PROPERTIES:
         if css_ident(token) != "normal":
             validate_css_length(

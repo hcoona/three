@@ -30,6 +30,36 @@
       "content": "p:lang(zh-Hans) > span.term { color: #111; font-family: \"Fixture Serif\", serif; font-size: 12pt; }"
     },
     {
+      "id": "line-height-percentage-lower-bound",
+      "accepted": true,
+      "content": "p { line-height: 80%; }"
+    },
+    {
+      "id": "line-height-percentage-normal",
+      "accepted": true,
+      "content": "p { line-height: 100%; }"
+    },
+    {
+      "id": "line-height-percentage-upper-bound",
+      "accepted": true,
+      "content": "p { line-height: 400%; }"
+    },
+    {
+      "id": "line-height-percentage-collapsed",
+      "accepted": false,
+      "content": "p { line-height: 1%; }"
+    },
+    {
+      "id": "line-height-percentage-below-lower-bound",
+      "accepted": false,
+      "content": "p { line-height: 79.9%; }"
+    },
+    {
+      "id": "line-height-percentage-above-upper-bound",
+      "accepted": false,
+      "content": "p { line-height: 400.1%; }"
+    },
+    {
       "id": "compatible-font-variants",
       "accepted": true,
       "content": "p { font-variant-numeric: lining-nums tabular-nums diagonal-fractions; font-variant-east-asian: jis04 full-width ruby; }"

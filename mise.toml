@@ -197,6 +197,15 @@ uv run --isolated --no-project --with defusedxml==0.7.1 --with pymupdf==1.26.6 -
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 '''
 
+[tasks.scholarly-publication-plugin-ci]
+description = "Run the scholarly publication CI validation suite"
+depends = [
+  "scholarly-publication-plugin-runtime-check",
+  "scholarly-publication-plugin-spec",
+  "scholarly-publication-plugin-test",
+  "scholarly-publication-plugin-lint",
+]
+
 [tasks.scholarly-publication-plugin-install]
 description = "Validate and deploy the scholarly publication Copilot CLI plugin"
 depends = ["scholarly-publication-plugin-source-check"]

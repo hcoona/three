@@ -94,8 +94,11 @@ def test_workflow_documentation_is_repository_only() -> None:
 def test_scholarly_publication_admission_stays_package_bounded() -> None:
     """Admit scholarly package surfaces without admitting sibling packages."""
     paths = (
+        ".agents/skills/scholarly-pdf-reconstruction",
         ".agents/skills/scholarly-pdf-reconstruction/SKILL.md",
+        ".agents/skills/scholarly-print-assembly",
         ".agents/skills/scholarly-print-assembly/scripts/assemble_print.py",
+        ".agents/skills/scholarly-render-qa",
         ".agents/skills/scholarly-render-qa/assets/release-manifest.schema.json",
         ".typos.toml",
         "apm.lock.yaml",
@@ -110,3 +113,4 @@ def test_scholarly_publication_admission_stays_package_bounded() -> None:
     assert not is_repository_only_path(
         ".agents/skills/scholarly-unrelated/SKILL.md"
     )
+    assert not is_repository_only_path(".agents/skills/scholarly-unrelated")

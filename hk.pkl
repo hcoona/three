@@ -473,6 +473,30 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
   }
 }
 
+local scholarly_publication_validation = new Mapping<String, Step> {
+  local scholarly_publication_files =
+    List(
+      ".agents/skills/scholarly-pdf-reconstruction",
+      ".agents/skills/scholarly-pdf-reconstruction/**",
+      ".agents/skills/scholarly-print-assembly",
+      ".agents/skills/scholarly-print-assembly/**",
+      ".agents/skills/scholarly-render-qa",
+      ".agents/skills/scholarly-render-qa/**",
+      "apm.lock.yaml",
+      "apm.yml",
+      "mise.toml",
+      "pyproject.toml",
+      "src/private/lib/scholarly-publication/**",
+    )
+
+  ["scholarly-publication-plugin-ci"] {
+    glob = scholarly_publication_files
+    allow_symlinks = true
+    check =
+      "python eng/scripts/hk_exec.py --timeout-seconds 720 mise run scholarly-publication-plugin-ci"
+  }
+}
+
 local dotenv_linter = new Mapping<String, Step> {
   ["dotenv-linter"] = (Steps.dotenv_linter) {
     profiles = List("small")
@@ -547,6 +571,7 @@ local all_steps = new Mapping<String, Step> {
   ...javascript_typescript_linters
   ...python_linters
   ...workflow_delivery_v3_validation
+  ...scholarly_publication_validation
   ...dotenv_linter
   ...code_generation_guard
 }
