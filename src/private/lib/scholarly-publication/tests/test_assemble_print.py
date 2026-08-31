@@ -170,7 +170,6 @@ def source_blocks(page_number: int) -> dict[str, Any]:
             {
                 "id": f"{page_id}-block-0001",
                 "source_order": 1,
-                "source_block_number": 0,
                 "bbox": [36, 36, 324, 96],
                 "text": f"Deterministic source block for page {page_number}.",
             }
@@ -194,27 +193,17 @@ def create_fixture(root: Path) -> None:
         svg_path = page_root / "page.svg"
         write_json(blocks_path, source_blocks(number))
         svg_path.write_bytes(page_svg(number))
-        text = source_blocks(number)["blocks"][0]["text"]
         pages.append(
             {
                 "id": page_id,
                 "pdf_page": number,
-                "printed_folio": str(number),
                 "width": 360,
                 "height": 480,
                 "rotation": 0,
-                "crop_box": [0, 0, 360, 480],
-                "media_box": [0, 0, 360, 480],
                 "assets": {
                     "blocks": asset_record(source_root, blocks_path),
                     "svg": asset_record(source_root, svg_path),
                 },
-                "block_count": 1,
-                "text_characters": len("".join(text.split())),
-                "replacement_characters": 0,
-                "image_count": 0,
-                "vector_drawing_count": 1,
-                "link_count": 0,
                 "status": "pass",
             }
         )
@@ -268,27 +257,14 @@ def create_fixture(root: Path) -> None:
         source_path,
         {
             "schema_version": "1.0",
-            "package_id": "source-1111111111111111-1-3",
-            "generator": {
-                "name": "reconstruct_pdf.py",
-                "version": "0.1.0",
-                "runtime": "python-3.12.11",
-                "parser": "PyMuPDF-1.26.6",
-            },
             "source": {
-                "file_name": "source.pdf",
                 "sha256": "1" * 64,
                 "bytes": 12345,
                 "rights_note": "Authorized deterministic test fixture.",
                 "page_count": 3,
-                "encrypted": False,
-                "attachments": [],
-                "embedded_javascript": False,
             },
             "selection": {
                 "pdf_pages": [1, 2, 3],
-                "first_pdf_page": 1,
-                "last_pdf_page": 3,
             },
             "coordinate_system": {
                 "units": "pdf-points",
@@ -1173,23 +1149,7 @@ class AssemblePrintReplacementTests(unittest.TestCase):
             self.refresh_source_asset(workspace, 2, "blocks")
             self.refresh_bundle_source(workspace)
 
-        def reconstruction_counts(workspace: Path) -> None:
-            self.update_json(
-                workspace / "source" / "source-package.json",
-                lambda source: source["pages"][0].update(
-                    {
-                        "block_count": 0,
-                        "text_characters": 0,
-                        "replacement_characters": 1,
-                    }
-                ),
-            )
-            self.refresh_bundle_source(workspace)
-
-        cases = (
-            ("unconsumed-blocks", unconsumed_blocks),
-            ("reconstruction-counts", reconstruction_counts),
-        )
+        cases = (("unconsumed-blocks", unconsumed_blocks),)
         for name, mutation in cases:
             with self.subTest(case=name):
                 workspace = self.fresh_workspace(name)

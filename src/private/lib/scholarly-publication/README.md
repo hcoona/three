@@ -45,7 +45,8 @@ values QA must observe.
 The retained guarantees are intentionally local:
 
 - reconstruction owns source extraction, ordered block evidence, canonical
-  page SVGs, source status, and optional exact source replay;
+  page SVGs, asset-derived review facts, extraction-time trace observations,
+  and optional exact source replay;
 - assembly validates upstream schemas, status, manifest hashes, approved
   fragments, and only the blocks, maps, and SVGs it consumes;
 - QA validates the assembly manifest, its declared tree, and observable
@@ -56,6 +57,14 @@ The retained guarantees are intentionally local:
 
 The publication tree is not a complete archival closure of the source package
 or translation approval workspace.
+
+Reconstruction publishes only to an absent output path. It validates a sibling
+candidate and performs one final rename into place; reruns require a new path
+or caller-managed deletion of the prior output. Page content counters are not
+emitted. Text volume, replacement characters, and raster-image presence are
+recomputed from the bound block JSON and page SVG bytes. Canonical
+hidden/nonpainting-text and trace-failure observations remain extraction-time
+issues.
 
 ## Publication profiles
 

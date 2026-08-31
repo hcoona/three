@@ -6,8 +6,6 @@
   "additionalProperties": false,
   "required": [
     "schema_version",
-    "package_id",
-    "generator",
     "source",
     "selection",
     "coordinate_system",
@@ -22,50 +20,11 @@
     "schema_version": {
       "const": "1.0"
     },
-    "package_id": {
-      "type": "string",
-      "pattern": "^source-[a-f0-9]{16}-[0-9]+-[0-9]+$"
-    },
-    "generator": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name", "version", "runtime", "parser"],
-      "properties": {
-        "name": {
-          "const": "reconstruct_pdf.py"
-        },
-        "version": {
-          "type": "string",
-          "minLength": 1
-        },
-        "runtime": {
-          "type": "string",
-          "minLength": 1
-        },
-        "parser": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
     "source": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "file_name",
-        "sha256",
-        "bytes",
-        "rights_note",
-        "page_count",
-        "encrypted",
-        "attachments",
-        "embedded_javascript"
-      ],
+      "required": ["sha256", "bytes", "rights_note", "page_count"],
       "properties": {
-        "file_name": {
-          "type": "string",
-          "minLength": 1
-        },
         "sha256": {
           "$ref": "#/$defs/sha256"
         },
@@ -80,43 +39,23 @@
         "page_count": {
           "type": "integer",
           "minimum": 1
-        },
-        "encrypted": {
-          "const": false
-        },
-        "attachments": {
-          "type": "array",
-          "maxItems": 0,
-          "items": {
-            "type": "string"
-          }
-        },
-        "embedded_javascript": {
-          "const": false
         }
       }
     },
     "selection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pdf_pages", "first_pdf_page", "last_pdf_page"],
+      "required": ["pdf_pages"],
       "properties": {
         "pdf_pages": {
           "type": "array",
           "minItems": 1,
+          "maxItems": 500,
           "uniqueItems": true,
           "items": {
             "type": "integer",
             "minimum": 1
           }
-        },
-        "first_pdf_page": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "last_pdf_page": {
-          "type": "integer",
-          "minimum": 1
         }
       }
     },
@@ -149,24 +88,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "id",
-          "pdf_page",
-          "printed_folio",
-          "width",
-          "height",
-          "rotation",
-          "crop_box",
-          "media_box",
-          "assets",
-          "block_count",
-          "text_characters",
-          "replacement_characters",
-          "image_count",
-          "vector_drawing_count",
-          "link_count",
-          "status"
-        ],
+        "required": ["id", "pdf_page", "width", "height", "rotation", "assets", "status"],
         "properties": {
           "id": {
             "type": "string",
@@ -175,9 +97,6 @@
           "pdf_page": {
             "type": "integer",
             "minimum": 1
-          },
-          "printed_folio": {
-            "type": ["string", "null"]
           },
           "width": {
             "type": "number",
@@ -191,12 +110,6 @@
             "type": "integer",
             "multipleOf": 90
           },
-          "crop_box": {
-            "$ref": "#/$defs/bbox"
-          },
-          "media_box": {
-            "$ref": "#/$defs/bbox"
-          },
           "assets": {
             "type": "object",
             "additionalProperties": false,
@@ -209,31 +122,6 @@
                 "$ref": "#/$defs/asset"
               }
             }
-          },
-          "block_count": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "text_characters": {
-            "type": "integer",
-            "description": "Non-whitespace characters in the ordered translation-facing blocks.",
-            "minimum": 0
-          },
-          "replacement_characters": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "image_count": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "vector_drawing_count": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "link_count": {
-            "type": "integer",
-            "minimum": 0
           },
           "status": {
             "$ref": "#/$defs/status"
@@ -301,26 +189,6 @@
     },
     "status": {
       "enum": ["pass", "review_required", "fail"]
-    },
-    "bbox": {
-      "type": "array",
-      "prefixItems": [
-        {
-          "type": "number"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "number"
-        }
-      ],
-      "items": false,
-      "minItems": 4,
-      "maxItems": 4
     },
     "asset": {
       "type": "object",

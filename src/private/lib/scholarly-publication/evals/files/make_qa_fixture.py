@@ -176,7 +176,6 @@ def make_source_package(work: Path) -> Path:
                 {
                     "id": "pdf-0001-block-0001",
                     "source_order": 1,
-                    "source_block_number": 0,
                     "bbox": [36, 36, 324, 100],
                     "text": source_text,
                 }
@@ -202,27 +201,14 @@ def make_source_package(work: Path) -> Path:
         manifest,
         {
             "schema_version": "1.0",
-            "package_id": f"source-{source_hash[:16]}-1-1",
-            "generator": {
-                "name": "reconstruct_pdf.py",
-                "version": "0.1.0",
-                "runtime": "python-3.12.11",
-                "parser": "Synthetic fixture",
-            },
             "source": {
-                "file_name": "synthetic.pdf",
                 "sha256": source_hash,
                 "bytes": len(source_identity),
                 "rights_note": "Synthetic authorized QA evaluation fixture.",
                 "page_count": 1,
-                "encrypted": False,
-                "attachments": [],
-                "embedded_javascript": False,
             },
             "selection": {
                 "pdf_pages": [1],
-                "first_pdf_page": 1,
-                "last_pdf_page": 1,
             },
             "coordinate_system": {
                 "units": "pdf-points",
@@ -234,24 +220,13 @@ def make_source_package(work: Path) -> Path:
                 {
                     "id": "pdf-0001",
                     "pdf_page": 1,
-                    "printed_folio": None,
                     "width": 360,
                     "height": 480,
                     "rotation": 0,
-                    "crop_box": [0, 0, 360, 480],
-                    "media_box": [0, 0, 360, 480],
                     "assets": {
                         "blocks": asset(source, blocks),
                         "svg": asset(source, svg),
                     },
-                    "block_count": 1,
-                    "text_characters": sum(
-                        not character.isspace() for character in source_text
-                    ),
-                    "replacement_characters": 0,
-                    "image_count": 0,
-                    "vector_drawing_count": 1,
-                    "link_count": 0,
                     "status": "pass",
                 }
             ],

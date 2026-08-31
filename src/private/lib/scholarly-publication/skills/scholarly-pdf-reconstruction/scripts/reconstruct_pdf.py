@@ -17,10 +17,8 @@ import json
 import math
 import re
 import shutil
-import stat
 import sys
 import tempfile
-import uuid
 from collections import Counter
 from functools import cache
 from itertools import pairwise
@@ -36,21 +34,13 @@ from jsonschema.exceptions import SchemaError
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-SCRIPT_VERSION = "1.0.0"
 PINNED_PYMUPDF_VERSION = "1.26.6"
-PARSER_NAME = f"PyMuPDF {PINNED_PYMUPDF_VERSION}"
 MAX_SELECTED_PAGES = 500
 GEOMETRY_TOLERANCE = 0.01
 SVG_VIEWBOX_TOLERANCE = 0.001
 POSSIBLE_SCAN_CHARACTER_THRESHOLD = 32
 PACKAGE_CHARACTER_MINIMUM = 32
 PACKAGE_CHARACTERS_PER_PAGE = 8
-REPARSE_POINT_ATTRIBUTE = getattr(
-    stat,
-    "FILE_ATTRIBUTE_REPARSE_POINT",
-    0x400,
-)
-
 PROFILE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 SVG_ID_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:-]*$")
 SVG_NUMBER_PATTERN = re.compile(
@@ -211,20 +201,25 @@ class JsonArgumentParser(argparse.ArgumentParser):
         raise ContractError(f"invalid command line: {message}")
 
 
-class BlockSummary(NamedTuple):
-    block_count: int
+class BlockFacts(NamedTuple):
     text_characters: int
     replacement_characters: int
 
 
+class PageReviewFacts(NamedTuple):
+    page_id: str
+    page_number: int
+    text_characters: int
+    replacement_characters: int
+    has_image: bool
+    hidden_text: bool | None
+
+
 class PageEvidence(NamedTuple):
-    blocks: dict[str, Any]
     blocks_content: bytes
     svg_content: bytes
-    summary: BlockSummary
-    image_count: int
-    drawing_count: int
-    link_count: int
+    block_facts: BlockFacts
+    has_image: bool
     hidden_text: bool | None
 
 
@@ -259,6 +254,13 @@ def reject_json_constant(value: str) -> Any:
     raise ValueError(f"non-finite JSON number: {value}")
 
 
+def parse_finite_json_float(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"non-finite JSON number: {value}")
+    return number
+
+
 def unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -278,6 +280,7 @@ def parse_json_bytes(content: bytes, role: str) -> Any:
             text,
             object_pairs_hook=unique_json_object,
             parse_constant=reject_json_constant,
+            parse_float=parse_finite_json_float,
         )
     except (json.JSONDecodeError, ValueError) as error:
         raise ContractError(f"cannot parse {role}: {error}") from error
@@ -353,43 +356,8 @@ def schema_validation_errors(
     return errors
 
 
-def path_exists(path: Path) -> bool:
-    return path.exists() or path.is_symlink()
-
-
-def is_link_or_reparse(info: Any) -> bool:
-    return stat.S_ISLNK(info.st_mode) or bool(
-        getattr(info, "st_file_attributes", 0) & REPARSE_POINT_ATTRIBUTE
-    )
-
-
-def remove_path(path: Path) -> None:
-    if not path_exists(path):
-        return
-    if path.is_symlink() or path.is_file():
-        path.unlink()
-    else:
-        shutil.rmtree(path)
-
-
-def source_is_within_output(source: Path, output: Path) -> bool:
-    try:
-        source.relative_to(output)
-    except ValueError:
-        pass
-    else:
-        return True
-    if not path_exists(output):
-        return False
-    for ancestor in source.parents:
-        try:
-            if output.samefile(ancestor):
-                return True
-        except OSError as error:
-            raise ContractError(
-                f"cannot compare source and output filesystem identity: {error}"
-            ) from error
-    return False
+def remove_candidate(path: Path) -> None:
+    shutil.rmtree(path)
 
 
 def resolve_asset_path(root: Path, value: str) -> Path:
@@ -466,7 +434,10 @@ def validated_profiles(values: list[str]) -> list[str]:
 def finite_number(value: Any, context: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ContractError(f"{context} must be a number")
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as error:
+        raise ContractError(f"{context} must be finite") from error
     if not math.isfinite(number):
         raise ContractError(f"{context} must be finite")
     return number
@@ -530,7 +501,7 @@ def canonical_block_bbox(
 
 def page_geometry(
     page: Any,
-) -> tuple[float, float, list[float], list[float], int]:
+) -> tuple[float, float, int]:
     crop_box = page.cropbox
     rotation = int(page.rotation)
     crop_width = float(crop_box.width)
@@ -565,13 +536,7 @@ def page_geometry(
         raise ContractError("page media box does not contain the crop box")
     if rotation not in {0, 90, 180, 270}:
         raise ContractError(f"unsupported page rotation: {rotation}")
-    return (
-        width,
-        height,
-        [0.0, 0.0, width, height],
-        media,
-        rotation,
-    )
+    return width, height, rotation
 
 
 def section_map_errors(
@@ -721,7 +686,7 @@ def write_map_asset(
     return asset_record(path_value, content)
 
 
-def require_pymupdf() -> tuple[Any, str]:
+def require_pymupdf() -> Any:
     try:
         import fitz
     except ImportError as error:
@@ -740,7 +705,7 @@ def require_pymupdf() -> tuple[Any, str]:
         raise ContractError(
             f"PyMuPDF {version} does not match pinned {PINNED_PYMUPDF_VERSION}"
         )
-    return fitz, version
+    return fitz
 
 
 def source_pdf_is_encrypted(document: Any) -> bool:
@@ -1084,7 +1049,7 @@ def stable_blocks(
             raise ContractError(
                 f"PyMuPDF text block {source_index} is malformed"
             )
-        x0, y0, x1, y1, text, source_number, block_type = source_block[:7]
+        x0, y0, x1, y1, text, _, block_type = source_block[:7]
         if block_type != 0:
             continue
         if not isinstance(text, str):
@@ -1093,19 +1058,11 @@ def stable_blocks(
             )
         if not text.strip():
             continue
-        if isinstance(source_number, bool) or not isinstance(
-            source_number,
-            int,
-        ):
-            raise ContractError(
-                f"PyMuPDF text block {source_index} has an invalid number"
-            )
         order = len(blocks) + 1
         blocks.append(
             {
                 "id": f"{page_id}-block-{order:04d}",
                 "source_order": order,
-                "source_block_number": source_number,
                 "bbox": canonical_block_bbox(
                     [x0, y0, x1, y1],
                     width,
@@ -1137,10 +1094,9 @@ def canonical_page_svg(page: Any) -> bytes:
     return value.encode("utf-8")
 
 
-def block_summary(data: dict[str, Any]) -> BlockSummary:
+def block_facts(data: dict[str, Any]) -> BlockFacts:
     text = "".join(block["text"] for block in data["blocks"])
-    return BlockSummary(
-        block_count=len(data["blocks"]),
+    return BlockFacts(
         text_characters=sum(not character.isspace() for character in text),
         replacement_characters=text.count("\ufffd"),
     )
@@ -1446,7 +1402,7 @@ def block_validation_errors(
     width: float,
     height: float,
     seen_block_ids: set[str],
-) -> tuple[list[str], BlockSummary | None]:
+) -> tuple[list[str], BlockFacts | None]:
     errors = schema_validation_errors(
         data,
         SOURCE_BLOCKS_SCHEMA,
@@ -1483,7 +1439,7 @@ def block_validation_errors(
                 errors.append(
                     f"{role} block {block_id} bbox exceeds page geometry"
                 )
-    return errors, block_summary(data)
+    return errors, block_facts(data)
 
 
 def issue_record(
@@ -1501,54 +1457,49 @@ def issue_record(
 
 
 def derive_issues(
-    pages: list[dict[str, Any]],
-    hidden_pages: set[int],
-    trace_failure_pages: set[int],
+    pages: list[PageReviewFacts],
     profiles: list[str],
     has_figures: bool,
 ) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for page in pages:
-        page_number = page["pdf_page"]
-        page_id = page["id"]
-        replacement_count = page["replacement_characters"]
-        if replacement_count:
+        if page.replacement_characters:
             issues.append(
                 issue_record(
-                    f"{page_id}.replacement-characters",
+                    f"{page.page_id}.replacement-characters",
                     "review_required",
                     REPLACEMENT_MESSAGE,
-                    page_number,
+                    page.page_number,
                 )
             )
         if (
-            page["text_characters"] < POSSIBLE_SCAN_CHARACTER_THRESHOLD
-            and page["image_count"] > 0
+            page.text_characters < POSSIBLE_SCAN_CHARACTER_THRESHOLD
+            and page.has_image
         ):
             issues.append(
                 issue_record(
-                    f"{page_id}.possible-scan",
+                    f"{page.page_id}.possible-scan",
                     "review_required",
                     POSSIBLE_SCAN_MESSAGE,
-                    page_number,
+                    page.page_number,
                 )
             )
-        if page_number in hidden_pages:
+        if page.hidden_text is True:
             issues.append(
                 issue_record(
-                    f"{page_id}.hidden-or-nonpainting-text",
+                    f"{page.page_id}.hidden-or-nonpainting-text",
                     "review_required",
                     HIDDEN_TEXT_MESSAGE,
-                    page_number,
+                    page.page_number,
                 )
             )
-        if page_number in trace_failure_pages:
+        elif page.hidden_text is None:
             issues.append(
                 issue_record(
-                    f"{page_id}.trace-inspection-failed",
+                    f"{page.page_id}.trace-inspection-failed",
                     "review_required",
                     TRACE_FAILURE_MESSAGE,
-                    page_number,
+                    page.page_number,
                 )
             )
 
@@ -1561,7 +1512,7 @@ def derive_issues(
             )
         )
 
-    total_text = sum(page["text_characters"] for page in pages)
+    total_text = sum(page.text_characters for page in pages)
     if total_text == 0:
         issues.append(
             issue_record(
@@ -1606,15 +1557,6 @@ def page_status(
     )
 
 
-def page_observation_counts(page: Any) -> tuple[int, int, int]:
-    images = page.get_image_info()
-    drawings = page.get_drawings()
-    links = page.get_links()
-    if not all(isinstance(value, list) for value in (images, drawings, links)):
-        raise ContractError("PyMuPDF page inventory returned invalid data")
-    return len(images), len(drawings), len(links)
-
-
 def generate_page_evidence(
     page: Any,
     page_id: str,
@@ -1632,17 +1574,13 @@ def generate_page_evidence(
     )
     if errors:
         raise ContractError("; ".join(errors))
-    summary = block_summary(blocks)
-    image_count, drawing_count, link_count = page_observation_counts(page)
+    facts = block_facts(blocks)
     extracted_text = "".join(block["text"] for block in blocks["blocks"])
     return PageEvidence(
-        blocks=blocks,
         blocks_content=blocks_content,
         svg_content=svg_content,
-        summary=summary,
-        image_count=image_count,
-        drawing_count=drawing_count,
-        link_count=link_count,
+        block_facts=facts,
+        has_image=svg_contains_image(svg_content),
         hidden_text=suspected_hidden_or_nonpainting_text(
             page,
             extracted_text,
@@ -1667,7 +1605,7 @@ def build_candidate(
     args: argparse.Namespace,
     candidate: Path,
 ) -> tuple[dict[str, Any], int]:
-    fitz, installed_version = require_pymupdf()
+    fitz = require_pymupdf()
     source = args.pdf.resolve()
     if not source.is_file():
         raise ContractError(f"source PDF is missing: {source}")
@@ -1720,12 +1658,11 @@ def build_candidate(
         )
 
         page_records: list[dict[str, Any]] = []
-        hidden_pages: set[int] = set()
-        trace_failure_pages: set[int] = set()
+        review_facts: list[PageReviewFacts] = []
         for page_number in selected_pages:
             page = document.load_page(page_number - 1)
             page_id = f"pdf-{page_number:04d}"
-            width, height, crop_box, media_box, rotation = page_geometry(page)
+            width, height, rotation = page_geometry(page)
             evidence = generate_page_evidence(
                 page,
                 page_id,
@@ -1745,21 +1682,26 @@ def build_candidate(
                 candidate.joinpath(*PurePosixPath(svg_path_value).parts),
                 evidence.svg_content,
             )
-            if evidence.hidden_text is True:
-                hidden_pages.add(page_number)
-            elif evidence.hidden_text is None:
-                trace_failure_pages.add(page_number)
+            review_facts.append(
+                PageReviewFacts(
+                    page_id=page_id,
+                    page_number=page_number,
+                    text_characters=evidence.block_facts.text_characters,
+                    replacement_characters=(
+                        evidence.block_facts.replacement_characters
+                    ),
+                    has_image=evidence.has_image,
+                    hidden_text=evidence.hidden_text,
+                )
+            )
 
             page_records.append(
                 {
                     "id": page_id,
                     "pdf_page": page_number,
-                    "printed_folio": None,
                     "width": width,
                     "height": height,
                     "rotation": rotation,
-                    "crop_box": crop_box,
-                    "media_box": media_box,
                     "assets": {
                         "blocks": asset_record(
                             block_path_value,
@@ -1770,22 +1712,12 @@ def build_candidate(
                             evidence.svg_content,
                         ),
                     },
-                    "block_count": evidence.summary.block_count,
-                    "text_characters": evidence.summary.text_characters,
-                    "replacement_characters": (
-                        evidence.summary.replacement_characters
-                    ),
-                    "image_count": evidence.image_count,
-                    "vector_drawing_count": evidence.drawing_count,
-                    "link_count": evidence.link_count,
                     "status": "pass",
                 }
             )
 
         issues = derive_issues(
-            page_records,
-            hidden_pages,
-            trace_failure_pages,
+            review_facts,
             profiles,
             figure_input is not None
             and bool(parse_json_bytes(figure_input, "figure map")["figures"]),
@@ -1809,33 +1741,14 @@ def build_candidate(
 
         manifest = {
             "schema_version": "1.0",
-            "package_id": (
-                f"source-{source_hash[:16]}-"
-                f"{selected_pages[0]}-{selected_pages[-1]}"
-            ),
-            "generator": {
-                "name": "reconstruct_pdf.py",
-                "version": SCRIPT_VERSION,
-                "runtime": (
-                    f"python-{sys.version_info.major}."
-                    f"{sys.version_info.minor}.{sys.version_info.micro}"
-                ),
-                "parser": f"PyMuPDF {installed_version}",
-            },
             "source": {
-                "file_name": source.name,
                 "sha256": source_hash,
                 "bytes": source_length,
                 "rights_note": rights_note,
                 "page_count": page_count,
-                "encrypted": False,
-                "attachments": [],
-                "embedded_javascript": False,
             },
             "selection": {
                 "pdf_pages": selected_pages,
-                "first_pdf_page": selected_pages[0],
-                "last_pdf_page": selected_pages[-1],
             },
             "coordinate_system": {
                 "units": "pdf-points",
@@ -1929,19 +1842,10 @@ def validate_manifest_semantics(
     errors: list[str] = []
     source = manifest["source"]
     selection = manifest["selection"]
-    generator = manifest["generator"]
     pages = manifest["pages"]
 
     selected_pages = selection["pdf_pages"]
-    expected_package_id = (
-        f"source-{source['sha256'][:16]}-"
-        f"{selected_pages[0]}-{selected_pages[-1]}"
-    )
     checks = (
-        (
-            generator["parser"] == PARSER_NAME,
-            f"generator.parser must be {PARSER_NAME}",
-        ),
         (
             bool(source["rights_note"].strip()),
             "source.rights_note must contain visible text",
@@ -1954,20 +1858,8 @@ def validate_manifest_semantics(
             "selection.pdf_pages must be strictly increasing",
         ),
         (
-            selection["first_pdf_page"] == selected_pages[0],
-            "selection.first_pdf_page must equal the first selected page",
-        ),
-        (
-            selection["last_pdf_page"] == selected_pages[-1],
-            "selection.last_pdf_page must equal the last selected page",
-        ),
-        (
             selected_pages[-1] <= source["page_count"],
             "selected pages exceed source.page_count",
-        ),
-        (
-            manifest["package_id"] == expected_package_id,
-            f"package_id must be {expected_package_id}",
         ),
         (
             len(pages) == len(selected_pages),
@@ -1977,13 +1869,21 @@ def validate_manifest_semantics(
     errors.extend(message for valid, message in checks if not valid)
 
     seen_block_ids: set[str] = set()
+    seen_page_ids: set[str] = set()
+    seen_page_numbers: set[int] = set()
     geometry_by_page: dict[int, tuple[float, float]] = {}
     page_assets: dict[tuple[int, str], bytes] = {}
-    effective_pages: list[dict[str, Any]] = []
+    review_material: dict[int, tuple[str, BlockFacts, bool]] = {}
 
     for index, page in enumerate(pages):
         page_number = page["pdf_page"]
         page_id = page["id"]
+        if page_number in seen_page_numbers:
+            errors.append(f"duplicate page record for PDF page {page_number}")
+        seen_page_numbers.add(page_number)
+        if page_id in seen_page_ids:
+            errors.append(f"duplicate page id: {page_id}")
+        seen_page_ids.add(page_id)
         if index < len(selected_pages) and page_number != selected_pages[index]:
             errors.append(
                 "page records must exactly follow selection.pdf_pages"
@@ -1991,26 +1891,23 @@ def validate_manifest_semantics(
         expected_page_id = f"pdf-{page_number:04d}"
         if page_id != expected_page_id:
             errors.append(f"page {page_number} id must be {expected_page_id}")
-        width = float(page["width"])
-        height = float(page["height"])
-        geometry_by_page[page_number] = (width, height)
-        expected_crop_box = [0.0, 0.0, width, height]
-        if not numeric_values_equal(page["crop_box"], expected_crop_box):
-            errors.append(
-                f"page {page_number} crop_box must be {expected_crop_box}"
-            )
         try:
-            media = bbox_numbers(
-                page["media_box"],
-                f"page {page_number} media_box",
+            width = finite_number(
+                page["width"],
+                f"page {page_number} width",
             )
         except ContractError as error:
             errors.append(str(error))
-        else:
-            if not media_box_contains_crop(media, width, height):
-                errors.append(
-                    f"page {page_number} media_box does not contain crop_box"
-                )
+            width = math.nan
+        try:
+            height = finite_number(
+                page["height"],
+                f"page {page_number} height",
+            )
+        except ContractError as error:
+            errors.append(str(error))
+            height = math.nan
+        geometry_by_page[page_number] = (width, height)
         if page["rotation"] not in {0, 90, 180, 270}:
             errors.append(
                 f"page {page_number} rotation must be 0, 90, 180, or 270"
@@ -2024,7 +1921,7 @@ def validate_manifest_semantics(
             f"page {page_number} blocks",
             errors,
         )
-        summary: BlockSummary | None = None
+        facts: BlockFacts | None = None
         if blocks_content is not None:
             try:
                 blocks_data = parse_json_bytes(
@@ -2034,7 +1931,7 @@ def validate_manifest_semantics(
             except ContractError as error:
                 errors.append(str(error))
             else:
-                block_errors, summary = block_validation_errors(
+                block_errors, facts = block_validation_errors(
                     blocks_data,
                     f"page {page_number} blocks",
                     page_id,
@@ -2066,34 +1963,8 @@ def validate_manifest_semantics(
                 svg_has_image = svg_contains_image(svg_content)
             page_assets[(page_number, "svg")] = svg_content
 
-        effective_page = dict(page)
-        if summary is not None:
-            if page["block_count"] != summary.block_count:
-                errors.append(
-                    f"page {page_number} block_count does not match blocks"
-                )
-            if page["text_characters"] != summary.text_characters:
-                errors.append(
-                    f"page {page_number} text_characters does not match blocks"
-                )
-            if page["replacement_characters"] != summary.replacement_characters:
-                errors.append(
-                    f"page {page_number} replacement_characters does not "
-                    "match blocks"
-                )
-            effective_page["block_count"] = summary.block_count
-            effective_page["text_characters"] = summary.text_characters
-            effective_page["replacement_characters"] = (
-                summary.replacement_characters
-            )
-        if svg_has_image is not None:
-            if bool(page["image_count"]) != svg_has_image:
-                errors.append(
-                    f"page {page_number} image_count presence does not "
-                    "match SVG"
-                )
-            effective_page["image_count"] = int(svg_has_image)
-        effective_pages.append(effective_page)
+        if facts is not None and svg_has_image is not None:
+            review_material[page_number] = (page_id, facts, svg_has_image)
 
     has_figures = False
     for role in ("sections", "figure_map"):
@@ -2136,27 +2007,50 @@ def validate_manifest_semantics(
             "failure: "
             + ", ".join(str(page) for page in conflicting_trace_pages)
         )
-    expected_issues = derive_issues(
-        effective_pages,
-        hidden_pages,
-        trace_failure_pages,
-        manifest["profiles"],
-        has_figures,
-    )
-    if manifest["issues"] != expected_issues:
-        errors.append("manifest issues do not match derived package issues")
-    expected_status = status_from_issues(expected_issues)
-    if manifest["status"] != expected_status:
-        errors.append(f"manifest status must be derived as {expected_status}")
-    for page in pages:
-        expected_page_status = page_status(
-            expected_issues,
-            page["pdf_page"],
-        )
-        if page["status"] != expected_page_status:
-            errors.append(
-                f"page {page['pdf_page']} status must be {expected_page_status}"
+    if len(review_material) == len(pages):
+        review_facts = [
+            PageReviewFacts(
+                page_id=review_material[page["pdf_page"]][0],
+                page_number=page["pdf_page"],
+                text_characters=review_material[page["pdf_page"]][
+                    1
+                ].text_characters,
+                replacement_characters=review_material[page["pdf_page"]][
+                    1
+                ].replacement_characters,
+                has_image=review_material[page["pdf_page"]][2],
+                hidden_text=(
+                    True
+                    if page["pdf_page"] in hidden_pages
+                    else None
+                    if page["pdf_page"] in trace_failure_pages
+                    else False
+                ),
             )
+            for page in pages
+        ]
+        expected_issues = derive_issues(
+            review_facts,
+            manifest["profiles"],
+            has_figures,
+        )
+        if manifest["issues"] != expected_issues:
+            errors.append("manifest issues do not match derived package issues")
+        expected_status = status_from_issues(expected_issues)
+        if manifest["status"] != expected_status:
+            errors.append(
+                f"manifest status must be derived as {expected_status}"
+            )
+        for page in pages:
+            expected_page_status = page_status(
+                expected_issues,
+                page["pdf_page"],
+            )
+            if page["status"] != expected_page_status:
+                errors.append(
+                    f"page {page['pdf_page']} status must be "
+                    f"{expected_page_status}"
+                )
 
     return errors, PackageState(
         page_records=pages,
@@ -2170,7 +2064,7 @@ def source_replay_errors(
     source: Path,
 ) -> list[str]:
     errors: list[str] = []
-    fitz, _ = require_pymupdf()
+    fitz = require_pymupdf()
     if not source.is_file():
         return [f"source PDF is missing: {source}"]
 
@@ -2195,21 +2089,15 @@ def source_replay_errors(
             page_number = page_record["pdf_page"]
             page = document.load_page(page_number - 1)
             page_id = page_record["id"]
-            width, height, crop_box, media_box, rotation = page_geometry(page)
-            for actual, expected, label in (
-                (
+            width, height, rotation = page_geometry(page)
+            expect(
+                errors,
+                numeric_values_equal(
                     [page_record["width"], page_record["height"]],
                     [width, height],
-                    "dimensions",
                 ),
-                (page_record["crop_box"], crop_box, "crop_box"),
-                (page_record["media_box"], media_box, "media_box"),
-            ):
-                expect(
-                    errors,
-                    numeric_values_equal(actual, expected),
-                    f"source page {page_number} {label} does not match",
-                )
+                f"source page {page_number} dimensions do not match",
+            )
             expect(
                 errors,
                 page_record["rotation"] == rotation,
@@ -2316,130 +2204,33 @@ def create_candidate(output: Path) -> Path:
         ) from error
 
 
-def restore_backup(output: Path, backup: Path) -> None:
-    if path_exists(output):
-        remove_path(output)
-    backup.replace(output)
-
-
-def inspect_replacement_target(output: Path, force: bool) -> bool:
+def ensure_output_absent(output: Path) -> None:
     try:
-        output_info = output.lstat()
+        output.lstat()
     except FileNotFoundError:
-        return False
+        return
     except OSError as error:
         raise ContractError(
             f"cannot inspect output path {output}: {error}"
         ) from error
-
-    if is_link_or_reparse(output_info) or not stat.S_ISDIR(output_info.st_mode):
-        raise ContractError(
-            f"output exists and is not an ordinary directory: {output}"
-        )
-    if not force:
-        raise ContractError(
-            f"output already exists; use --force to replace it: {output}"
-        )
-
-    try:
-        empty = next(output.iterdir(), None) is None
-    except OSError as error:
-        raise ContractError(
-            f"cannot inspect output directory {output}: {error}"
-        ) from error
-    if empty:
-        return True
-
-    marker = output / "source-package.json"
-    try:
-        marker_info = marker.lstat()
-    except OSError as error:
-        raise ContractError(
-            "--force requires a direct source-package.json ownership marker "
-            f"in a non-empty output directory: {marker}: {error}"
-        ) from error
-    if is_link_or_reparse(marker_info) or not stat.S_ISREG(marker_info.st_mode):
-        raise ContractError(
-            "--force requires a direct regular non-symlink/non-reparse "
-            f"source-package.json ownership marker: {marker}"
-        )
-    return True
+    raise ContractError(f"output already exists: {output}")
 
 
 def publish_candidate(
     candidate: Path,
     output: Path,
-    force: bool,
 ) -> None:
-    output_exists = inspect_replacement_target(output, force)
-
-    backup: Path | None = None
     try:
-        if output_exists:
-            backup = output.with_name(
-                f".{output.name}.backup-{uuid.uuid4().hex}"
-            )
-            output.replace(backup)
-        candidate.replace(output)
-    except KeyboardInterrupt:
-        if backup is not None and path_exists(backup):
-            try:
-                restore_backup(output, backup)
-            except OSError as restore_error:
-                raise ContractError(
-                    "interrupted publication could not restore the previous "
-                    f"output; backup retained at {backup}: {restore_error}"
-                ) from restore_error
-        raise
+        candidate.rename(output)
     except OSError as error:
-        if backup is not None and path_exists(backup):
-            try:
-                restore_backup(output, backup)
-            except OSError as restore_error:
-                raise ContractError(
-                    "cannot publish candidate and cannot restore the previous "
-                    f"output: publish={error}; restore={restore_error}"
-                ) from restore_error
         raise ContractError(f"cannot publish candidate: {error}") from error
-
-    if backup is not None:
-        try:
-            remove_path(backup)
-        except OSError as error:
-            print(
-                "warning: reconstruction committed but backup remains at "
-                f"{backup}: {error}",
-                file=sys.stderr,
-            )
 
 
 def extract_command(args: argparse.Namespace) -> dict[str, Any]:
-    source = args.pdf.resolve()
     if not args.output.name:
         raise ContractError("--output must name a package directory")
-    if (
-        sys.platform == "win32"
-        and args.output.name.rstrip(" .") != args.output.name
-    ):
-        raise ContractError(
-            "--output directory name must not end in a dot or space on Windows"
-        )
     output = args.output.parent.resolve() / args.output.name
-    if path_exists(output) and (output.is_symlink() or output.is_junction()):
-        raise ContractError("output must not be a symlink or junction")
-    if source_is_within_output(source, output):
-        raise ContractError("source PDF must be outside the output directory")
-    if sys.platform == "win32" and path_exists(output):
-        try:
-            output = output.resolve(strict=True)
-        except OSError as error:
-            raise ContractError(
-                f"cannot resolve existing output directory: {output}: {error}"
-            ) from error
-    if path_exists(output) and not args.force:
-        raise ContractError(
-            f"output already exists; use --force to replace it: {output}"
-        )
+    ensure_output_absent(output)
 
     candidate = create_candidate(output)
     try:
@@ -2451,21 +2242,20 @@ def extract_command(args: argparse.Namespace) -> dict[str, Any]:
                 "candidate package validation failed: "
                 + "; ".join(validation["errors"])
             )
-        publish_candidate(candidate, output, args.force)
+        publish_candidate(candidate, output)
         return {
             "command": "extract",
             "valid": True,
             "status": manifest["status"],
             "errors": [],
             "manifest": str(output / "source-package.json"),
-            "package_id": manifest["package_id"],
             "selected_pages": selected_count,
             "published": True,
         }
     finally:
-        if path_exists(candidate):
+        if candidate.exists():
             try:
-                remove_path(candidate)
+                remove_candidate(candidate)
             except OSError as error:
                 raise ContractError(
                     f"cannot clean candidate directory: {error}"
@@ -2509,16 +2299,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Declare a profile; repeat the option for multiple profiles.",
     )
-    extract.add_argument(
-        "--force",
-        action="store_true",
-        help=(
-            "Replace an empty output directory, or a non-empty directory with "
-            "a direct regular non-symlink/non-reparse source-package.json "
-            "ownership marker."
-        ),
-    )
-
     validate = subparsers.add_parser(
         "validate",
         help="Validate a source package and optionally replay its source.",

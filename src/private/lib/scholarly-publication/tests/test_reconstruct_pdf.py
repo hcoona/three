@@ -41,7 +41,6 @@ import_by_path = publication_test_support.import_by_path
 invoke_main = publication_test_support.invoke_main
 read_json = publication_test_support.read_json
 tree_snapshot = publication_test_support.tree_snapshot
-windows_short_path = publication_test_support.windows_short_path
 write_json = publication_test_support.write_json
 write_pdf = publication_test_support.write_pdf
 
@@ -117,7 +116,7 @@ def add_page_reachable_3d_javascript(path: Path) -> None:
         document.saveIncr()
 
 
-class ReconstructPdfReplacementTests(unittest.TestCase):
+class ReconstructPdfTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(
             prefix="scholarly-reconstruction-"
@@ -245,6 +244,48 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
         self.assertEqual(1, content.count(line))
         path.write_bytes(content.replace(line, line * 2, 1))
 
+    def assert_contracted_manifest_shape(
+        self,
+        manifest: dict[str, Any],
+    ) -> None:
+        self.assertEqual(
+            {
+                "schema_version",
+                "source",
+                "selection",
+                "coordinate_system",
+                "profiles",
+                "pages",
+                "sections",
+                "figure_map",
+                "issues",
+                "status",
+            },
+            set(manifest),
+        )
+        self.assertEqual(
+            {"sha256", "bytes", "rights_note", "page_count"},
+            set(manifest["source"]),
+        )
+        self.assertEqual({"pdf_pages"}, set(manifest["selection"]))
+        self.assertEqual(
+            {"units", "origin", "bbox_order"},
+            set(manifest["coordinate_system"]),
+        )
+        for page in manifest["pages"]:
+            self.assertEqual(
+                {
+                    "id",
+                    "pdf_page",
+                    "width",
+                    "height",
+                    "rotation",
+                    "assets",
+                    "status",
+                },
+                set(page),
+            )
+
     def test_happy_extract_standalone_validate_and_exact_source_replay(
         self,
     ) -> None:
@@ -267,7 +308,6 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
                 "status": "pass",
                 "errors": [],
                 "manifest": str(output / "source-package.json"),
-                "package_id": extracted.report["package_id"],
                 "selected_pages": 2,
                 "published": True,
             },
@@ -275,6 +315,7 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
         )
         manifest_path = output / "source-package.json"
         manifest = read_json(manifest_path)
+        self.assert_contracted_manifest_shape(manifest)
         self.assertEqual([1, 2], manifest["selection"]["pdf_pages"])
         self.assertEqual(["music-notation"], manifest["profiles"])
         self.assertEqual("pass", manifest["status"])
@@ -328,6 +369,15 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
                 self.assertEqual(expected_name, path.name)
                 self.assertEqual(asset_record(output, path), record)
             blocks = read_json(output / page["assets"]["blocks"]["path"])
+            self.assertEqual(
+                {"schema_version", "coordinate_space", "page_id", "blocks"},
+                set(blocks),
+            )
+            for block in blocks["blocks"]:
+                self.assertEqual(
+                    {"id", "source_order", "bbox", "text"},
+                    set(block),
+                )
             reconstructed_text.extend(
                 block["text"] for block in blocks["blocks"]
             )
@@ -432,7 +482,9 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
         ] = (
             (
                 "schema",
-                lambda _package, manifest: manifest.pop("package_id"),
+                lambda _package, manifest: manifest["source"].pop(
+                    "rights_note"
+                ),
             ),
             (
                 "hash",
@@ -534,6 +586,78 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
                         for error in result.report["errors"]
                     )
                 )
+
+    def test_validator_rejects_nonfinite_json_in_all_package_documents(
+        self,
+    ) -> None:
+        self.make_happy_source()
+        _, figures = self.write_maps()
+        baseline = self.root / "nonfinite-baseline"
+        extracted = self.extract(
+            baseline,
+            pages="1-2",
+            maps=(None, figures),
+            extra=("--profile", "music-notation"),
+        )
+        self.assertEqual(0, extracted.exit_code, extracted)
+
+        marker = b'"__NONFINITE__"'
+        for document in ("manifest", "source-blocks", "figure-map"):
+            for token in ("NaN", "Infinity", "-Infinity", "1e999"):
+                with self.subTest(document=document, token=token):
+                    package = self.root / f"nonfinite-{document}-{token}"
+                    copy_tree(baseline, package)
+                    manifest_path = package / "source-package.json"
+                    manifest = read_json(manifest_path)
+
+                    if document == "manifest":
+                        target = manifest_path
+                        manifest["pages"][0]["width"] = "__NONFINITE__"
+                        write_json(target, manifest)
+                    elif document == "source-blocks":
+                        target = (
+                            package
+                            / manifest["pages"][0]["assets"]["blocks"]["path"]
+                        )
+                        blocks = read_json(target)
+                        blocks["blocks"][0]["bbox"][0] = "__NONFINITE__"
+                        write_json(target, blocks)
+                    else:
+                        target = package / manifest["figure_map"]["path"]
+                        figure_map = read_json(target)
+                        figure_map["figures"][0]["parts"][0]["bbox"][0] = (
+                            "__NONFINITE__"
+                        )
+                        write_json(target, figure_map)
+
+                    content = target.read_bytes()
+                    self.assertEqual(1, content.count(marker))
+                    target.write_bytes(
+                        content.replace(marker, token.encode("ascii"), 1)
+                    )
+                    if document == "source-blocks":
+                        self.refresh_manifest_asset(
+                            package,
+                            manifest,
+                            0,
+                            "blocks",
+                        )
+                        write_json(manifest_path, manifest)
+                    elif document == "figure-map":
+                        manifest["figure_map"] = asset_record(package, target)
+                        write_json(manifest_path, manifest)
+
+                    result = self.validate(manifest_path)
+
+                    self.assertEqual(1, result.exit_code, result)
+                    self.assertFalse(result.report["valid"])
+                    self.assertTrue(
+                        any(
+                            f"non-finite JSON number: {token}" in error
+                            for error in result.report["errors"]
+                        ),
+                        result.report["errors"],
+                    )
 
     def test_extract_rejects_duplicate_figure_map_object_keys(self) -> None:
         self.make_happy_source()
@@ -730,6 +854,84 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
                     )
                 )
 
+    def test_validator_rejects_page_and_bbox_bounds(self) -> None:
+        self.make_happy_source()
+        _, figures = self.write_maps()
+        baseline = self.root / "bounds-baseline"
+        extracted = self.extract(
+            baseline,
+            pages="1-2",
+            maps=(None, figures),
+            extra=("--profile", "music-notation"),
+        )
+        self.assertEqual(0, extracted.exit_code, extracted)
+
+        def page_dimension(
+            _package: Path,
+            manifest: dict[str, Any],
+        ) -> None:
+            manifest["pages"][0]["width"] = 0
+
+        def source_page_bound(
+            _package: Path,
+            manifest: dict[str, Any],
+        ) -> None:
+            manifest["source"]["page_count"] = 1
+
+        def selection_duplicate(
+            _package: Path,
+            manifest: dict[str, Any],
+        ) -> None:
+            manifest["selection"]["pdf_pages"] = [1, 1]
+
+        def page_order(
+            _package: Path,
+            manifest: dict[str, Any],
+        ) -> None:
+            manifest["pages"].reverse()
+
+        def block_bbox(package: Path, manifest: dict[str, Any]) -> None:
+            blocks_path = (
+                package / manifest["pages"][0]["assets"]["blocks"]["path"]
+            )
+            blocks = read_json(blocks_path)
+            blocks["blocks"][0]["bbox"] = [0, 0, 361, 20]
+            write_json(blocks_path, blocks)
+            self.refresh_manifest_asset(package, manifest, 0, "blocks")
+
+        def figure_bbox(package: Path, manifest: dict[str, Any]) -> None:
+            figure_path = package / manifest["figure_map"]["path"]
+            figure_map = read_json(figure_path)
+            figure_map["figures"][0]["parts"][0]["bbox"] = [0, 0, 361, 20]
+            write_json(figure_path, figure_map)
+            manifest["figure_map"] = asset_record(package, figure_path)
+
+        cases = (
+            ("positive-dimension", page_dimension, "minimum"),
+            ("source-page-bound", source_page_bound, "source.page_count"),
+            ("selection-duplicate", selection_duplicate, "non-unique"),
+            ("page-order", page_order, "exactly follow"),
+            ("block-bbox", block_bbox, "exceeds page geometry"),
+            ("figure-bbox", figure_bbox, "exceeds page 1 bounds"),
+        )
+        for name, mutate, expected in cases:
+            with self.subTest(case=name):
+                package = self.root / f"bounds-{name}"
+                copy_tree(baseline, package)
+                manifest_path = package / "source-package.json"
+                manifest = read_json(manifest_path)
+                mutate(package, manifest)
+                write_json(manifest_path, manifest)
+
+                result = self.validate(manifest_path)
+
+                self.assertEqual(1, result.exit_code, result)
+                self.assertFalse(result.report["valid"])
+                self.assertTrue(
+                    any(expected in error for error in result.report["errors"]),
+                    result.report["errors"],
+                )
+
     def test_source_mismatch_and_exact_replay_drift_are_rejected(self) -> None:
         package = self.make_baseline_package()
         manifest_path = package / "source-package.json"
@@ -804,296 +1006,182 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
             )
         )
 
-    def test_force_replacement_and_rollback_preserve_expected_tree(
+    def test_any_existing_output_is_rejected_unchanged_before_staging(
         self,
     ) -> None:
         self.make_happy_source()
-        output = self.root / "force-package"
-        self.assertEqual(0, self.extract(output, pages="1-2").exit_code)
-        original = tree_snapshot(output)
-
-        refused = self.extract(output, pages="1-2")
-        self.assertEqual(2, refused.exit_code)
-        self.assertEqual(original, tree_snapshot(output))
-
-        self.make_happy_source(suffix=" Replacement revision.")
-        replaced = self.extract(output, pages="1-2", extra=("--force",))
-        self.assertEqual(0, replaced.exit_code)
-        replacement = tree_snapshot(output)
-        self.assertNotEqual(original, replacement)
-
-        self.make_happy_source(suffix=" Rollback candidate.")
-        original_replace = Path.replace
-        parent_before = tree_snapshot(self.root)
-        publish_failed = False
-        failure_message = "synthetic publish failure"
-
-        def fail_candidate_publish(path: Path, target: Path) -> Path:
-            nonlocal publish_failed
-            if not publish_failed and path != output and Path(target) == output:
-                publish_failed = True
-                raise PermissionError(failure_message)
-            return original_replace(path, target)
-
-        with mock.patch.object(Path, "replace", new=fail_candidate_publish):
-            failed = self.extract(
-                output,
-                pages="1-2",
-                extra=("--force",),
-            )
-
-        self.assertEqual(2, failed.exit_code)
-        self.assertFalse(failed.report["valid"])
-        self.assertEqual(replacement, tree_snapshot(output))
-        self.assertEqual(parent_before, tree_snapshot(self.root))
-
-    def test_backup_cleanup_failure_warns_after_committed_replacement(
-        self,
-    ) -> None:
-        self.make_happy_source()
-        output = self.root / "cleanup-warning-package"
-        first = self.extract(output, pages="1-2")
-        self.assertEqual(0, first.exit_code, first)
-        original = tree_snapshot(output)
-
-        self.make_happy_source(suffix=" Replacement revision.")
-        original_remove = reconstruct_pdf.remove_path
-
-        def fail_backup_cleanup(path: Path) -> None:
-            if path.name.startswith(f".{output.name}.backup-"):
-                raise PermissionError
-            original_remove(path)
-
-        with mock.patch.object(
-            reconstruct_pdf,
-            "remove_path",
-            new=fail_backup_cleanup,
-        ):
-            replaced = self.extract(
-                output,
-                pages="1-2",
-                extra=("--force",),
-            )
-
-        self.assertEqual(0, replaced.exit_code, replaced)
-        self.assertTrue(replaced.report["valid"])
-        self.assertTrue(replaced.report["published"])
-        self.assertEqual([], replaced.report["errors"])
-        self.assertIn(
-            "warning: reconstruction committed but backup remains",
-            replaced.stderr,
-        )
-        self.assertNotEqual(original, tree_snapshot(output))
-        self.assertEqual(
-            1,
-            len(
-                list(
-                    self.root.glob(
-                        f".{output.name}.backup-*",
-                    )
-                )
-            ),
-        )
-
-    @unittest.skipUnless(
-        sys.platform == "win32",
-        "Win32 final-component aliases are Windows-specific.",
-    )
-    def test_windows_output_alias_cannot_replace_source_directory(self) -> None:
-        output = self.root / "owned-package"
-        output.mkdir()
-        self.source = output / "source.pdf"
-        self.make_happy_source()
-        (output / "source-package.json").write_text(
-            "owned previous package\n",
-            encoding="utf-8",
-        )
-        before = tree_snapshot(output)
-
-        refused = self.extract(
-            output.with_name(f"{output.name}."),
-            pages="1-2",
-            extra=("--force",),
-        )
-
-        self.assertEqual(2, refused.exit_code, refused)
-        self.assertTrue(
-            any(
-                "must not end in a dot or space" in error
-                for error in refused.report["errors"]
-            )
-        )
-        self.assertEqual(before, tree_snapshot(output))
-        self.assertTrue(self.source.is_file())
-
-    @unittest.skipUnless(
-        sys.platform == "win32",
-        "Win32 short-name aliases are Windows-specific.",
-    )
-    def test_windows_short_name_alias_cannot_replace_source_directory(
-        self,
-    ) -> None:
-        self.make_happy_source()
-        output = self.root / "owned publication package"
-        first = self.extract(output, pages="1-2")
-        self.assertEqual(0, first.exit_code, first)
-
-        self.source = output / "nested-source.pdf"
-        self.make_happy_source(suffix=" Nested source revision.")
-        before = tree_snapshot(output)
-
-        short_output = windows_short_path(output)
-        if short_output is None:
-            self.skipTest("Win32 short-name lookup is unavailable")
-        if short_output.name.casefold() == output.name.casefold():
-            self.skipTest("8.3 short names are disabled for this volume")
-        self.assertTrue(output.samefile(short_output))
-
-        refused = self.extract(
-            short_output,
-            pages="1-2",
-            extra=("--force",),
-        )
-
-        self.assertEqual(2, refused.exit_code, refused)
-        self.assertTrue(
-            any(
-                "source PDF must be outside the output directory" in error
-                for error in refused.report["errors"]
-            )
-        )
-        self.assertEqual(before, tree_snapshot(output))
-        self.assertTrue(self.source.is_file())
-
-    def test_existing_case_alias_cannot_replace_source_directory(self) -> None:
-        output = self.root / "OwnedPackage"
-        output.mkdir()
-        self.source = output / "source.pdf"
-        self.make_happy_source()
-        (output / "source-package.json").write_text(
-            "owned previous package\n",
-            encoding="utf-8",
-        )
-        alias = output.with_name(output.name.swapcase())
-        try:
-            aliases_output = alias.samefile(output)
-        except OSError:
-            aliases_output = False
-        if not aliases_output:
-            self.skipTest("test filesystem is case-sensitive")
-        before = tree_snapshot(output)
-
-        refused = self.extract(
-            alias,
-            pages="1-2",
-            extra=("--force",),
-        )
-
-        self.assertEqual(2, refused.exit_code, refused)
-        self.assertTrue(
-            any(
-                "source PDF must be outside the output directory" in error
-                for error in refused.report["errors"]
-            )
-        )
-        self.assertEqual(before, tree_snapshot(output))
-        self.assertTrue(self.source.is_file())
-
-    def test_force_rejects_existing_regular_file_unchanged(self) -> None:
-        self.make_happy_source()
-        output = self.root / "regular-file-output"
-        output.write_bytes(b"unrelated regular file\n")
-        before = tree_snapshot(self.root)
-
-        refused = self.extract(output, pages="1-2", extra=("--force",))
-
-        self.assertEqual(2, refused.exit_code)
-        self.assertTrue(
-            any(
-                "not an ordinary directory" in error
-                for error in refused.report["errors"]
-            )
-        )
-        self.assertEqual(before, tree_snapshot(self.root))
-
-    def test_force_rejects_unowned_nonempty_directory_unchanged(self) -> None:
-        self.make_happy_source()
-        output = self.root / "unowned-directory"
-        output.mkdir()
-        sentinel = output / "unrelated-sentinel.txt"
-        sentinel.write_text("must survive\n", encoding="utf-8")
-        before = tree_snapshot(self.root)
-
-        refused = self.extract(output, pages="1-2", extra=("--force",))
-
-        self.assertEqual(2, refused.exit_code)
-        self.assertTrue(
-            any(
-                "ownership marker" in error
-                for error in refused.report["errors"]
-            )
-        )
-        self.assertEqual(before, tree_snapshot(self.root))
-        self.assertEqual("must survive\n", sentinel.read_text(encoding="utf-8"))
-
-    def test_force_allows_empty_or_damaged_owned_directory(self) -> None:
-        for name, damaged in (("empty", False), ("damaged-owned", True)):
-            with self.subTest(case=name):
-                self.make_happy_source()
-                output = self.root / name
-                output.mkdir()
-                if damaged:
-                    (output / "source-package.json").write_text(
-                        "damaged older package\n",
+        for kind in ("file", "empty-directory", "directory", "dangling-link"):
+            with self.subTest(kind=kind):
+                output = self.root / f"existing-{kind}"
+                link_target: Path | None = None
+                if kind == "file":
+                    output.write_bytes(b"unrelated regular file\n")
+                elif kind == "empty-directory":
+                    output.mkdir()
+                elif kind == "directory":
+                    output.mkdir()
+                    (output / "sentinel.txt").write_text(
+                        "must survive\n",
                         encoding="utf-8",
                     )
-                    (output / "stale.bin").write_bytes(b"stale")
+                else:
+                    link_target = self.root / "missing-link-target"
+                    try:
+                        output.symlink_to(link_target)
+                    except (NotImplementedError, OSError):
+                        continue
+                    link_target = output.readlink()
 
-                replaced = self.extract(
-                    output,
-                    pages="1-2",
-                    extra=("--force",),
+                before = tree_snapshot(self.root)
+                with mock.patch.object(
+                    reconstruct_pdf,
+                    "create_candidate",
+                    wraps=reconstruct_pdf.create_candidate,
+                ) as create_candidate:
+                    refused = self.extract(output, pages="1-2")
+
+                self.assertEqual(2, refused.exit_code, refused)
+                self.assertFalse(refused.report["valid"])
+                self.assertTrue(
+                    any(
+                        "output already exists" in error
+                        for error in refused.report["errors"]
+                    )
                 )
-
-                self.assertEqual(0, replaced.exit_code, replaced)
+                create_candidate.assert_not_called()
+                self.assertEqual(before, tree_snapshot(self.root))
+                if kind == "file":
+                    self.assertEqual(
+                        b"unrelated regular file\n",
+                        output.read_bytes(),
+                    )
+                elif kind == "empty-directory":
+                    self.assertTrue(output.is_dir())
+                    self.assertEqual([], list(output.iterdir()))
+                elif kind == "directory":
+                    self.assertEqual(
+                        "must survive\n",
+                        (output / "sentinel.txt").read_text(encoding="utf-8"),
+                    )
+                else:
+                    self.assertTrue(output.is_symlink())
+                    self.assertEqual(link_target, output.readlink())
                 self.assertEqual(
-                    "pass",
-                    read_json(output / "source-package.json")["status"],
+                    [],
+                    list(self.root.glob(f".{output.name}.build-*")),
                 )
-                self.assertFalse((output / "stale.bin").exists())
 
-    def test_force_rejects_symlink_ownership_marker_unchanged(self) -> None:
+    def test_force_option_is_unrecognized(self) -> None:
         self.make_happy_source()
-        output = self.root / "linked-marker-output"
-        output.mkdir()
-        external_marker = self.root / "external-source-package.json"
-        external_marker.write_text("external marker\n", encoding="utf-8")
-        marker = output / "source-package.json"
-        try:
-            marker.symlink_to(external_marker)
-        except (NotImplementedError, OSError) as error:
-            self.skipTest(f"file symlinks are unavailable: {error}")
-        stale = output / "stale.bin"
-        stale.write_bytes(b"stale")
-        link_target = marker.readlink()
-        before = tree_snapshot(self.root)
+        output = self.root / "force-is-not-supported"
 
-        refused = self.extract(output, pages="1-2", extra=("--force",))
+        result = self.extract(output, pages="1-2", extra=("--force",))
 
-        self.assertEqual(2, refused.exit_code)
+        self.assertEqual(2, result.exit_code, result)
+        self.assertFalse(result.report["valid"])
+        self.assertFalse(output.exists())
         self.assertTrue(
             any(
-                "regular non-symlink/non-reparse" in error
-                for error in refused.report["errors"]
+                "unrecognized arguments: --force" in error
+                for error in result.report["errors"]
             )
         )
-        self.assertTrue(marker.is_symlink())
-        self.assertEqual(link_target, marker.readlink())
+
+    def test_successful_publication_uses_one_rename_and_no_backup(self) -> None:
+        self.make_happy_source()
+        output = self.root / "one-rename-package"
+        rename_calls: list[tuple[Path, Path]] = []
+        original_rename = Path.rename
+
+        def track_rename(path: Path, target: Path) -> Path:
+            rename_calls.append((path, Path(target)))
+            return original_rename(path, target)
+
+        with mock.patch.object(Path, "rename", new=track_rename):
+            result = self.extract(output, pages="1-2")
+
+        self.assertEqual(0, result.exit_code, result)
+        self.assertEqual(1, len(rename_calls))
+        candidate, target = rename_calls[0]
+        self.assertEqual(output, target)
+        self.assertTrue(candidate.name.startswith(f".{output.name}.build-"))
+        self.assertEqual([], list(self.root.glob(f".{output.name}.backup-*")))
+        self.assertEqual([], list(self.root.glob(f".{output.name}.build-*")))
+
+    def test_rename_failure_leaves_output_absent_and_candidate_cleaned(
+        self,
+    ) -> None:
+        self.make_happy_source()
+        output = self.root / "rename-failure-package"
+        before = tree_snapshot(self.root)
+        original_rename = Path.rename
+        rename_calls = 0
+        failure_message = "synthetic final rename failure"
+
+        def fail_publication(path: Path, target: Path) -> Path:
+            nonlocal rename_calls
+            if Path(target) == output:
+                rename_calls += 1
+                raise PermissionError(failure_message)
+            return original_rename(path, target)
+
+        with mock.patch.object(Path, "rename", new=fail_publication):
+            result = self.extract(output, pages="1-2")
+
+        self.assertEqual(2, result.exit_code, result)
+        self.assertFalse(result.report["valid"])
+        self.assertEqual(1, rename_calls)
+        self.assertFalse(output.exists())
+        self.assertFalse(output.is_symlink())
         self.assertEqual(before, tree_snapshot(self.root))
-        self.assertEqual(
-            "external marker\n",
-            external_marker.read_text(encoding="utf-8"),
+        self.assertEqual([], list(self.root.glob(f".{output.name}.build-*")))
+        self.assertEqual([], list(self.root.glob(f".{output.name}.backup-*")))
+        self.assertTrue(
+            any(failure_message in error for error in result.report["errors"])
         )
+
+    def test_candidate_cleanup_failure_is_reported(self) -> None:
+        self.make_happy_source()
+        output = self.root / "cleanup-failure-package"
+        build_failure = "synthetic build failure"
+        cleanup_failure = "synthetic cleanup failure"
+
+        def fail_build(_args: Any, _candidate: Path) -> Any:
+            raise reconstruct_pdf.ContractError(build_failure)
+
+        def fail_cleanup(_path: Path) -> None:
+            raise PermissionError(cleanup_failure)
+
+        with (
+            mock.patch.object(
+                reconstruct_pdf,
+                "build_candidate",
+                new=fail_build,
+            ),
+            mock.patch.object(
+                reconstruct_pdf,
+                "remove_candidate",
+                new=fail_cleanup,
+            ),
+        ):
+            result = self.extract(output, pages="1-2")
+
+        candidates = list(self.root.glob(f".{output.name}.build-*"))
+        try:
+            self.assertEqual(2, result.exit_code, result)
+            self.assertFalse(result.report["valid"])
+            self.assertFalse(output.exists())
+            self.assertEqual(1, len(candidates))
+            self.assertTrue(
+                any(
+                    "cannot clean candidate directory: synthetic cleanup "
+                    "failure" in error
+                    for error in result.report["errors"]
+                )
+            )
+        finally:
+            for candidate in candidates:
+                candidate.rmdir()
 
     def test_encryption_attachments_and_javascript_are_rejected(self) -> None:
         cases: tuple[
@@ -1227,25 +1315,25 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
                 )
 
         pages = [
-            {
-                "id": "pdf-0001",
-                "pdf_page": 1,
-                "text_characters": 4,
-                "replacement_characters": 0,
-                "image_count": 0,
-            },
-            {
-                "id": "pdf-0002",
-                "pdf_page": 2,
-                "text_characters": 40,
-                "replacement_characters": 1,
-                "image_count": 0,
-            },
+            reconstruct_pdf.PageReviewFacts(
+                page_id="pdf-0001",
+                page_number=1,
+                text_characters=4,
+                replacement_characters=0,
+                has_image=False,
+                hidden_text=False,
+            ),
+            reconstruct_pdf.PageReviewFacts(
+                page_id="pdf-0002",
+                page_number=2,
+                text_characters=40,
+                replacement_characters=1,
+                has_image=False,
+                hidden_text=False,
+            ),
         ]
         issues = reconstruct_pdf.derive_issues(
             pages,
-            hidden_pages=set(),
-            trace_failure_pages=set(),
             profiles=[],
             has_figures=False,
         )
@@ -1260,16 +1348,15 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
 
         zero_text_issues = reconstruct_pdf.derive_issues(
             [
-                {
-                    "id": "pdf-0001",
-                    "pdf_page": 1,
-                    "text_characters": 0,
-                    "replacement_characters": 0,
-                    "image_count": 0,
-                }
+                reconstruct_pdf.PageReviewFacts(
+                    page_id="pdf-0001",
+                    page_number=1,
+                    text_characters=0,
+                    replacement_characters=0,
+                    has_image=False,
+                    hidden_text=False,
+                )
             ],
-            hidden_pages=set(),
-            trace_failure_pages=set(),
             profiles=[],
             has_figures=False,
         )
@@ -1278,6 +1365,55 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
         )
         self.assertEqual(
             "pass", reconstruct_pdf.page_status(zero_text_issues, 1)
+        )
+
+        review_issues = reconstruct_pdf.derive_issues(
+            [
+                reconstruct_pdf.PageReviewFacts(
+                    page_id="pdf-0001",
+                    page_number=1,
+                    text_characters=4,
+                    replacement_characters=0,
+                    has_image=True,
+                    hidden_text=False,
+                ),
+                reconstruct_pdf.PageReviewFacts(
+                    page_id="pdf-0002",
+                    page_number=2,
+                    text_characters=40,
+                    replacement_characters=1,
+                    has_image=False,
+                    hidden_text=False,
+                ),
+                reconstruct_pdf.PageReviewFacts(
+                    page_id="pdf-0003",
+                    page_number=3,
+                    text_characters=40,
+                    replacement_characters=0,
+                    has_image=False,
+                    hidden_text=True,
+                ),
+                reconstruct_pdf.PageReviewFacts(
+                    page_id="pdf-0004",
+                    page_number=4,
+                    text_characters=40,
+                    replacement_characters=0,
+                    has_image=False,
+                    hidden_text=None,
+                ),
+            ],
+            profiles=["music-notation"],
+            has_figures=False,
+        )
+        self.assertEqual(
+            {
+                "pdf-0001.possible-scan",
+                "pdf-0002.replacement-characters",
+                "pdf-0003.hidden-or-nonpainting-text",
+                "pdf-0004.trace-inspection-failed",
+                "source.music-figure-map-missing",
+            },
+            {issue["id"] for issue in review_issues},
         )
 
     def test_confined_relative_asset_paths_reject_unsafe_forms(self) -> None:

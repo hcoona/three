@@ -52,13 +52,14 @@ nonrepudiation are outside scope.
 
 1. Hash the source under the declared exclusive-write assumption.
 2. Inventory source metadata and reject encryption, embedded JavaScript, or
-   XFA or attachments before extracting selected-page geometry and content
-   counts.
+   XFA or attachments before extracting selected-page geometry and content.
 3. Emit one ordered `blocks` JSON asset and one canonical page `svg` asset for
    every selected page. Blocks are translation-facing text with stable IDs and
    crop-box-local coordinates; SVG is the page-level vector evidence.
 4. Validate page identity, order, geometry, asset hashes, section coverage,
-   figure-part bounds, and package status.
+   figure-part bounds, and package status. Recompute text volume, replacement
+   characters, and raster-image presence from validated block and SVG bytes;
+   retain canonical extraction-time trace observations when deriving status.
 5. Fail closed on malformed extraction, SVG, or geometry. Report replacement
    characters, possible scans, and suspected hidden or nonpainting OCR as
    `review_required` instead of requiring raw-text, reading-text, XML, or
@@ -101,14 +102,12 @@ contract-valid package or validation found a contract-valid package; use the
 reported `status` as the downstream gate. Operational errors and invalid
 packages exit nonzero and report errors.
 
-The final `--output` path component may be absent or an ordinary directory.
-Regular files, symlinks, junctions or other reparse points, and special nodes
-are rejected. Without `--force`, any existing output directory is rejected.
-With `--force`, an empty output directory may be replaced. A non-empty
-directory is replaceable only when it directly contains a regular,
-non-symlink, non-reparse `source-package.json` ownership marker. The marker is
-not parsed or validated, so damaged or older Reconstruction output remains
-recoverable.
+The final `--output` path must be absent. Any existing entry is rejected
+unchanged before staging. Extraction builds and validates a sibling candidate,
+then publishes with one final rename. Build, validation, or rename failure
+leaves the final output absent and cleans the candidate when possible. Reruns
+must use a new output path or rely on caller-managed deletion of the previous
+output.
 
 ## Handoff
 

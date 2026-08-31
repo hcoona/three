@@ -23,10 +23,8 @@ authenticity, and nonrepudiation are outside scope.
 The closed schema retains:
 
 - `schema_version`: `1.0`
-- `package_id`: stable identity derived by reconstruction
-- `generator`: reconstruction tool and runtime versions
 - `source`: source metadata and source-byte binding
-- `selection`: ordered selected PDF pages and endpoints
+- `selection`: ordered selected PDF pages
 - `coordinate_system`: PDF points with top-left crop-box-local coordinates
 - `profiles`: declared bounded source profiles
 - `pages`: one record per selected page
@@ -41,21 +39,18 @@ SHA-256, and byte length.
 
 ## Source metadata
 
-`source` binds the authorized input PDF by file name, hash, byte length,
-rights note, page count, encryption state, attachment names, and embedded
-JavaScript observation. The delivered package does not need to copy the
-original PDF.
+`source` binds the authorized input PDF by hash, byte length, rights note, and
+page count. The delivered package does not need to copy the original PDF.
 
-Accepted packages have `encrypted: false`, an empty `attachments` array, and
-`embedded_javascript: false`. Reconstruction inventories those features
-without extracting payloads and rejects the source when any is present.
-XFA sources are also rejected rather than inspected for scripts.
+Reconstruction rejects encryption, attachments, embedded JavaScript, and XFA
+before publication. Those rejected-source observations are not emitted as
+manifest properties.
 
 ## Selection and coordinates
 
-`selection.pdf_pages` is ordered, non-empty, and one-based. The first and last
-values agree with `first_pdf_page` and `last_pdf_page`. Every page record has
-the corresponding `pdf_page` and stable `pdf-NNNN` ID.
+`selection.pdf_pages` is ordered, non-empty, one-based, unique, and limited to
+500 entries. Every page record has the corresponding `pdf_page` and stable
+`pdf-NNNN` ID.
 
 All page and figure geometry uses unrotated crop-box-local PDF points after
 applying the PDF page's effective `UserUnit` scaling:
@@ -88,14 +83,13 @@ Blocks preserve stable IDs, source order, text, and bounded coordinates.
 Their text is the extraction selected for translation. It is not proof that
 every character visibly paints in the PDF.
 
-The page record retains counts needed to interpret extraction and source
-complexity, including block/text/replacement, displayed-image, vector, and
-link counts as defined by the schema. Counts are observations made by
-reconstruction, not a transitive replay obligation for Assembly or QA.
-
 Suspected hidden or nonpainting OCR, replacement characters, and scan-like
 pages may produce `review_required`. They need not be represented by a
-cross-stage painted-glyph model.
+cross-stage painted-glyph model. Reconstruction and package validation derive
+text volume and replacement-character facts from the bound blocks and
+raster-image presence from the bound SVG; page content counters are not
+stored in the manifest. Hidden/nonpainting-text and trace-inspection-failure
+facts remain canonical extraction-time observations carried by `issues`.
 
 ### Canonical page SVG
 
@@ -167,10 +161,10 @@ manifest hash still binds the complete map bytes.
 
 Zero aggregate block text derives `fail`. Positive aggregate text below
 `max(32, selected_page_count * 8)`, a page with fewer than 32 text characters
-and displayed images, a replacement character, or suspected hidden or
-nonpainting text derives `review_required`. Failure of the advisory PyMuPDF
-text-trace inspection also derives `review_required`, as does declaring the
-`music-notation` profile without a non-empty figure map.
+and a raster image in its SVG, a replacement character, or suspected hidden
+or nonpainting text derives `review_required`. Failure of the advisory
+PyMuPDF text-trace inspection also derives `review_required`, as does
+declaring the `music-notation` profile without a non-empty figure map.
 
 Page status and package status must agree with `issues`. A downstream stage
 must reject any effective status other than `pass`; it must not repair or
@@ -185,45 +179,33 @@ Normal package validation guarantees:
 - exact hashes and lengths for manifest-referenced assets;
 - valid ordered blocks;
 - valid canonical page SVGs;
-- agreement between positive `image_count` and raster-image presence in the
-  validated SVG, so possible-scan status cannot be suppressed;
 - valid section and figure maps when present; and
-- internally consistent counts, issues, and status.
+- asset-derived issues recomputed from validated block and SVG bytes, combined
+  with accepted canonical trace observations to derive page and package status.
 
 Malformed blocks, SVG, or geometry are validation failures rather than review
 issues.
 
 When the caller supplies the original PDF, reconstruction may additionally
-verify source hash, byte length, selected-page geometry, and exact regenerated
-block JSON and SVG bytes. That stronger check remains inside reconstruction.
-Neither Assembly nor QA performs full source replay.
+verify source hash, byte length, page count, retained page dimensions and
+rotation, and exact regenerated block JSON and SVG bytes. That stronger check
+remains inside reconstruction. Neither Assembly nor QA performs full source
+replay. Source replay does not rerun advisory text tracing or refresh
+trace-related observations; rerun extraction to refresh them.
 
-## Extraction publication and replacement
+## Extraction publication
 
-Extraction builds and validates a candidate in a sibling staging directory,
-then publishes it with same-filesystem replacement. The final output path
-component may be absent or an ordinary directory. Regular files, symlinks,
-junctions or other reparse points, and special nodes are rejected unchanged.
-On Windows, a final component ending in a dot or space is rejected because
-Win32 aliases it to a different lexical name. Before replacement, an existing
-output is compared by filesystem identity with every source ancestor, so
-case-insensitive, Unicode-normalizing, and 8.3 aliases cannot bypass source
-containment. Windows also resolves an existing final component to its canonical
-filesystem name before publication.
+Extraction publishes only to an absent output path. Before staging, any
+existing entry at that path is rejected unchanged, including a file,
+directory, empty directory, link or reparse point, or special node.
 
-Without `--force`, any existing output directory is rejected. With `--force`,
-an empty directory may be replaced. A non-empty directory is replaceable only
-when it directly contains a regular, non-symlink, non-reparse
-`source-package.json` ownership marker. Reconstruction does not parse or
-validate that marker before replacement, allowing damaged or older owned
-packages to be recovered without granting replacement authority over an
-unrelated directory.
-
-Publication renames an existing owned output to a sibling backup before
-renaming the validated candidate into place. An in-process publication failure
-attempts to restore that backup. Once the candidate rename commits, failure to
-remove the old backup is reported as a warning and does not retroactively fail
-the successful extraction.
+The package is built and validated in a sibling candidate directory on the
+same filesystem. Publication consists of exactly one final
+`candidate.rename(output)`. Build, validation, or final-rename failure leaves
+the output absent and cleans the candidate when possible. A cleanup failure is
+reported as the operation failure rather than hidden. Reconstruction does not
+replace, back up, restore, or roll back existing output. Reruns require a new
+path or caller-managed deletion of the previous output.
 
 ## Immutability and non-guarantees
 
