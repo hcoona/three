@@ -177,11 +177,30 @@ def fail(message: str) -> Never:
     raise ValidationError(message)
 
 
+def reject_json_constant(value: str) -> Never:
+    """Reject non-finite numbers that deployed runtimes cannot read."""
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Reject duplicate object keys before JSON validation loses them."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object key: {key}")
+        result[key] = value
+    return result
+
+
 def read_json(path: Path) -> Any:
     """Read one UTF-8 JSON file."""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        return json.loads(
+            path.read_text(encoding="utf-8"),
+            parse_constant=reject_json_constant,
+            object_pairs_hook=unique_json_object,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
         fail(f"cannot parse JSON {path}: {error}")
 
 

@@ -252,7 +252,12 @@ Evidence always records:
 ```json
 {
     "human_review": {
-        "status": "required"
+        "status": "required",
+        "required_scope": [
+            "Inspect every full-page raster at readable zoom.",
+            "Check crop loss, overflow, page breaks, and continuation order.",
+            "Check mixed-script typography, figures, captions, and notation fidelity."
+        ]
     }
 }
 ```

@@ -211,7 +211,7 @@ dependencies:
     .agents/skills/scholarly-render-qa/assets/qa-evidence.schema.json: sha256:502da511978a349c637a0ace80876dc05c38890f56f6f32524aaafcf5c144ab1
     .agents/skills/scholarly-render-qa/assets/release-manifest.schema.json: sha256:5da0c709cc91cd77faef793f4fdafc56b02bdb1cdd318b6d79f215224441dbc4
     .agents/skills/scholarly-render-qa/references/music-notation-qa-profile.md: sha256:f491929d692b979c3a0dcbe7b8f62afeee1867e4f8e1be38da41c29f7bf56918
-    .agents/skills/scholarly-render-qa/references/qa-contract.md: sha256:2e4f83a601865e35b96e62c618a5408d88f1156e42a800431e15d164cbcdd3a8
+    .agents/skills/scholarly-render-qa/references/qa-contract.md: sha256:4b1387bca36dcbdbc3d540b3f114f0f89b1e3b541ed41fb4240dccb30aaae453
     .agents/skills/scholarly-render-qa/scripts/audit_publication.py: sha256:a4fc2f17281088196ee48a5bba94454669bb3042db5e728b70929406d5813827
   source: local
   local_path: ./src/private/lib/scholarly-publication
@@ -3892,7 +3892,7 @@ deployments:
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:2e4f83a601865e35b96e62c618a5408d88f1156e42a800431e15d164cbcdd3a8
+  content_hash: sha256:4b1387bca36dcbdbc3d540b3f114f0f89b1e3b541ed41fb4240dccb30aaae453
 - kind: project-relative
   target: agents
   value: .agents/skills/scholarly-render-qa/scripts/audit_publication.py

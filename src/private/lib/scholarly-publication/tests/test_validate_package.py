@@ -99,6 +99,57 @@ def make_runtime_fixture(
 
 
 class JsonSchemaValidationTests(unittest.TestCase):
+    def test_runtime_incompatible_json_is_rejected(self) -> None:
+        cases = (
+            (
+                "nan",
+                '"x-fixture": NaN',
+                "non-finite JSON number: NaN",
+            ),
+            (
+                "positive-infinity",
+                '"x-fixture": Infinity',
+                "non-finite JSON number: Infinity",
+            ),
+            (
+                "negative-infinity",
+                '"x-fixture": -Infinity',
+                "non-finite JSON number: -Infinity",
+            ),
+            (
+                "duplicate-key",
+                '"x-fixture": 1, "x-fixture": 2',
+                "duplicate JSON object key: x-fixture",
+            ),
+        )
+
+        for name, fragment, expected_error in cases:
+            with self.subTest(name=name):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    package_root = Path(temporary_directory)
+                    path = package_root / "malformed.schema.json"
+                    valid_schema = json.dumps(schema_fixture())
+                    path.write_text(
+                        f"{valid_schema[:-1]}, {fragment}}}",
+                        encoding="utf-8",
+                    )
+                    with (
+                        mock.patch.object(
+                            validate_package,
+                            "PACKAGE_ROOT",
+                            package_root,
+                        ),
+                        self.assertRaises(  # noqa: PT027
+                            validate_package.ValidationError
+                        ) as raised,
+                    ):
+                        validate_package.validate_json_and_python()
+
+                self.assertEqual(
+                    str(raised.exception),
+                    f"cannot parse JSON {path}: {expected_error}",
+                )
+
     def test_required_keyword_rejects_scalar_shape(self) -> None:
         schema = schema_fixture()
         schema["required"] = "schema_version"
