@@ -122,7 +122,10 @@ figcaption {
   break-after: avoid-page;
 }
 
-.keep-together,
+.keep-together {
+  break-inside: avoid;
+}
+
 .atomic,
 .bilingual-term,
 .music-token,

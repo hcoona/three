@@ -305,7 +305,8 @@ BASE_RULES: dict[str, tuple[tuple[str, str], ...]] = {
         ("text-align", "center"),
     ),
     ".keep-with-next": (("break-after", "avoid-page"),),
-    ".keep-together, .atomic, .bilingual-term, .music-token, .figure-label": (
+    ".keep-together": (("break-inside", "avoid"),),
+    ".atomic, .bilingual-term, .music-token, .figure-label": (
         ("break-inside", "avoid"), ("display", "inline-block"), ("white-space", "nowrap"),
     ),
     "a": (("color", "inherit"), ("text-decoration", "none")),

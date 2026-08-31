@@ -113,7 +113,14 @@ CORE_CHECK_ORDER = (
 )
 OVERFLOW_FRAGMENT = (
     '<h1 id="opening">Integrated publication</h1>\n'
-    '<p><span class="keep-together">' + ("A" * 240) + "</span></p>\n"
+    '<p><span class="atomic">' + ("A" * 240) + "</span></p>\n"
+    "<!-- figure: integration-figure -->\n"
+)
+KEEP_TOGETHER_FRAGMENT = (
+    '<h1 id="opening">Integrated publication</h1>\n'
+    '<p class="keep-together">'
+    + ("A long scholarly paragraph must wrap within the printable width. " * 16)
+    + "</p>\n"
     "<!-- figure: integration-figure -->\n"
 )
 PIPELINE_FRAGMENT_SENTINEL = "qa-fragment-body-sentinel-8f31d71a"
@@ -2156,6 +2163,29 @@ class AuditPublicationReplacementTests(unittest.TestCase):
                 "render.geometry-overflow",
             )["evidence"]["overflow"]
         )
+
+    def test_block_keep_together_wraps_without_horizontal_overflow(
+        self,
+    ) -> None:
+        publication = build_rendered_publication(
+            self.case_root / "keep-together-pipeline",
+            reconstruct_pdf,
+            assemble_print,
+            browser=BROWSER,
+            fragment_html=KEEP_TOGETHER_FRAGMENT,
+        )
+        review = self.case_root / "review-keep-together"
+
+        result = invoke(self.arguments(publication, review))
+
+        self.assertEqual(0, result.exit_code, result)
+        evidence = read_json(review / "qa-evidence.json")
+        overflow_check = self.check_by_id(
+            evidence,
+            "render.geometry-overflow",
+        )
+        self.assertTrue(overflow_check["passed"])
+        self.assertEqual({}, overflow_check["evidence"]["overflow"])
 
     def test_fractional_bbox_pipeline_remains_qa_compatible(self) -> None:
         publication = build_rendered_publication(
