@@ -673,6 +673,21 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         figure = manifest["figures"][0]
         self.assertEqual("sample-figure", figure["id"])
         self.assertEqual(
+            {
+                "source_label": "Example 1",
+                "profile": "music-notation",
+                "embedded_language_inventory": ["zh-Hans", "en"],
+            },
+            {
+                key: figure[key]
+                for key in (
+                    "source_label",
+                    "profile",
+                    "embedded_language_inventory",
+                )
+            },
+        )
+        self.assertEqual(
             [
                 (
                     1,
@@ -732,6 +747,28 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         self.assertFalse((publication / "assets/pages/pdf-0003.svg").exists())
         self.assertFalse((publication / "fragments/unused.html").exists())
         self.assertFalse((publication / "maps").exists())
+
+    def test_validate_rejects_recipe_only_figure_profile(self) -> None:
+        workspace = self.fresh_workspace()
+        self.update_json(
+            workspace / "assembly-spec.json",
+            lambda value: value["profiles"].append("notation-review"),
+        )
+        built = self.build(workspace)
+        self.assertEqual(0, built.exit_code, built)
+        publication = workspace / "publication"
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        manifest["figures"][0]["profile"] = "notation-review"
+        write_json(manifest_path, manifest)
+
+        validated = self.validate(publication)
+
+        self.assertEqual(2, validated.exit_code, validated)
+        self.assertIn(
+            "profile is not declared by the source package",
+            validated.stderr,
+        )
 
     def test_markup_nesting_limit_accepts_fragment_and_caption_boundary(
         self,
@@ -1213,6 +1250,27 @@ class AssemblePrintReplacementTests(unittest.TestCase):
             )
             self.refresh_figure_map(workspace)
 
+        def missing_source_facts(workspace: Path) -> None:
+            figure_path = workspace / "source" / "maps" / "figures.json"
+            figure_map = read_json(figure_path)
+            figure_map["figures"][0].pop("embedded_language_inventory")
+            write_json(figure_path, figure_map)
+            self.refresh_figure_map(workspace)
+
+        def undeclared_source_profile(workspace: Path) -> None:
+            figure_path = workspace / "source" / "maps" / "figures.json"
+            self.update_json(
+                figure_path,
+                lambda value: value["figures"][0].update(
+                    {"profile": "notation-review"}
+                ),
+            )
+            self.refresh_figure_map(workspace)
+            self.update_json(
+                workspace / "assembly-spec.json",
+                lambda value: value["profiles"].append("notation-review"),
+            )
+
         def caption_class(workspace: Path) -> None:
             self.update_json(
                 workspace / "assembly-spec.json",
@@ -1230,6 +1288,8 @@ class AssemblePrintReplacementTests(unittest.TestCase):
             ("part-order", part_order),
             ("bbox", bbox),
             ("profile-identifier", profile_identifier),
+            ("missing-source-facts", missing_source_facts),
+            ("undeclared-source-profile", undeclared_source_profile),
             ("caption-class", caption_class),
         )
         for name, mutation in cases:

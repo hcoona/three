@@ -104,9 +104,12 @@ Require every manifest figure and crop exactly once and no unbound figure,
 caption, inline SVG, image, or crop. Inspect the declared source PDF page and
 bind caption content, accessible names, part order, source box, used page SVG
 hash/href/geometry, and browser geometry to the manifest when making the check
-decision. Retain only compact binding summaries or bounded failure
-diagnostics. QA does not replay the source PDF to re-prove the page
-declaration.
+decision. Include bounded samples of manifest figure source labels, profiles,
+and embedded-language inventories in the compact binding evidence. The bound
+assembly manifest remains the complete exact authority. QA validates their
+structure and profile membership but does not re-prove their source semantics.
+Retain only compact binding summaries or bounded failure diagnostics. QA does
+not replay the source PDF to re-prove the page declaration.
 
 Figure DOM IDs and crop IDs are unique within their respective namespaces but
 need not be disjoint; crop identity uses `data-crop-id`. Source boxes in the
@@ -256,7 +259,9 @@ Evidence always records:
         "required_scope": [
             "Inspect every full-page raster at readable zoom.",
             "Check crop loss, overflow, page breaks, and continuation order.",
-            "Check mixed-script typography, figures, captions, and notation fidelity."
+            "Check figure presence, identity, fidelity, and caption correspondence.",
+            "Check mixed-script typography and notation fidelity.",
+            "Review source labels, language inventories, translations, glosses, and errata."
         ]
     }
 }
@@ -264,8 +269,10 @@ Evidence always records:
 
 Mechanical QA cannot change that state. A human must inspect every raster at
 readable zoom for crop loss, overflow, pagination, mixed-script typography,
-figure/caption order, continuation order, and notation fidelity. Human review
-records belong to a later editorial process, not an inferred QA pass.
+figure/caption order, continuation order, notation fidelity, and the
+editorial correctness of source labels, embedded-language inventories,
+translations, glosses, and errata notes. Human review records belong to a
+later editorial process, not an inferred QA pass.
 
 ## Release manifest
 

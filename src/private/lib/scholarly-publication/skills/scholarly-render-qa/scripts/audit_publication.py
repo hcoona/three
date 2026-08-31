@@ -73,7 +73,9 @@ CORE_CHECK_IDS = (
 HUMAN_REVIEW_SCOPE = (
     "Inspect every full-page raster at readable zoom.",
     "Check crop loss, overflow, page breaks, and continuation order.",
-    "Check mixed-script typography, figures, captions, and notation fidelity.",
+    "Check figure presence, identity, fidelity, and caption correspondence.",
+    "Check mixed-script typography and notation fidelity.",
+    "Review source labels, language inventories, translations, glosses, and errata.",
 )
 VOID_ELEMENTS = {
     "area", "base", "br", "col", "embed", "hr", "img", "input",
@@ -885,6 +887,15 @@ def load_context(manifest_file: Path, html_file: Path, page_size: str) -> Contex
     for figure in manifest["figures"]:
         if [part["order"] for part in figure["parts"]] != list(range(1, len(figure["parts"]) + 1)):
             errors.append(f"figure {figure['id']} part order is not contiguous")
+        figure_profile = figure["profile"]
+        if (
+            figure_profile is not None
+            and figure_profile not in manifest["profiles"]
+        ):
+            errors.append(
+                f"figure {figure['id']} profile is not declared by the "
+                f"assembly manifest: {figure_profile}"
+            )
         if figure["caption_sha256"] != hash_bytes(figure["caption_html"].encode()):
             errors.append(f"figure {figure['id']} caption hash is inconsistent")
         for part in figure["parts"]:
@@ -1820,6 +1831,11 @@ def validate_figure(
         {
             "id": figure["id"],
             "dom_id": figure["dom_id"],
+            "source_label": figure["source_label"],
+            "profile": figure["profile"],
+            "embedded_language_inventory": figure[
+                "embedded_language_inventory"
+            ],
             "matches": 1,
             "caption_matches": caption_ok,
         },
@@ -2042,6 +2058,11 @@ def audit_html(context: Context) -> StaticAudit:
                 {
                     "id": figure["id"],
                     "dom_id": figure["dom_id"],
+                    "source_label": figure["source_label"],
+                    "profile": figure["profile"],
+                    "embedded_language_inventory": figure[
+                        "embedded_language_inventory"
+                    ],
                     "matches": len(matches),
                     "caption_matches": False,
                 }
@@ -2921,6 +2942,11 @@ def build_evidence(
             {
                 "id": figure["id"],
                 "dom_id": figure["dom_id"],
+                "source_label": figure["source_label"],
+                "profile": figure["profile"],
+                "embedded_language_inventory": figure[
+                    "embedded_language_inventory"
+                ],
                 "matches": 0,
                 "caption_matches": False,
             },
@@ -2938,7 +2964,17 @@ def build_evidence(
                     "geometry_matches": False,
                 },
             )
-    figures = [figure_records[item["id"]] for item in context.manifest["figures"]]
+    figures = [
+        {
+            **figure_records[item["id"]],
+            "source_label": item["source_label"],
+            "profile": item["profile"],
+            "embedded_language_inventory": item[
+                "embedded_language_inventory"
+            ],
+        }
+        for item in context.manifest["figures"]
+    ]
     crops = [crop_records[part["id"]] for figure in context.manifest["figures"] for part in figure["parts"]]
     binding_pass = (
         not binding_errors
@@ -3028,7 +3064,7 @@ def build_evidence(
         checks,
         "figures.crop-bindings",
         binding_pass,
-        "Every manifest figure and crop binds exactly once to its caption, copied source SVG, source box, and browser geometry.",
+        "Every manifest figure and crop binds exactly once to its caption, copied source SVG, source box, and browser geometry; bounded source-fact samples are included in evidence.",
         {"findings": binding_errors, "figures": figures, "crops": crops},
     )
     add_check(

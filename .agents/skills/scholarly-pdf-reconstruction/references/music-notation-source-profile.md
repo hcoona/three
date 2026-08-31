@@ -29,7 +29,11 @@ tool-specific ratio.
 - Provide at least one mapped figure when `music-notation` is declared.
 
 For each figure, record its stable source label, part order, source page,
-bounding box, embedded language inventory, and continuation status.
+bounding box, profile, and embedded language inventory. Use `null` when no
+stable source label or figure-specific profile exists, and use an empty
+language inventory only after confirming that the notation contains no
+natural-language text. Ordered parts carry continuation status without a
+separate field.
 
 This profile does not translate notation, silently correct source errata, or
 replace source symbols with modernized equivalents.

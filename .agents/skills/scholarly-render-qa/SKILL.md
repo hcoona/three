@@ -158,7 +158,8 @@ All nine core checks are blocking. A failed core check cannot coexist with
 `qa-evidence.json` always records `human_review.status: required`. Mechanical
 success does not replace readable-zoom inspection of every raster for
 cropping, page breaks, mixed-script spacing, figures, captions, continuation
-order, and notation fidelity.
+order, notation fidelity, source labels, embedded-language inventories,
+translations, glosses, and errata notes.
 
 ## Non-goals
 

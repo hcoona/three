@@ -198,6 +198,12 @@ default. The snapshots may therefore refer to upstream assets absent from the
 publication tree. This is intentional and must not be represented as archival
 closure.
 
+During build, selected figure source labels, profiles, embedded-language
+inventories, parts, and boxes are projected from the validated figure map.
+Because that map is not retained, standalone validation checks the manifest
+structure, source-profile membership, and retained crop/SVG bindings, but does
+not replay source labels or language inventories.
+
 ## Assembly manifest
 
 `assets/assembly-manifest.schema.json` is closed and records:
@@ -206,7 +212,8 @@ closure.
 - assembler/runtime and policy identifiers;
 - exact input-manifest snapshots;
 - copied fragment and visible-text bindings;
-- figure/caption/crop and used-page-SVG bindings;
+- figure source-label, profile, embedded-language-inventory, caption, crop,
+  and used-page-SVG bindings;
 - font roles and copied font records;
 - copied stylesheet records;
 - HTML, CSS, and optional rendered PDF;

@@ -1694,9 +1694,15 @@ def load_figures(assembly: Assembly) -> tuple[list[JsonObject], dict[str, tuple[
         source_figure = figures_by_id.get(identifier)
         if source_figure is None:
             fail(f"assembly figure is absent from the figure map: {identifier}")
-        source_profile = source_figure.get("profile")
-        if isinstance(source_profile, str) and source_profile and (source_profile not in assembly.recipe.value["profiles"]):
-            fail(f"figure {identifier} requires omitted profile {source_profile!r}")
+        source_profile = source_figure["profile"]
+        if (
+            source_profile is not None
+            and source_profile not in assembly.source.value["profiles"]
+        ):
+            fail(
+                f"figure {identifier} profile is not declared by the "
+                f"source package: {source_profile!r}"
+            )
         parts = source_figure["parts"]
         if [part["order"] for part in parts] != list(range(1, len(parts) + 1)):
             fail(f"figure {identifier} parts are not in canonical order")
@@ -2005,6 +2011,11 @@ def build_candidate(stage: Path, material: BuildMaterial) -> JsonObject:
         manifest_figures.append({
             "id": declaration["id"],
             "dom_id": declaration["id"],
+            "source_label": source_figure["source_label"],
+            "profile": source_figure["profile"],
+            "embedded_language_inventory": list(
+                source_figure["embedded_language_inventory"]
+            ),
             "caption_html": caption,
             "caption_sha256": sha256_bytes(caption.encode()),
             "alt": declaration["alt"],
@@ -2213,6 +2224,12 @@ def validate_figure_projection(manifest: JsonObject, assembly: Assembly, invento
         }
         if {key: figure[key] for key in expected} != expected:
             fail(f"manifest figure {identifier} projection is inconsistent")
+        profile = figure["profile"]
+        if profile is not None and profile not in assembly.source.value["profiles"]:
+            fail(
+                f"manifest figure {identifier} profile is not declared by "
+                f"the source package: {profile!r}"
+            )
         parts = figure["parts"]
         if [part["order"] for part in parts] != list(range(1, len(parts) + 1)):
             fail(f"manifest figure {identifier} part order is invalid")

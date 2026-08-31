@@ -630,6 +630,7 @@ def section_map_errors(
 def figure_map_errors(
     data: Any,
     page_geometry_by_number: dict[int, tuple[float, float]],
+    declared_profiles: set[str],
 ) -> list[str]:
     errors = schema_validation_errors(
         data,
@@ -647,6 +648,12 @@ def figure_map_errors(
         if figure_id in figure_ids:
             errors.append(f"duplicate figure id: {figure_id}")
         figure_ids.add(figure_id)
+        profile = figure["profile"]
+        if profile is not None and profile not in declared_profiles:
+            errors.append(
+                f"{context} profile is not declared by the source package: "
+                f"{profile}"
+            )
         expected_orders = list(range(1, len(figure["parts"]) + 1))
         actual_orders = [part["order"] for part in figure["parts"]]
         if actual_orders != expected_orders:
@@ -681,13 +688,18 @@ def load_map_input(
     role: str,
     selected_pages: set[int],
     page_geometry_by_number: dict[int, tuple[float, float]],
+    declared_profiles: set[str],
 ) -> bytes:
     content = read_bytes(path, role)
     data = parse_json_bytes(content, role)
     errors = (
         section_map_errors(data, selected_pages)
         if role == "section map"
-        else figure_map_errors(data, page_geometry_by_number)
+        else figure_map_errors(
+            data,
+            page_geometry_by_number,
+            declared_profiles,
+        )
     )
     if errors:
         raise ContractError("; ".join(errors))
@@ -1690,6 +1702,7 @@ def build_candidate(
                 "section map",
                 selected_set,
                 geometry_by_page,
+                set(profiles),
             )
             if args.sections is not None
             else None
@@ -1700,6 +1713,7 @@ def build_candidate(
                 "figure map",
                 selected_set,
                 geometry_by_page,
+                set(profiles),
             )
             if args.figure_map is not None
             else None
@@ -2103,7 +2117,11 @@ def validate_manifest_semantics(
         map_errors = (
             section_map_errors(data, set(selected_pages))
             if role == "sections"
-            else figure_map_errors(data, geometry_by_page)
+            else figure_map_errors(
+                data,
+                geometry_by_page,
+                set(manifest["profiles"]),
+            )
         )
         errors.extend(map_errors)
         if role == "figure_map" and isinstance(data, dict):

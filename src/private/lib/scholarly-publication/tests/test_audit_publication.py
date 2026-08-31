@@ -1369,8 +1369,46 @@ class AuditPublicationReplacementTests(unittest.TestCase):
                 for check in evidence["checks"]
             )
         )
+        figure_binding = self.check_by_id(
+            evidence,
+            "figures.crop-bindings",
+        )["evidence"]["figures"][0]
+        self.assertEqual(
+            {
+                "source_label": "Figure 1",
+                "profile": "music-notation",
+                "embedded_language_inventory": ["en", "zh-Hans"],
+            },
+            {
+                key: figure_binding[key]
+                for key in (
+                    "source_label",
+                    "profile",
+                    "embedded_language_inventory",
+                )
+            },
+        )
         self.assertEqual("pass", evidence["mechanical_status"])
         self.assertEqual("required", evidence["human_review"]["status"])
+        self.assertEqual(
+            [
+                "Inspect every full-page raster at readable zoom.",
+                (
+                    "Check crop loss, overflow, page breaks, and "
+                    "continuation order."
+                ),
+                (
+                    "Check figure presence, identity, fidelity, and caption "
+                    "correspondence."
+                ),
+                "Check mixed-script typography and notation fidelity.",
+                (
+                    "Review source labels, language inventories, translations, "
+                    "glosses, and errata."
+                ),
+            ],
+            evidence["human_review"]["required_scope"],
+        )
         self.assert_schema_valid(evidence, "qa-evidence.schema.json")
         self.assert_schema_valid(release, "release-manifest.schema.json")
         self.assertEqual(
@@ -1561,11 +1599,81 @@ class AuditPublicationReplacementTests(unittest.TestCase):
                     expected,
                 )
 
+    def test_figure_profile_must_be_declared_by_manifest(self) -> None:
+        publication = self.fresh_publication()
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        manifest["figures"][0]["profile"] = "notation-review"
+        write_json(manifest_path, manifest)
+
+        evidence = self.assert_blocked(
+            publication,
+            self.case_root / "review",
+            {"manifest.integrity"},
+        )
+
+        self.assertIn(
+            "profile is not declared by the assembly manifest",
+            json.dumps(evidence["checks"], ensure_ascii=False),
+        )
+
+    def test_duplicate_figure_ids_preserve_entry_source_facts(self) -> None:
+        publication = self.fresh_publication()
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        duplicate = copy.deepcopy(manifest["figures"][0])
+        duplicate.update(
+            {
+                "source_label": "Second Figure",
+                "profile": None,
+                "embedded_language_inventory": ["fr"],
+            }
+        )
+        manifest["figures"].append(duplicate)
+        write_json(manifest_path, manifest)
+
+        evidence = self.assert_blocked(
+            publication,
+            self.case_root / "review",
+            {"manifest.integrity", "figures.crop-bindings"},
+        )
+
+        figures = self.check_by_id(
+            evidence,
+            "figures.crop-bindings",
+        )["evidence"]["figures"]
+        self.assertEqual(
+            [
+                {
+                    "source_label": "Figure 1",
+                    "profile": "music-notation",
+                    "embedded_language_inventory": ["en", "zh-Hans"],
+                },
+                {
+                    "source_label": "Second Figure",
+                    "profile": None,
+                    "embedded_language_inventory": ["fr"],
+                },
+            ],
+            [
+                {
+                    key: figure[key]
+                    for key in (
+                        "source_label",
+                        "profile",
+                        "embedded_language_inventory",
+                    )
+                }
+                for figure in figures
+            ],
+        )
+
     def test_profile_link_and_figure_artifacts_block_release(self) -> None:
         cases = (
             ("fragment-profile", "html.offline-profile"),
             ("stylesheet-link", "html.offline-profile"),
             ("figure-crop", "figures.crop-bindings"),
+            ("figure-cardinality", "figures.crop-bindings"),
         )
         for name, expected_check in cases:
             with self.subTest(case=name):
@@ -1591,10 +1699,18 @@ class AuditPublicationReplacementTests(unittest.TestCase):
                             ('href="assets/stylesheets/stylesheet-001.css"'),
                             1,
                         )
-                    else:
+                    elif name == "figure-crop":
                         content, replacements = re.subn(
                             r'viewBox="[^"]+"',
                             'viewBox="0 0 1 1"',
+                            content,
+                            count=1,
+                        )
+                        self.assertEqual(1, replacements)
+                    else:
+                        content, replacements = re.subn(
+                            'data-figure-id="integration-figure"',
+                            'data-figure-id="unbound-figure"',
                             content,
                             count=1,
                         )
@@ -1613,6 +1729,30 @@ class AuditPublicationReplacementTests(unittest.TestCase):
                         "manifest.integrity",
                     )["passed"]
                 )
+                if name == "figure-cardinality":
+                    figure = self.check_by_id(
+                        evidence,
+                        "figures.crop-bindings",
+                    )["evidence"]["figures"][0]
+                    self.assertEqual(0, figure["matches"])
+                    self.assertEqual(
+                        {
+                            "source_label": "Figure 1",
+                            "profile": "music-notation",
+                            "embedded_language_inventory": [
+                                "en",
+                                "zh-Hans",
+                            ],
+                        },
+                        {
+                            key: figure[key]
+                            for key in (
+                                "source_label",
+                                "profile",
+                                "embedded_language_inventory",
+                            )
+                        },
+                    )
 
     def test_authored_reserved_classes_are_rejected_at_qa_boundaries(
         self,

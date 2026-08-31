@@ -148,6 +148,11 @@ page.
 `figure_map` is null when no source figure is needed or an asset conforming to
 `assets/figure-map.schema.json`. Figure discovery is never automatic. Each
 logical figure has one or more ordered parts with page-local positive boxes.
+Every figure explicitly records a nullable source label, a nullable
+figure-specific profile, and an embedded-language inventory with no exact
+duplicate tag strings. A non-null figure profile must also appear in the
+source package `profiles`. Null and empty values mean the fact was checked and
+is absent, not that review was skipped.
 
 Assembly may read only the section/figure entries required by its recipe. The
 manifest hash still binds the complete map bytes.

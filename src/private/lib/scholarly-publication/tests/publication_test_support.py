@@ -626,8 +626,8 @@ def build_rendered_publication(  # noqa: PLR0913, PLR0915
                 {
                     "id": "integration-figure",
                     "source_label": "Figure 1",
-                    "profile": None,
-                    "embedded_language_inventory": [],
+                    "profile": "music-notation",
+                    "embedded_language_inventory": ["en", "zh-Hans"],
                     "parts": [
                         {
                             "id": figure_part_id,
@@ -657,6 +657,8 @@ def build_rendered_publication(  # noqa: PLR0913, PLR0915
             "1",
             "--figure-map",
             str(figure_map),
+            "--profile",
+            "music-notation",
             "--rights-note",
             "Authorized deterministic integration fixture.",
         ],
@@ -765,7 +767,7 @@ def build_rendered_publication(  # noqa: PLR0913, PLR0915
                     "left": 0.75,
                 },
             },
-            "profiles": [],
+            "profiles": ["music-notation"],
         },
     )
 

@@ -471,6 +471,7 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
             baseline,
             pages="1-2",
             maps=(None, figures),
+            extra=("--profile", "music-notation"),
         )
         self.assertEqual(0, extracted.exit_code)
 
@@ -547,6 +548,7 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
             output,
             pages="1-2",
             maps=(None, figures),
+            extra=("--profile", "music-notation"),
         )
 
         self.assertEqual(2, result.exit_code)
@@ -584,6 +586,68 @@ class ReconstructPdfReplacementTests(unittest.TestCase):
                 for error in result.report["errors"]
             )
         )
+
+    def test_extract_rejects_incomplete_or_inconsistent_figure_facts(
+        self,
+    ) -> None:
+        self.make_happy_source()
+        cases = {
+            "missing-source-label": (
+                lambda figure: figure.pop("source_label"),
+                "source_label",
+            ),
+            "blank-source-label": (
+                lambda figure: figure.update({"source_label": "   "}),
+                "source_label",
+            ),
+            "missing-profile": (
+                lambda figure: figure.pop("profile"),
+                "profile",
+            ),
+            "missing-language-inventory": (
+                lambda figure: figure.pop("embedded_language_inventory"),
+                "embedded_language_inventory",
+            ),
+            "duplicate-language": (
+                lambda figure: figure.update(
+                    {"embedded_language_inventory": ["en", "en"]}
+                ),
+                "embedded_language_inventory",
+            ),
+            "invalid-language": (
+                lambda figure: figure.update(
+                    {"embedded_language_inventory": ["not_a_language"]}
+                ),
+                "embedded_language_inventory",
+            ),
+            "undeclared-profile": (
+                lambda figure: figure.update({"profile": "notation-review"}),
+                "not declared by the source package",
+            ),
+        }
+        for name, (mutate, expected) in cases.items():
+            with self.subTest(case=name):
+                _, figures = self.write_maps()
+                figure_map = read_json(figures)
+                mutate(figure_map["figures"][0])
+                write_json(figures, figure_map)
+                output = self.root / f"invalid-figure-facts-{name}"
+
+                result = self.extract(
+                    output,
+                    pages="1-2",
+                    maps=(None, figures),
+                    extra=("--profile", "music-notation"),
+                )
+
+                self.assertEqual(2, result.exit_code)
+                self.assertFalse(result.report["valid"])
+                self.assertEqual("fail", result.report["status"])
+                self.assertFalse(output.exists())
+                self.assertTrue(
+                    any(expected in error for error in result.report["errors"]),
+                    result.report["errors"],
+                )
 
     def test_validator_groups_unsafe_svg_cases(self) -> None:
         baseline = self.make_baseline_package()

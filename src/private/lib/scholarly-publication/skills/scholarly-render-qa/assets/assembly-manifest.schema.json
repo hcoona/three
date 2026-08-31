@@ -167,13 +167,39 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "dom_id", "caption_html", "caption_sha256", "alt", "parts"],
+        "required": [
+          "id",
+          "dom_id",
+          "source_label",
+          "profile",
+          "embedded_language_inventory",
+          "caption_html",
+          "caption_sha256",
+          "alt",
+          "parts"
+        ],
         "properties": {
           "id": {
             "$ref": "#/$defs/id"
           },
           "dom_id": {
             "$ref": "#/$defs/id"
+          },
+          "source_label": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "profile": {
+            "type": ["string", "null"],
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "embedded_language_inventory": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/language"
+            }
           },
           "caption_html": {
             "type": "string"
