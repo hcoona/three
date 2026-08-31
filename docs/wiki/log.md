@@ -2744,3 +2744,31 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   state is unchanged. Permanent Environment provisioning is complete;
   protected preparation remains blocked pending separate explicit
   authorization.
+
+## [2026-08-31] query | Contract normal Live design after package-authority review
+
+- Fresh package inventory disproved package-specific token isolation;
+  preparation stopped and `live_enabled` stayed false.
+- The user approved replacement requirements, and the requirements, HLD,
+  glossary, five MLDs, migration policy, and first-slice LLD were contracted
+  into one aligned design.
+- The replacement retains one authority-bearing Approval Environment and
+  accepts the repository-principal package blast radius for sole
+  writer/publisher TCB member `hcoona`; the legacy Capability Environment
+  remains inert and preserved pending separately authorized cleanup.
+- The design replaces universal consumer proof, history-derived authority,
+  group/profile publication machinery, Preparation PRs, and rerun recovery with
+  bounded static-reference evidence, current-Attempt authority, zero-or-one
+  action publication, new-dispatch retry, and one-PR activation.
+- Independent review found that standard `npm publish --tag` cannot guarantee
+  conditional non-overwriting creation of the complete version-and-tag
+  projection. The design now rejects that command as a Live primitive and
+  keeps activation blocked pending a reviewed supported primitive and race
+  acceptance.
+- Read-only repository API inspection returned 90-day Actions artifact
+  retention. The design now requires fresh authenticated preactivation and
+  post-merge readback proving at least 45 days; this observation does not
+  authorize or replace future activation evidence.
+- No runtime, Governance, package-access, Environment, deployment, workflow,
+  package, or other external mutation occurred. Final combined validation,
+  independent review/adjudication, commits, PR, and merge remain pending.

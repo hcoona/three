@@ -2,355 +2,149 @@
 
 ## Status
 
-Active and normative.
+Workflow Delivery v3 is active and is the only normative Workflow Delivery design line.
 
-v3 is a clean implementation line. It does not evolve the v2 control
-architecture in place. Proven v2 mechanisms may be ported only through reviewed
-v3 Provider, Adapter, or client boundaries and must not leak v2 domain or
-authority types into v3 CI or Release decision models.
+The user-approved replacement normal-Live baseline is incorporated across the requirements, HLD, glossary, five MLDs,
+migration policy, and first-slice LLD. These documents form one coherent design
+package; Git and pull-request state must be inspected rather than inferred from
+this page.
 
-## AI Agent Handoff
+No workflow, Python, schema, test, descriptor, release policy, Governance JSON, dependency, package access, or external
+resource has changed. The merged runtime is superseded by this design but remains disabled through
+`live_enabled: false`.
 
-Agents continuing v3 work must read the
-[Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md)
-before planning or editing.
+Normal Live is also activation-blocked by a destination capability gap:
+standard `npm publish --tag` can overwrite a conflicting tag introduced after
+Observation and is not an admitted primitive for the complete version-and-tag
+projection. A separately reviewed supported primitive and its conditional
+non-overwrite race acceptance are required before activation.
 
-## Normative Pages
+Before planning or editing v3 work, read the [Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md). It is
+operating guidance, not a second normative specification.
 
-- [Requirements](./requirements.md)
-- [High-Level Design](./high-level-design.md)
-- [Architecture Glossary](./architecture-glossary.md)
-- [Migration and Document Policy](./migration-strategy.md)
+## Normative Hierarchy
 
-## Middle-Level Design
+Read the current v3 documents in this order:
 
-- [Repository Model and Release Unit MLD](./repository-model-release-unit-mld.md)
-- [Governance Integration MLD](./governance-integration-mld.md)
-- [CI Qualification MLD](./ci-qualification-mld.md)
-- [Release Delivery MLD](./release-delivery-mld.md)
-- [Shared Foundation MLD](./shared-foundation-mld.md)
+1. [Requirements](./requirements.md)
+2. [High-Level Design](./high-level-design.md)
+3. [Architecture Glossary](./architecture-glossary.md)
+4. Middle-level designs:
+    - [Repository Model and Release Unit](./repository-model-release-unit-mld.md)
+    - [Governance Integration](./governance-integration-mld.md)
+    - [CI Qualification](./ci-qualification-mld.md)
+    - [Release Delivery](./release-delivery-mld.md)
+    - [Shared Foundation](./shared-foundation-mld.md)
+5. [Migration and Document Policy](./migration-strategy.md)
+6. [`hcoona-release-smoke-npm` LLD](./hcoona-release-smoke-npm-lld.md)
 
-## Current Design Work
+Higher layers constrain lower ones, and the current set must be reconciled if a conflict appears. v1 and v2 may supply
+a mechanism only when a v3 document explicitly requires extraction and revalidation.
+
+## Current First Slice
 
 The first vertical slice is `hcoona-release-smoke-npm`:
 
-- CI Qualification;
-- live Buddy publication to GitHub Packages; and
-- Official npmjs dry-run.
+- CI Qualification remains shadow/manual during coexistence;
+- live Buddy targets GitHub Packages; and
+- Official npmjs behavior remains simulation-only.
 
-The Release MLD identity decision was reopened and reconfirmed before LLD on
-2026-08-05. Buddy npm uses the frozen native NBGV `npmPackageVersion`
-unchanged. Separate manual requests create separate request and Intent records.
-Each admitted, non-coalesced request creates a new Attempt in one Release
-Execution only when it names the same channel, Release Unit, and target. Buddy
-Release Execution Identity does not include any coordinate or projection-set
-digest. Official Product Identity is channel, Release Unit, and canonical NBGV
-version; Official Execution Identity adds immutable target. Different targets
-create separate Executions even when they share Product Identity; no permanent
-Product Identity-to-target ledger is required. Each candidate run attempt
-branches to live Release or release simulation and compiles exactly one
-same-revision, purpose-bound Repository Model Snapshot for its run attempt. The
-resulting live Attempt or simulation pass reuses that Snapshot; a new run
-attempt compiles a new one. NBGV-owning Providers remain pinned to the exact
-target while fetching complete ancestry and tags with `fetch-depth: 0` or an
-equivalent guarantee, and reject shallow or incomplete history before compiling
-version facts. Simulation has separately namespaced request-scoped identity
-derived only after its Snapshot validates and cannot enter live Product,
-Execution, Attempt, authorization, capability, Receipt, or mutation lineage.
-Successful approval alone produces the Authorization Record required by
-capability groups. The first-slice GitHub rejection surface cannot produce
-attempt-bound Approval Outcome Evidence, so rejection is unknown, replayable
-incomplete, and non-authorizing. Cancellation or platform expiry while approval
-is pending may terminate the run before a separate record or Finalizer outcome;
-the platform conclusion proves no side effect only when no capability group
-started, otherwise replay must reobserve. Pre-admission compilation closes
-technical repository, version, build, and artifact facts; post-admission
-live planning, or the corresponding simulation planning pass, selects and
-freezes native projections and the deterministic pre-observation publication
-basis. Build and observation precede materialization of actual live actions and
-key sets in the Publication Snapshot. No Intent reserves an absent coordinate.
+Prior retry-5 destination acceptance is complete historical evidence. Exact
+`.17` through `.20` versions and tags remain intentionally retained, but their
+chronology is not current architecture.
 
-The first-slice Buddy trust decision was reopened and reconfirmed before LLD on
-2026-08-06 as a bounded risk exception. Any same-repository selected ref may
-supply the complete same-revision release stack, including workflow, Planner,
-Finalizer, Providers, Adapters, compiler, clients, catalogs, capability
-declarations, and publisher, without owner-reviewed eligibility. Approval
-of the current Attempt's deployment to the Environment identity mapped from the
-selected Buddy Approval Environment Profile after Publication Snapshot creation
-governs the normal path. Workflow-level permissions remain empty or read-only;
-`packages: write` is declared only on the `run-live-attempt` `uses`-only caller
-job as the reusable-workflow ceiling and on the called
-Environment-referencing publisher job as effective capability. The publisher
-receives short-lived `GITHUB_TOKEN` with no PAT or `id-token: write`.
-`evaluate-live-eligibility` receives only `contents: read`; effective
-`actions: read` is confined to history admission and explicit `packages: read`
-to the observer. All other jobs remain least-privilege, and the callee cannot
-elevate beyond the caller. Approval is not independent semantic validation or a
-malicious-writer permission ceiling. Every repository Write/Maintain/Admin actor
-is inside the slice publisher TCB; if that trust assumption changes, the slice
-blocks until the untrusted actor's access is reduced below
-Write/Maintain/Admin or an independently enforced publisher boundary makes
-package-write Capability and destination access unavailable to writer-authored
-workflows. Ref restrictions and workflow governance alone are insufficient
-remediation. The exception is limited to the disposable smoke package and
-isolated GitHub Packages destination and is not inherited by Official or future
-Buddy destinations or
-production packages.
+## Replacement Contract
 
-The first brief
-[`hcoona-release-smoke-npm` LLD](./hcoona-release-smoke-npm-lld.md)
-was **approved for implementation on 2026-08-06**. It fixes the clean
-v3 package and workflow decomposition, strict binding inventory, first-slice
-quality and release authoring, npm observation/publication boundaries,
-acceptance plan, and dependency-ordered implementation commits. The revised
-draft keeps first-slice CI shadow-only with manual `slice-validation`, holds
-Release Execution concurrency through the reusable live Attempt, defines
-job-scoped reusable-workflow permission ceilings with no workflow-wide package
-write, requires distinct tarball content and install/import Evidence, binds
-approval to an immutable reviewer-summary artifact, handles approval-pending
-cancellation truthfully,
-strictly admits retained same-Execution history as history-only, uses ID-only
-artifact transport, adds exact path-triggered root-HK v3 tests, uses
-`approval-finalizer` as the credential-free publisher admission gate, treats
-GitHub rejection as diagnostic-only unknown state, requires full-SHA action
-pins with the current Renovate-selected Node-24-compatible action major,
-requires 45-day Release retention, defines caller-selected current/history
-admission with same-run prior-attempt support and platform-aware historical
-attribution, exact-target pre-Attempt Live Eligibility Decisions, fixed-source
-protected-ref human TCB/access attestations with exact repository/ref/path
-policy fields, required boolean `live_enabled`, `contents: read` fresh-source
-validation, and bounded operational staleness, immediate pre-Capability
-source/provenance/content revalidation with new-Attempt recovery,
-workflow-run-unique physical artifact names across reruns, permanent consumer
-policy, isolated frozen-version npm staging that updates and verifies the staged
-manifest `files` allowlist, exact packed-tarball witness-path/content checks,
-exact-target full-history/tag NBGV checkout with shallow-history rejection,
-explicit target-specific npm dist-tag projections, a conservative shared
-destination/package GitHub equality group that over-serializes while preserving
-the complete coordinate-plus-tag resource-key set, exact final-match CODEOWNERS
-coverage for the protected Governance document, and Governance re-attestation.
-It sequences removal, disablement, and draining of both legacy Buddy identities
-before a removable protected destination-acceptance bootstrap whose probes
-require `github.run_attempt == 1` and whose terminal evidence capture uses
-`always() && github.run_attempt == 1` to retain dependency failures and
-ambiguous mutation state for reconciliation; retry requires a new reviewed
-invocation and disposable coordinate/version. Failed acceptance leaves all
-Buddy publication disabled. No legacy Buddy compatibility remains;
-former Buddy projects are unsupported until migrated, while v1 Official and CI
-assets remain unchanged. Legacy Buddy workflows, Buddy-specific tests/matrices,
-and Buddy docs are excluded from that preservation and are retired or
-rewritten. The publication-preparation/cancellation closure is complete. Do not
-activate normal live delivery, run real acceptance probes, finalize the
-sentinel target, mutate any package, or begin later-scope work without separate
-explicit approval.
+- A normal Buddy dispatch may select any same-repository ref. GitHub resolves
+  it to one exact SHA that is both the workflow/control revision and Release
+  target. Protected Governance is read separately from `main`. Compatible
+  selected-revision control must strictly admit the active replacement
+  Governance schema; older parsers fail before any Environment job.
+- The bounded static-reference policy has exactly `git-target`, `index`, and
+  `worktree` source kinds. Only exact-SHA `git-target` output is Live evidence;
+  the other two are HK feedback.
+- A clean static result prevents bounded accidental references. It does not
+  prove universal consumer absence or package-token isolation.
+- The target architecture has one authority-bearing Environment,
+  `workflow-delivery-v3-buddy-approval`. It has no Capability Environment or
+  generic Environment Profile.
+- An exact-satisfied zero-action path has no approval, Publication
+  Authorization, publisher, mutation marker, Publication Result, or Receipt.
+  It repeats fresh protected Governance continuity checks before success.
+- A one-action path may form only after the destination primitive proves
+  conditional non-overwriting creation of the complete version-and-target-tag
+  projection. It then durably prepares the Approval Bundle and reviewer
+  summary before the Environment wait, emits the complete Publication
+  Authorization, runs a separate publisher, persists the marker before
+  mutation, performs one admitted compound action, and persists one Publication
+  Result. Standard `npm publish --tag` does not satisfy this gate.
+- Only a successful `published` Result embeds exactly one Receipt.
+- `hcoona` self-approval is explicit operator confirmation inside the accepted
+  writer/publisher TCB, not independent security review.
+- Every authoritative normal-Live job independently requires
+  `github.run_attempt == 1`. Normal-Live records omit run attempt; simulation
+  retains its existing run-attempt identity and rerun semantics.
+- Retry is a new manual dispatch with a new run ID and a complete rebuild,
+  requalification, reobservation, and reapproval when an action remains.
+  GitHub rerun is unsupported.
+- Protected Governance is valid for at most 90 days. Identity is bound to the
+  protected path and blob/content or generation; any later touch of that path
+  invalidates the Attempt even after a revert. Unrelated `main` commits do not.
+- First-slice artifact bytes must be deterministic. Resume of a
+  nondeterministic sealed artifact is deferred.
+- Caller-held Release Execution concurrency and publisher mutable-resource
+  concurrency remain separate and required.
+- Native Actions history is diagnostic only and supplies no publication
+  authority.
+- Activation follows design merge, separately authorized disabled
+  implementation, validation/review/merge, separately authorized obsolete
+  Environment cleanup, accepted destination-primitive race proof, fresh native
+  and Governance evidence including repository retention of at least 45 days,
+  one small Activation PR, readback, one API dispatch returning a run ID, and
+  exact run readback. There is no Preparation PR, `main` freeze, activation
+  SHA/tag, or blind redispatch after an ambiguous response.
 
-Buddy caller-held Release Execution concurrency is complete at `3a2df043`.
-The canonical key derives only from channel, Release Unit, and immutable
-target; request and workflow-run identity remain Attempt transport but do not
-partition the concurrency group. The caller holds the group across the complete
-reusable live Attempt with `cancel-in-progress: false`.
+## Current External Boundary
 
-The historical PR #552 implementation baseline was `4fac140d`. After the
-initial PR head, bounded repairs skipped Git LFS smudge only for Provider Git
-subprocesses, hardened the acceptance proxy, made consumer-policy tokenization
-linear, bound live checkouts and admission to the caller revision, and removed
-the superseded release-build-variant workflow. Non-rewriting merge commit
-`4fac140d` integrated `origin/main` at `191abc82` and preserved upstream
-open-code-review 1.9.5 lock data exactly.
+- Approval Environment `workflow-delivery-v3-buddy-approval` is ID
+  `20895030723`, with reviewer rule `64124473`, sole reviewer
+  `hcoona` / `712433`, `prevent_self_review: false`, zero wait, no secrets,
+  no branch/tag restriction, `can_admins_bypass: false`, marker
+  `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`,
+  and zero deployments.
+- Legacy Environment `workflow-delivery-v3-buddy-github-packages` is ID
+  `20895037877`, with no reviewer or protection rule, zero wait, no secrets,
+  no branch/tag restriction, `can_admins_bypass: false`, legacy marker
+  `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1`,
+  and zero deployments. It is inert in the replacement design but must not be
+  deleted until implementation no longer treats it as input or authority and
+  separate cleanup is authorized.
+- The GitHub Packages credential principal is repository `hcoona/three`.
+  Known reach includes production package `hexo-renderer-asciidoc` and
+  disposable smoke packages. This accepted repository-principal blast radius
+  is neither package isolation nor an exhaustive inventory.
+- Package access remains unchanged. No normal Live dispatch, Approval
+  deployment, publication, tag change, or package mutation has occurred.
 
-The bounded pre-coexistence CI bootstrap design is committed at `7c457b7c`,
-and its implementation, tests, and review closure are committed at
-`f0535989`. The canonical shadow Decision remains
-`incomplete-model-plan`/`fix-model-plan-and-rerun`; no record is rewritten.
-Only while the exact pull-request base tree lacks the canonical v3 CI workflow
-may the enclosing non-authoritative check conclusion project success after
-exact Plan, Decision, Summary, event-identity, and base-tree admission. Manual
-validation, lane failures, mixed diagnostics, malformed records, explicit
-supersession, and post-coexistence pull requests remain red. The exception
-self-disables after merge because the workflow is then present in the base
-tree. Before Phase 1 scope cleanup, the 14-file committed range through
-`f0535989` passed the managed gates with 1,257 workflow-release tests and 3,234
-Workflow Delivery v3 tests. The inherited workflow-release suite is no longer
-retained, so those counts are historical rather than current repair evidence.
-All three original policy, CLI, and workflow reviewers report no findings after
-independent adjudication and repair.
+## Delivery Boundary
 
-Documentation closure is committed at `a9e8cbfa`. Non-rewriting merge commit
-`30b793be` then integrates the latest `origin/main` at `7f8f41c2`, containing
-only the upstream Biome 2.5.9 and Asciidoctor 4.0.10 dependency updates. The
-frozen PNPM and UV lock checks pass after the merge.
+Design delivery consists of:
 
-The implementation review and PR-comment follow-up are complete at behavior
-commit `9f97ef091e8a831f73d81fe91b441aa6ee0520c3`, tree
-`69bec461fcb1047e7beb2ce13a9e9192e5cdf056`, after non-rewriting integration
-of `main` commit `62ffb59bcfbe7845e580d7aea5337afafc88bdf8`. The exact tested merge is
-`59ad1ef2bd9277dc6cc35f897d8230dcf807ecdb`. The prior `e9d812b2` RC-001
-boundary is retained as superseded evidence. The complete repair and
-supersession ledger is in the [AI Agent Handoff](./agent-handoff.md).
+1. validate the complete coherent design set;
+2. complete independent multi-angle review and one-finding-at-a-time TP/FP
+   adjudication;
+3. fix and rereview until every reviewer reports zero findings;
+4. create human-reviewable design commits and deliver a protected design PR;
+   and
+5. reconcile the merged design, then stop.
 
-That historical PR #552 behavior head passed General CI run
-[`32669623270`](https://github.com/hcoona/three/actions/runs/32669623270),
-CodeQL run
-[`32669623284`](https://github.com/hcoona/three/actions/runs/32669623284), and
-dedicated v3 run
-[`32669623261`](https://github.com/hcoona/three/actions/runs/32669623261), all
-on attempt 1. All nine retained v3 payloads match their GitHub byte counts and
-SHA-256 digests and pass canonical admission. Authenticated exact-identity
-replay reproduces the Decision and Summary byte-for-byte and retains Finalizer
-exit `1`, the expected non-authoritative
-`incomplete-model-plan` / `fix-model-plan-and-rerun` result, 295 changed paths,
-78 exclusively unclassified-path diagnostics, four empty lane results, and no
-admitted Evidence or artifact digests. The exact bootstrap projection exits
-`0` while explicitly retaining the canonical failure. Every review thread is
-resolved with either a published repair or recorded false-positive evidence.
+Runtime implementation, Environment cleanup, Governance refresh, activation,
+dispatch, approval, and package mutation remain separate authorization
+boundaries.
 
-That historical PR #552 RC-001 evidence update was a strict documentation-only
-child of the named behavior commit and did not name itself. Its checks were
-external closure evidence and were not recursively documented.
+## Historical Source Rule
 
-[PR #552](https://github.com/hcoona/three/pull/552) merged as
-`5a84bebd05407e1859fe76f400dcb4f4cbcd002e` on 2026-08-24. Normal v3 Live
-remains disabled. Governance converted both legacy Buddy workflow identities
-to `disabled_manually`, verified no nonterminal legacy executions, and proved
-that real old refs now receive disabled-workflow rejection.
-
-Retry-3 cleanup and documentation closure merged through PRs #600 and #601.
-Repair PR #603 then merged as
-`bf1748971f2717a8877852590c5436b4160a4fbf`. It retains closed request-bound
-upstream diagnostics across the acceptance proxy, runner, Adapter, and
-Governance while keeping those diagnostics non-authoritative. It also makes
-the expected-one request reservation atomic. The complete v3 suite passed
-3,782 tests, and focused Pyrefly, HK, independent review/adjudication, required
-checks, and CodeQL passed. No destination-acceptance invocation followed the
-merge before this documentation update, so all three historical attempts
-remain unsuccessful and `.1`-`.12` remain consumed.
-
-Next:
-
-1. preserve all four attempts and their exact evidence as unsuccessful
-   historical replay; do not infer acceptance from destination state or the
-   new diagnostics;
-2. retain retry-4 preparation merge `835b81be` and protected finalization merge
-   `f3d53177` as provenance for the consumed profile. A fresh exact preflight
-   passed before exactly one attempt-1 dispatch, run `33165777024`, from
-   `main`;
-3. retain run `33165777024` as unsuccessful evidence. It observed `.13`
-   absent, started mutation, received a request-bound upstream HTTP 200, and
-   exactly read back `.13`. The proof contract required HTTP 201, so no
-   validated request proof formed. The first probe remained incomplete, the
-   `.14`-`.16` probe was skipped, and terminal Governance evidence classified
-   the run unknown. Authenticated reconciliation confirms exact tag
-   `wdv3-acceptance-13`, tarball SHA-1
-   `7f088ba1708310ef0dba5814da3ad4cf57d49062`, SHA-512
-   `aafe86f3b48a7affc6c160f81bd81d69692fc3789149a7a01e620acd05052d0c7c0e87b7f552b19fc2192a90b6af1201b265cc2475ac28288cc1ab70bfbe7c71`,
-   and target witness `835b81be`; `.14`-`.16` remain absent;
-4. preserve immutable artifacts `9683508663`, `9683519655`, and `9683526452`.
-   Their GitHub-recorded SHA-256 digests match the retained raw bytes, and the
-   terminal Governance artifact passes canonical admission;
-5. retain cleanup PR #610 as rebase-merged without bypass at `4e7e7ef6`.
-   Post-merge CI and CodeQL passed. Fresh authenticated reconciliation
-   confirms the temporary workflow source and workflow-only contract absent,
-   workflow ID `344468231` `deleted`, Environment ID `20772100445` and
-   acceptance refs absent, exactly one historical attempt-1 run, exact `.13`
-   retained, and `.14`-`.16` absent. No post-deletion dispatch occurred. The
-   cleanup-before-repair gate is satisfied, but any further attempt still
-   requires a separately reviewed acceptance-only repair and fresh coordinate
-   block starting from a fresh fetch of this cleanup merge or a later reviewed
-   successor; and
-6. retain response-status repair PR #612 as rebase-merged without bypass at
-   `aed58191ce37defba8f7a7e44def03396c2c6824`. All protected PR checks,
-   including Workflow Delivery v3 shadow CI, passed; post-merge Continuous
-   Integration run `33190125517` and CodeQL run `33190125529` passed on that
-   exact SHA. Fresh authenticated read-only reconciliation confirms no
-   post-merge acceptance invocation, workflow ID `344468231` still deleted
-   with exactly failed attempt-1 run `33165777024`, the temporary Environment
-   absent, and package versions still limited to `.1`, `.5`, `.9`, and `.13`.
-   Any retry-5 profile must start from freshly fetched and revalidated
-   `origin/main` at this merge, or at a later reviewed, merged successor that
-   contains it. For a strictly validated GitHub Packages npm publish exchange,
-   proof authority may use exactly HTTP 200 or HTTP 201, must retain the actual
-   status in response identity, and must still reject HTTP 202, HTTP 204, and
-   every other status. New HTTP 200 diagnostics remain request-bound; the only
-   historical unbound status compatibility remains HTTP 201 adjacent to a
-   matching proof. The exact retry-4 terminal artifact remains unknown because
-   it contains no validated request proof; and
-7. retain work-base clarification PR #613 as rebase-merged without bypass at
-   `8e6baf24ca476b449b5c97c21f14f3776e668b90`; its post-merge Continuous
-   Integration run `33194078923` passed. The retry-5 preparation initially
-   started from that exact `origin/main`. Before delivery, a fresh fetch found
-   the later dependency-only merges #614 and #615 at
-   `origin/main@c33ea9da5456ca0e915e39134ec111714ddc4ec8`; the preparation
-   commits were rebased onto that reviewed successor without file overlap or
-   conflict. It adds only the temporary manual workflow and closed
-   Adapter/Governance profile for absent/exact `.17`, identical-race `.18`,
-   differing-race `.19`, and lost-response `.20`, with the exact corresponding
-   tags and confirmation digest. The preparation target remained forty ASCII
-   zeroes, so validation rejected before Environment review or either
-   package-write probe. The terminal fan-in retains canonical suite records
-   across monotone failure/upload downgrade, treats missing artifact bindings
-   as incomplete, and admits proof authority only for exact HTTP 200 or HTTP 201. Protected preparation PR #616 rebase-merged without bypass as
-   `66154d0bb351a0c9c13d16292ce003d7eee65077`; post-merge Continuous
-   Integration run `33223036097` and CodeQL run `33223036123` passed on that
-   exact SHA. Fresh authenticated revalidation again found `.17`-`.20`, their
-   tags, retry-5 runs, deployments, and acceptance refs absent. The dedicated
-   Environment was created as ID `20815831035` with sole reviewer
-   `hcoona` / `712433`, self-review permitted, and sole custom branch policy
-   `main`; and
-8. retain protected finalization PR #618 as rebase-merged without bypass at
-   `73bf1ecf395bc6d646d3e689e3c9e7fd580948ef`. Its post-merge Continuous
-   Integration run `33265013602` and CodeQL run `33265013646` passed. Fresh
-   exact preflight preceded the sole attempt-1 dispatch, run `33265777858`,
-   which targeted preparation merge `66154d0b` from `main@73bf1ecf`.
-   Deployment `6158274629` received the sole approval from `hcoona`; the
-   bounded reviewer recovery reports deployment-review ID `100993530`.
-   All five jobs succeeded. Artifacts `9718601879`, `9718607290`,
-   `9718615519`, and `9718619450` match their GitHub-recorded SHA-256
-   digests, and the terminal Governance artifact independently re-admits as
-   `complete`. Authenticated reconciliation confirms exact versions and tags
-   `.17`-`.20`, exact tarball bytes and target witnesses, including
-   request-bound HTTP 200 proofs for absent/create `.17` and lost-response
-   `.20`. After evidence capture, workflow ID `345015706` was changed to
-   `disabled_manually`, Environment ID `20815831035` was deleted, deployment
-   `6158274629` became `inactive`, and pending deployments remained empty.
-   Cleanup PR #621 rebase-merged without bypass as
-   `791544371eb3d1aff7376dbd14ae05ed074ff927`; post-merge Continuous
-   Integration run `33268353682` and CodeQL run `33268353678` passed. Fresh
-   authenticated reconciliation confirms the temporary workflow source and
-   workflow-only contract absent, workflow ID `345015706` `deleted` with
-   exactly the one successful attempt-1 run, Environment ID `20815831035` and
-   acceptance refs absent, deployment `6158274629` `inactive`, and exact
-   `.17`-`.20` versions and tags retained. No post-deletion dispatch occurred.
-   The cleanup-before-closure gate is satisfied; and
-9. keep `live_enabled: false`. Destination acceptance is successful, but
-   normal Live activation remains a separate production decision and is not
-   authorized by this acceptance-only execution; and
-10. retain the normal Live design merged by PR #623 as
-    `cda7e2d617ffe1877fb8a389dee336270ec06cda` and the readiness repair merged
-    by PR #624 as `2db88a56df58e3e957fb366390882a6089cebfe1`.
-    PR #629 rebase-merged the Environment identity design as
-    `d2de3356b744e39d31bb4ac0038bdee438c5592d`.
-    On 2026-08-30 the user confirmed a policy-scoped Environment identity
-    model for the repository's single-maintainer operation: Buddy approval is
-    shared only across Release policies with the same reviewer/Governance
-    profile, while capability Environments are shared only across the same
-    destination, credential, permission, and access profile, with reviewer
-    policy fixed to `none` under the current one-approval architecture. The
-    first slice maps those profiles to `workflow-delivery-v3-buddy-approval`
-    and `workflow-delivery-v3-buddy-github-packages`. Sharing never transfers
-    package Governance, approval, Authorization, Capability, or Attempt/package
-    lineage; GitHub's Environment-level deployment history is shared.
-    PR #630 rebase-merged the protected atomic implementation rename as
-    `9c9901cc38297d212de48d4b51349872ef60d5b4` while false. All required PR
-    checks and the 18/18-file Copilot review passed. Exact post-merge CodeQL
-    and the non-overlapping successor `main` CI and CodeQL passed.
-    After separate explicit authorization, the permanent approval Environment
-    `20895030723` and capability Environment `20895037877` were created with
-    their exact markers and authenticated-read configurations. API readback
-    reports `can_admins_bypass: false`, and both authenticated UI settings were
-    saved and reloaded with the bypass control still unchecked. Provisioning
-    evidence PR #635 rebase-merged as
-    `5cae672c139de1956a96e75f02f224c826c06939`; post-merge Continuous
-    Integration run `33343870709` passed. Governance remains false; no
-    deployment or normal workflow run exists; and preparation, activation,
-    dispatch, approval, package mutation, retry, and Break-Glass remain
-    unauthorized.
+Git history and the append-only
+[`docs/wiki/log.md`](../../../log.md) carry chronology. Current-state pages
+describe current truth and must not reproduce retry ledgers, PR narratives,
+test-count histories, artifact tables, or superseded mechanisms.
