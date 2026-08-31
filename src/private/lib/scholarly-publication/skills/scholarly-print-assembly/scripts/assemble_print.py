@@ -1612,7 +1612,26 @@ def validate_consumed_blocks(assembly: Assembly) -> list[Path]:
         validate_schema(blocks, "source-blocks.schema.json", f"source blocks for {page_id}")
         if blocks["page_id"] != page_id:
             fail(f"source block file page_id does not match {page_id}")
-        available = set(index_objects(blocks["blocks"], "id", "source block"))
+        indexed = index_objects(blocks["blocks"], "id", "source block")
+        width = finite_number(page["width"], "page width")
+        height = finite_number(page["height"], "page height")
+        for position, block in enumerate(blocks["blocks"], start=1):
+            block_id = block["id"]
+            expected_id = f"{page_id}-block-{position:04d}"
+            if block_id != expected_id:
+                fail(f"source block {position} id must be {expected_id}")
+            if block["source_order"] != position:
+                fail(f"source block {block_id} source_order must be {position}")
+            if not block["text"].strip():
+                fail(f"source block {block_id} text is blank")
+            bbox = [
+                finite_number(value, f"source block {block_id} bbox coordinate")
+                for value in block["bbox"]
+            ]
+            x0, y0, x1, y1 = bbox
+            if x0 < 0 or y0 < 0 or x1 <= x0 or y1 <= y0 or x1 > width or y1 > height:
+                fail(f"source block {block_id} bbox is outside the source page")
+        available = set(indexed)
         missing = sorted(block_ids - available)
         if missing:
             fail(f"selected source blocks are absent on {page_id}: " + ", ".join(missing))

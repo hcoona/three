@@ -1038,6 +1038,10 @@ class AssemblePrintReplacementTests(unittest.TestCase):
     def test_source_hash_status_and_block_mismatches(
         self,
     ) -> None:
+        def refresh_blocks(workspace: Path) -> None:
+            self.refresh_source_asset(workspace, 0, "blocks")
+            self.refresh_bundle_source(workspace)
+
         def source_hash(workspace: Path) -> None:
             self.update_json(
                 workspace / "translation-bundle.json",
@@ -1061,19 +1065,111 @@ class AssemblePrintReplacementTests(unittest.TestCase):
                 blocks_path,
                 lambda blocks: blocks.update({"page_id": "pdf-9999"}),
             )
-            self.refresh_source_asset(workspace, 0, "blocks")
-            self.refresh_bundle_source(workspace)
+            refresh_blocks(workspace)
+
+        def block_id(workspace: Path) -> None:
+            identifier = "pdf-0001-block-9999"
+            blocks_path = (
+                workspace / "source" / "pages" / "pdf-0001" / "blocks.json"
+            )
+            self.update_json(
+                blocks_path,
+                lambda blocks: blocks["blocks"][0].update({"id": identifier}),
+            )
+            self.update_json(
+                workspace / "translation-bundle.json",
+                lambda bundle: bundle["fragments"][0][
+                    "source_block_ids"
+                ].__setitem__(0, identifier),
+            )
+            refresh_blocks(workspace)
+
+        def block_order(workspace: Path) -> None:
+            blocks_path = (
+                workspace / "source" / "pages" / "pdf-0001" / "blocks.json"
+            )
+            self.update_json(
+                blocks_path,
+                lambda blocks: blocks["blocks"][0].update({"source_order": 2}),
+            )
+            refresh_blocks(workspace)
+
+        def block_text(workspace: Path) -> None:
+            blocks_path = (
+                workspace / "source" / "pages" / "pdf-0001" / "blocks.json"
+            )
+            self.update_json(
+                blocks_path,
+                lambda blocks: blocks["blocks"][0].update({"text": " "}),
+            )
+            refresh_blocks(workspace)
+
+        def block_bbox(workspace: Path) -> None:
+            blocks_path = (
+                workspace / "source" / "pages" / "pdf-0001" / "blocks.json"
+            )
+            self.update_json(
+                blocks_path,
+                lambda blocks: blocks["blocks"][0].update(
+                    {"bbox": [0, 0, 361, 20]}
+                ),
+            )
+            refresh_blocks(workspace)
 
         cases = (
             ("hash", source_hash),
             ("status", source_status),
             ("block-page", block_page),
+            ("block-id", block_id),
+            ("block-order", block_order),
+            ("block-text", block_text),
+            ("block-bbox", block_bbox),
         )
         for name, mutation in cases:
             with self.subTest(case=name):
                 workspace = self.fresh_workspace(name)
                 mutation(workspace)
                 self.assert_build_rejected(workspace)
+
+    def test_consumed_block_validation_respects_stage_boundaries(
+        self,
+    ) -> None:
+        def unconsumed_blocks(workspace: Path) -> None:
+            blocks_path = (
+                workspace / "source" / "pages" / "pdf-0003" / "blocks.json"
+            )
+            self.update_json(
+                blocks_path,
+                lambda blocks: blocks["blocks"][0].update({"source_order": 2}),
+            )
+            self.refresh_source_asset(workspace, 2, "blocks")
+            self.refresh_bundle_source(workspace)
+
+        def reconstruction_counts(workspace: Path) -> None:
+            self.update_json(
+                workspace / "source" / "source-package.json",
+                lambda source: source["pages"][0].update(
+                    {
+                        "block_count": 0,
+                        "text_characters": 0,
+                        "replacement_characters": 1,
+                    }
+                ),
+            )
+            self.refresh_bundle_source(workspace)
+
+        cases = (
+            ("unconsumed-blocks", unconsumed_blocks),
+            ("reconstruction-counts", reconstruction_counts),
+        )
+        for name, mutation in cases:
+            with self.subTest(case=name):
+                workspace = self.fresh_workspace(name)
+                mutation(workspace)
+
+                result = self.build(workspace)
+
+                self.assertEqual(0, result.exit_code, result)
 
     def test_figure_mismatch_rejections(self) -> None:
         def absent_figure(workspace: Path) -> None:
