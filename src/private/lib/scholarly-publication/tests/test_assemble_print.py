@@ -995,7 +995,7 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
         self.assertEqual(before, tree_snapshot(output))
 
-    def test_cli_rejects_deeply_nested_json_without_mutating_output(
+    def test_cli_rejects_deeply_nested_invalid_spec_without_mutating_output(
         self,
     ) -> None:
         workspace = self.fresh_workspace("deeply-nested-json")
@@ -1013,9 +1013,12 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         self.assertEqual(2, result.exit_code, result)
         self.assertEqual({}, result.report)
         self.assertEqual("", result.stdout)
-        self.assertIn(
-            "error: assembly specification is not valid JSON:",
+        self.assertRegex(
             result.stderr,
+            (
+                r"^error: assembly specification "
+                r"(?:is not valid JSON:|violates assembly-spec\.schema\.json:)"
+            ),
         )
         self.assertNotIn("Traceback", result.stderr)
         self.assertEqual(before, tree_snapshot(output))
