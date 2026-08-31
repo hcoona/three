@@ -443,6 +443,19 @@ If it conflicts with the
   "Allow administrators to bypass configured protection rules" remained
   unchecked. No deployment was created, both normal workflows retain zero runs,
   protected Governance remains false, and package/tag state is unchanged.
+- Provisioning evidence PR #635 was rebased over non-overlapping dependency
+  PRs #633 and #634, then rebase-merged without bypass as
+  `5cae672c139de1956a96e75f02f224c826c06939`. All required checks passed.
+  Exact-head Copilot review covered 9/9 files with zero comments and requested
+  only final human verification of the external UI evidence. Authenticated
+  owner comment
+  `https://github.com/hcoona/three/pull/635#issuecomment-5472131067` records
+  that save/reload confirmation. Post-merge Continuous Integration run
+  `33343870709` passed.
+- Fresh post-merge readback confirms both exact Environment configurations and
+  markers, zero secrets, zero related deployments, absent same-name repository
+  variables, and zero runs for both normal workflows. Protected Governance
+  remains false, and the nine-version package/dist-tag inventory is unchanged.
 - The Environment-creation prerequisite is complete. Future delivery remains
   ordered, but is not authorized by this phase: protected preparation evidence
   while false, freeze of other `main` writes and normal dispatch, minimal

@@ -1997,6 +1997,12 @@ for both Environments. The owner saved and reloaded both authenticated settings
 pages and confirmed that "Allow administrators to bypass configured protection
 rules" remained unchecked. The UI and supplemental API evidence agree.
 
+Provisioning evidence PR #635 rebase-merged without bypass as
+`5cae672c139de1956a96e75f02f224c826c06939`; all required checks and
+post-merge Continuous Integration run `33343870709` passed. Fresh readback
+retains the exact settings above with zero related deployments and zero normal
+workflow runs.
+
 No branch restriction is intentional because `WD-SLICE-001` permits any
 same-repository selected ref. The first activation Attempt is nevertheless
 constrained operationally to `main` at the exact activation merge SHA.

@@ -6615,3 +6615,33 @@ Environment configuration is ready for a separately authorized preparation
 decision; it grants no preparation or activation authority by itself.
 
 <!-- END APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-research -->
+
+<!-- BEGIN APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-research -->
+
+## Workflow Delivery v3 permanent Environment provisioning closure research
+
+- Main advanced from the original PR base through dependency-only PRs #633 and
+  #634. Their six workflow-pin and .NET package paths did not overlap the nine
+  provisioning-evidence paths. Rebase retained the exact documentation diff.
+- All required checks passed on rebased head
+  `7f9782ff4ee3d2199d6c03f78de017a38a756d4d`.
+- Exact-head Copilot review covered 9/9 files with zero comments. Its
+  "Needs a closer look" summary identified a verification boundary rather than
+  a documentation defect: an AI reviewer cannot authenticate the GitHub
+  settings UI.
+- Repository owner `hcoona` had already saved and reloaded both settings pages.
+  Authenticated PR comment
+  `https://github.com/hcoona/three/pull/635#issuecomment-5472131067` makes that
+  human evidence durable. No diff correction was required.
+- PR #635 rebase-merged without bypass as
+  `5cae672c139de1956a96e75f02f224c826c06939`; post-merge Continuous
+  Integration run `33343870709` passed.
+- Fresh external readback retained both Environment IDs, approval rule and
+  reviewer, no capability protection rule, exact markers, zero secrets,
+  `deployment_branch_policy: null`, supplemental `can_admins_bypass: false`,
+  zero related deployments, and zero normal workflow runs.
+
+The Environment-creation gate is complete. Protected preparation remains a
+separate authorization decision.
+
+<!-- END APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-research -->

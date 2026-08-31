@@ -6998,3 +6998,29 @@ Live dispatch, approval, package/tag mutation, acceptance ref, retry, legacy,
 or Break-Glass operation.
 
 <!-- END APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-plan -->
+
+<!-- BEGIN APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-plan -->
+
+## Workflow Delivery v3 permanent Environment provisioning closure
+
+This closure supersedes the outstanding delivery box in the preceding
+append-only provisioning plan.
+
+- [x] Rebase the evidence branch over non-overlapping dependency successors.
+- [x] Pass exact-head required checks and 9/9-file Copilot review with zero
+  comments.
+- [x] Record the authenticated owner's final UI save/reload verification in PR
+  #635.
+- [x] Rebase-merge PR #635 without bypass as
+  `5cae672c139de1956a96e75f02f224c826c06939`.
+- [x] Pass post-merge Continuous Integration run `33343870709`.
+- [x] Reconcile exact Environment settings and markers, zero secrets,
+  deployments, and normal runs, Governance false, and unchanged package/tag
+  state.
+
+Permanent Environment provisioning is complete. Protected preparation remains
+blocked pending separate explicit authorization. This closure grants no
+preparation, activation, normal Live dispatch, approval, package/tag mutation,
+acceptance ref, retry, legacy, or Break-Glass authority.
+
+<!-- END APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-plan -->

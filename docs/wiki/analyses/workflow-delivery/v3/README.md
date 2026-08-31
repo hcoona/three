@@ -347,7 +347,10 @@ Next:
     `20895030723` and capability Environment `20895037877` were created with
     their exact markers and authenticated-read configurations. API readback
     reports `can_admins_bypass: false`, and both authenticated UI settings were
-    saved and reloaded with the bypass control still unchecked. Governance
-    remains false; no deployment or normal workflow run exists; and
-    preparation, activation, dispatch, approval, package mutation, retry, and
-    Break-Glass remain unauthorized.
+    saved and reloaded with the bypass control still unchecked. Provisioning
+    evidence PR #635 rebase-merged as
+    `5cae672c139de1956a96e75f02f224c826c06939`; post-merge Continuous
+    Integration run `33343870709` passed. Governance remains false; no
+    deployment or normal workflow run exists; and preparation, activation,
+    dispatch, approval, package mutation, retry, and Break-Glass remain
+    unauthorized.
