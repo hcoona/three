@@ -204,7 +204,7 @@ dependencies:
     .agents/skills/scholarly-print-assembly/references/assembly-contract.md: sha256:6575eed756db4b479cd28cd7a3e42597fc6fdf5bd14fd2f3c943875dc92c4b7b
     .agents/skills/scholarly-print-assembly/references/mixed-script-print.md: sha256:ad369a5574857bee113b09d864beca728c7e8e729cc1460ccb5bd39666d261db
     .agents/skills/scholarly-print-assembly/references/music-notation-markup.md: sha256:e86c4c38d222daa26dde5bcceb3b11abe806c7bd815e6498d4ab1eef9edabf6a
-    .agents/skills/scholarly-print-assembly/scripts/assemble_print.py: sha256:7e90b800b10d026d5f3429a735d19b68631542894ab254985dc8abdfb08baa18
+    .agents/skills/scholarly-print-assembly/scripts/assemble_print.py: sha256:94d04bf936455c37c3ca78a2f720c07f623c5bab356d6a098fb4275d751f2938
     .agents/skills/scholarly-render-qa/SKILL.md: sha256:e31e0e370310f310ed2f0f4b8b2c2be64a54bf583c609ab2a27bb9112e3dbc42
     .agents/skills/scholarly-render-qa/assets/assembly-manifest.schema.json: sha256:e1db861db4c6742aeb4376a4e30dc2de66270d212d2774e9b863057865bbfac8
     .agents/skills/scholarly-render-qa/assets/publication-profile.json: sha256:ba56046efd78fe5b8589ea429e20e777de06f7e759fba23bc3ef446ba4d2312c
@@ -212,7 +212,7 @@ dependencies:
     .agents/skills/scholarly-render-qa/assets/release-manifest.schema.json: sha256:5da0c709cc91cd77faef793f4fdafc56b02bdb1cdd318b6d79f215224441dbc4
     .agents/skills/scholarly-render-qa/references/music-notation-qa-profile.md: sha256:f491929d692b979c3a0dcbe7b8f62afeee1867e4f8e1be38da41c29f7bf56918
     .agents/skills/scholarly-render-qa/references/qa-contract.md: sha256:4b1387bca36dcbdbc3d540b3f114f0f89b1e3b541ed41fb4240dccb30aaae453
-    .agents/skills/scholarly-render-qa/scripts/audit_publication.py: sha256:a4fc2f17281088196ee48a5bba94454669bb3042db5e728b70929406d5813827
+    .agents/skills/scholarly-render-qa/scripts/audit_publication.py: sha256:5340e82a24a9f4d5e9eacb3332c3fb0c1db6e8dd79ecadf1e4288a26f006009f
   source: local
   local_path: ./src/private/lib/scholarly-publication
   declared_license: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
@@ -3820,7 +3820,7 @@ deployments:
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:7e90b800b10d026d5f3429a735d19b68631542894ab254985dc8abdfb08baa18
+  content_hash: sha256:94d04bf936455c37c3ca78a2f720c07f623c5bab356d6a098fb4275d751f2938
 - kind: project-relative
   target: agents
   value: .agents/skills/scholarly-render-qa
@@ -3901,7 +3901,7 @@ deployments:
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:a4fc2f17281088196ee48a5bba94454669bb3042db5e728b70929406d5813827
+  content_hash: sha256:5340e82a24a9f4d5e9eacb3332c3fb0c1db6e8dd79ecadf1e4288a26f006009f
 - kind: project-relative
   target: agents
   value: .agents/skills/setup-local-sdk

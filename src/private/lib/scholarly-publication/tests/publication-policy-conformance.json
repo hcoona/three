@@ -8,6 +8,26 @@
       "content": "<p id=\"term-1\" class=\"term\" lang=\"zh-Hans\" aria-describedby=\"note-1\">正文 <a href=\"#note-1\">note</a></p><p id=\"note-1\">Note</p>"
     },
     {
+      "id": "authored-utility-and-near-match-classes",
+      "accepted": true,
+      "content": "<p class=\"keep-with-next keep-together atomic bilingual-term music-token figure-label publication-figure-note figure-parts-label figure-partial\">Allowed classes</p>"
+    },
+    {
+      "id": "assembler-owned-publication-figure-class",
+      "accepted": false,
+      "content": "<p class=\"publication-figure\">Reserved class</p>"
+    },
+    {
+      "id": "assembler-owned-figure-parts-class",
+      "accepted": false,
+      "content": "<p class=\"figure-parts\">Reserved class</p>"
+    },
+    {
+      "id": "assembler-owned-figure-part-class",
+      "accepted": false,
+      "content": "<p class=\"keep-together figure-part\">Reserved class</p>"
+    },
+    {
       "id": "figure-marker",
       "accepted": true,
       "content": "<section><!-- figure: example-1 --></section>"

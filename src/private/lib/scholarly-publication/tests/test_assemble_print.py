@@ -1011,6 +1011,7 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         cases = (
             ("undeclared-element", "<video>media</video>"),
             ("undeclared-attribute", '<p data-extra="x">text</p>'),
+            ("assembler-owned-class", '<p class="figure-part">text</p>'),
         )
         for name, markup in cases:
             with self.subTest(case=name):
@@ -1212,11 +1213,24 @@ class AssemblePrintReplacementTests(unittest.TestCase):
             )
             self.refresh_figure_map(workspace)
 
+        def caption_class(workspace: Path) -> None:
+            self.update_json(
+                workspace / "assembly-spec.json",
+                lambda value: value["figures"][0].update(
+                    {
+                        "caption_html": (
+                            '<span class="figure-parts">Caption</span>'
+                        )
+                    }
+                ),
+            )
+
         cases = (
             ("figure", absent_figure),
             ("part-order", part_order),
             ("bbox", bbox),
             ("profile-identifier", profile_identifier),
+            ("caption-class", caption_class),
         )
         for name, mutation in cases:
             with self.subTest(case=name):

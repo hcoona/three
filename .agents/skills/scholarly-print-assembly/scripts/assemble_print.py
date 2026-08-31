@@ -719,6 +719,13 @@ def validate_attribute_value(name: str, value: str, context: str) -> None:
     else:
         fail(f"{context} has no fixed value policy")
 
+def authored_class_tokens(value: str, context: str) -> list[str]:
+    validate_attribute_value("class", value, context)
+    tokens = value.split()
+    reserved = GENERATED_CLASSES.intersection(tokens)
+    require(not reserved, f"{context} uses assembler-owned classes: " + ", ".join(sorted(reserved)))
+    return tokens
+
 def parse_markup(content: str, profile: JsonObject, context: str, *, allow_figure_markers: bool) -> Markup:
     ensure_utf8_text(content, context)
     parser = html5lib.HTMLParser(tree=html5lib.getTreeBuilder("etree"), strict=False,
@@ -768,7 +775,11 @@ def parse_markup(content: str, profile: JsonObject, context: str, *, allow_figur
                             f"{context} contains a namespaced attribute")
                     require(name in allowed, f"{context} contains undeclared attribute {name!r} on <{tag}>")
                     value = ensure_utf8_text(raw_value, f"{context} <{tag}> {name}")
-                    validate_attribute_value(name, value, f"{context} <{tag}> {name}")
+                    attribute_context = f"{context} <{tag}> {name}"
+                    if name == "class":
+                        authored_class_tokens(value, attribute_context)
+                    else:
+                        validate_attribute_value(name, value, attribute_context)
                     if name == "id":
                         if value in identifiers:
                             fail(f"{context} contains duplicate id {value!r}")
@@ -817,11 +828,8 @@ def class_tokens(value: Any, context: str) -> list[str]:
     text = ensure_utf8_text(value, context)
     if not text.strip():
         return []
-    validate_attribute_value("class", text, context)
-    tokens = text.split()
+    tokens = authored_class_tokens(text, context)
     require(len(tokens) == len(set(tokens)), f"{context} contains duplicate class tokens")
-    reserved = GENERATED_CLASSES.intersection(tokens)
-    require(not reserved, f"{context} uses assembler-owned classes: " + ", ".join(sorted(reserved)))
     return tokens
 
 def validate_recipe(value: JsonObject, profile: JsonObject) -> Recipe:

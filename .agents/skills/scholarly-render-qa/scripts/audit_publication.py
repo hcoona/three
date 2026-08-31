@@ -1119,6 +1119,13 @@ def validate_fragment(
                 errors.append(f"{label}: <{node.tag}> attribute {name} is not allowed")
             elif not validate_attribute(name, value):
                 errors.append(f"{label}: <{node.tag}> attribute {name} is invalid")
+            elif name == "class":
+                reserved = GENERATED_CLASSES.intersection((value or "").split())
+                if reserved:
+                    errors.append(
+                        f"{label}: <{node.tag}> class uses assembler-owned "
+                        f"classes: {', '.join(sorted(reserved))}"
+                    )
             if name == "id":
                 text = value or ""
                 if text in identifiers:
@@ -1790,8 +1797,12 @@ def validate_figure(
             f"figure {figure['id']} caption",
         )
         errors.extend(caption_findings)
-        caption_ok = not caption_findings and caption_matches(caption, figure["caption_html"])
-        if not caption_ok:
+        caption_matches_manifest = caption_matches(
+            caption,
+            figure["caption_html"],
+        )
+        caption_ok = not caption_findings and caption_matches_manifest
+        if not caption_matches_manifest:
             errors.append(f"figure {figure['id']} caption does not match manifest")
         crop_nodes = elements(parts)
         if len(crop_nodes) != len(figure["parts"]):

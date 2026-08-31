@@ -1607,6 +1607,93 @@ class AuditPublicationReplacementTests(unittest.TestCase):
                     )["passed"]
                 )
 
+    def test_authored_reserved_classes_are_rejected_at_qa_boundaries(
+        self,
+    ) -> None:
+        publication = self.fresh_publication("reserved-classes")
+        fragment_logical = "fragments/section-one.html"
+        fragment_path = publication / fragment_logical
+        fragment_path.write_text(
+            fragment_path.read_text(encoding="utf-8").replace(
+                "<p>",
+                '<p class="publication-figure">',
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        index_logical = "index.html"
+        index_path = publication / index_logical
+        index_content = index_path.read_text(encoding="utf-8").replace(
+            "<p>",
+            '<p class="publication-figure">',
+            1,
+        )
+        caption = (
+            '<span class="figure-label publication-figure">Figure 1.</span> '
+            "Deterministic vector figure."
+        )
+        index_content = index_content.replace(
+            '<span class="figure-label">Figure 1.</span> '
+            "Deterministic vector figure.",
+            caption,
+            1,
+        )
+        index_path.write_text(index_content, encoding="utf-8")
+
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        manifest["figures"][0]["caption_html"] = caption
+        manifest["figures"][0]["caption_sha256"] = sha256_bytes(
+            caption.encode()
+        )
+        write_json(manifest_path, manifest)
+        self.refresh_asset(publication, fragment_logical)
+        self.refresh_asset(publication, index_logical)
+
+        evidence = self.assert_blocked(
+            publication,
+            self.case_root / "review-reserved-classes",
+            {"html.offline-profile", "figures.crop-bindings"},
+        )
+
+        html_findings = self.check_by_id(
+            evidence,
+            "html.offline-profile",
+        )["evidence"]["findings"]
+        self.assertTrue(
+            any(
+                "fragment section-one: <p> class uses assembler-owned "
+                "classes: publication-figure" in str(finding)
+                for finding in html_findings
+            )
+        )
+        figure_findings = self.check_by_id(
+            evidence,
+            "figures.crop-bindings",
+        )["evidence"]["findings"]
+        self.assertTrue(
+            any(
+                "figure integration-figure caption: <span> class uses "
+                "assembler-owned classes: publication-figure" in str(finding)
+                for finding in figure_findings
+            )
+        )
+        self.assertNotIn(
+            "figure integration-figure caption does not match manifest",
+            figure_findings,
+        )
+        figure_records = self.check_by_id(
+            evidence,
+            "figures.crop-bindings",
+        )["evidence"]["figures"]
+        figure_record = next(
+            record
+            for record in figure_records
+            if record["id"] == "integration-figure"
+        )
+        self.assertFalse(figure_record["caption_matches"])
+
     def test_text_read_failures_emit_path_neutral_diagnostics(self) -> None:
         publication = self.fresh_publication("text-read-failures")
         manifest = read_json(publication / "assembly-manifest.json")
