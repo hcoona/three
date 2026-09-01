@@ -13833,3 +13833,72 @@ remains accurate for the pre-repair PR head and is superseded for the final
 committed range by this entry.
 
 <!-- END APPEND: 2026-09-01-wdv3-python314-ci-path-erratum -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-python314-mise-boundary-closure -->
+
+## Workflow Delivery v3 Python 3.14 mise boundary closure
+
+The second automatic PR #644 Continuous Integration run against commit
+`c3342116b0481fb5fa71c46340ac7111488b7191` closed the first repair's two
+failure modes but exposed a separate mise task-run boundary defect.
+
+### Observed failure
+
+- Run `33557756428`, job `100025079624`, no longer reported missing
+  static-reference preparation stamps.
+- The installed-wheel provenance smoke passed, confirming that isolated pinned
+  Python 3.13 execution no longer replaced the outer Python 3.14 `.venv`.
+- The explicit `mise run prepare:static-reference-authorities` call
+  auto-installed the repository-wide mise tool set, including Node, and created
+  a mise-managed `node` shim ahead of the `actions/setup-node` executable.
+- Node adapter tests correctly retained `PATH` while replacing `HOME` and
+  configuration roots. The new shim then lacked its ambient mise trust and
+  installation state, so `node --version` exited 1.
+- The remote job ended with `85 failed, 4154 passed, 147 errors`.
+
+### Independent adjudication
+
+| Finding | Disposition | Bounded decision |
+|---|---|---|
+| Explicit authority preparation auto-installed unrelated mise tools | TP | Disable task-run auto-install for this already-bootstrapped CI boundary. |
+| General Python CI should match the Buddy preparation boundary | TP | Use a dedicated preparation step after dependency installation and before tests, with exact `MISE_TASK_RUN_AUTO_INSTALL: 'false'`. |
+| The Node adapter should preserve mise state or bypass mise shims | FP | That would weaken the credential-free environment or couple the adapter to one tool manager while leaving the contaminating CI side effect in place. |
+
+### Correction
+
+- `.github/workflows/ci.yml` now gives authority preparation its own step
+  between dependency installation and the complete Python test run.
+- The step sets `MISE_TASK_RUN_AUTO_INSTALL` to the string `false` and invokes
+  the existing `prepare:static-reference-authorities` task exactly once.
+- The direct delivery contract verifies the distinct step, exact environment,
+  exact command, uniqueness, and ordering.
+- Both exact workflow reconstructions remove the new step separately and retain
+  baseline digest
+  `a0ca041623f8f90771a35c25bc14ceeb25810111c50dfcb17b6e34d988f62fca`.
+- `adapters/node.py` remains unchanged, and the preparation task retains its
+  official uv `--isolated` boundary.
+
+### Validation and review
+
+| Gate | Observed result |
+|---|---|
+| Exact preparation with task-run auto-install disabled | passed; authority artifacts were prepared without repository-wide mise installation |
+| Focused workflow reconstruction contracts | `3 passed` |
+| Python 3.14 remote-failure regression cluster | `434 passed in 93.51s` |
+| Complete Workflow Delivery v3 suite under isolated Python 3.14 | `4,234 passed in 440.96s` |
+| Initial changed-worktree HK `small+medium` | exposed only one Ruff formatting difference; check-only/no-stage changed no files |
+| Post-format changed-worktree HK `small+medium` | passed; `v3-control-pytest` reported `4,234 passed in 433.19s`; actionlint, Ruff, Node pin authority, and all other selected steps passed |
+| Final five-file delivery-diff HK `small+medium` | passed; `v3-control-pytest` reported `4,234 passed in 435.96s`; actionlint, Ruff, typos, editorconfig, Node pin authority, and static-reference checks passed |
+| Canonical index static-reference scan | `clean`; policy digest `sha256:c9647d381e07fd54dcf187cca242064eb00fe702201f0428689aa7a4c50f599d` |
+| Canonical worktree static-reference scan | `clean`; same policy digest |
+| Production workflow review | **No findings** |
+| Exact contract-test review | **No findings** |
+
+Current counts remain 1,325 Python test functions and 4,234 collected pytest
+cases; `test_static_reference_delivery.py` still contains four test functions.
+
+The correction adds no runtime authority and preserves `live_enabled=false`.
+It performs no workflow dispatch, Approval, deployment, Governance or
+Environment mutation, package publication, or tag mutation.
+
+<!-- END APPEND: 2026-09-01-wdv3-python314-mise-boundary-closure -->
