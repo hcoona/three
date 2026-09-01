@@ -112,9 +112,10 @@ core. A release manifest is valid only for a mechanical pass. A changed
 publication is a completed blocking result that may publish evidence; it is
 not release eligible.
 
-The legacy check ID `html.offline-profile` means bundled profile identity plus
-observable offline, passive-resource, stylesheet, language, and semantic
-content outcomes. It does not claim authored or generated profile
+The legacy check ID `html.offline-profile` means observable offline,
+passive-resource, stylesheet, language, and semantic content outcomes.
+Manifest-to-bundled profile identity and hash binding belong to
+`manifest.integrity`. Neither check claims authored or generated profile
 conformance.
 
 ## Fresh review transaction

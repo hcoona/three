@@ -2781,8 +2781,8 @@ def build_evidence(
         "html.offline-profile",
         not html_errors and not request_errors,
         (
-            "Bundled profile identity and observable offline, passive-resource, "
-            "stylesheet, document-language, and semantic-content outcomes match."
+            "Observable offline, passive-resource, stylesheet, document-language, "
+            "and semantic-content outcomes match."
         ),
         {
             "findings": html_errors,
@@ -2846,8 +2846,8 @@ def build_evidence(
         binding_pass,
         (
             "Both renders bind every manifest figure, visible caption, crop, "
-            "source SVG, source box, and viewBox exactly once; computed "
-            "accessible names and rendered aspect ratios match within relative "
+            "source SVG, source box, and viewBox exactly once; normalized raw "
+            "aria-label values and rendered aspect ratios match within relative "
             "tolerance."
         ),
         {

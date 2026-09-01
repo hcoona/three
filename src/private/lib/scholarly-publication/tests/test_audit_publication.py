@@ -552,6 +552,12 @@ class AuditPublicationScenarioTests(unittest.TestCase):
                 for check in evidence["checks"]
             )
         )
+        figure_message = self.check_by_id(
+            evidence,
+            "figures.crop-bindings",
+        )["message"]
+        self.assertIn("normalized raw aria-label values", figure_message)
+        self.assertNotIn("computed accessible names", figure_message)
         self.assert_path_neutral_artifact(evidence, publication)
         extended_evidence = copy.deepcopy(evidence)
         extended_evidence["checks"].append(
@@ -1300,6 +1306,22 @@ class AuditPublicationScenarioTests(unittest.TestCase):
         )
         self.assertFalse(crop["source_matches"])
         self.assertFalse(crop["viewbox_matches"])
+
+    def test_profile_binding_failure_stays_in_manifest_integrity(self) -> None:
+        publication = self.fresh_publication("profile-binding")
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        manifest["policies"]["publication_profile"]["sha256"] = "0" * 64
+        write_json(manifest_path, manifest)
+
+        evidence = self.assert_blocked(
+            publication,
+            self.case_root / "review-profile-binding",
+            {"manifest.integrity"},
+        )
+        offline = self.check_by_id(evidence, "html.offline-profile")
+        self.assertTrue(offline["passed"])
+        self.assertNotIn("profile identity", offline["message"].casefold())
 
     def test_manifest_integrity_and_no_review_operational_matrix(self) -> None:
         invalid = self.fresh_publication("schema-invalid")

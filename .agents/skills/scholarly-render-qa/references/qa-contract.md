@@ -198,9 +198,10 @@ Overflow must be evaluated against the manifest printable width using genuine
 rendered layout. Viewport/probe orchestration is an implementation choice
 provided document overflow and bounded offending element boxes are observed.
 
-The legacy core ID `html.offline-profile` covers profile identity plus these
-observable offline, passive-resource, stylesheet, language, and semantic
-content outcomes. It is not a claim of authored/generated profile parity.
+The legacy core ID `html.offline-profile` covers these observable offline,
+passive-resource, stylesheet, language, and semantic content outcomes.
+Manifest-to-bundled profile identity and hash binding belong to
+`manifest.integrity`. Neither check claims authored/generated profile parity.
 
 ## PDF observations
 
