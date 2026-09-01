@@ -184,35 +184,35 @@ dependencies:
   - .agents/skills/scholarly-render-qa/references/qa-contract.md
   - .agents/skills/scholarly-render-qa/scripts/audit_publication.py
   deployed_file_hashes:
-    .agents/skills/scholarly-pdf-reconstruction/SKILL.md: sha256:16280ebf45e26f00b25c4d2fdc506d7d0e2c486ec60317d48d79b290ce89cef0
+    .agents/skills/scholarly-pdf-reconstruction/SKILL.md: sha256:f5abdff078ab34da534c97fdde8e9f7feb784d6f4150604fd4297a1726238d64
     .agents/skills/scholarly-pdf-reconstruction/assets/figure-map.schema.json: sha256:91fd4a94dc55a383c409dc1247565af76db619330574328406700d893de956f6
     .agents/skills/scholarly-pdf-reconstruction/assets/section-map.schema.json: sha256:b70abbb9c21b530040ea5363f5b73deebc67836b4cfbff60e6ffca0eb0644620
-    .agents/skills/scholarly-pdf-reconstruction/assets/source-blocks.schema.json: sha256:0e60c806e1e0f50c24a9c6e3b8a61b4bfbd191680ba49126a2ba3f9af32d5c0a
-    .agents/skills/scholarly-pdf-reconstruction/assets/source-package.schema.json: sha256:11cf5e88818644547bf6d547c1cf950f8bd99e8da967a6fc4e992d99f416c4a9
+    .agents/skills/scholarly-pdf-reconstruction/assets/source-blocks.schema.json: sha256:c9f8901bdba9faa4484d4c77f115ed648397295a809b644fc712345a7bff0199
+    .agents/skills/scholarly-pdf-reconstruction/assets/source-package.schema.json: sha256:0fbb3f8c229a20c39d86ceecf37cfd702f3760ea06e5f0d0798e68581efbe795
     .agents/skills/scholarly-pdf-reconstruction/references/music-notation-source-profile.md: sha256:0340ba9d0935cf66a77915b323cfc3417b8d28c8e240d5152d3e18e35d7094ed
-    .agents/skills/scholarly-pdf-reconstruction/references/source-package-contract.md: sha256:e29f24f417628b38c566bb5539f3d64f8dc1bc3603e5ce7bb83f55d4b98abe8a
-    .agents/skills/scholarly-pdf-reconstruction/scripts/reconstruct_pdf.py: sha256:2a9af4979fd20fca2099cb3a5a4ebe8d5b6ff68be630ee9d1f4739643d34eccc
-    .agents/skills/scholarly-print-assembly/SKILL.md: sha256:aeb3a6e3f416878010f570261fb44f32a3918e998a3937506b6493c66d4baa5b
-    .agents/skills/scholarly-print-assembly/assets/assembly-manifest.schema.json: sha256:ea36189ac95f0ee0e207ba8822ec692936560367f59e9e31c4bd65efed7e31f8
+    .agents/skills/scholarly-pdf-reconstruction/references/source-package-contract.md: sha256:108b8661a7d5842ae793b4f1f2c9eca0c776ec8e6a6db9e175db1ea16ca0d49e
+    .agents/skills/scholarly-pdf-reconstruction/scripts/reconstruct_pdf.py: sha256:4ce6addc0f785368515ead1413f4bbd6fc93ef75475b4fbd9981f31d14951a46
+    .agents/skills/scholarly-print-assembly/SKILL.md: sha256:ef6e89867c18b12d57cae8b03238b8f2023e396cf3b8431d173d4da05d3a523f
+    .agents/skills/scholarly-print-assembly/assets/assembly-manifest.schema.json: sha256:80528b0368071f409cba2244ffb6932cf4f368e6ae4659054f5699f7325debdf
     .agents/skills/scholarly-print-assembly/assets/assembly-spec.schema.json: sha256:482628af62f50d64b058a3334fb51e455a170343572223178fbf7a7bb4260a4a
     .agents/skills/scholarly-print-assembly/assets/figure-map.schema.json: sha256:91fd4a94dc55a383c409dc1247565af76db619330574328406700d893de956f6
-    .agents/skills/scholarly-print-assembly/assets/print-base.css: sha256:21ce9c38d9357f35905c87bad8d5dbfa178d67c4e92554c2fc8d13a8d412a91c
+    .agents/skills/scholarly-print-assembly/assets/print-base.css: sha256:13a1aceeaa34580523345c61237d5ac333ae61b417139dd665710da9b3a2d158
     .agents/skills/scholarly-print-assembly/assets/publication-profile.json: sha256:ba56046efd78fe5b8589ea429e20e777de06f7e759fba23bc3ef446ba4d2312c
-    .agents/skills/scholarly-print-assembly/assets/source-blocks.schema.json: sha256:0e60c806e1e0f50c24a9c6e3b8a61b4bfbd191680ba49126a2ba3f9af32d5c0a
-    .agents/skills/scholarly-print-assembly/assets/source-package.schema.json: sha256:11cf5e88818644547bf6d547c1cf950f8bd99e8da967a6fc4e992d99f416c4a9
+    .agents/skills/scholarly-print-assembly/assets/source-blocks.schema.json: sha256:c9f8901bdba9faa4484d4c77f115ed648397295a809b644fc712345a7bff0199
+    .agents/skills/scholarly-print-assembly/assets/source-package.schema.json: sha256:0fbb3f8c229a20c39d86ceecf37cfd702f3760ea06e5f0d0798e68581efbe795
     .agents/skills/scholarly-print-assembly/assets/translation-bundle.schema.json: sha256:a981b4e3e183970817dbd60ad8a4876557aaaab765b226afb4de58ab70ce640b
-    .agents/skills/scholarly-print-assembly/references/assembly-contract.md: sha256:2857c867e75ca884868a753aafd01afc706b2f72f921f0c2ebb13424b3e712c1
-    .agents/skills/scholarly-print-assembly/references/mixed-script-print.md: sha256:ad369a5574857bee113b09d864beca728c7e8e729cc1460ccb5bd39666d261db
+    .agents/skills/scholarly-print-assembly/references/assembly-contract.md: sha256:f73fa48c8fd9d0adc02b7ebacf0566e9e6b81cabc37d1be3ddd4d95750bfbbeb
+    .agents/skills/scholarly-print-assembly/references/mixed-script-print.md: sha256:9bad50264392685eb970c2d3fd01c037c2854cef40c78eabd87a3e844cf885ff
     .agents/skills/scholarly-print-assembly/references/music-notation-markup.md: sha256:795558edf5480734ca3e0964f5e2c591ffcc22e687ab8e2611f58d357541d44f
-    .agents/skills/scholarly-print-assembly/scripts/assemble_print.py: sha256:5072a940d2a82dc79e395d565553b34efae488431b5f6e670cbc946e6841f5b1
-    .agents/skills/scholarly-render-qa/SKILL.md: sha256:e7eb604a7cbc4824c3a860df56d0bb525d47abf05b0c3e2295781a830f40c362
-    .agents/skills/scholarly-render-qa/assets/assembly-manifest.schema.json: sha256:ea36189ac95f0ee0e207ba8822ec692936560367f59e9e31c4bd65efed7e31f8
+    .agents/skills/scholarly-print-assembly/scripts/assemble_print.py: sha256:d29d37381670df7c10418d0dfdafc20edc14968a3d74329d3f275631e0fdf8d8
+    .agents/skills/scholarly-render-qa/SKILL.md: sha256:1c3238bf333077091475b59f56bf0afe8dca5bb5db62c44d04cda079ab9235fd
+    .agents/skills/scholarly-render-qa/assets/assembly-manifest.schema.json: sha256:80528b0368071f409cba2244ffb6932cf4f368e6ae4659054f5699f7325debdf
     .agents/skills/scholarly-render-qa/assets/publication-profile.json: sha256:ba56046efd78fe5b8589ea429e20e777de06f7e759fba23bc3ef446ba4d2312c
     .agents/skills/scholarly-render-qa/assets/qa-evidence.schema.json: sha256:502da511978a349c637a0ace80876dc05c38890f56f6f32524aaafcf5c144ab1
     .agents/skills/scholarly-render-qa/assets/release-manifest.schema.json: sha256:5da0c709cc91cd77faef793f4fdafc56b02bdb1cdd318b6d79f215224441dbc4
     .agents/skills/scholarly-render-qa/references/music-notation-qa-profile.md: sha256:e5075da84ed0c01d83132aeb4b84db6d3031fe7e0cacbd9da2cf259c77ba2b28
-    .agents/skills/scholarly-render-qa/references/qa-contract.md: sha256:07e7d67c714da1a43025a41c1ac2ec3d72847a4b4028d86a81f3e9edca2a52ca
-    .agents/skills/scholarly-render-qa/scripts/audit_publication.py: sha256:9b1118f835f307c5e153a59e170bfc0c5fd6f5d8887988845b99456eea23bc5d
+    .agents/skills/scholarly-render-qa/references/qa-contract.md: sha256:e038dd126aca8e6bb0c5552fc7c08c60de920800dfa1555e23bf6a3efbeff080
+    .agents/skills/scholarly-render-qa/scripts/audit_publication.py: sha256:a8a99e9c0cbbb9ede1f5761199b3acb2bcb64ae1fc04c1c3cc2d603761992cc5
   source: local
   local_path: ./src/private/lib/scholarly-publication
   declared_license: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
@@ -943,339 +943,6 @@ dependencies:
 deployments:
 - kind: project-relative
   target: agents
-  value: .agents/skills/analyzing-dotnet-performance
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/analyzing-dotnet-performance/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:9980c08c82a1f0a961892472ea773d6b5342b080e46d92e9db3c109814e1afad
-- kind: project-relative
-  target: agents
-  value: .agents/skills/analyzing-dotnet-performance/references/async-patterns.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:18e881ff7fbddbaf8e1da84cd46f182fa81c2c2c070915286e2aba671fcd3be7
-- kind: project-relative
-  target: agents
-  value: .agents/skills/analyzing-dotnet-performance/references/collections-and-linq.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:6911129ce735bd7c232ab75fd93fe5c4c0e6ddef911c0062ae974b33c76eeddf
-- kind: project-relative
-  target: agents
-  value: .agents/skills/analyzing-dotnet-performance/references/critical-patterns.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:ac17e1301a2f997a1be552d8efc5210b9b3c1ca30c71a5d60ed6f7d03d2e8290
-- kind: project-relative
-  target: agents
-  value: .agents/skills/analyzing-dotnet-performance/references/io-and-serialization.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:a9cb85c2bbfdce1059cc8e4c102d728728b79b8cb0c1d6091076bf79bca05c89
-- kind: project-relative
-  target: agents
-  value: .agents/skills/analyzing-dotnet-performance/references/memory-and-strings.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:917ea09f0496a59a15fe5abe2cea7b6ac38cf8d85e19b730bb497d35eb387d59
-- kind: project-relative
-  target: agents
-  value: .agents/skills/analyzing-dotnet-performance/references/regex-patterns.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:cfbd9bb1a4596b8acc537ed4a58d939237441e8716d5c747175cd8bc3b840a62
-- kind: project-relative
-  target: agents
-  value: .agents/skills/analyzing-dotnet-performance/references/structural-patterns.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:ee75e7da219e1d5fcc91c728babe9978793be97e37e01a78b51cc47316ecf170
-- kind: project-relative
-  target: agents
-  value: .agents/skills/android-tombstone-symbolication
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/android-tombstone-symbolication/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:3e25d754833c1a362b3d1968cc81ab75b0d1824b161c3ab9d14113a41cacbe9f
-- kind: project-relative
-  target: agents
-  value: .agents/skills/android-tombstone-symbolication/scripts/Symbolicate-Tombstone.ps1
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:050257edb89ce80796233ee6870bfc178c6c1ef1bb3f3ac05e4f893368acaa5a
-- kind: project-relative
-  target: agents
-  value: .agents/skills/apple-crash-symbolication
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/apple-crash-symbolication/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:c8db1d3298cb94e321c47b29fdc0a611b22716b4fc72c32442db0d717de79198
-- kind: project-relative
-  target: agents
-  value: .agents/skills/apple-crash-symbolication/references/ips-crash-format.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:df15e681730d1962b53e9006345f4c5d7caee9a0ab3ea05d87e675aaea766694
-- kind: project-relative
-  target: agents
-  value: .agents/skills/apple-crash-symbolication/scripts/Symbolicate-Crash.ps1
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:5dd9ffdd9097adf7c104b504ced59e31514202ead8a8c22f5744ee3a0bbc3019
-- kind: project-relative
-  target: agents
-  value: .agents/skills/assertion-quality
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/assertion-quality/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:efc92d1cbea09cf01e5e3b723bffa72ff4f6f8be352a2cd89fb502d6d27194e8
-- kind: project-relative
-  target: agents
-  value: .agents/skills/binlog-failure-analysis
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/binlog-failure-analysis/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:0424369ec57d99dd244605ce01f84ff2b62fdc24acd26c4103e3b378735e403b
-- kind: project-relative
-  target: agents
-  value: .agents/skills/binlog-generation
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/binlog-generation/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:6a35bd9871239d314e36836bd425c93e50c295e9794166aef620bbd0754bca85
-- kind: project-relative
-  target: agents
-  value: .agents/skills/build-parallelism
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/build-parallelism/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:1d5bf8518ef43108fac23c47b28a08e49b7486d41c2f25078632b2758dd6eab8
-- kind: project-relative
-  target: agents
-  value: .agents/skills/build-perf-baseline
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/build-perf-baseline/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:9546a5d3a22432142a193cec052405e7a64977a9b57ca2268f975b20c512a909
-- kind: project-relative
-  target: agents
-  value: .agents/skills/build-perf-diagnostics
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/build-perf-diagnostics/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:8575541b9b13f28c44ab62a248c3b141eb0fbb906893b46981b4b0546bb995a2
-- kind: project-relative
-  target: agents
-  value: .agents/skills/check-bin-obj-clash
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/check-bin-obj-clash/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:160357b3e5926d4e762fb68c47b3fce42957b2ebc116bbabe112eae80c9dd210
-- kind: project-relative
-  target: agents
-  value: .agents/skills/clr-activation-debugging
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/clr-activation-debugging/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:84db80e2fed910551267c5ed7ed29b3829849e394ed09fecfde4f4aebfc8fcf4
-- kind: project-relative
-  target: agents
-  value: .agents/skills/clr-activation-debugging/references/activation-flow.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:04d748a40788aa47dd7bb325f682615486da71812b3a80b9a6403ce97eca4d9f
-- kind: project-relative
-  target: agents
-  value: .agents/skills/clr-activation-debugging/references/com-activation.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:3da57d54a8f6dd85bfb9e2a3b617fa5521e6551b7187bfc3bac73f71c1b6c9bc
-- kind: project-relative
-  target: agents
-  value: .agents/skills/clr-activation-debugging/references/log-format.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:f594da621cd46f457a93aebc5273ed2e102730a03086eb9cb0cb96e07e2e8472
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-agent
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-agent/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:5b7ae07075fb1485ccbc7a88bbd254bf465e1e9d4d58cc34f1eae455974e6057
-- kind: project-relative
-  target: agents
   value: .agents/skills/code-testing-agent/extensions/dotnet.md
   runtime: null
   scope: project
@@ -1283,537 +950,6 @@ deployments:
   - dotnet/skills/plugins/dotnet-test
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:4ec6daf1b4cff64a9b85519f128f55b0c7622a219b388d9ff68086bf9da10eec
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-agent/unit-test-generation.prompt.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:3b15527fa3525c1217f9c17afc4c67a709e8583caf90f710116d5742c8cce20d
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:211d1cdfc77a36bee0f2d2ee9095689899bceebe6adc5bfedcb8b5de5fa7fb47
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/cpp-examples.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:68a46d9304efc0120c35eea73d5155dd21ccc84eb5dc8461118fe37289d6c1fc
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/cpp.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:9a2d89347ab8c5a02a32ae2feb60d7e9cf0094f7417d129f676c8e0933090f2a
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/dotnet-examples.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:034c4683312db43fbd4c6355c2006af054f740015b1483815b74cbfa07d82c11
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/dotnet.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:35e4a548d535729a433426c6b0c472ba56c721d43aa85cb156e56d30739c88c9
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/go-examples.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:4815e383e0b068e63bcbacc88cc6a6b5ee19823843da973e232e44596335e629
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/go.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:4024cdf22cc092cb120406a74c49e58ab5af4802fa446e12416f399df7a94807
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/java-examples.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:cdfcc33e33c21d0c1bee85c032f06065edb002e6e24992cd4c29078263645b47
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/java.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:25b32c779b49e17dff4cbb44fa3003cd33edba27592a9f1d0ab28c135eb04125
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/kotlin-examples.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:a02cae6ec0a133ad12039f4cd616ed3b5cb9e4d34b12a803a98fccb2c603f739
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/kotlin.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:7553070dbf0254c1bb91c293ae8ce4313a68450cf1a451975d9f92d5367eb906
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/powershell-examples.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:c526ce52c4f7451f37d122a284e55a01dd4db986a6f49c64111b3918ba536725
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/powershell.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:90dd9616f65be68c63ce0a3c50a974f6aa53ad0cbeffe379a3c8309252f03715
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/python-examples.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:93301c314fc5ea903d42fd6a697d0e0fa9e1469460ff8581f5a787ee6bce5746
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/python.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:299b75668830dbe88747bff89355d825d7508f82937a87a3ed8d6953032efa96
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/ruby-examples.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:bc9d746417daa759f18cf0767beee969ce72f95cc41f29a0b7f4cc80fdd89563
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/ruby.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:9d6cc5ed7ba9269d259c39fa9754cfc93d496b5fd3abcf81bd91833a27268bbe
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/rust-examples.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:f8b46a1047ad2a8f06c4d0242d67c033064b7226d39821aa6240b60813ed009f
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/rust.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:6228a43826eb47112bee333ba34ebbb692770907da235af20296d8938e96ceea
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/swift.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:6765fb1f54ffbe34ecd25099ea5c735bae1c2f8f93bb7ac21d3b1fa0821d2adb
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/typescript-examples.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:b2178b3c89a456ef06d9dbb317602b4a266a0fd93300c07647eb4eb9fd3ea0c5
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-extensions/extensions/typescript.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:011f96ef5cfc6d9d334ac1e8d32f322d1b31de9e716e6ec8e0400dd228020d49
-- kind: project-relative
-  target: agents
-  value: .agents/skills/convert-to-cpm
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-nuget
-  active_owner: dotnet/skills/plugins/dotnet-nuget
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/convert-to-cpm/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-nuget
-  active_owner: dotnet/skills/plugins/dotnet-nuget
-  content_hash: sha256:3f72e6a7b8f71f12c70ca780f62ae2cf5b322760cdb5c7001b0074eafe8dd2f2
-- kind: project-relative
-  target: agents
-  value: .agents/skills/convert-to-cpm/references/audit-complexities.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-nuget
-  active_owner: dotnet/skills/plugins/dotnet-nuget
-  content_hash: sha256:bc800008376654c72fbd25aca2a12ffbed4f3a99d8686292bb905db748292ae7
-- kind: project-relative
-  target: agents
-  value: .agents/skills/convert-to-cpm/references/baseline-comparison.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-nuget
-  active_owner: dotnet/skills/plugins/dotnet-nuget
-  content_hash: sha256:27375f972010499e3503fecdcab2ba60171bc50278889451a28dbb364ba1bb91
-- kind: project-relative
-  target: agents
-  value: .agents/skills/convert-to-cpm/references/directory-packages-props.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-nuget
-  active_owner: dotnet/skills/plugins/dotnet-nuget
-  content_hash: sha256:f2a2fc03e206982fe03ba1b006e03aee3fb08740b28d336c876d21ee68e3a113
-- kind: project-relative
-  target: agents
-  value: .agents/skills/convert-to-cpm/references/msbuild-property-handling.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-nuget
-  active_owner: dotnet/skills/plugins/dotnet-nuget
-  content_hash: sha256:3bc84372446e38af3336dd8161ad242938c70cfa4a3960c3e04a246d28d05063
-- kind: project-relative
-  target: agents
-  value: .agents/skills/convert-to-cpm/references/validation-and-errors.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-nuget
-  active_owner: dotnet/skills/plugins/dotnet-nuget
-  content_hash: sha256:f60a06adec7f0deb3fc8b5ca10cda9e6446c54089dd8b0246dcc3fcd6e8c836a
-- kind: project-relative
-  target: agents
-  value: .agents/skills/copy-to-output-directory
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/copy-to-output-directory/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:f099db9b3165ca2e49e4c3117612ef2d4e133af67c4a33b9b32775c9b493e52c
-- kind: project-relative
-  target: agents
-  value: .agents/skills/coverage-analysis
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/coverage-analysis/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:9b7714ede78411831bc2a4f6cd0eeddd8f34512206a9cfc57267cc218464c27e
-- kind: project-relative
-  target: agents
-  value: .agents/skills/coverage-analysis/references/guidelines.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:8e7bced5e4deb5e11b008f1d6f8ee69bd5f9a2bb743c9ccceb75f54a7f2790f1
-- kind: project-relative
-  target: agents
-  value: .agents/skills/coverage-analysis/references/output-format.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:f2328f0250002c25276f51373ab3b935b15b41be09c161db02d3e22316ad78c4
-- kind: project-relative
-  target: agents
-  value: .agents/skills/coverage-analysis/scripts/Compute-CrapScores.ps1
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:5c43c1dedbd464500eab3380cf142176bd288d8652ae0aeba45d7fedf830f526
-- kind: project-relative
-  target: agents
-  value: .agents/skills/coverage-analysis/scripts/Extract-MethodCoverage.ps1
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:37b3c6377dd5f654f2a0b88ceaeb4c77d8798134cbb0c9584532e7b2835f6f5b
-- kind: project-relative
-  target: agents
-  value: .agents/skills/crap-score
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/crap-score/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:0be501bff5042394d5b8388ce3cff8582d429ba83009d81bba5d6799df12ad45
-- kind: project-relative
-  target: agents
-  value: .agents/skills/create-datadriven-aspnetcore
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-data
-  active_owner: dotnet/skills/plugins/dotnet-data
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/create-datadriven-aspnetcore/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-data
-  active_owner: dotnet/skills/plugins/dotnet-data
-  content_hash: sha256:b90587c30ae832293bd25abeeb9f2df1a25dc28bbae0908e3d722086a2c7cf6a
-- kind: project-relative
-  target: agents
-  value: .agents/skills/csharp-scripts
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-advanced
-  active_owner: dotnet/skills/plugins/dotnet-advanced
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/csharp-scripts/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-advanced
-  active_owner: dotnet/skills/plugins/dotnet-advanced
-  content_hash: sha256:acc0ea3c023127db9ef4be653686b543808597a252a1ab06a3754a3ae93572f9
-- kind: project-relative
-  target: agents
-  value: .agents/skills/detect-static-dependencies
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/detect-static-dependencies/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:eefe4323542ea7c73d9d0ae6a650d095d546881eb3b0a8c56c99a8477f536ed8
-- kind: project-relative
-  target: agents
-  value: .agents/skills/directory-build-organization
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/directory-build-organization/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:19236a9a5ccac500f1d2bc4023bbe5c427e4ec598220af7366257de686835ff8
-- kind: project-relative
-  target: agents
-  value: .agents/skills/directory-build-organization/references/common-patterns.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:6e651cb87034e162e8a966228cbf837612e434c564fd7f9928d38ef44a12e7f3
-- kind: project-relative
-  target: agents
-  value: .agents/skills/directory-build-organization/references/multi-level-examples.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:6120bf2b385eb2cf348c66173bb27ade493d570db8c497881cc8319f448c820a
-- kind: project-relative
-  target: agents
-  value: .agents/skills/directory-build-organization/references/targetframework-props-pitfall.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:a5f0b84a3138e5fdf1fdf103268493006756a1c86312952926f3a10c3e5dd738
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-aot-compat
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-upgrade
-  active_owner: dotnet/skills/plugins/dotnet-upgrade
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-aot-compat/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-upgrade
-  active_owner: dotnet/skills/plugins/dotnet-upgrade
-  content_hash: sha256:7971aab97bdd585def34e7548b81e7d8efb0f8362fea8e9015a40dbc21a90402
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-aot-compat/references/polyfills.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-upgrade
-  active_owner: dotnet/skills/plugins/dotnet-upgrade
-  content_hash: sha256:d60c955f0fc16fc0d90ac34242e7e14ac2c773a5405c2f53850dbe795b8fa31f
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-pinvoke
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-advanced
-  active_owner: dotnet/skills/plugins/dotnet-advanced
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-pinvoke/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-advanced
-  active_owner: dotnet/skills/plugins/dotnet-advanced
-  content_hash: sha256:40dd8410a9eb882a57bef1af864fa8ae3c87046e701cd0ca5f8f183c28e6e3d8
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-pinvoke/references/diagnostics.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-advanced
-  active_owner: dotnet/skills/plugins/dotnet-advanced
-  content_hash: sha256:5c3596bc66f89a20dc1216d133fda6cdcf3af951e8ce41bc35c4fc90861528a7
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-pinvoke/references/type-mapping.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-advanced
-  active_owner: dotnet/skills/plugins/dotnet-advanced
-  content_hash: sha256:b8987c9264dc44704dbfdcfe8071f702c7d976cf3aabb6b686850df600c36d7c
 - kind: project-relative
   target: agents
   value: .agents/skills/dotnet-test-frameworks
@@ -1832,528 +968,6 @@ deployments:
   - dotnet/skills/plugins/dotnet-test
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:24ea84fd509d4570a8bdc5a188ee695d73b00cb2e9936c73ed004c0456721670
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-trace-collect
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-trace-collect/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:a701fd47f61e196b456cea55699d2e523cc8fc37f382e53d241c153b1c21a494
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-trace-collect/references/dotnet-monitor.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:726655946aac6f654c58cb3a92e37b9e1b0b4b7c2d990cd9bdfd1e54912882dd
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-trace-collect/references/dotnet-trace-collect-linux.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:fcb65d649219958c61e6070f4278caaac07e75a418328976bed7bddc77ef24af
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-trace-collect/references/dotnet-trace-collect.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:c47af38a982c1184cf43eafed795260c9872a85f09718d7b51095b7f22afbe6d
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-trace-collect/references/perfcollect.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:5b5de0486d84ff2e1b86be7de04631a2a3b32d55ca0bb2a3c2c636c0d167943a
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-trace-collect/references/perfview.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:c8018e9f1844fa854d971f0d1d75e61887e9ebd5ca97def209650ac634626813
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dump-collect
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dump-collect/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:d00af814b354faae10cd78fedf7c94a78de6e64f04d4c15703b8fbac5e08e2e2
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dump-collect/references/container-dumps.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:e8f1bad53e928efa41caa6855b7022062e30f11b96fdf9ded37526e03b86f5e3
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dump-collect/references/coreclr-dumps.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:180c6b4ab82f2d27b85b751e309bf0aa445fde68ddc0c6a507b51999f02cf195
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dump-collect/references/nativeaot-dumps.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-diag
-  active_owner: dotnet/skills/plugins/dotnet-diag
-  content_hash: sha256:63bda7821ce96ad27e343b93fdf46eb31d2209ba66c387f669062909e3d532a0
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:e2d5f82f3534d64ffa524ecb2f8a491c640afc52068efd20547813ea19195afd
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/evals/evals.json
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:5db7b0a3be6ea7b2635fae7039249e387351c72d57e1f5c0cc2686945c453679
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/evals/files/mqm-review-sample.json
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:866b2a4297a6a237dee6fd75279b3d5558f88e3b8bb6d84a46497486f3adb5e6
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/review.json
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:5310c987db20360b72afe7369c292e883b37f8465be0692fbec3c0696d78be07
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.delta.jsonl
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:545907ad3afa123728c88ff98751a415e83fcefd7725edf6f36e6542d511152f
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.job.json
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:422d928f6377eb303ff0aa1310b18cdba85f099bf4ad2829a92600e0992ffa61
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.tbx
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:9b755785571f5925fbf05f29960fc1ae73d59b95ca88d1819f9f83bc9fdea615
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/terminology-review.tsv
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:7173cfc90c067080fd55e099cc9fe49b8b7cccfe404f9751acd54df42256f729
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/translation.md
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:28aee96bbfa2079233f49bc87c82a22dba0a4962b5e5b8a3320ef5ad925cd6c1
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/evals/files/structured-doc.md
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:46880505b731e3c68289e038b87d9d00f48455659ec74fbfb34f2f5d2532b8fb
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/evals/files/terminology-brief.json
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:936f99f0cb58e083d4fc1ed6747f46574d627091e9009957fa3285b6471cbe1f
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/references/context-packet.md
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:a3a0214e32623676be8cded6e55d81858e80b7f39c892fa4a4e3d2a134d796e8
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/references/evaluation.md
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:a6fe68ad73e6e00a0286d86276e7b53c1accd38c4d2d8fa02e59fe5164a5090f
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/references/mqm-taxonomy.md
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:4b3f7b51bbd3cb57665a1f922f08607bc9a3322f1e61e7ffc6bb24e7af44a9a8
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/references/output-contracts.md
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:0651dc868db9166baf8d220992cd5729deee960c5c4501765e303c1917beaa13
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/references/roles.md
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:10b1895bdcc6dbc02ebed174d0510b3eb78a3e6c97cbf8036777dd80fe3b2647
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/references/terminology-schema.md
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:a48b9a02e8e68ef59cac3a6fec2450f9170b56b53261fa640ce54e7d607c76ef
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/scripts/check_translation_outputs.py
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:6ac94a0436121e4c813434ec26b5c0400e510245acdbe7fc6facd3eb77b22409
-- kind: project-relative
-  target: agents
-  value: .agents/skills/enterprise-translation-team/scripts/run_copilot_evals.py
-  runtime: null
-  scope: project
-  owners:
-  - ./src/private/lib/enterprise-translation-team
-  active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:90f9076ceeef2d19070e6acfbd3a0625f9981b5a5a2a6e6595b371d22a6e555c
-- kind: project-relative
-  target: agents
-  value: .agents/skills/eval-performance
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/eval-performance/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:54f04e50c459aaaa466cfcad4e5742be1ad3df65a96107ccfc16e1501a03c0f2
-- kind: project-relative
-  target: agents
-  value: .agents/skills/extension-points
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/extension-points/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:fa274ec554b0a40f43060782a4aba9d9152ac0b162e93943ddbccbfd0bab25f8
-- kind: project-relative
-  target: agents
-  value: .agents/skills/filter-syntax
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/filter-syntax/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:ab2c30569d6c859e0f340880c7182ab87c4fe108fa65f618815d3ac85aedee52
-- kind: project-relative
-  target: agents
-  value: .agents/skills/find-untested-sources
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/find-untested-sources/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:b9e8d509604469418d998e18eecdadda3ee7e9afec612f6e11770053a9eef445
-- kind: project-relative
-  target: agents
-  value: .agents/skills/find-untested-sources/scripts/Find-UntestedSources.cs
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:b6f01c528bcfbeae5f4a88c5953ece8274850c902b90f9a591b4e62ed6161e70
-- kind: project-relative
-  target: agents
-  value: .agents/skills/find-untested-sources/scripts/find_untested_sources.py
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:231dc55cd7558f54d09b292396370cb25f2430501bfb063266c62609ae55715f
-- kind: project-relative
-  target: agents
-  value: .agents/skills/generate-testability-wrappers
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/generate-testability-wrappers/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:f7c2c3b9dc320bbe702e5c91ff9b0aa06a59285be0bc0c38cf4083bd538acabb
-- kind: project-relative
-  target: agents
-  value: .agents/skills/grade-tests
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/grade-tests/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:1e14e1ae7749017b5183406a4e4369fed0eb662494e6774ac59e5007357fa03a
-- kind: project-relative
-  target: agents
-  value: .agents/skills/grill-me
-  runtime: null
-  scope: project
-  owners:
-  - mattpocock/skills/skills/productivity/grill-me
-  active_owner: mattpocock/skills/skills/productivity/grill-me
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/grill-me/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - mattpocock/skills/skills/productivity/grill-me
-  active_owner: mattpocock/skills/skills/productivity/grill-me
-  content_hash: sha256:6189dfceb7304a6e5558f75d87e68fa3bc7fcf7ba120e44f21f8a61fe01eba54
-- kind: project-relative
-  target: agents
-  value: .agents/skills/including-generated-files
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/including-generated-files/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:921f3cbe3078d13f6429e0ec820dbb95832c4cb4df896d80de0449c4c37c2246
-- kind: project-relative
-  target: agents
-  value: .agents/skills/incremental-build
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/incremental-build/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:05db7b97519627bcaaa9fd7d3212e8a6a2d68fb686c6ebf8a0472bf3a6ff8657
-- kind: project-relative
-  target: agents
-  value: .agents/skills/item-management
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/item-management/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-msbuild
-  active_owner: dotnet/skills/plugins/dotnet-msbuild
-  content_hash: sha256:86d3ba145c9b334b337161cb2d25af7bfa4db20d7ca4fc3cc879461c519d0568
-- kind: project-relative
-  target: agents
-  value: .agents/skills/mcp-csharp-create
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-ai
-  active_owner: dotnet/skills/plugins/dotnet-ai
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/mcp-csharp-create/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-ai
-  active_owner: dotnet/skills/plugins/dotnet-ai
-  content_hash: sha256:e43ca99a840fd96ad0a707e79cb79fb5eb16deca7b638eb27f9832e36b9ec7a3
-- kind: project-relative
-  target: agents
-  value: .agents/skills/mcp-csharp-create/references/api-patterns.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-ai
-  active_owner: dotnet/skills/plugins/dotnet-ai
-  content_hash: sha256:d788cdecec36327e5d2193237e4b6283530ea2c8775d818cd630a9f7ac9fd26f
-- kind: project-relative
-  target: agents
-  value: .agents/skills/mcp-csharp-create/references/transport-config.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-ai
-  active_owner: dotnet/skills/plugins/dotnet-ai
-  content_hash: sha256:018ee47caa2e2c63c0ef31465d9db42bfb505741f5e8e584ab011dea3504f563
 - kind: project-relative
   target: agents
   value: .agents/skills/mcp-csharp-debug
@@ -2391,7 +1005,1393 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: sha256:20ca0bedebdac6e8d3c9361b658809d418cdce8943262c1885909c85cb071c61
 - kind: project-relative
-  target: agents
+  target: copilot
+  value: .agents/skills/analyzing-dotnet-performance
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/analyzing-dotnet-performance/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:9980c08c82a1f0a961892472ea773d6b5342b080e46d92e9db3c109814e1afad
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/analyzing-dotnet-performance/references/async-patterns.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:18e881ff7fbddbaf8e1da84cd46f182fa81c2c2c070915286e2aba671fcd3be7
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/analyzing-dotnet-performance/references/collections-and-linq.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:6911129ce735bd7c232ab75fd93fe5c4c0e6ddef911c0062ae974b33c76eeddf
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/analyzing-dotnet-performance/references/critical-patterns.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:ac17e1301a2f997a1be552d8efc5210b9b3c1ca30c71a5d60ed6f7d03d2e8290
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/analyzing-dotnet-performance/references/io-and-serialization.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:a9cb85c2bbfdce1059cc8e4c102d728728b79b8cb0c1d6091076bf79bca05c89
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/analyzing-dotnet-performance/references/memory-and-strings.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:917ea09f0496a59a15fe5abe2cea7b6ac38cf8d85e19b730bb497d35eb387d59
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/analyzing-dotnet-performance/references/regex-patterns.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:cfbd9bb1a4596b8acc537ed4a58d939237441e8716d5c747175cd8bc3b840a62
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/analyzing-dotnet-performance/references/structural-patterns.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:ee75e7da219e1d5fcc91c728babe9978793be97e37e01a78b51cc47316ecf170
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/android-tombstone-symbolication
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/android-tombstone-symbolication/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:3e25d754833c1a362b3d1968cc81ab75b0d1824b161c3ab9d14113a41cacbe9f
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/android-tombstone-symbolication/scripts/Symbolicate-Tombstone.ps1
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:050257edb89ce80796233ee6870bfc178c6c1ef1bb3f3ac05e4f893368acaa5a
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/apple-crash-symbolication
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/apple-crash-symbolication/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:c8db1d3298cb94e321c47b29fdc0a611b22716b4fc72c32442db0d717de79198
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/apple-crash-symbolication/references/ips-crash-format.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:df15e681730d1962b53e9006345f4c5d7caee9a0ab3ea05d87e675aaea766694
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/apple-crash-symbolication/scripts/Symbolicate-Crash.ps1
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:5dd9ffdd9097adf7c104b504ced59e31514202ead8a8c22f5744ee3a0bbc3019
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/assertion-quality
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/assertion-quality/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:efc92d1cbea09cf01e5e3b723bffa72ff4f6f8be352a2cd89fb502d6d27194e8
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/binlog-failure-analysis
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/binlog-failure-analysis/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:0424369ec57d99dd244605ce01f84ff2b62fdc24acd26c4103e3b378735e403b
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/binlog-generation
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/binlog-generation/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:6a35bd9871239d314e36836bd425c93e50c295e9794166aef620bbd0754bca85
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/build-parallelism
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/build-parallelism/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:1d5bf8518ef43108fac23c47b28a08e49b7486d41c2f25078632b2758dd6eab8
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/build-perf-baseline
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/build-perf-baseline/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:9546a5d3a22432142a193cec052405e7a64977a9b57ca2268f975b20c512a909
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/build-perf-diagnostics
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/build-perf-diagnostics/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:8575541b9b13f28c44ab62a248c3b141eb0fbb906893b46981b4b0546bb995a2
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/check-bin-obj-clash
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/check-bin-obj-clash/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:160357b3e5926d4e762fb68c47b3fce42957b2ebc116bbabe112eae80c9dd210
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/clr-activation-debugging
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/clr-activation-debugging/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:84db80e2fed910551267c5ed7ed29b3829849e394ed09fecfde4f4aebfc8fcf4
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/clr-activation-debugging/references/activation-flow.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:04d748a40788aa47dd7bb325f682615486da71812b3a80b9a6403ce97eca4d9f
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/clr-activation-debugging/references/com-activation.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:3da57d54a8f6dd85bfb9e2a3b617fa5521e6551b7187bfc3bac73f71c1b6c9bc
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/clr-activation-debugging/references/log-format.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:f594da621cd46f457a93aebc5273ed2e102730a03086eb9cb0cb96e07e2e8472
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-agent
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-agent/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:5b7ae07075fb1485ccbc7a88bbd254bf465e1e9d4d58cc34f1eae455974e6057
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-agent/unit-test-generation.prompt.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:3b15527fa3525c1217f9c17afc4c67a709e8583caf90f710116d5742c8cce20d
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:211d1cdfc77a36bee0f2d2ee9095689899bceebe6adc5bfedcb8b5de5fa7fb47
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/cpp-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:68a46d9304efc0120c35eea73d5155dd21ccc84eb5dc8461118fe37289d6c1fc
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/cpp.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:9a2d89347ab8c5a02a32ae2feb60d7e9cf0094f7417d129f676c8e0933090f2a
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/dotnet-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:034c4683312db43fbd4c6355c2006af054f740015b1483815b74cbfa07d82c11
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/dotnet.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:35e4a548d535729a433426c6b0c472ba56c721d43aa85cb156e56d30739c88c9
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/go-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:4815e383e0b068e63bcbacc88cc6a6b5ee19823843da973e232e44596335e629
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/go.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:4024cdf22cc092cb120406a74c49e58ab5af4802fa446e12416f399df7a94807
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/java-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:cdfcc33e33c21d0c1bee85c032f06065edb002e6e24992cd4c29078263645b47
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/java.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:25b32c779b49e17dff4cbb44fa3003cd33edba27592a9f1d0ab28c135eb04125
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/kotlin-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:a02cae6ec0a133ad12039f4cd616ed3b5cb9e4d34b12a803a98fccb2c603f739
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/kotlin.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:7553070dbf0254c1bb91c293ae8ce4313a68450cf1a451975d9f92d5367eb906
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/powershell-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:c526ce52c4f7451f37d122a284e55a01dd4db986a6f49c64111b3918ba536725
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/powershell.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:90dd9616f65be68c63ce0a3c50a974f6aa53ad0cbeffe379a3c8309252f03715
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/python-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:93301c314fc5ea903d42fd6a697d0e0fa9e1469460ff8581f5a787ee6bce5746
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/python.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:299b75668830dbe88747bff89355d825d7508f82937a87a3ed8d6953032efa96
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/ruby-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:bc9d746417daa759f18cf0767beee969ce72f95cc41f29a0b7f4cc80fdd89563
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/ruby.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:9d6cc5ed7ba9269d259c39fa9754cfc93d496b5fd3abcf81bd91833a27268bbe
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/rust-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:f8b46a1047ad2a8f06c4d0242d67c033064b7226d39821aa6240b60813ed009f
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/rust.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:6228a43826eb47112bee333ba34ebbb692770907da235af20296d8938e96ceea
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/swift.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:6765fb1f54ffbe34ecd25099ea5c735bae1c2f8f93bb7ac21d3b1fa0821d2adb
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/typescript-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:b2178b3c89a456ef06d9dbb317602b4a266a0fd93300c07647eb4eb9fd3ea0c5
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/code-testing-extensions/extensions/typescript.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:011f96ef5cfc6d9d334ac1e8d32f322d1b31de9e716e6ec8e0400dd228020d49
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/convert-to-cpm
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-nuget
+  active_owner: dotnet/skills/plugins/dotnet-nuget
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/convert-to-cpm/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-nuget
+  active_owner: dotnet/skills/plugins/dotnet-nuget
+  content_hash: sha256:3f72e6a7b8f71f12c70ca780f62ae2cf5b322760cdb5c7001b0074eafe8dd2f2
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/convert-to-cpm/references/audit-complexities.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-nuget
+  active_owner: dotnet/skills/plugins/dotnet-nuget
+  content_hash: sha256:bc800008376654c72fbd25aca2a12ffbed4f3a99d8686292bb905db748292ae7
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/convert-to-cpm/references/baseline-comparison.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-nuget
+  active_owner: dotnet/skills/plugins/dotnet-nuget
+  content_hash: sha256:27375f972010499e3503fecdcab2ba60171bc50278889451a28dbb364ba1bb91
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/convert-to-cpm/references/directory-packages-props.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-nuget
+  active_owner: dotnet/skills/plugins/dotnet-nuget
+  content_hash: sha256:f2a2fc03e206982fe03ba1b006e03aee3fb08740b28d336c876d21ee68e3a113
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/convert-to-cpm/references/msbuild-property-handling.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-nuget
+  active_owner: dotnet/skills/plugins/dotnet-nuget
+  content_hash: sha256:3bc84372446e38af3336dd8161ad242938c70cfa4a3960c3e04a246d28d05063
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/convert-to-cpm/references/validation-and-errors.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-nuget
+  active_owner: dotnet/skills/plugins/dotnet-nuget
+  content_hash: sha256:f60a06adec7f0deb3fc8b5ca10cda9e6446c54089dd8b0246dcc3fcd6e8c836a
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/copy-to-output-directory
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/copy-to-output-directory/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:f099db9b3165ca2e49e4c3117612ef2d4e133af67c4a33b9b32775c9b493e52c
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/coverage-analysis
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/coverage-analysis/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:9b7714ede78411831bc2a4f6cd0eeddd8f34512206a9cfc57267cc218464c27e
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/coverage-analysis/references/guidelines.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:8e7bced5e4deb5e11b008f1d6f8ee69bd5f9a2bb743c9ccceb75f54a7f2790f1
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/coverage-analysis/references/output-format.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:f2328f0250002c25276f51373ab3b935b15b41be09c161db02d3e22316ad78c4
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/coverage-analysis/scripts/Compute-CrapScores.ps1
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:5c43c1dedbd464500eab3380cf142176bd288d8652ae0aeba45d7fedf830f526
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/coverage-analysis/scripts/Extract-MethodCoverage.ps1
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:37b3c6377dd5f654f2a0b88ceaeb4c77d8798134cbb0c9584532e7b2835f6f5b
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/crap-score
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/crap-score/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:0be501bff5042394d5b8388ce3cff8582d429ba83009d81bba5d6799df12ad45
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/create-datadriven-aspnetcore
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-data
+  active_owner: dotnet/skills/plugins/dotnet-data
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/create-datadriven-aspnetcore/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-data
+  active_owner: dotnet/skills/plugins/dotnet-data
+  content_hash: sha256:b90587c30ae832293bd25abeeb9f2df1a25dc28bbae0908e3d722086a2c7cf6a
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/csharp-scripts
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-advanced
+  active_owner: dotnet/skills/plugins/dotnet-advanced
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/csharp-scripts/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-advanced
+  active_owner: dotnet/skills/plugins/dotnet-advanced
+  content_hash: sha256:acc0ea3c023127db9ef4be653686b543808597a252a1ab06a3754a3ae93572f9
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/detect-static-dependencies
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/detect-static-dependencies/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:eefe4323542ea7c73d9d0ae6a650d095d546881eb3b0a8c56c99a8477f536ed8
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/directory-build-organization
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/directory-build-organization/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:19236a9a5ccac500f1d2bc4023bbe5c427e4ec598220af7366257de686835ff8
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/directory-build-organization/references/common-patterns.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:6e651cb87034e162e8a966228cbf837612e434c564fd7f9928d38ef44a12e7f3
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/directory-build-organization/references/multi-level-examples.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:6120bf2b385eb2cf348c66173bb27ade493d570db8c497881cc8319f448c820a
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/directory-build-organization/references/targetframework-props-pitfall.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:a5f0b84a3138e5fdf1fdf103268493006756a1c86312952926f3a10c3e5dd738
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-aot-compat
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-upgrade
+  active_owner: dotnet/skills/plugins/dotnet-upgrade
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-aot-compat/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-upgrade
+  active_owner: dotnet/skills/plugins/dotnet-upgrade
+  content_hash: sha256:7971aab97bdd585def34e7548b81e7d8efb0f8362fea8e9015a40dbc21a90402
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-aot-compat/references/polyfills.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-upgrade
+  active_owner: dotnet/skills/plugins/dotnet-upgrade
+  content_hash: sha256:d60c955f0fc16fc0d90ac34242e7e14ac2c773a5405c2f53850dbe795b8fa31f
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-pinvoke
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-advanced
+  active_owner: dotnet/skills/plugins/dotnet-advanced
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-pinvoke/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-advanced
+  active_owner: dotnet/skills/plugins/dotnet-advanced
+  content_hash: sha256:40dd8410a9eb882a57bef1af864fa8ae3c87046e701cd0ca5f8f183c28e6e3d8
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-pinvoke/references/diagnostics.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-advanced
+  active_owner: dotnet/skills/plugins/dotnet-advanced
+  content_hash: sha256:5c3596bc66f89a20dc1216d133fda6cdcf3af951e8ce41bc35c4fc90861528a7
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-pinvoke/references/type-mapping.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-advanced
+  active_owner: dotnet/skills/plugins/dotnet-advanced
+  content_hash: sha256:b8987c9264dc44704dbfdcfe8071f702c7d976cf3aabb6b686850df600c36d7c
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-trace-collect
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-trace-collect/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:a701fd47f61e196b456cea55699d2e523cc8fc37f382e53d241c153b1c21a494
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-trace-collect/references/dotnet-monitor.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:726655946aac6f654c58cb3a92e37b9e1b0b4b7c2d990cd9bdfd1e54912882dd
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-trace-collect/references/dotnet-trace-collect-linux.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:fcb65d649219958c61e6070f4278caaac07e75a418328976bed7bddc77ef24af
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-trace-collect/references/dotnet-trace-collect.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:c47af38a982c1184cf43eafed795260c9872a85f09718d7b51095b7f22afbe6d
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-trace-collect/references/perfcollect.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:5b5de0486d84ff2e1b86be7de04631a2a3b32d55ca0bb2a3c2c636c0d167943a
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dotnet-trace-collect/references/perfview.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:c8018e9f1844fa854d971f0d1d75e61887e9ebd5ca97def209650ac634626813
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dump-collect
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dump-collect/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:d00af814b354faae10cd78fedf7c94a78de6e64f04d4c15703b8fbac5e08e2e2
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dump-collect/references/container-dumps.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:e8f1bad53e928efa41caa6855b7022062e30f11b96fdf9ded37526e03b86f5e3
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dump-collect/references/coreclr-dumps.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:180c6b4ab82f2d27b85b751e309bf0aa445fde68ddc0c6a507b51999f02cf195
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/dump-collect/references/nativeaot-dumps.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-diag
+  active_owner: dotnet/skills/plugins/dotnet-diag
+  content_hash: sha256:63bda7821ce96ad27e343b93fdf46eb31d2209ba66c387f669062909e3d532a0
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:e2d5f82f3534d64ffa524ecb2f8a491c640afc52068efd20547813ea19195afd
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/evals/evals.json
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:5db7b0a3be6ea7b2635fae7039249e387351c72d57e1f5c0cc2686945c453679
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/evals/files/mqm-review-sample.json
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:866b2a4297a6a237dee6fd75279b3d5558f88e3b8bb6d84a46497486f3adb5e6
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/review.json
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:5310c987db20360b72afe7369c292e883b37f8465be0692fbec3c0696d78be07
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.delta.jsonl
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:545907ad3afa123728c88ff98751a415e83fcefd7725edf6f36e6542d511152f
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.job.json
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:422d928f6377eb303ff0aa1310b18cdba85f099bf4ad2829a92600e0992ffa61
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.tbx
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:9b755785571f5925fbf05f29960fc1ae73d59b95ca88d1819f9f83bc9fdea615
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/terminology-review.tsv
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:7173cfc90c067080fd55e099cc9fe49b8b7cccfe404f9751acd54df42256f729
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/evals/files/qa-package/translation.md
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:28aee96bbfa2079233f49bc87c82a22dba0a4962b5e5b8a3320ef5ad925cd6c1
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/evals/files/structured-doc.md
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:46880505b731e3c68289e038b87d9d00f48455659ec74fbfb34f2f5d2532b8fb
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/evals/files/terminology-brief.json
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:936f99f0cb58e083d4fc1ed6747f46574d627091e9009957fa3285b6471cbe1f
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/references/context-packet.md
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:a3a0214e32623676be8cded6e55d81858e80b7f39c892fa4a4e3d2a134d796e8
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/references/evaluation.md
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:a6fe68ad73e6e00a0286d86276e7b53c1accd38c4d2d8fa02e59fe5164a5090f
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/references/mqm-taxonomy.md
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:4b3f7b51bbd3cb57665a1f922f08607bc9a3322f1e61e7ffc6bb24e7af44a9a8
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/references/output-contracts.md
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:0651dc868db9166baf8d220992cd5729deee960c5c4501765e303c1917beaa13
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/references/roles.md
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:10b1895bdcc6dbc02ebed174d0510b3eb78a3e6c97cbf8036777dd80fe3b2647
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/references/terminology-schema.md
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:a48b9a02e8e68ef59cac3a6fec2450f9170b56b53261fa640ce54e7d607c76ef
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/scripts/check_translation_outputs.py
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:6ac94a0436121e4c813434ec26b5c0400e510245acdbe7fc6facd3eb77b22409
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/enterprise-translation-team/scripts/run_copilot_evals.py
+  runtime: null
+  scope: project
+  owners:
+  - ./src/private/lib/enterprise-translation-team
+  active_owner: ./src/private/lib/enterprise-translation-team
+  content_hash: sha256:90f9076ceeef2d19070e6acfbd3a0625f9981b5a5a2a6e6595b371d22a6e555c
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/eval-performance
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/eval-performance/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:54f04e50c459aaaa466cfcad4e5742be1ad3df65a96107ccfc16e1501a03c0f2
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/extension-points
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/extension-points/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:fa274ec554b0a40f43060782a4aba9d9152ac0b162e93943ddbccbfd0bab25f8
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/filter-syntax
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/filter-syntax/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:ab2c30569d6c859e0f340880c7182ab87c4fe108fa65f618815d3ac85aedee52
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/find-untested-sources
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/find-untested-sources/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:b9e8d509604469418d998e18eecdadda3ee7e9afec612f6e11770053a9eef445
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/find-untested-sources/scripts/Find-UntestedSources.cs
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:b6f01c528bcfbeae5f4a88c5953ece8274850c902b90f9a591b4e62ed6161e70
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/find-untested-sources/scripts/find_untested_sources.py
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:231dc55cd7558f54d09b292396370cb25f2430501bfb063266c62609ae55715f
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/generate-testability-wrappers
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/generate-testability-wrappers/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:f7c2c3b9dc320bbe702e5c91ff9b0aa06a59285be0bc0c38cf4083bd538acabb
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/grade-tests
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/grade-tests/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-test
+  active_owner: dotnet/skills/plugins/dotnet-test
+  content_hash: sha256:1e14e1ae7749017b5183406a4e4369fed0eb662494e6774ac59e5007357fa03a
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/grill-me
+  runtime: null
+  scope: project
+  owners:
+  - mattpocock/skills/skills/productivity/grill-me
+  active_owner: mattpocock/skills/skills/productivity/grill-me
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/grill-me/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - mattpocock/skills/skills/productivity/grill-me
+  active_owner: mattpocock/skills/skills/productivity/grill-me
+  content_hash: sha256:6189dfceb7304a6e5558f75d87e68fa3bc7fcf7ba120e44f21f8a61fe01eba54
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/including-generated-files
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/including-generated-files/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:921f3cbe3078d13f6429e0ec820dbb95832c4cb4df896d80de0449c4c37c2246
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/incremental-build
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/incremental-build/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:05db7b97519627bcaaa9fd7d3212e8a6a2d68fb686c6ebf8a0472bf3a6ff8657
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/item-management
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/item-management/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-msbuild
+  active_owner: dotnet/skills/plugins/dotnet-msbuild
+  content_hash: sha256:86d3ba145c9b334b337161cb2d25af7bfa4db20d7ca4fc3cc879461c519d0568
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/mcp-csharp-create
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-ai
+  active_owner: dotnet/skills/plugins/dotnet-ai
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/mcp-csharp-create/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-ai
+  active_owner: dotnet/skills/plugins/dotnet-ai
+  content_hash: sha256:e43ca99a840fd96ad0a707e79cb79fb5eb16deca7b638eb27f9832e36b9ec7a3
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/mcp-csharp-create/references/api-patterns.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-ai
+  active_owner: dotnet/skills/plugins/dotnet-ai
+  content_hash: sha256:d788cdecec36327e5d2193237e4b6283530ea2c8775d818cd630a9f7ac9fd26f
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/mcp-csharp-create/references/transport-config.md
+  runtime: null
+  scope: project
+  owners:
+  - dotnet/skills/plugins/dotnet-ai
+  active_owner: dotnet/skills/plugins/dotnet-ai
+  content_hash: sha256:018ee47caa2e2c63c0ef31465d9db42bfb505741f5e8e584ab011dea3504f563
+- kind: project-relative
+  target: copilot
   value: .agents/skills/mcp-csharp-publish
   runtime: null
   scope: project
@@ -2400,7 +2400,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/mcp-csharp-publish/SKILL.md
   runtime: null
   scope: project
@@ -2409,7 +2409,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: sha256:d6a9ec39abf8fa9268512fce3837c5ddb5bfc89f2ac7c58bae603b637bef2e43
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/mcp-csharp-publish/references/docker-azure.md
   runtime: null
   scope: project
@@ -2418,7 +2418,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: sha256:4f767b78108a81740a369ecbd05f530e34fbfe816e7e968ce7dc80081e8e5671
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/mcp-csharp-publish/references/mcp-registry.md
   runtime: null
   scope: project
@@ -2427,7 +2427,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: sha256:6f236903fb3707c04acecf18cbc111054defe19686798249a48acb37104be4d9
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/mcp-csharp-publish/references/nuget-packaging.md
   runtime: null
   scope: project
@@ -2436,7 +2436,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: sha256:25e06d557a154a5c1c9fe562c25785dabaea68b0d46d77d585e4e8a1768a55f5
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/mcp-csharp-test
   runtime: null
   scope: project
@@ -2445,7 +2445,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/mcp-csharp-test/SKILL.md
   runtime: null
   scope: project
@@ -2454,7 +2454,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: sha256:0bff5b7a6fd0c819a8597baaa3e6ce7fec185b5afa3c7451f47c64dc8729acc0
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/mcp-csharp-test/references/evaluations.md
   runtime: null
   scope: project
@@ -2463,7 +2463,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: sha256:726b9f1f07b8c77df1d4eb4639581b7ef710ec8fe5c61fb321860e630a150f38
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/mcp-csharp-test/references/test-patterns.md
   runtime: null
   scope: project
@@ -2472,7 +2472,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: sha256:7e1f57b4ec3f2af4c8d9845a97d7651d652afb36ffc088c6beafefc60213e1a9
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/microbenchmarking
   runtime: null
   scope: project
@@ -2481,7 +2481,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-diag
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/microbenchmarking/SKILL.md
   runtime: null
   scope: project
@@ -2490,7 +2490,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-diag
   content_hash: sha256:64dab692a441a8af87b40cda1f3c2c9e5046551446fdea55d2801eaabb34785e
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/microbenchmarking/references/bdn-internals-and-tuning.md
   runtime: null
   scope: project
@@ -2499,7 +2499,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-diag
   content_hash: sha256:213842a5ced85bbdd5db4d7f6de4c3bdd231367b292f7c994a504960e32c83f0
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/microbenchmarking/references/comparison-strategies.md
   runtime: null
   scope: project
@@ -2508,7 +2508,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-diag
   content_hash: sha256:cdbc8e7d4b9b2c9eeb1dbc1a7ceaee5b3cb453d041211bf30fc93b150c4fecf7
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/microbenchmarking/references/diagnosers-and-exporters.md
   runtime: null
   scope: project
@@ -2517,7 +2517,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-diag
   content_hash: sha256:9410eb556b83af2a63bdb593a791077a4a070210df569887f6265d9ecd825b14
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/microbenchmarking/references/project-setup-and-running.md
   runtime: null
   scope: project
@@ -2526,7 +2526,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-diag
   content_hash: sha256:dd6866d218be83e84e772b9bda17d1d8261da4a8318d6b098faffe71b95bfcdf
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/microbenchmarking/references/writing-benchmarks.md
   runtime: null
   scope: project
@@ -2535,7 +2535,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-diag
   content_hash: sha256:00279137333ae46cec081a3b85d53858cec9a7565beddf902e15a6f7abe81f09
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/microsoft-code-reference
   runtime: null
   scope: project
@@ -2544,7 +2544,7 @@ deployments:
   active_owner: microsoftdocs/mcp/skills/microsoft-code-reference
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/microsoft-code-reference/SKILL.md
   runtime: null
   scope: project
@@ -2553,7 +2553,7 @@ deployments:
   active_owner: microsoftdocs/mcp/skills/microsoft-code-reference
   content_hash: sha256:36354e87d7095fbba0b7138c251ee6fd30f85a89d35a0909e4a6aafdf74280fe
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/microsoft-docs
   runtime: null
   scope: project
@@ -2562,7 +2562,7 @@ deployments:
   active_owner: microsoftdocs/mcp/skills/microsoft-docs
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/microsoft-docs/SKILL.md
   runtime: null
   scope: project
@@ -2571,7 +2571,7 @@ deployments:
   active_owner: microsoftdocs/mcp/skills/microsoft-docs
   content_hash: sha256:23d6c309124c4dd7f96ef7166a1998814b4eaeca7e3d654bdac2feacde7e16d1
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet10-to-dotnet11
   runtime: null
   scope: project
@@ -2580,7 +2580,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet10-to-dotnet11/SKILL.md
   runtime: null
   scope: project
@@ -2589,7 +2589,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:63dc826d2cbe5a1becbd33dfb5d4c296434ea5cd2f314531133c36a8cb2b8ed8
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet10-to-dotnet11/references/aspnetcore-dotnet10to11.md
   runtime: null
   scope: project
@@ -2598,7 +2598,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:db79207394b5ba5b7ae7159bc1a4e3e9b500efa209896539bfc4ce6d27cb3ac5
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet10-to-dotnet11/references/core-libraries-dotnet10to11.md
   runtime: null
   scope: project
@@ -2607,7 +2607,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:a92004ded0f412b0129f77cd0e6eeead756052b743f2b848da00cdfe243c1f7b
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet10-to-dotnet11/references/cryptography-dotnet10to11.md
   runtime: null
   scope: project
@@ -2616,7 +2616,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:5e5a9f45acff9a0cbe77df80a328e7ba1cc7d305c5061dd6370fb3409704d78a
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet10-to-dotnet11/references/csharp-compiler-dotnet10to11.md
   runtime: null
   scope: project
@@ -2625,7 +2625,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:67ed87efb6f049b43a92dedb8bfb225a556a71451c6d85a3430a7d01afc526bb
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet10-to-dotnet11/references/efcore-dotnet10to11.md
   runtime: null
   scope: project
@@ -2634,7 +2634,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:85681798e06385d00b9ec9bd5358a0c87fbe481f9f75833b58eb6478c6563599
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet10-to-dotnet11/references/runtime-jit-dotnet10to11.md
   runtime: null
   scope: project
@@ -2643,7 +2643,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:3bb6c41df25f854d39d531d0ddd72faa41e5a2117343fa2aa118016540d6ed36
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet10-to-dotnet11/references/sdk-msbuild-dotnet10to11.md
   runtime: null
   scope: project
@@ -2652,7 +2652,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:2c9588ca9b69a46ca635dac912d3ac6d6880c84615016e60df464f7b3bc8ba3b
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9
   runtime: null
   scope: project
@@ -2661,7 +2661,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9/SKILL.md
   runtime: null
   scope: project
@@ -2670,7 +2670,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:95d6de4776ccd6b8a71bf1ce776eb3cd8ddb67b590ce1ca66db4785a2d91d9a8
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9/references/aspnet-core-dotnet8to9.md
   runtime: null
   scope: project
@@ -2679,7 +2679,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:6d8695375489c6431a8c3acbdc4f1de7c4efebc84615fb04e397e4d834e8fc54
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9/references/containers-interop-dotnet8to9.md
   runtime: null
   scope: project
@@ -2688,7 +2688,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:e10129fbca91f5eff00a9eba0a1687f78861de18d512e3a52d73eb1867650a5d
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9/references/core-libraries-dotnet8to9.md
   runtime: null
   scope: project
@@ -2697,7 +2697,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:ea5d40eb5bd01213a01969d9e8be1838367e7627cf1ba5be567b3efc26267d91
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9/references/cryptography-dotnet8to9.md
   runtime: null
   scope: project
@@ -2706,7 +2706,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:acdfb7016c4b050f8ea1907593f613c4632604499ac5f1bafb447b79045052f4
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9/references/csharp-compiler-dotnet8to9.md
   runtime: null
   scope: project
@@ -2715,7 +2715,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:0a59413db5f0aedd1ee6b073e4ffce5a6ed6ef61dca254d87dfe33d360f300e0
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9/references/deployment-runtime-dotnet8to9.md
   runtime: null
   scope: project
@@ -2724,7 +2724,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:c4fa49cb4feceafbea4e6256cbd1b9b56207a26e56b5d8f47c38480d392f146d
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9/references/efcore-dotnet8to9.md
   runtime: null
   scope: project
@@ -2733,7 +2733,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:4b16813cb4a6de2db4e8123212565583144206da28812f0d1855edb515032bba
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9/references/sdk-msbuild-dotnet8to9.md
   runtime: null
   scope: project
@@ -2742,7 +2742,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:f413c1da8a1c249f44a62c63b195149eccd7c5a1be6971ec89498bc4d73d67e4
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9/references/serialization-networking-dotnet8to9.md
   runtime: null
   scope: project
@@ -2751,7 +2751,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:ac1bc17ece41c8645e71dc51d6a26264475770004b42438410af0570b2b4108f
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet8-to-dotnet9/references/winforms-wpf-dotnet8to9.md
   runtime: null
   scope: project
@@ -2760,7 +2760,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:0c8736b3e7360e9ee3042a2e6f5b50cb3688cace295c77c3bb048dc66f9c96e2
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10
   runtime: null
   scope: project
@@ -2769,7 +2769,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10/SKILL.md
   runtime: null
   scope: project
@@ -2778,7 +2778,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:f3f6993993ff7b33df6ae8950b61ed4ab72bc2c053e099a1eb1d5a1452655ff9
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10/references/aspnet-core-dotnet9to10.md
   runtime: null
   scope: project
@@ -2787,7 +2787,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:5d21ef7d5bf416628b4af58e6e06fb46954c5f37307ea8cfc013c0cf15cddb89
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10/references/containers-interop-dotnet9to10.md
   runtime: null
   scope: project
@@ -2796,7 +2796,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:4f64e899e98fc4e9cc45b6fff6cffdb6fc732a684d0b40e0858e43f1f536c49b
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10/references/core-libraries-dotnet9to10.md
   runtime: null
   scope: project
@@ -2805,7 +2805,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:76744765e0886d8ffa68b7852dbbd25c492eb37cd7c6820f2501bf567a79b517
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10/references/cryptography-dotnet9to10.md
   runtime: null
   scope: project
@@ -2814,7 +2814,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:718e4accfcb5bb7f7ed38ad52b92a12e616c2bc2416b605ae1ced0468cbec022
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10/references/csharp-compiler-dotnet9to10.md
   runtime: null
   scope: project
@@ -2823,7 +2823,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:a6a158726c4b98d89323fe3139368bcc0833404a636282732b0717a5b45ee8fa
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10/references/efcore-dotnet9to10.md
   runtime: null
   scope: project
@@ -2832,7 +2832,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:8864ae3710386eae2d1ef7201ad067904b9f7f022fa2649c4541e8b561438488
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10/references/extensions-hosting-dotnet9to10.md
   runtime: null
   scope: project
@@ -2841,7 +2841,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:6a762de960712fcd83f6bee173ee85db5e098d60d4e2a553c7fcf41322f28a7d
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10/references/sdk-msbuild-dotnet9to10.md
   runtime: null
   scope: project
@@ -2850,7 +2850,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:ffcab567221a4a6439944be69f3e9d131e37b5f4afcfe4af377c7ef679155312
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10/references/serialization-networking-dotnet9to10.md
   runtime: null
   scope: project
@@ -2859,7 +2859,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:8f935a471ea2da9c132763851bff73f9b011facd26255579bc0bf8448975bee5
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-dotnet9-to-dotnet10/references/winforms-wpf-dotnet9to10.md
   runtime: null
   scope: project
@@ -2868,7 +2868,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:d82418368d9f0967a9d72606ec6270b040b74721f5255a644a43e31b42526658
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-mstest-v1v2-to-v3
   runtime: null
   scope: project
@@ -2877,7 +2877,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test-migration
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-mstest-v1v2-to-v3/SKILL.md
   runtime: null
   scope: project
@@ -2886,7 +2886,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test-migration
   content_hash: sha256:d6257dadf5c604ff85f52a3ad5835659e740be8392e9bfb937c9de3084cc9035
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-mstest-v3-to-v4
   runtime: null
   scope: project
@@ -2895,7 +2895,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test-migration
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-mstest-v3-to-v4/SKILL.md
   runtime: null
   scope: project
@@ -2904,7 +2904,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test-migration
   content_hash: sha256:20efaa1256c5aae30ee03e810f7f5ac328c94b20b0853773ee928ce8493ab25c
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-nullable-references
   runtime: null
   scope: project
@@ -2913,7 +2913,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-nullable-references/SKILL.md
   runtime: null
   scope: project
@@ -2922,7 +2922,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:4c229d8b7626a3737b2cf26ea89583a90fecf4f1d9136f04377688c75f22879b
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-nullable-references/references/aspnet-core.md
   runtime: null
   scope: project
@@ -2931,7 +2931,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:5db76c4148b682aac61f7e6349276a833b042a5284c7f625fef65dbbdd9a65d7
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-nullable-references/references/breaking-changes.md
   runtime: null
   scope: project
@@ -2940,7 +2940,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:f46fa6d6b2eb3c3cc6b4f1a826c1e3668502fd73d7215e03b4ef171e45bcf692
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-nullable-references/references/ef-core.md
   runtime: null
   scope: project
@@ -2949,7 +2949,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:98ef960c73c820925d9d6fb6801e65b15a12b4b9f3dcb5ececc5ccc6778b1ff1
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-nullable-references/references/nullable-attributes.md
   runtime: null
   scope: project
@@ -2958,7 +2958,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:81a71f6bc0997ba44956fce3de28b61ebf6ad6fbc32cf5cca2efe2ceabc9cb7b
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-nullable-references/scripts/Get-NullableReadiness.ps1
   runtime: null
   scope: project
@@ -2967,7 +2967,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:61a5540f17c00b3da4d97dbbe82df85c2ccc1c580795586afe6af002d21493e6
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-static-to-wrapper
   runtime: null
   scope: project
@@ -2976,7 +2976,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-static-to-wrapper/SKILL.md
   runtime: null
   scope: project
@@ -2985,7 +2985,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:058e7739a29232628c591e9eaffdcdbf29ea05056ff20b609397a1b534caf6be
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-vstest-to-mtp
   runtime: null
   scope: project
@@ -2994,7 +2994,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test-migration
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-vstest-to-mtp/SKILL.md
   runtime: null
   scope: project
@@ -3003,7 +3003,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test-migration
   content_hash: sha256:cfd50c87a6a35623ba88743f9b0da120e5691ff77bb4c90d2565b41d9c30f700
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-xunit-to-xunit-v3
   runtime: null
   scope: project
@@ -3012,7 +3012,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test-migration
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/migrate-xunit-to-xunit-v3/SKILL.md
   runtime: null
   scope: project
@@ -3021,7 +3021,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test-migration
   content_hash: sha256:0481be42764236a4bf8aa67d1e8ff75f7000913dbdcb80312b0d612c2ceaeb34
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/msbuild-antipatterns
   runtime: null
   scope: project
@@ -3030,7 +3030,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/msbuild-antipatterns/SKILL.md
   runtime: null
   scope: project
@@ -3039,7 +3039,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: sha256:08b36b41196b1282fc96bee299cbabf10e876969be0d9abb5b40ae4f15665ae4
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/msbuild-antipatterns/references/additional-antipatterns.md
   runtime: null
   scope: project
@@ -3048,7 +3048,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: sha256:4a62a12ba5173eb5c3d8b66e2ec4a9f0248e815aacd065664175b6db72adb6d9
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/msbuild-antipatterns/references/incremental-build-inputs-outputs.md
   runtime: null
   scope: project
@@ -3057,7 +3057,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: sha256:006a123ea16f95aeb216ae9e2a59be48fc82f15e66ecccdbb92fdcf03b05fdc4
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/msbuild-antipatterns/references/private-assets.md
   runtime: null
   scope: project
@@ -3066,7 +3066,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: sha256:1e678c0ef9667d9df92ff71ca12737ac3a4ed26050d73e5197a2478356e0b4f5
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/msbuild-modernization
   runtime: null
   scope: project
@@ -3075,7 +3075,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/msbuild-modernization/SKILL.md
   runtime: null
   scope: project
@@ -3084,7 +3084,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: sha256:6abc8b21c8fbd78e59d2358783d75b0febaa5dde0bb0d9495e41a1d9d99e246d
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/msbuild-server
   runtime: null
   scope: project
@@ -3093,7 +3093,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/msbuild-server/SKILL.md
   runtime: null
   scope: project
@@ -3102,7 +3102,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: sha256:4b2d14f7bcef2e00c67a10513fba8267df03d98e82d90042e61d965f6ff3cd7b
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/mtp-hot-reload
   runtime: null
   scope: project
@@ -3111,7 +3111,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/mtp-hot-reload/SKILL.md
   runtime: null
   scope: project
@@ -3120,7 +3120,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:2779894f8761a1b465f57b3fd81f13db5fab5516765ef8df246a99df151203a3
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/nuget-trusted-publishing
   runtime: null
   scope: project
@@ -3129,7 +3129,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-advanced
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/nuget-trusted-publishing/SKILL.md
   runtime: null
   scope: project
@@ -3138,7 +3138,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-advanced
   content_hash: sha256:e12a67e1239989a36b8835b715daf94a4223c89fbc21336bb24107f51363c3e5
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/nuget-trusted-publishing/references/package-types.md
   runtime: null
   scope: project
@@ -3147,7 +3147,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-advanced
   content_hash: sha256:f413d6ee9fc24c5b886dfcb0f7063b2bfa16bd8e6a5c938ca103ffd001b4f3b6
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/nuget-trusted-publishing/references/publish-workflow.md
   runtime: null
   scope: project
@@ -3156,7 +3156,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-advanced
   content_hash: sha256:632b8e8db22115237ce305ddbca00a41d3cbb10869f1cdc3116e329a35ab70df
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/open-code-review-delegate
   runtime: null
   scope: project
@@ -3165,7 +3165,7 @@ deployments:
   active_owner: alibaba/open-code-review/plugins/open-code-review/skills/open-code-review-delegate
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/open-code-review-delegate/SKILL.md
   runtime: null
   scope: project
@@ -3174,7 +3174,7 @@ deployments:
   active_owner: alibaba/open-code-review/plugins/open-code-review/skills/open-code-review-delegate
   content_hash: sha256:ead2ddb1b8db584051c81a2b5cdd6b6abe361c133b032a6b3a84567a8329d71f
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/optimizing-ef-core-queries
   runtime: null
   scope: project
@@ -3183,7 +3183,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-data
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/optimizing-ef-core-queries/SKILL.md
   runtime: null
   scope: project
@@ -3192,7 +3192,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-data
   content_hash: sha256:f5eb7b623031da6b217e75aca465f8258d3545ea51ab954491b3c4c52e91429f
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/platform-detection
   runtime: null
   scope: project
@@ -3201,7 +3201,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/platform-detection/SKILL.md
   runtime: null
   scope: project
@@ -3210,7 +3210,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:53fbe0c99edcd7c8366293826b2624bcd8ed22af4a4eb4a1529698f5db25e2b7
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/property-patterns
   runtime: null
   scope: project
@@ -3219,7 +3219,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/property-patterns/SKILL.md
   runtime: null
   scope: project
@@ -3228,7 +3228,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: sha256:d20ac0adca21952f0dba7501595b2bb7c9ae5cff1b236e5ef912fbd3a32da838
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/resolve-project-references
   runtime: null
   scope: project
@@ -3237,7 +3237,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/resolve-project-references/SKILL.md
   runtime: null
   scope: project
@@ -3246,7 +3246,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: sha256:5aa288d6f2204bdf7c3519a74596b9c7c501e9e655c1cd0369a3b877fa732fd9
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/run-tests
   runtime: null
   scope: project
@@ -3255,7 +3255,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/run-tests/SKILL.md
   runtime: null
   scope: project
@@ -3264,7 +3264,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:62a44beebf3d8ec988d171b3907cd3248b064b68ea6a1e9016ac32c6bc7100f5
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-batch-diagnostics
   runtime: null
   scope: project
@@ -3273,7 +3273,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-batch-diagnostics/SKILL.md
   runtime: null
   scope: project
@@ -3282,7 +3282,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:6ffe59597a869e56c579931e547ca64866004620c58cfed3fd64f7a9f45d3afa
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-batch-diagnostics/scripts/analyze_scans.py
   runtime: null
   scope: project
@@ -3291,7 +3291,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:1f29f760bc5a284fdb88cfa7e98ce36c71136821a477dfa9d01e78407b960b6e
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-batch-diagnostics/scripts/check_runtime.py
   runtime: null
   scope: project
@@ -3300,7 +3300,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:27d31fdac9289afb727d8985bc9c30037cb1e876c6ab0f19dbab0f2c17b16b76
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-batch-diagnostics/scripts/requirements.lock
   runtime: null
   scope: project
@@ -3309,7 +3309,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:931798b6624bcab60997a651f2079b8fc5774e60ea4d543fc9c1d62dd4c3efbd
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-batch-diagnostics/scripts/run.ps1
   runtime: null
   scope: project
@@ -3318,7 +3318,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:82c0db82b88a16e3d18add95cd149efe75bcbc8cc3979bb9c723b0a4d42352c5
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-batch-diagnostics/scripts/run_tests.py
   runtime: null
   scope: project
@@ -3327,7 +3327,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:829e7b22a00cc894f9c9f0f70e561b2c01bb9605463e1d400c317d1f0cdff972
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-batch-diagnostics/tests/test_analyze_scans.py
   runtime: null
   scope: project
@@ -3336,7 +3336,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:4a269734ef0167775023361a78b5f3ec19ab86bac0c6d9853d5b0235806f7dc4
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-batch-diagnostics/tests/test_runtime_readiness.py
   runtime: null
   scope: project
@@ -3345,7 +3345,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:d3db3a2d644b749d8d931e3fd6537663bc86c9ff5a55f311340ed3f5733ab843
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-layout
   runtime: null
   scope: project
@@ -3354,7 +3354,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-layout/SKILL.md
   runtime: null
   scope: project
@@ -3363,7 +3363,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:ffd517e01e6aeec9f92aa824c96f6a5280157d3c35aebb1e630f3da5d19acf5e
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-layout/scripts/normalize_book.py
   runtime: null
   scope: project
@@ -3372,7 +3372,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:e7548ef103e73562701aeae35b16ab5b7329aea618d8f3adb7981583592e60b8
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-layout/scripts/requirements.lock
   runtime: null
   scope: project
@@ -3381,7 +3381,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:931798b6624bcab60997a651f2079b8fc5774e60ea4d543fc9c1d62dd4c3efbd
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-layout/scripts/run.ps1
   runtime: null
   scope: project
@@ -3390,7 +3390,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:a651606451ac72be4806c32148de7d4872fb88db82dab3e69ca82890117d5293
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-layout/tests/run.ps1
   runtime: null
   scope: project
@@ -3399,7 +3399,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:fd7794cf9ea10d47ff5c1ec992574c83412ebd34f45dfde5091648c52f9d2172
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-layout/tests/test_normalize_book.py
   runtime: null
   scope: project
@@ -3408,7 +3408,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:4cd46b958aaa1839afd25ab9d600d6813ddbaa1db63b1c4effcc27a230f759d2
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-quality-control
   runtime: null
   scope: project
@@ -3417,7 +3417,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-quality-control/SKILL.md
   runtime: null
   scope: project
@@ -3426,7 +3426,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:5b33dd66ce6360ffee5e2d3f5909be25189ea2e748f01c02816414f507fdb25a
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-quality-control/scripts/requirements.lock
   runtime: null
   scope: project
@@ -3435,7 +3435,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:4c13730314335bf5e0cac01cb5b5d9bc78c1aeda127124772d10b8c0fb7eabcb
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-quality-control/scripts/run.ps1
   runtime: null
   scope: project
@@ -3444,7 +3444,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:7ab8d34979bbf0142025c3c73866ab88f7c8849dbd729f8426cbb579a3b9af90
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-quality-control/scripts/validate_book.py
   runtime: null
   scope: project
@@ -3453,7 +3453,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:07e7b96db372cf68554bbf6288cf6365523d85de5ad5a4ab02deeb56b3da4d20
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-quality-control/tests/run.ps1
   runtime: null
   scope: project
@@ -3462,7 +3462,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:c322d738f62c520855703ae59c6323227393f7857807940617156f8f50e62324
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-book-quality-control/tests/test_validate_book.py
   runtime: null
   scope: project
@@ -3471,7 +3471,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:eb58d5fe1a231dae106eee4a10e6ceb88885e69adb3e78b92875eb7d61971655
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-page-rectification
   runtime: null
   scope: project
@@ -3480,7 +3480,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-page-rectification/SKILL.md
   runtime: null
   scope: project
@@ -3489,7 +3489,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:4085008008997280b39c77fd4bd5d97ba4cb9396da1b9c98c0e0f98713168e78
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-page-rectification/scripts/rectify_pages.py
   runtime: null
   scope: project
@@ -3498,7 +3498,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:ad3b0a9b434890d28ddd3fe54df357c7793c66be7d8a8b502c6066ede5b28ba3
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-page-rectification/scripts/requirements.lock
   runtime: null
   scope: project
@@ -3507,7 +3507,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:669d3b4e9bb87bdb6fb8ce10753bfc743fdd1a86d80cc2c74c11eb065311b3a8
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-page-rectification/scripts/run.ps1
   runtime: null
   scope: project
@@ -3516,7 +3516,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:a96ff95b69a70fedc0c92d84c20e9ecc390c414d9f2f872f324e529db6dddb93
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-page-rectification/tests/run.ps1
   runtime: null
   scope: project
@@ -3525,7 +3525,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:46eb597910ab1160c3658abac5549bebd3e5c858441b12f614d78b3d7cb6f6e0
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-page-rectification/tests/test_rectify_pages.py
   runtime: null
   scope: project
@@ -3534,7 +3534,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:69c7fc3342e2f3616c9df1725bfb601251494c7cc3ab830844bab30f5b7922ec
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-page-rectification/tests/test_runner.ps1
   runtime: null
   scope: project
@@ -3543,7 +3543,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:eceef58272b792f16e499539e646ae8fd94ec6e6d5cdbea95579b657b4e91265
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-tone-restoration
   runtime: null
   scope: project
@@ -3552,7 +3552,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-tone-restoration/SKILL.md
   runtime: null
   scope: project
@@ -3561,7 +3561,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:bfa5e0cd50c7e17f901701f47b86db945667eb952e04c19c400cb5ae07130834
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-tone-restoration/scripts/requirements.lock
   runtime: null
   scope: project
@@ -3570,7 +3570,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:931798b6624bcab60997a651f2079b8fc5774e60ea4d543fc9c1d62dd4c3efbd
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-tone-restoration/scripts/restore_tone.py
   runtime: null
   scope: project
@@ -3579,7 +3579,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:f74867fb8a5a4c426549c6696549bb1713f6cc1b810a012cda2131ece636a0c8
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-tone-restoration/scripts/run.ps1
   runtime: null
   scope: project
@@ -3588,7 +3588,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:9aa0e0333eaf722e7b7bd15e72c573e337df7cf2312b944b8577454ae383cfbb
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-tone-restoration/tests/run.ps1
   runtime: null
   scope: project
@@ -3597,7 +3597,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:522ff1f3353eacaeef2b0fdce5d2594b79a1792b2bcc9828f9164bf86a08ec09
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-tone-restoration/tests/test_restore_tone.py
   runtime: null
   scope: project
@@ -3606,7 +3606,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:ae7823a94be9b336a012d1077c2a813d0893e704a67a4dd81318b70fafa13443
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scan-tone-restoration/tests/test_runner.ps1
   runtime: null
   scope: project
@@ -3615,7 +3615,7 @@ deployments:
   active_owner: ./src/private/lib/scan-restoration
   content_hash: sha256:ecaf496a3e458d61a704ad332d269985dc5d56d9d631ee439e7fe4e8c8b507e3
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-pdf-reconstruction
   runtime: null
   scope: project
@@ -3624,16 +3624,16 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-pdf-reconstruction/SKILL.md
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:16280ebf45e26f00b25c4d2fdc506d7d0e2c486ec60317d48d79b290ce89cef0
+  content_hash: sha256:f5abdff078ab34da534c97fdde8e9f7feb784d6f4150604fd4297a1726238d64
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-pdf-reconstruction/assets/figure-map.schema.json
   runtime: null
   scope: project
@@ -3642,7 +3642,7 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:91fd4a94dc55a383c409dc1247565af76db619330574328406700d893de956f6
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-pdf-reconstruction/assets/section-map.schema.json
   runtime: null
   scope: project
@@ -3651,25 +3651,25 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:b70abbb9c21b530040ea5363f5b73deebc67836b4cfbff60e6ffca0eb0644620
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-pdf-reconstruction/assets/source-blocks.schema.json
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:0e60c806e1e0f50c24a9c6e3b8a61b4bfbd191680ba49126a2ba3f9af32d5c0a
+  content_hash: sha256:c9f8901bdba9faa4484d4c77f115ed648397295a809b644fc712345a7bff0199
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-pdf-reconstruction/assets/source-package.schema.json
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:11cf5e88818644547bf6d547c1cf950f8bd99e8da967a6fc4e992d99f416c4a9
+  content_hash: sha256:0fbb3f8c229a20c39d86ceecf37cfd702f3760ea06e5f0d0798e68581efbe795
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-pdf-reconstruction/references/music-notation-source-profile.md
   runtime: null
   scope: project
@@ -3678,25 +3678,25 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:0340ba9d0935cf66a77915b323cfc3417b8d28c8e240d5152d3e18e35d7094ed
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-pdf-reconstruction/references/source-package-contract.md
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:e29f24f417628b38c566bb5539f3d64f8dc1bc3603e5ce7bb83f55d4b98abe8a
+  content_hash: sha256:108b8661a7d5842ae793b4f1f2c9eca0c776ec8e6a6db9e175db1ea16ca0d49e
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-pdf-reconstruction/scripts/reconstruct_pdf.py
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:2a9af4979fd20fca2099cb3a5a4ebe8d5b6ff68be630ee9d1f4739643d34eccc
+  content_hash: sha256:4ce6addc0f785368515ead1413f4bbd6fc93ef75475b4fbd9981f31d14951a46
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly
   runtime: null
   scope: project
@@ -3705,25 +3705,25 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/SKILL.md
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:aeb3a6e3f416878010f570261fb44f32a3918e998a3937506b6493c66d4baa5b
+  content_hash: sha256:ef6e89867c18b12d57cae8b03238b8f2023e396cf3b8431d173d4da05d3a523f
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/assets/assembly-manifest.schema.json
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:ea36189ac95f0ee0e207ba8822ec692936560367f59e9e31c4bd65efed7e31f8
+  content_hash: sha256:80528b0368071f409cba2244ffb6932cf4f368e6ae4659054f5699f7325debdf
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/assets/assembly-spec.schema.json
   runtime: null
   scope: project
@@ -3732,7 +3732,7 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:482628af62f50d64b058a3334fb51e455a170343572223178fbf7a7bb4260a4a
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/assets/figure-map.schema.json
   runtime: null
   scope: project
@@ -3741,16 +3741,16 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:91fd4a94dc55a383c409dc1247565af76db619330574328406700d893de956f6
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/assets/print-base.css
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:21ce9c38d9357f35905c87bad8d5dbfa178d67c4e92554c2fc8d13a8d412a91c
+  content_hash: sha256:13a1aceeaa34580523345c61237d5ac333ae61b417139dd665710da9b3a2d158
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/assets/publication-profile.json
   runtime: null
   scope: project
@@ -3759,25 +3759,25 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:ba56046efd78fe5b8589ea429e20e777de06f7e759fba23bc3ef446ba4d2312c
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/assets/source-blocks.schema.json
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:0e60c806e1e0f50c24a9c6e3b8a61b4bfbd191680ba49126a2ba3f9af32d5c0a
+  content_hash: sha256:c9f8901bdba9faa4484d4c77f115ed648397295a809b644fc712345a7bff0199
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/assets/source-package.schema.json
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:11cf5e88818644547bf6d547c1cf950f8bd99e8da967a6fc4e992d99f416c4a9
+  content_hash: sha256:0fbb3f8c229a20c39d86ceecf37cfd702f3760ea06e5f0d0798e68581efbe795
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/assets/translation-bundle.schema.json
   runtime: null
   scope: project
@@ -3786,25 +3786,25 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:a981b4e3e183970817dbd60ad8a4876557aaaab765b226afb4de58ab70ce640b
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/references/assembly-contract.md
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:2857c867e75ca884868a753aafd01afc706b2f72f921f0c2ebb13424b3e712c1
+  content_hash: sha256:f73fa48c8fd9d0adc02b7ebacf0566e9e6b81cabc37d1be3ddd4d95750bfbbeb
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/references/mixed-script-print.md
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:ad369a5574857bee113b09d864beca728c7e8e729cc1460ccb5bd39666d261db
+  content_hash: sha256:9bad50264392685eb970c2d3fd01c037c2854cef40c78eabd87a3e844cf885ff
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/references/music-notation-markup.md
   runtime: null
   scope: project
@@ -3813,16 +3813,16 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:795558edf5480734ca3e0964f5e2c591ffcc22e687ab8e2611f58d357541d44f
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-print-assembly/scripts/assemble_print.py
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:5072a940d2a82dc79e395d565553b34efae488431b5f6e670cbc946e6841f5b1
+  content_hash: sha256:d29d37381670df7c10418d0dfdafc20edc14968a3d74329d3f275631e0fdf8d8
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-render-qa
   runtime: null
   scope: project
@@ -3831,25 +3831,25 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-render-qa/SKILL.md
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:e7eb604a7cbc4824c3a860df56d0bb525d47abf05b0c3e2295781a830f40c362
+  content_hash: sha256:1c3238bf333077091475b59f56bf0afe8dca5bb5db62c44d04cda079ab9235fd
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-render-qa/assets/assembly-manifest.schema.json
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:ea36189ac95f0ee0e207ba8822ec692936560367f59e9e31c4bd65efed7e31f8
+  content_hash: sha256:80528b0368071f409cba2244ffb6932cf4f368e6ae4659054f5699f7325debdf
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-render-qa/assets/publication-profile.json
   runtime: null
   scope: project
@@ -3858,7 +3858,7 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:ba56046efd78fe5b8589ea429e20e777de06f7e759fba23bc3ef446ba4d2312c
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-render-qa/assets/qa-evidence.schema.json
   runtime: null
   scope: project
@@ -3867,7 +3867,7 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:502da511978a349c637a0ace80876dc05c38890f56f6f32524aaafcf5c144ab1
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-render-qa/assets/release-manifest.schema.json
   runtime: null
   scope: project
@@ -3876,7 +3876,7 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:5da0c709cc91cd77faef793f4fdafc56b02bdb1cdd318b6d79f215224441dbc4
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-render-qa/references/music-notation-qa-profile.md
   runtime: null
   scope: project
@@ -3885,25 +3885,25 @@ deployments:
   active_owner: ./src/private/lib/scholarly-publication
   content_hash: sha256:e5075da84ed0c01d83132aeb4b84db6d3031fe7e0cacbd9da2cf259c77ba2b28
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-render-qa/references/qa-contract.md
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:07e7d67c714da1a43025a41c1ac2ec3d72847a4b4028d86a81f3e9edca2a52ca
+  content_hash: sha256:e038dd126aca8e6bb0c5552fc7c08c60de920800dfa1555e23bf6a3efbeff080
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/scholarly-render-qa/scripts/audit_publication.py
   runtime: null
   scope: project
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:9b1118f835f307c5e153a59e170bfc0c5fd6f5d8887988845b99456eea23bc5d
+  content_hash: sha256:a8a99e9c0cbbb9ede1f5761199b3acb2bcb64ae1fc04c1c3cc2d603761992cc5
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/setup-local-sdk
   runtime: null
   scope: project
@@ -3912,7 +3912,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/setup-local-sdk/SKILL.md
   runtime: null
   scope: project
@@ -3921,7 +3921,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet
   content_hash: sha256:6b4904db9ae950da582f85dc2f4cf2adf586776d84ce805a273edb4045f1a74e
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/target-authoring
   runtime: null
   scope: project
@@ -3930,7 +3930,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/target-authoring/SKILL.md
   runtime: null
   scope: project
@@ -3939,7 +3939,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-msbuild
   content_hash: sha256:e39b9ad0bfe65746c8110f971847a1dd8988feccc10b8ad19674ab544926bcc0
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/technology-selection
   runtime: null
   scope: project
@@ -3948,7 +3948,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/technology-selection/SKILL.md
   runtime: null
   scope: project
@@ -3957,7 +3957,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: sha256:94a7031083ba18d869322e21cdfa90d859703edf881381a3706a1bb0411a09a0
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions
   runtime: null
   scope: project
@@ -3966,7 +3966,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/SKILL.md
   runtime: null
   scope: project
@@ -3975,7 +3975,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:ec6f69ed00a627c0319a2bbdcfd71fcfab84eaae28900b2f814af3b27e44bd70
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/extensions/cpp.md
   runtime: null
   scope: project
@@ -3984,7 +3984,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:da2de0bb820edaf523731bf36381d2a7e71009561072204773be548e43911d50
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/extensions/dotnet.md
   runtime: null
   scope: project
@@ -3993,7 +3993,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:ef257a931a25501697fde8a36e027ba9195ff624ff701dd5fd276d746c0d25be
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/extensions/go.md
   runtime: null
   scope: project
@@ -4002,7 +4002,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:a885da2e49efbedfe30307c196ec71876433571ce3e5c781e6741ee9a77ab8c3
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/extensions/java.md
   runtime: null
   scope: project
@@ -4011,7 +4011,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:05f3bd254cad71e2b4ac36a3483e2a8fef41dba0ac6a983925754b60bc50758b
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/extensions/kotlin.md
   runtime: null
   scope: project
@@ -4020,7 +4020,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:ef1176cc48c807bfb6e57329df6ee093f6e2475cd629980ffc477d85d879605c
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/extensions/powershell.md
   runtime: null
   scope: project
@@ -4029,7 +4029,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:2dbbac3f475b7f7f4f817597379789af228e034d4c179460403757af26240f9b
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/extensions/python.md
   runtime: null
   scope: project
@@ -4038,7 +4038,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:e532c6eb1d362e8c0a14b90cb906a84449f0a03330ff432a72d484c79ece0e5d
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/extensions/ruby.md
   runtime: null
   scope: project
@@ -4047,7 +4047,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:422044981b8672c26f6c47ac9f828aa25f03eac5cc0c9a2354843a6980a297bc
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/extensions/rust.md
   runtime: null
   scope: project
@@ -4056,7 +4056,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:d92041fc8142311070e9c02a5590ac9d10eef0baa4aa9136e163e2c526871725
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/extensions/swift.md
   runtime: null
   scope: project
@@ -4065,7 +4065,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:41f4b7c9b8827de0737778ca24de5de26ccd1a3f5ff58d6f58a135fc576c4c52
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-analysis-extensions/extensions/typescript.md
   runtime: null
   scope: project
@@ -4074,7 +4074,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:7dd98060c3941ec791f1128ef67d77cad2733ee8381e39f14ccdc19ad48f90ef
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-anti-patterns
   runtime: null
   scope: project
@@ -4083,7 +4083,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-anti-patterns/SKILL.md
   runtime: null
   scope: project
@@ -4092,7 +4092,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:7f2742ee23ca9c91d5c68fdd81e4e6b0bc21aaa4c570b4538454e0899a1b16ec
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-gap-analysis
   runtime: null
   scope: project
@@ -4101,7 +4101,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-gap-analysis/SKILL.md
   runtime: null
   scope: project
@@ -4110,7 +4110,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:3a0a70911a37f680eb7ad7926b65be071cc1657a96900c91e0fa189e02b78b4a
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-smell-detection
   runtime: null
   scope: project
@@ -4119,7 +4119,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-smell-detection/SKILL.md
   runtime: null
   scope: project
@@ -4128,7 +4128,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:d5597861bb37d83743d2e97a6909139429524cccf37aabd61988f9d5a9840733
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-smell-detection/references/test-smell-catalog.md
   runtime: null
   scope: project
@@ -4137,7 +4137,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:001e04c54d73940df65090c6915e87b07aac8cddcc26be139c7d9770dc0a8b99
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-tagging
   runtime: null
   scope: project
@@ -4146,7 +4146,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/test-tagging/SKILL.md
   runtime: null
   scope: project
@@ -4155,7 +4155,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: sha256:874745af561a9b04b67f19adf587cb3b58f60d0e186345f1c799dfa23cf589e0
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/thread-abort-migration
   runtime: null
   scope: project
@@ -4164,7 +4164,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/thread-abort-migration/SKILL.md
   runtime: null
   scope: project
@@ -4173,7 +4173,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-upgrade
   content_hash: sha256:0dfe570c456b940b44f5283f03bebe487261ee0dc036cad05a201f871c06e9eb
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-code-review
   runtime: null
   scope: project
@@ -4182,7 +4182,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-code-review/SKILL.md
   runtime: null
   scope: project
@@ -4191,7 +4191,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:63ad45a2cbdf1289747bc0480272176cc11182bb45fe1fc2b6ae96706fa4b90c
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-code-review/references/quality-rules.md
   runtime: null
   scope: project
@@ -4200,7 +4200,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:9f4c258078ab1b5ef4da5973277d31c2e59dc137590768c1cdc185b3ece9f262
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-design
   runtime: null
   scope: project
@@ -4209,7 +4209,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-design/SKILL.md
   runtime: null
   scope: project
@@ -4218,7 +4218,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:f205f46bf8385039e150a5da065249fa94c24ad6f9e49d6d697267c7c5fab089
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-design/references/brushes-and-icons.md
   runtime: null
   scope: project
@@ -4227,7 +4227,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:7ebce795a714a6479320bd0f07ba21b26b5689edb3dd96a5227192e9e352a878
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-design/references/layout-review.md
   runtime: null
   scope: project
@@ -4236,7 +4236,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:12210e16f1562687c6d02762c433c689cbabd7f4c3e5d9457e44928127fe2542
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-design/references/theme-accessibility.md
   runtime: null
   scope: project
@@ -4245,7 +4245,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:79179212801c3edc16566941b1667f3e6b2c819a3bdd32e941c47531d11ed1fc
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-design/winui-search.exe
   runtime: null
   scope: project
@@ -4254,7 +4254,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:c0b897e97a1832111c7fada164d5c7da0062470ff46453a6b0b3d5668f529b8b
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-dev-workflow
   runtime: null
   scope: project
@@ -4263,7 +4263,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-dev-workflow/BuildAndRun.ps1
   runtime: null
   scope: project
@@ -4272,7 +4272,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:8e0adfb55609913c91c86cff3d48de4376067b50f34304795ded3513b9772d08
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-dev-workflow/SKILL.md
   runtime: null
   scope: project
@@ -4281,7 +4281,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:7ae06a5b0ba0ccb2235e702bf86945341802a82a4436a0388699edcd7d057093
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-dev-workflow/analyzer/Microsoft.WindowsAppSDK.Analyzers.dll
   runtime: null
   scope: project
@@ -4290,7 +4290,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:e989099a0e369a1f2c114b4d86a82789f1006d73efc719db96e9bbe45d88671c
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-dev-workflow/analyzer/Microsoft.WindowsAppSDK.Analyzers.targets
   runtime: null
   scope: project
@@ -4299,7 +4299,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:80e801c7d787248009cf365268a8dbdd16a30399806b3fe85a7fe87badba3727
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-packaging
   runtime: null
   scope: project
@@ -4308,7 +4308,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-packaging/SKILL.md
   runtime: null
   scope: project
@@ -4317,7 +4317,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:83e9685062d9ae7ef25e9bc4f1dce771ab4207ad6276e3d98ec8ffbd7766cf0a
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-packaging/references/sourcegen-patterns.md
   runtime: null
   scope: project
@@ -4326,7 +4326,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:a022b5dc66e63ef2652eb5aeac986e9b80fd86fa207f25fef4cc41470d3a3267
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-session-report
   runtime: null
   scope: project
@@ -4335,7 +4335,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-session-report/Analyze-Session.ps1
   runtime: null
   scope: project
@@ -4344,7 +4344,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:e06f4b3ef041d02ed1e5af593ba7c8edf62aa20a35322363f3328d3a4fed0af5
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-session-report/SKILL.md
   runtime: null
   scope: project
@@ -4353,7 +4353,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:00e1ebc5da3ad4fd158624fbd96f6a1a0ea57d8a6f6592d3236193932528fa86
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-setup
   runtime: null
   scope: project
@@ -4362,7 +4362,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-setup/SKILL.md
   runtime: null
   scope: project
@@ -4371,7 +4371,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:cdaf1e76576bcdacc67ec8d347918d6d2c2242df588c3c49c1f9569fa46e0808
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-ui-testing
   runtime: null
   scope: project
@@ -4380,7 +4380,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-ui-testing/SKILL.md
   runtime: null
   scope: project
@@ -4389,7 +4389,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:1b6164a6b6cd26dbc4d154530030ce05e17f1c421e5389872efb0cf5b91afb42
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-wpf-migration
   runtime: null
   scope: project
@@ -4398,7 +4398,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/winui-wpf-migration/SKILL.md
   runtime: null
   scope: project
@@ -4407,7 +4407,7 @@ deployments:
   active_owner: microsoft/win-dev-skills/plugins/winui
   content_hash: sha256:3f0de39015b2ebd204214036dcda4418cdaeb5b3e5b8ab9193bfc6e3aad446d3
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/writing-mstest-tests
   runtime: null
   scope: project
@@ -4416,7 +4416,7 @@ deployments:
   active_owner: dotnet/skills/plugins/dotnet-test
   content_hash: null
 - kind: project-relative
-  target: agents
+  target: copilot
   value: .agents/skills/writing-mstest-tests/SKILL.md
   runtime: null
   scope: project

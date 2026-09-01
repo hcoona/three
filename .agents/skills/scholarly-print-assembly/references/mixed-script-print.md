@@ -15,11 +15,12 @@ point, not a substitute for rendered-page review.
 - Use static local font files with explicit family, style, and weight.
 - Bind `body-cjk` and `body-latin` roles to declared families in the assembly
   specification; do not infer roles from font array order.
-- Use `body-latin` as the bounded default for accepted language tags. Select
-  `body-cjk` only for `zh`, `ja`, or `ko` primary tags or `Hans`, `Hant`,
-  `Hani`, `Jpan`, or `Kore` script subtags.
-- Provide an exact declared face for every family/style/weight tuple selected
-  by the semantic markup. A cmap in another face is not fallback evidence.
+- Keep authored language selectors and font declarations within the publication
+  profile and bind both roles to declared normal-400 families.
+- Assembly verifies font parsing, names, declared style/weight records, Unicode
+  cmap presence, and generated CSS resource bindings. It does not simulate the
+  browser cascade or glyph fallback. Confirm actual face and glyph selection in
+  rendered output and downstream PDF/QA inspection.
 - Prefer a CJK family designed for body text and a compatible Latin family.
 - Subset only after the final character inventory is known.
 - Retain font licenses and hash every font file.

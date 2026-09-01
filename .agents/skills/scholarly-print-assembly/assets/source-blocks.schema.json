@@ -21,7 +21,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "source_order", "source_block_number", "bbox", "text"],
+        "required": ["id", "source_order", "bbox", "text"],
         "properties": {
           "id": {
             "type": "string",
@@ -30,10 +30,6 @@
           "source_order": {
             "type": "integer",
             "minimum": 1
-          },
-          "source_block_number": {
-            "type": "integer",
-            "minimum": 0
           },
           "bbox": {
             "$ref": "#/$defs/bbox"

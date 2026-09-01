@@ -87,7 +87,7 @@ def _deployment_record(
 ) -> dict[str, object]:
     return {
         "kind": "project-relative",
-        "target": "agents",
+        "target": "copilot",
         "value": value,
         "runtime": None,
         "scope": "project",

@@ -401,7 +401,7 @@ def _check_deployments(
         matches = [item for item in relevant if item.get("value") == path]
         expected = {
             "kind": "project-relative",
-            "target": "agents",
+            "target": "copilot",
             "value": path,
             "runtime": None,
             "scope": "project",
