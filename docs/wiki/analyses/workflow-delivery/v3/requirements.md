@@ -277,25 +277,66 @@ isolation are separate authority boundaries and remain unchanged.
     candidate feedback. `worktree` enumerates tracked plus eligible untracked
     paths and reads filesystem bytes for manual developer feedback. Every result
     binds its source kind. Index or worktree bytes must never be represented as
-    `HEAD` or commit identity. The supported catalog covers manifests,
-    lockfiles, workflows, dependency and configuration files, composite
-    actions, and conventional install/bootstrap automation. It rejects direct,
-    versioned, aliased, workspace, and subpath forms of the exact smoke
-    coordinate. In manifest and lock dependency positions, it also rejects
-    direct `file:`, `link:`, or `workspace:` paths that resolve to the known
+    `HEAD` or commit identity. The supported catalog covers only selector rows
+    paired with an exact Ecosystem Authority Graph in the first-slice LLD. Git
+    Source Authority supplies exact bytes directly or materializes only the
+    declared files into a Session-owned isolated snapshot when an official
+    library or CLI requires paths. The graph binds authoritative source
+    artifact schemas, ecosystem standards, exact package, CLI, runtime, tool,
+    module, or assembly identities; exact versions and lock/integrity
+    provenance; public APIs or commands; input modes; admitted format
+    generations; required normalized facts; and explicitly unsupported cases.
+    File-oriented authorities may read only that snapshot. No graph may fall
+    back to the real worktree, resolve an undeclared import or preset, expand
+    ambient environment, access a registry or network, evaluate GitHub
+    expressions or MSBuild properties, install or restore packages, execute
+    candidate code, or write repository or external state.
+
+    Authoritative lockfiles or manifests, official ecosystem libraries or CLIs,
+    and published standards may compose to own the manifest, lock, descriptor,
+    locator, workspace, or language model. Distinct semantic layers may compose
+    in an ordered graph, such as a pnpm lock model followed by official
+    dependency-path, lockfile-resolution, workspace-specifier, and registry
+    specifier helpers, but two authorities must not compete over the same layer.
+    Policy code consumes only stable package identity, reference-kind,
+    local-path, and source-location facts. It must not recreate, cross-check, or
+    harden syntax or invariants already owned by the selected graph.
+
+    The policy rejects the prohibited forms assigned to each retained surface,
+    including normalized direct, versioned, aliased, and workspace
+    smoke-coordinate facts and local dependency paths resolving to the known
     producer root. It must not reject the producer path globally because
-    workflows may legitimately build that source. The only allowed package-name
-    occurrence is the top-level `name` in `package.json` at an exact known
-    producer path. Findings mean prohibited references, not proven runtime
-    consumers. Encoded or split construction, arbitrary runtime downloads,
+    workflows may legitimately build that source. The only allowed
+    package-name occurrence is the top-level `name` in `package.json` at an
+    exact known producer path. Findings mean prohibited references, not proven
+    runtime consumers. Encoded or split construction, arbitrary runtime
+    downloads, surfaces or dialects without an admitted authority graph,
     external configuration, and novel layouts are explicit non-goals.
 
-    Static-reference evidence must bind schema and result, source kind, exact
-    target when applicable, policy ID and digest, and sorted findings. File,
-    surface, or finding counts may be diagnostics only. Whole-file digest
-    exceptions, fixed inventory counts, scanned-surface digest authority,
-    parser/dataflow/interpreter claims, trigger-catalog authority, and claims of
-    universal consumer absence are forbidden.
+    Static-reference evidence must bind schema, result, source kind, exact
+    target when applicable, policy ID and digest, sorted exact implementation
+    identities actually loaded, canonical error kind when result is error, and
+    sorted findings. The invocation schema must reject an omitted or unknown
+    source kind and malformed required source parameters before constructing a
+    Result. After source admission, inability to deterministically enumerate,
+    read, or minimally materialize the declared exact source is
+    `source-acquisition-failed`. File, surface, or finding counts may be
+    diagnostics only. Whole-file digest exceptions, fixed inventory counts,
+    scanned-surface digest authority, handwritten ecosystem grammars or
+    schemas, competing-authority cross-validation or hardening,
+    dataflow/interpreter claims beyond the bound authority projections,
+    trigger-catalog authority, and claims of universal consumer absence are
+    forbidden. Strict byte-to-text behavior, BOM handling, snapshot inputs,
+    loaded authority identities, normalized fact contracts, and distinct
+    `source-acquisition-failed`, `encoding-rejected`, `authority-rejected`,
+    `authority-execution-failed`, `unsupported-projection`,
+    `authority-mismatch`, and `cleanup-failed` failures are part of the policy
+    contract. Changing any source schema, standard, authority identity, version,
+    API or command, input mode, format generation, or fact contract changes the
+    policy digest. Source candidates and graph-owned projections must follow
+    one deterministic declared traversal. The first typed non-cleanup failure
+    is the canonical error; required-root cleanup failure overrides it and
+    retains the earlier sanitized cause only as diagnostic.
 
     The immutable Governance source contract is repository `hcoona/three`, ref
     `refs/heads/main`, and path

@@ -2772,3 +2772,275 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - No runtime, Governance, package-access, Environment, deployment, workflow,
   package, or other external mutation occurred. Final combined validation,
   independent review/adjudication, commits, PR, and merge remain pending.
+
+## [2026-08-31] query | Bind static-reference ecosystem parser authorities
+
+- Replaced the planned handwritten ecosystem parsing boundary with one
+  exact-version, parse-only parser authority per retained static-reference
+  surface.
+- Required adapters to consume exact candidate bytes only and emit stable
+  normalized policy facts without evaluation, execution, installation,
+  network access, fallback worktree reads, or writes.
+- Removed first-slice selectors that lack a stable and proportionate parser
+  projection instead of retaining local compatibility grammars.
+- Bound parser IDs and versions into the policy digest and prohibited
+  second-parser cross-validation or defensive revalidation of guarantees owned
+  by the selected parser.
+- Preserved `live_enabled: false`; no workflow, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Generalize static-reference ecosystem authority
+
+- Corrected the parser-only and library-only abstraction to an Ecosystem
+  Authority Graph composed from authoritative source artifacts, stable official
+  libraries or CLIs, and published ecosystem standards.
+- Defined lockfiles as authority nodes for the resolved state they record,
+  without allowing them to replace manifest intent or interpret themselves.
+- Restored `uv.lock` to the first-slice surface through pinned `uv@0.10.9`
+  `--locked --offline` export, PEP 751 `pylock.toml`, and
+  `packaging@26.3` `packaging.pylock`, rather than depending on uv's unstable
+  Rust API or maintaining a local uv schema.
+- Bound disjoint selectors to exact source-snapshot closures, authority
+  identities, APIs or commands, versions, provenance, normalized facts,
+  applicable prohibited forms, unsupported cases, and typed authority
+  failures.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Contract authority graphs to provable facts
+
+- Independent review identified 22 true-positive authority, projection,
+  isolation, Result, and acceptance gaps; one claimed mvdan default-dialect gap
+  was dismissed because the pinned API deterministically defaults to Bash.
+- Removed first-slice Yarn locks, standalone Python manifests, GitHub Actions
+  `uses`, Node import-subpath claims, and explicit Windows PowerShell workflow
+  shells instead of adding local compatibility grammars.
+- Restricted npm locks to lock-only v2-v3 input, bound pnpm v9 conflict-aware
+  reading and official local resolution, and replaced a new Go helper with the
+  checksum-pinned official `shfmt` CLI.
+- Restricted uv authority to the flat package/source facts preserved by its
+  official PEP 751 export, added ancestor-isolated snapshot and concrete
+  failure acceptance, and kept manifest intent distinct from resolved lock
+  state.
+- Added observed authority identities, canonical typed errors, and exact
+  cleanup failure to the static-reference Result contract.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Remove authorities without bounded inputs
+
+- Independent regression review identified seven true-positive contract and
+  implementation gaps after the first authority contraction.
+- Removed uv from the first-slice surface because uv 0.10.9 has no stable
+  lock-bytes interface and even frozen project export performs filesystem
+  discovery outside an enforceable snapshot boundary.
+- Removed the filesystem-reading pnpm local resolver and retained only public
+  no-I/O lockfile, dependency-path, workspace-specifier, and registry-specifier
+  APIs; unprojectable link/path-local forms now fail closed.
+- Removed `npm-shrinkwrap.json`, which Arborist 10.0.2 deliberately ignores,
+  and corrected npm workspace-spec and explicit npm-package-arg base handling.
+- Corrected Node import-subpath scope and shfmt provenance without adding a
+  local grammar, internal ecosystem API, binary helper, or cross-platform
+  filesystem sandbox.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Close file-authority input gaps
+
+- Independent review found eight further true-positive selector, handoff,
+  encoding, lock-format, and Result-contract gaps; two proposed hardening
+  changes were dismissed as unnecessary.
+- Removed npm lock projection because Arborist 10.0.2 can follow lock-controlled
+  links and workspace paths into undeclared package manifests and exposes no
+  stable byte-only loading mode.
+- Added strict UTF-8 byte preflight without byte rewriting for file-oriented
+  JSON/YAML authorities, plus explicit authority-owned BOM behavior.
+- Rejected combined pnpm environment lock documents before the wanted-lock
+  reader can discard them, and admitted only NuGet lock format versions 1-3.
+- Removed execution-relative local-path claims from workflow, action, and
+  standalone script rows instead of implementing a partial working-directory
+  evaluator.
+- Added matrix-wide selector and unsupported-boundary acceptance, completed the
+  HLD Result fields, and restored design-merge/reconciliation before
+  implementation in the handoff.
+- Kept unevaluated MSBuild parsing and mise-locked shfmt identity unchanged:
+  the rejected findings would have added ambient-state cleaning or
+  platform-specific binary hashing without changing the bounded semantic
+  authority.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Finalize bounded authority inputs
+
+- A fourth independent review identified six true-positive handoff,
+  discriminator, BOM, pnpm API, and authority-boundary gaps.
+- Removed unevaluated MSBuild project/central-manifest projection after
+  read-focused adjudication confirmed that Microsoft.Build 18.9.6 exposes no
+  public XML entry point that avoids ambient collection/toolset initialization.
+- Bound the exact pnpm pure-function order, arguments, fixed registry/default
+  constants, lock options, and fail-closed outcomes instead of naming packages
+  without a complete invocation contract.
+- Recorded the actual upstream pnpm BOM stack, which accepts zero, one, or two
+  leading BOMs, rather than adding a stricter local byte ceiling.
+- Unified the static-reference discriminator on the existing `result` field and
+  removed the competing undocumented `status` field.
+- Corrected the HLD authority-graph wording and made protected design merge and
+  reconciliation explicit in both the handoff summary and executable workflow.
+- Preserved the earlier shfmt adjudication: module/version lock provenance is
+  sufficient for this bounded authority without a platform-specific binary
+  digest.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Complete retained authority projections
+
+- A fifth independent review identified eight true-positive pnpm,
+  manifest-projection, selector, and partial-model admission gaps.
+- Removed GitHub workflow/composite-action static projection because the pinned
+  Actions package's public typed converters omit the required `with`, `shell`,
+  `working-directory`, and general environment facts; retaining it would
+  require a local TemplateToken schema adapter.
+- Defined exact npm manifest and pnpm workspace projections, including selected
+  fields, shapes, deterministic ordering, official parser calls, emitted facts,
+  and all-or-nothing failure behavior.
+- Corrected pnpm workspace recognition so ordinary specifiers bypass the
+  workspace converter, while named/ranged workspace identity remains
+  authoritative even when an expected `link:` resolution has no snapshot key.
+- Made pnpm basename selectors exclude GitHub workflow paths and distinguished
+  the declared snapshot read from the subsequent no-I/O companion helpers.
+- Bound PowerShell's filename-bearing parser overload and required zero parse
+  errors before any recovery-AST fact projection.
+- Preserved contract-bounded scope instead of adding an Actions token adapter,
+  workflow evaluator, local-path resolver, or new external sandbox.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Close retained projection ambiguities
+
+- Sixth-round review and independent adjudication identified seven
+  true-positive selector, repository-migration, pnpm-edge, dialect, and
+  deterministic-failure gaps; two broader claims were dismissed because the
+  existing byte-input and merged-baseline contracts already covered them.
+- Bound every admitted `.sh` and `.bash` bootstrap to shfmt's exact Bash
+  dialect command, treating POSIX syntax as its admitted subset rather than
+  adding a suffix or shebang classifier.
+- Added direct package-snapshot `dependencies` and `optionalDependencies` edge
+  facts so a transitive alias cannot hide the producer in a dependency key.
+- Made importer workspace parsing cardinality, selector-alternative scenarios,
+  candidate traversal, and first-error selection deterministic.
+- Added the required implementation migration from the tracked Hexo example's
+  unsupported `link:../..` manifest and lock entries to an official typed
+  `file:../..` projection without a path exception or local pnpm grammar.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Finish loaded-model projections
+
+- Seventh-round regression review and independent adjudication identified three
+  true-positive pnpm importer, NuGet invocation, and shell-fact authority gaps.
+- Bound pnpm importer projection to the loaded `ProjectSnapshot` `specifiers`,
+  dependency, development-dependency, and optional-dependency maps with exact
+  field sources, shapes, section order, key closure, and deterministic
+  traversal.
+- Bound NuGet lock/config projection to exact stream overloads, logger and
+  logical-path arguments, JSON options, duplicate-ID policy, selected model
+  fields, official comparers, and deterministic target/dependency/edge order.
+- Removed Bash/POSIX scripts from the first slice after confirming that shfmt
+  JSON transports syntax nodes but not authoritative cooked command fields.
+  Adding a hermetic Go expansion sidecar was disproportionate for the current
+  repository surface; PowerShell remains retained through its constant-value
+  AST.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Bind the retained PowerShell projection
+
+- Eighth-round review and independent adjudication identified two
+  true-positive PowerShell selector and normalized-fact projection gaps.
+- Restated the exact case-sensitive `bootstrap`, `install`, `setup`, and
+  `postinstall` basename prefixes with the lowercase `.ps1` suffix at any
+  repository-relative depth.
+- Bound nested `CommandAst` discovery, deterministic extent and element order,
+  direct and attached-parameter `StringConstantExpressionAst.Value` extraction,
+  leaf extents, and full-candidate atomicity.
+- Excluded expandable strings, arrays, concatenation, and other composite or
+  dynamic AST nodes without calling `SafeGetValue()`. npm-package-arg rejection
+  of an arbitrary admitted command string is a normal no-fact result rather
+  than a local exception taxonomy.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Close final acceptance details
+
+- Ninth-round review produced four candidates; independent adjudication
+  confirmed two true-positive migration and NuGet-call gaps and dismissed two
+  claims already covered by the existing no-fact and explicit-helper-call
+  contracts.
+- Corrected packages.config ordering to use the executable
+  `OrderBy(p => p.PackageIdentity, PackageIdentity.Comparer)` projection.
+- Added repository-state acceptance for the exact tracked Hexo manifest and
+  isolated lock migration to `file:../..`, including its typed file-directory
+  snapshot and absence of any example-path selector exception.
+- Preserved the existing PowerShell local-path scenario as coverage of a
+  successful npm-package-arg result without identity, and retained pinned
+  helper-owned internal pnpm parsing without exposing it as an adapter API.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Remove the tracked fixture exception
+
+- Tenth-round review produced one true-positive repository-state blocker and
+  three clean reviewer reports.
+- Confirmed that a tracked npm publish request fixture, in addition to the
+  exact producer manifest, used the producer name in a selected `package.json`
+  and would therefore keep root HK and Live static-reference results non-clean.
+- Required the fixture source to move to a non-candidate basename and be
+  materialized as `package/package.json` only in test-owned temporary storage,
+  preserving package and tarball assertions without a tracked policy finding.
+- Required removal of the superseded fixture-path whole-file exception rather
+  than transferring it to the new policy.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-08-31] query | Establish the final authority boundary
+
+- Eleventh-round review produced five candidates; independent adjudication
+  confirmed four true-positive authorization, ownership, NuGet, and PowerShell
+  authority gaps and dismissed the stale-ref fixture claim because the
+  unconditional fixture and every-ref requirements already exist.
+- Made disabled implementation authorization conditional on protected merge of
+  this correction, exact `main` reconciliation, and rebasing the implementation
+  branch from that merged result.
+- Established the release-smoke LLD as sole normative owner of the first-slice
+  static-reference contract; the future CI LLD now owns integration and
+  CI-local transport only.
+- Removed the competing System.Text.Json lock admission and bound
+  `packages.lock.json` solely to the pinned NuGet model's reported version
+  `1`-`3`, including its official coercion behavior.
+- Removed PowerShell and generic command-string classification from the first
+  slice because npm-package-arg exposes no public distinction between an
+  unrelated rejected string and a malformed producer-shaped reference.
+- The final retained surface is structured npm manifests, pnpm v9
+  lock/workspace manifests, and NuGet lock/config models.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.
+
+## [2026-09-01] query | Close source and normalized-fact contracts
+
+- Twelfth-round review produced two true-positive cross-layer contract gaps;
+  two other independent reviewers reported no findings.
+- Removed the stale literal-command fact from the normative glossary after all
+  command-bearing surfaces and generic command classification had been removed
+  from the first slice.
+- Added one bounded `source-acquisition-failed` Result for an admitted source
+  request that cannot deterministically enumerate, read, or minimally
+  materialize its declared exact source.
+- Defined omitted or unknown source kinds and malformed required source
+  parameters as nonzero pre-Result invocation failures, without a guessed mode
+  or synthesized Result.
+- Preserved `cleanup-failed` precedence over admitted source or authority-graph
+  failures and added matching acceptance coverage.
+- Thirteenth-round cross-layer, authority-boundary, exact-API, and delivery
+  reviewers all reported no findings.
+- Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
+  Environment, deployment, or other external state changed.

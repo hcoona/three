@@ -330,13 +330,21 @@ enumerates and reads exact blobs from an explicit full commit SHA. Root HK does
 not convert `index` or `worktree` output into Live Eligibility evidence, and
 neither source may be represented as `HEAD` or another commit identity.
 
-The closed supported surface families are manifests, lockfiles, workflows,
-dependency and configuration files, composite actions, and conventional
-install or bootstrap automation. The policy reports prohibited direct
-references to `@hcoona/hcoona-release-smoke-npm`, including direct, versioned,
-aliased, workspace, and subpath forms. In manifest and lock dependency
-positions, `file:`, `link:`, and `workspace:` paths that resolve to a known
-producer root are also prohibited.
+The closed supported surface is the first-slice LLD's selector-to-fact matrix.
+Each retained disjoint selector has one exact Ecosystem Authority Graph. Git
+Source Authority supplies exact bytes directly or through a Session-owned
+isolated snapshot containing only declared files from one source kind. The
+graph binds authoritative artifact schemas and standards, exact
+library/CLI/runtime identities and versions, lock or checksum provenance,
+public APIs or commands, input mode, admitted format generation, required
+facts, applicable prohibited forms, and unsupported cases.
+
+Authoritative artifacts, official ecosystem libraries or CLIs, and published
+standards emit normalized manifest, lock, descriptor, locator, workspace, and
+package-reference facts. Policy code does not recreate source schemas or
+grammar, split locators, cross-check an authority with another implementation,
+or harden invariants owned by the graph. It reports only the prohibited
+coordinate and local-dependency facts assigned to the selecting row.
 
 The producer root is not globally prohibited because workflows may
 legitimately build it. The package name is allowed only as the top-level
@@ -346,16 +354,29 @@ This is repository hygiene and accidental-consumption prevention. A finding
 fails the HK internal step and therefore the composite
 `SourceTreeConformance` obligation.
 
-Every result binds schema and result, source kind, exact target when applicable,
-policy ID and digest, and sorted findings. Findings are prohibited references,
-not proven runtime consumers. File, surface, and finding counts are diagnostics
-only. A clean result does not prove universal consumer absence or GitHub token
-or package isolation.
+Every result binds schema, result, source kind, exact target when applicable,
+policy ID and digest, sorted exact implementation identities actually loaded,
+canonical error kind when result is error, and sorted findings.
+Findings are prohibited references, not proven runtime consumers. File,
+surface, and finding counts and temporary snapshot paths are diagnostics only.
+A clean result does not prove universal consumer absence or GitHub token or
+package isolation.
 
-The policy contract does not require a particular parser, dataflow model,
-interpreter, Tree-sitter dependency, trigger catalog, whole-file digest
-exception, scanned-surface digest, or fixed inventory count. Exact
-target/policy/finding behavior is covered by scenario and contract tests.
+The canonical policy binds the exact authority graph and strict byte-input
+contract. The invocation schema rejects an omitted or unknown feedback mode and
+malformed required source parameters before Result construction; HK propagates
+that nonzero failure without synthesizing a Result.
+`source-acquisition-failed`, `encoding-rejected`, `authority-rejected`,
+`authority-execution-failed`, `unsupported-projection`,
+`authority-mismatch`, and `cleanup-failed` are distinct fail-closed errors. The
+policy requires no evaluator, dataflow model, Tree-sitter dependency, trigger
+catalog, whole-file digest exception, scanned-surface digest, or fixed inventory
+count. It also forbids handwritten ecosystem grammars or schemas,
+competing-authority cross-validation, and defensive checks that duplicate
+guarantees of the bound graph. Exact target, snapshot isolation, authority
+identity, normalized-fact, and finding behavior is covered by semantic
+scenarios and adapter contracts rather than foreign-library grammar-branch
+tests.
 
 The static-reference step remains internal to root HK and does not create a
 separate CI obligation, Evidence record, or job.
@@ -832,6 +853,12 @@ The policy contract supports each source kind.
   producer root produce findings.
 - A workflow may name the producer root to build it, and the exact producer
   `package.json` may use the package name in its top-level `name`.
+- File-oriented ecosystem libraries or CLIs receive only a minimal isolated snapshot
+  materialized from the selected source kind and report their exact loaded
+  identities.
+- A selected file rejected by its authority graph, or unable to produce its
+  row's required normalized facts, fails closed rather than using a fallback
+  grammar.
 - Sorted findings determine the policy result; inventory counts do not.
 
 ### .NET Dependency Change
@@ -888,6 +915,15 @@ compatibility probe.
 
 ## Deferred LLD Decisions
 
+The [`hcoona-release-smoke-npm` LLD](./hcoona-release-smoke-npm-lld.md) is the
+sole normative owner of the first-slice bounded static-reference Result schema,
+policy identity, Ecosystem Authority manifest and graph, source enumeration,
+snapshot/input contracts, normalized-fact contracts, failure taxonomy, and
+semantic scenarios. The first CI LLD must reference and must not redefine those
+contracts. It owns only root-HK and `SourceTreeConformance` integration,
+including adapter invocation, `index`/`worktree` feedback selection, failure
+propagation, and CI-local Result transport.
+
 The first CI LLD must define:
 
 - candidate request, Plan, Evidence, Decision, and Advisory Report schemas;
@@ -895,10 +931,9 @@ The first CI LLD must define:
 - the initial preset catalog and custom-policy representation;
 - Provider contracts for ownership, capabilities, supporting tests, dimensions,
   and control consumers;
-- HK adapter invocation, root CI gate configuration, and separate
-  `index`/`worktree` feedback selection;
-- static-reference result schema, policy identity, source enumeration, and
-  semantic scenario tests without parser-branch or fixed-count requirements;
+- HK adapter invocation, root CI gate configuration, separate
+  `index`/`worktree` feedback selection, static-policy failure propagation, and
+  CI-local Result transport against the release-smoke LLD-owned contract;
 - runner-lane, batching, matrix, and empty-lane representation without freezing
   an exact job DAG;
 - batch request and per-obligation result transport;

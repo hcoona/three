@@ -399,24 +399,56 @@ enumerates and reads stage-0 Git index entries for staged or pre-commit
 candidate feedback. `worktree` enumerates tracked plus eligible untracked paths
 and reads filesystem bytes for manual developer feedback. Every result binds
 its source kind. Index or worktree bytes are never represented as `HEAD` or
-commit identity. The catalog covers manifests, lockfiles, workflows, dependency
-and configuration files, composite actions, and conventional install/bootstrap
-automation.
+commit identity.
 
-The policy rejects direct, versioned, aliased, workspace, and subpath forms of
-the exact smoke coordinate. In manifest or lock dependency positions it also
-rejects `file:`, `link:`, and `workspace:` paths that resolve to the known
-producer root. It does not reject that producer path globally because workflows
-may legitimately build it. The top-level `package.json` `name` field is allowed
-only at exact known producer paths.
+The catalog covers only disjoint path selectors paired with an exact Ecosystem
+Authority Graph in the first-slice LLD. Git Source Authority supplies exact
+bytes directly or materializes only declared exact-source files into a
+Session-owned isolated snapshot for file-oriented APIs or commands. Each graph
+binds authoritative artifact schemas and standards, exact library/CLI/runtime
+identities and versions, lock or checksum provenance, public APIs or commands,
+input mode, admitted format generation, required normalized facts, applicable
+prohibited forms, and unsupported cases. Raw-byte, strict-UTF-8, and XML input
+modes are explicit; no adapter performs replacement decoding or hidden
+normalization.
 
-The result binds schema/result, source kind, exact target when applicable,
-policy ID and digest, and sorted findings. Findings are prohibited references,
-not proven consumers. Counts are diagnostics only. The architecture makes no
-parser, dataflow, interpreter, exhaustive-consumer, trigger-catalog, or whole
-scanned-surface-digest claim. Encoded/split construction, arbitrary runtime
-downloads, external configuration, and novel layouts remain explicit
-non-goals.
+Authoritative manifests or lockfiles, official ecosystem libraries or CLIs,
+and published standards own manifest, lock, descriptor, locator, workspace,
+and package-reference models. Different semantic layers may compose in one
+ordered graph, but the design admits no competing authority for the same layer.
+The graph performs no evaluation, candidate execution, installation, restore,
+network access, undeclared file read, ambient configuration load, or external
+write. Policy code owns only normalized prohibited-fact comparison,
+repository-relative path policy, exact allowances, failure typing, and Result
+construction.
+
+The policy rejects direct, versioned, aliased, and workspace facts assigned to
+each retained surface, plus normalized local dependency paths that resolve to
+the known producer root. It does not reject that producer path globally because
+build configuration may legitimately name it outside dependency positions. The
+top-level `package.json` `name` field is allowed only at exact known producer
+paths.
+
+The result binds schema, result, source kind, exact target when applicable,
+policy ID and digest, sorted exact implementation identities actually loaded,
+canonical error kind when result is error, and sorted findings. The policy
+digest binds the full authority graph. The invocation schema rejects an omitted
+or unknown source kind and malformed required source parameters before Result
+construction. Once the source request is admitted, exact-source acquisition
+failure is `source-acquisition-failed`; encoding or authority rejection,
+authority execution failure, inability to project a required fact, authority
+mismatch, and required-root cleanup failure are distinct fail-closed errors.
+Candidate paths and graph-owned projections follow one deterministic declared
+traversal. The first typed non-cleanup failure is canonical; required cleanup
+failure overrides it and preserves the earlier sanitized cause only as
+diagnostic.
+Findings are prohibited references, not proven consumers. Counts are
+diagnostics only. The architecture makes no evaluator, dataflow,
+exhaustive-consumer, trigger-catalog, or whole scanned-surface-digest claim and
+contains no handwritten ecosystem grammar, lock schema, locator splitter, or
+competing-authority hardening. Encoded/split construction, arbitrary runtime
+downloads, excluded authority-less surfaces, external configuration, and novel
+layouts remain explicit non-goals.
 
 ### Normal Live Activation Control
 
@@ -599,20 +631,23 @@ Each Release Attempt has one logical Plan lineage with two immutable snapshots.
   runs after Snapshot compilation and before Product/Execution lookup,
   concurrency, or Attempt creation. Its `git-target` static-reference source
   kind enumerates and reads exact blobs from the explicit full target commit SHA
-  and emits schema/result, source kind, target, policy ID/digest, and sorted
-  findings. Only `git-target` can satisfy this gate. The `index` source kind
-  enumerates and reads stage-0 Git index entries for staged or pre-commit
-  candidate feedback. The `worktree` source kind enumerates tracked plus
-  eligible untracked paths and reads filesystem bytes for manual developer
-  feedback. Neither feedback source kind can satisfy Live Eligibility.
-- The static-reference catalog covers manifests, lockfiles, workflows,
-  dependency and configuration files, composite actions, and conventional
-  install/bootstrap automation. It rejects direct, versioned, aliased,
-  workspace, and subpath forms of the exact smoke coordinate. In dependency
-  positions it also rejects local paths resolving to the producer root, while
-  allowing workflows to name that root for legitimate builds and allowing only
-  the producer `package.json` top-level `name`. Findings are prohibited
-  references, not proven consumers; counts are diagnostics only.
+  and emits schema, result, source kind, target, policy ID/digest, sorted exact
+  implementation identities actually loaded, canonical error kind when result
+  is error, and sorted findings. Only `git-target` can satisfy this gate.
+  The `index` source kind enumerates and reads stage-0 Git index entries for
+  staged or pre-commit candidate feedback. The `worktree` source kind
+  enumerates tracked plus eligible untracked paths and reads filesystem bytes
+  for manual developer feedback. Neither feedback source kind can satisfy Live
+  Eligibility.
+- The static-reference catalog covers only first-slice paths with a bound exact
+  Ecosystem Authority Graph. A graph may compose non-competing nodes across
+  distinct semantic layers and emits stable normalized facts; repository policy
+  projects those facts through the per-surface matrix without reproducing
+  foreign grammar. The matrix rejects assigned coordinate forms and local
+  dependency paths resolving to the producer root, while allowing workflows to
+  name that root for legitimate builds and allowing only the producer
+  `package.json` top-level `name`. Findings are prohibited references, not
+  proven consumers; counts are diagnostics only.
 - Eligibility independently reads protected Governance from repository
   `hcoona/three`, ref `refs/heads/main`, and path
   `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`. The
