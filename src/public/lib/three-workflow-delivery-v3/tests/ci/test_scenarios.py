@@ -1098,6 +1098,7 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
           dotnet tool restore
           pnpm install --frozen-lockfile
           uv sync --frozen --all-packages
+          mise run prepare:static-reference-authorities
 """
     assert ci_bytes.count(pinned_validation_node) == 1
     assert ci_bytes.count(capture_step) == 1

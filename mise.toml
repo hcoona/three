@@ -99,7 +99,7 @@ run = "dotnet tool restore"
 
 [tasks."prepare:static-reference-authorities"]
 description = "Prepare bounded static-reference authority runtimes"
-run = "uv run --frozen --python 3.13 --package three-workflow-delivery-v3 python -B eng/scripts/workflow_delivery_v3_prepare_static_reference.py"
+run = "uv run --isolated --frozen --python 3.13 --package three-workflow-delivery-v3 python -B eng/scripts/workflow_delivery_v3_prepare_static_reference.py"
 
 [tasks."check:static-reference-worktree"]
 description = "Check bounded static references in the explicit worktree source"

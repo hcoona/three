@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
+GENERAL_CI = REPO_ROOT / ".github/workflows/ci.yml"
 WORKFLOWS = (
     REPO_ROOT / ".github/workflows/workflow-delivery-v3-ci.yml",
     REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml",
@@ -62,3 +63,20 @@ def test_ci_workflow_has_no_worktree_static_reference_route() -> None:
     assert "--source-kind worktree" not in execute_step
     assert "check:static-reference-worktree" not in execute_step
     assert "--consumer-policy" not in execute_step
+
+
+def test_general_python_ci_prepares_static_reference_authorities() -> None:
+    """Prepare pinned authorities before the all-package Python test run."""
+    workflow = GENERAL_CI.read_text(encoding="utf-8")
+    job_start = workflow.index("  python-tests:\n")
+    job_end = workflow.index("\n  ruby-tests:", job_start)
+    job = workflow[job_start:job_end]
+
+    install = job.index("      - name: Install dependencies")
+    preparation = job.index(
+        "          mise run prepare:static-reference-authorities"
+    )
+    tests = job.index("      - name: Run tests")
+
+    assert install < preparation < tests
+    assert job.count("mise run prepare:static-reference-authorities") == 1

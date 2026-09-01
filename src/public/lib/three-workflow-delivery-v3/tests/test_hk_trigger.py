@@ -1057,6 +1057,7 @@ def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
         (
             "uv",
             "run",
+            "--isolated",
             "--python",
             "3.13",
             "--package",
@@ -1713,7 +1714,7 @@ def test_mise_bootstrap_preparation_chain_and_manual_worktree_are_exact() -> (
     assert tuple(node_bootstrap["depends"]) == (preparation_name,)
     assert node_bootstrap["run"] == "pnpm -r rebuild --pending"
     assert preparation["run"] == (
-        "uv run --frozen --python 3.13 "
+        "uv run --isolated --frozen --python 3.13 "
         "--package three-workflow-delivery-v3 python -B "
         "eng/scripts/workflow_delivery_v3_prepare_static_reference.py"
     )

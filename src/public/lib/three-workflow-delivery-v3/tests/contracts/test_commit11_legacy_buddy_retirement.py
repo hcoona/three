@@ -421,6 +421,7 @@ def test_production_v1_workflows_match_base_contract() -> None:
           dotnet tool restore
           pnpm install --frozen-lockfile
           uv sync --frozen --all-packages
+          mise run prepare:static-reference-authorities
 """
     assert ci_bytes.count(pinned_validation_node) == 1
     assert ci_bytes.count(capture_step) == 1

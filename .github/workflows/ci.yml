@@ -447,6 +447,7 @@ jobs:
           dotnet tool restore
           pnpm install --frozen-lockfile
           uv sync --frozen --all-packages
+          mise run prepare:static-reference-authorities
 
       - name: Run tests
         run: |
