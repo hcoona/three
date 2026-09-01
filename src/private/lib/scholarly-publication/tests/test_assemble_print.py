@@ -773,6 +773,16 @@ class AssemblePrintScenarioTests(unittest.TestCase):
             path = publication.joinpath(*Path(record["path"]).parts)
             path.write_bytes(payload)
             record.update(asset_record(publication, path))
+        source_svg = manifest["figures"][0]["parts"][0]["source_svg"]
+        svg_path = publication.joinpath(*Path(source_svg["path"]).parts)
+        svg_path.write_bytes(
+            svg_path.read_bytes().replace(
+                b"</svg>",
+                b"<!-- retained lineage note --></svg>",
+                1,
+            )
+        )
+        source_svg.update(asset_record(publication, svg_path))
         manifest["generator"]["runtime"] = "python-3.12.10"
         write_json(manifest_path, manifest)
 
@@ -1036,6 +1046,29 @@ class AssemblePrintScenarioTests(unittest.TestCase):
                 self.assertEqual("", result.stdout)
                 self.assertIn(message, result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
+
+    def test_standalone_validate_translates_retained_svg_parser_errors(
+        self,
+    ) -> None:
+        publication = self.fresh_publication("retained-svg-parser-error")
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        source_svg = manifest["figures"][0]["parts"][0]["source_svg"]
+        svg_path = publication.joinpath(*Path(source_svg["path"]).parts)
+        svg_path.write_bytes(
+            b'<?xml version="1.0" encoding="bogus"?>' + svg_path.read_bytes()
+        )
+        source_svg.update(asset_record(publication, svg_path))
+        write_json(manifest_path, manifest)
+
+        rejected = self.validate(publication)
+
+        self.assertEqual(2, rejected.exit_code, rejected)
+        self.assertIn(
+            "is not safe XML: unknown encoding: bogus",
+            rejected.stderr,
+        )
+        self.assertNotIn("Traceback", rejected.stderr)
 
     def test_cli_rejects_oversized_json_integer_without_mutating_output(
         self,
@@ -1733,6 +1766,24 @@ class AssemblePrintScenarioTests(unittest.TestCase):
                 )
                 self.refresh_output_asset(publication, "html")
                 self.assertEqual(2, self.validate(publication).exit_code)
+
+        publication = self.fresh_publication("topology-template")
+        html_path = publication / "index.html"
+        html = html_path.read_text(encoding="utf-8")
+        section = '<section data-fragment-id="section-one">'
+        self.assertIn(section, html)
+        html_path.write_text(
+            html.replace(section, f"{section}<template>", 1).replace(
+                "</section>",
+                "</template></section>",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        self.refresh_output_asset(publication, "html")
+        rejected = self.validate(publication)
+        self.assertEqual(2, rejected.exit_code, rejected)
+        self.assertIn("active element <template>", rejected.stderr)
 
         publication = self.fresh_publication("topology-nested-figure")
         manifest_path = publication / "assembly-manifest.json"

@@ -42,7 +42,7 @@ from xml.etree.ElementTree import Comment, Element, ParseError
 
 import tinycss2
 from defusedxml.common import DefusedXmlException
-from defusedxml.ElementTree import iterparse
+from defusedxml.ElementTree import fromstring
 from fontTools.ttLib import TTFont, TTLibError
 from jsonschema import Draft202012Validator
 
@@ -97,7 +97,7 @@ GENERATED_ACTIVE_ELEMENTS = frozenset({
     "animate", "animatemotion", "animatetransform", "applet", "audio", "base",
     "button", "canvas", "datalist", "details", "dialog", "discard", "embed",
     "foreignobject", "form", "frame", "frameset", "iframe", "input", "object",
-    "script", "select", "set", "source", "textarea", "track", "video",
+    "script", "select", "set", "source", "template", "textarea", "track", "video",
 })
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 XLINK_NAMESPACE = "http://www.w3.org/1999/xlink"
@@ -1248,29 +1248,28 @@ def svg_css_is_obfuscated(value: str) -> bool:
             or re.search("@import\\b", value, flags=re.IGNORECASE) is not None
             or re.search("(?:var|env)\\s*\\(", value, flags=re.IGNORECASE) is not None)
 
-def validate_page_svg(
-    content: bytes,
-    context: str,
-    *,
-    expected_dimensions: tuple[float, float] | None=None,
-) -> tuple[float, float]:
-    text = decode_utf8(content, context)
-    require(not any(token in text for token in ("<!--", "<?", "<![CDATA[")),
-            f"{context} contains XML comments, instructions, or CDATA")
+def parse_page_svg_root(content: bytes, context: str) -> Element:
+    decode_utf8(content, context)
     try:
-        parser = iterparse(BytesIO(content), events=("start", "pi"), forbid_dtd=True,
-                           forbid_entities=True, forbid_external=True)
-        for event, _node in parser:
-            if event == "pi":
-                fail(f"{context} contains an XML processing instruction")
-        root = getattr(parser, "root", None)
-    except (DefusedXmlException, ParseError) as error:
+        root = fromstring(
+            content,
+            forbid_dtd=True,
+            forbid_entities=True,
+            forbid_external=True,
+        )
+    except (DefusedXmlException, LookupError, ParseError) as error:
         fail(f"{context} is not safe XML: {error}")
-    if root is None:
-        fail(f"{context} has no SVG root")
     namespace, local = split_xml_name(root.tag)
     require(namespace == SVG_NAMESPACE and local == "svg",
             f"{context} root must be an SVG namespace <svg>")
+    return root
+
+def validate_page_svg_geometry(
+    root: Element,
+    context: str,
+    *,
+    expected_dimensions: tuple[float, float] | None = None,
+) -> tuple[float, float]:
     width = svg_length(root.attrib.get("width"), f"{context} width")
     height = svg_length(root.attrib.get("height"), f"{context} height")
     if expected_dimensions is not None:
@@ -1283,6 +1282,22 @@ def validate_page_svg(
             and values[3] > 0
             and values == [0.0, 0.0, width, height],
             f"{context} viewBox does not match the source page")
+    return (width, height)
+
+def validate_page_svg(
+    content: bytes,
+    context: str,
+    *,
+    expected_dimensions: tuple[float, float] | None=None,
+) -> tuple[float, float]:
+    root = parse_page_svg_root(content, context)
+    require(not any(token in content for token in (b"<!--", b"<?", b"<![CDATA[")),
+            f"{context} contains XML comments, instructions, or CDATA")
+    width, height = validate_page_svg_geometry(
+        root,
+        context,
+        expected_dimensions=expected_dimensions,
+    )
     identifiers: set[str] = set()
     references: set[str] = set()
     for node in root.iter():
@@ -1947,9 +1962,15 @@ def validate_manifest_bindings(
                     and ID_PATTERN.fullmatch(path.stem) is not None,
                     f"crop {part_id} source SVG path is not canonical")
             if retained["path"] not in dimensions:
-                dimensions[retained["path"]] = validate_page_svg(
+                context = f"retained source page SVG {retained['path']}"
+                root = parse_page_svg_root(
                     inventory[retained["path"]].path.read_bytes(),
-                    f"retained source page SVG {retained['path']}")
+                    context,
+                )
+                dimensions[retained["path"]] = validate_page_svg_geometry(
+                    root,
+                    context,
+                )
             canonical = validated_bbox(part["bbox"], dimensions[retained["path"]], f"crop {part_id}")
             require(part["bbox"] == canonical, f"crop {part_id} bbox is not canonical to three decimals")
     faces: set[tuple[str, str, int]] = set()
