@@ -109,7 +109,9 @@ ordered blocking core checks and records required human-review state. The
 schema permits additional namespaced blocking or advisory checks after that
 core. A release manifest is valid only for a mechanical pass. A changed
 publication is a completed blocking result that may publish evidence; it is
-not release eligible.
+not release eligible. The normative check IDs, order, and stable asset path
+bases are defined once in
+[references/qa-contract.md](references/qa-contract.md).
 
 The legacy check ID `html.offline-profile` means observable offline,
 passive-resource, stylesheet, language, and semantic content outcomes.
@@ -159,28 +161,6 @@ uv run --script scripts/audit_publication.py `
 ```
 
 `--page-size` is an assertion, not an override.
-
-## Required mechanical core
-
-Evidence begins with these core checks once, in order, with
-`severity: blocking`:
-
-1. `manifest.integrity`
-2. `html.offline-profile`
-3. `render.geometry-overflow`
-4. `pdf.fonts`
-5. `pdf.actions-type3-text`
-6. `figures.crop-bindings`
-7. `render.repeatability`
-8. `rasters.complete`
-9. `publication.tree-unchanged`
-
-Any additional namespaced blocking or advisory checks follow this core.
-A mechanical pass forbids failed blocking checks.
-
-Stable asset records name their base: `publication-root` for the Assembly
-manifest, `evidence-root` for render PDFs and rasters, and `release-root` for
-QA evidence in the release index.
 
 ## Human review
 

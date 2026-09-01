@@ -58,40 +58,56 @@ Assembler-generated document wrappers, figure/crop markup, font rules, and
 page CSS use the separate closed generated-output profile defined in
 [references/assembly-contract.md](references/assembly-contract.md).
 
-## Workflow
+## Required outcomes and decision points
 
-1. Snapshot and hash the source package, translation bundle, and assembly
-   recipe.
-2. Validate the source package and translation bundle. Resolve only consumed
-   block IDs, selected figure-map entries, page SVGs, and approved fragments.
-3. Validate the recipe's publication identity, order, language, local fonts,
-   stylesheets, profiles, and finite print geometry.
-4. Sanitize fragments and stylesheets with the shared publication profile.
-5. Compose semantic HTML, generated CSS, continued figures, and local
-   resources in a fresh staging tree.
-6. Copy only retained lineage/audit assets: the three input manifest
-   snapshots, approved fragments actually used, page SVGs used by figures,
-   declared fonts and stylesheets, HTML, CSS, and PDF when rendered.
-7. Emit `assembly-manifest.json` whose semantic input, fragment, figure-SVG,
-   font, stylesheet, and output asset records exactly cover every retained
-   regular file other than the manifest itself.
-8. Validate the staged tree, publish one sibling candidate to an absent output
-   with one final rename, and optionally render its canonical HTML once to an
-   absent PDF destination.
-9. Hand the immutable tree to `scholarly-render-qa`.
+This Skill does not prescribe one build investigation or composition
+sequence. Choose an efficient approach while preserving these decisions and
+outcomes.
 
-After build, standalone validation uses only the assembly manifest and its
-declared files. The retained input snapshots are opaque hash/length-bound
-lineage assets. Retained fragments and stylesheets are also bound lineage
-copies; build has already validated and composed them. Standalone validation
-does not replay upstream schemas, the recipe, authored-content policy, or the
-composer. It checks manifest and tree integrity, semantic relations, source
-SVG and crop geometry, generated HTML topology and local resources, generated
-CSS font-resource closure, and bounded PDF parseability. The output is not a
-complete source or approval archive. Actual browser glyph selection belongs
-to rendering and downstream QA, not an Assembly CSS-cascade simulator.
+### Input admission
 
-## Script
+Admit only a passing source package, an approved translation bundle, and a
+schema-valid recipe with finite geometry and local declared resources.
+Validate only the blocks, figure entries, page SVGs, fragments, fonts, and
+stylesheets the recipe consumes. A failure in an admitted input is a build
+failure; do not compensate by widening the recipe or loading unrelated
+upstream assets.
+
+### Build outcome
+
+Apply the publication profile to every authored fragment, caption, and
+untrusted stylesheet. Compose semantic HTML, generated CSS, continued figures,
+and local resources in a fresh candidate.
+
+Retain only the three input snapshots, approved fragments actually used, page
+SVGs used by figures, declared fonts and stylesheets, HTML, CSS, and the PDF
+when rendered. `assembly-manifest.json` must bind the semantic input,
+fragment, figure-SVG, font, stylesheet, and non-null output asset union, which
+is the complete retained regular-file tree other than the manifest itself.
+
+### Standalone validation boundary
+
+After build, standalone validation uses only the Assembly manifest and its
+declared files. The retained input snapshots, fragments, and stylesheets are
+opaque hash/length-bound lineage copies. Build has already validated and
+composed them.
+
+Standalone validation does not replay upstream schemas, the recipe,
+authored-content policy, or the composer. It checks manifest and tree
+integrity, semantic relations, source-SVG and crop geometry, generated HTML
+topology and local resources, generated CSS font-resource closure, and bounded
+PDF parseability. The output is not a complete source or approval archive.
+Actual browser glyph selection belongs to rendering and downstream QA, not an
+Assembly CSS-cascade simulator.
+
+### Publication and handoff decision
+
+Publish a contract-valid build only through the fresh candidate transaction
+defined below. Rendering may add the one canonical PDF only while the manifest
+PDF output is null. A completed assembled tree is immutable input to
+`scholarly-render-qa`; Assembly does not certify release eligibility.
+
+## Runtime invocation
 
 Translation-bundle creation and approval are upstream responsibilities. This
 Skill exposes only build, render, and validation commands:

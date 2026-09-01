@@ -48,29 +48,51 @@ nonrepudiation are outside scope.
   one figure whenever `music-notation` is declared
 - Optional declared profiles such as `music-notation`
 
-## Workflow
+## Required outcomes and decision points
 
-1. Hash the source under the declared exclusive-write assumption.
-2. Inventory source metadata and reject encryption, embedded JavaScript, or
-   XFA or attachments before extracting selected-page geometry and content.
-3. Emit one ordered `blocks` JSON asset and one canonical page `svg` asset for
-   every selected page. Blocks are translation-facing text with stable IDs and
-   crop-box-local coordinates; SVG is the page-level vector evidence.
-4. Validate page identity, order, geometry, asset hashes, section coverage,
-   figure-part bounds, and package status. Recompute text volume, replacement
-   characters, and raster-image presence from validated block and SVG bytes;
-   retain canonical extraction-time trace observations when deriving status.
-5. Fail closed on malformed extraction, SVG, or geometry. Report replacement
-   characters, possible scans, and suspected hidden or nonpainting OCR as
-   `review_required` instead of requiring raw-text, reading-text, XML, or
-   painted-trace assets.
-6. Emit `source-package.json` and run package validation before handoff.
+This Skill does not prescribe one extraction or investigation sequence. Choose
+an approach suited to the source while preserving these decisions and
+outcomes.
 
-The normal package guarantee is schema validity, ordered selection,
-hash-bound blocks and SVGs, bounded geometry, and an explicit status. It does
-not include a full semantic model of the PDF.
+### Source admission
 
-## Script
+Establish the declared authorization, selected pages, required maps, and
+profile choices before extraction. Reject encryption, embedded JavaScript,
+XFA, attachments, malformed page geometry, and unsupported source conditions
+rather than attempting repair or silently changing the selection. Figure
+regions must be supplied or human-confirmed; they are never inferred as a
+side effect of extraction.
+
+### Package outcome
+
+A completed package binds the source bytes and metadata and contains one
+ordered translation-facing `blocks` asset plus one canonical page-level `svg`
+asset for every selected page. Blocks use stable IDs and crop-box-local
+coordinates.
+
+Validation must establish page identity and order, bounded geometry, asset
+hashes, section coverage, figure-part bounds, and package status. Derive text
+volume, replacement characters, and raster-image presence from the validated
+block and SVG bytes, while retaining canonical extraction-time trace
+observations used by status.
+
+Malformed extraction, SVG, or geometry fails closed. Replacement characters,
+possible scans, and suspected hidden or nonpainting OCR produce
+`review_required`; they do not require raw-text, reading-text, XML, or
+painted-trace artifacts.
+
+The normal guarantee is schema validity, ordered selection, hash-bound blocks
+and SVGs, bounded geometry, and an explicit status. It is not a full semantic
+model of the PDF.
+
+### Handoff decision
+
+Only `status: pass` may enter translation or Assembly. `review_required` is a
+blocking inspection state, not an approval. After translation approval, treat
+the source package bytes as immutable; a source change creates a new
+downstream binding.
+
+## Runtime invocation
 
 ```powershell
 uv run --script scripts/reconstruct_pdf.py extract `
@@ -108,13 +130,6 @@ then publishes with one final rename. Build, validation, or rename failure
 leaves the final output absent and cleans the candidate when possible. Reruns
 must use a new output path or rely on caller-managed deletion of the previous
 output.
-
-## Handoff
-
-Only a package with `status: pass` may enter translation or assembly.
-`review_required` is a blocking inspection state, not an approval. After
-translation approval, treat the source package bytes as immutable; a source
-change creates a new downstream binding.
 
 ## Non-goals
 
