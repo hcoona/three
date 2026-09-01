@@ -13820,3 +13820,16 @@ The correction adds no runtime authority and does not change
 Governance or Environment mutation, package publication, or tag mutation.
 
 <!-- END APPEND: 2026-09-01-wdv3-python314-ci-repair -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-python314-ci-path-erratum -->
+
+Final committed-range Planner correction: the Python 3.14 CI repair adds
+`.github/workflows/ci.yml` to the change set. Relative to current
+`origin/main`, Git now reports 75 changed paths and the existing `R100` rename
+expands that set to 76 logical Planner paths. The recomputed Plan remains
+`ready=true`, selects `root-hk`, `project-build`, `project-test`, and
+`npm-artifact-build`, and has zero unclassified paths. The earlier 74/75 proof
+remains accurate for the pre-repair PR head and is superseded for the final
+committed range by this entry.
+
+<!-- END APPEND: 2026-09-01-wdv3-python314-ci-path-erratum -->
