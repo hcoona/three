@@ -81,12 +81,14 @@ After completing the root-invoked clean-checkout setup documented in
 [source,bash]
 ----
 mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc run build
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --frozen-lockfile
 mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site run generate
 xdg-open src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/public/index.html
 ----
 
 Inspect the resulting markup and you'll see the three stages above reflected
 verbatim. After adjusting the parent renderer under `src/core/`, rerun the
-parent-package build before regenerating the example with the commands above.
+parent-package build and refresh the local `file:` dependency before
+regenerating the example with the commands above.
 If you script the package directly instead of going through Hexo, remember that
 `renderSync` is unsupported and `renderer(...)` must be awaited.

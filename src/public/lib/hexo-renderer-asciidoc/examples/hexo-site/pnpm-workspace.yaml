@@ -1,5 +1,8 @@
 packages:
   - .
 
+allowBuilds:
+  hexo-util: true
+
 overrides:
   hexo@<7.2.0: '>=7.2.0'

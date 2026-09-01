@@ -72,9 +72,9 @@ For AsciiDoc content, this package still uses its own static highlighting pass a
 
 ## Example Hexo site
 
-A source-tree contributor fixture lives at `examples/hexo-site`. It links to the
-local package via `link:../..` and is not included as a runnable site in the
-installed package.
+A source-tree contributor fixture lives at `examples/hexo-site`. It consumes
+the local package via `file:../..` and is not included as a runnable site in
+the installed package.
 
 If you cloned the monorepo, the demo lives under `src/public/lib/hexo-renderer-asciidoc/examples/hexo-site` from the repository root.
 
@@ -85,7 +85,7 @@ evidence designated by the authoritative migration PR or prerelease
 announcement, as described above.
 
 > [!NOTE]
-> The sample site is intentionally outside the root pnpm workspace. From the repository root, follow the exact `pnpm --dir ...` sequence in `examples/hexo-site/README.md`; it builds the parent package before installing and generating the example. After that setup, either keep using `pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site ...` from the root or `cd` into that directory and run its scripts directly. Its `pnpm-workspace.yaml` and lockfile keep those dependencies isolated.
+> The sample site is intentionally outside the root pnpm workspace. From the repository root, follow the exact `pnpm --dir ...` sequence in `examples/hexo-site/README.md`; it builds the parent package before installing and generating the example. After changing the parent renderer, rebuild it and reinstall the example's `file:` dependency before generating or restarting Hexo. Its `pnpm-workspace.yaml` and lockfile keep those dependencies isolated.
 
 Browse `examples/hexo-site/source/` for the maintained posts and page that exercise headings, lists, a table of renderer defaults, and highlighted source listings. The broader constructs listed below are covered by doctests, not by this example site.
 

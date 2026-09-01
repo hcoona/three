@@ -25,6 +25,27 @@
         "resolved": "3.10.94",
         "contentHash": "sn6gFIx6bwFj3Me0XGmek3gLZi/MZC8C4tRLwslXGeBcXcVxvFpZyDrQA93G8TiYgxTS7J7triKB7hj5wXzSxA=="
       },
+      "NuGet.Packaging": {
+        "type": "Direct",
+        "requested": "[7.9.0, )",
+        "resolved": "7.9.0",
+        "contentHash": "Q2jxuud5kJLV0rUzsC02iC5ts8QsQu9UVyMvF8lULY3TwHL/W/PrnQ9bQFvMR7jJkzF1uilRPI1o+7VOtc2XMg==",
+        "dependencies": {
+          "Newtonsoft.Json": "13.0.3",
+          "NuGet.Configuration": "7.9.0",
+          "NuGet.Versioning": "7.9.0",
+          "System.Security.Cryptography.Pkcs": "8.0.1"
+        }
+      },
+      "NuGet.ProjectModel": {
+        "type": "Direct",
+        "requested": "[7.9.0, )",
+        "resolved": "7.9.0",
+        "contentHash": "RIDWJdbA/1P+IA+QjjhG7RTAN1eEmJJFKtXMRz5dNoHX7EmIdpUURdiygmgykHHuhXX4aPAMZ49OONT3SITtOQ==",
+        "dependencies": {
+          "NuGet.DependencyResolver.Core": "7.9.0"
+        }
+      },
       "Microsoft.Build.Tasks.Git": {
         "type": "Transitive",
         "resolved": "10.0.400",
@@ -60,10 +81,29 @@
           "System.Security.Cryptography.ProtectedData": "8.0.0"
         }
       },
+      "NuGet.DependencyResolver.Core": {
+        "type": "Transitive",
+        "resolved": "7.9.0",
+        "contentHash": "0OVtQufJaPMJGdGpjuPmsDwvYX1SdE1L0XDCGfSnIPDj/tyUKILAuVrjHINPFl7smrsdtmoIlIJkEEDYpd1LMQ==",
+        "dependencies": {
+          "NuGet.Configuration": "7.9.0",
+          "NuGet.LibraryModel": "7.9.0",
+          "NuGet.Protocol": "7.9.0"
+        }
+      },
       "NuGet.Frameworks": {
         "type": "Transitive",
         "resolved": "7.9.0",
         "contentHash": "w2adPmgUafmW9ON1MzDjuHmViN0vtiPV48Dz3OE6px8BiGSqrnWHOjwFEPOEPAZx20J1c7bxp90Hxo9l4xGWtw=="
+      },
+      "NuGet.LibraryModel": {
+        "type": "Transitive",
+        "resolved": "7.9.0",
+        "contentHash": "96/6qeHY4CfOpMyk6XyOBbNF1QD50iFNFs2rs0ppBG3EYF5FyWZHvRHZoq3COXM2zlKmqrGt0EBCUkgdXvyGfw==",
+        "dependencies": {
+          "NuGet.Common": "7.9.0",
+          "NuGet.Versioning": "7.9.0"
+        }
       },
       "NuGet.Versioning": {
         "type": "Transitive",
@@ -80,28 +120,6 @@
         "resolved": "8.0.0",
         "contentHash": "+TUFINV2q2ifyXauQXRwy4CiBhqvDEDZeVJU7qfxya4aRYOKzVBpN+4acx25VcPB9ywUN6C0n8drWl110PhZEg=="
       },
-      "hcoona.azureauth.credprovider.contracts": {
-        "type": "Project"
-      },
-      "hcoona.azureauth.credprovider.platform": {
-        "type": "Project",
-        "dependencies": {
-          "Hcoona.AzureAuth.CredProvider.Contracts": "[1.0.0, )",
-          "NuGet.Protocol": "[7.9.0, )"
-        }
-      },
-      "NuGet.Packaging": {
-        "type": "CentralTransitive",
-        "requested": "[7.9.0, )",
-        "resolved": "7.9.0",
-        "contentHash": "Q2jxuud5kJLV0rUzsC02iC5ts8QsQu9UVyMvF8lULY3TwHL/W/PrnQ9bQFvMR7jJkzF1uilRPI1o+7VOtc2XMg==",
-        "dependencies": {
-          "Newtonsoft.Json": "13.0.3",
-          "NuGet.Configuration": "7.9.0",
-          "NuGet.Versioning": "7.9.0",
-          "System.Security.Cryptography.Pkcs": "8.0.1"
-        }
-      },
       "NuGet.Protocol": {
         "type": "CentralTransitive",
         "requested": "[7.9.0, )",
@@ -116,27 +134,6 @@
         "requested": "[10.0.11, )",
         "resolved": "10.0.11",
         "contentHash": "OzKDcIRkeNJeC8qAsbn8yJXnfTLP1dtkWILe+T56Gf/z+IkAASi7sMqLqJQat08j5z/mRN5xVtoAwbkMNMoBUQ=="
-      }
-    },
-    "net10.0/linux-x64": {
-      "System.Security.Cryptography.Pkcs": {
-        "type": "Transitive",
-        "resolved": "8.0.1",
-        "contentHash": "CoCRHFym33aUSf/NtWSVSZa99dkd0Hm7OCZUxORBjRB16LNhIEOf8THPqzIYlvKM0nNDAPTRBa1FxEECrgaxxA=="
-      }
-    },
-    "net10.0/osx-x64": {
-      "System.Security.Cryptography.Pkcs": {
-        "type": "Transitive",
-        "resolved": "8.0.1",
-        "contentHash": "CoCRHFym33aUSf/NtWSVSZa99dkd0Hm7OCZUxORBjRB16LNhIEOf8THPqzIYlvKM0nNDAPTRBa1FxEECrgaxxA=="
-      }
-    },
-    "net10.0/win-x64": {
-      "System.Security.Cryptography.Pkcs": {
-        "type": "Transitive",
-        "resolved": "8.0.1",
-        "contentHash": "CoCRHFym33aUSf/NtWSVSZa99dkd0Hm7OCZUxORBjRB16LNhIEOf8THPqzIYlvKM0nNDAPTRBa1FxEECrgaxxA=="
       }
     }
   }

@@ -75,8 +75,10 @@ The renderer does not add renderer-specific `_config.yml` sections. Feature togg
 ### Example site
 
 The example is a source-tree contributor fixture that depends on the local
-package via `link:../..`; it is not included as a runnable site in the installed
-package. For an already independently verified and trusted source checkout,
+package via `file:../..`; it is not included as a runnable site in the installed
+package. Rebuild the parent and reinstall this local dependency before
+regenerating the example after renderer changes. For an already independently
+verified and trusted source checkout,
 follow `src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md`. Reviewers of an unpublished candidate
 must use the checkout instructions and acceptance evidence designated by the
 authoritative migration PR or prerelease announcement, as described above.

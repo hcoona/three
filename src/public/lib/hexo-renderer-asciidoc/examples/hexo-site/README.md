@@ -6,7 +6,7 @@
 # Example Hexo site for `hexo-renderer-asciidoc`
 
 This folder contains a self-contained Hexo site that consumes the local
-`hexo-renderer-asciidoc` package via a link dependency. Use it to test the
+`hexo-renderer-asciidoc` package via a `file:` dependency. Use it to test the
 renderer end-to-end without publishing to npm. It is **not** part of the root
 pnpm workspace so that its Hexo dependencies stay isolated. The clean-checkout
 sequence below targets it from the repository root with `pnpm --dir`; after
@@ -18,13 +18,13 @@ and `.asciidoc`.
 
 - [mise](https://mise.jdx.dev/) installed
 - Node.js 22 or newer (matching the main project requirements)
-- pnpm 10.x (already pinned in the repo)
+- pnpm 11.22.0 (already pinned in the repo)
 
 ## Clean-checkout setup and generation
 
-The example links to the parent package's generated `dist/` files. From the
+The example imports the parent package's generated `dist/` files. From the
 repository root, run this exact sequence so the parent package is built before
-the example is installed or generated:
+the local dependency is installed or the site is generated:
 
 <!-- linked-example-validation-sequence:start -->
 
@@ -38,7 +38,7 @@ mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site
 
 <!-- linked-example-validation-sequence:end -->
 
-Skipping the parent-package build can leave Hexo unable to load the linked
+Skipping the parent-package build can leave Hexo unable to load the local
 renderer; Hexo may still exit successfully while reporting that `.adoc` files
 have no renderer.
 
@@ -73,13 +73,23 @@ To generate again from inside the example directory:
 pnpm generate
 ```
 
+Changes to the example's own content do not require reinstalling dependencies.
+After changing the parent renderer, refresh the imported `file:` dependency
+before generating or restarting Hexo:
+
+```bash
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc run build
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --frozen-lockfile
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site run generate
+```
+
 ## Structure
 
 - `_config.yml` – Minimal Hexo configuration with the `minimalism` theme and
   Hexo's built-in highlighter enabled. The renderer still applies its own fixed
   static-highlighting pass only to recognized AsciiDoc listing blocks.
 - `source/_posts/` – Sample AsciiDoc posts referenced on the home page.
-- `source/about/` – Example standalone page describing how the demo links to
+- `source/about/` – Example standalone page describing how the demo consumes
   the local renderer build.
 - `pnpm-workspace.yaml` / `pnpm-lock.yaml` – Tiny helper files that force pnpm
   to treat this folder as its own workspace and capture the resolved Hexo
