@@ -66,16 +66,42 @@ LANGUAGE_PATTERN = re.compile("^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 FIGURE_COMMENT_PATTERN = re.compile("^\\s*figure\\s*:\\s*(?P<id>[a-z0-9][a-z0-9._-]*)\\s*$")
 SCHEME_PATTERN = re.compile("^[A-Za-z][A-Za-z0-9+.-]*:")
 HEX_COLOR_PATTERN = re.compile("^[0-9A-Fa-f]+$")
-SVG_LENGTH_PATTERN = re.compile("^\\s*(?P<number>[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)"
-                                "(?:[eE][+-]?[0-9]+)?)\\s*$")
+SVG_NUMBER_SOURCE = (
+    "[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
+)
+SVG_LENGTH_PATTERN = re.compile(f"^\\s*(?P<number>{SVG_NUMBER_SOURCE})\\s*$")
+SVG_WHITESPACE_SOURCE = "[ \\t\\r\\n]"
+SVG_VIEWBOX_SEPARATOR_SOURCE = (
+    f"(?:{SVG_WHITESPACE_SOURCE}*,{SVG_WHITESPACE_SOURCE}*|"
+    f"{SVG_WHITESPACE_SOURCE}+)"
+)
+SVG_VIEWBOX_PATTERN = re.compile(
+    f"^{SVG_WHITESPACE_SOURCE}*"
+    f"(?P<x>{SVG_NUMBER_SOURCE}){SVG_VIEWBOX_SEPARATOR_SOURCE}"
+    f"(?P<y>{SVG_NUMBER_SOURCE}){SVG_VIEWBOX_SEPARATOR_SOURCE}"
+    f"(?P<width>{SVG_NUMBER_SOURCE}){SVG_VIEWBOX_SEPARATOR_SOURCE}"
+    f"(?P<height>{SVG_NUMBER_SOURCE})"
+    f"{SVG_WHITESPACE_SOURCE}*$"
+)
 CSS_LENGTH_UNITS = frozenset({"ch", "cm", "em", "ex", "in", "mm", "pc", "pt", "px", "q", "rem"})
 VOID_ELEMENTS = frozenset({"br", "col", "hr", "wbr"})
 FIGURE_CONTAINERS = frozenset({
     "DOCUMENT_FRAGMENT", "address", "aside", "blockquote", "dd", "div", "li", "section", "td",
 })
 GENERATED_CLASSES = frozenset({"publication-figure", "figure-parts", "figure-part"})
+GENERATED_URL_ATTRIBUTES = frozenset({
+    "action", "background", "cite", "data", "formaction", "href", "longdesc",
+    "manifest", "ping", "poster", "src", "srcset", "xlink:href",
+})
+GENERATED_ACTIVE_ELEMENTS = frozenset({
+    "animate", "animatemotion", "animatetransform", "applet", "audio", "base",
+    "button", "canvas", "datalist", "details", "dialog", "discard", "embed",
+    "foreignobject", "form", "frame", "frameset", "iframe", "input", "object",
+    "script", "select", "set", "source", "textarea", "track", "video",
+})
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 XLINK_NAMESPACE = "http://www.w3.org/1999/xlink"
+XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/"
 INKSCAPE_NAMESPACE = "http://www.inkscape.org/namespaces/inkscape"
 SVG_ELEMENTS = frozenset({
     "circle", "clipPath", "defs", "ellipse", "g", "image", "line", "linearGradient", "mask", "path",
@@ -1184,16 +1210,38 @@ def split_xml_name(value: str) -> tuple[str, str]:
         return (namespace, local)
     return ("", value)
 
-def svg_length(value: Any, context: str) -> float:
+def svg_number(value: Any, context: str) -> float:
     if not isinstance(value, str):
         fail(f"{context} is missing")
     match = SVG_LENGTH_PATTERN.fullmatch(value)
     if match is None:
         fail(f"{context} is not a finite SVG length")
     number = float(match.group("number"))
-    if not math.isfinite(number) or number <= 0:
-        fail(f"{context} must be positive")
+    if not math.isfinite(number):
+        fail(f"{context} must be finite")
     return number
+
+def svg_length(value: Any, context: str) -> float:
+    number = svg_number(value, context)
+    require(number > 0, f"{context} must be positive")
+    return number
+
+def svg_viewbox(value: Any, context: str) -> list[float]:
+    if not isinstance(value, str):
+        fail(f"{context} is missing")
+    match = SVG_VIEWBOX_PATTERN.fullmatch(value)
+    if match is None:
+        fail(f"{context} has invalid number-list syntax")
+    values = [
+        float(match.group(name))
+        for name in ("x", "y", "width", "height")
+    ]
+    require(all(math.isfinite(number) for number in values),
+            f"{context} must contain finite numbers")
+    return values
+
+def emitted_geometry(value: float) -> float:
+    return float(f"{value:.3f}")
 
 def svg_css_is_obfuscated(value: str) -> bool:
     return ("\\" in value or "/*" in value or "*/" in value
@@ -1230,15 +1278,10 @@ def validate_page_svg(
         require(f"{width:.3f}" == f"{expected_width:.3f}"
                 and f"{height:.3f}" == f"{expected_height:.3f}",
                 f"{context} dimensions do not match the source package page")
-    view_box = root.attrib.get("viewBox")
-    require(isinstance(view_box, str), f"{context} requires a viewBox")
-    try:
-        values = [float(value) for value in re.split("[\\s,]+", view_box.strip())]
-    except ValueError as error:
-        fail(f"{context} has an invalid viewBox: {error}")
-    require(len(values) == 4 and all(math.isfinite(value) for value in values)
-            and all(abs(actual - expected) <= 0.001
-                    for actual, expected in zip(values, (0.0, 0.0, width, height), strict=True)),
+    values = svg_viewbox(root.attrib.get("viewBox"), f"{context} viewBox")
+    require(values[2] > 0
+            and values[3] > 0
+            and values == [0.0, 0.0, width, height],
             f"{context} viewBox does not match the source page")
     identifiers: set[str] = set()
     references: set[str] = set()
@@ -1856,40 +1899,39 @@ def validate_manifest_inventory(root: Path, manifest: JsonObject) -> dict[str, F
 def read_utf8_asset(state: FileState, context: str) -> str:
     return decode_utf8(read_regular(state.path, context), context)
 
-def load_manifest_material(manifest: JsonObject, inventory: dict[str, FileState],
-                           profile: JsonObject) -> tuple[dict[str, Markup], dict[str, Markup],
-                                                         dict[str, tuple[float, float]], list[str]]:
+def validate_manifest_bindings(
+    manifest: JsonObject,
+    inventory: dict[str, FileState],
+) -> dict[str, tuple[float, float]]:
     for role in ("source_package", "translation_bundle", "assembly_spec"):
         path = f"inputs/{role.replace('_', '-')}.json"
         require(manifest["inputs"][role]["path"] == path, f"manifest input {role} must use {path}")
-    fragments: dict[str, Markup] = {}
-    for index, record in enumerate(manifest["fragments"], start=1):
+    fragment_ids: set[str] = set()
+    for record in manifest["fragments"]:
         identifier = record["id"]
-        require(identifier not in fragments, f"duplicate manifest fragment id: {identifier}")
+        require(identifier not in fragment_ids, f"duplicate manifest fragment id: {identifier}")
+        fragment_ids.add(identifier)
         require(record["asset"]["path"] == f"fragments/{identifier}.html",
                 f"manifest fragment {identifier} has a noncanonical path")
         require(record["dom_selector"] == f'[data-fragment-id="{identifier}"]',
                 f"manifest fragment {identifier} has a noncanonical selector")
-        context = f"manifest fragment {identifier}"
-        markup = parse_markup(read_utf8_asset(inventory[record["asset"]["path"]], context), profile, context,
-                              allow_figure_markers=True)
-        require(markup.visible_sha256 == record["visible_text_sha256"],
-                f"manifest fragment {index} visible-text hash is inconsistent")
-        fragments[identifier] = markup
-    captions: dict[str, Markup] = {}
+    figure_ids: set[str] = set()
+    figure_dom_ids: set[str] = set()
     part_ids: set[str] = set()
     dimensions: dict[str, tuple[float, float]] = {}
     for figure in manifest["figures"]:
         identifier = figure["id"]
-        require(identifier not in captions, f"duplicate manifest figure id: {identifier}")
+        require(identifier not in figure_ids, f"duplicate manifest figure id: {identifier}")
+        figure_ids.add(identifier)
+        require(figure["dom_id"] not in figure_dom_ids,
+                f"duplicate manifest figure DOM id: {figure['dom_id']}")
+        figure_dom_ids.add(figure["dom_id"])
         figure_profile = figure["profile"]
         require(figure_profile is None or figure_profile in manifest["profiles"],
                 f"manifest figure {identifier} profile is not declared by the assembly manifest: {figure_profile!r}")
         caption = figure["caption_html"]
         require(figure["caption_sha256"] == sha256_bytes(caption.encode()),
                 f"manifest figure {identifier} caption hash is inconsistent")
-        captions[identifier] = parse_markup(
-            caption, profile, f"manifest figure {identifier} caption", allow_figure_markers=False)
         parts = figure["parts"]
         require([part["order"] for part in parts] == list(range(1, len(parts) + 1)),
                 f"manifest figure {identifier} part order is invalid")
@@ -1910,11 +1952,6 @@ def load_manifest_material(manifest: JsonObject, inventory: dict[str, FileState]
                     f"retained source page SVG {retained['path']}")
             canonical = validated_bbox(part["bbox"], dimensions[retained["path"]], f"crop {part_id}")
             require(part["bbox"] == canonical, f"crop {part_id} bbox is not canonical to three decimals")
-    figure_bindings = [(figure["id"], figure["dom_id"], captions[figure["id"]])
-                       for figure in manifest["figures"]]
-    validate_document_bindings(manifest["publication_id"],
-                               [fragment["id"] for fragment in manifest["fragments"]],
-                               fragments, figure_bindings)
     faces: set[tuple[str, str, int]] = set()
     families: set[str] = set()
     for index, record in enumerate(manifest["fonts"], start=1):
@@ -1928,183 +1965,109 @@ def load_manifest_material(manifest: JsonObject, inventory: dict[str, FileState]
         require(face not in faces, f"duplicate manifest font face: {family} {record['style']} {record['weight']}")
         faces.add(face)
         families.add(family.casefold())
-        metadata = inspect_font_bytes(inventory[asset["path"]].path.read_bytes(), f"manifest font {index}")
-        require({"postscript_name": record["postscript_name"], "full_name": record["full_name"]} == metadata,
-                f"manifest font {index} metadata is inconsistent")
     for role in FONT_ROLES:
         family = validate_css_string(manifest["font_roles"][role], f"font role {role}", nonempty=True)
         require(family.casefold() in families, f"font role {role} references undeclared family {family!r}")
         require((family.casefold(), "normal", 400) in faces, f"font role {role} has no normal 400 face")
-    scoped: list[str] = []
     for index, record in enumerate(manifest["stylesheets"], start=1):
         require(record["path"] == f"assets/stylesheets/stylesheet-{index:03d}.css",
                 f"manifest stylesheet {index} has a noncanonical path")
-        context = f"manifest stylesheet {index}"
-        scoped.append(validate_and_scope_stylesheet(
-            read_utf8_asset(inventory[record["path"]], context), profile, families, context))
-    return (fragments, captions, dimensions, scoped)
+    return dimensions
 
-def generated_css_records(content: str, context: str) -> list[Any]:
-    def canonical_tokens(tokens: list[Any]) -> tuple[Any, ...]:
-        result: list[Any] = []
-        pending_whitespace = False
-        for token in tokens:
-            if token.type == "comment":
-                continue
-            if token.type == "whitespace":
-                pending_whitespace = bool(result)
-                continue
-            if pending_whitespace:
-                result.append(("whitespace",))
-                pending_whitespace = False
-            if token.type in {"string", "url"}:
-                result.append((token.type, str(token.value)))
-            elif token.type == "function":
-                result.append(("function", str(token.name), canonical_tokens(token.arguments)))
-            elif token.type in {"() block", "[] block", "{} block"}:
-                result.append((token.type, canonical_tokens(token.content)))
-            else:
-                result.append((token.type, tinycss2.serialize([token])))
-        return tuple(result)
+def generated_css_urls(tokens: list[Any], context: str, *, depth: int=0) -> list[str]:
+    require(depth <= 64, f"{context} exceeds the resource nesting limit")
+    values: list[str] = []
+    for token in tokens:
+        require(token.type != "error",
+                f"{context} contains invalid CSS: {getattr(token, 'message', '')}")
+        if token.type == "url":
+            values.append(str(token.value))
+            continue
+        if token.type == "function" and token.lower_name == "url":
+            significant = css_tokens(token.arguments)
+            require(len(significant) == 1 and significant[0].type in {"ident", "string", "url"},
+                    f"{context} contains an invalid url()")
+            values.append(str(significant[0].value))
+            continue
+        if (token.type == "function"
+                and token.lower_name in {"image-set", "-webkit-image-set"}):
+            values.extend(
+                str(argument.value)
+                for argument in css_tokens(token.arguments)
+                if argument.type == "string"
+            )
+        nested = None
+        if token.type == "function":
+            nested = token.arguments
+        elif token.type in {"() block", "[] block", "{} block"}:
+            nested = token.content
+        if nested is not None:
+            values.extend(generated_css_urls(list(nested), context, depth=depth + 1))
+    return values
 
-    def records(rules: list[Any], *, nested: bool) -> list[Any]:
-        result: list[Any] = []
-        for index, rule in enumerate(rules, start=1):
-            item_context = f"{context} rule {index}"
-            require(rule.type != "error", f"{item_context} cannot be parsed: {getattr(rule, 'message', '')}")
-            if rule.type == "qualified-rule":
-                result.append(("rule", canonical_tokens(rule.prelude), canonical_tokens(rule.content)))
-                continue
-            require(rule.type == "at-rule" and not nested, f"{item_context} is outside the generated CSS profile")
-            keyword = str(rule.lower_at_keyword)
-            if keyword in {"font-face", "page"}:
-                require(not css_tokens(rule.prelude) and rule.content is not None,
-                        f"{item_context} has an invalid @{keyword} rule")
-                result.append((keyword, canonical_tokens(rule.content)))
-            elif keyword == "media":
-                prelude = css_tokens(rule.prelude)
-                require(len(prelude) == 1 and css_ident(prelude[0]) == "screen" and rule.content is not None,
-                        f"{item_context} has an invalid @media rule")
-                nested_rules = tinycss2.parse_rule_list(rule.content, skip_comments=True, skip_whitespace=True)
-                result.append(("media-screen", tuple(records(nested_rules, nested=True))))
-            else:
-                fail(f"{item_context} uses unsupported @{keyword}")
-        return result
-
+def validate_generated_css(content: str, manifest: JsonObject) -> None:
     try:
         rules = tinycss2.parse_stylesheet(content, skip_comments=True, skip_whitespace=True)
-        return records(rules, nested=False)
+        urls: list[str] = []
+        for index, rule in enumerate(rules, start=1):
+            context = f"generated CSS rule {index}"
+            require(rule.type != "error",
+                    f"{context} cannot be parsed: {getattr(rule, 'message', '')}")
+            require(rule.type != "at-rule" or rule.lower_at_keyword != "import",
+                    "generated CSS cannot import another stylesheet")
+            tokens = list(getattr(rule, "prelude", ()) or ())
+            tokens.extend(list(getattr(rule, "content", ()) or ()))
+            urls.extend(generated_css_urls(tokens, context))
     except ContractError:
         raise
-    except (RecursionError, ValueError) as error:
-        fail(f"{context} is not valid CSS: {error}")
-
-def validate_generated_css(content: str, manifest: JsonObject,
-                           scoped_stylesheets: list[str]) -> None:
-    css_path = Path(manifest["outputs"]["css"]["path"])
-    margins = manifest["print_geometry"]["margin_in"]
-    roles = manifest["font_roles"]
-    expected = (
-        "".join(font_face_css(font, css_path) for font in manifest["fonts"])
-        + decode_utf8(read_regular(ASSETS / "print-base.css", "bundled print CSS"), "bundled print CSS")
-        + "@page {\n"
-        f"  size: {PAGE_SIZES[manifest['print_geometry']['page_size']]};\n"
-        f"  margin: {margins['top']}in {margins['right']}in "
-        f"{margins['bottom']}in {margins['left']}in;\n"
-        "}\n:root {\n"
-        f"  --body-cjk: {css_string(roles['body-cjk'], 'body-cjk family')};\n"
-        f"  --body-latin: {css_string(roles['body-latin'], 'body-latin family')};\n"
-        "}\n"
-        + "".join(scoped_stylesheets)
-    )
-    require(generated_css_records(content, "generated CSS")
-            == generated_css_records(expected, "manifest-bound CSS"),
-            "generated CSS does not match the manifest-bound generated profile")
+    except (RecursionError, TypeError, ValueError) as error:
+        fail(f"generated CSS is not valid CSS: {error}")
+    css_path = PurePosixPath(manifest["outputs"]["css"]["path"])
+    declared_fonts = {record["asset"]["path"] for record in manifest["fonts"]}
+    observed_fonts: set[str] = set()
+    for value in urls:
+        try:
+            parsed = urlsplit(value)
+        except (UnicodeError, ValueError) as error:
+            fail(f"generated CSS contains an invalid resource URL: {error}")
+        require(not parsed.scheme and not parsed.netloc and not parsed.query and not parsed.fragment
+                and bool(parsed.path) and "\\" not in parsed.path and "\x00" not in parsed.path,
+                "generated CSS contains a nonlocal resource URL")
+        resource = normalized_relative_path(
+            (css_path.parent / PurePosixPath(parsed.path)).as_posix(),
+            "generated CSS resource",
+        )
+        require(resource in declared_fonts,
+                f"generated CSS references an undeclared font resource: {resource}")
+        observed_fonts.add(resource)
+    missing = sorted(declared_fonts - observed_fonts)
+    require(not missing, f"generated CSS does not reference declared fonts: {missing}")
 
 def local_name(node: Element) -> str:
     return node.tag.rsplit("}", maxsplit=1)[-1] if isinstance(node.tag, str) else ""
 
-def checked_children(node: Element, tag: str, attributes: dict[str, str], context: str, *,
-                     text: str | None=None, mixed: bool=False) -> list[Element]:
-    require(local_name(node) == tag, f"{context} must be <{tag}>")
-    require(dict(node.attrib) == attributes, f"{context} attributes do not match the generated profile")
-    children = [child for child in list(node) if not is_comment(child)]
-    if mixed:
-        return children
-    if text is not None:
-        require(not children and (node.text or "") == text, f"{context} content is inconsistent")
-    else:
-        require(not (node.text or "").strip() and not any((child.tail or "").strip() for child in list(node)),
-                f"{context} contains unexpected direct text")
-    return children
+def attribute_name(value: str) -> str:
+    if value.startswith("{"):
+        namespace, local = value[1:].split("}", maxsplit=1)
+        if namespace == XLINK_NAMESPACE and local.casefold() == "href":
+            return "xlink:href"
+        return local.casefold()
+    return value.casefold()
 
-def fragment_signature(parent: Element, *, generated: bool) -> tuple[Any, ...]:
-    signature: list[Any] = [("text", parent.text or "")]
-    for child in list(parent):
-        if is_comment(child):
-            require(not generated, "generated HTML contains a comment")
-            match = FIGURE_COMMENT_PATTERN.fullmatch(child.text or "")
-            if match is None:
-                fail("retained fragment contains an invalid comment")
-            signature.append(("figure", match.group("id")))
-        elif generated and local_name(child) == "figure" and "data-figure-id" in child.attrib:
-            signature.append(("figure", child.attrib["data-figure-id"]))
-        else:
-            signature.append(("element", local_name(child), tuple(sorted(child.attrib.items())),
-                              fragment_signature(child, generated=generated)))
-        signature.append(("tail", child.tail or ""))
-    return tuple(signature)
+def element_children(node: Element) -> list[Element]:
+    return [child for child in list(node) if not is_comment(child)]
 
-def validate_crop_element(node: Element, figure: JsonObject, part: JsonObject,
-                          dimensions: tuple[float, float]) -> None:
-    part_id = part["id"]
-    x0, y0, x1, y1 = validated_bbox(part["bbox"], dimensions, f"crop {part_id}")
-    width, height = x1 - x0, y1 - y0
-    accessible = f"{figure['alt']} - part {part['order']}"
-    attributes = {
-        "class": "figure-part", "data-crop-id": part_id,
-        "{http://www.w3.org/2000/xmlns/}xmlns": SVG_NAMESPACE,
-        "viewBox": f"{x0:.3f} {y0:.3f} {width:.3f} {height:.3f}",
-        "width": f"{width:.3f}", "height": f"{height:.3f}", "role": "img",
-        "aria-label": accessible, "preserveAspectRatio": "xMidYMid meet"}
-    children = checked_children(node, "svg", attributes, f"crop {part_id}")
-    require(len(children) == 2, f"crop {part_id} must contain title and image")
-    title, image = children
-    checked_children(title, "title", {}, f"crop {part_id} title", text=accessible)
-    page_width, page_height = dimensions
-    image_attributes = {"href": part["source_svg"]["path"], "x": "0", "y": "0",
-                        "width": f"{page_width:.3f}", "height": f"{page_height:.3f}"}
-    checked_children(image, "image", image_attributes, f"crop {part_id} image", text="")
+def has_only_formatting_text(node: Element) -> bool:
+    return not (node.text or "").strip() and all(
+        not (child.tail or "").strip()
+        for child in list(node)
+    )
 
-def validate_figure_element(node: Element, figure: JsonObject, caption: Markup,
-                            svg_dimensions: dict[str, tuple[float, float]]) -> None:
-    identifier = figure["id"]
-    attributes = dict(node.attrib)
-    class_value = attributes.pop("class", "")
-    classes = class_value.split()
-    require(bool(classes) and len(classes) == len(set(classes))
-            and classes[0] == "publication-figure" and not (set(classes[1:]) & GENERATED_CLASSES),
-            f"figure {identifier} classes are outside the generated profile")
-    require(all(re.fullmatch("[A-Za-z][A-Za-z0-9_-]{0,63}", token) for token in classes),
-            f"figure {identifier} has invalid class tokens")
-    expected = {"id": figure["dom_id"], "data-figure-id": identifier,
-                "role": "group", "aria-label": figure["alt"]}
-    require(attributes == expected, f"figure {identifier} attributes do not match the generated profile")
-    children = checked_children(node, "figure", {"class": class_value, **expected}, f"figure {identifier}")
-    require(len(children) == 2, f"figure {identifier} must contain parts and caption")
-    parts_node, caption_node = children
-    crop_nodes = checked_children(parts_node, "div", {"class": "figure-parts"},
-                                  f"figure {identifier} parts wrapper")
-    require(len(crop_nodes) == len(figure["parts"]), f"figure {identifier} crop count is inconsistent")
-    for part, crop in zip(figure["parts"], crop_nodes, strict=True):
-        validate_crop_element(crop, figure, part, svg_dimensions[part["source_svg"]["path"]])
-    checked_children(caption_node, "figcaption", {}, f"figure {identifier} caption", mixed=True)
-    require(fragment_signature(caption_node, generated=True) == fragment_signature(caption.root, generated=False),
-            f"figure {identifier} caption content is inconsistent")
-
-def validate_generated_html(content: str, manifest: JsonObject, fragments: dict[str, Markup],
-                            captions: dict[str, Markup],
-                            svg_dimensions: dict[str, tuple[float, float]]) -> None:
+def validate_generated_html(
+    content: str,
+    manifest: JsonObject,
+    svg_dimensions: dict[str, tuple[float, float]],
+) -> None:
     require(content.startswith("<!doctype html>"), "generated HTML requires an HTML doctype")
     parser = html5lib.HTMLParser(tree=html5lib.getTreeBuilder("etree"), strict=False,
                                  namespaceHTMLElements=False)
@@ -2118,44 +2081,213 @@ def validate_generated_html(content: str, manifest: JsonObject, fragments: dict[
         findings = ", ".join(f"{position[0]}:{position[1]} {code}"
                              for position, code, _data in parser.errors[:10])
         fail(f"generated HTML has parse errors: {findings}")
-    for node in document.iter():
+    nodes = list(document.iter())
+    for node in nodes:
         require(not is_comment(node), "generated HTML contains a comment")
-    root_children = checked_children(
-        document, "html", {"lang": manifest["document"]["language"]}, "generated <html>")
+    require(local_name(document) == "html"
+            and dict(document.attrib) == {"lang": manifest["document"]["language"]},
+            "generated <html> does not match the manifest language")
+    root_children = element_children(document)
     require([local_name(node) for node in root_children] == ["head", "body"],
             "generated HTML must contain one head followed by one body")
     head, body = root_children
-    head_children = checked_children(head, "head", {}, "generated <head>")
+    require(not head.attrib and not body.attrib, "generated head and body must not have attributes")
+    head_children = element_children(head)
     require([local_name(node) for node in head_children] == ["meta", "title", "link"],
             "generated head structure is invalid")
     meta, title, link = head_children
-    checked_children(meta, "meta", {"charset": "utf-8"}, "generated charset metadata", text="")
-    checked_children(title, "title", {"lang": manifest["document"]["title_language"]},
-                     "generated title", text=manifest["document"]["title"])
-    checked_children(link, "link", {"rel": "stylesheet",
-                                    "href": manifest["outputs"]["css"]["path"]},
-                     "generated stylesheet link", text="")
-    body_children = checked_children(body, "body", {}, "generated <body>")
+    require(dict(meta.attrib) == {"charset": "utf-8"}, "generated charset metadata is invalid")
+    require(dict(title.attrib) == {"lang": manifest["document"]["title_language"]}
+            and not element_children(title) and (title.text or "") == manifest["document"]["title"],
+            "generated title does not match the manifest")
+    require(dict(link.attrib) == {"rel": "stylesheet", "href": manifest["outputs"]["css"]["path"]},
+            "generated stylesheet link does not match the manifest")
+    require([node for node in nodes if local_name(node) == "meta"] == [meta]
+            and [node for node in nodes if local_name(node) == "link"] == [link],
+            "generated HTML has noncanonical metadata or link elements")
+    body_children = element_children(body)
     require(len(body_children) == 1 and local_name(body_children[0]) == "main",
             "generated body must contain one main")
     main = body_children[0]
-    sections = checked_children(main, "main", {"id": manifest["publication_id"]}, "generated <main>")
+    require([node for node in nodes if local_name(node) == "main"] == [main],
+            "generated HTML must contain exactly one main")
+    require(dict(main.attrib) == {"id": manifest["publication_id"]},
+            "generated main does not match the publication ID")
+    sections = element_children(main)
     expected_fragments = manifest["fragments"]
-    require(len(sections) == len(expected_fragments), "generated fragment section count is inconsistent")
+    require(len(sections) == len(expected_fragments)
+            and all(local_name(section) == "section" for section in sections),
+            "generated fragment section topology is inconsistent")
     for record, section in zip(expected_fragments, sections, strict=True):
         identifier = record["id"]
-        checked_children(section, "section", {"data-fragment-id": identifier},
-                         f"fragment section {identifier}", mixed=True)
-        require(fragment_signature(section, generated=True)
-                == fragment_signature(fragments[identifier].root, generated=False),
-                f"fragment section {identifier} content is inconsistent")
-    observed_figures = [node for section in sections for node in section.iter()
-                        if local_name(node) == "figure"]
+        require(dict(section.attrib) == {"data-fragment-id": identifier},
+                f"fragment section {identifier} does not match its manifest binding")
+    fragment_nodes = [node for node in nodes if "data-fragment-id" in node.attrib]
+    require(fragment_nodes == sections,
+            "generated HTML has fragment bindings outside the main section sequence")
+    observed_figures = [node for node in nodes if "data-figure-id" in node.attrib]
+    expected_figures = manifest["figures"]
     require([node.attrib.get("data-figure-id") for node in observed_figures]
-            == [figure["id"] for figure in manifest["figures"]],
-            "generated figure order is inconsistent")
-    for figure, node in zip(manifest["figures"], observed_figures, strict=True):
-        validate_figure_element(node, figure, captions[figure["id"]], svg_dimensions)
+            == [figure["id"] for figure in expected_figures]
+            and all(local_name(node) == "figure" for node in observed_figures),
+            "generated figure bindings do not match the manifest")
+    figure_nodes = set(observed_figures)
+    parents = {
+        child: parent
+        for parent in nodes
+        for child in list(parent)
+    }
+    for node in observed_figures:
+        ancestor = parents.get(node)
+        while ancestor is not None:
+            require(ancestor not in figure_nodes,
+                    "generated manifest figures must not be nested")
+            ancestor = parents.get(ancestor)
+    expected_images: list[Element] = []
+    expected_captions: list[Element] = []
+    for figure, node in zip(expected_figures, observed_figures, strict=True):
+        identifier = figure["id"]
+        classes = node.attrib.get("class", "").split()
+        require(bool(classes) and len(classes) == len(set(classes))
+                and classes[0] == "publication-figure"
+                and not (set(classes[1:]) & GENERATED_CLASSES)
+                and all(re.fullmatch("[A-Za-z][A-Za-z0-9_-]{0,63}", token) for token in classes),
+                f"figure {identifier} classes are invalid")
+        require(node.attrib.get("id") == figure["dom_id"]
+                and node.attrib.get("role") == "group"
+                and node.attrib.get("aria-label") == figure["alt"],
+                f"figure {identifier} does not match its manifest binding")
+        require(set(node.attrib) == {
+            "id", "class", "data-figure-id", "role", "aria-label",
+        }, f"figure {identifier} has unsupported generated attributes")
+        require(has_only_formatting_text(node),
+                f"figure {identifier} has unbound generated text")
+        figure_children = element_children(node)
+        require(len(figure_children) == 2
+                and local_name(figure_children[0]) == "div"
+                and dict(figure_children[0].attrib) == {"class": "figure-parts"}
+                and local_name(figure_children[1]) == "figcaption",
+                f"figure {identifier} has invalid generated structure")
+        parts_container, caption = figure_children
+        require(has_only_formatting_text(parts_container),
+                f"figure {identifier} parts have unbound generated text")
+        require(not caption.attrib, f"figure {identifier} caption has generated attributes")
+        expected_captions.append(caption)
+        crops = element_children(parts_container)
+        require([crop.attrib.get("data-crop-id") for crop in crops]
+                == [part["id"] for part in figure["parts"]]
+                and all(local_name(crop) == "svg" for crop in crops),
+                f"figure {identifier} crop bindings do not match the manifest")
+        for part, crop in zip(figure["parts"], crops, strict=True):
+            accessible = f"{figure['alt']} - part {part['order']}"
+            require(crop.attrib.get("role") == "img"
+                    and crop.attrib.get("aria-label") == accessible,
+                    f"crop {part['id']} does not match its accessible binding")
+            required_crop_attributes = {
+                "class", "data-crop-id", "viewBox", "width", "height",
+                "role", "aria-label", f"{{{XMLNS_NAMESPACE}}}xmlns",
+            }
+            require(required_crop_attributes <= set(crop.attrib)
+                    <= required_crop_attributes | {"preserveAspectRatio"},
+                    f"crop {part['id']} has unsupported generated attributes")
+            require(crop.attrib[f"{{{XMLNS_NAMESPACE}}}xmlns"] == SVG_NAMESPACE,
+                    f"crop {part['id']} has an invalid SVG namespace declaration")
+            require(crop.attrib.get("class", "").split() == ["figure-part"],
+                    f"crop {part['id']} has invalid generated classes")
+            x0, y0, x1, y1 = [float(value) for value in part["bbox"]]
+            expected_viewbox = [x0, y0, x1 - x0, y1 - y0]
+            observed_viewbox = svg_viewbox(
+                crop.attrib.get("viewBox"),
+                f"crop {part['id']} viewBox",
+            )
+            require(observed_viewbox[2] > 0
+                    and observed_viewbox[3] > 0
+                    and all(actual == emitted_geometry(expected)
+                            for actual, expected in zip(
+                                observed_viewbox,
+                                expected_viewbox,
+                                strict=True,
+                            )),
+                    f"crop {part['id']} viewBox does not match its manifest bbox")
+            require(svg_length(crop.attrib.get("width"), f"crop {part['id']} width")
+                    == emitted_geometry(expected_viewbox[2])
+                    and svg_length(crop.attrib.get("height"), f"crop {part['id']} height")
+                    == emitted_geometry(expected_viewbox[3]),
+                    f"crop {part['id']} dimensions do not match its manifest bbox")
+            aspect_ratio = crop.attrib.get("preserveAspectRatio")
+            require(aspect_ratio is None
+                    or aspect_ratio.split() in [["xMidYMid"], ["xMidYMid", "meet"]],
+                    f"crop {part['id']} changes the source aspect ratio")
+            crop_children = element_children(crop)
+            require(has_only_formatting_text(crop),
+                    f"crop {part['id']} has unbound generated text")
+            require(len(crop_children) == 2
+                    and local_name(crop_children[0]) == "title"
+                    and not crop_children[0].attrib
+                    and not element_children(crop_children[0])
+                    and (crop_children[0].text or "") == accessible
+                    and local_name(crop_children[1]) == "image",
+                    f"crop {part['id']} has invalid generated structure")
+            image = crop_children[1]
+            require(not list(image) and not (image.text or "").strip(),
+                    f"crop {part['id']} image must be empty")
+            required_image_attributes = {"href", "width", "height"}
+            require(required_image_attributes <= set(image.attrib)
+                    <= required_image_attributes | {"x", "y"},
+                    f"crop {part['id']} image has unsupported generated attributes")
+            require(image.attrib.get("href") == part["source_svg"]["path"],
+                    f"crop {part['id']} does not bind its source SVG")
+            source_width, source_height = svg_dimensions[part["source_svg"]["path"]]
+            require(svg_number(image.attrib.get("x", "0"), f"crop {part['id']} image x") == 0
+                    and svg_number(image.attrib.get("y", "0"), f"crop {part['id']} image y") == 0,
+                    f"crop {part['id']} shifts its source page")
+            require(svg_length(image.attrib.get("width"), f"crop {part['id']} image width")
+                    == emitted_geometry(source_width)
+                    and svg_length(image.attrib.get("height"), f"crop {part['id']} image height")
+                    == emitted_geometry(source_height),
+                    f"crop {part['id']} image dimensions do not match its source SVG")
+            expected_images.append(image)
+    require([node for node in nodes if local_name(node) == "figure"] == observed_figures,
+            "generated HTML has unbound figure elements")
+    require([node for node in nodes if local_name(node) == "figcaption"] == expected_captions,
+            "generated HTML has unbound figure captions")
+    observed_crops = [node for node in nodes if "data-crop-id" in node.attrib]
+    require([node.attrib.get("data-crop-id") for node in observed_crops]
+            == [part["id"] for figure in expected_figures for part in figure["parts"]],
+            "generated crop bindings do not match the manifest")
+    require([node for node in nodes if local_name(node) == "svg"] == observed_crops,
+            "generated HTML has unbound SVG elements")
+    observed_images = [node for node in nodes if local_name(node) in {"image", "img"}]
+    require(observed_images == expected_images, "generated HTML has unbound image elements")
+    identifiers: set[str] = set()
+    for node in nodes:
+        identifier = node.attrib.get("id")
+        if identifier is not None:
+            require(identifier not in identifiers, f"generated HTML has duplicate id {identifier!r}")
+            identifiers.add(identifier)
+    for node in nodes:
+        require(local_name(node).casefold() not in GENERATED_ACTIVE_ELEMENTS,
+                f"generated HTML contains active element <{local_name(node)}>")
+        require(local_name(node).casefold() != "style",
+                "generated HTML contains an inline stylesheet")
+        for raw_name, value in node.attrib.items():
+            name = attribute_name(raw_name)
+            require(not name.startswith("on") and name != "style",
+                    "generated HTML contains an event handler or inline style")
+            if name not in GENERATED_URL_ATTRIBUTES:
+                continue
+            tag = local_name(node)
+            if tag == "a" and name == "href":
+                require(value.startswith("#") and value[1:] in identifiers,
+                        "generated HTML contains an invalid internal anchor")
+            elif tag == "link" and name == "href":
+                require(node is link and value == manifest["outputs"]["css"]["path"],
+                        "generated HTML contains an unbound stylesheet resource")
+            elif tag == "image" and name == "href":
+                require(node in expected_images,
+                        "generated HTML contains an unbound figure resource")
+            else:
+                fail("generated HTML contains an unsupported resource attribute")
 
 def validate_pdf(path: Path, context: str) -> None:
     content = read_regular(path, context)
@@ -2192,12 +2324,7 @@ def validate_publication(manifest_path: Path) -> ValidationResult:
     require(manifest["policies"] == publication_policies(),
             "assembly manifest policies do not match bundled profiles")
     inventory = validate_manifest_inventory(resolved.parent, manifest)
-    profile, _profile_content = load_profile()
-    fragments, captions, svg_dimensions, stylesheets = load_manifest_material(
-        manifest,
-        inventory,
-        profile,
-    )
+    svg_dimensions = validate_manifest_bindings(manifest, inventory)
     outputs = manifest["outputs"]
     require(outputs["html"]["path"] == "index.html", "manifest HTML output must be index.html")
     require(outputs["css"]["path"] == "assets/print.css",
@@ -2205,11 +2332,14 @@ def validate_publication(manifest_path: Path) -> ValidationResult:
     html = inventory[outputs["html"]["path"]]
     css = inventory[outputs["css"]["path"]]
     try:
-        validate_generated_html(read_utf8_asset(html, "HTML output"), manifest, fragments,
-                                captions, svg_dimensions)
+        validate_generated_html(
+            read_utf8_asset(html, "HTML output"),
+            manifest,
+            svg_dimensions,
+        )
     except RecursionError as error:
         fail(f"generated HTML exceeds runtime validation limits: {error}")
-    validate_generated_css(read_utf8_asset(css, "CSS output"), manifest, stylesheets)
+    validate_generated_css(read_utf8_asset(css, "CSS output"), manifest)
     draft_pdf = outputs["draft_pdf"]
     if isinstance(draft_pdf, dict):
         pdf = inventory[draft_pdf["path"]]

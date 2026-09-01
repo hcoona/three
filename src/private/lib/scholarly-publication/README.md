@@ -75,8 +75,11 @@ snapshots as opaque lineage assets bound only by path, hash, and length. It
 does not parse them, replay the recipe, or reconstruct manifest values.
 The deduplicated union of manifest input, fragment, figure-SVG, font,
 stylesheet, and non-null output records is the complete retained regular-file
-inventory. Assembly validates authored HTML/CSS policy and generated
-structure/resource bindings; browser rendering and QA determine actual glyph
+inventory. Build validates authored HTML/CSS policy and generated
+composition. Standalone validation checks manifest consistency, retained-tree
+integrity, generated topology and local-resource bindings, and bounded output
+parseability without reparsing retained fragments and stylesheets or
+reconstructing the composer. Browser rendering and QA determine actual glyph
 selection.
 
 Reconstruction publishes only to an absent output path. It validates a sibling
@@ -103,16 +106,17 @@ reports an orphan candidate.
 
 Assembly and QA carry byte-identical
 `assets/publication-profile.json` files. Assembly owns enforcement of its
-authored-fragment/stylesheet policy and standalone validation of the exact
-generated HTML/CSS profile, topology, crop attributes and children, raw ARIA
-attributes, pseudo-content prohibition, opaque colors, and CSS composition.
-QA trusts that stage boundary plus manifest hashes and retained-tree closure.
-It binds the bundled profile's closed identity/version/hash without replaying
-Assembly validators. QA independently checks narrow CSS/source-SVG resource
-safety, role-aware offline browser routing, active print-page rules, effective
-UTF-8 metadata, visibility-aware fragment text, normalized raw `aria-label`
-bindings, figure/crop geometry and ownership, overflow, bounded complete
-renders, and final PDF behavior under the 500-page ceiling.
+authored-fragment/stylesheet policy and generated composition during build.
+Standalone validation checks the manifest, retained tree, generated topology,
+resource bindings, source-SVG crop geometry, and bounded output parseability;
+it does not replay the composer. QA trusts that stage boundary plus manifest
+hashes and retained-tree closure. It binds the bundled profile's closed
+identity/version/hash without replaying Assembly validators. QA independently
+checks narrow CSS/source-SVG resource safety, role-aware offline browser
+routing, active print-page rules, effective UTF-8 metadata,
+visibility-aware fragment text, normalized raw `aria-label` bindings,
+figure/crop geometry and ownership, overflow, bounded complete renders, and
+final PDF behavior under the 500-page ceiling.
 
 QA explicitly does not guarantee independent authored-profile conformance,
 exact generated markup/CSS reproduction, retained-snapshot or source replay,

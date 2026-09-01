@@ -82,10 +82,14 @@ page CSS use the separate closed generated-output profile defined in
 
 After build, standalone validation uses only the assembly manifest and its
 declared files. The retained input snapshots are opaque hash/length-bound
-lineage assets; validation does not replay their schemas, the recipe, or
-upstream semantics. The output is not a complete source or approval archive.
-Actual browser glyph selection belongs to rendering and downstream QA, not an
-Assembly CSS-cascade simulator.
+lineage assets. Retained fragments and stylesheets are also bound lineage
+copies; build has already validated and composed them. Standalone validation
+does not replay upstream schemas, the recipe, authored-content policy, or the
+composer. It checks manifest and tree integrity, semantic relations, source
+SVG and crop geometry, generated HTML topology and local resources, generated
+CSS font-resource closure, and bounded PDF parseability. The output is not a
+complete source or approval archive. Actual browser glyph selection belongs
+to rendering and downstream QA, not an Assembly CSS-cascade simulator.
 
 ## Script
 

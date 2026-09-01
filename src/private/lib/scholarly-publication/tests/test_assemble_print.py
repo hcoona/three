@@ -747,7 +747,7 @@ class AssemblePrintScenarioTests(unittest.TestCase):
 
         self.assertEqual(0, validated.exit_code, validated)
 
-    def test_validate_treats_input_snapshots_as_opaque_bound_assets(
+    def test_validate_treats_retained_lineage_assets_as_opaque(
         self,
     ) -> None:
         publication = self.fresh_publication()
@@ -763,6 +763,14 @@ class AssemblePrintScenarioTests(unittest.TestCase):
             path = publication.joinpath(
                 *Path(record["path"]).parts,
             )
+            path.write_bytes(payload)
+            record.update(asset_record(publication, path))
+        retained = (
+            (manifest["fragments"][0]["asset"], b"opaque approved fragment"),
+            (manifest["stylesheets"][0], b"opaque retained stylesheet"),
+        )
+        for record, payload in retained:
+            path = publication.joinpath(*Path(record["path"]).parts)
             path.write_bytes(payload)
             record.update(asset_record(publication, path))
         manifest["generator"]["runtime"] = "python-3.12.10"
@@ -962,50 +970,33 @@ class AssemblePrintScenarioTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
         self.assertEqual(before, tree_snapshot(output))
 
-    def test_standalone_validate_translates_generated_html_errors(
-        self,
-    ) -> None:
-        cases = (
-            (
-                "numeric-reference",
-                "</body>",
-                f"&#{'9' * 5000};",
-                640,
-                "generated HTML is not valid HTML: Exceeds the limit",
-            ),
-            (
-                "nested-elements",
-                '<h1 id="opening">',
-                nested_span_markup(sys.getrecursionlimit() + 100),
-                None,
-                "generated HTML exceeds runtime validation limits",
-            ),
+    def test_standalone_validate_translates_generated_html_errors(self) -> None:
+        publication = self.fresh_publication("numeric-reference")
+        html_path = publication / "index.html"
+        content = html_path.read_text(encoding="utf-8")
+        marker = "</body>"
+        self.assertIn(marker, content)
+        html_path.write_text(
+            content.replace(marker, f"&#{'9' * 5000};{marker}", 1),
+            encoding="utf-8",
         )
-        for name, marker, insertion, integer_limit, message in cases:
-            with self.subTest(case=name):
-                publication = self.fresh_publication(name)
-                html_path = publication / "index.html"
-                content = html_path.read_text(encoding="utf-8")
-                self.assertIn(marker, content)
-                html_path.write_text(
-                    content.replace(marker, f"{insertion}{marker}", 1),
-                    encoding="utf-8",
-                )
-                self.refresh_output_asset(publication, "html")
+        self.refresh_output_asset(publication, "html")
 
-                previous_limit = sys.get_int_max_str_digits()
-                try:
-                    if integer_limit is not None:
-                        sys.set_int_max_str_digits(integer_limit)
-                    result = self.validate(publication)
-                finally:
-                    sys.set_int_max_str_digits(previous_limit)
+        previous_limit = sys.get_int_max_str_digits()
+        try:
+            sys.set_int_max_str_digits(640)
+            result = self.validate(publication)
+        finally:
+            sys.set_int_max_str_digits(previous_limit)
 
-                self.assertEqual(2, result.exit_code, result)
-                self.assertEqual({}, result.report)
-                self.assertEqual("", result.stdout)
-                self.assertIn(f"error: {message}", result.stderr)
-                self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(2, result.exit_code, result)
+        self.assertEqual({}, result.report)
+        self.assertEqual("", result.stdout)
+        self.assertIn(
+            "error: generated HTML is not valid HTML: Exceeds the limit",
+            result.stderr,
+        )
+        self.assertNotIn("Traceback", result.stderr)
 
     def test_standalone_validate_translates_generated_css_parser_errors(
         self,
@@ -1021,7 +1012,7 @@ class AssemblePrintScenarioTests(unittest.TestCase):
                 "nested-functions",
                 "\na { x: " + "f(" * 2000 + "x" + ")" * 2000 + "; }\n",
                 None,
-                "maximum recursion depth exceeded",
+                "resource nesting limit",
             ),
         )
         for name, addition, integer_limit, message in cases:
@@ -1043,10 +1034,7 @@ class AssemblePrintScenarioTests(unittest.TestCase):
                 self.assertEqual(2, result.exit_code, result)
                 self.assertEqual({}, result.report)
                 self.assertEqual("", result.stdout)
-                self.assertIn(
-                    f"error: generated CSS is not valid CSS: {message}",
-                    result.stderr,
-                )
+                self.assertIn(message, result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
 
     def test_cli_rejects_oversized_json_integer_without_mutating_output(
@@ -1500,15 +1488,6 @@ class AssemblePrintScenarioTests(unittest.TestCase):
         (invalid / "fonts" / "fixture.ttf").write_bytes(b"not a font")
         self.assert_build_rejected(invalid)
 
-        publication = self.fresh_publication("invalid-metadata")
-        manifest_path = publication / "assembly-manifest.json"
-        manifest = read_json(manifest_path)
-        manifest["fonts"][0]["postscript_name"] = "Incorrect-Name"
-        write_json(manifest_path, manifest)
-        rejected = self.validate(publication)
-        self.assertEqual(2, rejected.exit_code, rejected)
-        self.assertIn("metadata is inconsistent", rejected.stderr)
-
     def test_font_names_reject_css_unsafe_characters(self) -> None:
         cases = (
             ("control", "Fixture\u0001Serif"),
@@ -1532,30 +1511,254 @@ class AssemblePrintScenarioTests(unittest.TestCase):
                 self.assertIn("CSS-unsafe", rejected.stderr)
                 self.assertFalse((workspace / "publication").exists())
 
-    def test_validate_rejects_css_string_payload_whitespace_drift(
+    def test_validate_rejects_generated_css_external_resource(self) -> None:
+        resources = {
+            "url": 'url("https://example.test/url.png")',
+            "image-set": 'image-set("https://example.test/standard.png" 1x)',
+            "webkit-image-set": (
+                '-webkit-image-set("https://example.test/webkit.png" 2x)'
+            ),
+        }
+        for name, resource in resources.items():
+            with self.subTest(case=name):
+                publication = self.fresh_publication(
+                    f"external-css-resource-{name}"
+                )
+                css_path = publication / "assets" / "print.css"
+                with css_path.open("a", encoding="utf-8") as stream:
+                    stream.write(
+                        f"\nbody {{ background-image: {resource}; }}\n"
+                    )
+                self.refresh_output_asset(publication, "css")
+
+                rejected = self.validate(publication)
+
+                self.assertEqual(2, rejected.exit_code, rejected)
+                self.assertIn("nonlocal resource URL", rejected.stderr)
+
+    def test_validate_binds_crop_geometry_semantically(self) -> None:
+        mutations = {
+            "viewbox": lambda html: html.replace('viewBox="', 'viewBox="1 ', 1),
+            "viewbox-separators": lambda html: html.replace(
+                'viewBox="54.000 220.000 252.000 120.000"',
+                'viewBox="54.000,,220.000,,252.000,,120.000"',
+                1,
+            ),
+            "aspect-ratio": lambda html: html.replace(
+                'preserveAspectRatio="xMidYMid meet"',
+                'preserveAspectRatio="none"',
+                1,
+            ),
+            "image-offset": lambda html: html.replace(
+                'x="0" y="0"',
+                'x="1" y="0"',
+                1,
+            ),
+            "crop-size": lambda html: html.replace(
+                ' width="',
+                ' width="1',
+                1,
+            ),
+            "image-size": lambda html: html.replace(
+                'x="0" y="0" width="',
+                'x="0" y="0" width="1',
+                1,
+            ),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(case=name):
+                publication = self.fresh_publication(f"geometry-{name}")
+                html_path = publication / "index.html"
+                html_path.write_text(
+                    mutate(html_path.read_text(encoding="utf-8")),
+                    encoding="utf-8",
+                )
+                self.refresh_output_asset(publication, "html")
+                self.assertEqual(2, self.validate(publication).exit_code)
+
+        equivalent = self.fresh_publication("geometry-equivalent")
+        html_path = equivalent / "index.html"
+        html = html_path.read_text(encoding="utf-8")
+        value_start = html.index('viewBox="') + len('viewBox="')
+        value_end = html.index('"', value_start)
+        equivalent_viewbox = ", ".join(
+            f"{float(value):.4f}"
+            for value in html[value_start:value_end].split()
+        )
+        html = html.replace(' preserveAspectRatio="xMidYMid meet"', "", 1)
+        html = html.replace(' x="0" y="0"', "", 1)
+        html_path.write_text(
+            f"{html[:value_start]}{equivalent_viewbox}{html[value_end:]}",
+            encoding="utf-8",
+        )
+        self.refresh_output_asset(equivalent, "html")
+        self.assertEqual(0, self.validate(equivalent).exit_code)
+
+        for name, viewbox_width, expected_exit in (
+            ("minimum-equivalent", "1e-3", 0),
+            ("minimum-collapsed", "0", 2),
+        ):
+            with self.subTest(case=name):
+                publication = self.fresh_publication(name)
+                manifest_path = publication / "assembly-manifest.json"
+                manifest = read_json(manifest_path)
+                manifest["figures"][0]["parts"][0]["bbox"] = [
+                    54.0,
+                    220.0,
+                    54.001,
+                    340.0,
+                ]
+                write_json(manifest_path, manifest)
+                html_path = publication / "index.html"
+                original_geometry = (
+                    'viewBox="54.000 220.000 252.000 120.000" width="252.000"'
+                )
+                html = html_path.read_text(encoding="utf-8")
+                self.assertIn(original_geometry, html)
+                html_path.write_text(
+                    html.replace(
+                        original_geometry,
+                        f'viewBox="54 220 {viewbox_width} 120" width=".001"',
+                        1,
+                    ),
+                    encoding="utf-8",
+                )
+                self.refresh_output_asset(publication, "html")
+                self.assertEqual(
+                    expected_exit,
+                    self.validate(publication).exit_code,
+                )
+
+        publication = self.fresh_publication("retained-viewbox-separators")
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        source_svg = manifest["figures"][0]["parts"][0]["source_svg"]
+        svg_path = publication.joinpath(*Path(source_svg["path"]).parts)
+        svg_path.write_bytes(
+            svg_path.read_bytes().replace(
+                b'viewBox="0 0 360 480"',
+                b'viewBox="0,,0,,360,,480"',
+                1,
+            )
+        )
+        source_svg.update(asset_record(publication, svg_path))
+        write_json(manifest_path, manifest)
+        self.assertEqual(2, self.validate(publication).exit_code)
+
+    def test_validate_closes_generated_topology_and_resource_attributes(
         self,
     ) -> None:
-        publication = self.fresh_publication("string-payload-drift")
-        css_path = publication / "assets" / "print.css"
-        content = css_path.read_text(encoding="utf-8")
-        self.assertIn('"Fixture Serif"', content)
-        css_path.write_text(
-            content.replace(
-                '"Fixture Serif"',
-                '"Fixture  Serif"',
+        insertions = {
+            "unbound-figure": "<figure></figure>",
+            "orphan-caption": "<figcaption>orphan</figcaption>",
+            "unbound-svg": "<svg></svg>",
+            "active-element": "<script>void 0</script>",
+            "inline-stylesheet": "<style>body { color: red; }</style>",
+            "metadata-refresh": (
+                '<meta http-equiv="refresh" '
+                'content="0;url=https://example.test/refresh">'
+            ),
+            "preload-resource": (
+                '<link rel="preload" as="image" '
+                'imagesrcset="https://example.test/preload.png">'
+            ),
+            "secondary-url": (
+                '<a href="#opening" ping="https://example.test/audit">ping</a>'
+            ),
+        }
+        for name, insertion in insertions.items():
+            with self.subTest(case=name):
+                publication = self.fresh_publication(f"topology-{name}")
+                html_path = publication / "index.html"
+                html = html_path.read_text(encoding="utf-8")
+                html_path.write_text(
+                    html.replace("</section>", f"{insertion}</section>", 1),
+                    encoding="utf-8",
+                )
+                self.refresh_output_asset(publication, "html")
+                self.assertEqual(2, self.validate(publication).exit_code)
+
+        publication = self.fresh_publication("topology-nested-figure")
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        nested_figure = copy.deepcopy(manifest["figures"][0])
+        nested_figure["id"] = "nested-figure"
+        nested_figure["dom_id"] = "nested-figure"
+        for part in nested_figure["parts"]:
+            part["id"] = part["id"].replace(
+                "sample-figure",
+                "nested-figure",
+                1,
+            )
+            part["dom_selector"] = f'[data-crop-id="{part["id"]}"]'
+        manifest["figures"].append(nested_figure)
+        write_json(manifest_path, manifest)
+
+        html_path = publication / "index.html"
+        html = html_path.read_text(encoding="utf-8")
+        figure_start = html.index("<figure ")
+        figure_end = html.index("</figure>", figure_start) + len("</figure>")
+        figure_markup = html[figure_start:figure_end]
+        nested_markup = figure_markup.replace(
+            "sample-figure",
+            "nested-figure",
+        )
+        caption_end = figure_markup.rindex("</figcaption>")
+        nested_outer = (
+            f"{figure_markup[:caption_end]}"
+            f"{nested_markup}"
+            f"{figure_markup[caption_end:]}"
+        )
+        html_path.write_text(
+            f"{html[:figure_start]}{nested_outer}{html[figure_end:]}",
+            encoding="utf-8",
+        )
+        self.refresh_output_asset(publication, "html")
+        self.assertEqual(2, self.validate(publication).exit_code)
+
+        publication = self.fresh_publication("topology-svg-resource")
+        html_path = publication / "index.html"
+        html_path.write_text(
+            html_path.read_text(encoding="utf-8").replace(
+                '<svg class="figure-part"',
+                '<svg class="figure-part" filter="url(https://example.test/filter)"',
                 1,
             ),
             encoding="utf-8",
         )
-        self.refresh_output_asset(publication, "css")
+        self.refresh_output_asset(publication, "html")
+        self.assertEqual(2, self.validate(publication).exit_code)
 
-        rejected = self.validate(publication)
-
-        self.assertEqual(2, rejected.exit_code, rejected)
-        self.assertIn(
-            "generated CSS does not match the manifest-bound generated profile",
-            rejected.stderr,
-        )
+        for name, marker, replacement in (
+            (
+                "parts-text",
+                '<div class="figure-parts">',
+                '<div class="figure-parts">UNBOUND',
+            ),
+            (
+                "crop-tail",
+                "</svg>",
+                "</svg>UNBOUND",
+            ),
+            (
+                "image-subtree",
+                "</image>",
+                "<title>UNBOUND</title></image>",
+            ),
+        ):
+            with self.subTest(case=name):
+                publication = self.fresh_publication(f"topology-{name}")
+                html_path = publication / "index.html"
+                html_path.write_text(
+                    html_path.read_text(encoding="utf-8").replace(
+                        marker,
+                        replacement,
+                        1,
+                    ),
+                    encoding="utf-8",
+                )
+                self.refresh_output_asset(publication, "html")
+                self.assertEqual(2, self.validate(publication).exit_code)
 
     def test_build_rejects_every_existing_output_entry_unchanged(self) -> None:
         workspace = self.fresh_workspace("rerun")

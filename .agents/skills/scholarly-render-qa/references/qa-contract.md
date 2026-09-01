@@ -29,10 +29,12 @@ not reconstruct the recipe or infer authority from retained input snapshots.
 
 Trust the caller/workspace owner, exclusive output access, the operating
 system, Python standard library, and pinned schema, CSS, XML, PDF, and browser
-tooling. Trust Assembly's standalone validation of its exact generated
-HTML/CSS profile and composition. Manifest hashes and exact retained-tree
-closure detect ordinary byte corruption between stages. A coherent rewrite by
-the trusted caller or workspace owner is outside scope. Hashes prove byte
+tooling. Trust Assembly's build-time authored-content policy and generated
+composition, plus its standalone manifest, retained-tree, topology, resource,
+geometry, and output-parseability checks. Manifest hashes and exact
+retained-tree closure detect ordinary byte corruption between stages. A
+coherent rewrite by the trusted caller or workspace owner is outside scope.
+Hashes prove byte
 consistency only; they do not authenticate an owner, author, or toolchain.
 
 ## Manifest and retained-tree boundary
@@ -67,10 +69,10 @@ conformance corpus. It does not reconstruct Assembly's wrapper, fragment
 projection, figure classes/attributes/child order, caption subtree, generated
 font/page/rule sequence, or exact CSS and markup bytes.
 
-Assembly owns and standalone-validates exact generated HTML/CSS profile
-conformance, topology, generated crop attributes and children, raw ARIA
-attributes, pseudo-content prohibition, opaque colors, and exact CSS
-composition. QA trusts that boundary rather than replaying it.
+Assembly owns authored-content policy and generated composition during build.
+Its standalone validator checks integrity, generated topology, local-resource
+bindings, source-SVG crop geometry, and output parseability without replaying
+the composer. QA trusts that boundary rather than reconstructing it.
 
 ## Narrow passive boundaries
 

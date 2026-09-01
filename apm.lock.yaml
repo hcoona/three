@@ -192,7 +192,7 @@ dependencies:
     .agents/skills/scholarly-pdf-reconstruction/references/music-notation-source-profile.md: sha256:0340ba9d0935cf66a77915b323cfc3417b8d28c8e240d5152d3e18e35d7094ed
     .agents/skills/scholarly-pdf-reconstruction/references/source-package-contract.md: sha256:108b8661a7d5842ae793b4f1f2c9eca0c776ec8e6a6db9e175db1ea16ca0d49e
     .agents/skills/scholarly-pdf-reconstruction/scripts/reconstruct_pdf.py: sha256:4ce6addc0f785368515ead1413f4bbd6fc93ef75475b4fbd9981f31d14951a46
-    .agents/skills/scholarly-print-assembly/SKILL.md: sha256:0be76b837bddf599b67ba8f86951cc4ae7c37e403dce3dfb052180748a47b398
+    .agents/skills/scholarly-print-assembly/SKILL.md: sha256:ece3315b4b47c04aae432753126e2bf888c51c1274f153af9c345b6fe715386f
     .agents/skills/scholarly-print-assembly/assets/assembly-manifest.schema.json: sha256:80528b0368071f409cba2244ffb6932cf4f368e6ae4659054f5699f7325debdf
     .agents/skills/scholarly-print-assembly/assets/assembly-spec.schema.json: sha256:482628af62f50d64b058a3334fb51e455a170343572223178fbf7a7bb4260a4a
     .agents/skills/scholarly-print-assembly/assets/figure-map.schema.json: sha256:91fd4a94dc55a383c409dc1247565af76db619330574328406700d893de956f6
@@ -201,17 +201,17 @@ dependencies:
     .agents/skills/scholarly-print-assembly/assets/source-blocks.schema.json: sha256:c9f8901bdba9faa4484d4c77f115ed648397295a809b644fc712345a7bff0199
     .agents/skills/scholarly-print-assembly/assets/source-package.schema.json: sha256:0fbb3f8c229a20c39d86ceecf37cfd702f3760ea06e5f0d0798e68581efbe795
     .agents/skills/scholarly-print-assembly/assets/translation-bundle.schema.json: sha256:a981b4e3e183970817dbd60ad8a4876557aaaab765b226afb4de58ab70ce640b
-    .agents/skills/scholarly-print-assembly/references/assembly-contract.md: sha256:9b90238d48df720f5d83899694fbfe747cbc62515fa434c30ed6bb19eb3479a7
+    .agents/skills/scholarly-print-assembly/references/assembly-contract.md: sha256:f123b7ddb57be91a7e77d75a4204a83b041322c631d894135eaa2cb89cd2528e
     .agents/skills/scholarly-print-assembly/references/mixed-script-print.md: sha256:9bad50264392685eb970c2d3fd01c037c2854cef40c78eabd87a3e844cf885ff
     .agents/skills/scholarly-print-assembly/references/music-notation-markup.md: sha256:795558edf5480734ca3e0964f5e2c591ffcc22e687ab8e2611f58d357541d44f
-    .agents/skills/scholarly-print-assembly/scripts/assemble_print.py: sha256:6e743496f123151e9c81c434728183ab36d920be88c581fec257a4055ce02c16
-    .agents/skills/scholarly-render-qa/SKILL.md: sha256:da1530e8ef38eb45b3c732c8bfefbf8f3b7426933caaa74f3279ac85da4c9681
+    .agents/skills/scholarly-print-assembly/scripts/assemble_print.py: sha256:998dc97c8d1f203e5669d3f4eb5810eb44ef2f213b3e115573f6a688ab8c4ebd
+    .agents/skills/scholarly-render-qa/SKILL.md: sha256:d9f05106dbd37a7768cfc0a1c19b398bedaa9bb541178cd1e79ac04852db8053
     .agents/skills/scholarly-render-qa/assets/assembly-manifest.schema.json: sha256:80528b0368071f409cba2244ffb6932cf4f368e6ae4659054f5699f7325debdf
     .agents/skills/scholarly-render-qa/assets/publication-profile.json: sha256:ba56046efd78fe5b8589ea429e20e777de06f7e759fba23bc3ef446ba4d2312c
     .agents/skills/scholarly-render-qa/assets/qa-evidence.schema.json: sha256:502da511978a349c637a0ace80876dc05c38890f56f6f32524aaafcf5c144ab1
     .agents/skills/scholarly-render-qa/assets/release-manifest.schema.json: sha256:5da0c709cc91cd77faef793f4fdafc56b02bdb1cdd318b6d79f215224441dbc4
     .agents/skills/scholarly-render-qa/references/music-notation-qa-profile.md: sha256:e5075da84ed0c01d83132aeb4b84db6d3031fe7e0cacbd9da2cf259c77ba2b28
-    .agents/skills/scholarly-render-qa/references/qa-contract.md: sha256:c941d351c34ff311150e4a3fa6e20a9854ada2b88fcfc91538da3520a2d3d379
+    .agents/skills/scholarly-render-qa/references/qa-contract.md: sha256:5188e9990242d9dfe37363cf92c2100aa96d0b48a3f334c73727f787d7fb6bcb
     .agents/skills/scholarly-render-qa/scripts/audit_publication.py: sha256:94a7111dc7ee324660ce590decc7ae2ddaf18964bc3e9936c46a8bbd9fc241f0
   source: local
   local_path: ./src/private/lib/scholarly-publication
@@ -3712,7 +3712,7 @@ deployments:
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:0be76b837bddf599b67ba8f86951cc4ae7c37e403dce3dfb052180748a47b398
+  content_hash: sha256:ece3315b4b47c04aae432753126e2bf888c51c1274f153af9c345b6fe715386f
 - kind: project-relative
   target: copilot
   value: .agents/skills/scholarly-print-assembly/assets/assembly-manifest.schema.json
@@ -3793,7 +3793,7 @@ deployments:
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:9b90238d48df720f5d83899694fbfe747cbc62515fa434c30ed6bb19eb3479a7
+  content_hash: sha256:f123b7ddb57be91a7e77d75a4204a83b041322c631d894135eaa2cb89cd2528e
 - kind: project-relative
   target: copilot
   value: .agents/skills/scholarly-print-assembly/references/mixed-script-print.md
@@ -3820,7 +3820,7 @@ deployments:
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:6e743496f123151e9c81c434728183ab36d920be88c581fec257a4055ce02c16
+  content_hash: sha256:998dc97c8d1f203e5669d3f4eb5810eb44ef2f213b3e115573f6a688ab8c4ebd
 - kind: project-relative
   target: copilot
   value: .agents/skills/scholarly-render-qa
@@ -3838,7 +3838,7 @@ deployments:
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:da1530e8ef38eb45b3c732c8bfefbf8f3b7426933caaa74f3279ac85da4c9681
+  content_hash: sha256:d9f05106dbd37a7768cfc0a1c19b398bedaa9bb541178cd1e79ac04852db8053
 - kind: project-relative
   target: copilot
   value: .agents/skills/scholarly-render-qa/assets/assembly-manifest.schema.json
@@ -3892,7 +3892,7 @@ deployments:
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:c941d351c34ff311150e4a3fa6e20a9854ada2b88fcfc91538da3520a2d3d379
+  content_hash: sha256:5188e9990242d9dfe37363cf92c2100aa96d0b48a3f334c73727f787d7fb6bcb
 - kind: project-relative
   target: copilot
   value: .agents/skills/scholarly-render-qa/scripts/audit_publication.py

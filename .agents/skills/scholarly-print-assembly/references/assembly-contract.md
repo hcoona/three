@@ -253,13 +253,15 @@ After build, standalone validation loads only `assembly-manifest.json` and the
 files declared by its semantic asset union. The three retained input snapshots
 are opaque hash/length-bound lineage assets: validation does not parse the
 source package, translation bundle, or recipe; replay the recipe; reconstruct
-manifest values; or regenerate and byte-compare composed HTML/CSS. It validates
-the manifest schema, status, policy identity, semantic declaration
-consistency, exact retained-tree closure, hashes and lengths, authored
-fragment/style policy, generated document/CSS structure and local-resource
-bindings, figure/crop/SVG geometry, font parsing and metadata, and bounded PDF
-parseability. The recorded Python runtime need only satisfy the manifest
-schema; the validating patch version need not be identical.
+manifest values; or regenerate and byte-compare composed HTML/CSS. Retained
+fragments and stylesheets are also opaque post-build lineage copies.
+Standalone validation checks the manifest schema, status, policy identity,
+semantic declaration consistency, exact retained-tree closure, hashes and
+lengths, generated document topology and local-resource bindings,
+figure/crop/SVG geometry, declared font relations, generated CSS font-resource
+closure, and bounded PDF parseability. The recorded Python runtime need only
+satisfy the manifest schema; the validating patch version need not be
+identical.
 
 Assembly validates declared font files and authored/generated font bindings,
 but it does not simulate CSS cascade inheritance or prove glyph selection.

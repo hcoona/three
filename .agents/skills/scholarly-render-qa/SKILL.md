@@ -38,13 +38,12 @@ profile, generated CSS recipe, or exact topology checks.
 
 Trust the caller/workspace owner, exclusive access to declared output paths,
 the operating system, standard library, and pinned schema, CSS, XML, PDF, and
-browser tooling. Trust Assembly's standalone validation of the exact generated
-HTML/CSS profile, topology, crop attributes and children, raw ARIA attributes,
-pseudo-content prohibition, opaque colors, and exact CSS composition. Manifest
-hashes and retained-tree closure catch ordinary byte corruption; a coherent
-rewrite by the trusted caller or workspace owner is outside scope. SHA-256
-binds observed bytes for consistency; it is not a signature or proof of
-authorship.
+browser tooling. Trust Assembly's build-time enforcement of authored-content
+policy and generated composition, plus its standalone manifest, retained-tree,
+topology, resource, geometry, and output-parseability checks. Manifest hashes
+and retained-tree closure catch ordinary byte corruption; a coherent rewrite
+by the trusted caller or workspace owner is outside scope. SHA-256 binds
+observed bytes for consistency; it is not a signature or proof of authorship.
 
 Keep evidence, independent renders, and rasters outside the publication tree.
 Do not repair, delete, or rewrite publication artifacts.
