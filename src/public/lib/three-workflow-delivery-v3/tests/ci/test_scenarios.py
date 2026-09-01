@@ -1098,13 +1098,20 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
           dotnet tool restore
           pnpm install --frozen-lockfile
           uv sync --frozen --all-packages
-          mise run prepare:static-reference-authorities
+"""
+    python_preparation = b"""\
+      - name: Prepare static-reference authorities
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: 'false'
+        run: mise run prepare:static-reference-authorities
+
 """
     assert ci_bytes.count(pinned_validation_node) == 1
     assert ci_bytes.count(capture_step) == 1
     assert ci_bytes.count(forced_links) == 1
     assert ci_bytes.count(python_test_toolchain) == 1
     assert ci_bytes.count(python_dependencies) == 1
+    assert ci_bytes.count(python_preparation) == 1
     reconstructed_base = (
         ci_bytes.replace(
             pinned_validation_node,
@@ -1129,6 +1136,11 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
         .replace(
             python_dependencies,
             base_python_dependencies,
+            1,
+        )
+        .replace(
+            python_preparation,
+            b"",
             1,
         )
     )
