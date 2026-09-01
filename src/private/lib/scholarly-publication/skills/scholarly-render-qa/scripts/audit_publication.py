@@ -120,7 +120,7 @@ EVIDENCE_SCHEMA = ASSET_ROOT / "qa-evidence.schema.json"
 RELEASE_SCHEMA = ASSET_ROOT / "release-manifest.schema.json"
 PROFILE_PATH = ASSET_ROOT / "publication-profile.json"
 CSS_UNSAFE_STRING_CATEGORIES = frozenset({"Cc", "Cf", "Cs"})
-# Unicode 17 Script or Script_Extensions intersects Han, Hiragana, Katakana, or Hangul.
+# Characters treated as ambiguous CJK visual-wrap boundaries.
 CJK_LINE_JOIN_RANGES = (
     (0xB7, 0xB7),
     (0x305, 0x305),
@@ -294,21 +294,10 @@ def eprint(message: str) -> None:
 
 def canonical_json(value: Any) -> bytes:
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
-def atomic_write(path: Path, content: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
-    temporary = Path(name)
-    try:
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
 def write_json(path: Path, value: Any) -> None:
     content = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
-    atomic_write(path, (content + "\n").encode())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes((content + "\n").encode())
 def reject_constant(value: str) -> Any:
     raise ValueError(f"non-finite JSON number {value}")
 def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -2157,7 +2146,7 @@ def inspect_pdf(path: Path, logical: str, page_size: str, raster_dir: Path, rast
                 fonts[key], font_details[key] = record, detail
             png = page.get_pixmap(matrix=fitz.Matrix(RASTER_SCALE, RASTER_SCALE), alpha=False, annots=True).tobytes("png")
             raster_path = raster_dir / f"page-{index + 1:04d}.png"
-            atomic_write(raster_path, png)
+            raster_path.write_bytes(png)
             raster = relative_asset(raster_path, evidence_root)
             rasters.append(
                 {

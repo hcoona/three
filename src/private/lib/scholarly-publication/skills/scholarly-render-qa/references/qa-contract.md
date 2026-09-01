@@ -227,10 +227,13 @@ it may match either no normalized boundary or one normalized whitespace
 boundary. Spaces or tabs that survive extraction, and all other whitespace,
 continue to preserve definite normalized boundaries.
 
-The character set follows Unicode 17 `Script` and `Script_Extensions`.
-Candidate search and boundary verification receive a deterministic allowance
-of 16 times the combined normalized PDF and expected-segment character count;
-exhausting it fails the audit closed instead of permitting unbounded matching.
+The character classification must cover the Han, Hiragana, Katakana, and
+Hangul visual-wrap boundaries needed by supported publications. Its exact
+Unicode data revision and table representation are implementation details.
+Candidate search and boundary verification must use a deterministic,
+approximately linear work bound derived from the combined normalized PDF and
+expected-segment size. Exhausting that finite allowance fails the audit closed;
+the exact multiplier is an implementation detail.
 
 Page-link and bounded low-level action observations jointly classify actions.
 Internal GoTo and direct document-local destinations are safe only when they
@@ -336,7 +339,9 @@ The publication boundary is strict: one unique same-filesystem sibling
 candidate contains the complete validated/serialized pass/fail artifact set
 before exactly one `candidate.rename(review_root)`. This ordering is normative
 because it defines the transaction, not because it dictates the surrounding
-agent audit workflow.
+agent audit workflow. Files inside the unpublished candidate may be written
+directly; per-file replacement and `fsync` are not separate publication
+boundaries.
 
 - Completed pass: evidence, two renders, all rasters, and release; exit `0`.
 - Completed blocking failure: evidence, two renders, all rasters, no release;

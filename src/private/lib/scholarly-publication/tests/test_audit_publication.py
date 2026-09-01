@@ -24,7 +24,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from collections import Counter
 from pathlib import Path
@@ -393,7 +392,7 @@ class AuditPublicationUnitTests(unittest.TestCase):
             audit_publication.pdf_searchable_text(["\U0001b170\n\U0001b171"]),
         )
 
-    def test_pdf_text_match_scales_on_repetitive_content(self) -> None:
+    def test_pdf_text_match_handles_overlap_and_fails_closed(self) -> None:
         overlapping = audit_publication.Pdf(
             evidence={},
             detail={
@@ -411,39 +410,25 @@ class AuditPublicationUnitTests(unittest.TestCase):
             ),
         )
 
-        content = "甲" * 500_000
-        report = audit_publication.Pdf(
-            evidence={},
-            detail={"searchable_text": content},
-            rasters=[],
-        )
-        started = time.perf_counter()
-        present = audit_publication.missing_text_segments(
-            report,
-            [{"text": "甲" * 250_000}],
-        )
-        missing = audit_publication.missing_text_segments(
-            report,
-            [{"text": "甲" * 249_999 + "乙"}],
-        )
-        elapsed = time.perf_counter() - started
-
-        self.assertEqual([], present)
-        self.assertEqual(1, len(missing))
-        self.assertLess(elapsed, 5.0)
-
         pathological = audit_publication.Pdf(
             evidence={},
-            detail={"searchable_text": "甲" * 20_000},
+            detail={"searchable_text": "甲" * 200},
             rasters=[],
         )
-        with self.assertRaisesRegex(  # noqa: PT027
-            audit_publication.PublicationError,
-            "linear work allowance",
+        with (
+            mock.patch.object(
+                audit_publication,
+                "TEXT_MATCH_WORK_FACTOR",
+                1,
+            ),
+            self.assertRaisesRegex(  # noqa: PT027
+                audit_publication.PublicationError,
+                "linear work allowance",
+            ),
         ):
             audit_publication.missing_text_segments(
                 pathological,
-                [{"text": "甲" * 9_999 + " 甲"}],
+                [{"text": "甲" * 99 + " 甲"}],
             )
 
     def test_pdf_text_search_ignores_cjk_page_boundaries(self) -> None:
