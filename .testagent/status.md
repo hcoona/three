@@ -12278,3 +12278,1480 @@ Permanent Environment provisioning and evidence delivery are complete.
 Protected preparation remains blocked pending separate explicit authorization.
 
 <!-- END APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-status -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-foundation-status -->
+
+# Workflow Delivery v3 Static-Reference Foundation Test Status
+
+## Research
+
+| Item | State | Evidence |
+|---|---|---|
+| Required docs first | Complete | `docs/AGENTS.md`; v3 `agent-handoff.md` |
+| Normative contract | Complete | merged first-slice LLD §§6 and 18.2 only |
+| Language guidance | Complete with registry limitation | `code-testing-extensions` invoked once; base Python, TypeScript/JavaScript, and .NET guidance read directly; no examples |
+| Static pairing | Complete | `find-untested-sources` invoked once and polyglot analyzer executed once with `--include-tested`; new static-reference sources have no existing referring test |
+| Bounded API refresh | Complete | Python mechanism modules plus private Node/NuGet protocols inventoried |
+| Strategy | Iterative | five dependency-ordered phases recorded in `research.md` |
+
+No tests or production files were changed during Research. Current blockers are
+the concurrently owned npm fixture migration, malformed CLI target/root
+sanitization, and any environment failure to prepare the pinned Node/NuGet
+sidecars without manifest edits.
+
+## Progress
+
+| Phase | State |
+|---|---|
+| 1. Model/source/session/invocation | Planned |
+| 2. Projection/policy/error/cleanup | Planned |
+| 3. npm/pnpm Node authority | Planned |
+| 4. NuGet authority | Planned |
+| 5. Repository scenarios and closure | Planned |
+| Final build/test validation | Pending |
+| Gap/assertion/scenario gate | Pending |
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-foundation-status -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-foundation-phase-1 -->
+
+## Phase 1 — model, source, session, and invocation
+
+- Created
+  `src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py`.
+- Added 23 collected scenarios covering exact source/error enums, canonical
+  record admission, invalid shapes, distinct commit/index/worktree bytes,
+  typed exact-source failure, snapshot evidence and controlled environment,
+  exact-path cleanup on success/error/failure, pre-Result parser rejection,
+  and canonical clean/findings/error Result exit behavior.
+- The strict malformed-target pre-Result scenario passed against the current
+  concurrently updated entry point; the earlier observed API blocker is
+  resolved in the tested worktree.
+
+Command:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py -k 'model or source or session or invocation'
+```
+
+Result: **23 passed in 0.22s**; exit code `0`.
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-foundation-phase-1 -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-foundation-phase-2 -->
+
+## Phase 2 — projection, authority adapter, and policy precedence
+
+Status: **SUCCESS** for the Phase 2 narrow scope.
+
+Appended 11 test functions / 27 collected scenarios to
+`src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py`:
+
+| Test | Scenarios |
+|---|---:|
+| `test_projection_maps_normalized_facts_to_d_v_a_w_l_and_dependency_key_findings` | 1 |
+| `test_projection_orders_candidates_nodes_arrays_mappings_facts_and_findings` | 1 |
+| `test_projection_rejects_invalid_fact_shape_without_partial_findings` | 1 |
+| `test_authority_dispatches_each_graph_to_its_exact_protocol` | 4 |
+| `test_authority_rejects_missing_extra_or_malformed_response_fields_without_partial_facts` | 9 |
+| `test_authority_sanitizes_spawn_exit_signal_stderr_and_json_failures` | 4 |
+| `test_policy_authority_manifest_and_digest_are_exact` | 1 |
+| `test_policy_traverses_candidates_and_graphs_in_deterministic_order` | 1 |
+| `test_policy_stops_at_the_first_source_error_before_authority_execution` | 1 |
+| `test_policy_returns_only_the_first_typed_graph_error` | 1 |
+| `test_policy_cleanup_failed_overrides_success_source_or_graph_result_and_cleans_exact_roots` | 3 |
+
+The scenarios use injected acquisition, authority-process, authority-runner,
+session-factory, materialization-failure, and cleanup seams. Assertions bind
+all D/V/A/W/L/dependency-key projections; fact/finding/candidate/graph order;
+no partial findings/facts; all four graph protocols; missing, extra,
+malformed, wrong-identity, duplicate-field, invalid-result, and invalid
+error-kind response rejection; sanitized spawn/exit/signal/stderr/JSON
+failures; the complete authority manifest and exact policy digest; source
+precedence; sole first typed graph failure; and cleanup override plus exact
+root removal after success, source failure, and graph failure.
+
+### Verification
+
+Initial narrow run:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py -k "projection or authority or policy"
+```
+
+Result: **16 passed, 6 failed, 23 deselected in 0.28s**. All six failures
+were test-construction mistakes: four post-release environment reads, one
+incorrect file-backed-input assumption for the NuGet byte-stream graph, and
+one string supplied where `SourceAcquisitionError` requires its typed
+diagnostic. Only the appended tests were corrected.
+
+Final narrow run after those corrections and the gap-review additions:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py -k "projection or authority or policy"
+```
+
+Result: **27 passed, 23 deselected in 0.15s**; exit code `0`.
+
+An in-memory Python `compile()` of the test file passed with exit code `0`;
+no bytecode or cache file was written.
+
+Harness-equivalent package discovery was captured before and after Phase 2:
+
+```text
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q src/public/lib/three-workflow-delivery-v3/tests
+```
+
+- Baseline: **3583 tests collected**, 4 collection errors.
+- Final: **3610 tests collected**, the same 4 collection errors.
+- Phase 2 discovery delta: **+27**, exactly matching the generated scenarios.
+
+### Quality review
+
+- `test-gap-analysis` identified strict private-response gaps for separate
+  schema/graph identity mutations, duplicate fields, invalid result values,
+  and invalid graph error kinds. Five response-rejection scenarios were added;
+  the final narrow rerun remained green.
+- `assertion-quality` found 11 Phase 2 test functions, 97 explicit assertion
+  or `pytest.raises` sites, and zero assertion-free or trivial-only tests.
+  The suite combines exact/deep equality, exception, negative, lifecycle,
+  call-order, filesystem-state, and no-partial-result assertions.
+
+### Blockers and non-scoped gates
+
+- No Phase 2 behavioral blocker remains.
+- Package-wide discovery still exits `2` for four concurrent pre-existing
+  collection failures outside the allowed edit scope:
+  `tests/ci/test_consumer_policy.py` cannot import `javascript_consumer`;
+  `tests/ci/test_path_admission.py` cannot import
+  `CI_CONSUMER_POLICY_SURFACE_PATTERNS`; `tests/ci/test_scenarios.py` cannot
+  find `eng/scripts/workflow_delivery_v3_consumer_policy.py`; and
+  `tests/release/test_eligibility.py` cannot import `consumer_policy`.
+- The optional whole-file Ruff check remains red with 73 style diagnostics:
+  36 are in the immutable Phase 1 region and 37 are in the appended Phase 2
+  region. `ruff format --check` also reports that the combined append-only
+  file would be reformatted. No style-only rewrite was made because this phase
+  was restricted to appending scenarios and correcting test mistakes.
+
+No production, documentation, manifest, lock, fixture, Hexo, other-test, or
+VCS file was edited by Phase 2.
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-foundation-phase-2 -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-foundation-phase-3 -->
+
+## Workflow Delivery v3 static-reference foundation Phase 3
+
+**Status:** PARTIAL — the strict Node sidecar suite is implemented and 16 of
+17 collected cases pass. The remaining case exposes selected-path fallback in
+the current pnpm lock authority and was retained without weakening the
+contract.
+
+### Owned changes
+
+- Created only
+  `src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py`
+  with 11 planned pytest functions and 17 collected cases.
+- Appended only this Phase 3 status section.
+- No production, documentation, manifest, lock, fixture, Hexo, other-test, or
+  VCS file was edited by Phase 3.
+
+### Preparation and build
+
+- `mise run prepare:static-reference-authorities`: exit `0`; no preparation
+  blocker.
+- In-memory AST compile validation of the new test file: passed without
+  creating bytecode or another output file.
+
+### Exact narrow result
+
+Command:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py -k "node_npm or node_pnpm"
+```
+
+Final result: `16 passed, 1 failed` in `5.47s`.
+
+Passing test IDs:
+
+- `test_node_npm_protocol_reads_one_snapshot_content_without_mutation`
+- `test_node_npm_protocol_orders_name_and_four_dependency_sections_exactly`
+- `test_node_npm_protocol_projects_pinned_npa_alias_and_local_facts[registry-version]`
+- `test_node_npm_protocol_projects_pinned_npa_alias_and_local_facts[one-level-alias]`
+- `test_node_npm_protocol_projects_pinned_npa_alias_and_local_facts[file-relative]`
+- `test_node_npm_protocol_projects_pinned_npa_alias_and_local_facts[directory-relative]`
+- `test_node_npm_protocol_uses_the_source_owned_base_for_relative_specs`
+- `test_node_npm_protocol_rejects_selected_field_shape_without_partial_facts[dependencies-not-an-object]`
+- `test_node_npm_protocol_rejects_selected_field_shape_without_partial_facts[dependency-specifier-not-a-string]`
+- `test_node_npm_protocol_rejects_selected_field_shape_without_partial_facts[selected-section-null]`
+- `test_node_npm_protocol_ignores_unselected_fields_and_uncontrolled_home`
+- `test_node_pnpm_protocol_orders_catalog_importer_snapshot_and_preserves_equal_keys`
+- `test_node_pnpm_protocol_projects_git_file_and_workspace_resolutions`
+- `test_node_pnpm_protocol_rejects_environment_documents_without_partial_facts[environment-only]`
+- `test_node_pnpm_protocol_rejects_environment_documents_without_partial_facts[combined-environment-and-main]`
+- `test_node_pnpm_protocol_does_not_resolve_registry_git_file_or_tar_references`
+
+Failing test ID:
+
+- `test_node_pnpm_protocol_accepts_exact_v9_and_bound_bom_behavior`
+
+Within that test, the zero-, one-, and two-BOM facts responses were exactly
+equivalent; three BOMs produced the pinned
+`errorKind: authority-rejected`; and lockfile generation `8.0` was rejected.
+The final selected-path assertion failed: with the selected candidate
+`not-pnpm-lock.yaml` containing generation `8.0` and a valid canonical sibling
+`pnpm-lock.yaml`, the test expected `authority-rejected`, but the sidecar
+returned the canonical sibling's successful `facts` response.
+
+The implementation preflights the selected candidate, then invokes
+`readWantedLockfileWithMergeInfo(lockfileDirectory)` at
+`eng/scripts/workflow_delivery_v3_static_reference_node.mjs:566`. That public
+API selects the canonical sibling by directory, so the current implementation
+falls back away from the requested candidate. Production is outside Phase 3
+ownership, so the strict regression remains red.
+
+### Harness discovery
+
+- Baseline root discovery before creation: `3610 tests collected, 4 errors`.
+- Final root discovery: `3627 tests collected, 4 errors`.
+- Harness discovery delta: exactly `+17`, matching all generated cases.
+- Both discovery runs exit `2` for the same four concurrent, pre-existing
+  collection failures outside Phase 3 ownership:
+  `tests/ci/test_consumer_policy.py`,
+  `tests/ci/test_path_admission.py`, `tests/ci/test_scenarios.py`, and
+  `tests/release/test_eligibility.py`.
+
+### Quality review
+
+- `ruff check` and `ruff format --check` pass for the new test file.
+- Pseudo-mutation review found the planned npm and pnpm observables pinned by
+  complete raw JSON, parsed deep equality, exact implementation identities,
+  ordering, error-without-facts, source-byte state, and network-guard
+  assertions. The selected-path mutation is caught as the one current
+  production blocker; no additional in-scope test gap remained.
+- Assertion-quality review found 11 test functions, 17 collected cases, 20
+  explicit assertion sites including shared strict-response helpers, zero
+  assertion-free cases, zero trivial-only cases, and zero self-referential
+  assertions after replacing expected-object comparisons with observed
+  response comparisons. Assertions cover process status, stderr, raw protocol
+  bytes, deep structures, negative field/path/network observables, and
+  filesystem non-mutation.
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-foundation-phase-3 -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-foundation-phase-4 -->
+
+## Workflow Delivery v3 static-reference foundation Phase 4
+
+**Status:** SUCCESS — all 21 NuGet black-box protocol cases pass. There is no
+new Phase 4 production blocker. The Phase 3 strict selected-path fallback
+blocker remains recorded and was neither weakened nor reclassified.
+
+### Owned changes
+
+- Appended only six Phase 4 pytest functions (21 collected cases) to
+  `src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py`.
+- Appended only this Phase 4 status section.
+- Added no .NET test project, package, project/solution reference, manifest
+  change, fixture, or adapter-owned parser.
+- No production, documentation, manifest, lock, fixture, Hexo, other-test, or
+  VCS file was edited by Phase 4.
+
+### Preparation and build
+
+- `mise run prepare:static-reference-authorities`: exit `0`.
+- The prepared executable exists at
+  `artifacts/workflow-delivery-v3/static-reference/nuget-authority/WorkflowDeliveryV3NuGetAuthority.dll`.
+- In-memory AST compilation of the appended pytest module passed without
+  creating bytecode or another output file.
+- Every facts and error response pins the exact identities
+  `NuGet.Packaging@7.9.0`, `NuGet.ProjectModel@7.9.0`, and
+  `dotnet-runtime@10.0.8`.
+
+### Exact generated cases
+
+`test_nuget_lock_protocol_projects_versions_and_documented_coercions`:
+
+- `[integer-v1]`
+- `[integer-v2]`
+- `[integer-v3]`
+- `[numeric-string-coerces-to-v2]`
+- `[boolean-coerces-to-v1]`
+- `[fraction-coerces-to-v3]`
+- `[missing-version]`
+- `[unconvertible-version]`
+- `[int-min-value]`
+- `[below-admitted-range]`
+- `[above-admitted-range]`
+
+Additional lock cases:
+
+- `test_nuget_lock_protocol_orders_targets_dependencies_edges_and_selected_fields`
+- `test_nuget_lock_protocol_uses_stream_logger_and_logical_path_behavior`
+
+`test_nuget_packages_config_protocol_orders_with_package_identity_comparer`
+is one case.
+
+`test_nuget_packages_config_protocol_rejects_duplicate_ids_without_partial_facts`:
+
+- `[exact-duplicate-id]`
+- `[case-insensitive-duplicate-id]`
+
+`test_nuget_packages_config_protocol_enforces_the_non_tolerant_reader_contract`:
+
+- `[utf16-reader-owned-parse]`
+- `[malformed-xml-after-valid-entry]`
+- `[missing-id-after-valid-entry]`
+- `[missing-version-after-valid-entry]`
+- `[invalid-version-after-valid-entry]`
+
+The cases assert complete raw and parsed JSON responses, process status,
+silent stderr, exact schemas/graph/identities, normalized values, exact
+selected fields, target ordinal order, dependency/edge
+ordinal-ignore-case-plus-ordinal order, request-stream precedence over host
+files, a normalized nonexistent repository logical path, strict lock UTF-8,
+reader-owned UTF-16 XML parsing, `PackageIdentity.Comparer` order, duplicate
+rejection, and error responses containing no partial facts.
+
+### Exact narrow result
+
+Command:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py -k "nuget"
+```
+
+Final result: `21 passed, 17 deselected` in `3.52s`.
+
+### Harness discovery
+
+- Baseline root discovery before Phase 4: `3627 tests collected, 4 errors`,
+  exit `2`, exactly matching the Phase 3 final baseline.
+- Immediate post-generation root discovery: `3648 tests collected, 4 errors`,
+  exit `2`.
+- The immediate harness discovery delta was exactly `+21`, matching every
+  generated NuGet case with no new collection error.
+- A final root discovery after concurrent parent changes reported
+  `4520 tests collected`, zero errors, exit `0`. Its aggregate `+893` delta is
+  not attributable solely to Phase 4; the target's final narrow run still
+  discovered and passed exactly the 21 NuGet cases. Registration and placement
+  are therefore confirmed.
+
+### Quality review
+
+- Final `ruff check` result: `All checks passed!`, exit `0`.
+- Final `ruff format --check` result: `1 file already formatted`, exit `0`.
+- Pseudo-mutation review found the admitted `1`/`2`/`3` boundaries,
+  coercions, missing/unconvertible/minimum/below/above versions, both ordering
+  comparers, all selected fields, normalization, exact identities, encoding,
+  stream-vs-host selection, duplicate rejection, and no-partial-facts paths
+  killed by concrete assertions. `leaveStreamOpen: false` has no distinct
+  externally visible state after this one-shot protocol closes its internal
+  stream; its observable reader-owned byte/encoding and strict parsing
+  behavior is pinned. No actionable tests-only gap remained.
+- Assertion-quality review found six test functions and 21 collected cases,
+  with every case reaching a strict response helper that asserts exit status,
+  stderr, exact raw JSON, and parsed deep equality. There are zero
+  assertion-free, trivial-only, or self-referential cases. Additional
+  assertions cover negative field/facts absence, exact collection order, and
+  filesystem non-selection/non-mutation.
+
+### Preserved blocker
+
+The Phase 3 strict blocker remains
+`test_node_pnpm_protocol_accepts_exact_v9_and_bound_bom_behavior`: for a
+noncanonical selected candidate beside a valid canonical `pnpm-lock.yaml`,
+the recorded implementation falls back to the canonical sibling and returns
+facts instead of `authority-rejected`. Phase 4 selected only `-k "nuget"`;
+the strict Node assertion and its status evidence were not changed, skipped,
+xfail-marked, ignored, or rerun as part of this phase.
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-foundation-phase-4 -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-step-8-gap-closure -->
+
+## Static-reference Step 8 tests-only gap closure
+
+**Status:** PARTIAL only because four strict known RED nodes remain. All 102
+newly added non-migration cases pass; the one newly added migration witness is
+strict RED against the unchanged old npm fixture basename. No production,
+documentation, manifest, lock, migration, Hexo, fixture, existing
+non-generated test, or VCS state was edited.
+
+### Preparation and discovery
+
+- `mise run prepare:static-reference-authorities`: exit `0`; Node dependencies
+  were already current and the NuGet authority restored/built successfully.
+- Before this iteration, the two generated files collected **107** tests and
+  ran **104 passed, 3 failed**. The three failures were the already recorded
+  old-fixture clean-scan blocker, Tree-sitter-dependency blocker, and pnpm
+  selected-path fallback blocker.
+- After this iteration, the two generated files collect **210** tests.
+- Exact discovery delta: **+103**:
+  - `test_static_reference.py`: **+66** cases, now 135 total.
+  - `test_static_reference_sidecars.py`: **+37** cases, now 75 total.
+- Root package discovery from the repository root reports **3773 tests
+  collected, 4 errors**. The +103 generated cases are visible. The four
+  collection errors are unchanged out-of-scope concurrent removals:
+  `tests/ci/test_consumer_policy.py` cannot import `javascript_consumer`;
+  `tests/ci/test_path_admission.py` cannot import
+  `CI_CONSUMER_POLICY_SURFACE_PATTERNS`; `tests/ci/test_scenarios.py` cannot
+  find `eng/scripts/workflow_delivery_v3_consumer_policy.py`; and
+  `tests/release/test_eligibility.py` cannot import `consumer_policy`.
+
+### Exact additions
+
+`test_static_reference.py` adds these 14 functions / 66 cases:
+
+| Test | Exact case IDs | Cases |
+|---|---|---:|
+| `test_source_exact_failures_are_typed_and_stop_policy_before_authority` | `annotated-tag-object`, `non-commit-object`, `git-target-symlink`, `git-target-gitlink`, `index-symlink`, `index-gitlink`, `unmerged-index`, `missing-index-object`, `worktree-file-symlink`, `worktree-parent-symlink` | 10 |
+| `test_source_accepts_an_executable_regular_blob` | `git-target-100755`, `index-100755` | 2 |
+| `test_worktree_selects_present_tracked_and_eligible_untracked_only` | unparameterized | 1 |
+| `test_git_source_ignores_poisoned_index_and_replace_refs` | unparameterized | 1 |
+| `test_source_and_npm_candidate_order_uses_utf8_bytes_for_non_ascii_paths` | `git-target`, `index`, `worktree` | 3 |
+| `test_selector_rows_project_only_their_assigned_prohibited_forms` | `nuget-lock-D-and-key`, `nuget-lock-V-and-key`, `nuget-config-V`, `pnpm-lock-W`, `pnpm-lock-L`, `pnpm-lock-dependency-key`, `pnpm-workspace-A`, `pnpm-workspace-V`, `pnpm-workspace-L`, `pnpm-workspace-dependency-key` | 10 |
+| `test_producer_name_allowance_is_exact_manifest_path_only` | `exact-producer-manifest-allowed`, `adjacent-manifest-not-allowed` | 2 |
+| `test_producer_root_outside_dependency_positions_is_clean` | `workspace-producer-root`, `importer-producer-root` | 2 |
+| `test_policy_routes_every_terminal_error_without_partial_findings` | `source-acquisition-failed`, `encoding-rejected`, `authority-rejected`, `authority-execution-failed`, `unsupported-projection`, `authority-mismatch-missing`, `authority-mismatch-extra`, `cleanup-failed` | 8 |
+| `test_policy_timeout_and_cancellation_always_clean_exact_roots` | `timeout`, `timeout-cleanup-override`, `keyboard-interrupt`, `cancellation` | 4 |
+| `test_invocation_boundary_rejects_exact_invalid_target_and_root_forms` | `missing-target`, `target-39-characters`, `target-41-characters`, `target-uppercase`, `nonexistent-repository-root`, `file-repository-root` | 6 |
+| `test_invocation_admitted_missing_object_emits_source_failure_result` | unparameterized | 1 |
+| `test_remaining_excluded_categories_select_no_graph_or_runner` | `documentation`, `setup-py`, `requirements`, `poetry-lock`, `bun`, `npmrc`, `yarnrc`, `renovate`, `dependabot`, `pnpmfile`, `batch`, `zsh`, `ordinary-javascript`, `ordinary-typescript`, `ordinary-python` | 15 |
+| `test_tracked_fixture_and_selected_producer_manifests_are_path_exact` | unparameterized | 1 |
+
+`test_static_reference_sidecars.py` adds these 11 functions / 37 cases:
+
+| Test | Exact case IDs | Cases |
+|---|---|---:|
+| `test_node_pnpm_importer_and_snapshot_negatives_fail_closed` | `missing-own-specifier`, `null-importer`, `null-importer-selected-map`, `non-string-importer-selected-map`, `null-snapshot`, `array-snapshot`, `null-snapshot-selected-map`, `array-snapshot-selected-map`, `non-string-snapshot-selected-map`, `missing-required-snapshot`, `unexplained-null-link-key`, `non-workspace-bare-local`, `non-workspace-path-local`, `path-form-workspace`, `conflicted-lock` | 15 |
+| `test_shipped_node_authority_uses_only_exact_pinned_public_calls` | unparameterized | 1 |
+| `test_node_workspace_catalog_projects_named_and_ranged_workspace_specs` | `named-workspace-catalog`, `ranged-workspace-catalog` | 2 |
+| `test_node_graphs_reject_malformed_utf8_before_facts` | `npm-manifest`, `pnpm-lock`, `pnpm-workspace` | 3 |
+| `test_node_npm_and_workspace_bom_outcomes_are_reader_owned_and_exact` | `npm-zero-bom`, `npm-one-bom`, `npm-two-bom`, `workspace-zero-bom`, `workspace-one-bom`, `workspace-two-bom`, `workspace-three-bom` | 7 |
+| `test_node_pnpm_preserves_original_bytes_digest_and_crlf_admission` | `clean-lf`, `clean-crlf`, `environment-crlf` | 3 |
+| `test_nuget_source_contract_uses_exact_non_writable_public_reader_calls` | unparameterized | 1 |
+| `test_node_pnpm_orders_non_ascii_catalogs_and_importers_by_utf8_bytes` | unparameterized | 1 |
+| `test_nuget_uses_ordinal_and_case_insensitive_ordinal_unicode_ordering` | unparameterized | 1 |
+| `test_shipped_node_authority_binds_fixed_parser_arguments_exactly` | unparameterized | 1 |
+| `test_node_npm_non_ascii_dependency_keys_are_authority_rejected` | `private-use-U+E000`, `non-bmp-U+10000` | 2 |
+
+### Final exact test result
+
+Command:
+
+```text
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py
+```
+
+Result: **206 passed, 4 failed (210 total)** in **37.88s**.
+
+All new node IDs listed above pass except:
+
+- `test_static_reference.py::test_tracked_fixture_and_selected_producer_manifests_are_path_exact`
+  — **strict RED, parent-owned fixture migration**. The source is tracked, but
+  it is still
+  `tests/fixtures/acceptance/npm-publish-request/package/package.json`; it has
+  a selected basename and is the second tracked selected `package.json` whose
+  top-level name is the producer.
+
+The three unchanged baseline failing node IDs are:
+
+- `test_static_reference.py::test_hexo_file_reference_and_v9_lock_project_a_typed_directory_and_scan_cleanly`
+  — **strict RED, same old fixture basename**; the repository scan returns its
+  prohibited producer-name finding instead of clean.
+- `test_static_reference.py::test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared`
+  — **strict RED, parent-owned dependency migration**; direct Tree-sitter
+  dependencies remain.
+- `test_static_reference_sidecars.py::test_node_pnpm_protocol_accepts_exact_v9_and_bound_bom_behavior`
+  — **strict RED, pre-existing selected-path fallback**; the sidecar reads a
+  canonical sibling when the selected candidate has another basename.
+
+No node is skipped, xfailed, ignored, or made inconclusive. The tests do not
+bind a port or access the network.
+
+### Gap and assertion review
+
+- `test-gap-analysis` and `assertion-quality` were invoked after the final
+  additions. `test-analysis-extensions` was attempted and unavailable; its
+  directly located Python/pytest extension was read.
+- The 25 added test functions contain **140 direct `assert` sites** plus four
+  `pytest.raises` regions; the sidecar response helpers add exact exit,
+  stderr, raw JSON, and parsed deep-equality assertions to every process case.
+- Assertion categories include exact/deep equality, exception propagation,
+  negative absence/no-call checks, collection order, string/encoding form,
+  identity, and filesystem/process lifecycle state. There are zero
+  assertion-free, trivial-only, self-referential, skipped, or timing-only
+  additions.
+- Focused pseudo-mutations for dropped source-mode checks, removed Git
+  isolation, changed selector forms, lost first-stop behavior, partial
+  findings, changed implementation closures, swallowed cancellation, omitted
+  cleanup, altered Node options/calls, replacement decoding, byte mutation,
+  comparer changes, and fallback runner invocation are all killed by concrete
+  assertions. No further actionable tests-only gap remained.
+
+### Narrow infeasible/out-of-scope dispositions
+
+1. A loaded orphan pnpm `specifiers` key cannot be produced through the pinned
+   public v9 serialized reader: that reader constructs its loaded `specifiers`
+   map from the same selected inline dependency sections. Replacing immutable
+   ESM imports with a custom/non-public loader would test a substituted
+   authority rather than the shipped graph. The narrow shipped-source fallback
+   therefore asserts the exact final `referencedSpecifiers` loop and
+   `unsupported()` branch, while executable cases cover missing-own-specifier,
+   null/non-string importer maps, null/array/non-string snapshot maps, missing
+   snapshots, null keys, local/path forms, and conflicts.
+2. `npm-package-arg@14.0.0` rejects dependency keys containing U+E000 or
+   U+10000 before they can participate in npm key ordering. Two executable
+   cases pin `authority-rejected` with no facts. UTF-8 ordering for npm
+   candidates is covered at the source/policy boundary; accepted pnpm catalog
+   and importer positions cover U+E000/U+10000 directly.
+3. The private one-shot Node sidecar exposes no callable exports, and replacing
+   its immutable ESM imports would cease to observe the shipped calls. Exact
+   shipped call expressions, counts, options, fixed arguments, public package
+   imports, and forbidden fallbacks are therefore asserted narrowly from the
+   checked-in sidecar text, as permitted by the requested fallback.
+4. `leaveStreamOpen: false` has no post-call observable after the private
+   one-shot NuGet process closes its local stream. The exact non-writable
+   `MemoryStream`, three-argument lock read, `NullLogger`, logical path,
+   `PackagesConfigReader(stream,false)`, `GetPackages(false)`, and
+   `PackageIdentity.Comparer` source expressions are pinned while all retained
+   black-box behavior tests remain unchanged.
+
+### Non-gating style check
+
+Check-only Ruff reported 35 diagnostics in the appended regions and
+`ruff format --check` would reformat both append-only files. No style-only
+rewrite was made because this iteration permits test-mistake corrections only
+and forbids rewriting existing generated content. In-memory Python compilation
+passed for both files.
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-step-8-gap-closure -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-mandatory-pseudo-mutation-closure -->
+
+## Mandatory static-reference pseudo-mutation closure
+
+**Status:** SUCCESS for every requested tests-only gap. The complete generated
+suite remains intentionally RED only at the same four known production or
+migration blockers; those blockers are not classified as test gaps. No
+production, documentation, manifest, lock, migration, fixture, Hexo,
+non-generated test, or VCS file was edited.
+
+### Preparation and discovery
+
+- `mise run prepare:static-reference-authorities`: exit `0`; the pinned Node
+  workspace was current and `WorkflowDeliveryV3NuGetAuthority` built
+  successfully for `net10.0`.
+- Baseline discovery for the two generated files: **210 tests collected**.
+- Final discovery for the two generated files: **230 tests collected**.
+- Exact generated discovery delta: **+20**, matching all added cases.
+- Root package harness discovery reports **3793 tests collected, 4 errors**,
+  exactly `+20` from the previously recorded 3773-test baseline. The four
+  unchanged collection errors remain the out-of-scope removed consumer-policy
+  surfaces recorded in the preceding status entry.
+
+### Exact additions and focused result
+
+`test_static_reference.py` adds five functions / 12 cases:
+
+| Test | Exact case IDs | Cases |
+|---|---|---:|
+| `test_git_sources_ignore_all_ambient_repository_object_and_config_redirects` | unparameterized | 1 |
+| `test_worktree_permission_errors_are_typed_and_stop_before_authority` | `parent-lstat-permission-error`, `candidate-lstat-permission-error`, `candidate-open-permission-error` | 3 |
+| `test_selector_rows_bind_exact_family_graph_mode_and_basename_boundary` | `package-json`, `pnpm-lock`, `pnpm-workspace`, `nuget-lock`, `nuget-packages-config` | 5 |
+| `test_nested_workflow_pnpm_paths_are_reserved_but_adjacent_paths_select` | `nested-pnpm-lock`, `nested-pnpm-workspace` | 2 |
+| `test_policy_session_factory_oserror_is_canonical_source_failure_without_root` | unparameterized | 1 |
+
+`test_static_reference_sidecars.py` adds four functions / 8 cases:
+
+| Test | Exact case IDs | Cases |
+|---|---|---:|
+| `test_node_npm_rejects_unprojectable_selected_values_without_partial_facts` | `workspace-protocol`, `numeric-selected-name`, `tilde-local-directory`, `repository-escaping-directory`, `repository-escaping-file-tarball` | 5 |
+| `test_pnpm_importer_specifier_reverse_membership_guard_is_exact` | unparameterized | 1 |
+| `test_node_pnpm_snapshot_dependency_edges_use_utf8_byte_order` | unparameterized | 1 |
+| `test_nuget_targets_use_ordinal_case_and_unicode_ordering` | unparameterized | 1 |
+
+Focused command:
+
+```text
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py -k 'git_sources_ignore_all_ambient or worktree_permission_errors or selector_rows_bind_exact or nested_workflow_pnpm_paths or policy_session_factory_oserror or node_npm_rejects_unprojectable or pnpm_importer_specifier_reverse or node_pnpm_snapshot_dependency_edges or nuget_targets_use_ordinal'
+```
+
+Final focused result: **20 passed, 210 deselected** in **1.64s**, exit `0`.
+
+### Complete generated-suite result and preserved strict RED blockers
+
+Command:
+
+```text
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py
+```
+
+Final result: **226 passed, 4 failed (230 total)** in **39.49s**, exit `1`.
+The only failures are the four known strict RED production/migration blockers:
+
+1. `test_static_reference.py::test_hexo_file_reference_and_v9_lock_project_a_typed_directory_and_scan_cleanly`
+2. `test_static_reference.py::test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared`
+3. `test_static_reference.py::test_tracked_fixture_and_selected_producer_manifests_are_path_exact`
+4. `test_static_reference_sidecars.py::test_node_pnpm_protocol_accepts_exact_v9_and_bound_bom_behavior`
+
+No test is skipped, xfailed, ignored, or made inconclusive. The additions bind
+no port and perform no network access.
+
+### Ruff and quality gates
+
+- `ruff check` over both complete generated files: `All checks passed!`, exit
+  `0`.
+- `ruff format --check` over both complete generated files:
+  `2 files already formatted`, exit `0`.
+- `test-gap-analysis` and `assertion-quality` were invoked. The required
+  `test-analysis-extensions` helper was attempted and unavailable, so the
+  Python/pytest review was completed directly.
+- The nine added functions contain **51 direct `assert` statements plus one
+  `pytest.raises` region**. The shared black-box response helpers additionally
+  assert exact exit status, silent stderr, raw JSON, and parsed deep equality.
+  There are zero assertion-free, trivial-only, self-referential, skipped, or
+  timing-dependent additions.
+- Assertion categories cover exact/deep equality, exception typing, negative
+  absence and no-call behavior, ordering/comparison, byte preservation,
+  process output, and filesystem/session lifecycle state.
+
+### Pseudo-mutation disposition
+
+- Removing any ambient Git redirect deletion, `--no-replace-objects`, or the
+  controlled Git config values is killed by the captured child environment;
+  committed, indexed, and worktree byte/object identities are independently
+  exact.
+- Removing or swapping parent/candidate `lstat` and candidate `open`
+  `PermissionError` routing is killed by exact diagnostic, path, canonical
+  source failure, no-Session, and no-authority assertions.
+- Changing any of the five selector basenames, families, graph IDs, input
+  modes, or workflow-descendant segment boundary is killed by positive,
+  one-character-suffix near-miss, nested-reserved, and adjacent-allowed cases.
+- Swallowing Session-factory `OSError`, allocating a root, invoking an
+  authority, or retaining partial identities/findings is killed by one exact
+  canonical Result and empty-root/call assertions.
+- npm `workspace:*` is pinned to `authority-rejected`; numeric selected name,
+  tilde local directory, escaping local directory, and escaping local tarball
+  are pinned to `unsupported-projection`. Every case proves no facts and
+  unchanged selected bytes.
+- The pinned official pnpm v9 reader cannot construct an orphan loaded
+  `importer.specifiers` member from serialized input. As explicitly requested,
+  `test_pnpm_importer_specifier_reverse_membership_guard_is_exact` therefore
+  pins the complete shipped reverse loop, the preceding membership insertion,
+  the negated `referencedSpecifiers.has(specifierKey)` test, and its exact
+  `unsupported()` rejection. It uses no substitute or competing loader.
+- Replacing UTF-8 byte ordering with JavaScript UTF-16 ordering is killed at
+  the pnpm snapshot dependency-edge level by reversed-input U+10000/U+E000
+  bytes and exact U+E000-before-U+10000 output. Replacing NuGet
+  `StringComparer.Ordinal` target ordering is killed by valid runtime-qualified
+  uppercase/lowercase targets and the opposite U+10000-before-U+E000 UTF-16
+  order, including exact raw JSON.
+
+No remaining requested tests-only pseudo-mutation gap was found. The four
+known production/migration blockers above were preserved and not counted as
+gaps.
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-mandatory-pseudo-mutation-closure -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-final-validation -->
+
+# Final Validation — Workflow Delivery v3 Static-Reference Foundation
+
+## Final test inventory
+
+| File | Added scope | Collected cases |
+|---|---|---:|
+| `tests/release/test_static_reference.py` | model, acquisition, Session, projection, policy, repository scenarios, exclusions, Live boundary | 147 |
+| `tests/release/test_static_reference_sidecars.py` | pinned npm/pnpm and NuGet executable authority contracts | 83 |
+| `tests/test_hk_trigger.py` | explicit HK source modes and no Live authority | 2 |
+| `tests/adapters/test_commit10_acceptance_probes.py` | npm fixture source/materialization boundary | 1 |
+| **Total** | 83 test functions with parameterized scenarios | **233** |
+
+The two new generated files contain 230 cases. The two existing files were
+extended additively with three cases; no existing test was deleted or
+overwritten.
+
+## Build validation
+
+| Command | Result |
+|---|---|
+| `mise run prepare:static-reference-authorities` | Passed; pinned Node closure current and NuGet authority restored/built for `net10.0` |
+| `uv build --package three-workflow-delivery-v3` | Passed; sdist and wheel built |
+
+No manifest edit was made to create a separate Node or .NET test project. The
+private sidecars are tested through their checked-in executable JSON
+protocols.
+
+## Test validation
+
+Generated files:
+
+```text
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py
+```
+
+Result: **230 collected, 226 passed, 4 strict contract failures** in 38.84s.
+
+Exact appended integration nodes:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py::test_root_hk_reports_explicit_index_and_worktree_feedback src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py::test_root_hk_live_static_reference_uses_git_target_evidence_only src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py::test_npm_publish_fixture_source_is_non_candidate_and_materializes_only_package_manifest
+```
+
+Result: **1 passed, 2 strict contract failures**.
+
+Across all 233 added cases, **227 pass and 6 remain strict RED**. Those six
+tests reduce to four parent-owned blockers:
+
+1. **npm fixture migration not present** — the tracked source remains
+   `tests/fixtures/acceptance/npm-publish-request/package/package.json`. It is
+   a selected second producer manifest. This fails the direct fixture test,
+   the tracked-inventory test, and the final whole-worktree clean assertion in
+   the Hexo scenario. The Hexo manifest's exact `file:../..`, v9 importer
+   specifier/reference, and typed directory snapshot assertions themselves
+   pass.
+2. **Superseded Tree-sitter dependencies remain declared** —
+   `tree-sitter==0.25.2`, `tree-sitter-javascript==0.25.0`, and
+   `tree-sitter-typescript==0.23.2`.
+3. **pnpm selected-path fallback** — a request for
+   `not-pnpm-lock.yaml` can succeed by reading a canonical sibling
+   `pnpm-lock.yaml`, rather than remaining bound to the declared snapshot
+   candidate.
+4. **Root HK lacks an explicit worktree invocation** — the retained block
+   contains explicit `index` only. Its separate no-Live-authority assertion
+   passes.
+
+The required affected-package command:
+
+```text
+python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests
+```
+
+stopped during collection with exit `2` after four concurrently stale,
+pre-existing consumer-policy test errors:
+
+- `tests/ci/test_consumer_policy.py` imports removed
+  `javascript_consumer`;
+- `tests/ci/test_path_admission.py` imports removed
+  `CI_CONSUMER_POLICY_SURFACE_PATTERNS`;
+- `tests/ci/test_scenarios.py` requires removed
+  `eng/scripts/workflow_delivery_v3_consumer_policy.py`;
+- `tests/release/test_eligibility.py` imports removed
+  `release.consumer_policy`.
+
+These four collection failures are outside this run's ownership and are not
+generated-test failures. No unrelated runtime test failure was reached.
+
+## Quality gates
+
+| Gate | Result |
+|---|---|
+| `test-gap-analysis` pseudo-mutation review | Clear after two tests-only closure iterations and final reverse-membership strengthening |
+| `assertion-quality` | Clear: no assertion-free, trivial-only, tautological, weak single-observable, skipped, or xfailed added test |
+| Prompt-scenario mapping | Complete below; blocked rows retain strict assertions |
+| Ruff check | Passed on all four owned test files |
+| Ruff format check | Four files already formatted |
+| `git diff --check` | Passed for `.testagent/` and owned test paths |
+
+### Prompt-scenario-to-test mapping
+
+| Prompt scenario | Exact evidence |
+|---|---|
+| git-target/index/worktree exact acquisition | `test_source_uses_its_own_git_target_index_and_worktree_bytes`; `test_source_exact_failures_are_typed_and_stop_policy_before_authority`; `test_git_sources_ignore_all_ambient_repository_object_and_config_redirects` |
+| pre-Result versus admitted source failures | `test_invocation_rejects_invalid_arguments_before_result_or_root`; `test_invocation_boundary_rejects_exact_invalid_target_and_root_forms`; `test_invocation_admitted_missing_object_emits_source_failure_result`; `test_policy_stops_at_the_first_source_error_before_authority_execution` |
+| pinned official npm projection | `test_node_npm_protocol_reads_one_snapshot_content_without_mutation`; `test_node_npm_protocol_orders_name_and_four_dependency_sections_exactly`; `test_node_npm_protocol_projects_pinned_npa_alias_and_local_facts`; `test_node_npm_rejects_unprojectable_selected_values_without_partial_facts` |
+| pinned pnpm v9 lock/workspace projection | `test_node_pnpm_protocol_accepts_exact_v9_and_bound_bom_behavior`; `test_node_pnpm_protocol_orders_catalog_importer_snapshot_and_preserves_equal_keys`; `test_node_pnpm_importer_and_snapshot_negatives_fail_closed`; `test_node_workspace_catalog_projects_named_and_ranged_workspace_specs`; `test_shipped_node_authority_uses_only_exact_pinned_public_calls` |
+| NuGet 7.9 lock/config sidecar | `test_nuget_lock_protocol_projects_versions_and_documented_coercions`; `test_nuget_lock_protocol_orders_targets_dependencies_edges_and_selected_fields`; `test_nuget_packages_config_protocol_orders_with_package_identity_comparer`; `test_nuget_source_contract_uses_exact_non_writable_public_reader_calls` |
+| deterministic ordering | `test_projection_orders_candidates_nodes_arrays_mappings_facts_and_findings`; `test_source_and_npm_candidate_order_uses_utf8_bytes_for_non_ascii_paths`; `test_node_pnpm_snapshot_dependency_edges_use_utf8_byte_order`; `test_nuget_targets_use_ordinal_case_and_unicode_ordering` |
+| seven typed errors, first error, cleanup precedence | `test_model_source_kinds_and_all_seven_error_kinds_are_exact_and_distinct`; `test_policy_routes_every_terminal_error_without_partial_findings`; `test_policy_returns_only_the_first_typed_graph_error`; `test_policy_cleanup_failed_overrides_success_source_or_graph_result_and_cleans_exact_roots`; `test_policy_timeout_and_cancellation_always_clean_exact_roots` |
+| exact Hexo migration | `test_hexo_file_reference_and_v9_lock_project_a_typed_directory_and_scan_cleanly` (migration facts pass; final clean scan blocked by the unmigrated npm fixture) |
+| npm fixture materialization | `test_npm_publish_fixture_source_is_non_candidate_and_materializes_only_package_manifest`; `test_tracked_fixture_and_selected_producer_manifests_are_path_exact`; existing passing request/tarball evidence includes `test_acceptance_capture_uses_real_npm_publish_request`, `test_acceptance_request_fixture_is_reproducible`, and `test_validated_request_proof_binds_raw_request_and_tarball_digests` |
+| excluded surfaces and removed mechanisms | `test_excluded_surface_selects_no_graph_and_has_no_fallback`; `test_remaining_excluded_categories_select_no_graph_or_runner`; `test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared`; `test_selector_rows_bind_exact_family_graph_mode_and_basename_boundary` |
+| HK feedback versus Live evidence | `test_root_hk_reports_explicit_index_and_worktree_feedback`; `test_root_hk_live_static_reference_uses_git_target_evidence_only`; `test_cli_live_evidence_accepts_git_target_only` |
+
+## Ownership and blocker disposition
+
+Only `.testagent/` and the four planned test paths were edited by this test
+generation run. Production, docs, manifests, locks, Hexo files, fixture source,
+and VCS state were not changed. The strict failures above are intentionally
+preserved for the concurrently running parent implementation; no assertion was
+weakened and no test was ignored or skipped.
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-final-validation -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-live-refresh-status -->
+
+# Workflow Delivery v3 static-reference Live/HK/CLI follow-up closure
+
+## Changed artifacts
+
+State appended:
+
+- `.testagent/research.md`
+- `.testagent/plan.md`
+- `.testagent/status.md`
+
+Tests added or revised:
+
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_live_static_reference.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_static_reference_delivery.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_ci_workflow.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/ci/test_path_admission.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/ci/test_planner.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/ci/test_scenarios.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+
+No production, documentation, manifest/lock, workflow, HK/mise, migration, or
+other non-test file was edited in this follow-up. No compatibility shim, skip,
+xfail, ignore, network call, port binding, or timing assertion was added.
+
+## Exact validation evidence
+
+| Command | Observed result |
+|---|---|
+| Focused Live/HK/CLI/workflow command covering the new files/nodes | `20 passed in 0.24s` after one corrected parser-Namespace assertion |
+| Final revised affected-node command covering the current Live, eligibility, CI retirement, HK, CLI, workflow, Governance, fixture, Hexo, pnpm, and planner nodes | `73 passed in 6.67s` |
+| `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q src/public/lib/three-workflow-delivery-v3/tests` | `3774 tests collected in 0.60s` |
+| `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests` | `3774 passed in 379.08s (0:06:19)`; wrapper exit `0`, elapsed `380.1s` |
+| `uv build --package three-workflow-delivery-v3` | Built `dist/three_workflow_delivery_v3-0.1.0.tar.gz` and `dist/three_workflow_delivery_v3-0.1.0-py3-none-any.whl`; exit `0` |
+| `uv run --python 3.13 ruff check --force-exclude -- <15 changed test files>` | `All checks passed!` |
+| `uv run --python 3.13 ruff format --check --force-exclude -- <15 changed test files>` | `15 files already formatted` |
+| `git --no-pager diff --check -- .testagent src/public/lib/three-workflow-delivery-v3/tests` | No output; exit `0` |
+
+The first package run exposed 45 stale failures: consumer-policy-era HK,
+planner/workflow/Governance expectations plus four strict foundation
+fixture/dependency/sidecar assertions. All were test defects under the current
+production contract. The superseded content was retired or updated, no
+production code was changed, and the final complete package run is green.
+There are no remaining in-scope or pre-existing package blockers.
+
+## Mandatory final quality gate
+
+`test-gap-analysis` and `assertion-quality` were invoked on the final test set.
+Their shared language-extension helper was unavailable, so the required pytest
+analysis was completed inline against the current source and final tests.
+
+Pseudo-mutations killed by exact assertions include:
+
+- removing, duplicating, or moving the Live scan after Governance;
+- changing `git-target`, dropping/changing `context.target`, or dropping Result
+  validation;
+- replacing clean with findings/error, removing the findings diagnostic, or
+  collapsing any of the seven typed operational diagnostics;
+- dropping/renaming `static-reference` or omitting its target, source kind,
+  findings, or typed error;
+- accepting `--consumer-policy`, restoring it in either workflow, or restoring
+  a production consumer-policy module;
+- changing root HK from index to worktree/git-target, making it conditional, or
+  moving the manual worktree command out of its mise task.
+
+No actionable tests-only pseudo-mutation gap survived. The assertion-depth
+scan over the 29 focused final test functions counted 121 `assert` statements,
+2 `pytest.raises` contexts, and 0 assertion-free functions. It found concrete
+equality, structural/deep, negative, exception, collection, ordering, and
+state/side-effect checks; no trivial-only, tautological, return-type-only, or
+single-observable Live behavior test remains.
+
+## Requirement | Evidence
+
+| Requirement | Exact evidence |
+|---|---|
+| R1 Live owns same-run exact-target scan | `test_live_eligibility_runs_its_own_exact_target_static_reference_scan` asserts the sole ordered call with the controlled repository root, `git-target`, exact target, validator identity, run ID, attempt, Governance order, and final pass. |
+| R2 bounded Result identified as `static-reference` | `test_live_eligibility_embeds_the_canonical_clean_result_as_static_reference`; `test_live_eligibility_decision_names_static_reference_evidence`. |
+| R3 CLI/workflows no longer accept/pass consumer policy | `test_live_eligibility_cli_omits_consumer_policy_input`; `test_live_eligibility_cli_rejects_consumer_policy_option`; `test_workflow_delivery_workflows_do_not_pass_consumer_policy`; `test_workflows_omit_all_consumer_policy_spellings`. |
+| R4 root HK unconditional index invocation | `test_root_hk_unconditionally_invokes_static_reference_for_index` asserts the exact full command, one index occurrence, no condition, and no worktree/git-target/target argument. |
+| R5 manual worktree scan is a mise task | `test_manual_worktree_static_reference_is_a_separate_mise_task`; `test_manual_worktree_scenario_is_isolated_in_mise`. |
+| R6 retire superseded tests without compatibility | `test_consumer_policy_runtime_and_script_are_retired`; `test_no_production_file_imports_consumer_policy`; `test_live_eligibility_runtime_has_no_consumer_policy_symbols`; revised collection is `3774` with no import error. |
+| R7 reconcile obsolete generated HK expectations | `test_root_hk_unconditionally_invokes_static_reference_for_index` and `test_manual_worktree_static_reference_is_a_separate_mise_task` are separate exact tests; the obsolete combined worktree expectation was removed. |
+| R8 Live clean/findings/typed operational handling and secondary observables | `test_live_eligibility_runs_its_own_exact_target_static_reference_scan`; `test_live_eligibility_embeds_the_canonical_clean_result_as_static_reference`; `test_live_eligibility_blocks_on_static_reference_findings_with_evidence`; seven cases of `test_live_eligibility_maps_each_typed_static_reference_error`; `test_live_eligibility_validates_static_reference_before_governance`; `test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate`. |
+| R9 CLI rejects and workflows omit removed option | `test_live_eligibility_cli_rejects_consumer_policy_option` asserts exit `2` and exact unrecognized-argument text; `test_buddy_workflow_delegates_static_reference_to_live`; `test_live_scenario_has_no_external_or_caller_supplied_policy_result`. |
+| R10 narrow, broad, Ruff, format, diff | `73 passed`; `3774 passed`; package wheel/sdist built; Ruff check and format check passed; owned-path diff check exit `0`, as tabulated above. |
+| R11 final gates and scenario mapping | Mandatory gate section above: no surviving actionable gap, 29 functions/121 asserts/2 raises/0 assertion-free, and this exact mapping. |
+| R12 final artifacts/results/blockers | Changed-artifact list and exact validation table above; no remaining blockers. |
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-live-refresh-status -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-live-final-gate-correction -->
+
+## Final-gate correction after the Live/HK/CLI closure
+
+The mandatory parent-owned `test-gap-analysis` and `assertion-quality` skills
+were invoked again against the final test set. Their requested
+`test-analysis-extensions` helper was unavailable. The Python/pytest checks
+were therefore completed directly against the bounded production/test pairs.
+
+### Actionable findings closed
+
+1. The typed-error Live test originally parameterized itself from production's
+   `STATIC_REFERENCE_ERROR_KINDS`. Deleting an error kind from that tuple could
+   shrink the test matrix and survive. The test now uses an independent literal
+   seven-kind oracle, and
+   `test_live_eligibility_operational_error_kinds_are_exact` separately pins
+   the production tuple and distinct count.
+2. A tracked legacy fixture still carried the old consumer-policy schema and
+   dependency payload. Deleting or renaming a tracked path is forbidden in this
+   run, so its permitted test-local content was neutralized to the exact
+   non-normative tombstone
+   `{"replacement":"static-reference","status":"superseded"}`.
+   `test_consumer_policy_runtime_and_script_are_retired` asserts that tombstone.
+3. Two incidental positive test references were stale:
+   `test_commit9_codeowners.py` used the removed script as a CODEOWNERS
+   exemplar, and `test_commit11_legacy_buddy_retirement.py` used the removed HK
+   local name as a parsing sentinel. They now use the current static-reference
+   script and current `v3-control-pytest` boundary.
+
+No actionable pseudo-mutation remains for the requested scan ownership,
+exact-root/source-kind/target binding, validation ordering, canonical
+`static-reference` evidence, clean/findings/seven-error mapping, CLI/workflow
+route removal, root-HK index routing, or manual mise worktree routing.
+
+Assertion-depth analysis over all 17 changed Python test modules found 438 test
+functions, 2,422 direct `assert` statements, 66 `pytest.raises` contexts, zero
+trivial-only tests, and zero direct self-equality assertions. Nine top-level
+test wrappers have no local assertion but directly invoke assertion-bearing
+scenario helpers/tests; call tracing leaves zero effective assertion-free
+tests. No skip, xfail, ignore, network, port, or timing behavior was introduced
+by this follow-up.
+
+### Additional changed test-local artifacts
+
+These supplement the earlier complete list:
+
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/consumer-policy-acceptance.json`
+
+The tracked legacy fixture **filename** cannot be removed or renamed under the
+explicit no-deletion constraint. Its old behavior and payload are retired; the
+remaining name is the sole constrained residual and does not feed production
+or any compatibility route.
+
+### Final commands and observed results
+
+One initial focused invocation from the session default directory omitted the
+required worktree `cd` and returned pytest exit `4` (`file or directory not
+found`). It made no change. Every command below ran from the exact requested
+worktree and passed.
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_live_static_reference.py
+```
+
+Observed: `13 passed in 0.05s`.
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_live_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py::test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_surface src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py::test_later_replacement_owner_override_fails_exact_final_match src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py::test_later_hcoona_coowner_override_fails_exact_final_match src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py::test_root_hk_selects_buddy_retirement_and_compatibility_changes
+```
+
+Observed after the final edits: `39 passed in 0.31s`.
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py::test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_surface src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py::test_later_replacement_owner_override_fails_exact_final_match src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py::test_later_hcoona_coowner_override_fails_exact_final_match
+```
+
+Observed: `19 passed in 0.40s`.
+
+```text
+python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests
+```
+
+Observed: exit `0`; `3775 passed in 383.20s (0:06:23)`; wrapper elapsed
+`384.1s`.
+
+```text
+uv build --package three-workflow-delivery-v3
+```
+
+Observed: exit `0`; built
+`three_workflow_delivery_v3-0.1.0.tar.gz` and
+`three_workflow_delivery_v3-0.1.0-py3-none-any.whl`.
+
+```text
+uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_path_admission.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_planner.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_scenarios.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_ci_workflow.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_static_reference_delivery.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py src/public/lib/three-workflow-delivery-v3/tests/release/test_live_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py
+```
+
+Observed: exit `0`; `All checks passed!`.
+
+```text
+uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_path_admission.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_planner.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_scenarios.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_ci_workflow.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_static_reference_delivery.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py src/public/lib/three-workflow-delivery-v3/tests/release/test_live_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py
+```
+
+Observed: exit `0`; `17 files already formatted`.
+
+```text
+git --no-pager diff --check -- .testagent src/public/lib/three-workflow-delivery-v3/tests
+```
+
+Observed: exit `0`, no output; the check was repeated after this append and
+remained clean.
+
+### Corrected requirement evidence
+
+| Requirement | Final exact evidence |
+|---|---|
+| Seven typed operational Results are independently pinned | `test_live_eligibility_operational_error_kinds_are_exact`; seven literal cases of `test_live_eligibility_maps_each_typed_static_reference_error` |
+| Superseded fixture/positive expectations are non-normative | `test_consumer_policy_runtime_and_script_are_retired`; `test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_surface`; `test_root_hk_selects_buddy_retirement_and_compatibility_changes` |
+| Mandatory final gate is against the final set | The skill invocations, closed mutation, assertion-depth results, `39`-test narrow rerun, `3775`-test package rerun, Ruff results, and prompt mapping recorded above |
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-live-final-gate-correction -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-over-contraction-correction-status -->
+
+## Workflow Delivery v3 over-contracted test correction status
+
+### Requirement checklist
+
+- [x] **E1** Eligibility valid baseline contracts restored/adapted.
+- [x] **H1** root-HK unrelated contracts restored/adapted.
+- [x] **C1** CI scenario unrelated contracts restored/adapted.
+- [x] **A1** attestation/path-admission and other shrinkage audited.
+- [x] **R1** parser-only suite remains retired; replacement retirement suite
+      remains present; no stale fixture/path was recreated.
+- [x] **F1** tracked `package-manifest.json` and temp-only `package.json`
+      fixture oracle strengthened.
+- [x] **S1** current static-reference tests, typed errors, route-removal,
+      root-index, manual-worktree, sidecar, retirement, and matrices preserved.
+- [ ] **V1** final combined/full/build/lint/diff validation pending.
+- [ ] **Q1** final quality gates and final command/count report pending.
+
+### Implementation and exact count ledger
+
+| Corrected module | HEAD functions | Pre-correction | Final | Pytest cases after correction |
+|---|---:|---:|---:|---:|
+| `tests/release/test_eligibility.py` | 49 | 3 | 49 | 240 |
+| `tests/test_hk_trigger.py` | 32 | 4 | 32 | 44 |
+| `tests/ci/test_scenarios.py` | 17 | 4 | 20 | 27 |
+| `tests/governance/test_commit10_attestation.py` | 5 | 4 | 5 | 5 |
+| `tests/ci/test_path_admission.py` | 4 | 4 | 7 | 18 |
+
+Eligibility preserves all three current static-reference/public-shape tests,
+adapts 43 still-valid baseline functions, and intentionally omits exactly:
+
+- `test_live_admission_rejects_hash_consistent_exception_substitution` —
+  deleted approved-exception/caller-route model has no bounded scanner
+  equivalent.
+- `test_drifted_approved_exception_blocks_as_a_consumer` — deleted exception
+  promotion into caller-supplied consumers; direct findings blocking is
+  retained.
+- `test_nonadmitted_approved_exception_must_be_a_consumer` — deleted admitted
+  exception/consumer-list relationship.
+
+Root HK preserves all four current tests, restores/adapts 28 baseline
+functions, and intentionally omits exactly:
+
+- `test_real_hk_plan_triggers_consumer_policy_for_each_cataloged_surface`
+- `test_composite_action_manifest_selects_only_consumer_policy`
+- `test_dangling_catalog_symlink_selects_consumer_policy`
+- `test_real_hk_plan_triggers_consumer_policy_for_git_history`
+
+Each omitted HK test solely selected the removed broad consumer-policy
+glob/step. The exact unconditional index step and separate manual worktree task
+remain covered.
+
+Scenarios preserve all four current tests, restore/adapt 16 baseline
+functions, and intentionally omit exactly
+`test_ci_scenario_consumer_reference_blocks_except_acceptance_fixtures`,
+whose only contract was broad consumer scanning plus its exception inventory.
+
+Attestation omits no baseline test. Path admission intentionally omits exactly
+`test_package_admission_has_exhaustive_consumer_policy_catalog_parity`, whose
+only subject was exhaustive parity with the deleted broad catalog; the three
+other baseline contracts were adapted and all four current bounded tests were
+preserved.
+
+The 74-function parser/runtime-only
+`tests/ci/test_consumer_policy.py` and deleted
+`tests/fixtures/release/consumer-policy-acceptance.json` remain retired.
+`tests/ci/test_static_reference_retirement.py` remains the current replacement
+and was not renamed or rewritten.
+
+### Phase-local validation already completed
+
+- Eligibility: `240 passed`; Ruff check/format and diff check passed.
+- Root HK: `44 passed`; Ruff check/format and diff check passed.
+- Scenarios: `27 passed`; Ruff check/format and diff check passed.
+- Attestation plus path admission: `23 passed`; Ruff check/format and diff
+  check passed.
+- Fixture oracle: exact node `1 passed`; related selector matrix `5 passed`;
+  Ruff check/format passed.
+
+### Concrete requirement evidence
+
+| Requirement | Exact test evidence |
+|---|---|
+| E1 | `test_evaluator_output_round_trips_through_strict_live_admission`; `test_live_admission_closes_every_nested_schema`; `test_each_evaluation_performs_a_fresh_protected_ref_read`; `test_missing_unreadable_or_unprotected_source_fails_closed`; `test_attestation_time_boundaries_block_live_eligibility` |
+| H1 | `test_script_resolves_ref_when_name_collides_with_path`; `test_real_v3_control_pytest_selects_governed_side_of_batched_rename`; `test_root_mise_path_includes_v3_control_pytest`; `test_testagent_markdown_exclusion_remains_local_to_two_steps` |
+| C1 | `test_ci_scenario_project_source_change_selects_complete_slice`; `test_ci_scenario_project_test_failure_fails_shadow_check`; `test_ci_scenario_repository_only_change_has_valid_empty_affected_lanes`; `test_ci_scenario_missing_comparison_blocks_without_full_fallback`; `test_precoexistence_bootstrap_projection_rejects_identity_drift` |
+| A1 | `test_commit10_attestation_binds_disabled_normal_live_without_acceptance_evidence`; `test_nested_gitattributes_is_not_invented_as_a_policy_surface`; `test_recursive_composite_action_pattern_matches_every_depth` |
+| R1 | `test_consumer_policy_runtime_and_script_are_retired`; `test_superseded_consumer_acceptance_fixture_is_retired`; `test_static_reference_replacement_runtime_is_present` |
+| F1 | `test_fixture_is_non_normative_and_production_manifest_is_exact` |
+| S1 | `test_live_eligibility_runs_its_own_exact_target_static_reference_scan`; `test_live_eligibility_embeds_the_canonical_clean_result_as_static_reference`; `test_live_eligibility_maps_each_typed_static_reference_error`; `test_root_hk_unconditionally_invokes_static_reference_for_index`; `test_manual_worktree_static_reference_is_a_separate_mise_task` |
+
+<!-- END APPEND: 2026-09-01-wdv3-over-contraction-correction-status -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-over-contraction-final-validation -->
+
+## Workflow Delivery v3 over-contraction final validation
+
+### Final checklist
+
+- [x] **E1** Eligibility baseline contracts retained/adapted, then
+      pseudo-mutation gaps for independent pass guards, positive validity
+      boundaries, nonzero UTC offsets, and selected-ref grammar were closed.
+- [x] **H1** unrelated HK contracts retained/adapted; child exit propagation,
+      unsafe path rejection, and exact mise preparation chaining were added.
+- [x] **C1** unrelated scenario contracts retained/adapted; bootstrap primitive
+      strictness and invalid-input immutability were added.
+- [x] **A1** attestation/path-admission and all other modified tracked test
+      count contractions were audited.
+- [x] **R1** parser-only suite and stale fixture remain retired; current
+      replacement retirement tests remain present.
+- [x] **F1** tracked non-candidate source and exact temp-only materialization
+      are asserted.
+- [x] **S1** all current static-reference and route-retirement tests remain in
+      the passing complete suite.
+- [x] **V1** definitive targeted/full tests, build, Ruff, and diff checks pass.
+- [x] **Q1** final count ledger, exact deletion rationale, pseudo-mutation,
+      assertion-depth, and literal prompt-scenario gates are complete.
+
+### Final count ledger
+
+| Corrected large module | HEAD functions | Pre-correction | Final functions | Final cases |
+|---|---:|---:|---:|---:|
+| `tests/release/test_eligibility.py` | 49 | 3 | 53 | 268 |
+| `tests/test_hk_trigger.py` | 32 | 4 | 35 | 48 |
+| `tests/ci/test_scenarios.py` | 17 | 4 | 23 | 42 |
+| `tests/governance/test_commit10_attestation.py` | 5 | 4 | 5 | 5 |
+| `tests/ci/test_path_admission.py` | 4 | 4 | 7 | 18 |
+
+Counts were verified from Python ASTs; each HEAD count was obtained from the
+required read-only `git show HEAD:<path>`. Final totals exceed the restored
+baseline only where current static-reference tests or final quality-gate tests
+were preserved/added. The exact intentionally omitted baseline names and
+removed-runtime rationales are recorded in the preceding correction status and
+research append; no additional baseline test was omitted.
+
+### Quality-gate additions
+
+- `test_live_admission_independently_enforces_result_and_diagnostics_guards`
+- `test_enabled_governance_exact_validity_boundaries_evaluate_and_admit`
+- `test_observation_rejects_nonzero_utc_offsets_before_source_read`
+- `test_selected_ref_grammar_rejects_invalid_refs_before_any_read`
+- `test_hk_helper_propagates_exact_child_exit_code_and_changed_paths`
+- `test_parse_name_status_rejects_unsafe_path_before_child_execution`
+- `test_mise_bootstrap_preparation_chain_and_manual_worktree_are_exact`
+- `test_live_eligibility_command_forwards_resolved_root_and_current_lineage`
+- `test_precoexistence_bootstrap_projection_rejects_invalid_pr_number`
+- `test_precoexistence_bootstrap_projection_rejects_invalid_sha_fields`
+- `test_precoexistence_bootstrap_projection_requires_exact_workflow_bool`
+
+The proposed selected-ref 255/256 case was rejected because production defines
+no ref-length boundary; no nonexistent contract was invented.
+
+### Stale test defects fixed after the first full run
+
+- `test_npm_publish_fixture_is_test_local_and_materializes_exact_package_manifest`
+  now names tracked `package-manifest.json` while retaining exact temp
+  `package.json`, byte, capture, and source-tree invariants.
+- `test_project_registers_only_the_bounded_cli` now exactly matches the current
+  two package dependencies and still pins the sole approved CLI entry point.
+
+No parent production, fixture migration, or manifest was edited.
+
+### Definitive validation commands and results
+
+Targeted final set:
+
+```text
+TMPDIR="$XDG_RUNTIME_DIR" TMP="$XDG_RUNTIME_DIR" TEMP="$XDG_RUNTIME_DIR" PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_scenarios.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_path_admission.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py::test_npm_publish_fixture_is_test_local_and_materializes_exact_package_manifest src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_project_registers_only_the_bounded_cli src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_live_eligibility_cli_omits_consumer_policy_input src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_live_eligibility_cli_rejects_consumer_policy_option src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_live_eligibility_command_forwards_resolved_root_and_current_lineage
+```
+
+Observed: exit `0`; `533 passed`, `0 failed`, `0 skipped` in `53.85s`.
+
+Complete package harness:
+
+```text
+TMPDIR="$XDG_RUNTIME_DIR" TMP="$XDG_RUNTIME_DIR" TEMP="$XDG_RUNTIME_DIR" PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests
+```
+
+Observed: exit `0`; `4127 passed`, `0 failed`, `0 skipped`, `0 xfailed`,
+`0 errors` in `421.06s`.
+
+Package build:
+
+```text
+TMPDIR="$XDG_RUNTIME_DIR" TMP="$XDG_RUNTIME_DIR" TEMP="$XDG_RUNTIME_DIR" uv build --package three-workflow-delivery-v3
+```
+
+Observed: exit `0`; built
+`dist/three_workflow_delivery_v3-0.1.0.tar.gz` and
+`dist/three_workflow_delivery_v3-0.1.0-py3-none-any.whl`, with no warnings.
+
+Ruff:
+
+```text
+uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_path_admission.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_scenarios.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py
+uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_path_admission.py src/public/lib/three-workflow-delivery-v3/tests/ci/test_scenarios.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py
+```
+
+Observed: both exit `0`; `All checks passed!`; `8 files already formatted`.
+
+The owned-path `git diff --check` command is rerun after this status append.
+
+### Mandatory final gates
+
+- **Pseudo-mutation:** final rerun is **CLEAN**. All nine initial survivors
+  were killed by the exact tests above; no in-scope survivor remains.
+- **Assertion quality:** final rerun is **CLEAN** over 129 scoped functions /
+  387 statically expanded cases: 630 bare asserts, 40 `pytest.raises`,
+  3.89 case-weighted checks/case, 11/12 relevant categories, and zero
+  assertion-free, trivial-only, tautological-only, or missing-secondary-
+  observable tests.
+- **Prompt scenarios:** E1/H1/C1/A1/R1/F1/S1 map to the exact tests below;
+  V1/Q1 map to this validation and gate record.
+
+| Requirement | Final exact evidence |
+|---|---|
+| E1 | `test_evaluator_output_round_trips_through_strict_live_admission`; `test_each_evaluation_performs_a_fresh_protected_ref_read`; `test_live_admission_independently_enforces_result_and_diagnostics_guards`; `test_enabled_governance_exact_validity_boundaries_evaluate_and_admit`; `test_selected_ref_grammar_rejects_invalid_refs_before_any_read` |
+| H1 | `test_script_resolves_ref_when_name_collides_with_path`; `test_real_v3_control_pytest_selects_governed_side_of_batched_rename`; `test_testagent_markdown_exclusion_remains_local_to_two_steps`; `test_hk_helper_propagates_exact_child_exit_code_and_changed_paths`; `test_mise_bootstrap_preparation_chain_and_manual_worktree_are_exact` |
+| C1 | `test_ci_scenario_project_source_change_selects_complete_slice`; `test_ci_scenario_project_test_failure_fails_shadow_check`; `test_ci_scenario_repository_only_change_has_valid_empty_affected_lanes`; `test_ci_scenario_missing_comparison_blocks_without_full_fallback`; `test_precoexistence_bootstrap_projection_requires_exact_workflow_bool` |
+| A1 | `test_commit10_attestation_binds_disabled_normal_live_without_acceptance_evidence`; `test_nested_gitattributes_is_not_invented_as_a_policy_surface`; `test_recursive_composite_action_pattern_matches_every_depth` |
+| R1 | `test_consumer_policy_runtime_and_script_are_retired`; `test_superseded_consumer_acceptance_fixture_is_retired`; `test_static_reference_replacement_runtime_is_present` |
+| F1 | `test_fixture_is_non_normative_and_production_manifest_is_exact`; `test_npm_publish_fixture_is_test_local_and_materializes_exact_package_manifest` |
+| S1 | `test_live_eligibility_runs_its_own_exact_target_static_reference_scan`; `test_live_eligibility_embeds_the_canonical_clean_result_as_static_reference`; `test_live_eligibility_maps_each_typed_static_reference_error`; `test_root_hk_unconditionally_invokes_static_reference_for_index`; `test_manual_worktree_static_reference_is_a_separate_mise_task`; `test_live_eligibility_cli_rejects_consumer_policy_option` |
+| V1 | Final targeted `533 passed`; full `4127 passed`; package build, Ruff, and final owned diff check |
+| Q1 | Final count/deletion ledger plus CLEAN pseudo-mutation, assertion-quality, and prompt-scenario gates |
+
+### Remaining blockers
+
+None. `/tmp` reached inode exhaustion during an intermediate run, so definitive
+validation used the existing short user runtime temporary root
+`/run/user/1003`; the final complete suite passed there without test skips or
+behavior changes.
+
+<!-- END APPEND: 2026-09-01-wdv3-over-contraction-final-validation -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-over-contraction-diff-check -->
+
+Final owned-path `git --no-pager diff --check -- .testagent <eight corrected
+test files>` result: exit `0`, no output.
+
+<!-- END APPEND: 2026-09-01-wdv3-over-contraction-diff-check -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-over-contraction-evidence-erratum -->
+
+R1 evidence-name correction: the exact retained replacement tests are
+`test_consumer_policy_runtime_and_script_are_retired`,
+`test_bounded_static_reference_replaces_broad_consumer_classification`, and
+`test_no_production_file_imports_consumer_policy`. The first test also asserts
+that `tests/fixtures/release/consumer-policy-acceptance.json` remains absent.
+These exact names supersede the two stale aliases in the preceding evidence
+tables; every other cited test name was AST-verified in the current tree.
+
+<!-- END APPEND: 2026-09-01-wdv3-over-contraction-evidence-erratum -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-over-contraction-count-erratum -->
+
+Eligibility count wording correction: 46 of 49 baseline contracts were
+retained/adapted (41 under their original names and five under
+static-reference names), not 43. The final arithmetic is 46 retained/adapted
+baseline contracts + three preserved current public-shape tests + four
+quality-gate tests = 53 functions. The ledger values themselves were already
+correct.
+
+<!-- END APPEND: 2026-09-01-wdv3-over-contraction-count-erratum -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-disabled-runtime-static-reference-final-closure -->
+
+## Workflow Delivery v3 disabled-runtime static-reference final closure
+
+This entry supersedes earlier entries only where they reported an interim test
+count, interim test-function count, or pre-review validation state. Historical
+entries remain unchanged as required by the append-only ledger contract.
+
+### Scope and authority boundary
+
+- `live_enabled` remains `false`.
+- No workflow dispatch, Approval, deployment, Governance or Environment
+  mutation, package publication, or tag mutation was performed.
+- The implementation is limited to the normative first-slice static-reference
+  contract. Removed consumer-policy, JavaScript-consumer, Capability
+  Environment/Profile, Capability Admission, capability-group,
+  `approval-finalizer`, and Actions-history authority surfaces were not
+  recreated.
+- npm authority uses `@npmcli/package-json@8.0.0` and
+  `npm-package-arg@14.0.0`.
+- pnpm authority uses the pinned public workspace, lockfile, path, and resolver
+  APIs. It does not maintain a private pnpm syntax or semantic parser.
+- NuGet authority uses `NuGet.ProjectModel` and `NuGet.Packaging`.
+- No private uv lock parser was introduced. The current slice has no normative
+  uv graph surface.
+
+### Final model
+
+- Source authority is exact `git-target`, index, or worktree acquisition.
+- File-oriented JSON and YAML candidates receive fatal exact-byte UTF-8
+  preflight before snapshot materialization. JSON/YAML syntax and package
+  semantics remain owned by the pinned ecosystem authority.
+- XML and raw-byte NuGet candidates do not pass through the JSON/YAML UTF-8
+  preflight.
+- A malformed Git tree that repeats a selected normalized path fails closed as
+  `source-acquisition-failed` before blob inventory construction.
+- A Node request is admitted only when the requested `logicalPath` equals the
+  actual candidate path relative to `snapshotRoot`, after native-to-POSIX
+  separator projection.
+- `source-acquisition-failed` carries no implementation identities.
+- The generic bounded Result validator continues to support empty inventory and
+  any complete selected graph closure for offline index/worktree callers.
+- A clean Live Result additionally requires the complete mandatory npm/pnpm
+  implementation closure. NuGet is an optional additional graph in this first
+  slice.
+- The seven typed terminal errors remain:
+  `source-acquisition-failed`, `encoding-rejected`, `authority-rejected`,
+  `authority-execution-failed`, `unsupported-projection`,
+  `authority-mismatch`, and `cleanup-failed`.
+- Cleanup failure overrides an earlier source or graph outcome. Logs retain only
+  the sanitized typed error kind.
+
+The mandatory clean Live closure is:
+
+```text
+@npmcli/package-json@8.0.0
+@pnpm/deps.path@1101.0.1
+@pnpm/lockfile.fs@1100.2.5
+@pnpm/lockfile.utils@1102.1.0
+@pnpm/resolving.npm-resolver@1104.1.0
+@pnpm/workspace.spec-parser@1100.0.1
+@pnpm/workspace.workspace-manifest-reader@1100.1.8
+node@24.19.0
+npm-package-arg@14.0.0
+```
+
+### Independent review and adjudication
+
+Every reported issue was adjudicated independently before correction.
+
+| Finding | Disposition | Closure |
+|---|---|---|
+| Existing non-Git directory could cross source admission | TP | Existing-directory admission now requires the exact supported source boundary. |
+| pnpm request lifecycle could expose a pending execution state | TP | The authority lifecycle now reaches one terminal typed outcome and cleanup. |
+| pnpm lock materialization could change CRLF bytes | TP | Exact source bytes are preserved; no newline conversion is performed. |
+| NuGet helper could roll to an ambient runtime | TP | The helper pins runtime `10.0.8` with `RollForward=Disable`. |
+| uv could reuse ambient cache state | TP | Validation uses an isolated task-owned uv cache where provenance matters. |
+| An empty pnpm dependency edge could escape exact projection | TP | Empty-edge behavior is explicitly projected and regression-tested. |
+| The NuGet candidate selector could admit the wrong surface | TP | Selection is bound to the normative basename/mode matrix. |
+| The distribution smoke could import the source tree instead of the wheel | TP | An isolated interpreter proves the CLI module originates from the installed wheel. |
+| Local authority artifacts could be stale | TP | Preparation stamps bind toolchain and lock digests; consumers require the current stamp. |
+| POSIX literal backslash could be treated as a separator | TP | Native path mapping preserves POSIX backslash as an ordinary component. |
+| A malformed Git tree could contain duplicate selected paths | TP | Duplicate selected normalized paths map to typed source acquisition failure. |
+| A source-stage error Result could claim authority implementations | TP | Source acquisition failure now requires an empty implementation identity tuple. |
+| Node `logicalPath` was not bound to the materialized candidate | TP | Request validation now compares it with the exact snapshot-relative candidate path. |
+| Strict UTF-8 preflight happened after materialization | TP | Exact-byte preflight now precedes every materialization write. |
+| Live could accept an empty or NuGet-only clean closure | TP | Live-specific validation requires the complete mandatory npm/pnpm closure. |
+| Consumer-only HK changes do not select authority preparation | FP | Supported CI, Live, and manual routes bootstrap or explicitly prepare first. Consumer-only source changes do not alter the pinned authority closure; forcing restore/install on every such change would add non-contract work. |
+| Executable/source self-hashing was absent | FP | Local HK output is not Live Evidence, and executable self-hashing is outside the stated threat model. |
+| The status ledger still called 4,127 or 4,227 tests final | TP | This append records the current AST and pytest collection counts without rewriting history. |
+
+After the retained fixes, the source/model/session, authority, and
+policy/runtime/Live reviewers each returned **No findings**.
+
+### Current test counts
+
+Counts were recomputed from the current Python ASTs and a fresh complete pytest
+collection. They were not inferred from prior entries.
+
+| Scope | Test functions | Collected cases |
+|---|---:|---:|
+| Complete package suite | 1,324 | 4,233 |
+| `tests/release/test_eligibility.py` | 54 | 270 |
+| `tests/test_hk_trigger.py` | 37 | 53 |
+| `tests/ci/test_scenarios.py` | 23 | 42 |
+| `tests/governance/test_commit10_attestation.py` | 5 | 5 |
+| `tests/ci/test_path_admission.py` | 11 | 32 |
+| `tests/release/test_static_reference.py` | 70 | 196 |
+| `tests/release/test_static_reference_sidecars.py` | 42 | 95 |
+| `tests/release/test_live_static_reference.py` | 7 | 13 |
+| `tests/test_package.py` | 1 | 1 |
+
+### Definitive validation
+
+| Gate | Observed result |
+|---|---|
+| Initial focused regression set | `3 passed` |
+| Complete static-reference files after the first corrections | `290 passed` |
+| UTF-8 and Live-closure focused set | `5 passed` |
+| Affected policy/eligibility/static-reference set | `479 passed` |
+| Corrected Governance regression | `1 passed` |
+| Complete package suite | `4,233 passed in 431.69s` |
+| Final staged HK `small+medium`, check-only, no-stage | `passed`; `v3-control-pytest` reported `4,233 passed in 435.15s`; all selected steps passed or were inapplicable |
+| Canonical index static-reference scan | `clean`; policy digest `sha256:c9647d381e07fd54dcf187cca242064eb00fe702201f0428689aa7a4c50f599d` |
+| Canonical worktree static-reference scan | `clean`; same policy digest |
+| Exact staged Planner proof | `pathCount=75`, `ready=true`, lanes `root-hk`, `project-build`, `project-test`, `npm-artifact-build`, `unclassified=0` |
+| Exact NuGet authority MTP command | `1 passed`; locked restore mode; `net10.0` |
+| Installed-wheel provenance smoke | `1 passed in 3.12s` |
+| Scoped production Pyrefly | `0 errors` |
+| `uv lock --check` | passed |
+| Root pnpm frozen-lock validation | passed |
+| Hexo linked-example validation | passed, including the missing-parent-build negative control and documented frozen-install/build/generate sequence |
+| `hk validate` | passed |
+| `git diff --cached --check` | passed |
+
+The staged Planner proof uses
+`git diff --cached --name-status --find-renames -z` and the production
+`parse_name_status` helper. Git reports 74 changed paths; the `R100` rename is
+expanded to source and destination, producing 75 logical paths for planning.
+HK's 69-file message is its filtered processable set and is not the Planner
+path count.
+
+Five existing NuGet lockfiles changed because the central version pin changed.
+Restoring the previous lock bytes under the current central pin reproduces
+`NU1004`; the staged regenerated closures pass locked restore. The updates are
+therefore required dependency closure, not unrelated lock churn.
+
+The final authority preparation stamp binds:
+
+- root pnpm lock digest
+  `sha256:44ea8ea08134a04f079e89747de2f4b6219ff7dbc23365d66c9656e087a224ba`;
+- NuGet authority lock digest
+  `sha256:2fcd4e94b3b3be83522776536c4cae3f22aaa4bcbfe747a522627654c020cc5a`;
+- .NET SDK `10.0.300`;
+- .NET runtime `10.0.8`;
+- Node `24.19.0`;
+- pnpm `11.22.0`.
+
+### Delivery state
+
+Implementation and validation blockers are closed. The isolated implementation
+worktree has no unstaged source change. Final contraction/status review,
+human-reviewable commit splitting, and protected PR delivery remain; all must
+preserve the disabled runtime boundary above.
+
+<!-- END APPEND: 2026-09-01-wdv3-disabled-runtime-static-reference-final-closure -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-disabled-runtime-final-review-closure -->
+
+### Workflow Delivery v3 disabled-runtime final review closure
+
+The final mutually exclusive review set is clean:
+
+- source/model/session: **No findings**;
+- package-manager authority protocol: **No findings**;
+- policy/runtime/Live validation: **No findings**;
+- design contraction, Hexo/locks, and ledger truthfulness: **No findings**.
+
+No new finding required adjudication. Implementation, validation, and review
+are closed. Only human-reviewable commit construction and protected PR delivery
+remain, with `live_enabled=false` and the no-mutation boundary unchanged.
+
+<!-- END APPEND: 2026-09-01-wdv3-disabled-runtime-final-review-closure -->
