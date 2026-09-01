@@ -82,12 +82,13 @@ contain Unicode control, format, or surrogate characters.
 `assets/publication-profile.json` is a compact closed allowlist shared
 byte-for-byte with QA. It carries only policy identity, HTML element and
 attribute allowlists, CSS property/at-rule/selector allowlists, and explicit
-global prohibitions. Attribute values, selector syntax, and CSS values are fixed Assembly runtime
-policy rather than an interpreted profile language. Assembly carries the
-corresponding positive ceilings, and package validation binds the
-byte-identical profile copies. QA binds the bundled profile identity and hash
-but does not replay those authored-content validators. The JSON profile may
-narrow Assembly's sets but cannot add authority.
+global prohibitions. The profile is the structural authority. Attribute
+values, supported selector syntax, and CSS values are fixed Assembly runtime
+policy rather than an interpreted profile language. Assembly rejects a
+profile entry when the runtime has no corresponding value policy. Package
+validation binds the byte-identical profile copies. QA binds the bundled
+profile identity and hash but does not replay those authored-content
+validators.
 
 ### Fragment HTML
 

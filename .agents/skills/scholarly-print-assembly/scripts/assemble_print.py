@@ -122,12 +122,7 @@ CSS_KEYWORD_EXCLUSIVE_GROUPS = {
         {"diagonal-fractions", "stacked-fractions"},
     ),
 }
-PROFILE_PROHIBITIONS = frozenset({
-    "active-content", "browser-default-hidden-content", "css-custom-properties", "css-functions",
-    "css-important", "css-pseudo-elements", "css-url-values", "event-handler-attributes",
-    "external-urls", "inline-style", "parser-changing-markup",
-})
-PROFILE_SELECTOR_SURFACE = frozenset({
+SUPPORTED_SELECTOR_SURFACE = frozenset({
     "type", "universal", "class", "id", "lang-attribute", "lang-pseudo-class", "child", "descendant",
 })
 ATTRIBUTE_PLAIN_LIMITS = {"abbr": 128, "aria-label": 512, "title": 512, "value": 512}
@@ -135,74 +130,6 @@ ATTRIBUTE_TOKEN_LIMITS = {
     "aria-describedby": 32, "aria-labelledby": 32, "headers": 32,
 }
 MARKUP_NESTING_LIMIT = 128
-FIXED_ELEMENT_ATTRIBUTES = {
-    "a": frozenset({"href"}),
-    "abbr": frozenset(),
-    "address": frozenset(),
-    "aside": frozenset(),
-    "b": frozenset(),
-    "bdi": frozenset(),
-    "bdo": frozenset(),
-    "blockquote": frozenset(),
-    "br": frozenset(),
-    "caption": frozenset(),
-    "cite": frozenset(),
-    "code": frozenset(),
-    "col": frozenset({"span"}),
-    "colgroup": frozenset({"span"}),
-    "data": frozenset({"value"}),
-    "dd": frozenset(),
-    "del": frozenset({"datetime"}),
-    "dfn": frozenset(),
-    "div": frozenset(),
-    "dl": frozenset(),
-    "dt": frozenset(),
-    "em": frozenset(),
-    "h1": frozenset(),
-    "h2": frozenset(),
-    "h3": frozenset(),
-    "h4": frozenset(),
-    "h5": frozenset(),
-    "h6": frozenset(),
-    "hr": frozenset(),
-    "i": frozenset(),
-    "ins": frozenset({"datetime"}),
-    "kbd": frozenset(),
-    "li": frozenset({"value"}),
-    "mark": frozenset(),
-    "ol": frozenset({"reversed", "start", "type"}),
-    "p": frozenset(),
-    "pre": frozenset(),
-    "q": frozenset(),
-    "rb": frozenset(),
-    "rt": frozenset(),
-    "rtc": frozenset(),
-    "ruby": frozenset(),
-    "s": frozenset(),
-    "samp": frozenset(),
-    "section": frozenset(),
-    "small": frozenset(),
-    "span": frozenset(),
-    "strong": frozenset(),
-    "sub": frozenset(),
-    "sup": frozenset(),
-    "table": frozenset(),
-    "tbody": frozenset(),
-    "td": frozenset({"colspan", "headers", "rowspan"}),
-    "tfoot": frozenset(),
-    "th": frozenset({"abbr", "colspan", "headers", "rowspan", "scope"}),
-    "thead": frozenset(),
-    "time": frozenset({"datetime"}),
-    "tr": frozenset(),
-    "u": frozenset(),
-    "ul": frozenset(),
-    "var": frozenset(),
-    "wbr": frozenset(),
-}
-FIXED_GLOBAL_ATTRIBUTES = frozenset({
-    "aria-describedby", "aria-label", "aria-labelledby", "class", "dir", "id", "lang", "title",
-})
-FIXED_ATTRIBUTE_NAMES = FIXED_GLOBAL_ATTRIBUTES | frozenset().union(*FIXED_ELEMENT_ATTRIBUTES.values())
 CSS_WIDE_KEYWORDS = frozenset({"inherit", "initial", "unset"})
 CSS_GENERIC_FAMILIES = frozenset({"monospace", "sans-serif", "serif"})
 CSS_NAMED_COLORS = frozenset({
@@ -276,13 +203,6 @@ CSS_KEYWORD_SET_VALUES = {
     }),
     "text-decoration-line": frozenset({"line-through", "none", "overline", "underline"}),
 }
-FIXED_CSS_PROPERTIES = frozenset({
-    *CSS_BORDER_STYLE_PROPERTIES, *CSS_BORDER_WIDTH_PROPERTIES, *CSS_COLOR_PROPERTIES,
-    *CSS_NONNEGATIVE_LENGTH_PERCENTAGE_PROPERTIES, *CSS_SIGNED_SPACING_PROPERTIES,
-    *CSS_WIDOW_ORPHAN_PROPERTIES, *CSS_ENUM_VALUES, *CSS_KEYWORD_SET_VALUES,
-    "border-spacing", "font-family", "font-size", "font-weight", "line-height", "tab-size",
-    "text-decoration-thickness", "text-indent", "vertical-align",
-})
 type JsonObject = dict[str, Any]
 type AssetRecord = dict[str, Any]
 
@@ -461,6 +381,32 @@ def validate_schema_value(value: Any, schema: JsonObject, name: str, context: st
 def validate_schema(value: Any, name: str, context: str) -> None:
     validate_schema_value(value, load_schema(name), name, context)
 
+def has_attribute_value_policy(name: str) -> bool:
+    return (
+        name in ATTRIBUTE_PLAIN_LIMITS
+        or name in ATTRIBUTE_TOKEN_LIMITS
+        or name in {
+            "class", "colspan", "datetime", "dir", "href", "id", "lang",
+            "reversed", "rowspan", "scope", "span", "start", "type",
+        }
+    )
+
+def has_css_value_policy(name: str) -> bool:
+    return (
+        name in CSS_ENUM_VALUES
+        or name in CSS_BORDER_STYLE_PROPERTIES
+        or name in CSS_KEYWORD_SET_VALUES
+        or name in CSS_WIDOW_ORPHAN_PROPERTIES
+        or name in CSS_COLOR_PROPERTIES
+        or name in CSS_NONNEGATIVE_LENGTH_PERCENTAGE_PROPERTIES
+        or name in CSS_BORDER_WIDTH_PROPERTIES
+        or name in CSS_SIGNED_SPACING_PROPERTIES
+        or name in {
+            "border-spacing", "font-family", "font-size", "font-weight", "line-height",
+            "tab-size", "text-decoration-thickness", "text-indent", "vertical-align",
+        }
+    )
+
 @functools.cache
 def load_profile() -> tuple[JsonObject, bytes]:
     content = read_regular(ASSETS / PROFILE_NAME, "publication profile")
@@ -481,36 +427,43 @@ def load_profile() -> tuple[JsonObject, bytes]:
             "publication profile HTML allowlists are malformed")
     elements = html["elements"]
     global_attributes = html["global_attributes"]
-    require(all(isinstance(tag, str) and tag == tag.casefold()
-                and tag in FIXED_ELEMENT_ATTRIBUTES
+    require(all(isinstance(tag, str) and re.fullmatch("[a-z][a-z0-9-]*", tag) is not None
                 and isinstance(attributes, list)
                 and all(isinstance(name, str) for name in attributes)
-                and set(attributes) <= FIXED_ELEMENT_ATTRIBUTES[tag]
                 and len(attributes) == len(set(attributes))
                 for tag, attributes in elements.items()),
             "publication profile element allowlist is malformed")
-    require(all(isinstance(name, str) and name in FIXED_GLOBAL_ATTRIBUTES
+    require(all(isinstance(name, str) and name == name.casefold()
                 for name in global_attributes)
             and len(global_attributes) == len(set(global_attributes)),
             "publication profile global attribute allowlist is malformed")
+    attribute_names = set(global_attributes)
+    for attributes in elements.values():
+        attribute_names.update(attributes)
+    require(all(re.fullmatch("[a-z][a-z0-9-]*", name) is not None
+                and has_attribute_value_policy(name)
+                for name in attribute_names),
+            "publication profile declares an attribute without a runtime value policy")
     require(set(css) == {"properties", "at_rules", "selector_surface"}
             and isinstance(css.get("properties"), list) and isinstance(css.get("at_rules"), list)
             and isinstance(css.get("selector_surface"), list),
             "publication profile stylesheet allowlists are malformed")
-    require(all(isinstance(name, str) and not name.startswith("--") and name in FIXED_CSS_PROPERTIES
+    require(all(isinstance(name, str) and re.fullmatch("[a-z][a-z0-9-]*", name) is not None
+                and has_css_value_policy(name)
                 for name in css["properties"])
             and len(css["properties"]) == len(set(css["properties"])),
-            "publication profile CSS property allowlist is unsupported")
+            "publication profile declares a CSS property without a runtime value policy")
     require(css["at_rules"] == [], "publication profile at-rules are unsupported")
     require(all(isinstance(name, str) for name in css["selector_surface"])
             and len(css["selector_surface"]) == len(set(css["selector_surface"]))
-            and set(css["selector_surface"]) <= PROFILE_SELECTOR_SURFACE,
+            and set(css["selector_surface"]) <= SUPPORTED_SELECTOR_SURFACE,
             "publication profile selector surface is unsupported")
     prohibitions = profile["global_prohibitions"]
     require(isinstance(prohibitions, list) and all(isinstance(name, str) for name in prohibitions)
             and len(prohibitions) == len(set(prohibitions))
-            and set(prohibitions) == PROFILE_PROHIBITIONS,
-            "publication profile global prohibitions are unsupported")
+            and all(re.fullmatch("[a-z][a-z0-9-]*", name) is not None
+                    for name in prohibitions),
+            "publication profile global prohibitions are malformed")
     return (profile, content)
 
 def normalized_relative_path(value: Any, context: str) -> str:

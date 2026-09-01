@@ -397,26 +397,25 @@ class PublicationProfileContractTests(unittest.TestCase):
                 finally:
                     assemble_print.load_profile.cache_clear()
 
-    def test_assembly_loader_accepts_baseline_and_narrowing(self) -> None:
+    def test_loader_accepts_profile_owned_structure(self) -> None:
         narrowed = copy.deepcopy(self.profile)
         del narrowed["fragment_html"]["elements"]["abbr"]
         narrowed["untrusted_stylesheet"]["properties"].remove("color")
+        expanded = copy.deepcopy(self.profile)
+        expanded["fragment_html"]["elements"]["article"] = []
 
         self.load_profile(self.profile)
         self.load_profile(narrowed)
+        self.load_profile(expanded)
 
-    def test_assembly_loader_rejects_profile_widening(self) -> None:
-        script_element = copy.deepcopy(self.profile)
-        script_element["fragment_html"]["elements"]["script"] = []
+    def test_loader_rejects_fields_without_value_policies(self) -> None:
         global_attribute = copy.deepcopy(self.profile)
         global_attribute["fragment_html"]["global_attributes"].append(
             "data-extra"
         )
         css_property = copy.deepcopy(self.profile)
         css_property["untrusted_stylesheet"]["properties"].append("display")
-
         for name, profile in (
-            ("script-element", script_element),
             ("global-attribute", global_attribute),
             ("css-property", css_property),
         ):

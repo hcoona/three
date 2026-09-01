@@ -47,12 +47,12 @@ prove the unconsumed transitive closure of either upstream workspace.
 Apply `assets/publication-profile.json` to every approved fragment, caption,
 and untrusted stylesheet. Its compact data lists the permitted HTML,
 attribute, property, at-rule, and selector surface plus global prohibitions.
-The script owns fixed positive ceilings for element/local-attribute pairs,
-global attributes, CSS properties, and value semantics. The JSON profile may
-only remove entries from those ceilings. Reject anything outside both the
-profile surface and those fixed rules, including external URLs, active or
-hidden content, event/style attributes, parser-changing markup, generated
-content, visibility, positioning, transforms, and opacity mechanisms.
+The profile is the structural authority. The script owns attribute, selector,
+and CSS value semantics and rejects profile entries for which it has no value
+policy. Reject anything outside the profile surface or those runtime value
+rules, including external URLs, active or hidden content, event/style
+attributes, parser-changing markup, generated content, visibility,
+positioning, transforms, and opacity mechanisms.
 
 Assembler-generated document wrappers, figure/crop markup, font rules, and
 page CSS use the separate closed generated-output profile defined in

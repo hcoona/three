@@ -114,20 +114,6 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def fixed_profile_ceiling(module: Any) -> dict[str, Any]:
-    """Normalize one runtime's fixed profile ceiling for comparison."""
-    return {
-        "element_attributes": {
-            tag: sorted(attributes)
-            for tag, attributes in sorted(
-                module.FIXED_ELEMENT_ATTRIBUTES.items()
-            )
-        },
-        "global_attributes": sorted(module.FIXED_GLOBAL_ATTRIBUTES),
-        "css_properties": sorted(module.FIXED_CSS_PROPERTIES),
-    }
-
-
 def resolve_stable_asset(
     record: dict[str, Any],
     roots: dict[str, Path],
