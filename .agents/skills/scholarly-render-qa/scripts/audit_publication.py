@@ -25,6 +25,7 @@ import stat
 import sys
 import tempfile
 import unicodedata
+from bisect import bisect_left, bisect_right
 from collections import Counter
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -119,6 +120,77 @@ EVIDENCE_SCHEMA = ASSET_ROOT / "qa-evidence.schema.json"
 RELEASE_SCHEMA = ASSET_ROOT / "release-manifest.schema.json"
 PROFILE_PATH = ASSET_ROOT / "publication-profile.json"
 CSS_UNSAFE_STRING_CATEGORIES = frozenset({"Cc", "Cf", "Cs"})
+# Unicode 17 Script or Script_Extensions intersects Han, Hiragana, Katakana, or Hangul.
+CJK_LINE_JOIN_RANGES = (
+    (0xB7, 0xB7),
+    (0x305, 0x305),
+    (0x323, 0x323),
+    (0x1100, 0x11FF),
+    (0x2E80, 0x2E99),
+    (0x2E9B, 0x2EF3),
+    (0x2F00, 0x2FD5),
+    (0x2FF0, 0x2FFF),
+    (0x3001, 0x3003),
+    (0x3005, 0x3011),
+    (0x3013, 0x301F),
+    (0x3021, 0x3035),
+    (0x3037, 0x303F),
+    (0x3041, 0x3096),
+    (0x3099, 0x30FF),
+    (0x3131, 0x318E),
+    (0x3190, 0x319F),
+    (0x31C0, 0x31E5),
+    (0x31EF, 0x321E),
+    (0x3220, 0x3247),
+    (0x3260, 0x327E),
+    (0x3280, 0x32B0),
+    (0x32C0, 0x32CB),
+    (0x32D0, 0x3370),
+    (0x337B, 0x337F),
+    (0x33E0, 0x33FE),
+    (0x3400, 0x4DBF),
+    (0x4E00, 0x9FFF),
+    (0xA700, 0xA707),
+    (0xA960, 0xA97C),
+    (0xAC00, 0xD7A3),
+    (0xD7B0, 0xD7C6),
+    (0xD7CB, 0xD7FB),
+    (0xF900, 0xFA6D),
+    (0xFA70, 0xFAD9),
+    (0xFE45, 0xFE46),
+    (0xFF61, 0xFFBE),
+    (0xFFC2, 0xFFC7),
+    (0xFFCA, 0xFFCF),
+    (0xFFD2, 0xFFD7),
+    (0xFFDA, 0xFFDC),
+    (0x16FE2, 0x16FE3),
+    (0x16FF0, 0x16FF6),
+    (0x1AFF0, 0x1AFF3),
+    (0x1AFF5, 0x1AFFB),
+    (0x1AFFD, 0x1AFFE),
+    (0x1B000, 0x1B122),
+    (0x1B132, 0x1B132),
+    (0x1B150, 0x1B152),
+    (0x1B155, 0x1B155),
+    (0x1B164, 0x1B167),
+    (0x1D360, 0x1D371),
+    (0x1F200, 0x1F200),
+    (0x1F250, 0x1F251),
+    (0x20000, 0x2A6DF),
+    (0x2A700, 0x2B81D),
+    (0x2B820, 0x2CEAD),
+    (0x2CEB0, 0x2EBE0),
+    (0x2EBF0, 0x2EE5D),
+    (0x2F800, 0x2FA1D),
+    (0x30000, 0x3134A),
+    (0x31350, 0x33479),
+)
+PDF_LINE_SEPARATOR = re.compile(r"\r\n|\r|\n")
+PDF_TERMINAL_LINE_SEPARATOR = re.compile(r"(?:\r\n|\r|\n)\Z")
+MATCH_BOUNDARY_NONE = -1
+MATCH_BOUNDARY_SPACE = -2
+MATCH_BOUNDARY_AMBIGUOUS = -3
+TEXT_MATCH_WORK_FACTOR = 16
 
 class AuditError(RuntimeError):
     pass
@@ -1609,9 +1681,43 @@ def render_pair(
         raise AuditError(f"Chromium rendering failed: {error}") from error
 def normalize_font(value: str) -> str:
     return unicodedata.normalize("NFC", re.sub(r"^[A-Z]{6}\+", "", value)).casefold().strip()
+def cjk_line_join_character(value: str) -> bool:
+    codepoint = ord(value)
+    return any(start <= codepoint <= end for start, end in CJK_LINE_JOIN_RANGES)
+def prepare_text_search(value: str) -> str:
+    value = unicodedata.normalize("NFC", value.replace("\u00ad", ""))
+    return re.sub(
+        r"(?<=\w)-[ \t]*(?:\r\n|\r|\n)[ \t]*(?=\w)",
+        "",
+        value,
+    )
 def text_search_key(value: str) -> str:
-    value = re.sub(r"(?<=\w)-[ \t]*(?:\r\n|\r|\n)[ \t]*(?=\w)", "", value)
-    return " ".join(unicodedata.normalize("NFC", value.replace("\u00ad", "")).split())
+    return " ".join(prepare_text_search(value).split())
+def pdf_searchable_text(raw_pages: list[str]) -> str:
+    value = prepare_text_search(
+        "\n".join(
+            PDF_TERMINAL_LINE_SEPARATOR.sub("", page, count=1)
+            for page in raw_pages
+        )
+    )
+
+    def line_separator(match: re.Match[str]) -> str:
+        left = value[match.start() - 1] if match.start() else ""
+        right = value[match.end()] if match.end() < len(value) else ""
+        if (
+            left
+            and right
+            and cjk_line_join_character(left)
+            and cjk_line_join_character(right)
+        ):
+            return "\n"
+        return " "
+
+    return re.sub(
+        r"[^\S\n]+",
+        " ",
+        PDF_LINE_SEPARATOR.sub(line_separator, value),
+    ).strip()
 def declared_font_sets(
     manifest: dict[str, Any],
 ) -> tuple[set[str], list[set[str]]]:
@@ -2094,7 +2200,7 @@ def inspect_pdf(path: Path, logical: str, page_size: str, raster_dir: Path, rast
             "pages": details,
             "fonts": [font_details[key] for key in ordered_keys],
             "normalized_text": texts,
-            "searchable_text": text_search_key("\n".join(raw_texts)),
+            "searchable_text": pdf_searchable_text(raw_texts),
             "raw_sha256": pdf_asset.sha256,
             "missing_roles": [sorted(names) for names in role_sets if not names & observed_font_names],
         }
@@ -2503,24 +2609,128 @@ def pdf_findings(
             behavior[name] = behavior_record
     return geometry, fonts, behavior
 
+def text_match_projection(
+    value: str,
+) -> tuple[str, list[int], list[int]]:
+    characters: list[str] = []
+    boundaries: list[int] = []
+    offsets: list[int] = []
+    boundary = MATCH_BOUNDARY_NONE
+    for offset, character in enumerate(value):
+        if character == " ":
+            boundary = MATCH_BOUNDARY_SPACE
+        elif character == "\n":
+            boundary = MATCH_BOUNDARY_AMBIGUOUS
+        else:
+            if characters:
+                boundaries.append(boundary)
+            characters.append(character)
+            offsets.append(offset)
+            boundary = MATCH_BOUNDARY_NONE
+    return "".join(characters), boundaries, offsets
+
+def find_text_match(
+    content: str,
+    content_boundaries: list[int],
+    needle: str,
+    needle_boundaries: list[int],
+    start: int,
+    work_limit: int,
+) -> tuple[tuple[int, int] | None, int]:
+    work = 0
+    search_start = start
+    while search_start < len(content):
+        candidate = content.find(needle, search_start)
+        if candidate < 0:
+            work += len(content) - search_start
+            if work > work_limit:
+                raise PublicationError(
+                    "PDF text correspondence exceeds its linear work allowance"
+                )
+            return None, work
+        work += candidate - search_start + len(needle)
+        matched = True
+        for index, expected in enumerate(needle_boundaries):
+            work += 1
+            observed = content_boundaries[candidate + index]
+            if observed not in (MATCH_BOUNDARY_AMBIGUOUS, expected):
+                matched = False
+                break
+        if work > work_limit:
+            raise PublicationError(
+                "PDF text correspondence exceeds its linear work allowance"
+            )
+        if matched:
+            return (candidate, candidate + len(needle)), work
+        search_start = candidate + 1
+    return None, work
+
 def missing_text_segments(report: Pdf, segments: list[dict[str, Any]]) -> list[str]:
     content = report.detail["searchable_text"]
-    cursor = 0
-    missing: list[str] = []
-    previous_trailing = False
+    content_characters, content_boundaries, content_offsets = text_match_projection(
+        content
+    )
+    whitespace_offsets: list[int] = [
+        index
+        for index, character in enumerate(content)
+        if character.isspace()
+    ]
+    prepared: list[tuple[dict[str, Any], str, str, list[int]]] = []
     for segment in segments:
         text = str(segment.get("text", ""))
         needle = text_search_key(text)
-        if not needle:
-            continue
-        index = content.find(needle, cursor)
+        if needle:
+            needle_characters, needle_boundaries, _ = text_match_projection(
+                needle
+            )
+            prepared.append(
+                (segment, text, needle_characters, needle_boundaries)
+            )
+    work_remaining = TEXT_MATCH_WORK_FACTOR * (
+        len(content)
+        + sum(len(text) for _, text, _, _ in prepared)
+        + 1
+    )
+    cursor = 0
+    character_cursor = 0
+    missing: list[str] = []
+    previous_trailing = False
+    for segment, text, needle_characters, needle_boundaries in prepared:
         needs_space = cursor > 0 and (previous_trailing or bool(segment.get("leading")))
-        while index >= 0 and needs_space and not any(character.isspace() for character in content[cursor:index]):
-            index = content.find(needle, index + 1)
-        if index < 0:
+        search_start = character_cursor
+        if needs_space:
+            whitespace_index = bisect_left(whitespace_offsets, cursor)
+            if whitespace_index == len(whitespace_offsets):
+                match = None
+                work = 0
+            else:
+                search_start = bisect_right(
+                    content_offsets,
+                    whitespace_offsets[whitespace_index],
+                )
+                match, work = find_text_match(
+                    content_characters,
+                    content_boundaries,
+                    needle_characters,
+                    needle_boundaries,
+                    search_start,
+                    work_remaining,
+                )
+        else:
+            match, work = find_text_match(
+                content_characters,
+                content_boundaries,
+                needle_characters,
+                needle_boundaries,
+                search_start,
+                work_remaining,
+            )
+        work_remaining -= work
+        if match is None:
             missing.append(hash_bytes(normalize_text(text).encode()))
         else:
-            cursor = index + len(needle)
+            character_cursor = match[1]
+            cursor = content_offsets[match[1] - 1] + 1
         previous_trailing = bool(segment.get("trailing"))
     return missing
 def add_check(

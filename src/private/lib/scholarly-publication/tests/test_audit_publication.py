@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from collections import Counter
 from pathlib import Path
@@ -262,6 +263,177 @@ class AuditPublicationUnitTests(unittest.TestCase):
         )
         self.assertTrue(
             audit_publication.same_aspect_ratio(18.0, 1800.0, 1.0, 100.0)
+        )
+
+    def test_pdf_text_search_ignores_cjk_visual_line_wraps(self) -> None:
+        cases = (
+            ("han", "china-s", "天地玄黃宇宙洪荒"),
+            ("han-number-zero", "japan", "二〇二六年度報告"),
+            ("han-iteration-mark", "japan", "時々刻々変化する"),
+            ("hiragana", "japan", "あいうえおかきくけこ"),
+            ("katakana", "japan", "アイウエオカキクケコ"),
+            ("hangul", "korea", "가나다라마바사아자차"),
+        )
+        for script, font, text in cases:
+            with self.subTest(script=script):
+                with fitz.open() as document:
+                    page = document.new_page(width=200, height=240)
+                    remaining = page.insert_textbox(
+                        fitz.Rect(10, 10, 60, 220),
+                        text,
+                        fontsize=12,
+                        fontname=font,
+                    )
+                    self.assertGreaterEqual(remaining, 0)
+                    payload = document.tobytes()
+                with fitz.open(stream=payload, filetype="pdf") as rendered:
+                    extracted = rendered[0].get_text("text")
+                self.assertIn("\n", extracted.rstrip("\n"))
+                searchable = audit_publication.pdf_searchable_text([extracted])
+                report = audit_publication.Pdf(
+                    evidence={},
+                    detail={"searchable_text": searchable},
+                    rasters=[],
+                )
+                self.assertEqual(
+                    [],
+                    audit_publication.missing_text_segments(
+                        report,
+                        [{"text": text}],
+                    ),
+                )
+
+        self.assertEqual(
+            "alpha beta",
+            audit_publication.pdf_searchable_text(["alpha\nbeta"]),
+        )
+        self.assertEqual(
+            "天 地",
+            audit_publication.pdf_searchable_text(["天 \n 地"]),
+        )
+        for wrapped in (
+            "時々\n刻",
+            "時〆\n刻",
+            "二〇\n二",
+            "時〻\n刻",
+            "\uffa1\n\uffa2",
+            "\U0001aff0\n\U0001aff1",
+            "\U000323b0\n\U000323b1",
+            "\U00033479\n\U000323b0",
+            "\u3021\n\u3022",
+            "\u302e\n\u302f",
+            "\U00016fe3\n文",
+            "\U00016ff2\n字",
+        ):
+            with self.subTest(wrapped=wrapped):
+                searchable = audit_publication.pdf_searchable_text([wrapped])
+                report = audit_publication.Pdf(
+                    evidence={},
+                    detail={"searchable_text": searchable},
+                    rasters=[],
+                )
+                for expected in (
+                    wrapped.replace("\n", ""),
+                    wrapped.replace("\n", " "),
+                ):
+                    self.assertEqual(
+                        [],
+                        audit_publication.missing_text_segments(
+                            report,
+                            [{"text": expected}],
+                        ),
+                    )
+        self.assertEqual(
+            "\U0001b170 \U0001b171",
+            audit_publication.pdf_searchable_text(["\U0001b170\n\U0001b171"]),
+        )
+
+    def test_pdf_text_match_scales_on_repetitive_content(self) -> None:
+        overlapping = audit_publication.Pdf(
+            evidence={},
+            detail={
+                "searchable_text": audit_publication.pdf_searchable_text(
+                    ["甲甲\n甲 乙"]
+                )
+            },
+            rasters=[],
+        )
+        self.assertEqual(
+            [],
+            audit_publication.missing_text_segments(
+                overlapping,
+                [{"text": "甲甲 乙"}],
+            ),
+        )
+
+        content = "甲" * 500_000
+        report = audit_publication.Pdf(
+            evidence={},
+            detail={"searchable_text": content},
+            rasters=[],
+        )
+        started = time.perf_counter()
+        present = audit_publication.missing_text_segments(
+            report,
+            [{"text": "甲" * 250_000}],
+        )
+        missing = audit_publication.missing_text_segments(
+            report,
+            [{"text": "甲" * 249_999 + "乙"}],
+        )
+        elapsed = time.perf_counter() - started
+
+        self.assertEqual([], present)
+        self.assertEqual(1, len(missing))
+        self.assertLess(elapsed, 5.0)
+
+        pathological = audit_publication.Pdf(
+            evidence={},
+            detail={"searchable_text": "甲" * 20_000},
+            rasters=[],
+        )
+        with self.assertRaisesRegex(  # noqa: PT027
+            audit_publication.PublicationError,
+            "linear work allowance",
+        ):
+            audit_publication.missing_text_segments(
+                pathological,
+                [{"text": "甲" * 9_999 + " 甲"}],
+            )
+
+    def test_pdf_text_search_ignores_cjk_page_boundaries(self) -> None:
+        with fitz.open() as document:
+            for text in ("天地", "玄黃"):
+                page = document.new_page(width=200, height=240)
+                page.insert_text(
+                    fitz.Point(10, 30),
+                    text,
+                    fontsize=12,
+                    fontname="china-s",
+                )
+            payload = document.tobytes()
+        with fitz.open(stream=payload, filetype="pdf") as rendered:
+            raw_pages = [page.get_text("text") for page in rendered]
+
+        self.assertTrue(all(page.endswith("\n") for page in raw_pages))
+        searchable = audit_publication.pdf_searchable_text(raw_pages)
+        report = audit_publication.Pdf(
+            evidence={},
+            detail={"searchable_text": searchable},
+            rasters=[],
+        )
+        for expected in ("天地玄黃", "天地 玄黃"):
+            with self.subTest(expected=expected):
+                self.assertEqual(
+                    [],
+                    audit_publication.missing_text_segments(
+                        report,
+                        [{"text": expected}],
+                    ),
+                )
+        self.assertEqual(
+            "天地 玄黃",
+            audit_publication.pdf_searchable_text(["天地\n\n", "玄黃\n"]),
         )
 
 

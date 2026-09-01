@@ -217,6 +217,19 @@ PyMuPDF-observed outcomes:
 - no Type 3 font; and
 - no unsafe PDF action.
 
+For text correspondence, text from consecutive PDF pages is joined with one
+line separator after discarding at most one terminal extractor separator from
+each page. An extraction-only line separator immediately between adjacent Han,
+Hiragana, Katakana, or Hangul characters is an ambiguous visual-wrap marker:
+it may match either no normalized boundary or one normalized whitespace
+boundary. Spaces or tabs that survive extraction, and all other whitespace,
+continue to preserve definite normalized boundaries.
+
+The character set follows Unicode 17 `Script` and `Script_Extensions`.
+Candidate search and boundary verification receive a deterministic allowance
+of 16 times the combined normalized PDF and expected-segment character count;
+exhausting it fails the audit closed instead of permitting unbounded matching.
+
 Page-link and bounded low-level action observations jointly classify actions.
 Internal GoTo and direct document-local destinations are safe only when they
 resolve to an in-range page. Direct destinations on link annotations, outline
