@@ -4,14 +4,14 @@
 
 Workflow Delivery v3 is active and is the only normative Workflow Delivery design line.
 
-The user-approved replacement normal-Live baseline is incorporated across the requirements, HLD, glossary, five MLDs,
-migration policy, and first-slice LLD. These documents form one coherent design
-package; Git and pull-request state must be inspected rather than inferred from
-this page.
+The user-approved replacement normal-Live baseline is merged across the
+requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
+Disabled runtime contraction is separately authorized and in progress; Git and
+pull-request state must be inspected rather than inferred from this page.
 
-No workflow, Python, schema, test, descriptor, release policy, Governance JSON, dependency, package access, or external
-resource has changed. The merged runtime is superseded by this design but remains disabled through
-`live_enabled: false`.
+No normal Live workflow, Governance enablement, package access, deployment,
+package mutation, or other external resource has changed. The runtime remains
+disabled through `live_enabled: false`.
 
 Normal Live is also activation-blocked by a destination capability gap:
 standard `npm publish --tag` can overwrite a conflicting tag introduced after
@@ -63,6 +63,11 @@ chronology is not current architecture.
 - The bounded static-reference policy has exactly `git-target`, `index`, and
   `worktree` source kinds. Only exact-SHA `git-target` output is Live evidence;
   the other two are HK feedback.
+- Its closed surface is an exact selector-to-fact matrix. Each selector binds
+  one Ecosystem Authority Graph composed from authoritative source artifacts,
+  exact official libraries or CLIs, and published standards. Policy code
+  consumes normalized facts and contains no competing grammar, schema, or
+  authority-hardening layer.
 - A clean static result prevents bounded accidental references. It does not
   prove universal consumer absence or package-token isolation.
 - The target architecture has one authority-bearing Environment,

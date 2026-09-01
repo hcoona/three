@@ -19,22 +19,33 @@ requests mechanism extraction and revalidation. Git and the append-only
 - The user approved the replacement normal-Live requirements baseline on
   2026-08-31.
 - Requirements, HLD, glossary, all five MLDs, migration policy, and the
-  replacement LLD form the coherent design package.
-- Inspect Git and pull-request state at the start of every continuation. If the
-  package is not on protected `main`, complete design validation and protected
-  delivery only. If it is already merged, reconcile it and stop unless the user
-  separately authorizes runtime implementation.
-- The design package itself authorizes no workflow, Python, schema, test,
-  descriptor, release policy, Governance JSON, dependency, package-access, or
-  external-resource change.
-- The merged runtime is superseded by the replacement design but remains disabled through
-  `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with `live_enabled: false`.
+  replacement LLD were merged through PR #637 as
+  `e5379fea3d4cf1a63b8b29a9f06604e22b3ec058`; post-merge run
+  `33372040715` succeeded.
+- The user separately authorized disabled runtime contraction. The active
+  branch is `workflow-delivery-v3-disabled-runtime-contraction`, based on that
+  merged design.
+- The first dependency-ordered implementation unit is the bounded
+  static-reference foundation. No implementation commit exists yet; the
+  untracked prototype contains superseded handwritten ecosystem readers and
+  must not be committed as-is.
+- This revision corrects the static-reference design from parser/library-only
+  authority to an exact Ecosystem Authority Graph that may compose
+  authoritative artifacts, official libraries or CLIs, and published
+  standards. Its thirteenth-round cross-layer, authority-boundary, exact-API,
+  and delivery reviews reported no findings.
+- The runtime remains disabled through
+  `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with
+  `live_enabled: false`.
 - No normal Live dispatch, Approval deployment, or package mutation has occurred.
 - Retry-5 destination acceptance is complete historical evidence. Exact `.17` through `.20` versions and tags remain
   retained and must not be reused; detailed chronology stays in Git and the log.
 
-The immediate boundary is design validation and design merge only. Runtime contraction and all external action remain
-separately authorized.
+The immediate boundary is final commit-hook validation and a docs-only local
+commit of the authority-graph correction; then deliver it through a protected
+PR, merge and reconcile the exact result on `main`, and create or rebase the
+disabled implementation branch before implementing the static-reference
+foundation. All Live activation and external action remain unauthorized.
 
 ## Hot Context
 
@@ -56,6 +67,31 @@ separately authorized.
 - Every authoritative normal-Live job guards attempt 1; normal-Live records omit run attempt. Simulation keeps its
   existing run-attempt identity.
 - Retry is a new dispatch and full rebuild. GitHub rerun is unsupported.
+- Each retained static-reference selector binds one exact Ecosystem Authority
+  Graph. Authoritative manifest or lockfile state, stable official libraries or
+  CLIs, and published standards may compose across distinct semantic layers.
+  Adapters receive exact source bytes directly or through a minimal isolated
+  snapshot and emit stable normalized facts. Handwritten ecosystem grammars or
+  schemas, competing-authority hardening, candidate execution, network access,
+  and fallback worktree reads are forbidden.
+- The static-policy invocation schema rejects an omitted or unknown source kind
+  and malformed required source parameters before Result construction. Once a
+  source request is admitted, exact-source enumeration, read, or minimal
+  materialization failure is `source-acquisition-failed`; required cleanup
+  failure may override it.
+- The retained first-slice surface includes npm manifests, pnpm v9
+  locks/workspace manifests, and NuGet lock/config models. npm, uv, and Yarn
+  locks, unevaluated MSBuild project/central manifests, standalone Python
+  manifests, shell and PowerShell scripts, GitHub workflow/composite-action
+  files, and Node import subpaths are outside this policy revision.
+- Before the root static gate is enabled, migrate the tracked Hexo example's
+  local dependency from `link:../..` to `file:../..` and regenerate its
+  isolated pnpm v9 lock. Both current files are selected; no example-path
+  exception is allowed.
+- Move the tracked npm publish request fixture content away from the
+  `package.json` basename and materialize it only in test-owned temporary
+  storage. The exact producer name is allowed in a tracked `package.json` only
+  at the producer path; the old fixture-path exception must be removed.
 - Activation uses one protected Activation PR and a run-ID-returning API dispatch. There is no Preparation PR,
   repository-wide `main` freeze, activation SHA/tag, or blind redispatch.
 
@@ -163,8 +199,11 @@ This is a navigation summary. The normative documents own exact schemas and fail
 - Live Eligibility combines exact-target `git-target` evidence with protected Governance from `main`.
 - The static-reference source kinds are exactly `git-target`, `index`, and `worktree`. Only `git-target` is Live
   evidence; index and worktree are HK feedback and never commit identity.
-- The bounded policy prevents supported direct accidental references. It makes no parser/dataflow, fixed-inventory,
-  exhaustive-consumer, or credential-isolation claim.
+- The bounded policy prevents supported direct accidental references through
+  the LLD's selector-to-fact matrix and exact Ecosystem Authority Graphs. It
+  makes no evaluator/dataflow, fixed-inventory, exhaustive-consumer, or
+  credential-isolation claim and contains no handwritten ecosystem grammar or
+  schema.
 - Governance has maximum age 90 days and binds repository/ref/path plus blob/content or generation. Any later path
   touch invalidates the Attempt, including edit/revert; unrelated `main` commits do not.
 
@@ -242,14 +281,24 @@ Ambiguous dispatch response means read-only reconciliation, never blind redispat
 
 ## Explicit Authorization Boundary
 
-The current boundary authorizes design validation and design delivery only.
+The current boundary conditionally authorizes the disabled runtime contraction,
+including the code, tests, schemas, descriptors, workflow definitions, and
+exact implementation dependencies required by the approved replacement
+design. That standing authorization may be exercised only after this
+authority-graph correction is merged through protection, its exact result is
+reconciled on `main`, and the implementation branch is created or rebased from
+that exact result. Changes remain local and disabled until separately reviewed
+and delivered.
 
-Without later explicit authorization, do not edit runtime files; change package/repository access; create, alter, or
-delete an Environment or marker; refresh Governance; set `live_enabled: true`; dispatch, rerun, approve, or cancel
-normal Live; create a deployment; mutate packages or tags; run remediation; or change any external resource.
+Without later explicit authorization, do not change package/repository access;
+create, alter, or delete an Environment or marker; refresh Governance; set
+`live_enabled: true`; dispatch, rerun, approve, or cancel normal Live; create a
+deployment; mutate packages or tags; run remediation; or change any external
+resource.
 
-Design merge does not authorize implementation. Disabled implementation merge does not authorize Environment cleanup.
-Cleanup does not authorize Governance refresh, activation, dispatch, approval, or publication.
+Disabled implementation does not authorize obsolete-Environment cleanup.
+Cleanup does not authorize Governance refresh, activation, dispatch, approval,
+or publication.
 
 ## Required Reading Order
 
@@ -272,28 +321,39 @@ Do not infer policy from stale runtime behavior or archived designs.
 
 ## Next Executable Workflow
 
-1. Inspect current branch, status, identities, untracked paths, and complete diff before changing anything.
-2. Confirm the expected documentation-only scope and unchanged runtime/external state.
-3. Read the complete authoritative corpus in order.
-4. Perform one combined coherence pass across requirement traceability, terminology, authority, risk, lifecycle,
-   failure/retry, migration order, and LLD implementability.
-5. Run repository-applicable formatting, Markdown lint, link, diff, and documentation gates.
-6. After validation is green, obtain independent multi-angle reviews covering:
-    - requirements and cross-layer traceability;
-    - security, authority, accepted risk, and external-state safety;
-    - lifecycle, failure, retry, concurrency, and activation; and
-    - implementability, testability, migration, and documentation coherence.
-7. Split every response into atomic findings.
-8. Assign each atomic finding to its own independent TP/FP adjudication; do not batch findings.
-9. Fix every true positive surgically, rerun focused and combined validation, and return fixes to the same reviewers.
-10. Repeat until every original reviewer reports zero findings and no contradiction remains.
-11. Create dependency-ordered, human-reviewable design commits containing only the approved documentation scope.
-12. Push and open a protected design PR; resolve comments with the same atomic protocol and merge through protection.
-13. Reconcile the exact merged design on protected `main` and confirm read-only that `live_enabled` and external
-    resources remain unchanged.
-14. Stop after post-merge reconciliation.
+1. Inspect current branch, status, identities, untracked paths, and complete
+   diff before changing anything.
+2. Complete the Ecosystem Authority Graph correction across the normative
+   design, overview, log, and this handoff.
+3. Run formatting, Markdown lint, diff, and applicable HK documentation gates
+   using a Session-owned temporary root, then remove it by exact path.
+4. Obtain independent multi-angle design reviews, adjudicate every atomic
+   finding independently, fix true positives, and return the fixes until all
+   original reviewers report no findings.
+5. Create one human-reviewable design-correction commit containing only the
+   approved documentation paths.
+6. Deliver that documentation-only commit through a protected PR, merge it,
+   and reconcile the exact merged state on `main`. Then create or rebase a
+   disabled implementation branch from that merged design.
+7. Implement the bounded static-reference foundation in dependency order:
+   exact Git source acquisition and snapshot transport; exact authority
+   adapters; normalized policy projection; then semantic scenarios.
+8. Migrate the selected Hexo example manifest and isolated lock from
+   unsupported `link:../..` to the admitted typed `file:../..` projection.
+   Move the acceptance package manifest fixture to a non-candidate source and
+   materialize `package/package.json` only in test temporary storage. Remove
+   the superseded whole-file exception, handwritten readers, and parser-branch
+   tests rather than adapting them incrementally.
+9. Run targeted tests, root HK, and commit hooks with isolated temporary
+   storage and exact cleanup.
+10. Obtain independent multi-angle implementation reviews, adjudicate each
+    finding atomically, and iterate to no findings before creating the first
+    implementation commit.
+11. Continue the remaining disabled contraction in dependency order: record
+    model, Governance/authorization, publication/finalization, workflows, and
+    separately authorized cleanup.
 
-Do not continue into runtime implementation or external work.
+Do not perform Live or external work.
 
 ## Validation and Review Protocol
 
@@ -348,5 +408,8 @@ applicable documentation and repository gates but keeps the same validate-before
 - Make commits dependency-ordered and human-reviewable.
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
 
-The design phase ends after protected merge and post-merge reconciliation. Runtime and external boundaries require new
+The replacement baseline is merged. Disabled implementation is conditionally
+authorized only after this authority-graph correction is protected-merged,
+reconciled on exact `main`, and used as the base of the implementation branch.
+External-resource, cleanup, and Live boundaries still require separate
 explicit authorization.

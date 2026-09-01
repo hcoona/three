@@ -164,61 +164,448 @@ A clean Result means only that no prohibited reference was found in the supporte
 
 Index and worktree Results have no target SHA and never label their bytes as `HEAD`. Live Eligibility accepts only a same-run `git-target` Result bound to the exact selected target.
 
-### 6.3 Supported surface
+After the invocation schema admits one source kind and its required parameters,
+failure to enumerate, read, or minimally materialize the declared exact source
+is `source-acquisition-failed`.
 
-The canonical policy has six path families:
+### 6.3 Authority pipeline and isolated source snapshot
 
-| Family                                    | Bounded selector                                                                                                                                                |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Manifests                                 | `package.json`, `pyproject.toml`, `setup.py`, `requirements*.txt`, `Directory.Packages.props`, `packages.config`, and `*.*proj` basenames                       |
-| Lockfiles                                 | `pnpm-lock.yaml`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `bun.lock`, `uv.lock`, `poetry.lock`, and `packages.lock.json`                       |
-| Workflows                                 | `.github/workflows/**/*.yml` and `.github/workflows/**/*.yaml`                                                                                                  |
-| Dependency configuration                  | `.npmrc`, `.pnpmfile.cjs`, `.yarnrc*`, `pnpm-workspace.yaml`, `bunfig.toml`, `renovate.json`, and `.github/dependabot.{yml,yaml}`                               |
-| Composite actions                         | `.github/actions/**/action.{yml,yaml}`                                                                                                                          |
-| Conventional install/bootstrap automation | Any-depth basename beginning `bootstrap`, `install`, `setup`, or `postinstall` with a shell, PowerShell, batch, Python, JavaScript, or TypeScript script suffix |
+The static policy has three non-competing authority layers:
 
-The selector is path-role based, not a scan of all repository text. Documentation, ordinary application source, external configuration, generated registry metadata, and novel layouts are outside the first slice.
+```text
+Git Source Authority
+  -> isolated exact-source snapshot
+  -> Ecosystem Authority Graph
+  -> normalized ecosystem facts
+  -> repository policy projection
+  -> canonical Result
+```
 
-Format-specific readers may handle JSON, YAML, TOML, XML, and line-oriented files, with bounded literal-token recognition for command surfaces. Invalid syntax, duplicate structured keys, invalid required UTF-8, or an unsupported authority-relevant candidate fails closed.
+Git owns path enumeration and exact bytes. An Ecosystem Authority Graph may
+compose authoritative source artifacts, official libraries or CLIs, and
+published ecosystem standards. Together they own the manifest, lock,
+descriptor, locator, workspace, action, or language model. Repository policy
+owns only the producer identity, producer root, applicable prohibited-form
+comparison, allowances, and canonical Result.
 
-The implementation must not use Tree-sitter, a JavaScript/shell dataflow interpreter, an exhaustive command trigger catalog, fixed inventory counts, or whole-file digest exceptions.
+An authority that accepts bytes or text receives one candidate directly. A
+library or CLI that requires a filesystem receives a Session-owned temporary
+snapshot containing only the exact files declared for that authority graph.
+The snapshot:
 
-### 6.4 Prohibited forms
+- preserves repository-relative paths and exact file bytes from one source
+  kind;
+- never copies an undeclared companion, follows a repository symlink, or falls
+  back to the real worktree;
+- records source kind, target SHA when applicable, logical path, source object
+  identity when available, byte length, SHA-256 digest, BOM presence, input
+  mode, and authority-graph ID in its materialization manifest;
+- runs with controlled arguments and environment, including no ambient
+  `GIT_INDEX_FILE`, user package-manager configuration, registry credentials,
+  or writable cache outside the Session root; and
+- is removed by exact resolved path when that invocation ends.
 
-A supported dependency, package-load, package-manager, action, or workflow-command context reports a finding for:
+Materialization does not make the filesystem authoritative. The manifest and
+source-specific Git acquisition remain authoritative; the temporary tree is
+only an input shape required by an official file-oriented library.
 
-- direct `@hcoona/hcoona-release-smoke-npm`;
-- `@hcoona/hcoona-release-smoke-npm@<selector>`;
-- `@hcoona/hcoona-release-smoke-npm/<subpath>`;
-- `npm:@hcoona/hcoona-release-smoke-npm` with or without a selector;
-- a workspace form naming the producer package;
-- a dependency key equal to the producer package, regardless of its value; or
-- dependency-position `file:`, `link:`, or path-bearing `workspace:` values resolving to the producer root.
+Raw-byte APIs receive the original bytes. String-only APIs receive one strict
+UTF-8 decode with no replacement characters, newline conversion, Unicode
+normalization, or locale-dependent decoding. A decoded UTF-8 BOM remains the
+leading `U+FEFF`; only the selected syntax or model authority may accept or
+reject it. XML APIs receive the original byte stream so the official XML reader
+owns encoding and BOM handling. The declared input/decoding mode and
+BOM-handling rule are policy-digest inputs. Observed BOM presence is
+source-evidence metadata and does not change policy identity.
 
-Path resolution uses repository-relative POSIX semantics, resolves `.` and `..`, rejects escape above repository root, and compares with `src/public/lib/hcoona-release-smoke-npm`.
+Before materializing a JSON or YAML candidate for a file-oriented authority,
+the adapter performs only a fatal UTF-8 byte-validity preflight over
+the exact source bytes. It neither parses syntax nor alters the bytes copied to
+the snapshot. The selected package JSON and pnpm readers own their documented
+leading-BOM and newline behavior. The bound pnpm helper/YAML-loader stacks
+cumulatively accept zero, one, or two leading UTF-8 BOMs; that exact behavior,
+rather than a local one-BOM ceiling, is a graph-manifest input. Malformed UTF-8
+is `encoding-rejected`; other syntax and format outcomes after valid decoding
+remain authority-owned.
 
-Encoded package names, split/constructed strings, arbitrary runtime downloads, external files, and new layout conventions are non-goals. Normal structured-string decoding is syntax handling, not a dataflow guarantee.
+No authority graph may fetch, install, restore, resolve a registry, load a
+plugin or preset outside the snapshot, expand ambient environment variables,
+evaluate GitHub expressions or MSBuild properties, execute candidate code, or
+write repository or external state. A CLI node may write only its declared
+Session-owned cache or temporary output, both removed by exact path.
+Finally-equivalent cleanup runs after success, rejection, process failure,
+timeout, or cancellation. Failure to remove a required exact Session-owned
+root produces `cleanup-failed` and prevents an admissible clean/findings Result;
+an earlier sanitized failure remains diagnostic.
 
-### 6.5 Exact allowances
+### 6.4 Exact Ecosystem Authority Graph
+
+This LLD is the sole normative owner of the first-slice bounded
+static-reference Result schema, policy identity, authority manifest and graph,
+source enumeration, snapshot/input contracts, normalized facts, failure
+taxonomy, and semantic scenarios. CI design references these contracts and
+owns only gate integration and CI-local transport.
+
+The checked-in authority manifest binds these graph nodes. Source artifact
+format generations are part of the graph. Node packages are direct dependencies
+resolved by `pnpm-lock.yaml`, including lockfile integrity. .NET packages are
+centrally pinned and resolved by the adapter project's `packages.lock.json`.
+CLI and runtime nodes bind their exact backend and version provenance in
+`mise.lock`, plus an artifact checksum when that backend records one.
+
+| Graph node          | Authoritative artifacts, models, and exact implementation                                                                                                                                                                   | Public API or command and input mode                                                                                                                                                                                                                                  | Normalized model owned by the graph                                                                                                                                                 |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm-manifest-v1`   | `package.json`; `@npmcli/package-json@8.0.0`; `npm-package-arg@14.0.0`                                                                                                                                                      | fatal UTF-8 byte preflight; `PackageJson.load(snapshotDirectory)`; `npa.resolve(name, spec, where)`; isolated snapshot                                                                                                                                                | npm manifest, package identity, dependency result type, fetch spec, save spec, and local path                                                                                       |
+| `pnpm-lock-v1`      | `pnpm-lock.yaml` lockfile version exactly `9.0`; `@pnpm/lockfile.fs@1100.2.5`; `@pnpm/lockfile.utils@1102.1.0`; `@pnpm/deps.path@1101.0.1`; `@pnpm/workspace.spec-parser@1100.0.1`; `@pnpm/resolving.npm-resolver@1104.1.0` | fatal UTF-8 byte preflight; exact public `extractMainDocument`, `readWantedLockfileWithMergeInfo`, `WorkspaceSpec.parse`, `workspacePrefToNpm`, `parseBareSpecifier`, `refToRelative`, `nameVerFromPkgSnapshot`, and `pkgSnapshotToResolution` bounded sequence below | pnpm importers, package snapshots and identities, snapshot dependency edges, registry/alias specs, named or ranged workspace specs, and typed lock-owned Git or `file:` resolutions |
+| `pnpm-workspace-v1` | `pnpm-workspace.yaml`; `@pnpm/workspace.workspace-manifest-reader@1100.1.8`; `@pnpm/workspace.spec-parser@1100.0.1`; `@pnpm/resolving.npm-resolver@1104.1.0`; `npm-package-arg@14.0.0`                                      | fatal UTF-8 byte preflight; exact `readWorkspaceManifest`, `WorkspaceSpec.parse`, `workspacePrefToNpm`, `parseBareSpecifier`, and `npa.resolve` bounded sequence below; isolated snapshot                                                                             | workspace package patterns and catalog dependency specifications                                                                                                                    |
+| `nuget-lock-v1`     | `packages.lock.json` model version exactly `1`, `2`, or `3`; `packages.config` XML; NuGet lock/config models; `NuGet.ProjectModel@7.9.0`; `NuGet.Packaging@7.9.0`; exact sidecar `packages.lock.json` dependency closure    | for `packages.lock.json`, fatal UTF-8 byte preflight followed by `PackagesLockFileFormat.Read(Stream, NullLogger.Instance, repositoryLogicalPath)`; for `packages.config`, `new PackagesConfigReader(Stream, false).GetPackages(false)`                               | NuGet package identities, dependency groups, dependency edges, requested ranges, resolved versions, and package entries                                                             |
+
+File-oriented graph nodes receive exactly this source snapshot closure:
+
+| Graph node          | Exact source inputs preserving repository-relative paths |
+| ------------------- | -------------------------------------------------------- |
+| `npm-manifest-v1`   | the selected `package.json` only                         |
+| `pnpm-lock-v1`      | the selected `pnpm-lock.yaml` only                       |
+| `pnpm-workspace-v1` | the selected `pnpm-workspace.yaml` only                  |
+
+The NuGet graph consumes the exact candidate byte stream.
+`npm-manifest-v1` passes the selected manifest directory as `where`;
+`pnpm-workspace-v1` does the same for catalog references. Each Node invocation
+receives controlled Session-owned `HOME`, `USERPROFILE`, `HOMEDRIVE`, and
+`HOMEPATH` values as applicable. Tilde references and normalized paths escaping
+the snapshot repository root are `unsupported-projection`.
+
+The npm manifest graph uses this exact projection:
+
+1. Call `PackageJson.load(snapshotDirectory)` once and use only the returned
+   instance's `.content`. Do not call `normalize`, `prepare`, or `fix`.
+2. Require `.content` to be a non-null, non-array object. Inspect only own
+   top-level `name`, `dependencies`, `devDependencies`,
+   `optionalDependencies`, and `peerDependencies`; ignore all other fields.
+3. An absent `name` emits no package-name-role fact. A present `name` must be a
+   string and must satisfy `npa.resolve(name, "*", snapshotDirectory)` with the
+   same returned name before emitting that role.
+4. Process the four dependency sections in the fixed order above. A present
+   section must be a non-null, non-array object and every own value must be a
+   string. Process dependency keys in ascending unnormalized UTF-8 byte order;
+   the same key in different sections emits distinct facts.
+5. For each entry call
+   `npa.resolve(dependencyKey, sourceSpec, snapshotDirectory)`. Require a name
+   and documented result type; emit the section, key, source spec, name, type,
+   raw/save/fetch specs, file/directory local path when present, and one-level
+   alias `subSpec` identity/spec fields. Do not serialize hosted-provider or
+   other unused model state.
+
+Wrong selected-field shapes or missing required successful-result fields are
+`unsupported-projection`; `PackageJson.load` or `npa.resolve` rejection is
+`authority-rejected`. Parse and validate the complete candidate before
+emitting any facts. The graph does not independently parse JSON or npm
+specifier syntax.
+
+The pnpm workspace graph uses this exact projection:
+
+1. Call `readWorkspaceManifest(snapshotDirectory)` once with no filename
+   override. `undefined` or `null` emits no facts.
+2. If `manifest.packages` is an array, emit each exact string with its array
+   index. Otherwise emit no package-pattern facts. Never normalize/expand the
+   patterns or discover members.
+3. Traverse direct `manifest.catalog` entries as the distinct default catalog,
+   then each direct catalog under `manifest.catalogs`; do not merge the default
+   catalog with a named catalog called `default`, recurse, or deduplicate.
+   Process catalog names and dependency keys in ascending unnormalized UTF-8
+   byte order.
+4. For each direct string specifier, make these calls:
+
+    ```text
+    workspaceSpec = WorkspaceSpec.parse(rawSpecifier)
+    if workspaceSpec != null:
+      normalizedSpecifier = workspacePrefToNpm(rawSpecifier)
+      registrySpec = parseBareSpecifier(
+        normalizedSpecifier,
+        dependencyKey,
+        "latest",
+        "https://registry.npmjs.org/"
+      )
+    else:
+      npmResult = npa.resolve(
+        dependencyKey,
+        rawSpecifier,
+        snapshotDirectory
+      )
+    ```
+
+    A workspace result must yield a registry spec; emit its target identity plus
+    the exact workspace selector. A non-workspace result emits the same bounded
+    npm-result fields used by the npm manifest graph.
+
+Unsupported workspace path forms, tilde/escaping local paths, or missing
+required successful-result fields are `unsupported-projection`; reader or
+parser rejection is `authority-rejected`. Parse and validate the complete
+candidate before emitting facts. No member discovery, realpath, stat, registry,
+Git, tarball, or installer call is allowed.
+
+An authority graph may compose nodes for different semantic layers.
+`pnpm-lock-v1` composes the conflict-aware snapshot reader with public pure
+dependency-path, lockfile-resolution, workspace-specifier, and registry
+specifier helpers. It never invokes a resolver that reads a local directory,
+tarball, registry, or Git remote. The implementation must not run two competing
+authorities over the same semantic layer, cross-validate an official model with
+a local grammar, or reject syntax solely because a second implementation
+disagrees.
+
+Before the pnpm lock reader runs, the adapter uses the reader package's public
+document selector over a comparison view produced by the reader's documented
+removal of at most one leading BOM and CRLF-to-LF normalization. If
+`extractMainDocument` does not return that complete view unchanged, the combined
+environment/main or environment-only lock is `unsupported-projection`. The
+exact original bytes remain unchanged in the snapshot. This admission check
+owns only document selection; it does not parse YAML or interpret
+environment-lock contents.
+
+The NuGet graph uses these exact projections:
+
+1. For `packages.lock.json`, perform only the fatal UTF-8 byte-validity
+   preflight, then pass the unchanged original bytes through a non-writable
+   `MemoryStream` to:
+
+    ```text
+    PackagesLockFileFormat.Read(
+      stream,
+      NullLogger.Instance,
+      repositoryLogicalPath
+    )
+    ```
+
+    `repositoryLogicalPath` is the normalized repository-relative candidate
+    path rather than a materialization path. Require `model.Version` to be
+    exactly `1`, `2`, or `3`; `int.MinValue` or any other value is
+    `authority-rejected`. The adapter does not independently parse JSON,
+    inspect raw version spelling, or cross-check the NuGet model.
+
+2. Require `model.Targets` and selected child collections to be non-null.
+   Process targets by `PackagesLockFileTarget.Name` with
+   `StringComparer.Ordinal`. Within each target, process
+   `LockFileDependency` entries by ID using `OrdinalIgnoreCase` with `Ordinal`
+   as the total-order tie-breaker. Emit target name, dependency ID,
+   `PackageDependencyType.ToString()`, optional requested range through
+   `ToNormalizedString()`, and optional resolved version through
+   `ToNormalizedString()`.
+3. Process each lock dependency's direct `PackageDependency` edges by ID using
+   the same case-insensitive-plus-ordinal order. Emit parent ID, edge ID, and
+   optional normalized `VersionRange`. Do not inspect `JObject`, content hash,
+   or other unselected model state.
+4. For `packages.config`, pass the original bytes through a non-writable
+   `MemoryStream` and make these exact calls:
+
+    ```text
+    reader = new PackagesConfigReader(stream, leaveStreamOpen: false)
+    packages = reader.GetPackages(allowDuplicatePackageIds: false)
+    ```
+
+    Materialize the complete result and order it with
+    `packages.OrderBy(p => p.PackageIdentity, PackageIdentity.Comparer)`. Emit
+    only reader-returned package ID spelling and
+    `PackageIdentity.Version.ToNormalizedString()`. Do not preparse XML or
+    inspect target-framework or installation metadata.
+
+NuGet reader or `GetPackages` rejection is `authority-rejected`; an admitted
+model missing a required selected field is `unsupported-projection`. Parse and
+validate the complete candidate before emitting facts. Original bytes and
+their digest remain unchanged.
+
+The pnpm lock graph then uses this exact bounded sequence:
+
+1. `lockfileDir` is the directory containing the materialized exact
+   `pnpm-lock.yaml`.
+2. After the document-admission check above, call
+   `readWantedLockfileWithMergeInfo(lockfileDir, options)` with
+   `wantedVersions: ["9.0"]`, `ignoreIncompatible: false`,
+   `useGitBranchLockfile: false`, `mergeGitBranchLockfiles: false`, and
+   `autofixMergeConflicts: true`. Require a non-null lockfile,
+   `hadConflicts: false`, absent `preMergeImporters`, and exact returned
+   `lockfileVersion: "9.0"`.
+3. Bind `defaultTag` to `latest`, `registry` to
+   `https://registry.npmjs.org/`, and `registryContext.registriesByScope.default`
+   to that same registry. No ambient npm or pnpm configuration supplies these
+   values.
+4. Process distinct package snapshots in ascending unnormalized UTF-8
+   dependency-path order. For each snapshot, call
+   `nameVerFromPkgSnapshot(dependencyPath, snapshot)` and
+   `pkgSnapshotToResolution(dependencyPath, snapshot, registryContext)`. Consume
+   only the returned identity and typed lock-owned Git or `file:` resolution;
+   neither call may trigger a resolver. Then inspect only the loaded
+   snapshot's own `dependencies` and `optionalDependencies`, in that fixed
+   section order. Absence is empty. A present section must be a non-null,
+   non-array object whose own values are strings. Process keys in ascending
+   unnormalized UTF-8 byte order and emit the owning dependency path, section,
+   dependency key, exact resolved reference, and canonical logical location.
+   Do not resolve or recursively walk these edges.
+5. Process the loaded `lockfile.importers` own entries in ascending
+   unnormalized UTF-8 importer-ID byte order. Each importer must be a non-null,
+   non-array `ProjectSnapshot`. Inspect only its `specifiers`, `dependencies`,
+   `devDependencies`, and `optionalDependencies`. `specifiers` must be a
+   non-null, non-array object whose own values are strings. Process the three
+   dependency sections in the fixed order above; absence is empty, while a
+   present section must be a non-null, non-array object whose own values are
+   strings. Process each section's keys in ascending unnormalized UTF-8 byte
+   order without merging the same key across sections. Every section key must
+   have an own string-valued `specifiers` entry, and every own `specifiers` key
+   must occur in at least one selected section. A violation is
+   `unsupported-projection`.
+6. For each ordered importer-section entry, bind `dependencyName` to the
+   section key, `rawSpecifier` to the exact
+   `ProjectSnapshot.specifiers[dependencyName]` value, and
+   `resolvedReference` to the exact section-map value. Then make these calls:
+
+    ```text
+    workspaceSpec = WorkspaceSpec.parse(rawSpecifier)
+    normalizedSpecifier =
+      workspaceSpec == null
+        ? rawSpecifier
+        : workspacePrefToNpm(rawSpecifier)
+    registrySpec = parseBareSpecifier(
+      normalizedSpecifier,
+      dependencyName,
+      defaultTag,
+      registry
+    )
+    snapshotKey = refToRelative(resolvedReference, dependencyName)
+    ```
+
+    A workspace input must yield a registry spec; stage its `W` fact from that
+    official identity and selector. When its snapshot key is null, that `W` fact
+    is complete and no snapshot lookup occurs. A null snapshot key for a
+    non-workspace input, a required missing non-null snapshot, or a workspace
+    path form is `unsupported-projection`. A null registry spec is otherwise
+    admissible only when the matched snapshot emits an admitted typed Git or
+    `file:` resolution. Normalize returned local paths relative to
+    `lockfileDir`.
+
+The graph makes exactly one explicit `WorkspaceSpec.parse` call per ordered
+importer-section entry; `workspacePrefToNpm` owns its internal reparse. It does
+not call `packageIdFromSnapshot`, `deps.path.parse`, any non-public subpath, or
+any filesystem, registry, Git, tarball, or package resolver after the declared
+lock read.
+
+Changing an authoritative source schema, standard, package, CLI, runtime,
+public API or command, input mode, admitted format generation, or normalized
+fact contract changes the policy digest and requires semantic acceptance.
+Version discovery at runtime is not authority: the adapter must report the
+exact loaded implementation identity, and admission compares it with this
+manifest.
+
+### 6.5 Selector-to-fact and prohibited-form matrix
+
+Selectors are disjoint. A path is in the first-slice claim only when exactly one
+row selects it:
+
+| Family                  | Disjoint selector and admitted format                                                                         | Ordered authority graph | Required emitted facts                                                                                                                                                                                              | Applicable prohibited forms   | Explicitly unsupported in this row                                                                                                                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| npm manifest            | basename `package.json`; npm manifest format accepted by the authority graph                                  | `npm-manifest-v1`       | package-name role; dependency key and normalized reference for dependencies, dev, optional, and peer sections                                                                                                       | `dependency-key`, `D/V/A/L`   | `workspace:` values, scripts, arbitrary custom fields, and dynamically constructed values                                                                                                                                                     |
+| NuGet packages config   | exact basename `packages.config`                                                                              | `nuget-lock-v1`         | normalized package ID and requested version                                                                                                                                                                         | `D/V`                         | package-manager behavior not represented by `PackagesConfigReader`                                                                                                                                                                            |
+| pnpm lock               | exact basename `pnpm-lock.yaml`, excluding descendants of `.github/workflows`; lockfile version exactly `9.0` | `pnpm-lock-v1`          | normalized importer dependencies, snapshots, package identities, snapshot dependency/optional-dependency edges, registry/alias specs, named/ranged workspace specs, and typed lock-owned Git or `file:` resolutions | `dependency-key`, `D/V/A/W/L` | conflicted/branch-merged/incompatible generations; non-workspace `link:`, bare/path-local and path-form workspace references; unexplained null snapshot keys; missing required snapshots; registry/Git resolution; runtime installation state |
+| pnpm workspace manifest | exact basename `pnpm-workspace.yaml`, excluding descendants of `.github/workflows`                            | `pnpm-workspace-v1`     | workspace package patterns and normalized catalog dependency keys/references                                                                                                                                        | `dependency-key`, `D/V/A/W/L` | resolving package patterns into member paths, executable hooks, and files outside the isolated snapshot                                                                                                                                       |
+| NuGet lock              | exact basename `packages.lock.json`; NuGet model `Version` exactly `1`, `2`, or `3`                           | `nuget-lock-v1`         | normalized package ID, dependency group and type, dependency edge, and requested range or resolved version when supplied by the model                                                                               | `dependency-key`, `D/V`       | reader rejection or model version outside `1`-`3`; assets files; restore; target-framework selection beyond emitted groups                                                                                                                    |
+
+The prohibited-form codes are:
+
+- `D`: direct `@hcoona/hcoona-release-smoke-npm`;
+- `V`: the producer identity with a version, range, tag, or other selector;
+- `A`: an alias whose normalized target is the producer;
+- `W`: a workspace reference whose normalized identity is the producer;
+- `L`: a normalized local dependency path resolving to the producer root;
+- `dependency-key`: a dependency key equal to the producer package regardless
+  of value.
+
+The authority graph, not policy code, determines npm, pnpm, or NuGet syntax and
+normalization. Policy code compares emitted identities and paths.
+Repository-relative path comparison uses POSIX semantics, resolves `.` and
+`..`, rejects escape above repository root, and compares with
+`src/public/lib/hcoona-release-smoke-npm`.
+
+Documentation, ordinary application source, standalone `pyproject.toml`,
+`setup.py`, `requirements*.txt`, `uv.lock`, `poetry.lock`, npm and Yarn
+lockfiles, `Directory.Packages.props`, `.csproj`, `.vbproj`, `.fsproj`, Bun
+files, `.npmrc`, `.yarnrc.yml`, Renovate, Dependabot, `.pnpmfile.cjs`, batch/Zsh
+files, shell and PowerShell scripts, JavaScript, TypeScript, and Python
+automation, GitHub workflow and composite-action files, Node import subpaths,
+encoded identities, split/constructed strings, arbitrary runtime downloads,
+external files, and novel layouts are outside this policy revision. Unsupported
+surfaces are omitted rather than backed by a local compatibility grammar or
+retained behind an authority that can inspect undeclared filesystem state.
+
+### 6.6 Allowances, failures, Result, and integration
 
 Only these allowances exist:
 
 1. the top-level `name` value in the exact producer `package.json`; and
-2. legitimate build/workspace references to the producer root outside dependency positions.
+2. legitimate build/workspace references to the producer root outside
+   dependency positions.
 
-The second allowance covers a workspace member, lockfile importer, or workflow `working-directory`; it does not permit an install command, dependency value, alias, package token, or module load.
+The second allowance covers a workspace member or lockfile importer; it does
+not permit an admitted direct, versioned, or aliased dependency value, package
+token, or module load. Runtime-relative local install arguments on standalone
+script surfaces have no source-owned execution base and are outside this
+revision's `L` projection. Fixtures create prohibited examples outside
+candidate paths or construct them in test code. No repository file receives a
+whole-file exception.
 
-Fixtures create prohibited examples outside candidate paths or construct them in test code. No repository file receives a whole-file exception.
+Every selected file must complete its exact authority graph. Failure to decode
+the declared input is `encoding-rejected`; rejection by an official artifact
+schema, library, CLI, or standard model is `authority-rejected`; inability to
+start or complete an executable authority node is
+`authority-execution-failed`; successful authority processing that cannot emit
+a required fact is `unsupported-projection`; a loaded implementation, API,
+command, or schema identity that differs from the authority manifest is
+`authority-mismatch`; failure to remove required Session-owned materialization
+or scratch roots is `cleanup-failed`. Together with
+`source-acquisition-failed`, these are distinct fail-closed errors. An
+explicitly unsupported selector or field is outside the bounded claim; it must
+not be silently promoted into a supported fact by a fallback authority.
 
-### 6.6 Result and integration
+Each finding contains normalized path, family, semantic context,
+prohibited-form kind, stable location when the authority supplies one, and a
+sanitized matched identity. `result` is `clean`, `findings`, or `error`. Every
+Result contains the sorted exact implementation identities actually loaded.
+`error-kind` is required exactly when `result` is `error` and is one of
+`source-acquisition-failed`, `encoding-rejected`, `authority-rejected`,
+`authority-execution-failed`, `unsupported-projection`,
+`authority-mismatch`, or `cleanup-failed`; it is forbidden for `clean` and
+`findings`. If cleanup fails after an earlier failure, `cleanup-failed` is
+authoritative and the earlier sanitized cause is diagnostic. The policy
+document binds the expected authority manifest and graph; a Result binds the
+resulting policy digest and observed implementation identities rather than
+reproducing foreign authority models.
 
-Each finding contains normalized path, family, semantic context, prohibited-form kind, stable location when available, and a sanitized matched identity. Result status is `clean`, `findings`, or `error`.
+The invocation schema first admits exactly one source kind and its required
+parameters. An omitted or unknown source kind or malformed required parameter
+terminates with a nonzero exit and sanitized diagnostic before Result
+construction and before allocating an authority root. After admission, source
+enumeration validates and orders candidates by ascending normalized POSIX-path
+UTF-8 bytes. The first inability to enumerate, read, or minimally materialize
+the declared exact source returns an error Result with
+`source-acquisition-failed` and terminates before graph execution. Within a
+candidate, graph nodes run in declared order, arrays run by index, and selected
+mappings run in their explicitly bound section and UTF-8-key order. The first
+typed non-cleanup graph failure terminates further projection and becomes the
+Result's `error-kind`. Finally-equivalent cleanup still runs, and
+`cleanup-failed` overrides an earlier source or graph failure. This traversal
+and failure-selection rule is a policy-digest input.
 
-Candidate counts, per-file digests, aggregate inventory digests, and timing are diagnostics only. Live authority is exact target, exact policy ID/digest, successful parsing, and an empty finding set.
+Candidate counts, per-file digests, aggregate inventory digests, snapshot
+paths, and timing are diagnostics only. Live authority is exact target, exact
+policy ID/digest, exact authority identities, successful projections, and an
+empty finding set.
 
-Root HK runs the lightweight policy whenever HK runs; the step is not skipped because the caller-selected file list lacks a candidate. The caller explicitly selects `index` for staged/pre-commit operation or `worktree` for manual filesystem checking. Omitted or invalid mode fails rather than guessing. HK output is feedback, never Live Evidence.
+Root HK runs the lightweight policy whenever HK runs; the step is not skipped
+because the caller-selected file list lacks a candidate. The caller explicitly
+selects `index` for staged/pre-commit operation or `worktree` for manual
+filesystem checking. An omitted or unknown mode is the pre-Result invocation
+failure defined above; a recognized mode whose source cannot be acquired
+returns `source-acquisition-failed`. HK output is feedback, never Live Evidence.
 
-Live Eligibility reruns `git-target` itself against the exact selected commit. It does not adopt HK, CI, caller-provided, index, or worktree output.
+Live Eligibility reruns `git-target` itself against the exact selected commit.
+It does not adopt HK, CI, caller-provided, index, or worktree output.
 
 ## 7. Canonical Records and Artifact Binding
 
@@ -236,23 +623,23 @@ Buddy Execution identity is canonical channel + Release Unit + target. Normal-Li
 
 ### 7.3 Record set
 
-| Record                                       | Binding responsibility                                                                         |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Release Intent                               | Manual request, selected ref, repository, channel, Release Unit, purpose, actor, target        |
-| Repository Model Snapshot                    | Selected revision, Providers, Project Nodes, Release Unit, descriptors, catalogs/control, NBGV |
-| Buddy Execution / Release Attempt identities | Deterministic execution tuple; execution plus workflow run                                     |
-| Bounded Static-Reference Result              | Policy, source kind, target for `git-target`, status, findings                                 |
-| Live Eligibility Decision                    | Intent, Model, workflow run, policy Result, protected Governance, eligibility-main lineage     |
-| Qualification Snapshot                       | Target, build/output, version, toolchain, obligations, desired projection basis                |
-| Release Artifact                             | Tarball transport, SHA-256/SHA-512, manifest, witness, build identity                          |
-| Qualification Evidence / Decision            | Obligation results and complete admission                                                      |
-| Projection Observation                       | Desired-state basis and canonical remote facts; no future Snapshot reference                   |
-| Publication Snapshot                         | Qualification, Observations, desired state, `actions` of length zero or one                    |
-| Approval Bundle                              | Pre-wait summary and complete one-action closure                                               |
-| Publication Authorization                    | Sole approved authority for the exact action                                                   |
-| Mutation marker                              | Durable pre-mutation boundary                                                                  |
-| Publication Result                           | At most one result; `published` embeds one Receipt                                             |
-| Attempt Outcome                              | Read-only current-DAG terminal/incomplete disposition                                          |
+| Record                                       | Binding responsibility                                                                                                  |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Release Intent                               | Manual request, selected ref, repository, channel, Release Unit, purpose, actor, target                                 |
+| Repository Model Snapshot                    | Selected revision, Providers, Project Nodes, Release Unit, descriptors, catalogs/control, NBGV                          |
+| Buddy Execution / Release Attempt identities | Deterministic execution tuple; execution plus workflow run                                                              |
+| Bounded Static-Reference Result              | Policy, source kind, target for `git-target`, loaded authority identities, result, error kind when applicable, findings |
+| Live Eligibility Decision                    | Intent, Model, workflow run, policy Result, protected Governance, eligibility-main lineage                              |
+| Qualification Snapshot                       | Target, build/output, version, toolchain, obligations, desired projection basis                                         |
+| Release Artifact                             | Tarball transport, SHA-256/SHA-512, manifest, witness, build identity                                                   |
+| Qualification Evidence / Decision            | Obligation results and complete admission                                                                               |
+| Projection Observation                       | Desired-state basis and canonical remote facts; no future Snapshot reference                                            |
+| Publication Snapshot                         | Qualification, Observations, desired state, `actions` of length zero or one                                             |
+| Approval Bundle                              | Pre-wait summary and complete one-action closure                                                                        |
+| Publication Authorization                    | Sole approved authority for the exact action                                                                            |
+| Mutation marker                              | Durable pre-mutation boundary                                                                                           |
+| Publication Result                           | At most one result; `published` embeds one Receipt                                                                      |
+| Attempt Outcome                              | Read-only current-DAG terminal/incomplete disposition                                                                   |
 
 New schemas are `workflow-delivery/v3/approval-bundle`, `workflow-delivery/v3/publication-authorization`, and `workflow-delivery/v3/publication-result`. The marker retains `workflow-delivery/v3/github-packages-mutation-may-have-started`. A successful Result embeds one `workflow-delivery/v3/receipt`; no standalone Receipt artifact exists.
 
@@ -654,7 +1041,7 @@ capture endpoint identity, time, normalized response, and canonical response
 digest, and require integer `days >= 45`. Requested `retention-days: 45` in a
 workflow is not evidence that repository policy permits it.
 
-Logs and job summaries are diagnostic projections. Diagnostics may include run attempt, job/step result, Git status, endpoint/status/non-secret headers, canonical response digests, parser timing and inventory counts/digests, npm exit classification, and sanitized errors.
+Logs and job summaries are diagnostic projections. Diagnostics may include run attempt, job/step result, Git status, endpoint/status/non-secret headers, canonical response digests, authority timing and inventory counts/digests, npm exit classification, and sanitized errors.
 
 Redact `GITHUB_TOKEN`, npm auth lines, authorization headers, credential-bearing URLs/config, secrets, and unbounded response bodies. Native Actions history may be linked diagnostically but is never authority.
 
@@ -670,10 +1057,103 @@ Redact `GITHUB_TOKEN`, npm auth lines, authorization headers, credential-bearing
 ### 18.2 Static-reference policy
 
 - Prove `git-target`, index, and worktree read their declared bytes when all three differ.
-- Reject unmerged index candidates, candidate symlinks/submodules, missing objects, unreadable/invalid candidates, and non-`git-target` Live Results.
-- Cover direct, versioned, aliased, workspace, subpath, dependency-key, and dependency-position `file:`/`link:`/`workspace:` producer-root forms in every supported family.
-- Allow only exact producer top-level `name` and legitimate workspace/importer/working-directory producer-root references.
-- Prove no whole-file exception, Tree-sitter/dataflow dependency, fixed inventory authority, or consumer claim remains.
+- Reject unmerged index candidates, candidate symlinks/submodules, missing
+  objects, unreadable/invalid candidates, and other admitted exact-source
+  acquisition failures as `source-acquisition-failed`; reject an omitted or
+  unknown source kind and malformed required source parameters with a nonzero
+  pre-Result invocation failure; and reject non-`git-target` Live Results.
+- Cover the prohibited forms assigned to each retained surface in the
+  selector-to-fact matrix; do not require a universal form-by-family cross
+  product.
+- For every selector row, prove one boundary near-miss and cover every
+  explicitly enumerated positive path-selector alternative at least once,
+  without requiring cross-products of independent alternatives. Every case
+  selects exactly one row or no row. For every declared unsupported category,
+  prove at least one adapter-level representative is excluded or fails closed
+  without fallback. Do not reproduce exhaustive upstream grammar variants.
+- Allow only exact producer top-level `name` and legitimate workspace/importer
+  producer-root references.
+- Prove pnpm reserved basenames below `.github/workflows` select no pnpm row;
+  all retained selector rows remain pairwise disjoint.
+- Prove npm manifest projection uses `.content`, only the exact top-level name
+  and four declared dependency sections, fixed section/key ordering, string
+  field shapes, one-level alias `subSpec`, source-owned `where`, and no
+  normalize/prepare/fix or partial fact emission.
+- Prove pnpm workspace projection preserves package-pattern index/value,
+  traverses default and named catalogs without merging, branches once through
+  `WorkspaceSpec.parse`, uses exact fixed parser arguments, and performs no
+  member discovery or partial fact emission.
+- Prove pnpm lockfile version is exactly `9.0`, conflicted input is rejected
+  through merge information, branch-lock behavior is disabled, the official
+  reader reads only the declared snapshot, and subsequent pure companion APIs
+  emit only bounded facts.
+- Prove loaded importer IDs, `specifiers`, `dependencies`,
+  `devDependencies`, and `optionalDependencies` use the exact selected shapes
+  and bound order; every section key maps to its own specifier, every specifier
+  belongs to a selected section, and equal keys across sections remain distinct
+  entries.
+- Prove each loaded package snapshot emits identity and typed lock-owned
+  resolution plus direct `dependencies` and `optionalDependencies` edge keys
+  in the exact bound order. Include a transitive alias whose dependency key is
+  the producer while its resolved target is another package.
+- Prove combined environment/main and environment-only pnpm lock documents are
+  `unsupported-projection` before the main reader can discard a document.
+- Prove named/ranged workspace specs can emit `W` when their official
+  `refToRelative` result is null, while non-workspace `link:`, bare/path-local
+  and path-form workspace references, unexplained null snapshot keys, or
+  required missing snapshots cannot produce a clean pnpm-lock Result. No path
+  invokes the local, Git, tarball, or registry resolver.
+- Prove exact artifact schemas, library/CLI/runtime identities and versions,
+  public APIs or commands, lock/checksum provenance, source-snapshot closure,
+  byte-input modes, and stable normalized fact projection.
+- Prove npm manifests reject unsupported `workspace:` dependency values and npm
+  lockfiles remain outside the selector.
+- Prove every npm-package-arg call receives an explicit source-owned base and a
+  controlled HOME; changing ambient cwd or home cannot change emitted facts,
+  and tilde or repository-escaping paths are `unsupported-projection`.
+- Prove NuGet model versions `1`, `2`, and `3` are admitted, including
+  representative source values that the pinned NuGet model coerces to those
+  versions. Missing or unconvertible versions and parser failures that produce
+  `int.MinValue`, plus model versions below `1` or above `3`, are rejected
+  before facts are emitted.
+- Prove the exact NuGet stream/logger/logical-path overload, sole-model version
+  admission, target/dependency/edge ordering, selected model fields,
+  `PackagesConfigReader(Stream, false)`, duplicate-ID rejection, and
+  `OrderBy(p => p.PackageIdentity, PackageIdentity.Comparer)` ordering without
+  adapter-owned JSON or XML traversal.
+- Before enabling the root gate, prove the tracked Hexo example manifest
+  contains exact `file:../..`, its actual isolated pnpm v9 lock has the matching
+  importer specifier/reference and typed file-directory snapshot for `../..`,
+  and the static policy returns clean without an example-path selector
+  exception.
+- Prove the only tracked selected `package.json` whose top-level name equals
+  the producer is the exact producer manifest. The npm publish request fixture
+  source must have a non-candidate basename, materialize as
+  `package/package.json` only below test-owned temporary storage, preserve its
+  package/tarball assertions, and require no fixture-path policy exception.
+- For each file-oriented JSON/YAML authority, prove malformed UTF-8 cannot be
+  replacement-decoded into a fact and exact bound BOM behavior belongs to the
+  selected reader. In particular, pnpm zero-, one-, and two-BOM inputs produce
+  equivalent facts; additional-BOM outcomes match the exact stack; snapshot
+  bytes and digests remain unchanged.
+- Prove distinct `source-acquisition-failed`, `encoding-rejected`,
+  `authority-rejected`, `authority-execution-failed`,
+  `unsupported-projection`, `authority-mismatch`, and `cleanup-failed` Results.
+- Prove source candidates, graph nodes, arrays, and selected mappings follow
+  their bound deterministic order; the first source-acquisition failure becomes
+  the sole `error-kind` before graph execution, otherwise the first typed
+  non-cleanup graph failure becomes the sole `error-kind`, and cleanup failure
+  overrides either.
+- Prove exact snapshot/HOME/cache/temp/output cleanup after success, rejection,
+  execution failure, timeout, and cancellation; injected exact-path cleanup
+  failure must return `cleanup-failed`.
+- Prove GitHub workflow/composite-action files, Node import subpaths, npm, uv,
+  and Yarn locks, unevaluated MSBuild project/central manifests, standalone
+  Python manifests, shell and PowerShell scripts, and other excluded surfaces
+  remain outside the bounded projection.
+- Prove no handwritten ecosystem grammar or schema, competing-authority
+  hardening, whole-file exception, Tree-sitter or dataflow dependency, fixed
+  inventory authority, or consumer claim remains.
 - Prove root HK requires explicit `index`/`worktree`, runs independent of candidate file selection, and cannot supply Live Evidence.
 
 ### 18.3 Workflow contracts

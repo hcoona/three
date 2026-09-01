@@ -40,6 +40,11 @@ normative for new work.
 - The bounded static-reference policy has `git-target`, `index`, and
   `worktree` sources. Only exact-SHA `git-target` output is Live evidence;
   index and worktree are HK feedback.
+- Each retained static-reference selector has one exact Ecosystem Authority
+  Graph composed from authoritative source artifacts, exact official libraries
+  or CLIs, and published standards. Adapters emit normalized policy facts;
+  handwritten ecosystem grammars or schemas and competing-authority hardening
+  are excluded.
 - A clean static result prevents bounded accidental references. It does not
   prove universal consumer absence or package-token isolation.
 - The first-slice Publication Snapshot contains exactly zero or one action.

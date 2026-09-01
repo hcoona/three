@@ -124,11 +124,43 @@ The implementation phase introduces a new schema and policy ID. It must:
   feedback mode;
 - preserve the expensive v3 pytest suite as path-selected, except that manual
   `slice-validation` runs it unconditionally;
-- remove Tree-sitter dependencies, parser/dataflow/interpreter commitments,
-  whole-file digest exceptions, fixed inventory counts, scanned-surface digest
-  authority, and trigger-catalog authority; and
-- validate exact target, policy, source-kind, and finding behavior through
-  semantic tests rather than parser-branch or fixed-count assertions.
+- remove Tree-sitter and every handwritten ecosystem grammar, lexer, locator
+  splitter, and competing-authority hardening layer;
+- introduce one exact Ecosystem Authority Graph per retained selector,
+  composed only from authoritative source artifacts, stable official libraries
+  or CLIs, and published standards, and bind its manifest into the policy
+  digest;
+- remove npm, uv, and Yarn locks, unevaluated MSBuild project/central manifests,
+  standalone Python manifests, shell and PowerShell scripts, GitHub
+  workflow/composite-action files, and Node import-subpath claims from the first
+  slice rather than filling missing authority with local grammars, adding a
+  command-string classifier, or adding a cross-platform filesystem sandbox;
+- use official pnpm lock/workspace readers only against their declared isolated
+  snapshots, followed by public pure dependency-path, lockfile-resolution,
+  workspace-specifier, and registry-specifier helpers; fail closed on
+  unsupported non-workspace link/path-local forms instead of invoking the
+  filesystem-reading local resolver;
+- before enabling the root gate, change the tracked
+  `src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/package.json`
+  dependency on `hexo-renderer-asciidoc` from unsupported `link:../..` to
+  admitted `file:../..` and regenerate that example's `pnpm-lock.yaml` with the
+  repository-pinned pnpm so both selected artifacts use the typed file-directory
+  projection; do not add a selector exception for the example;
+- replace the tracked
+  `src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/package.json`
+  fixture source with a non-candidate basename and materialize its exact bytes
+  as `package/package.json` only under test-owned temporary storage; remove the
+  superseded fixture-path whole-file exception rather than carrying it into the
+  new policy;
+- remove selectors that lack a stable, proportionate, exact-source authority
+  projection rather than retaining a local compatibility grammar;
+- keep evaluation, dataflow, package installation, network access, fallback
+  file reads, and candidate execution outside authority adapters;
+- remove whole-file digest exceptions, fixed inventory counts,
+  scanned-surface digest authority, and trigger-catalog authority; and
+- validate exact target, policy, source-kind, normalized adapter facts, and
+  finding behavior through semantic tests rather than foreign-parser-branch or
+  fixed-count assertions.
 
 Those are implementation-phase changes. This documentation-only change does
 not modify the scanner, HK configuration, workflows, or tests.

@@ -236,8 +236,23 @@ for the approved static-reference source kinds:
 - `worktree`: tracked plus eligible untracked filesystem paths.
 
 The mechanical result binds source kind, exact target when applicable, policy
-ID and digest, and sorted findings. Index and worktree bytes are never
-represented as `HEAD` or commit identity.
+ID and digest, sorted exact ecosystem-authority implementation identities
+actually loaded, result, canonical error kind when result is error, and sorted
+findings.
+Index and worktree bytes are never represented as `HEAD` or commit identity.
+
+The typed invocation boundary rejects an omitted or unknown source kind and
+malformed required source parameters before constructing a mechanical result.
+For an admitted source request, inability to deterministically enumerate, read,
+or minimally materialize the declared exact source returns
+`source-acquisition-failed`.
+
+Foundation may also provide the isolated exact-source snapshot transport and
+typed adapter envelope used by the LLD's Ecosystem Authority Graph. The graph
+owns foreign ecosystem models through authoritative artifacts, official
+libraries or CLIs, and published standards; Foundation owns only source
+binding, snapshot closure, envelope validation, repository path normalization,
+and canonical result construction.
 
 Foundation does not decide whether a finding blocks CI feedback or Live
 eligibility. It does not claim exhaustive consumer discovery, dataflow
@@ -333,7 +348,7 @@ the optional Receipt rule into a universal result wrapper.
 
 ### Strict Validation
 
-Every Foundation parser or admission helper:
+Every Foundation record parser or admission helper:
 
 - rejects unknown fields unless the family contract explicitly allows an
   extension map;
@@ -349,6 +364,20 @@ Every Foundation parser or admission helper:
 Strict validation is a mechanism. The calling context decides whether failure
 blocks planning, fails an obligation, requires reconciliation, or changes an
 outcome.
+
+For foreign ecosystem semantics, strict Foundation validation starts at the
+normalized authority-fact envelope. The exact Ecosystem Authority Graph owns
+its manifest, lock, descriptor, locator, workspace, action, or language model
+through authoritative artifacts, official libraries or CLIs, and published
+standards, including syntax, comments, quoting, duplicate handling, case rules,
+and normalization. Foundation must not recreate the source schema, run a
+competing authority for cross-validation, reject an official normalized model
+because a local implementation disagrees, or add defensive checks for
+invariants guaranteed by the selected graph. `source-acquisition-failed`,
+`encoding-rejected`, `authority-rejected`, `authority-execution-failed`,
+`unsupported-projection`, and `authority-mismatch` remain distinct typed
+failures. Required Session-owned snapshot or scratch cleanup adds
+`cleanup-failed`.
 
 ### Current-Context Admission
 
@@ -1040,6 +1069,13 @@ from the selected revision and static catalog.
 Definitions and descriptors may select allowlisted IDs and parameters but
 cannot inject executable paths, packages, commands, or remote code.
 
+Static-reference authority implementations are exact-version dependencies or
+toolchain nodes selected by the static catalog, not target-selected plugins.
+File-oriented libraries and CLIs see only a Session-owned isolated snapshot
+containing declared exact-source bytes and controlled environment. They receive
+no publication capability, registry credential, undeclared worktree input, or
+external writable cache.
+
 ### Target-Controlled Input
 
 Target-controlled manifests and configuration are untrusted inputs.
@@ -1173,6 +1209,10 @@ The same scanner mechanism is used in three source modes.
 - `index` reads stage-0 entries for staged feedback.
 - `worktree` reads eligible filesystem bytes for manual feedback.
 - Every Result binds its source kind.
+- File-oriented ecosystem APIs receive a minimal isolated snapshot made only
+  from those exact bytes; the source mode, not the snapshot, remains authority.
+- The exact authority graph emits normalized facts before Foundation applies
+  repository-specific prohibited-form comparison.
 - Foundation reports findings but does not decide business eligibility.
 
 ### Approval and Publication Records
@@ -1230,7 +1270,7 @@ A faulty Invocation names an endpoint outside the allowed destination origin.
 
 Every Foundation implementation requires:
 
-- strict parser tests;
+- strict record-parser and admission tests;
 - canonicalization and digest golden tests;
 - context and purpose isolation tests;
 - normal-Live no-`run_attempt` and simulation run-attempt binding tests;
@@ -1241,6 +1281,8 @@ Every Foundation implementation requires:
 - Quality Adapter Result-shape tests;
 - Artifact Reference ID-only transport tests;
 - static-reference source-kind tests;
+- static-reference exact-authority identity, snapshot-isolation, normalized
+  fact, and typed authority-failure tests;
 - Git protected-path touch and change-then-revert fixtures;
 - current-context admission tests that reject prior-run and latest selection;
 - cache-disabled equivalence scenarios;

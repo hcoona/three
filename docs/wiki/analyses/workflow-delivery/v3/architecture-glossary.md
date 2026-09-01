@@ -161,12 +161,15 @@ isolation. Official npmjs PAT, OIDC, secret, and destination boundaries remain
 separate and unchanged.
 
 The bounded static-reference policy proves only that no prohibited direct
-reference was found in its closed supported catalog. It does not prove absence
-of every runtime consumer or constrain `GITHUB_TOKEN` reach. Ordinary delete,
-restore, permission, visibility, and admin actions remain outside normal
-publication; deletion or restoration requires Break-Glass Remediation. Official
-and future Buddy destinations or production packages do not inherit this
-exception.
+reference was found in its closed selector-to-fact catalog. Each retained
+selector invokes one exact Ecosystem Authority Graph over exact source bytes or
+a minimal isolated snapshot, then projects normalized policy facts.
+The policy does not maintain a competing ecosystem grammar or schema, harden
+the selected authority graph, prove absence of every runtime consumer, or constrain
+`GITHUB_TOKEN` reach. Ordinary delete, restore, permission, visibility, and
+admin actions remain outside normal publication; deletion or restoration
+requires Break-Glass Remediation. Official and future Buddy destinations or
+production packages do not inherit this exception.
 
 Protected Governance identifies the accepted writer and relevant access
 inspection, expires within 90 days, and uses `live_enabled` for fresh admission
@@ -312,14 +315,17 @@ The new-version bounded repository policy that reports prohibited direct static
 references to the exact smoke package coordinate within a closed supported
 catalog.
 
-Supported families are manifests, lockfiles, workflows, dependency and
-configuration files, composite actions, and conventional install/bootstrap
-automation. The policy rejects direct, versioned, aliased, workspace, and
-subpath coordinate forms. In manifest and lock dependency positions, it also
-rejects `file:`, `link:`, and `workspace:` paths that resolve to the known
-producer root. The producer path is not globally prohibited because workflows
-may legitimately build it. Only the top-level `package.json` `name` at an exact
-known producer path is allowed to equal the package name.
+Supported surfaces are disjoint selectors paired with an exact Ecosystem
+Authority Graph in the first-slice LLD. The graph binds authoritative artifact
+schemas and standards, official library/CLI/runtime identities and versions,
+provenance, public APIs or commands, input mode, admitted format generation,
+required normalized facts, applicable prohibited forms, and unsupported cases.
+Adapters emit package identity, reference kind, local path, and source-location
+facts. The policy rejects only the coordinate and local-dependency forms
+assigned to each selector row. The producer path is not globally prohibited
+because build configuration may legitimately name it outside dependency
+positions. Only the top-level `package.json` `name` at an exact known producer
+path is allowed to equal the package name.
 
 The canonical source kinds are exactly:
 
@@ -331,15 +337,46 @@ The canonical source kinds are exactly:
   filesystem bytes for manual developer feedback.
 
 Every result binds its source kind. Index or worktree bytes are never
-represented as `HEAD` or commit identity. The result also binds schema/result,
-the exact target when applicable, policy ID and digest, and sorted findings.
-Counts are diagnostics only.
+represented as `HEAD` or commit identity. The result also binds schema, result,
+the exact target when applicable, policy ID and digest, sorted exact
+implementation identities actually loaded, canonical error kind when result is
+error, and sorted findings. Counts and isolated-snapshot paths are
+diagnostics only.
+
+The invocation schema rejects an omitted or unknown source kind and malformed
+required source parameters before Result construction. After one source kind
+and its parameters are admitted, failure to deterministically enumerate, read,
+or minimally materialize its declared exact source is
+`source-acquisition-failed`. Callers propagate a pre-Result invocation failure
+without synthesizing a Result; required cleanup failure may override an
+admitted source-acquisition failure.
 
 A finding is a prohibited reference, not a proven consumer. A clean result
 proves only that no prohibited direct reference was found in the supported
 catalog. Encoded or split construction, arbitrary runtime downloads, external
 configuration, novel layouts, and universal consumer discovery are non-goals.
 The policy does not constrain `GITHUB_TOKEN` reach.
+
+### Ecosystem Authority Graph
+
+The exact ordered set of authoritative source artifacts, official ecosystem
+libraries or CLIs, and published standards that owns the semantic model for one
+static-reference selector. Git Source Authority provides exact bytes. When an
+authority is file-oriented, those bytes are materialized into a Session-owned
+snapshot containing only declared files from the same source kind.
+
+Different semantic layers may compose, such as the pnpm lockfile model, its
+dependency-path and lockfile utilities, and its pure workspace and registry
+specifier parsers. Two authorities must not compete over the same semantic
+layer. Repository code validates the normalized fact envelope and applies
+policy; it does not recreate lockfile schemas, descriptor or locator grammars,
+comment handling, case rules, or normalization owned by the graph.
+
+The graph identity includes source schema and standard versions; exact package,
+CLI, runtime, tool, module, or assembly versions; lock or checksum provenance;
+public APIs or commands; input and BOM behavior; admitted format generation;
+required facts; and unsupported cases. A change to any of these changes the
+bounded static-reference policy digest.
 
 ### Affected-System Qualification
 
@@ -539,10 +576,11 @@ It binds live purpose, request, `workflow_run_id`, selected ref and target SHA,
 Repository Model digest, producer/control, exact static-reference policy result,
 and protected Governance result. It does not bind `github.run_attempt`.
 
-The static-reference evidence contains schema/result, source kind `git-target`,
-exact full target, policy ID and digest, and sorted findings. A clean result
-means only that no prohibited direct static reference was found in the closed
-supported catalog.
+The static-reference evidence contains schema, result, source kind `git-target`,
+exact full target, policy ID and digest, sorted exact implementation identities
+actually loaded, canonical error kind when result is error, and sorted findings.
+A clean result means only that no prohibited direct static reference was found
+in the closed supported catalog.
 
 The Governance source contract is repository `hcoona/three`, ref
 `refs/heads/main`, and path
