@@ -2063,6 +2063,34 @@ def has_only_formatting_text(node: Element) -> bool:
         for child in list(node)
     )
 
+def element_visible_text_sha256(
+    root: Element,
+    *,
+    excluded: set[Element] | None = None,
+) -> str:
+    excluded_nodes = excluded or set()
+    parts: list[str] = []
+
+    def collect(node: Element) -> None:
+        if node.text is not None:
+            parts.append(node.text)
+        for child in list(node):
+            if child not in excluded_nodes and not is_comment(child):
+                collect(child)
+            if child.tail is not None:
+                parts.append(child.tail)
+
+    collect(root)
+    return visible_text_sha256(parts)
+
+def html_fragment_visible_text_sha256(content: str) -> str:
+    root = html5lib.parseFragment(
+        content,
+        treebuilder="etree",
+        namespaceHTMLElements=False,
+    )
+    return element_visible_text_sha256(root)
+
 def validate_generated_html(
     content: str,
     manifest: JsonObject,
@@ -2132,6 +2160,13 @@ def validate_generated_html(
             and all(local_name(node) == "figure" for node in observed_figures),
             "generated figure bindings do not match the manifest")
     figure_nodes = set(observed_figures)
+    for record, section in zip(expected_fragments, sections, strict=True):
+        identifier = record["id"]
+        require(
+            element_visible_text_sha256(section, excluded=figure_nodes)
+            == record["visible_text_sha256"],
+            f"fragment section {identifier} authored text does not match its manifest binding",
+        )
     parents = {
         child: parent
         for parent in nodes
@@ -2172,6 +2207,14 @@ def validate_generated_html(
         require(has_only_formatting_text(parts_container),
                 f"figure {identifier} parts have unbound generated text")
         require(not caption.attrib, f"figure {identifier} caption has generated attributes")
+        try:
+            expected_caption = html_fragment_visible_text_sha256(figure["caption_html"])
+        except ValueError as error:
+            fail(f"manifest figure {identifier} caption is not valid HTML: {error}")
+        require(
+            element_visible_text_sha256(caption) == expected_caption,
+            f"figure {identifier} caption text does not match its manifest binding",
+        )
         expected_captions.append(caption)
         crops = element_children(parts_container)
         require([crop.attrib.get("data-crop-id") for crop in crops]

@@ -1645,6 +1645,62 @@ class AssemblePrintScenarioTests(unittest.TestCase):
         write_json(manifest_path, manifest)
         self.assertEqual(2, self.validate(publication).exit_code)
 
+    def test_validate_binds_authored_text_and_caption_semantics(self) -> None:
+        cases = (
+            (
+                "fragment",
+                "A short scholarly quotation.",
+                "A changed scholarly quotation.",
+                "fragment section section-one authored text",
+            ),
+            (
+                "caption",
+                "A continued figure.",
+                "A changed figure caption.",
+                "figure sample-figure caption text",
+            ),
+        )
+        for name, original, replacement, expected_error in cases:
+            with self.subTest(case=name):
+                publication = self.fresh_publication(f"text-binding-{name}")
+                html_path = publication / "index.html"
+                html = html_path.read_text(encoding="utf-8")
+                self.assertIn(original, html)
+                html_path.write_text(
+                    html.replace(original, replacement, 1),
+                    encoding="utf-8",
+                )
+                self.refresh_output_asset(publication, "html")
+
+                rejected = self.validate(publication)
+
+                self.assertEqual(2, rejected.exit_code, rejected)
+                self.assertIn(expected_error, rejected.stderr)
+
+        publication = self.fresh_publication("caption-parser-error")
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        oversized = "9" * 5000
+        caption = f"&#{oversized};"
+        manifest["figures"][0]["caption_html"] = caption
+        manifest["figures"][0]["caption_sha256"] = sha256_bytes(
+            caption.encode()
+        )
+        write_json(manifest_path, manifest)
+        previous_limit = sys.get_int_max_str_digits()
+        try:
+            sys.set_int_max_str_digits(640)
+            rejected = self.validate(publication)
+        finally:
+            sys.set_int_max_str_digits(previous_limit)
+
+        self.assertEqual(2, rejected.exit_code, rejected)
+        self.assertIn(
+            "manifest figure sample-figure caption is not valid HTML",
+            rejected.stderr,
+        )
+        self.assertNotIn("Traceback", rejected.stderr)
+
     def test_validate_closes_generated_topology_and_resource_attributes(
         self,
     ) -> None:
