@@ -36,7 +36,7 @@ SYNTHETIC_FUTURE_SURFACES = (
 )
 OVERRIDE_EXEMPLARS = (
     *SYNTHETIC_FUTURE_SURFACES,
-    "eng/scripts/workflow_delivery_v3_consumer_policy.py",
+    "eng/scripts/workflow_delivery_v3_static_reference.py",
     "eng/scripts/workflow_delivery_v3_hk.py",
 )
 _BUDDY_CONTRACT_SPEC = importlib.util.spec_from_file_location(
@@ -122,7 +122,7 @@ def _coverage_failures(
 
 def _workspace_paths() -> set[str]:
     result = subprocess.run(
-        (
+        (  # noqa: S607
             "git",
             "ls-files",
             "--cached",
@@ -248,15 +248,17 @@ def test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_
         (
             "/eng/scripts/**",
             (
-                "eng/scripts/workflow_delivery_v3_consumer_policy.py",
+                "eng/scripts/workflow_delivery_v3_static_reference.py",
                 "eng/scripts/workflow_delivery_v3_hk.py",
             ),
         ),
         (
             "/src/public/lib/three-workflow-delivery-v3/**",
             (
-                "src/public/lib/three-workflow-delivery-v3/"
-                "src/three_workflow_delivery_v3/cli.py",
+                (
+                    "src/public/lib/three-workflow-delivery-v3/"
+                    "src/three_workflow_delivery_v3/cli.py"
+                ),
             ),
         ),
         (

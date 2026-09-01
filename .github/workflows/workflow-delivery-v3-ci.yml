@@ -279,7 +279,7 @@ jobs:
             three-workflow-delivery-v3 ci admit-payload \
             --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json" \
             --expected-digest "${{ needs.plan.outputs.provider-artifact-digest }}"
-      - name: Run permanent root HK and consumer policy
+      - name: Run permanent root HK and static-reference policy
         id: execute
         if: needs.plan.outputs.root-hk-selected == 'true'
         continue-on-error: true
@@ -305,7 +305,7 @@ jobs:
                       f"{name} differs from the admitted Provider fact"
                   )
           PY
-          pnpm install --frozen-lockfile --ignore-scripts
+          mise run prepare:static-reference-authorities
           pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site \
             install --frozen-lockfile --ignore-scripts
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then

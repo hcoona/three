@@ -264,6 +264,12 @@ def test_project_change_selects_complete_first_slice() -> None:
         f"{PRODUCT_PATH}/workflow-delivery.quality.yml",
         FIRST_SLICE_POLICY_PATH,
         "src/public/lib/three-workflow-delivery-v3/src/control.py",
+        "Directory.Packages.props",
+        ("src/private/app/workflow-delivery-v3-nuget-authority/Program.cs"),
+        (
+            "src/private/app/workflow-delivery-v3-nuget-authority/"
+            "WorkflowDeliveryV3NuGetAuthority.csproj"
+        ),
         ".github/actions/workflow-delivery-v3-node/action.yml",
         "eng/scripts/workflow_delivery_v3_control.py",
         CI_WORKFLOW_PATH,
@@ -282,9 +288,32 @@ def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
         "LICENSES/MIT.txt",
         ".gitattributes",
         "nested/package.json",
-        "nested/package-lock.json",
-        "tools/postinstall-consumer.js",
+        "nested/pnpm-lock.yaml",
+        "nested/packages.lock.json",
+        ".github/workflows/release/nested/packages.lock.json",
         ".github/workflows/consume.yml",
+        "nested/package-lock.json",
+        "src/private/app/tool/pyproject.toml",
+        "src/lab/TaskAssigner/TaskAssigner.csproj",
+        "nested/requirements-dev.txt",
+        "tools/bootstrap.ps1",
+        "nested/.npmrc",
+        "nested/.gitattributes",
+        ".github/workflows/release/package-lock.json",
+        ".github/workflows/release/tool.csproj",
+        ".github/workflows/release/bootstrap.ps1",
+        ".github/workflows/release/.npmrc",
+        "src/public/lib/hexo-renderer-asciidoc/README.md",
+        "src/public/lib/hexo-renderer-asciidoc/README.npm.md",
+        ("src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md"),
+        (
+            "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/"
+            "source/_posts/renderer-tour.adoc"
+        ),
+        (
+            "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/"
+            "source/about/index.adoc"
+        ),
     ],
 )
 def test_repository_only_change_selects_root_hk(path: str) -> None:
@@ -301,7 +330,7 @@ def test_repository_only_change_selects_root_hk(path: str) -> None:
 @pytest.mark.parametrize(
     ("path", "selected_lanes"),
     [
-        (".gitattributes", ("root-hk",)),
+        ("nested/package.json", ("root-hk",)),
         (".testagent/plan.md", ("root-hk",)),
         (
             "docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md",
@@ -311,8 +340,10 @@ def test_repository_only_change_selects_root_hk(path: str) -> None:
         (".github/workflows/REFACTOR_PLAN.md", ("root-hk",)),
         ("hk.pkl", ("root-hk",)),
         (
-            "src/public/lib/three-workflow-delivery-v3/src/"
-            "three_workflow_delivery_v3/cli.py",
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/cli.py"
+            ),
             CI_LANE_IDS,
         ),
         (
@@ -335,6 +366,31 @@ def test_current_change_surfaces_are_admitted_without_project_overselection(
         assert plan.selected_release_units == ()
         assert plan.selected_variants == ()
         assert plan.selected_outputs == ()
+
+
+def test_static_reference_delivery_path_set_is_fully_classified() -> None:
+    """Admit the authority controls and required Hexo documentation update."""
+    paths = (
+        "Directory.Packages.props",
+        ("src/private/app/workflow-delivery-v3-nuget-authority/Program.cs"),
+        (
+            "src/private/app/workflow-delivery-v3-nuget-authority/"
+            "WorkflowDeliveryV3NuGetAuthority.csproj"
+        ),
+        (
+            "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/"
+            "source/_posts/hello-from-asciidoc.adoc"
+        ),
+    )
+
+    plan = _plan(changed_paths=paths)
+
+    assert plan.ready
+    assert _selected_lanes(plan) == CI_LANE_IDS
+    assert not any(
+        "changed path is unclassified" in diagnostic
+        for diagnostic in plan.diagnostics
+    )
 
 
 def test_manual_slice_validation_always_selects_complete_slice() -> None:
@@ -518,6 +574,10 @@ def test_changed_paths_are_canonical_and_unique() -> None:
     """Sort trusted paths and reject duplicates or unsafe spellings."""
     plan = _plan(changed_paths=("docs/z.md", "README.md", "docs/a.md"))
     assert plan.changed_paths == ("README.md", "docs/a.md", "docs/z.md")
+    backslash_path = r"literal\component/package.json"
+    backslash_plan = _plan(changed_paths=(backslash_path,))
+    assert backslash_plan.changed_paths == (backslash_path,)
+    assert _selected_lanes(backslash_plan) == ("root-hk",)
     with pytest.raises(ValueError, match="duplicate"):
         _plan(changed_paths=("README.md", "README.md"))
     with pytest.raises(ValueError, match="invalid path"):

@@ -90,11 +90,21 @@ pwsh -NoLogo -Command "Install-Module -Name 'PSScriptAnalyzer' -Force -Scope Cur
 
 [tasks."bootstrap:node"]
 description = "Bootstrap the Node.js packages"
-run = "pnpm install --frozen-lockfile"
+depends = ["prepare:static-reference-authorities"]
+run = "pnpm -r rebuild --pending"
 
 [tasks."bootstrap:dotnet-tools"]
 description = "Bootstrap the .NET tools"
 run = "dotnet tool restore"
+
+[tasks."prepare:static-reference-authorities"]
+description = "Prepare bounded static-reference authority runtimes"
+run = "uv run --frozen --python 3.13 --package three-workflow-delivery-v3 python -B eng/scripts/workflow_delivery_v3_prepare_static_reference.py"
+
+[tasks."check:static-reference-worktree"]
+description = "Check bounded static references in the explicit worktree source"
+depends = ["prepare:static-reference-authorities"]
+run = "uv run --python 3.13 --package three-workflow-delivery-v3 python eng/scripts/workflow_delivery_v3_static_reference.py --repository-root . --source-kind worktree"
 
 #
 # Tasks

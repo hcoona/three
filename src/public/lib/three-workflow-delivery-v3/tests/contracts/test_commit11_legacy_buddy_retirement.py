@@ -198,7 +198,7 @@ def _v3_hk_globs() -> tuple[str, ...]:
     block = content.split(
         "local workflow_delivery_v3_files =",
         1,
-    )[1].split("local hcoona_release_smoke_npm_consumer_policy_files =", 1)[0]
+    )[1].split('  ["v3-control-pytest"] {', 1)[0]
     return tuple(re.findall(r'"([^"]+)"', block))
 
 

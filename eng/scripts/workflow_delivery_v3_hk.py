@@ -31,7 +31,6 @@ def _canonical_repo_path(path: str) -> str:
         not path
         or path.startswith(("/", "./"))
         or path.endswith("/")
-        or "\\" in path
         or any(part in {"", ".", ".."} for part in path.split("/"))
     ):
         message = f"non-canonical changed path: {path!r}"

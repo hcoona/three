@@ -1,9 +1,8 @@
-"""Literal integration scenarios from the approved first-slice CI LLD."""
+"""Current Workflow Delivery v3 static-reference integration scenarios."""
 
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 import shutil
 import subprocess
@@ -11,7 +10,7 @@ import sys
 from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import pytest
 import yaml
@@ -41,6 +40,7 @@ from three_workflow_delivery_v3.records.ci import (
     CiObligation,
     CiQualificationSnapshot,
     ci_qualification_snapshot_digest,
+    ci_slice_decision_digest,
 )
 from three_workflow_delivery_v3.repository.compiler import (
     CompilationContext,
@@ -62,11 +62,66 @@ from three_workflow_delivery_v3.repository.node_provider import (
     ProjectNode,
 )
 
-if TYPE_CHECKING:
-    from collections.abc import Sequence
-
 REPO_ROOT = Path(__file__).resolve().parents[6]
-WORKFLOW_PATH = REPO_ROOT / ".github/workflows/workflow-delivery-v3-ci.yml"
+CI_WORKFLOW = REPO_ROOT / ".github/workflows/workflow-delivery-v3-ci.yml"
+BUDDY_WORKFLOW = (
+    REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
+)
+
+
+def test_ci_scenario_uses_permanent_root_hk_static_reference() -> None:
+    """Run the unconditional index-bound HK step through permanent root HK."""
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    hk = (REPO_ROOT / "hk.pkl").read_text(encoding="utf-8")
+
+    assert "Run permanent root HK and static-reference policy" in workflow
+    assert "mise exec -- hk --no-progress check" in workflow
+    assert '["hcoona-release-smoke-npm-static-reference"]' in hk
+    assert "--source-kind index" in hk
+    assert "--source-kind worktree" not in hk
+
+
+def test_live_scenario_has_no_external_or_caller_supplied_policy_result() -> (
+    None
+):
+    """Let the evaluator form exact-target evidence in the current run."""
+    workflow = BUDDY_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "Prepare static-reference authorities" in workflow
+    assert "three-workflow-delivery-v3 release evaluate-live-eligibility" in (
+        workflow
+    )
+    assert '--target "${GITHUB_SHA}"' in workflow
+    assert "workflow_delivery_v3_static_reference.py" not in workflow
+    assert "--consumer-policy" not in workflow
+
+
+def test_manual_worktree_scenario_is_isolated_in_mise() -> None:
+    """Expose worktree feedback only through its explicit manual task."""
+    mise = (REPO_ROOT / "mise.toml").read_text(encoding="utf-8")
+    hk = (REPO_ROOT / "hk.pkl").read_text(encoding="utf-8")
+    task_start = mise.index('[tasks."check:static-reference-worktree"]')
+    task_end = mise.index("\n\n", task_start)
+    task = mise[task_start:task_end]
+
+    assert "--source-kind worktree" in task
+    assert "prepare:static-reference-authorities" in task
+    assert "check:static-reference-worktree" not in hk
+    assert "--source-kind worktree" not in hk
+
+
+def test_workflows_omit_all_consumer_policy_spellings() -> None:
+    """Reject both CLI and Python spellings in delivered workflows."""
+    workflows = (
+        CI_WORKFLOW.read_text(encoding="utf-8"),
+        BUDDY_WORKFLOW.read_text(encoding="utf-8"),
+    )
+
+    assert all("--consumer-policy" not in text for text in workflows)
+    assert all("consumer_policy" not in text for text in workflows)
+
+
+WORKFLOW_PATH = CI_WORKFLOW
 V1_CI_PATH = REPO_ROOT / ".github/workflows/ci.yml"
 DISABLED_GOVERNANCE_FIXTURE = (
     REPO_ROOT
@@ -77,10 +132,9 @@ HK_CONFIG = REPO_ROOT / "hk.pkl"
 HK_SUPPORT = REPO_ROOT / "src/private/lib/hk"
 HK_RANGE_HELPER = Path("eng/scripts/workflow_delivery_v3_hk.py")
 CONTROL_STEP_NAME = "v3-control-pytest"
-CONSUMER_STEP_NAME = "hcoona-release-smoke-npm-consumer-policy"
+STATIC_REFERENCE_STEP_NAME = "hcoona-release-smoke-npm-static-reference"
 POLICY_PATH = "eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml"
 SHADOW_CHECK_NAME = "Workflow Delivery v3 / hcoona-release-smoke-npm (shadow)"
-SCAN_ERROR_EXIT_CODE = 2
 
 SHA_A = "a" * 40
 SHA_B = "b" * 40
@@ -95,33 +149,7 @@ RUN_ATTEMPT = 2
 PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 PROJECT_SOURCE = f"{PRODUCT_PATH}/src/index.ts"
 UNRELATED_PRODUCT_SOURCE = "src/public/lib/hcoona-release-smoke/src/index.ts"
-
-
-def _load_consumer_policy() -> Any:
-    script = REPO_ROOT / "eng/scripts/workflow_delivery_v3_consumer_policy.py"
-    spec = importlib.util.spec_from_file_location(
-        "_workflow_delivery_v3_scenario_consumer_policy",
-        script,
-    )
-    if spec is None or spec.loader is None:
-        message = f"cannot load consumer-policy module from {script}"
-        raise AssertionError(message)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_CONSUMER_POLICY = _load_consumer_policy()
-ACCEPTANCE_FIXTURE_PATH = _CONSUMER_POLICY.ACCEPTANCE_FIXTURE_PATH
-ACCEPTANCE_NPM_MANIFEST_PATH = _CONSUMER_POLICY.ACCEPTANCE_NPM_MANIFEST_PATH
-APPROVED_CONSUMER_EXCEPTIONS = _CONSUMER_POLICY.APPROVED_CONSUMER_EXCEPTIONS
-DEPENDENCY_SURFACE_CATALOG = _CONSUMER_POLICY.DEPENDENCY_SURFACE_CATALOG
-OWN_DECLARATION_PATH = _CONSUMER_POLICY.OWN_DECLARATION_PATH
-PACKAGE_NAME = _CONSUMER_POLICY.PACKAGE_NAME
-classify_dependency_surface = _CONSUMER_POLICY.classify_dependency_surface
-consumer_policy_main = _CONSUMER_POLICY.main
-scan_consumer_policy = _CONSUMER_POLICY.scan_consumer_policy
+GIT_TRANSITIONS = ("add", "modify", "delete", "rename-out", "rename-in")
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,81 +159,6 @@ class HistoryChange:
     kind: str
     path: str
     old_path: str | None = None
-
-
-SURFACE_CASES = (
-    (
-        "dependency-manifest",
-        "consumer/package.json",
-        json.dumps(
-            {
-                "name": "ordinary-consumer",
-                "dependencies": {PACKAGE_NAME: "^1.2.3"},
-            },
-        ),
-    ),
-    (
-        "lockfile",
-        "consumer/package-lock.json",
-        json.dumps(
-            {
-                "lockfileVersion": 3,
-                "packages": {
-                    f"node_modules/{PACKAGE_NAME}": {"version": "1.2.3"},
-                },
-            },
-        ),
-    ),
-    (
-        "workflow",
-        ".github/workflows/consumer.yml",
-        (
-            "name: consumer\n"
-            "on: push\n"
-            "jobs:\n"
-            "  consume:\n"
-            "    runs-on: ubuntu-latest\n"
-            "    steps:\n"
-            f"      - run: pnpm add --save-exact {PACKAGE_NAME}@1.2.3\n"
-        ),
-    ),
-    (
-        "composite-action",
-        ".github/actions/consumer/action.yml",
-        json.dumps(
-            {
-                "runs": {
-                    "using": "composite",
-                    "steps": [
-                        {
-                            "run": (
-                                f"pnpm add --save-exact {PACKAGE_NAME}@1.2.3"
-                            ),
-                            "shell": "bash",
-                        },
-                    ],
-                },
-            },
-        ),
-    ),
-    (
-        "install-bootstrap-script",
-        "tools/install-consumer.sh",
-        f"npm install --ignore-scripts {PACKAGE_NAME}@1.2.3\n",
-    ),
-    (
-        "dependency-configuration",
-        "renovate.json",
-        json.dumps(
-            {
-                "packageRules": [
-                    {"matchPackageNames": [PACKAGE_NAME]},
-                ],
-            },
-        ),
-    ),
-)
-GIT_TRANSITIONS = ("add", "modify", "delete", "rename-out", "rename-in")
 
 
 def _pr_candidate() -> CiCandidate:
@@ -495,7 +448,7 @@ def _workflow_step(job_id: str, name: str) -> dict[str, Any]:
 
 
 def _run(
-    command: Sequence[str],
+    command: tuple[str, ...],
     *,
     cwd: Path,
 ) -> subprocess.CompletedProcess[str]:
@@ -530,7 +483,7 @@ def _commit(repo: Path, message: str) -> str:
 def _initialize_hk_repository(
     repo: Path,
     *,
-    baseline_paths: Sequence[str] = (),
+    baseline_paths: tuple[str, ...] = (),
 ) -> str:
     repo.mkdir()
     shutil.copy2(HK_CONFIG, repo / "hk.pkl")
@@ -560,7 +513,8 @@ def _hk_executable() -> str:
     executable = Path(install_root) / "hk"
     version = _run((str(executable), "--version"), cwd=REPO_ROOT)
     active_version = _run(
-        ("mise", "current", "hk"), cwd=REPO_ROOT
+        ("mise", "current", "hk"),
+        cwd=REPO_ROOT,
     ).stdout.strip()
     assert version.stdout.strip() == f"hk {active_version}"
     return str(executable)
@@ -645,24 +599,20 @@ def _hk_step_for_all(repo: Path, step_name: str) -> dict[str, Any]:
     return _hk_step_from_result(result, step_name)
 
 
-def _history_change(
-    category: str,
-    surface_path: str,
-    transition: str,
-) -> HistoryChange:
-    archive_path = f"archive/{category}.txt"
+def _history_change(path: str, transition: str) -> HistoryChange:
+    archive_path = "archive/static-reference-trigger.txt"
     if transition == "rename-out":
-        return HistoryChange("rename", archive_path, old_path=surface_path)
+        return HistoryChange("rename", archive_path, old_path=path)
     if transition == "rename-in":
-        return HistoryChange("rename", surface_path, old_path=archive_path)
-    return HistoryChange(transition, surface_path)
+        return HistoryChange("rename", path, old_path=archive_path)
+    return HistoryChange(transition, path)
 
 
 def _apply_history_change(repo: Path, change: HistoryChange) -> None:
     if change.kind == "add":
-        _write(repo, change.path, "added dependency surface\n")
+        _write(repo, change.path, "added static-reference trigger\n")
     elif change.kind == "modify":
-        _write(repo, change.path, "modified dependency surface\n")
+        _write(repo, change.path, "modified static-reference trigger\n")
     elif change.kind == "delete":
         (repo / change.path).unlink()
     elif change.kind == "rename":
@@ -674,26 +624,11 @@ def _apply_history_change(repo: Path, change: HistoryChange) -> None:
         raise AssertionError(message)
 
 
-def _initialize_policy_repository(repo: Path) -> tuple[Path, str]:
-    repo.mkdir()
-    for path in (
-        OWN_DECLARATION_PATH,
-        ACCEPTANCE_FIXTURE_PATH,
-        ACCEPTANCE_NPM_MANIFEST_PATH,
-    ):
-        source = REPO_ROOT / path
-        destination = repo / path
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
-    _git(repo, "init", "--quiet")
-    _git(repo, "config", "user.name", "Consumer Policy Scenario")
-    _git(
-        repo,
-        "config",
-        "user.email",
-        "consumer-policy-scenario@example.invalid",
-    )
-    return repo, _commit(repo, "approved exceptions")
+def _static_reference_hk_block() -> str:
+    hk_config = HK_CONFIG.read_text(encoding="utf-8")
+    start = hk_config.index(f'["{STATIC_REFERENCE_STEP_NAME}"]')
+    end = hk_config.index("\n  }\n", start) + len("\n  }\n")
+    return hk_config[start:end]
 
 
 def test_ci_scenario_project_source_change_selects_complete_slice() -> None:
@@ -801,7 +736,7 @@ def test_ci_scenario_slice_validation_selects_full_slice_without_synthetic_range
         "str",
         _workflow_step(
             "root-hk",
-            "Run permanent root HK and consumer policy",
+            "Run permanent root HK and static-reference policy",
         )["run"],
     )
     records = (
@@ -1211,7 +1146,7 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
 def test_ci_scenario_policy_only_selects_control_pytest_not_unrelated_source(
     tmp_path: Path,
 ) -> None:
-    """Exercise literal LLD CI scenario 7 with real Git and HK plans."""
+    """Keep control bounded while the explicit index scan stays universal."""
     policy_repo = tmp_path / "policy-repo"
     policy_base = _initialize_hk_repository(policy_repo)
     _write(policy_repo, POLICY_PATH, "policy\n")
@@ -1223,11 +1158,11 @@ def test_ci_scenario_policy_only_selects_control_pytest_not_unrelated_source(
         policy_head,
         CONTROL_STEP_NAME,
     )
-    policy_consumer = _hk_step_for_range(
+    policy_static_reference = _hk_step_for_range(
         policy_repo,
         policy_base,
         policy_head,
-        CONSUMER_STEP_NAME,
+        STATIC_REFERENCE_STEP_NAME,
     )
 
     product_repo = tmp_path / "unrelated-product-repo"
@@ -1245,35 +1180,36 @@ def test_ci_scenario_policy_only_selects_control_pytest_not_unrelated_source(
         product_head,
         CONTROL_STEP_NAME,
     )
+    product_static_reference = _hk_step_for_range(
+        product_repo,
+        product_base,
+        product_head,
+        STATIC_REFERENCE_STEP_NAME,
+    )
 
     assert policy_paths == (POLICY_PATH,)
     assert policy_control["name"] == CONTROL_STEP_NAME
     assert policy_control["status"] == "included"
     assert policy_control["fileCount"] == 1
-    assert policy_consumer["name"] == CONSUMER_STEP_NAME
-    assert policy_consumer["status"] == "skipped"
-    assert policy_consumer["fileCount"] == 0
+    assert policy_static_reference["name"] == STATIC_REFERENCE_STEP_NAME
+    assert policy_static_reference["status"] == "included"
+    assert policy_static_reference["fileCount"] == 1
     assert product_paths == (UNRELATED_PRODUCT_SOURCE,)
     assert product_control["name"] == CONTROL_STEP_NAME
     assert product_control["status"] == "skipped"
     assert product_control["fileCount"] == 0
+    assert product_static_reference["name"] == STATIC_REFERENCE_STEP_NAME
+    assert product_static_reference["status"] == "included"
+    assert product_static_reference["fileCount"] == 1
+    assert "--source-kind index" in _static_reference_hk_block()
 
 
-def test_ci_scenario_consumer_policy_trigger_coverage(
+def test_ci_scenario_static_reference_trigger_is_unconditional_and_index_bound(
     tmp_path: Path,
 ) -> None:
-    """Exercise literal LLD CI scenario 8 across every category/history form."""
-    categories = tuple(rule.category for rule in DEPENDENCY_SURFACE_CATALOG)
+    """Retain Git-transition coverage without a broad consumer glob."""
+    surface_path = "unrelated/static-reference-trigger.txt"
 
-    assert categories == tuple(case[0] for case in SURFACE_CASES)
-    assert categories == (
-        "dependency-manifest",
-        "lockfile",
-        "workflow",
-        "composite-action",
-        "install-bootstrap-script",
-        "dependency-configuration",
-    )
     assert GIT_TRANSITIONS == (
         "add",
         "modify",
@@ -1282,221 +1218,64 @@ def test_ci_scenario_consumer_policy_trigger_coverage(
         "rename-in",
     )
 
-    for category, surface_path, _content in SURFACE_CASES:
-        for transition in GIT_TRANSITIONS:
-            change = _history_change(category, surface_path, transition)
-            baseline_paths = (
-                (change.old_path or change.path,)
-                if change.kind in {"modify", "delete", "rename"}
-                else ()
-            )
-            repo = tmp_path / f"{category}-{transition}"
-            base = _initialize_hk_repository(
-                repo,
-                baseline_paths=baseline_paths,
-            )
-            _apply_history_change(repo, change)
-            head = _commit(repo, f"{category} {transition}")
-            paths = _changed_paths(repo, base, head)
-            step = _hk_step_for_range(
-                repo,
-                base,
-                head,
-                CONSUMER_STEP_NAME,
-            )
-            expected_paths = (
-                (cast("str", change.old_path), change.path)
-                if change.kind == "rename"
-                else (change.path,)
-            )
+    for transition in GIT_TRANSITIONS:
+        change = _history_change(surface_path, transition)
+        baseline_paths = (
+            (change.old_path or change.path,)
+            if change.kind in {"modify", "delete", "rename"}
+            else ()
+        )
+        repo = tmp_path / transition
+        base = _initialize_hk_repository(
+            repo,
+            baseline_paths=baseline_paths,
+        )
+        _apply_history_change(repo, change)
+        head = _commit(repo, f"static-reference {transition}")
+        paths = _changed_paths(repo, base, head)
+        step = _hk_step_for_range(
+            repo,
+            base,
+            head,
+            STATIC_REFERENCE_STEP_NAME,
+        )
+        expected_paths = (
+            (cast("str", change.old_path), change.path)
+            if change.kind == "rename"
+            else (change.path,)
+        )
 
-            assert paths == expected_paths
-            assert step["name"] == CONSUMER_STEP_NAME
-            assert step["status"] == "included"
-            assert step["fileCount"] == 1
+        assert paths == expected_paths
+        assert step["name"] == STATIC_REFERENCE_STEP_NAME
+        assert step["status"] == "included"
+        assert step["fileCount"] == len(expected_paths)
 
     manual_repo = tmp_path / "slice-validation"
     _initialize_hk_repository(manual_repo)
-    manual = _hk_step_for_all(manual_repo, CONSUMER_STEP_NAME)
+    manual = _hk_step_for_all(manual_repo, STATIC_REFERENCE_STEP_NAME)
+    static_reference = _static_reference_hk_block()
+    expected_invocation = (
+        "python eng/scripts/hk_exec.py --timeout-seconds 300 "
+        "uv run --python 3.13 --package three-workflow-delivery-v3 "
+        "python eng/scripts/workflow_delivery_v3_static_reference.py "
+        "--repository-root . --source-kind index"
+    )
 
-    assert manual["name"] == CONSUMER_STEP_NAME
+    assert manual["name"] == STATIC_REFERENCE_STEP_NAME
     assert manual["status"] == "included"
     assert cast("int", manual["fileCount"]) > 0
-
-
-def test_ci_scenario_consumer_reference_blocks_except_acceptance_fixtures(  # noqa: PLR0915
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Exercise literal LLD CI scenario 9 and all exact exceptions."""
-    expected_categories = tuple(case[0] for case in SURFACE_CASES)
-    hk_config = HK_CONFIG.read_text(encoding="utf-8")
-    step_start = hk_config.index(f'["{CONSUMER_STEP_NAME}"]')
-    step_end = hk_config.index("\n  }", step_start)
-    step_config = hk_config[step_start:step_end]
-
-    assert expected_categories == (
-        "dependency-manifest",
-        "lockfile",
-        "workflow",
-        "composite-action",
-        "install-bootstrap-script",
-        "dependency-configuration",
-    )
-    assert (
-        "workflow_delivery_v3_consumer_policy.py --repository-root ."
-        in step_config
-    )
-
-    for category, path, content in SURFACE_CASES:
-        repository, target = _initialize_policy_repository(
-            tmp_path / f"ordinary-{category}",
-        )
-        _write(repository, path, content)
-        result = scan_consumer_policy(repository)
-        return_code = consumer_policy_main(
-            ["--repository-root", str(repository)],
-        )
-        captured = capsys.readouterr()
-        rule = classify_dependency_surface(path)
-
-        assert rule is not None
-        assert rule.category == category
-        assert result.target == target
-        assert result.consumers == (path,)
-        assert path in {surface.path for surface in result.scanned_surfaces}
-        assert tuple(
-            surface.path for surface in result.admitted_exceptions
-        ) == tuple(
-            sorted(
-                (
-                    OWN_DECLARATION_PATH,
-                    ACCEPTANCE_FIXTURE_PATH,
-                    ACCEPTANCE_NPM_MANIFEST_PATH,
-                )
-            )
-        )
-        assert return_code == 1
-        assert captured.err == ""
-        assert json.loads(captured.out)["consumers"] == [path]
-
-    approved_repo, approved_target = _initialize_policy_repository(
-        tmp_path / "approved-exceptions",
-    )
-    approved = scan_consumer_policy(approved_repo)
-    approved_return_code = consumer_policy_main(
-        ["--repository-root", str(approved_repo)],
-    )
-    approved_output = capsys.readouterr()
-    expected_exceptions = tuple(
-        sorted(APPROVED_CONSUMER_EXCEPTIONS, key=lambda item: item.path),
-    )
-
-    assert approved.target == approved_target
-    assert approved.consumers == ()
-    assert approved_return_code == 0
-    assert approved_output.err == ""
-    assert json.loads(approved_output.out)["consumers"] == []
-    assert tuple(
-        (
-            exception.path,
-            exception.category,
-            exception.context,
-            exception.content_digest,
-        )
-        for exception in APPROVED_CONSUMER_EXCEPTIONS
-    ) == (
-        (
-            OWN_DECLARATION_PATH,
-            "dependency-manifest",
-            "name",
-            (
-                "sha256:"
-                "a7d84bac91fe5f9fa7ccfbf46cd065cd85ded95188046d96f6f2c9ce97775566"
-            ),
-        ),
-        (
-            ACCEPTANCE_FIXTURE_PATH,
-            "dependency-manifest",
-            f"dependencies.{PACKAGE_NAME}",
-            (
-                "sha256:"
-                "a28d7f1e161df6948cdc2f122e78b9a38f425b481877178e29c8cd8ef30b0aa2"
-            ),
-        ),
-        (
-            ACCEPTANCE_NPM_MANIFEST_PATH,
-            "dependency-manifest",
-            "name",
-            (
-                "sha256:"
-                "d032b543a77820f9660a629e7deee6140664150a2c0a7de8048d37947afc957e"
-            ),
-        ),
-    )
-    assert tuple(
-        (surface.path, surface.content_digest)
-        for surface in approved.admitted_exceptions
-    ) == tuple(
-        (exception.path, exception.content_digest)
-        for exception in expected_exceptions
-    )
-
-    for mutation in (
-        "path",
-        "context",
-        "digest",
-        "own-declaration-digest",
-    ):
-        repository, _target = _initialize_policy_repository(
-            tmp_path / f"mutated-{mutation}",
-        )
-        expected_path = ACCEPTANCE_FIXTURE_PATH
-        fixture = repository / ACCEPTANCE_FIXTURE_PATH
-        if mutation == "path":
-            fixture.rename(
-                fixture.with_name("consumer-policy-acceptance-moved.json"),
-            )
-            with pytest.raises(
-                ValueError,
-                match="approved consumer-policy exception is missing",
-            ):
-                scan_consumer_policy(repository)
-        elif mutation == "context":
-            document = json.loads(fixture.read_text(encoding="utf-8"))
-            document["devDependencies"] = document.pop("dependencies")
-            fixture.write_text(json.dumps(document), encoding="utf-8")
-        elif mutation == "own-declaration-digest":
-            expected_path = OWN_DECLARATION_PATH
-            own_declaration = repository / OWN_DECLARATION_PATH
-            own_declaration.write_bytes(own_declaration.read_bytes() + b"\n")
-        else:
-            fixture.write_bytes(fixture.read_bytes() + b"\n")
-
-        return_code = consumer_policy_main(
-            ["--repository-root", str(repository)],
-        )
-        captured = capsys.readouterr()
-
-        if mutation == "path":
-            assert return_code == SCAN_ERROR_EXIT_CODE
-            assert captured.out == ""
-            assert "approved consumer-policy exception is missing" in (
-                captured.err
-            )
-        else:
-            reopened = scan_consumer_policy(repository)
-            assert return_code == 1
-            assert captured.err == ""
-            assert json.loads(captured.out)["consumers"] == [expected_path]
-            assert reopened.consumers == (expected_path,)
-            assert expected_path not in {
-                surface.path for surface in reopened.admitted_exceptions
-            }
+    assert f'check =\n      "{expected_invocation}"' in static_reference
+    assert static_reference.count("--source-kind") == 1
+    assert static_reference.count("--source-kind index") == 1
+    assert "--source-kind worktree" not in static_reference
+    assert "git-target" not in static_reference
+    assert "--target" not in static_reference
+    assert "glob =" not in static_reference
+    assert "when =" not in static_reference
 
 
 def test_completed_failure_is_failure_not_incomplete() -> None:
-    """Additively pin scenario 3 as a completed failed project-test command."""
+    """Pin scenario 3 as a completed failed project-test command."""
     plan = _incremental_plan()
     completed_failure_results = _lane_results(
         plan,
@@ -1757,6 +1536,7 @@ def test_reserved_ci_scenario_inventory_is_exact() -> None:
     )
 
     assert reserved == (
+        "test_ci_scenario_uses_permanent_root_hk_static_reference",
         "test_ci_scenario_project_source_change_selects_complete_slice",
         "test_ci_scenario_slice_validation_selects_full_slice_without_synthetic_range",
         "test_ci_scenario_project_test_failure_fails_shadow_check",
@@ -1764,7 +1544,174 @@ def test_reserved_ci_scenario_inventory_is_exact() -> None:
         "test_ci_scenario_missing_comparison_blocks_without_full_fallback",
         "test_ci_scenario_coexistence_emits_no_authoritative_decision",
         "test_ci_scenario_policy_only_selects_control_pytest_not_unrelated_source",
-        "test_ci_scenario_consumer_policy_trigger_coverage",
-        "test_ci_scenario_consumer_reference_blocks_except_acceptance_fixtures",
+        "test_ci_scenario_static_reference_trigger_is_unconditional_and_index_bound",
         "test_ci_scenario_precoexistence_bootstrap_preserves_blocked_decision",
+    )
+
+
+@pytest.mark.parametrize(
+    "pull_request_number",
+    [
+        pytest.param(True, id="bool-true"),
+        pytest.param(0, id="zero"),
+        pytest.param(-1, id="negative"),
+        pytest.param(42.0, id="float"),
+        pytest.param("42", id="string"),
+    ],
+)
+def test_precoexistence_bootstrap_projection_rejects_invalid_pr_number(
+    pull_request_number: object,
+) -> None:
+    """Reject non-exact or nonpositive pull-request numbers without mutation."""
+    plan = _incremental_plan(changed_paths=("unmodeled/bootstrap.txt",))
+    decision = _finalize(plan, _lane_results(plan), elapsed_seconds=60)
+    valid_request = _bootstrap_request()
+    decision_snapshot = replace(decision)
+    decision_digest = ci_slice_decision_digest(decision)
+    request_snapshot = replace(valid_request)
+    invalid_request = replace(
+        valid_request,
+        pull_request_number=cast("Any", pull_request_number),
+    )
+    invalid_request_snapshot = replace(invalid_request)
+
+    with pytest.raises(
+        TypeError,
+        match=(r"\Apull_request_number must be an exact positive integer\Z"),
+    ) as exception:
+        qualifies_precoexistence_bootstrap_projection(
+            decision,
+            request=invalid_request,
+            base_contains_ci_workflow=False,
+        )
+
+    assert exception.type is TypeError
+    assert (
+        str(exception.value)
+        == "pull_request_number must be an exact positive integer"
+    )
+    assert decision == decision_snapshot
+    assert ci_slice_decision_digest(decision) == decision_digest
+    assert valid_request == request_snapshot
+    assert invalid_request == invalid_request_snapshot
+    assert qualifies_precoexistence_bootstrap_projection(
+        decision,
+        request=valid_request,
+        base_contains_ci_workflow=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_sha"),
+    [
+        pytest.param(
+            "base_sha",
+            SHA_A[:-1],
+            id="base-malformed-short",
+        ),
+        pytest.param("base_sha", None, id="base-non-string"),
+        pytest.param(
+            "head_sha",
+            "g" * 40,
+            id="head-malformed-non-hex",
+        ),
+        pytest.param("head_sha", b"b" * 40, id="head-non-string"),
+        pytest.param(
+            "tested_merge_sha",
+            SHA_C.upper(),
+            id="tested-merge-malformed-uppercase",
+        ),
+        pytest.param(
+            "tested_merge_sha",
+            42,
+            id="tested-merge-non-string",
+        ),
+    ],
+)
+def test_precoexistence_bootstrap_projection_rejects_invalid_sha_fields(
+    field: str,
+    invalid_sha: object,
+) -> None:
+    """Reject every malformed event SHA field without changing valid inputs."""
+    plan = _incremental_plan(changed_paths=("unmodeled/bootstrap.txt",))
+    decision = _finalize(plan, _lane_results(plan), elapsed_seconds=60)
+    valid_request = _bootstrap_request()
+    decision_snapshot = replace(decision)
+    decision_digest = ci_slice_decision_digest(decision)
+    request_snapshot = replace(valid_request)
+    invalid_request = replace(
+        valid_request,
+        **cast("Any", {field: invalid_sha}),
+    )
+    invalid_request_snapshot = replace(invalid_request)
+
+    with pytest.raises(
+        ValueError,
+        match=r"\Abootstrap pull-request identity is unavailable\Z",
+    ) as exception:
+        qualifies_precoexistence_bootstrap_projection(
+            decision,
+            request=invalid_request,
+            base_contains_ci_workflow=False,
+        )
+
+    assert exception.type is ValueError
+    assert str(exception.value) == (
+        "bootstrap pull-request identity is unavailable"
+    )
+    assert decision == decision_snapshot
+    assert ci_slice_decision_digest(decision) == decision_digest
+    assert valid_request == request_snapshot
+    assert invalid_request == invalid_request_snapshot
+    assert qualifies_precoexistence_bootstrap_projection(
+        decision,
+        request=valid_request,
+        base_contains_ci_workflow=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "base_contains_ci_workflow",
+    [
+        pytest.param(0, id="integer-zero"),
+        pytest.param(1, id="integer-one"),
+        pytest.param(None, id="none"),
+        pytest.param("false", id="string-false"),
+    ],
+)
+def test_precoexistence_bootstrap_projection_requires_exact_workflow_bool(
+    base_contains_ci_workflow: object,
+) -> None:
+    """Reject truthy and falsey non-bools without changing valid inputs."""
+    plan = _incremental_plan(changed_paths=("unmodeled/bootstrap.txt",))
+    decision = _finalize(plan, _lane_results(plan), elapsed_seconds=60)
+    valid_request = _bootstrap_request()
+    decision_snapshot = replace(decision)
+    decision_digest = ci_slice_decision_digest(decision)
+    request_snapshot = replace(valid_request)
+
+    with pytest.raises(
+        TypeError,
+        match=r"\Abase_contains_ci_workflow must be an exact bool\Z",
+    ) as exception:
+        qualifies_precoexistence_bootstrap_projection(
+            decision,
+            request=valid_request,
+            base_contains_ci_workflow=cast(
+                "Any",
+                base_contains_ci_workflow,
+            ),
+        )
+
+    assert exception.type is TypeError
+    assert str(exception.value) == (
+        "base_contains_ci_workflow must be an exact bool"
+    )
+    assert decision == decision_snapshot
+    assert ci_slice_decision_digest(decision) == decision_digest
+    assert valid_request == request_snapshot
+    assert qualifies_precoexistence_bootstrap_projection(
+        decision,
+        request=valid_request,
+        base_contains_ci_workflow=False,
     )
