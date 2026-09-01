@@ -36,7 +36,7 @@ from html import escape
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Any, Never
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlsplit
 from urllib.request import url2pathname
 from xml.etree.ElementTree import Comment, Element, ParseError
 
@@ -2320,7 +2320,7 @@ def file_url_path(value: str) -> Path | None:
     parsed = urlsplit(value)
     if parsed.scheme.casefold() != "file" or parsed.query or parsed.netloc not in {"", "localhost"}:
         return None
-    return Path(url2pathname(unquote(parsed.path))).resolve()
+    return Path(url2pathname(parsed.path)).resolve()
 
 def render_pdf(html_path: Path, output_path: Path, browser_path: Path, allowed_files: set[Path]) -> None:
     try:

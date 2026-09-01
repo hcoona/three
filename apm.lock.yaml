@@ -204,7 +204,7 @@ dependencies:
     .agents/skills/scholarly-print-assembly/references/assembly-contract.md: sha256:f73fa48c8fd9d0adc02b7ebacf0566e9e6b81cabc37d1be3ddd4d95750bfbbeb
     .agents/skills/scholarly-print-assembly/references/mixed-script-print.md: sha256:9bad50264392685eb970c2d3fd01c037c2854cef40c78eabd87a3e844cf885ff
     .agents/skills/scholarly-print-assembly/references/music-notation-markup.md: sha256:795558edf5480734ca3e0964f5e2c591ffcc22e687ab8e2611f58d357541d44f
-    .agents/skills/scholarly-print-assembly/scripts/assemble_print.py: sha256:d29d37381670df7c10418d0dfdafc20edc14968a3d74329d3f275631e0fdf8d8
+    .agents/skills/scholarly-print-assembly/scripts/assemble_print.py: sha256:f5685c34e5884c53d3727637d99a4875766769e46dc70c037f941c73f0a0af3f
     .agents/skills/scholarly-render-qa/SKILL.md: sha256:1c3238bf333077091475b59f56bf0afe8dca5bb5db62c44d04cda079ab9235fd
     .agents/skills/scholarly-render-qa/assets/assembly-manifest.schema.json: sha256:80528b0368071f409cba2244ffb6932cf4f368e6ae4659054f5699f7325debdf
     .agents/skills/scholarly-render-qa/assets/publication-profile.json: sha256:ba56046efd78fe5b8589ea429e20e777de06f7e759fba23bc3ef446ba4d2312c
@@ -3820,7 +3820,7 @@ deployments:
   owners:
   - ./src/private/lib/scholarly-publication
   active_owner: ./src/private/lib/scholarly-publication
-  content_hash: sha256:d29d37381670df7c10418d0dfdafc20edc14968a3d74329d3f275631e0fdf8d8
+  content_hash: sha256:f5685c34e5884c53d3727637d99a4875766769e46dc70c037f941c73f0a0af3f
 - kind: project-relative
   target: copilot
   value: .agents/skills/scholarly-render-qa

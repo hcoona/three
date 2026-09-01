@@ -1745,6 +1745,16 @@ class AssemblePrintScenarioTests(unittest.TestCase):
                 manifest = read_json(manifest_path)
                 self.assertIsNone(manifest["outputs"]["draft_pdf"])
 
+    def test_file_url_path_preserves_percent_escape_like_component(
+        self,
+    ) -> None:
+        publication = self.fresh_publication("%41-publication")
+        html = publication / "index.html"
+
+        self.assertEqual(
+            html.resolve(), assemble_print.file_url_path(html.as_uri())
+        )
+
     def test_render_pdf_enforces_fixed_deadline_and_cleans_browser(
         self,
     ) -> None:
