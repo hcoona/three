@@ -13,14 +13,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import importlib
 import json
 import math
+import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -28,38 +33,29 @@ from unittest import mock
 from jsonschema import Draft202012Validator
 
 sys.dont_write_bytecode = True
-
 PUBLICATION_ROOT = Path(__file__).resolve().parents[1]
 SKILL = PUBLICATION_ROOT / "skills" / "scholarly-render-qa"
 SUPPORT_ROOT = PUBLICATION_ROOT / "tests"
 sys.path.insert(0, str(SUPPORT_ROOT))
-
-publication_test_support: Any = importlib.import_module(
-    "publication_test_support"
-)
-MainResult = publication_test_support.MainResult
-PdfPage = publication_test_support.PdfPage
-add_pdf_javascript = publication_test_support.add_pdf_javascript
-add_pdf_type3_font = publication_test_support.add_pdf_type3_font
-add_pdf_vector_mark = publication_test_support.add_pdf_vector_mark
-asset_record = publication_test_support.asset_record
-build_rendered_publication = publication_test_support.build_rendered_publication
-clear_pdf_page_contents = publication_test_support.clear_pdf_page_contents
-copy_tree = publication_test_support.copy_tree
-detect_browser = publication_test_support.detect_browser
-fixed_profile_ceiling = publication_test_support.fixed_profile_ceiling
-import_by_path = publication_test_support.import_by_path
-invoke_main = publication_test_support.invoke_main
-read_json = publication_test_support.read_json
-remove_pdf_font_programs = publication_test_support.remove_pdf_font_programs
-resolve_stable_asset = publication_test_support.resolve_stable_asset
-scale_pdf_user_unit = publication_test_support.scale_pdf_user_unit
-sha256_bytes = publication_test_support.sha256_bytes
-tree_snapshot = publication_test_support.tree_snapshot
-windows_short_path = publication_test_support.windows_short_path
-write_json = publication_test_support.write_json
-write_pdf = publication_test_support.write_pdf
-
+support: Any = importlib.import_module("publication_test_support")
+MainResult = support.MainResult
+PdfPage = support.PdfPage
+add_pdf_vector_mark = support.add_pdf_vector_mark
+asset_record = support.asset_record
+build_rendered_publication = support.build_rendered_publication
+clear_pdf_page_contents = support.clear_pdf_page_contents
+copy_tree = support.copy_tree
+detect_browser = support.detect_browser
+import_by_path = support.import_by_path
+invoke_main = support.invoke_main
+read_json = support.read_json
+remove_pdf_font_programs = support.remove_pdf_font_programs
+resolve_stable_asset = support.resolve_stable_asset
+scale_pdf_user_unit = support.scale_pdf_user_unit
+sha256_bytes = support.sha256_bytes
+tree_snapshot = support.tree_snapshot
+write_json = support.write_json
+write_pdf = support.write_pdf
 reconstruct_pdf = import_by_path(
     "scholarly_reconstruct_pdf_for_qa_tests",
     PUBLICATION_ROOT
@@ -81,19 +77,7 @@ audit_publication = import_by_path(
     SKILL / "scripts" / "audit_publication.py",
 )
 fitz: Any = importlib.import_module("fitz")
-
 BROWSER = detect_browser()
-CORE_CHECK_IDS = {
-    "manifest.integrity",
-    "html.offline-profile",
-    "render.geometry-overflow",
-    "pdf.fonts",
-    "pdf.actions-type3-text",
-    "figures.crop-bindings",
-    "render.repeatability",
-    "rasters.complete",
-    "publication.tree-unchanged",
-}
 CORE_CHECK_ORDER = (
     "manifest.integrity",
     "html.offline-profile",
@@ -105,80 +89,26 @@ CORE_CHECK_ORDER = (
     "rasters.complete",
     "publication.tree-unchanged",
 )
-OVERFLOW_FRAGMENT = (
-    '<h1 id="opening">Integrated publication</h1>\n'
-    '<p><span class="atomic">' + ("A" * 240) + "</span></p>\n"
-    "<!-- figure: integration-figure -->\n"
-)
-KEEP_TOGETHER_FRAGMENT = (
-    '<h1 id="opening">Integrated publication</h1>\n'
-    '<p class="keep-together">'
-    + ("A long scholarly paragraph must wrap within the printable width. " * 16)
-    + "</p>\n"
-    "<!-- figure: integration-figure -->\n"
-)
-PIPELINE_FRAGMENT_SENTINEL = "qa-fragment-body-sentinel-8f31d71a"
+PIPELINE_SENTINEL = "qa-outcome-observer-sentinel"
 PIPELINE_FRAGMENT = (
     '<h1 id="opening">Integrated publication</h1>\n'
-    f'<p><a href="#opening">{PIPELINE_FRAGMENT_SENTINEL}</a></p>\n'
+    f'<p><a href="#opening">{PIPELINE_SENTINEL}</a></p>\n'
     "<!-- figure: integration-figure -->\n"
 )
-NONCANONICAL_STABLE_PATHS = (
-    "../outside.bin",
-    "/absolute.bin",
-    "C:/absolute.bin",
-    "nested\\asset.bin",
-    "./x",
-    "a/./b",
-    "a//b",
-    "a/",
-)
 
 
-def add_pdf_external_actions(
-    path: Path,
-    uri_target: str,
-    file_target: str,
-) -> None:
-    """Add long URI and file actions without rendering visible content."""
+def _add_pdf_page_link(path: Path, link: dict[str, Any]) -> None:
     with fitz.open(path) as document:
-        page = document.load_page(0)
-        page.insert_link(
-            {
-                "kind": fitz.LINK_URI,
-                "from": fitz.Rect(24, 24, 72, 36),
-                "uri": uri_target,
-            }
-        )
-        page.insert_link(
-            {
-                "kind": fitz.LINK_LAUNCH,
-                "from": fitz.Rect(24, 40, 72, 52),
-                "file": file_target,
-            }
+        document.load_page(0).insert_link(
+            {"from": fitz.Rect(24, 24, 72, 36), **link}
         )
         document.saveIncr()
 
 
-def add_pdf_page_link(path: Path, link: dict[str, Any]) -> None:
-    """Add one page annotation link without visible content."""
-    with fitz.open(path) as document:
-        page = document.load_page(0)
-        page.insert_link(
-            {
-                "from": fitz.Rect(24, 24, 72, 36),
-                **link,
-            }
-        )
-        document.saveIncr()
-
-
-def add_pdf_named_destination(path: Path) -> None:
-    """Add a direct named destination that resolves to a document page."""
+def _add_pdf_named_destination(path: Path) -> None:
     with fitz.open(path) as document:
         document.new_page(width=360, height=480)
-        source_xref = document.page_xref(0)
-        target_xref = document.page_xref(1)
+        source_xref, target_xref = document.page_xref(0), document.page_xref(1)
         document.xref_set_key(
             document.pdf_catalog(),
             "Dests",
@@ -192,939 +122,150 @@ def add_pdf_named_destination(path: Path) -> None:
                 "/Rect [24 24 72 36] /Dest /terms >>"
             ),
         )
-        document.xref_set_key(
-            source_xref,
-            "Annots",
-            f"[{annotation_xref} 0 R]",
-        )
+        document.xref_set_key(source_xref, "Annots", f"[{annotation_xref} 0 R]")
         document.saveIncr()
 
 
-def add_pdf_unknown_action(path: Path, encoded_subtype: str) -> None:
-    """Add duplicate catalog references to one unknown PDF action subtype."""
+def _add_pdf_action(
+    path: Path,
+    subtype: str | None,
+    target: str | None = None,
+) -> None:
     with fitz.open(path) as document:
-        catalog = document.pdf_catalog()
         action_xref = document.get_new_xref()
+        suffix = "" if subtype is None else f" /S {subtype}"
+        target_entry = (
+            "" if target is None else f" /T <{target.encode('utf-8').hex()}>"
+        )
         document.update_object(
             action_xref,
-            f"<< /Type /Action /S /{encoded_subtype} >>",
+            f"<< /Type /Action{suffix}{target_entry} >>",
         )
         document.xref_set_key(
-            catalog,
-            "OpenAction",
-            f"{action_xref} 0 R",
-        )
-        document.xref_set_key(
-            catalog,
-            "AA",
-            f"<< /WC {action_xref} 0 R >>",
+            document.pdf_catalog(), "OpenAction", f"{action_xref} 0 R"
         )
         document.saveIncr()
 
 
-def pdf_action_observation(path: Path) -> dict[str, Any]:
-    """Inspect only the bounded PDF action evidence."""
+def _set_pdf_local_destination(
+    path: Path,
+    kind: str,
+    raw: str | None,
+    named_destination: tuple[str, str] | None = None,
+    next_subtype: str | None = None,
+) -> None:
+    with fitz.open(path) as document:
+        page_xref = document.page_xref(0)
+        if named_destination is not None:
+            name, destination = named_destination
+            document.xref_set_key(
+                document.pdf_catalog(),
+                "Dests",
+                f"<< /{name} {destination.format(page=page_xref)} >>",
+            )
+        value = None if raw is None else raw.format(page=page_xref)
+        next_entry = ""
+        if next_subtype is not None:
+            next_xref = document.get_new_xref()
+            document.update_object(
+                next_xref,
+                f"<< /Type /Action /S {next_subtype} >>",
+            )
+            next_entry = f" /Next {next_xref} 0 R"
+        if kind == "goto":
+            destination_entry = "" if value is None else f" /D {value}"
+            action_xref = document.get_new_xref()
+            document.update_object(
+                action_xref,
+                f"<< /Type /Action /S /GoTo{destination_entry}{next_entry} >>",
+            )
+            value = f"{action_xref} 0 R"
+        else:
+            assert value is not None
+        document.xref_set_key(
+            document.pdf_catalog(),
+            "OpenAction",
+            value,
+        )
+        document.saveIncr()
+
+
+def _set_pdf_direct_destination(
+    path: Path,
+    source: str,
+    raw: str,
+    named_destination: tuple[str, str] | None = None,
+) -> None:
+    with fitz.open(path) as document:
+        page_xref = document.page_xref(0)
+        if named_destination is not None:
+            name, destination = named_destination
+            document.xref_set_key(
+                document.pdf_catalog(),
+                "Dests",
+                f"<< /{name} {destination.format(page=page_xref)} >>",
+            )
+        value = raw.format(page=page_xref)
+        if source == "annotation":
+            annotation_xref = document.get_new_xref()
+            document.update_object(
+                annotation_xref,
+                (
+                    "<< /Type /Annot /Subtype /Link "
+                    f"/Rect [24 24 72 36] /Dest {value} >>"
+                ),
+            )
+            document.xref_set_key(
+                page_xref,
+                "Annots",
+                f"[{annotation_xref} 0 R]",
+            )
+        else:
+            assert source == "outline"
+            outline_xref = document.get_new_xref()
+            item_xref = document.get_new_xref()
+            document.update_object(
+                item_xref,
+                (
+                    f"<< /Title (QA destination) /Parent {outline_xref} 0 R "
+                    f"/Dest {value} >>"
+                ),
+            )
+            document.update_object(
+                outline_xref,
+                (
+                    f"<< /Type /Outlines /First {item_xref} 0 R "
+                    f"/Last {item_xref} 0 R /Count 1 >>"
+                ),
+            )
+            document.xref_set_key(
+                document.pdf_catalog(),
+                "Outlines",
+                f"{outline_xref} 0 R",
+            )
+        document.saveIncr()
+
+
+def _pdf_action_observation(path: Path) -> dict[str, Any]:
     with fitz.open(path) as document:
         return audit_publication.pdf_actions(document, fitz)
 
 
-def windows_extended_alias(path: Path) -> Path:
-    """Return the extended drive or UNC spelling of an absolute path."""
-    value = str(path.absolute())
-    if value.startswith("\\\\?\\"):
-        return Path(value)
-    if value.startswith("\\\\"):
-        return Path("\\\\?\\UNC\\" + value[2:])
-    return Path("\\\\?\\" + value)
+def _invoke(arguments: list[str]) -> MainResult:
+    return invoke_main(audit_publication, arguments, require_report=False)
 
 
-class AuditPublicationContractTests(unittest.TestCase):
-    @staticmethod
-    def schema_errors(
-        value: dict[str, Any],
-        schema_name: str = "qa-evidence.schema.json",
-    ) -> list[str]:
-        schema = read_json(SKILL / "assets" / schema_name)
-        return [
-            error.message
-            for error in Draft202012Validator(schema).iter_errors(value)
-        ]
-
-    @staticmethod
-    def minimal_evidence() -> dict[str, Any]:
-        digest = "0" * 64
-        asset = {"path": "artifact.bin", "sha256": digest, "bytes": 1}
-        publication_asset = {
-            **asset,
-            "path_base": "publication-root",
-        }
-        evidence_asset = {
-            **asset,
-            "path_base": "evidence-root",
-        }
-        tree = {
-            "files": 1,
-            "path_inventory_sha256": digest,
-            "fingerprint_sha256": digest,
-            "symlinks": [],
-            "special_nodes": [],
-        }
-        return {
-            "schema_version": "1.0",
-            "publication_id": "publication-1",
-            "auditor": {
-                "name": "audit_publication.py",
-                "version": "0.1.0",
-                "publication_profile": {
-                    "id": "scholarly-fragment-and-stylesheet-v1",
-                    "schema_version": "1.0",
-                    "sha256": digest,
-                },
-            },
-            "inputs": {"assembly_manifest": publication_asset},
-            "checks": [
-                {
-                    "id": identifier,
-                    "severity": "blocking",
-                    "passed": True,
-                    "message": "passed",
-                    "evidence": {},
-                }
-                for identifier in CORE_CHECK_ORDER
-            ],
-            "render_pdfs": {
-                "render_1": {
-                    **evidence_asset,
-                    "path": "independent-renders/render-1.pdf",
-                },
-                "render_2": {
-                    **evidence_asset,
-                    "path": "independent-renders/render-2.pdf",
-                },
-            },
-            "rasters": [
-                {
-                    "source": source,
-                    "page": 1,
-                    "asset": {
-                        **evidence_asset,
-                        "path": f"pages/{source}/page-0001.png",
-                    },
-                }
-                for source in ("canonical", "render-1", "render-2")
-            ],
-            "publication_tree": {
-                "algorithm": "sha256-tree-json-v1",
-                "scope": "manifest-declared-regular-files-no-symlinks",
-                "before": dict(tree),
-                "after": dict(tree),
-                "unchanged": True,
-            },
-            "human_review": {
-                "status": "required",
-                "required_scope": ["Inspect every raster."],
-            },
-            "mechanical_status": "pass",
-        }
-
-    def test_check_evidence_diagnostic_ceiling_is_recursive(self) -> None:
-        long_value = "diagnostic-" + ("x" * 1_000)
-        values = [f"finding-{index}" for index in range(30)]
-
-        bounded = audit_publication.bounded_diagnostic(
-            {"long": long_value, "many": values}
-        )
-
-        self.assertLessEqual(
-            len(bounded["long"]),
-            audit_publication.MAX_DIAGNOSTIC_STRING,
-        )
-        self.assertIn(sha256_bytes(long_value.encode()), bounded["long"])
-        self.assertEqual(30, bounded["many"]["total"])
-        self.assertEqual(5, bounded["many"]["omitted"])
-        self.assertEqual(25, len(bounded["many"]["samples"]))
-        self.assertEqual(
-            sha256_bytes(audit_publication.canonical_json(values)),
-            bounded["many"]["sha256"],
-        )
-
-    def test_candidate_layout_rejects_physical_ancestor_aliases(self) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-ancestor-identity-"
-        ) as temporary:
-            root = Path(temporary) / "stage"
-            evidence_parent = root / "evidence-owner"
-            release = root / "release-alias"
-            rasters = evidence_parent / "pages"
-            renders = evidence_parent / "independent-renders"
-            rasters.mkdir(parents=True)
-            renders.mkdir()
-            release.mkdir()
-            layout = audit_publication.ReviewLayout(
-                root,
-                evidence_parent / "qa-evidence.json",
-                release,
-                rasters,
-                renders,
-            )
-            original_samefile = Path.samefile
-            aliased_pair = frozenset((str(release), str(evidence_parent)))
-
-            def samefile(left: Path, right: Path) -> bool:
-                if frozenset((str(left), str(right))) == aliased_pair:
-                    return True
-                return original_samefile(left, right)
-
-            with (
-                mock.patch.object(Path, "samefile", new=samefile),
-                self.assertRaisesRegex(  # noqa: PT027
-                    audit_publication.AuditError,
-                    "overlap after resolving filesystem aliases",
-                ),
-            ):
-                audit_publication.validate_candidate_layout(layout)
-
-    @unittest.skipUnless(
-        sys.platform == "win32",
-        "Extended path aliases are Windows-specific.",
-    )
-    def test_extended_path_aliases_reject_publication_output_overlap(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-extended-identity-"
-        ) as temporary:
-            root = Path(temporary)
-            publication = root / "publication"
-            review = publication / "prior-review"
-            review.mkdir(parents=True)
-            (publication / "assembly-manifest.json").write_text(
-                "{}\n",
-                encoding="utf-8",
-            )
-            (publication / "index.html").write_text(
-                "prior publication\n",
-                encoding="utf-8",
-            )
-            (review / "prior-review.bin").write_bytes(b"prior review\n")
-            extended_publication = windows_extended_alias(publication)
-            extended_review = windows_extended_alias(review)
-            try:
-                aliases_are_supported = publication.samefile(
-                    extended_publication
-                ) and review.samefile(extended_review)
-            except OSError:
-                aliases_are_supported = False
-            if not aliases_are_supported:
-                self.skipTest("Extended path aliases are unavailable.")
-
-            publication_before = tree_snapshot(publication)
-            review_before = tree_snapshot(review)
-            missing_review = publication / "missing-review"
-            scenarios = (
-                (
-                    "normal-publication-extended-review",
-                    publication,
-                    extended_review,
-                    review,
-                ),
-                (
-                    "extended-publication-normal-review",
-                    extended_publication,
-                    review,
-                    review,
-                ),
-                (
-                    "normal-publication-extended-missing-review",
-                    publication,
-                    windows_extended_alias(missing_review),
-                    missing_review,
-                ),
-            )
-            for (
-                name,
-                publication_path,
-                review_path,
-                physical_review,
-            ) in scenarios:
-                with self.subTest(case=name):
-                    result = invoke(
-                        [
-                            "--html",
-                            str(publication_path / "index.html"),
-                            "--assembly-manifest",
-                            str(publication_path / "assembly-manifest.json"),
-                            "--evidence",
-                            str(review_path / "qa-evidence.json"),
-                            "--release-manifest",
-                            str(review_path / "release-manifest.json"),
-                            "--rasters",
-                            str(review_path / "pages"),
-                            "--page-size",
-                            "letter",
-                            "--render-twice",
-                        ]
-                    )
-
-                    self.assertEqual(2, result.exit_code, result)
-                    self.assertEqual({}, result.report)
-                    self.assertIn(
-                        "disjoint from the publication tree",
-                        result.stderr,
-                    )
-                    self.assertEqual(
-                        publication_before,
-                        tree_snapshot(publication),
-                    )
-                    self.assertEqual(review_before, tree_snapshot(review))
-                    if physical_review == missing_review:
-                        self.assertFalse(missing_review.exists())
-
-    def test_publish_review_revalidates_publication_identity_before_rename(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-publish-identity-"
-        ) as temporary:
-            root = Path(temporary)
-            publication = root / "publication"
-            review = root / "review"
-            stage = root / "stage"
-            publication.mkdir()
-            review.mkdir()
-            stage.mkdir()
-            (publication / "publication.bin").write_bytes(b"publication\n")
-            (review / "qa-evidence.json").write_bytes(b"prior evidence\n")
-            (review / "prior-review.bin").write_bytes(b"prior review\n")
-            (stage / "candidate.bin").write_bytes(b"candidate\n")
-            layout = audit_publication.ReviewLayout(
-                review,
-                review / "qa-evidence.json",
-                review / "release-manifest.json",
-                review / "pages",
-                review / "independent-renders",
-            )
-            publication_before = tree_snapshot(publication)
-            review_before = tree_snapshot(review)
-            stage_before = tree_snapshot(stage)
-            original_samefile = Path.samefile
-            aliased_pair = frozenset(
-                (str(publication.resolve()), str(review.resolve()))
-            )
-
-            def samefile(left: Path, right: Path) -> bool:
-                if frozenset((str(left), str(right))) == aliased_pair:
-                    return True
-                return original_samefile(left, right)
-
-            with (
-                mock.patch.object(Path, "samefile", new=samefile),
-                self.assertRaisesRegex(  # noqa: PT027
-                    audit_publication.AuditError,
-                    "review root must be disjoint from the publication tree",
-                ),
-            ):
-                audit_publication.publish_review(
-                    stage,
-                    layout,
-                    publication,
-                )
-
-            self.assertEqual(
-                publication_before,
-                tree_snapshot(publication),
-            )
-            self.assertEqual(review_before, tree_snapshot(review))
-            self.assertEqual(stage_before, tree_snapshot(stage))
-
-    def test_required_core_checks_are_blocking_and_gate_pass(self) -> None:
-        evidence = self.minimal_evidence()
-        self.assertEqual([], self.schema_errors(evidence))
-
-        for index, identifier in enumerate(CORE_CHECK_ORDER):
-            with self.subTest(advisory=identifier):
-                advisory = copy.deepcopy(evidence)
-                advisory["checks"][index]["severity"] = "advisory"
-                self.assertTrue(self.schema_errors(advisory))
-
-        failed_pass = copy.deepcopy(evidence)
-        failed_pass["checks"][0]["passed"] = False
-        self.assertTrue(self.schema_errors(failed_pass))
-
-        failed = copy.deepcopy(failed_pass)
-        failed["mechanical_status"] = "fail"
-        self.assertEqual([], self.schema_errors(failed))
-
-    def test_stable_asset_schemas_require_named_relative_bases(self) -> None:
-        evidence = self.minimal_evidence()
-        for name, mutate in (
-            (
-                "missing-base",
-                lambda value: value["inputs"]["assembly_manifest"].pop(
-                    "path_base"
-                ),
-            ),
-            (
-                "wrong-assembly-base",
-                lambda value: value["inputs"]["assembly_manifest"].update(
-                    {"path_base": "evidence-root"}
-                ),
-            ),
-            (
-                "wrong-render-base",
-                lambda value: value["render_pdfs"]["render_1"].update(
-                    {"path_base": "publication-root"}
-                ),
-            ),
-        ):
-            with self.subTest(case=name):
-                invalid = copy.deepcopy(evidence)
-                mutate(invalid)
-                self.assertTrue(self.schema_errors(invalid))
-
-        digest = "0" * 64
-        release = {
-            "schema_version": "1.0",
-            "publication_id": "publication-1",
-            "assembly_manifest": {
-                "path_base": "publication-root",
-                "path": "assembly-manifest.json",
-                "sha256": digest,
-                "bytes": 1,
-            },
-            "qa_evidence": {
-                "path_base": "release-root",
-                "path": "qa-evidence.json",
-                "sha256": digest,
-                "bytes": 1,
-            },
-            "mechanical_status": "pass",
-            "generator": {
-                "name": "audit_publication.py",
-                "version": "0.1.0",
-            },
-        }
-        self.assertEqual(
-            [],
-            self.schema_errors(release, "release-manifest.schema.json"),
-        )
-        invalid_release = copy.deepcopy(release)
-        invalid_release["qa_evidence"]["path_base"] = "evidence-root"
-        self.assertTrue(
-            self.schema_errors(
-                invalid_release,
-                "release-manifest.schema.json",
-            )
-        )
-        for path in NONCANONICAL_STABLE_PATHS:
-            with self.subTest(path=path):
-                invalid_evidence = copy.deepcopy(evidence)
-                invalid_evidence["rasters"][0]["asset"]["path"] = path
-                self.assertTrue(self.schema_errors(invalid_evidence))
-
-                invalid_release = copy.deepcopy(release)
-                invalid_release["qa_evidence"]["path"] = path
-                self.assertTrue(
-                    self.schema_errors(
-                        invalid_release,
-                        "release-manifest.schema.json",
-                    )
-                )
-
-    def test_stable_asset_resolver_maps_named_sibling_roots(self) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-stable-paths-"
-        ) as temporary:
-            root = Path(temporary)
-            publication = root / "publication"
-            review = root / "review"
-            publication.mkdir()
-            (review / "independent-renders").mkdir(parents=True)
-            (review / "pages").mkdir()
-            targets = {
-                "publication-root": publication / "assembly-manifest.json",
-                "evidence-root": review / "independent-renders" / "render.pdf",
-                "release-root": review / "qa-evidence.json",
-            }
-            for path_base, target in targets.items():
-                target.write_bytes(f"{path_base}\n".encode())
-            roots = {
-                "publication-root": publication,
-                "evidence-root": review,
-                "release-root": review,
-            }
-            records = [
-                {
-                    "path_base": path_base,
-                    **asset_record(roots[path_base], target),
-                }
-                for path_base, target in targets.items()
-            ]
-            self.assertEqual(
-                list(targets.values()),
-                [resolve_stable_asset(record, roots) for record in records],
-            )
-            for path in NONCANONICAL_STABLE_PATHS:
-                with (
-                    self.subTest(path=path),
-                    self.assertRaises(ValueError),  # noqa: PT027
-                ):
-                    resolve_stable_asset(
-                        {
-                            **records[1],
-                            "path": path,
-                        },
-                        roots,
-                    )
-
-    def test_shared_publication_policy_conformance_corpus(self) -> None:
-        profile = read_json(SKILL / "assets" / "publication-profile.json")
-        corpus = read_json(SUPPORT_ROOT / "publication-policy-conformance.json")
-        families = set(corpus["declared_font_families"])
-        for case in corpus["fragment_cases"]:
-            with self.subTest(fragment=case["id"]):
-                findings, _identifiers = audit_publication.validate_fragment(
-                    case["content"],
-                    profile,
-                    case["id"],
-                )
-                self.assertEqual(case["accepted"], not findings, findings)
-        for case in corpus["stylesheet_cases"]:
-            with self.subTest(stylesheet=case["id"]):
-                findings, _records = audit_publication.validate_stylesheet(
-                    case["content"],
-                    profile,
-                    families,
-                    case["id"],
-                )
-                self.assertEqual(case["accepted"], not findings, findings)
-
-    def test_fixed_publication_profile_ceilings_are_aligned(self) -> None:
-        self.assertEqual(
-            fixed_profile_ceiling(assemble_print),
-            fixed_profile_ceiling(audit_publication),
-        )
-
-    def load_qa_profile(self, profile: dict[str, Any]) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-profile-"
-        ) as temporary:
-            profile_path = Path(temporary) / "publication-profile.json"
-            write_json(profile_path, profile)
-            with mock.patch.object(
-                audit_publication,
-                "PROFILE_PATH",
-                profile_path,
-            ):
-                audit_publication.load_profile.cache_clear()
-                try:
-                    audit_publication.load_profile()
-                finally:
-                    audit_publication.load_profile.cache_clear()
-
-    def test_qa_loader_accepts_baseline_and_narrowing(self) -> None:
-        profile = read_json(SKILL / "assets" / "publication-profile.json")
-        narrowed = copy.deepcopy(profile)
-        del narrowed["fragment_html"]["elements"]["abbr"]
-        narrowed["untrusted_stylesheet"]["properties"].remove("color")
-
-        self.load_qa_profile(profile)
-        self.load_qa_profile(narrowed)
-
-    def test_qa_loader_rejects_profile_widening(self) -> None:
-        profile = read_json(SKILL / "assets" / "publication-profile.json")
-        script_element = copy.deepcopy(profile)
-        script_element["fragment_html"]["elements"]["script"] = []
-        global_attribute = copy.deepcopy(profile)
-        global_attribute["fragment_html"]["global_attributes"].append(
-            "data-extra"
-        )
-        css_property = copy.deepcopy(profile)
-        css_property["untrusted_stylesheet"]["properties"].append("display")
-
-        for name, widened in (
-            ("script-element", script_element),
-            ("global-attribute", global_attribute),
-            ("css-property", css_property),
-        ):
-            with (
-                self.subTest(case=name),
-                self.assertRaises(audit_publication.AuditError),  # noqa: PT027
-            ):
-                self.load_qa_profile(widened)
-
-    def test_qa_loader_rejects_malformed_profile_shape(self) -> None:
-        profile = read_json(SKILL / "assets" / "publication-profile.json")
-        profile["fragment_html"]["global_attributes"] = "id"
-
-        with self.assertRaises(audit_publication.AuditError):  # noqa: PT027
-            self.load_qa_profile(profile)
-
-    def test_inspect_pdf_has_no_aggregate_raster_budget(self) -> None:
-        actual_page_pixels = math.ceil(
-            360 * audit_publication.RASTER_SCALE
-        ) * math.ceil(480 * audit_publication.RASTER_SCALE)
-        nominal_page_pixels = math.ceil(
-            612 * audit_publication.RASTER_SCALE
-        ) * math.ceil(792 * audit_publication.RASTER_SCALE)
-        page_count = 1_000_000_000 // actual_page_pixels + 1
-        self.assertGreater(page_count * actual_page_pixels, 1_000_000_000)
-        self.assertGreater(page_count * nominal_page_pixels, 1_000_000_000)
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-raster-count-"
-        ) as temporary:
-            root = Path(temporary)
-            pdf = root / "many-pages.pdf"
-            write_pdf(
-                pdf,
-                [PdfPage(vector_marks=False)] * page_count,
-            )
-            pixmap = mock.Mock()
-            pixmap.tobytes.return_value = b"synthetic-png"
-            with mock.patch.object(
-                fitz.Page,
-                "get_pixmap",
-                return_value=pixmap,
-            ) as get_pixmap:
-                report = audit_publication.inspect_pdf(
-                    pdf,
-                    "many-pages.pdf",
-                    "letter",
-                    root / "review" / "pages",
-                    "canonical",
-                    root / "review",
-                    {"fonts": [], "font_roles": {}},
-                )
-            self.assertEqual(page_count, report.evidence["page_count"])
-            self.assertEqual(page_count, len(report.rasters))
-            self.assertEqual(page_count, get_pixmap.call_count)
-
-    def test_inspect_pdf_rejects_unsafe_per_page_geometry(self) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-raster-geometry-"
-        ) as temporary:
-            root = Path(temporary)
-            pdf = root / "unsafe-page.pdf"
-            write_pdf(pdf, [PdfPage(vector_marks=False)])
-            scale_pdf_user_unit(pdf, scale=100)
-            with (
-                mock.patch.object(fitz.Page, "get_pixmap") as get_pixmap,
-                self.assertRaises(audit_publication.PublicationError),  # noqa: PT027
-            ):
-                audit_publication.inspect_pdf(
-                    pdf,
-                    "unsafe-page.pdf",
-                    "letter",
-                    root / "review" / "pages",
-                    "canonical",
-                    root / "review",
-                    {"fonts": [], "font_roles": {}},
-                )
-            get_pixmap.assert_not_called()
-
-    def test_one_uri_annotation_uses_detection_not_duplicate_counts(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-uri-action-"
-        ) as temporary:
-            pdf = Path(temporary) / "uri.pdf"
-            target = "https://example.invalid/unsafe"
-            write_pdf(pdf, [PdfPage(vector_marks=False)])
-            add_pdf_page_link(
-                pdf,
-                {"kind": fitz.LINK_URI, "uri": target},
-            )
-
-            actions = pdf_action_observation(pdf)
-
-        self.assertTrue(actions["unsafe_detected"])
-        self.assertEqual(["uri"], actions["unsafe_kinds"])
-        self.assertFalse(actions["unsafe_kinds_truncated"])
-        self.assertIn(
-            {"kind": "uri", "source_category": "page-link"},
-            actions["witnesses"],
-        )
-        self.assertEqual(
-            [
-                {
-                    "kind": "uri",
-                    "page": 1,
-                    "target_category": "uri",
-                    "scheme_category": "https",
-                    "target_characters": len(target),
-                    "target_bytes": len(target.encode()),
-                    "target_sha256": sha256_bytes(target.encode()),
-                }
-            ],
-            actions["target_samples"],
-        )
+class AuditPublicationUnitTests(unittest.TestCase):
+    def test_crop_aspect_ratio_uses_relative_cross_products(self) -> None:
         self.assertFalse(
-            {"total", "unsafe_total", "omitted", "sha256", "samples"}
-            & set(actions)
+            audit_publication.same_aspect_ratio(1.0, 180.0, 1.0, 100.0)
+        )
+        self.assertTrue(
+            audit_publication.same_aspect_ratio(18.0, 1800.0, 1.0, 100.0)
         )
 
-    def test_two_javascript_document_actions_need_no_multiplicity(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-javascript-actions-"
-        ) as temporary:
-            pdf = Path(temporary) / "javascript.pdf"
-            write_pdf(pdf, [PdfPage(vector_marks=False)])
-            add_pdf_javascript(pdf, "open-action")
-            add_pdf_javascript(pdf, "additional-action")
 
-            actions = pdf_action_observation(pdf)
-
-        self.assertTrue(actions["unsafe_detected"])
-        self.assertEqual(["javascript"], actions["unsafe_kinds"])
-        self.assertIn(
-            {"kind": "javascript", "source_category": "catalog"},
-            actions["witnesses"],
-        )
-        self.assertEqual([], actions["target_samples"])
-
-    def test_mixed_unsafe_action_kinds_are_reported(self) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-mixed-actions-"
-        ) as temporary:
-            pdf = Path(temporary) / "mixed.pdf"
-            write_pdf(pdf, [PdfPage(vector_marks=False)])
-            add_pdf_javascript(pdf, "open-action")
-            add_pdf_page_link(
-                pdf,
-                {
-                    "kind": fitz.LINK_URI,
-                    "uri": "https://example.invalid/mixed",
-                },
-            )
-
-            actions = pdf_action_observation(pdf)
-
-        self.assertTrue(actions["unsafe_detected"])
-        self.assertEqual(["javascript", "uri"], actions["unsafe_kinds"])
-        self.assertEqual(
-            {"catalog", "annotation", "page-link"},
-            {witness["source_category"] for witness in actions["witnesses"]},
-        )
-
-    def test_internal_goto_only_remains_safe(self) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-goto-action-"
-        ) as temporary:
-            pdf = Path(temporary) / "goto.pdf"
-            write_pdf(
-                pdf,
-                [
-                    PdfPage(vector_marks=False),
-                    PdfPage(vector_marks=False),
-                ],
-            )
-            add_pdf_page_link(
-                pdf,
-                {
-                    "kind": fitz.LINK_GOTO,
-                    "page": 1,
-                    "to": fitz.Point(36, 36),
-                },
-            )
-
-            actions = pdf_action_observation(pdf)
-
-        self.assertFalse(actions["unsafe_detected"])
-        self.assertEqual([], actions["unsafe_kinds"])
-        self.assertEqual([], actions["witnesses"])
-        self.assertEqual([], actions["target_samples"])
-
-    def test_direct_named_destinations_are_goto_but_named_actions_are_unsafe(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-named-action-"
-        ) as temporary:
-            direct_destination = Path(temporary) / "direct-destination.pdf"
-            write_pdf(
-                direct_destination,
-                [PdfPage(vector_marks=False)],
-            )
-            add_pdf_named_destination(direct_destination)
-            with fitz.open(direct_destination) as document:
-                links = document[0].get_links()
-            self.assertEqual(fitz.LINK_NAMED, links[0]["kind"])
-            self.assertEqual(1, links[0]["page"])
-
-            actions = pdf_action_observation(direct_destination)
-            self.assertFalse(actions["unsafe_detected"])
-            self.assertEqual([], actions["unsafe_kinds"])
-
-            named_action = Path(temporary) / "named-action.pdf"
-            write_pdf(
-                named_action,
-                [PdfPage(vector_marks=False)],
-            )
-            add_pdf_unknown_action(named_action, "Named")
-
-            actions = pdf_action_observation(named_action)
-            self.assertTrue(actions["unsafe_detected"])
-            self.assertIn("named", actions["unsafe_kinds"])
-
-
-def invoke(arguments: list[str]) -> MainResult:
-    """Invoke the public QA CLI and capture its optional JSON report."""
-    return invoke_main(
-        audit_publication,
-        arguments,
-        require_report=False,
-    )
-
-
-class BrowserSelectionTests(unittest.TestCase):
-    def test_default_browser_candidate_precedence(self) -> None:
-        scenarios: tuple[dict[str, Any], ...] = (
-            {
-                "name": "environment-override",
-                "platform": "posix",
-                "configured": True,
-                "windows_edge": False,
-                "windows_chrome": False,
-                "path_name": "chromium",
-                "bundled": True,
-                "expected": "configured",
-            },
-            {
-                "name": "windows-chrome-without-edge",
-                "platform": "nt",
-                "configured": False,
-                "windows_edge": False,
-                "windows_chrome": True,
-                "path_name": None,
-                "bundled": True,
-                "expected": "windows-chrome",
-            },
-            {
-                "name": "non-windows-path-chromium",
-                "platform": "posix",
-                "configured": False,
-                "windows_edge": False,
-                "windows_chrome": False,
-                "path_name": "chromium",
-                "bundled": False,
-                "expected": "path",
-            },
-            {
-                "name": "system-before-playwright",
-                "platform": "posix",
-                "configured": False,
-                "windows_edge": False,
-                "windows_chrome": False,
-                "path_name": "google-chrome",
-                "bundled": True,
-                "expected": "path",
-            },
-        )
-        with tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-browser-selection-"
-        ) as temporary:
-            root = Path(temporary)
-
-            def executable(
-                paths: dict[str, Path],
-                name: str,
-                path: Path,
-            ) -> Path:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(name.encode("ascii"))
-                paths[name] = path
-                return path
-
-            for scenario in scenarios:
-                with self.subTest(scenario=scenario["name"]):
-                    case_root = root / str(scenario["name"])
-                    paths: dict[str, Path] = {}
-
-                    environment: dict[str, str] = {}
-                    if scenario["configured"]:
-                        configured = executable(
-                            paths,
-                            "configured",
-                            case_root / "configured" / "browser",
-                        )
-                        environment["SCHOLARLY_PUBLICATION_BROWSER"] = str(
-                            configured
-                        )
-
-                    program_files = case_root / "Program Files"
-                    if scenario["platform"] == "nt":
-                        environment["PROGRAMFILES"] = str(program_files)
-                    if scenario["windows_edge"]:
-                        executable(
-                            paths,
-                            "windows-edge",
-                            program_files
-                            / "Microsoft"
-                            / "Edge"
-                            / "Application"
-                            / "msedge.exe",
-                        )
-                    if scenario["windows_chrome"]:
-                        executable(
-                            paths,
-                            "windows-chrome",
-                            program_files
-                            / "Google"
-                            / "Chrome"
-                            / "Application"
-                            / "chrome.exe",
-                        )
-
-                    which_results: dict[str, str] = {}
-                    path_name = scenario["path_name"]
-                    if path_name is not None:
-                        path_browser = executable(
-                            paths,
-                            "path",
-                            case_root / "path" / str(path_name),
-                        )
-                        which_results[str(path_name)] = str(path_browser)
-
-                    bundled_path = case_root / "playwright" / "chromium"
-                    if scenario["bundled"]:
-                        executable(paths, "bundled", bundled_path)
-
-                    fake_os = mock.Mock()
-                    fake_os.name = scenario["platform"]
-                    fake_os.environ = environment
-                    chromium = mock.Mock()
-                    chromium.executable_path = str(bundled_path)
-                    launched = object()
-                    chromium.launch.return_value = launched
-                    playwright = mock.Mock()
-                    playwright.chromium = chromium
-
-                    with (
-                        mock.patch.object(audit_publication, "os", fake_os),
-                        mock.patch.object(
-                            audit_publication.shutil,
-                            "which",
-                            side_effect=which_results.get,
-                        ),
-                    ):
-                        selected = audit_publication.launch_browser(
-                            playwright,
-                            None,
-                        )
-
-                    self.assertIs(launched, selected)
-                    chromium.launch.assert_called_once_with(
-                        headless=True,
-                        executable_path=str(
-                            paths[str(scenario["expected"])].resolve()
-                        ),
-                    )
-
-
-class AuditPublicationReplacementTests(unittest.TestCase):
+class AuditPublicationScenarioTests(unittest.TestCase):
     suite_temporary: tempfile.TemporaryDirectory[str]
     suite_root: Path
     baseline_publication: Path
@@ -1133,9 +274,11 @@ class AuditPublicationReplacementTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         if BROWSER is None:
             message = "No local Chromium-family browser is available."
+            if os.environ.get("CI"):
+                raise RuntimeError(message)
             raise unittest.SkipTest(message)
         cls.suite_temporary = tempfile.TemporaryDirectory(
-            prefix="scholarly-qa-suite-"
+            prefix="scholarly-qa-contracted-suite-"
         )
         cls.suite_root = Path(cls.suite_temporary.name)
         cls.baseline_publication = build_rendered_publication(
@@ -1160,40 +303,70 @@ class AuditPublicationReplacementTests(unittest.TestCase):
         return publication
 
     @staticmethod
-    def arguments(
-        publication: Path,
-        review: Path,
-        *,
-        render_twice: bool = True,
-        evidence_name: str = "qa-evidence.json",
-        release_name: str = "release-manifest.json",
-    ) -> list[str]:
-        evidence = review / evidence_name
-        arguments = [
+    def candidates(review: Path) -> list[Path]:
+        return list(review.parent.glob(f".{review.name}.candidate-*"))
+
+    @staticmethod
+    def arguments(publication: Path, review: Path) -> list[str]:
+        return [
             "--html",
             str(publication / "index.html"),
             "--assembly-manifest",
             str(publication / "assembly-manifest.json"),
             "--evidence",
-            str(evidence),
+            str(review / "qa-evidence.json"),
             "--release-manifest",
-            str(review / release_name),
+            str(review / "release-manifest.json"),
             "--rasters",
-            str(evidence.parent / "pages"),
+            str(review / "pages"),
             "--page-size",
             "letter",
             "--browser",
             str(BROWSER),
+            "--render-twice",
         ]
-        if render_twice:
-            arguments.append("--render-twice")
-        return arguments
+
+    @staticmethod
+    def browser_stack(
+        _context: Any,
+        pdf_side_effect: Any,
+    ) -> tuple[Any, Any, Any, Any]:
+        page = mock.Mock()
+        page.goto = mock.AsyncMock()
+        page.emulate_media = mock.AsyncMock()
+        page.evaluate = mock.AsyncMock(
+            side_effect=[
+                None,
+                {
+                    "geometry": {
+                        "client": 1,
+                        "scroll": 1,
+                        "overflow": False,
+                        "elements": [],
+                    }
+                },
+            ]
+        )
+        page.pdf = mock.AsyncMock(side_effect=pdf_side_effect)
+        browser_context = mock.Mock()
+        browser_context.route = mock.AsyncMock()
+        browser_context.new_page = mock.AsyncMock(return_value=page)
+        browser_context.close = mock.AsyncMock()
+        browser = mock.Mock()
+        browser.new_context = mock.AsyncMock(return_value=browser_context)
+        browser.close = mock.AsyncMock()
+        chromium = mock.Mock()
+        chromium.launch = mock.AsyncMock(return_value=browser)
+        playwright = mock.Mock(chromium=chromium)
+        manager = mock.MagicMock()
+        manager.__aenter__ = mock.AsyncMock(return_value=playwright)
+        manager.__aexit__ = mock.AsyncMock(return_value=None)
+        return page, browser_context, browser, manager
 
     @staticmethod
     def semantic_asset_records(
         manifest: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        """Return documented manifest asset records without runtime helpers."""
         records = list(manifest["inputs"].values())
         records.extend(fragment["asset"] for fragment in manifest["fragments"])
         records.extend(
@@ -1215,69 +388,50 @@ class AuditPublicationReplacementTests(unittest.TestCase):
         manifest_path = publication / "assembly-manifest.json"
         manifest = read_json(manifest_path)
         replacement = asset_record(publication, publication / logical)
-        semantic_matches = 0
+        matches = 0
         for record in cls.semantic_asset_records(manifest):
             if record["path"] == logical:
                 record.update(replacement)
-                semantic_matches += 1
-        if semantic_matches < 1:
-            message = f"manifest does not bind semantic asset {logical!r}"
+                matches += 1
+        if matches < 1:
+            message = f"manifest does not bind {logical!r}"
             raise AssertionError(message)
         write_json(manifest_path, manifest)
 
+    def rerender_publication(self, publication: Path) -> None:
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        pdf_record = manifest["outputs"]["draft_pdf"]
+        self.assertIsInstance(pdf_record, dict)
+        pdf = publication / pdf_record["path"]
+        manifest["outputs"]["draft_pdf"] = None
+        write_json(manifest_path, manifest)
+        pdf.unlink()
+        result = invoke_main(
+            assemble_print,
+            [
+                "render",
+                "--html",
+                str(publication / "index.html"),
+                "--pdf",
+                str(pdf),
+                "--browser",
+                str(BROWSER),
+            ],
+            require_report=False,
+        )
+        self.assertEqual(0, result.exit_code, result)
+
     @staticmethod
     def check_by_id(
-        evidence: dict[str, Any],
-        identifier: str,
+        evidence: dict[str, Any], identifier: str
     ) -> dict[str, Any]:
         return next(
             check for check in evidence["checks"] if check["id"] == identifier
         )
 
-    @staticmethod
-    def nested_records(value: Any) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
-        if isinstance(value, dict):
-            records.append(value)
-            for item in value.values():
-                records.extend(
-                    AuditPublicationReplacementTests.nested_records(item)
-                )
-        elif isinstance(value, list):
-            for item in value:
-                records.extend(
-                    AuditPublicationReplacementTests.nested_records(item)
-                )
-        return records
-
-    def assert_check_evidence_bounded(
-        self,
-        evidence: dict[str, Any],
-    ) -> None:
-        def inspect(value: Any) -> None:
-            if isinstance(value, str):
-                self.assertLessEqual(
-                    len(value),
-                    audit_publication.MAX_DIAGNOSTIC_STRING,
-                )
-            elif isinstance(value, list):
-                self.assertLessEqual(
-                    len(value),
-                    audit_publication.MAX_DIAGNOSTIC_ITEMS,
-                )
-                for item in value:
-                    inspect(item)
-            elif isinstance(value, dict):
-                for item in value.values():
-                    inspect(item)
-
-        for check in evidence["checks"]:
-            inspect(check["evidence"])
-
     def assert_schema_valid(
-        self,
-        value: dict[str, Any],
-        schema_name: str,
+        self, value: dict[str, Any], schema_name: str
     ) -> None:
         schema = read_json(SKILL / "assets" / schema_name)
         errors = sorted(
@@ -1285,157 +439,169 @@ class AuditPublicationReplacementTests(unittest.TestCase):
             key=lambda error: tuple(map(str, error.absolute_path)),
         )
         self.assertEqual(
-            [],
-            [f"{error.json_path}: {error.message}" for error in errors],
+            [], [f"{error.json_path}: {error.message}" for error in errors]
         )
+
+    def assert_evidence_assets(
+        self,
+        evidence: dict[str, Any],
+        publication: Path,
+        review: Path,
+    ) -> None:
+        roots = {
+            "publication-root": publication,
+            "evidence-root": review,
+        }
+        records = [
+            evidence["inputs"]["assembly_manifest"],
+            *evidence["render_pdfs"].values(),
+            *(raster["asset"] for raster in evidence["rasters"]),
+        ]
+        for record in records:
+            resolve_stable_asset(record, roots)
+
+    def assert_path_neutral_artifact(
+        self,
+        artifact: dict[str, Any],
+        publication: Path,
+    ) -> None:
+        def strings(value: Any) -> list[str]:
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, dict):
+                return [
+                    item
+                    for nested in value.values()
+                    for item in strings(nested)
+                ]
+            if isinstance(value, list):
+                return [item for nested in value for item in strings(nested)]
+            return []
+
+        root = publication.resolve()
+        serialized = json.dumps(artifact, ensure_ascii=False)
+        values = strings(artifact)
+        for canary in dict.fromkeys(
+            (
+                PIPELINE_SENTINEL,
+                str(root),
+                root.as_posix(),
+                root.as_uri(),
+            )
+        ):
+            self.assertFalse(any(canary in value for value in values))
+            self.assertNotIn(
+                json.dumps(canary, ensure_ascii=False)[1:-1],
+                serialized,
+            )
 
     def assert_blocked(
         self,
         publication: Path,
         review: Path,
-        expected_failed: set[str],
+        required_failed: set[str],
+        *,
+        exact: bool = True,
     ) -> dict[str, Any]:
-        before = tree_snapshot(publication)
-        result = invoke(self.arguments(publication, review))
+        result = _invoke(self.arguments(publication, review))
         self.assertEqual(1, result.exit_code, result)
-        self.assertEqual({}, result.report)
+        self.assertTrue(review.is_dir())
         self.assertFalse((review / "release-manifest.json").exists())
-        self.assertEqual(before, tree_snapshot(publication))
-        evidence_path = review / "qa-evidence.json"
-        evidence = read_json(evidence_path)
-        self.assertEqual("fail", evidence["mechanical_status"])
+        evidence = read_json(review / "qa-evidence.json")
+        self.assert_schema_valid(evidence, "qa-evidence.schema.json")
+        self.assert_evidence_assets(evidence, publication, review)
+        self.assert_path_neutral_artifact(evidence, publication)
         failed = {
-            check["id"] for check in evidence["checks"] if not check["passed"]
+            check["id"]
+            for check in evidence["checks"]
+            if check["severity"] == "blocking" and not check["passed"]
         }
-        self.assertLessEqual(expected_failed, failed)
+        if exact:
+            self.assertEqual(required_failed, failed)
+        else:
+            self.assertTrue(
+                required_failed <= failed, (required_failed, failed)
+            )
         return evidence
 
-    @staticmethod
-    def refresh_render_asset(rendered: Any, output: Path) -> None:
-        content = output.read_bytes()
-        rendered.pdf = type(rendered.pdf)(
-            path=rendered.pdf.path,
-            file=output,
-            sha256=sha256_bytes(content),
-            bytes=len(content),
-        )
-
-    def test_actual_pipeline_emits_nine_checks_and_release_contract(
-        self,
-    ) -> None:
+    def test_clean_publication_publishes_complete_review_contract(self) -> None:
         publication = self.fresh_publication()
         review = self.case_root / "review"
         before = tree_snapshot(publication)
-
-        result = invoke(self.arguments(publication, review))
-
+        result = _invoke(self.arguments(publication, review))
         self.assertEqual(0, result.exit_code, result)
-        self.assertEqual("pass", result.report["mechanical_status"])
-        evidence_path = review / "qa-evidence.json"
-        release_path = review / "release-manifest.json"
+        evidence_path, release_path = (
+            review / "qa-evidence.json",
+            review / "release-manifest.json",
+        )
+        evidence, release = read_json(evidence_path), read_json(release_path)
+        self.assert_schema_valid(evidence, "qa-evidence.schema.json")
+        self.assert_schema_valid(release, "release-manifest.schema.json")
+        self.assertEqual("pass", evidence["mechanical_status"])
+        core_checks = evidence["checks"][: len(CORE_CHECK_ORDER)]
         self.assertEqual(
-            str(evidence_path.resolve()),
-            result.report["evidence"],
+            list(CORE_CHECK_ORDER),
+            [check["id"] for check in core_checks],
         )
-        self.assertEqual(
-            str(release_path.resolve()),
-            result.report["release_manifest"],
-        )
-        self.assertNotIn(".staging-", result.stdout)
-        evidence = read_json(evidence_path)
-        release = read_json(release_path)
-        serialized_evidence = json.dumps(evidence, ensure_ascii=False)
-        self.assertNotIn("render_1_dom", serialized_evidence)
-        self.assertNotIn("render_2_dom", serialized_evidence)
-        self.assertNotIn(PIPELINE_FRAGMENT_SENTINEL, serialized_evidence)
-        self.assertNotIn("file:", serialized_evidence.casefold())
-        self.assertNotIn(
-            json.dumps(
-                str(publication.resolve()),
-                ensure_ascii=False,
-            )[1:-1],
-            serialized_evidence,
-        )
-        self.assertNotIn(
-            publication.resolve().as_posix(),
-            serialized_evidence,
-        )
-        self.assertEqual(
-            CORE_CHECK_IDS,
-            {check["id"] for check in evidence["checks"]},
-        )
-        self.assertEqual(9, len(evidence["checks"]))
         self.assertTrue(
-            all(
-                check["severity"] == "blocking" and check["passed"]
+            all(check["severity"] == "blocking" for check in core_checks)
+        )
+        self.assertFalse(
+            any(
+                check["severity"] == "blocking" and not check["passed"]
                 for check in evidence["checks"]
             )
         )
-        figure_binding = self.check_by_id(
-            evidence,
-            "figures.crop-bindings",
-        )["evidence"]["figures"][0]
-        self.assertEqual(
+        self.assert_path_neutral_artifact(evidence, publication)
+        extended_evidence = copy.deepcopy(evidence)
+        extended_evidence["checks"].append(
             {
-                "source_label": "Figure 1",
-                "profile": "music-notation",
-                "embedded_language_inventory": ["en", "zh-Hans"],
-            },
-            {
-                key: figure_binding[key]
-                for key in (
-                    "source_label",
-                    "profile",
-                    "embedded_language_inventory",
-                )
-            },
+                "id": "fixture.failed-advisory",
+                "severity": "advisory",
+                "passed": False,
+                "message": "Fixture advisory does not block a pass.",
+                "evidence": {},
+            }
         )
-        self.assertEqual("pass", evidence["mechanical_status"])
-        self.assertEqual("required", evidence["human_review"]["status"])
-        self.assertEqual(
-            [
-                "Inspect every full-page raster at readable zoom.",
-                (
-                    "Check crop loss, overflow, page breaks, and "
-                    "continuation order."
-                ),
-                (
-                    "Check figure presence, identity, fidelity, and caption "
-                    "correspondence."
-                ),
-                "Check mixed-script typography and notation fidelity.",
-                (
-                    "Review source labels, language inventories, translations, "
-                    "glosses, and errata."
-                ),
-            ],
-            evidence["human_review"]["required_scope"],
+        self.assert_schema_valid(extended_evidence, "qa-evidence.schema.json")
+        self.assertEqual({"render_1", "render_2"}, set(evidence["render_pdfs"]))
+        self.assertTrue(
+            all(
+                item["path_base"] == "evidence-root"
+                for item in evidence["render_pdfs"].values()
+            )
         )
-        self.assert_schema_valid(evidence, "qa-evidence.schema.json")
-        self.assert_schema_valid(release, "release-manifest.schema.json")
+        sources = Counter(item["source"] for item in evidence["rasters"])
+        self.assertEqual({"canonical", "render-1", "render-2"}, set(sources))
+        for source, count in sources.items():
+            pages = [
+                item["page"]
+                for item in evidence["rasters"]
+                if item["source"] == source
+            ]
+            self.assertEqual(list(range(1, count + 1)), pages)
         self.assertEqual(
-            {
-                "schema_version",
-                "publication_id",
-                "auditor",
-                "inputs",
-                "checks",
-                "render_pdfs",
-                "rasters",
-                "publication_tree",
-                "human_review",
-                "mechanical_status",
-            },
-            set(evidence),
+            "publication-root",
+            evidence["inputs"]["assembly_manifest"]["path_base"],
         )
         self.assertEqual(
-            {"name", "version", "publication_profile"},
-            set(evidence["auditor"]),
+            "publication-root", release["assembly_manifest"]["path_base"]
         )
-        self.assertEqual(
-            {"render_1", "render_2"},
-            set(evidence["render_pdfs"]),
-        )
+        self.assertEqual("release-root", release["qa_evidence"]["path_base"])
+        roots = {
+            "publication-root": publication,
+            "evidence-root": review,
+            "release-root": review,
+        }
+        records = [
+            evidence["inputs"]["assembly_manifest"],
+            *evidence["render_pdfs"].values(),
+            *(raster["asset"] for raster in evidence["rasters"]),
+            release["assembly_manifest"],
+            release["qa_evidence"],
+        ]
+        for record in records:
+            resolve_stable_asset(record, roots)
         self.assertEqual(
             {
                 "schema_version",
@@ -1447,1245 +613,1121 @@ class AuditPublicationReplacementTests(unittest.TestCase):
             },
             set(release),
         )
-        self.assertEqual({"name", "version"}, set(release["generator"]))
-        self.assertEqual(
-            {
-                "path_base": "publication-root",
-                **asset_record(
-                    publication,
-                    publication / "assembly-manifest.json",
-                ),
-            },
-            release["assembly_manifest"],
-        )
-        self.assertEqual(
-            release["assembly_manifest"],
-            evidence["inputs"]["assembly_manifest"],
-        )
-        self.assertEqual(
-            {
-                "path_base": "release-root",
-                **asset_record(review, evidence_path),
-            },
-            release["qa_evidence"],
-        )
-        roots = {
-            "publication-root": publication,
-            "evidence-root": evidence_path.parent,
-            "release-root": release_path.parent,
-        }
-        stable_records = [
-            evidence["inputs"]["assembly_manifest"],
-            *evidence["render_pdfs"].values(),
-            *(item["asset"] for item in evidence["rasters"]),
-            release["assembly_manifest"],
-            release["qa_evidence"],
-        ]
-        resolved = [
-            resolve_stable_asset(record, roots) for record in stable_records
-        ]
-        self.assertEqual(
-            (publication / "assembly-manifest.json").resolve(),
-            resolved[0],
-        )
-        self.assertEqual(evidence_path.resolve(), resolved[-1])
-        self.assertTrue(
-            all(
-                path.is_relative_to(publication.resolve())
-                or path.is_relative_to(review.resolve())
-                for path in resolved
-            )
-        )
-        self.assertEqual(
-            self.check_by_id(
-                evidence,
-                "rasters.complete",
-            )["evidence"]["expected"],
-            len(evidence["rasters"]),
-        )
+        self.assertEqual("required", evidence["human_review"]["status"])
+        self.assertTrue(evidence["human_review"]["required_scope"])
+        self.assertTrue(evidence["publication_tree"]["unchanged"])
         self.assertEqual(before, tree_snapshot(publication))
+        self.assertEqual("required", result.report["human_review"])
+
+    def test_stable_asset_schemas_reject_invalid_path_bindings(self) -> None:
+        publication = self.fresh_publication("stable-schema")
+        review = self.case_root / "review-stable-schema"
+        result = _invoke(self.arguments(publication, review))
+        self.assertEqual(0, result.exit_code, result)
+        evidence = read_json(review / "qa-evidence.json")
+        release = read_json(review / "release-manifest.json")
+        cases = (
+            (
+                "evidence-missing-base",
+                "qa-evidence.schema.json",
+                evidence,
+                ("inputs", "assembly_manifest", "path_base"),
+                None,
+            ),
+            (
+                "evidence-wrong-base",
+                "qa-evidence.schema.json",
+                evidence,
+                ("inputs", "assembly_manifest", "path_base"),
+                "evidence-root",
+            ),
+            (
+                "evidence-unsafe-path",
+                "qa-evidence.schema.json",
+                evidence,
+                ("render_pdfs", "render_1", "path"),
+                "../render.pdf",
+            ),
+            (
+                "release-missing-base",
+                "release-manifest.schema.json",
+                release,
+                ("qa_evidence", "path_base"),
+                None,
+            ),
+            (
+                "release-wrong-base",
+                "release-manifest.schema.json",
+                release,
+                ("qa_evidence", "path_base"),
+                "publication-root",
+            ),
+            (
+                "release-unsafe-path",
+                "release-manifest.schema.json",
+                release,
+                ("assembly_manifest", "path"),
+                "C:/outside/assembly-manifest.json",
+            ),
+        )
+        for name, schema_name, source, path, replacement in cases:
+            with self.subTest(name=name):
+                candidate = copy.deepcopy(source)
+                parent = candidate
+                for key in path[:-1]:
+                    parent = parent[key]
+                if replacement is None:
+                    parent.pop(path[-1])
+                else:
+                    parent[path[-1]] = replacement
+                validator = Draft202012Validator(
+                    read_json(SKILL / "assets" / schema_name)
+                )
+                self.assertTrue(list(validator.iter_errors(candidate)))
+
+    def test_seeded_pdf_observations_publish_failure_without_release(
+        self,
+    ) -> None:
+        publication = self.fresh_publication()
+        pdf = publication / "publication.pdf"
+        clear_pdf_page_contents(pdf)
+        remove_pdf_font_programs(pdf)
+        scale_pdf_user_unit(pdf)
+        target = "https://example.invalid/unsafe-action"
+        _add_pdf_page_link(pdf, {"kind": fitz.LINK_URI, "uri": target})
+        self.refresh_asset(publication, "publication.pdf")
+        evidence = self.assert_blocked(
+            publication,
+            self.case_root / "review",
+            {
+                "render.geometry-overflow",
+                "pdf.fonts",
+                "pdf.actions-type3-text",
+            },
+            exact=False,
+        )
+        geometry = self.check_by_id(evidence, "render.geometry-overflow")[
+            "evidence"
+        ]
+        self.assertFalse(geometry["pdf_pages"]["canonical"][0]["size_matches"])
+        self.assertIn(
+            "canonical",
+            self.check_by_id(evidence, "pdf.fonts")["evidence"]["findings"],
+        )
+        behavior = self.check_by_id(evidence, "pdf.actions-type3-text")[
+            "evidence"
+        ]["observations"]["canonical"]
+        self.assertTrue(behavior["actions"]["unsafe_detected"])
+        self.assertIn("uri", behavior["actions"]["unsafe_kinds"])
+        self.assertEqual(0, behavior["text_characters"])
+        serialized = json.dumps(evidence, ensure_ascii=False)
+        self.assertNotIn(target, serialized)
+        self.assertNotIn("xref", json.dumps(behavior["actions"]).casefold())
         self.assertTrue(evidence["publication_tree"]["unchanged"])
 
-    def test_manifest_load_failure_is_operational_and_integrity_failures_block(
-        self,
-    ) -> None:
-        invalid_publication = self.fresh_publication("manifest-schema")
-        invalid_manifest_path = invalid_publication / "assembly-manifest.json"
-        invalid_manifest = read_json(invalid_manifest_path)
-        invalid_manifest.pop("publication_id")
-        write_json(invalid_manifest_path, invalid_manifest)
-        invalid_review = self.case_root / "review-manifest-schema"
-
-        invalid = invoke(
-            self.arguments(
-                invalid_publication,
-                invalid_review,
+    def test_browser_offline_and_passive_security_matrix(self) -> None:
+        publication = self.fresh_publication("active-and-dormant")
+        html, css = (
+            publication / "index.html",
+            publication / "assets" / "print.css",
+        )
+        manifest = read_json(publication / "assembly-manifest.json")
+        source_svg = (
+            publication
+            / manifest["figures"][0]["parts"][0]["source_svg"]["path"]
+        )
+        remote = "https://example.invalid/" + ("resource" * 80)
+        html.write_text(
+            html.read_text(encoding="utf-8")
+            .replace(
+                "</svg>",
+                (
+                    '<animate attributeName="opacity" values="1;1"></animate>'
+                    "</svg>"
+                ),
+                1,
             )
-        )
-
-        self.assertEqual(2, invalid.exit_code, invalid)
-        self.assertEqual({}, invalid.report)
-        self.assertFalse(invalid_review.exists())
-
-        overflow = self.fresh_publication("overflow-bbox")
-        overflow_manifest_path = overflow / "assembly-manifest.json"
-        overflow_manifest = read_json(overflow_manifest_path)
-        overflow_manifest["figures"][0]["parts"][0]["bbox"][0] = 10**400
-        write_json(overflow_manifest_path, overflow_manifest)
-        overflow_review = self.case_root / "review-overflow-bbox"
-
-        overflow_result = invoke(
-            self.arguments(
-                overflow,
-                overflow_review,
-            )
-        )
-
-        self.assertEqual(2, overflow_result.exit_code, overflow_result)
-        self.assertEqual({}, overflow_result.report)
-        self.assertNotIn("Traceback", overflow_result.stderr)
-        self.assertFalse(overflow_review.exists())
-
-        noncanonical = self.fresh_publication("noncanonical-bbox")
-        noncanonical_manifest_path = noncanonical / "assembly-manifest.json"
-        noncanonical_manifest = read_json(noncanonical_manifest_path)
-        noncanonical_manifest["figures"][0]["parts"][0]["bbox"] = [
-            54.0001,
-            220.0001,
-            306.0001,
-            340.0001,
-        ]
-        write_json(noncanonical_manifest_path, noncanonical_manifest)
-        self.assert_blocked(
-            noncanonical,
-            self.case_root / "review-noncanonical-bbox",
-            {"manifest.integrity"},
-        )
-
-        nonpositive = self.fresh_publication("nonpositive-bbox")
-        nonpositive_manifest_path = nonpositive / "assembly-manifest.json"
-        nonpositive_manifest = read_json(nonpositive_manifest_path)
-        nonpositive_manifest["figures"][0]["parts"][0]["bbox"] = [
-            54.0,
-            220.0,
-            306.0,
-            220.0,
-        ]
-        write_json(nonpositive_manifest_path, nonpositive_manifest)
-        evidence = self.assert_blocked(
-            nonpositive,
-            self.case_root / "review-nonpositive-bbox",
-            {"manifest.integrity"},
-        )
-        assert evidence is not None
-        self.assertIn(
-            "bbox must have positive width and height",
-            json.dumps(evidence["checks"], ensure_ascii=False),
-        )
-
-        for name in ("tracked-hash", "undeclared-tree"):
-            with self.subTest(case=name):
-                publication = self.fresh_publication(name)
-                if name == "tracked-hash":
-                    with (publication / "inputs" / "assembly-spec.json").open(
-                        "ab"
-                    ) as stream:
-                        stream.write(b" ")
-                    expected = {"manifest.integrity"}
-                else:
-                    (publication / "undeclared.bin").write_bytes(b"rogue")
-                    expected = {"manifest.integrity"}
-                self.assert_blocked(
-                    publication,
-                    self.case_root / f"review-{name}",
-                    expected,
-                )
-
-    def test_manifest_projection_accepts_identical_shared_records(
-        self,
-    ) -> None:
-        def share_figure_page_svg(
-            publication: Path,
-        ) -> dict[str, Any]:
-            manifest = read_json(publication / "assembly-manifest.json")
-            figure = manifest["figures"][0]
-            first_part = figure["parts"][0]
-            second_part = copy.deepcopy(first_part)
-            second_part.update(
-                {
-                    "id": f"{first_part['id']}-shared",
-                    "order": 2,
-                    "dom_selector": (
-                        f'[data-crop-id="{first_part["id"]}-shared"]'
-                    ),
-                }
-            )
-            figure["parts"].append(second_part)
-            html_path = publication / "index.html"
-            content = html_path.read_text(encoding="utf-8")
-            start = content.index('<svg class="figure-part"')
-            end = content.index("</svg>", start) + len("</svg>")
-            second_crop = (
-                content[start:end]
-                .replace(
-                    f'data-crop-id="{first_part["id"]}"',
-                    f'data-crop-id="{second_part["id"]}"',
-                    1,
-                )
-                .replace(
-                    " - part 1",
-                    " - part 2",
-                )
-            )
-            html_path.write_text(
-                content[:end] + second_crop + content[end:],
-                encoding="utf-8",
-            )
-            manifest["outputs"]["html"] = asset_record(
-                publication,
-                html_path,
-            )
-            return manifest
-
-        accepted = self.fresh_publication("identical")
-        write_json(
-            accepted / "assembly-manifest.json",
-            share_figure_page_svg(accepted),
-        )
-        accepted_context = audit_publication.load_context(
-            accepted / "assembly-manifest.json",
-            accepted / "index.html",
-            "letter",
-        )
-        self.assertFalse(
-            any(
-                "conflicting semantic asset declarations" in error
-                for error in accepted_context.errors
-            )
-        )
-
-        conflicting = self.fresh_publication("conflicting")
-        conflicting_manifest = share_figure_page_svg(conflicting)
-        conflicting_manifest["figures"][0]["parts"][1]["source_svg"][
-            "bytes"
-        ] += 1
-        write_json(
-            conflicting / "assembly-manifest.json",
-            conflicting_manifest,
-        )
-        conflicting_context = audit_publication.load_context(
-            conflicting / "assembly-manifest.json",
-            conflicting / "index.html",
-            "letter",
-        )
-        conflicts = [
-            error
-            for error in conflicting_context.errors
-            if "conflicting semantic asset declarations" in error
-        ]
-        self.assertEqual(
-            1,
-            len(conflicts),
-        )
-
-    def test_figure_profile_must_be_declared_by_manifest(self) -> None:
-        publication = self.fresh_publication()
-        manifest_path = publication / "assembly-manifest.json"
-        manifest = read_json(manifest_path)
-        manifest["figures"][0]["profile"] = "notation-review"
-        write_json(manifest_path, manifest)
-
-        evidence = self.assert_blocked(
-            publication,
-            self.case_root / "review",
-            {"manifest.integrity"},
-        )
-
-        self.assertIn(
-            "profile is not declared by the assembly manifest",
-            json.dumps(evidence["checks"], ensure_ascii=False),
-        )
-
-    def test_duplicate_figure_ids_preserve_entry_source_facts(self) -> None:
-        publication = self.fresh_publication()
-        manifest_path = publication / "assembly-manifest.json"
-        manifest = read_json(manifest_path)
-        duplicate = copy.deepcopy(manifest["figures"][0])
-        duplicate.update(
-            {
-                "source_label": "Second Figure",
-                "profile": None,
-                "embedded_language_inventory": ["fr"],
-            }
-        )
-        manifest["figures"].append(duplicate)
-        write_json(manifest_path, manifest)
-
-        evidence = self.assert_blocked(
-            publication,
-            self.case_root / "review",
-            {"manifest.integrity", "figures.crop-bindings"},
-        )
-
-        figures = self.check_by_id(
-            evidence,
-            "figures.crop-bindings",
-        )["evidence"]["figures"]
-        self.assertEqual(
-            [
-                {
-                    "source_label": "Figure 1",
-                    "profile": "music-notation",
-                    "embedded_language_inventory": ["en", "zh-Hans"],
-                },
-                {
-                    "source_label": "Second Figure",
-                    "profile": None,
-                    "embedded_language_inventory": ["fr"],
-                },
-            ],
-            [
-                {
-                    key: figure[key]
-                    for key in (
-                        "source_label",
-                        "profile",
-                        "embedded_language_inventory",
-                    )
-                }
-                for figure in figures
-            ],
-        )
-
-    def test_profile_link_and_figure_artifacts_block_release(self) -> None:
-        cases = (
-            ("fragment-profile", "html.offline-profile"),
-            ("stylesheet-link", "html.offline-profile"),
-            ("figure-crop", "figures.crop-bindings"),
-            ("figure-cardinality", "figures.crop-bindings"),
-        )
-        for name, expected_check in cases:
-            with self.subTest(case=name):
-                publication = self.fresh_publication(name)
-                if name == "fragment-profile":
-                    logical = "fragments/section-one.html"
-                    path = publication / logical
-                    path.write_text(
-                        path.read_text(encoding="utf-8").replace(
-                            "<p>",
-                            '<p onclick="alert(1)">',
-                            1,
-                        ),
-                        encoding="utf-8",
-                    )
-                else:
-                    logical = "index.html"
-                    path = publication / logical
-                    content = path.read_text(encoding="utf-8")
-                    if name == "stylesheet-link":
-                        content = content.replace(
-                            'href="assets/print.css"',
-                            ('href="assets/stylesheets/stylesheet-001.css"'),
-                            1,
-                        )
-                    elif name == "figure-crop":
-                        content, replacements = re.subn(
-                            r'viewBox="[^"]+"',
-                            'viewBox="0 0 1 1"',
-                            content,
-                            count=1,
-                        )
-                        self.assertEqual(1, replacements)
-                    else:
-                        content, replacements = re.subn(
-                            'data-figure-id="integration-figure"',
-                            'data-figure-id="unbound-figure"',
-                            content,
-                            count=1,
-                        )
-                        self.assertEqual(1, replacements)
-                    path.write_text(content, encoding="utf-8")
-                self.refresh_asset(publication, logical)
-                evidence = self.assert_blocked(
-                    publication,
-                    self.case_root / f"review-{name}",
-                    {expected_check},
-                )
-                assert evidence is not None
-                self.assertTrue(
-                    self.check_by_id(
-                        evidence,
-                        "manifest.integrity",
-                    )["passed"]
-                )
-                if name == "figure-cardinality":
-                    figure = self.check_by_id(
-                        evidence,
-                        "figures.crop-bindings",
-                    )["evidence"]["figures"][0]
-                    self.assertEqual(0, figure["matches"])
-                    self.assertEqual(
-                        {
-                            "source_label": "Figure 1",
-                            "profile": "music-notation",
-                            "embedded_language_inventory": [
-                                "en",
-                                "zh-Hans",
-                            ],
-                        },
-                        {
-                            key: figure[key]
-                            for key in (
-                                "source_label",
-                                "profile",
-                                "embedded_language_inventory",
-                            )
-                        },
-                    )
-
-    def test_authored_reserved_classes_are_rejected_at_qa_boundaries(
-        self,
-    ) -> None:
-        publication = self.fresh_publication("reserved-classes")
-        fragment_logical = "fragments/section-one.html"
-        fragment_path = publication / fragment_logical
-        fragment_path.write_text(
-            fragment_path.read_text(encoding="utf-8").replace(
-                "<p>",
-                '<p class="publication-figure">',
+            .replace(
+                "</section>",
+                (
+                    f'<script src="{remote}"></script>'
+                    f'<img src="{remote}" alt="">'
+                    f'<a href="{remote}">remote</a>'
+                    "</section>"
+                ),
                 1,
             ),
             encoding="utf-8",
         )
-
-        index_logical = "index.html"
-        index_path = publication / index_logical
-        index_content = index_path.read_text(encoding="utf-8").replace(
-            "<p>",
-            '<p class="publication-figure">',
-            1,
+        css.write_text(
+            css.read_text(encoding="utf-8") + f'\n@import url("{remote}");\n'
+            f'body {{ background: url("{remote}"); }}\n',
+            encoding="utf-8",
         )
-        caption = (
-            '<span class="figure-label publication-figure">Figure 1.</span> '
-            "Deterministic vector figure."
+        source_svg.write_text(
+            source_svg.read_text(encoding="utf-8").replace(
+                "</svg>",
+                (
+                    f'<rect fill="url({remote})" '
+                    f'style="stroke:url({remote})"/>'
+                    f'<script></script><image href="{remote}"/></svg>'
+                ),
+                1,
+            ),
+            encoding="utf-8",
         )
-        index_content = index_content.replace(
-            '<span class="figure-label">Figure 1.</span> '
-            "Deterministic vector figure.",
-            caption,
-            1,
-        )
-        index_path.write_text(index_content, encoding="utf-8")
-
-        manifest_path = publication / "assembly-manifest.json"
-        manifest = read_json(manifest_path)
-        manifest["figures"][0]["caption_html"] = caption
-        manifest["figures"][0]["caption_sha256"] = sha256_bytes(
-            caption.encode()
-        )
-        write_json(manifest_path, manifest)
-        self.refresh_asset(publication, fragment_logical)
-        self.refresh_asset(publication, index_logical)
-
+        for logical in (
+            "index.html",
+            "assets/print.css",
+            source_svg.relative_to(publication).as_posix(),
+        ):
+            self.refresh_asset(publication, logical)
         evidence = self.assert_blocked(
             publication,
-            self.case_root / "review-reserved-classes",
-            {"html.offline-profile", "figures.crop-bindings"},
+            self.case_root / "review-active-and-dormant",
+            {"html.offline-profile"},
+            exact=False,
         )
+        offline = self.check_by_id(evidence, "html.offline-profile")["evidence"]
+        serialized = json.dumps(offline, ensure_ascii=False)
+        for expected in (
+            "blocked_requests",
+            "dormant-dom-url",
+            "active-elements",
+            "css-resource",
+            "source-svg",
+        ):
+            self.assertIn(expected, serialized)
+        self.assertNotIn(remote, serialized)
+        active = next(
+            finding
+            for finding in offline["findings"]
+            if isinstance(finding, dict)
+            and finding.get("kind") == "active-elements"
+        )
+        self.assertIn("animate", active["elements"])
 
-        html_findings = self.check_by_id(
-            evidence,
+        missing_font = self.fresh_publication("failed-local-font")
+        missing_manifest = read_json(missing_font / "assembly-manifest.json")
+        (missing_font / missing_manifest["fonts"][0]["asset"]["path"]).unlink()
+        missing_evidence = self.assert_blocked(
+            missing_font,
+            self.case_root / "review-failed-local-font",
+            {"manifest.integrity", "html.offline-profile", "pdf.fonts"},
+        )
+        requests = self.check_by_id(missing_evidence, "html.offline-profile")[
+            "evidence"
+        ]["request_findings"]
+        self.assertIn("failed_requests", json.dumps(requests))
+
+    def test_effective_metadata_security_matrix(self) -> None:
+        author = self.fresh_publication("author-metadata")
+        author_html = author / "index.html"
+        author_html.write_text(
+            author_html.read_text(encoding="utf-8").replace(
+                "<title",
+                '<meta name="author" content="QA Author">\n<title',
+                1,
+            ),
+            encoding="utf-8",
+        )
+        self.refresh_asset(author, "index.html")
+        author_result = _invoke(
+            self.arguments(
+                author,
+                self.case_root / "review-author-metadata",
+            )
+        )
+        self.assertEqual(0, author_result.exit_code, author_result)
+
+        http_equiv = self.fresh_publication("http-equiv-metadata")
+        http_equiv_html = http_equiv / "index.html"
+        declarations = "".join(
+            f'<meta http-equiv="x-qa-{index}" content="passive">\n'
+            for index in range(audit_publication.MAX_DIAGNOSTIC_ITEMS + 3)
+        )
+        http_equiv_html.write_text(
+            http_equiv_html.read_text(encoding="utf-8").replace(
+                "<title",
+                declarations + "<title",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        self.refresh_asset(http_equiv, "index.html")
+        http_equiv_evidence = self.assert_blocked(
+            http_equiv,
+            self.case_root / "review-http-equiv-metadata",
+            {"html.offline-profile"},
+        )
+        http_equiv_findings = self.check_by_id(
+            http_equiv_evidence,
             "html.offline-profile",
         )["evidence"]["findings"]
-        self.assertTrue(
-            any(
-                "fragment section-one: <p> class uses assembler-owned "
-                "classes: publication-figure" in str(finding)
-                for finding in html_findings
-            )
+        http_equiv_finding = next(
+            finding
+            for finding in http_equiv_findings
+            if isinstance(finding, dict)
+            and finding.get("kind") == "http-equiv-metadata"
         )
-        figure_findings = self.check_by_id(
-            evidence,
-            "figures.crop-bindings",
+        self.assertEqual(
+            audit_publication.MAX_DIAGNOSTIC_ITEMS + 3,
+            http_equiv_finding["count"],
+        )
+        self.assertEqual(
+            audit_publication.MAX_DIAGNOSTIC_ITEMS,
+            len(http_equiv_finding["samples"]),
+        )
+        self.assertTrue(http_equiv_finding["truncated"])
+
+        non_utf = self.fresh_publication("non-utf-metadata")
+        non_utf_html = non_utf / "index.html"
+        non_utf_content = non_utf_html.read_text(encoding="utf-8")
+        self.assertIn('<meta charset="utf-8">', non_utf_content)
+        non_utf_html.write_text(
+            non_utf_content.replace(
+                '<meta charset="utf-8">',
+                '<meta charset="windows-1252">',
+                1,
+            ),
+            encoding="utf-8",
+        )
+        self.refresh_asset(non_utf, "index.html")
+        non_utf_evidence = self.assert_blocked(
+            non_utf,
+            self.case_root / "review-non-utf-metadata",
+            {"html.offline-profile"},
+        )
+        non_utf_findings = self.check_by_id(
+            non_utf_evidence,
+            "html.offline-profile",
         )["evidence"]["findings"]
-        self.assertTrue(
-            any(
-                "figure integration-figure caption: <span> class uses "
-                "assembler-owned classes: publication-figure" in str(finding)
-                for finding in figure_findings
+        character_set_finding = next(
+            finding
+            for finding in non_utf_findings
+            if isinstance(finding, dict)
+            and finding.get("kind") == "effective-character-set"
+        )
+        self.assertEqual("UTF-8", character_set_finding["expected"])
+        self.assertNotEqual(
+            "utf-8",
+            str(character_set_finding["observed"]).casefold(),
+        )
+
+    def test_title_language_inherits_from_head(self) -> None:
+        publication = self.fresh_publication("head-title-language")
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        manifest["document"]["title_language"] = "fr"
+        write_json(manifest_path, manifest)
+        html = publication / "index.html"
+        content = html.read_text(encoding="utf-8")
+        self.assertIn("<head>", content)
+        self.assertIn('<title lang="en">', content)
+        html.write_text(
+            content.replace("<head>", '<head lang="fr">', 1).replace(
+                '<title lang="en">',
+                "<title>",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        self.refresh_asset(publication, "index.html")
+
+        result = _invoke(
+            self.arguments(
+                publication,
+                self.case_root / "review-head-title-language",
             )
         )
-        self.assertNotIn(
-            "figure integration-figure caption does not match manifest",
-            figure_findings,
+
+        self.assertEqual(0, result.exit_code, result)
+
+    def test_empty_title_language_stops_inheritance(self) -> None:
+        publication = self.fresh_publication("empty-title-language")
+        html = publication / "index.html"
+        content = html.read_text(encoding="utf-8")
+        self.assertIn('<title lang="en">', content)
+        html.write_text(
+            content.replace(
+                '<title lang="en">',
+                '<title lang="">',
+                1,
+            ),
+            encoding="utf-8",
         )
-        figure_records = self.check_by_id(
-            evidence,
-            "figures.crop-bindings",
-        )["evidence"]["figures"]
-        figure_record = next(
-            record
-            for record in figure_records
-            if record["id"] == "integration-figure"
+        self.refresh_asset(publication, "index.html")
+
+        self.assert_blocked(
+            publication,
+            self.case_root / "review-empty-title-language",
+            {"html.offline-profile"},
         )
-        self.assertFalse(figure_record["caption_matches"])
 
-    def test_text_read_failures_emit_path_neutral_diagnostics(self) -> None:
-        publication = self.fresh_publication("text-read-failures")
-        manifest = read_json(publication / "assembly-manifest.json")
-        fragment = manifest["fragments"][0]
-        cases = (
-            (
-                "generated-html",
-                manifest["outputs"]["html"]["path"],
-                None,
-                "os",
-            ),
-            (
-                "generated-css",
-                manifest["outputs"]["css"]["path"],
-                None,
-                "unicode",
-            ),
-            (
-                "retained-stylesheet",
-                manifest["stylesheets"][0]["path"],
-                None,
-                "os",
-            ),
-            (
-                "fragment",
-                fragment["asset"]["path"],
-                fragment["id"],
-                "unicode",
-            ),
-        )
-        original_read_text = Path.read_text
-        for category, logical, fragment_id, failure_category in cases:
-            with self.subTest(category=category):
-                target = (publication / logical).resolve()
-                raw_message = f"raw-{failure_category}-{category}-message"
-                absolute_filename = (
-                    rf"C:\qa-private\{category}-absolute-secret.txt"
-                )
-
-                def injected_read_text(
-                    path: Path,
-                    *args: Any,
-                    expected_target: Path = target,
-                    injected_failure: str = failure_category,
-                    injected_message: str = raw_message,
-                    injected_filename: str = absolute_filename,
-                    **kwargs: Any,
-                ) -> str:
-                    if path.resolve() == expected_target:
-                        if injected_failure == "os":
-                            raise FileNotFoundError(
-                                2,
-                                injected_message,
-                                injected_filename,
-                            )
-                        encoding = "utf-8"
-                        raise UnicodeDecodeError(
-                            encoding,
-                            b"\xffprivate",
-                            0,
-                            1,
-                            injected_message,
-                        )
-                    return original_read_text(path, *args, **kwargs)
-
-                review = self.case_root / f"review-{category}"
-                with mock.patch.object(
-                    Path,
-                    "read_text",
-                    new=injected_read_text,
-                ):
-                    evidence = self.assert_blocked(
-                        publication,
-                        review,
-                        {"html.offline-profile"},
-                    )
-
-                assert evidence is not None
-                self.assert_schema_valid(
-                    evidence,
-                    "qa-evidence.schema.json",
-                )
-                self.assert_check_evidence_bounded(evidence)
-                diagnostics = [
-                    record
-                    for record in self.nested_records(evidence["checks"])
-                    if record.get("kind") == "text-read"
-                    and record.get("category") == category
-                ]
-                self.assertTrue(diagnostics)
-                for diagnostic in diagnostics:
-                    self.assertEqual(logical, diagnostic["path"])
-                    self.assertEqual(
-                        failure_category,
-                        diagnostic["failure_category"],
-                    )
-                    if fragment_id is None:
-                        self.assertNotIn("fragment_id", diagnostic)
-                    else:
-                        self.assertEqual(
-                            fragment_id,
-                            diagnostic["fragment_id"],
-                        )
-                    if failure_category == "os":
-                        self.assertEqual(2, diagnostic["errno"])
-                    else:
-                        self.assertNotIn("errno", diagnostic)
-                serialized = json.dumps(evidence, ensure_ascii=False)
-                self.assertNotIn(raw_message, serialized)
-                self.assertNotIn(absolute_filename, serialized)
-                self.assertNotIn(
-                    absolute_filename.replace("\\", "/"),
-                    serialized,
-                )
-                self.assertNotIn("file:", serialized.casefold())
-
-    def test_long_resource_urls_emit_path_neutral_bounded_evidence(
-        self,
-    ) -> None:
-        for scheme in ("file", "https"):
-            with self.subTest(scheme=scheme):
-                publication = self.fresh_publication(f"resource-{scheme}")
-                sentinel = f"{scheme}-credential-" + ("x" * 700)
-                if scheme == "file":
-                    raw_url = (
-                        publication.resolve().as_uri()
-                        + f"/private/{sentinel}?token=secret#fragment"
-                    )
-                else:
-                    raw_url = (
-                        "https://user:password@example.invalid/"
-                        f"{sentinel}?token=secret#fragment"
-                    )
-                index = publication / "index.html"
-                encoded_url = raw_url.replace("&", "&amp;").replace(
-                    '"',
-                    "&quot;",
-                )
-                content, replacements = re.subn(
-                    r'(<image\b[^>]*\bhref=")[^"]*(")',
-                    lambda match, replacement=encoded_url: (
-                        f"{match.group(1)}{replacement}{match.group(2)}"
-                    ),
-                    index.read_text(encoding="utf-8"),
-                    count=1,
-                )
-                self.assertEqual(1, replacements)
-                index.write_text(content, encoding="utf-8")
-                self.refresh_asset(publication, "index.html")
-
-                evidence = self.assert_blocked(
-                    publication,
-                    self.case_root / f"review-resource-{scheme}",
-                    {"html.offline-profile", "figures.crop-bindings"},
-                )
-
-                assert evidence is not None
-                self.assert_schema_valid(evidence, "qa-evidence.schema.json")
-                self.assert_check_evidence_bounded(evidence)
-                diagnostics = [
-                    record
-                    for record in self.nested_records(evidence["checks"])
-                    if record.get("kind") == "resource-url"
-                    and record.get("sha256") == sha256_bytes(raw_url.encode())
-                ]
-                self.assertTrue(diagnostics)
-                self.assertTrue(
-                    all(
-                        record["category"] == "nonlocal"
-                        and record["scheme_category"] == scheme
-                        and record["input_characters"] == len(raw_url)
-                        and record["input_bytes"] == len(raw_url.encode())
-                        for record in diagnostics
-                    )
-                )
-                serialized = json.dumps(evidence, ensure_ascii=False)
-                self.assertNotIn(raw_url, serialized)
-                self.assertNotIn(sentinel, serialized)
-                self.assertNotIn("example.invalid", serialized)
-                self.assertNotIn("user:password", serialized)
-                self.assertNotIn("file:", serialized.casefold())
-                self.assertNotIn(str(publication.resolve()), serialized)
-                self.assertNotIn(
-                    publication.resolve().as_posix(),
-                    serialized,
-                )
-
-    def test_malformed_source_svg_emits_relative_stable_diagnostic(
-        self,
-    ) -> None:
-        publication = self.fresh_publication("malformed-source-svg")
+    def test_source_svg_metadata_text_is_not_parsed_as_css(self) -> None:
+        publication = self.fresh_publication("svg-metadata")
         manifest = read_json(publication / "assembly-manifest.json")
         logical = manifest["figures"][0]["parts"][0]["source_svg"]["path"]
         source_svg = publication / logical
-        source_svg.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg"><g>')
+        source_svg.write_text(
+            source_svg.read_text(encoding="utf-8").replace(
+                "</svg>",
+                (
+                    '<metadata data-text="url(https://example.invalid/text) '
+                    'unmatched(((">'
+                    "url(https://example.invalid/body) {</metadata>"
+                    "</svg>"
+                ),
+                1,
+            ),
+            encoding="utf-8",
+        )
         self.refresh_asset(publication, logical)
 
-        evidence = self.assert_blocked(
-            publication,
-            self.case_root / "review-malformed-source-svg",
-            {"figures.crop-bindings"},
-        )
-
-        assert evidence is not None
-        self.assert_schema_valid(evidence, "qa-evidence.schema.json")
-        self.assert_check_evidence_bounded(evidence)
-        diagnostics = [
-            record
-            for record in self.nested_records(evidence["checks"])
-            if record.get("kind") == "source-svg"
-        ]
-        self.assertTrue(
-            any(
-                record["category"] == "xml-parse-error"
-                and record["path"] == logical
-                and record["path_sha256"] == sha256_bytes(logical.encode())
-                for record in diagnostics
+        result = _invoke(
+            self.arguments(
+                publication,
+                self.case_root / "review-svg-metadata",
             )
         )
-        serialized = json.dumps(evidence, ensure_ascii=False)
-        self.assertNotIn(str(source_svg.resolve()), serialized)
-        self.assertNotIn(source_svg.resolve().as_posix(), serialized)
-        self.assertNotIn("unclosed token", serialized.casefold())
-        self.assertNotIn("file:", serialized.casefold())
 
-    def test_long_pdf_action_targets_emit_bounded_metadata_only(self) -> None:
-        publication = self.fresh_publication("long-pdf-actions")
-        uri_sentinel = "uri-target-secret-" + ("u" * 700)
-        file_sentinel = "file-target-secret-" + ("f" * 700)
-        uri_target = (
-            "https://user:password@example.invalid/"
-            f"{uri_sentinel}?token=secret#fragment"
-        )
-        file_target = str(
-            publication.resolve() / "private" / f"{file_sentinel}.pdf"
-        )
-        pdf = publication / "publication.pdf"
-        add_pdf_external_actions(pdf, uri_target, file_target)
-        self.refresh_asset(publication, "publication.pdf")
+        self.assertEqual(0, result.exit_code, result)
 
-        evidence = self.assert_blocked(
-            publication,
-            self.case_root / "review-long-pdf-actions",
-            {"pdf.actions-type3-text"},
-        )
-
-        assert evidence is not None
-        self.assert_schema_valid(evidence, "qa-evidence.schema.json")
-        self.assert_check_evidence_bounded(evidence)
-        check = self.check_by_id(evidence, "pdf.actions-type3-text")
-        canonical = check["evidence"]["observations"]["canonical"]
-        actions = canonical["actions"]
-        self.assertTrue(actions["unsafe_detected"])
-        self.assertIn("uri", actions["unsafe_kinds"])
-        self.assertTrue(
-            {"launch", "goto-remote"} & set(actions["unsafe_kinds"])
-        )
-        self.assertFalse(
-            {"total", "unsafe_total", "omitted", "sha256", "samples"}
-            & set(actions)
-        )
-        targeted = [
-            action
-            for action in actions["target_samples"]
-            if "target_sha256" in action
-        ]
-        self.assertTrue(
-            any(
-                action["kind"] == "uri"
-                and action["page"] == 1
-                and action["target_category"] == "uri"
-                and action["scheme_category"] == "https"
-                and action["target_characters"] == len(uri_target)
-                and action["target_bytes"] == len(uri_target.encode())
-                and action["target_sha256"] == sha256_bytes(uri_target.encode())
-                for action in targeted
-            )
-        )
-        self.assertTrue(
-            any(
-                action["kind"] in {"launch", "goto-remote"}
-                and action["page"] == 1
-                and action["target_category"] == "file"
-                and action["scheme_category"] in {"file", "path"}
-                and action["target_characters"] > 256
-                and re.fullmatch(r"[a-f0-9]{64}", action["target_sha256"])
-                for action in targeted
-            ),
-            targeted,
-        )
-        finding = check["evidence"]["findings"]["canonical"]
-        self.assertTrue(finding["actions"]["unsafe_detected"])
-        self.assertEqual(
-            actions["unsafe_kinds"],
-            finding["actions"]["unsafe_kinds"],
-        )
-        serialized = json.dumps(evidence, ensure_ascii=False)
-        self.assertNotIn(uri_target, serialized)
-        self.assertNotIn(file_target, serialized)
-        self.assertNotIn(uri_sentinel, serialized)
-        self.assertNotIn(file_sentinel, serialized)
-        self.assertNotIn("example.invalid", serialized)
-        self.assertNotIn("user:password", serialized)
-        self.assertNotIn("file:", serialized.casefold())
-        self.assertNotIn(str(publication.resolve()), serialized)
-        self.assertNotIn(publication.resolve().as_posix(), serialized)
-
-    def test_unknown_pdf_action_subtype_is_fixed_and_path_neutral(
+    def test_source_svg_css_resource_attributes_reject_remote_urls(
         self,
     ) -> None:
-        publication = self.fresh_publication("unknown-pdf-action")
-        decoded_subtype = "../../private/unknown-action-decoded-sentinel-" + (
-            "x" * 64
+        publication = self.fresh_publication("svg-css-resource")
+        manifest = read_json(publication / "assembly-manifest.json")
+        logical = manifest["figures"][0]["parts"][0]["source_svg"]["path"]
+        original = (publication / logical).read_text(encoding="utf-8")
+        remote = "https://example.invalid/svg-resource"
+        cases = {
+            "presentation": f'fill="url({remote})"',
+            "style": f'style="stroke:url({remote})"',
+        }
+        for name, attribute in cases.items():
+            with self.subTest(name=name):
+                candidate = self.case_root / f"source-{name}.svg"
+                candidate.write_text(
+                    original.replace(
+                        "</svg>",
+                        f"<rect {attribute}/></svg>",
+                        1,
+                    ),
+                    encoding="utf-8",
+                )
+                _width, _height, findings = (
+                    audit_publication.inspect_source_svg(
+                        candidate,
+                        candidate.name,
+                    )
+                )
+                self.assertIn(
+                    "nonlocal-resource",
+                    {finding["category"] for finding in findings},
+                )
+                self.assertNotIn(remote, json.dumps(findings))
+
+    def test_role_aware_browser_routing_blocks_wrong_resource_use(self) -> None:
+        publication = self.fresh_publication("wrong-resource-role")
+        manifest = read_json(publication / "assembly-manifest.json")
+        css = publication / manifest["outputs"]["css"]["path"]
+        font = publication / manifest["fonts"][0]["asset"]["path"]
+        relative_font = Path(os.path.relpath(font, css.parent)).as_posix()
+        css.write_text(
+            css.read_text(encoding="utf-8")
+            + f'\nbody {{ background-image: url("{relative_font}"); }}\n',
+            encoding="utf-8",
         )
-        encoded_subtype = "".join(
-            f"#{byte:02X}" for byte in decoded_subtype.encode()
-        )
-        self.assertGreater(
-            len(encoded_subtype),
-            audit_publication.MAX_DIAGNOSTIC_STRING,
-        )
-        pdf = publication / "publication.pdf"
-        add_pdf_unknown_action(pdf, encoded_subtype)
-        self.refresh_asset(publication, "publication.pdf")
+        self.refresh_asset(publication, manifest["outputs"]["css"]["path"])
 
         evidence = self.assert_blocked(
             publication,
-            self.case_root / "review-unknown-pdf-action",
-            {"pdf.actions-type3-text"},
+            self.case_root / "review-wrong-resource-role",
+            {"html.offline-profile"},
         )
 
-        assert evidence is not None
-        self.assert_schema_valid(evidence, "qa-evidence.schema.json")
-        self.assert_check_evidence_bounded(evidence)
-        check = self.check_by_id(evidence, "pdf.actions-type3-text")
-        actions = check["evidence"]["observations"]["canonical"]["actions"]
-        decoded_bytes = decoded_subtype.encode()
-        self.assertTrue(actions["unsafe_detected"])
-        self.assertEqual(["unknown-action"], actions["unsafe_kinds"])
-        self.assertEqual(
-            [
-                {
-                    "kind": "unknown-action",
-                    "source_category": "catalog",
-                    "subtype_characters": len(decoded_subtype),
-                    "subtype_bytes": len(decoded_bytes),
-                    "subtype_sha256": sha256_bytes(decoded_bytes),
-                }
-            ],
-            actions["witnesses"],
+        offline = self.check_by_id(evidence, "html.offline-profile")["evidence"]
+        self.assertIn(
+            "blocked_requests",
+            offline["request_findings"]["render_1"],
         )
-        self.assertFalse(actions["witnesses_truncated"])
-        serialized = json.dumps(evidence, ensure_ascii=False)
-        self.assertNotIn(decoded_subtype, serialized)
-        self.assertNotIn("unknown-action-decoded-sentinel", serialized)
-        self.assertNotIn(encoded_subtype, serialized)
-        self.assertNotIn("#75#6E#6B#6E#6F#77#6E", serialized)
+        self.assertTrue(self.check_by_id(evidence, "pdf.fonts")["passed"])
 
-    def test_actual_pdf_artifacts_drive_pdf_and_geometry_failures(self) -> None:
-        cases = (
-            ("font", remove_pdf_font_programs, "pdf.fonts"),
-            (
-                "action",
-                lambda path: add_pdf_javascript(path, "open-action"),
-                "pdf.actions-type3-text",
+    def test_page_rule_observation_respects_active_conditions(self) -> None:
+        inactive = self.fresh_publication("inactive-screen-page")
+        inactive_manifest = read_json(inactive / "assembly-manifest.json")
+        inactive_css = inactive / inactive_manifest["outputs"]["css"]["path"]
+        inactive_css.write_text(
+            inactive_css.read_text(encoding="utf-8")
+            + "\n@media screen { @page { size: A4; margin: 0; } }\n",
+            encoding="utf-8",
+        )
+        self.refresh_asset(
+            inactive,
+            inactive_manifest["outputs"]["css"]["path"],
+        )
+        inactive_result = _invoke(
+            self.arguments(
+                inactive,
+                self.case_root / "review-inactive-screen-page",
+            )
+        )
+        self.assertEqual(0, inactive_result.exit_code, inactive_result)
+
+        duplicate = self.fresh_publication("duplicate-active-page")
+        duplicate_manifest = read_json(duplicate / "assembly-manifest.json")
+        duplicate_css = duplicate / duplicate_manifest["outputs"]["css"]["path"]
+        duplicate_css.write_text(
+            duplicate_css.read_text(encoding="utf-8")
+            + "\n@page { size: Letter; margin: 0.75in; }\n",
+            encoding="utf-8",
+        )
+        self.refresh_asset(
+            duplicate,
+            duplicate_manifest["outputs"]["css"]["path"],
+        )
+        duplicate_evidence = self.assert_blocked(
+            duplicate,
+            self.case_root / "review-duplicate-active-page",
+            {"html.offline-profile"},
+        )
+        self.assertIn(
+            "exactly one active unqualified",
+            json.dumps(
+                self.check_by_id(
+                    duplicate_evidence,
+                    "html.offline-profile",
+                )["evidence"]
             ),
-            ("type3", add_pdf_type3_font, "pdf.actions-type3-text"),
-            (
-                "text",
-                clear_pdf_page_contents,
-                "pdf.actions-type3-text",
-            ),
-            (
-                "geometry",
-                scale_pdf_user_unit,
+        )
+
+    def test_semantic_fragment_content_order_and_overflow_matrix(self) -> None:
+        publication = self.fresh_publication("visible-and-overflow")
+        html, css = (
+            publication / "index.html",
+            publication / "assets" / "print.css",
+        )
+        html.write_text(
+            html.read_text(encoding="utf-8")
+            .replace(
+                "</section>", '<div class="qa-wide">wide</div></section>', 1
+            )
+            .replace("</main>", "</main><p id=outside>outside</p>", 1),
+            encoding="utf-8",
+        )
+        css.write_text(
+            css.read_text(encoding="utf-8")
+            + "\n#opening { opacity: 0; }\n.qa-wide { width: 2000px; }\n",
+            encoding="utf-8",
+        )
+        self.refresh_asset(publication, "index.html")
+        self.refresh_asset(publication, "assets/print.css")
+        evidence = self.assert_blocked(
+            publication,
+            self.case_root / "review-visible-and-overflow",
+            {
+                "html.offline-profile",
                 "render.geometry-overflow",
+            },
+            exact=False,
+        )
+        offline = json.dumps(
+            self.check_by_id(evidence, "html.offline-profile")["evidence"]
+        )
+        self.assertIn("visible-text hash mismatch", offline)
+        self.assertIn("visible-content-outside-fragments", offline)
+        self.assertTrue(
+            self.check_by_id(evidence, "render.geometry-overflow")["evidence"][
+                "overflow"
+            ]
+        )
+
+        cardinality = self.fresh_publication("fragment-cardinality")
+        cardinality_html = cardinality / "index.html"
+        content = cardinality_html.read_text(encoding="utf-8")
+        matched = re.search(
+            r'(<section\b[^>]*data-fragment-id="[^"]+".*?</section>)',
+            content,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(matched)
+        section = matched.group(1)
+        cardinality_html.write_text(
+            content.replace(section, section + section, 1), encoding="utf-8"
+        )
+        self.refresh_asset(cardinality, "index.html")
+        cardinality_evidence = self.assert_blocked(
+            cardinality,
+            self.case_root / "review-fragment-cardinality",
+            {"html.offline-profile"},
+            exact=False,
+        )
+        self.assertIn(
+            "not exactly once",
+            json.dumps(
+                self.check_by_id(cardinality_evidence, "html.offline-profile")[
+                    "evidence"
+                ]
             ),
         )
-        for name, mutation, expected_check in cases:
-            with self.subTest(case=name):
-                publication = self.fresh_publication(name)
-                pdf_path = publication / "publication.pdf"
-                mutation(pdf_path)
-                self.refresh_asset(publication, "publication.pdf")
 
-                evidence = self.assert_blocked(
-                    publication,
-                    self.case_root / f"review-{name}",
-                    {expected_check},
-                )
-                assert evidence is not None
-                assert evidence is not None
-                self.assertTrue(
-                    self.check_by_id(
-                        evidence,
-                        "manifest.integrity",
-                    )["passed"]
-                )
-                if name == "font":
-                    canonical = self.check_by_id(
-                        evidence,
-                        "pdf.fonts",
-                    )["evidence"]["fonts"]["canonical"]
-                    self.assertTrue(
-                        any(not font["embedded"] for font in canonical)
-                    )
-                elif name == "action":
-                    canonical = self.check_by_id(
-                        evidence,
-                        "pdf.actions-type3-text",
-                    )["evidence"]["observations"]["canonical"]
-                    self.assertTrue(canonical["actions"]["unsafe_detected"])
-                    self.assertIn(
-                        "javascript",
-                        canonical["actions"]["unsafe_kinds"],
-                    )
-                elif name == "type3":
-                    canonical = self.check_by_id(
-                        evidence,
-                        "pdf.actions-type3-text",
-                    )["evidence"]["observations"]["canonical"]
-                    self.assertTrue(canonical["type3_fonts"])
-                elif name == "text":
-                    canonical = self.check_by_id(
-                        evidence,
-                        "pdf.actions-type3-text",
-                    )["evidence"]["observations"]["canonical"]
-                    self.assertEqual(0, canonical["text_characters"])
-                else:
-                    canonical = self.check_by_id(
-                        evidence,
-                        "render.geometry-overflow",
-                    )["evidence"]["pdf_pages"]["canonical"]
-                    self.assertFalse(canonical[0]["size_matches"])
-
-    def test_actual_browser_overflow_blocks_release(self) -> None:
-        publication = build_rendered_publication(
-            self.case_root / "overflow-pipeline",
-            reconstruct_pdf,
-            assemble_print,
-            browser=BROWSER,
-            fragment_html=OVERFLOW_FRAGMENT,
+        ordered = self.fresh_publication("fragment-order")
+        manifest_path = ordered / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        original = manifest["fragments"][0]
+        original_asset = ordered / original["asset"]["path"]
+        second_asset = original_asset.with_name("section-two.html")
+        second_asset.write_bytes(original_asset.read_bytes())
+        second = copy.deepcopy(original)
+        second.update(
+            {
+                "id": "section-two",
+                "asset": asset_record(ordered, second_asset),
+                "dom_selector": '[data-fragment-id="section-two"]',
+            }
         )
+        manifest["fragments"].append(second)
+        write_json(manifest_path, manifest)
+        ordered_html = ordered / "index.html"
+        content = ordered_html.read_text(encoding="utf-8")
+        matched = re.search(
+            rf'(<section\b[^>]*data-fragment-id="{original["id"]}".*?</section>)',
+            content,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(matched)
+        original_section = matched.group(1)
+        second_section = original_section.replace(
+            f'data-fragment-id="{original["id"]}"',
+            'data-fragment-id="section-two"',
+            1,
+        )
+        ordered_html.write_text(
+            content.replace(
+                original_section, second_section + original_section, 1
+            ),
+            encoding="utf-8",
+        )
+        self.refresh_asset(ordered, "index.html")
+        ordered_evidence = self.assert_blocked(
+            ordered,
+            self.case_root / "review-fragment-order",
+            {"html.offline-profile"},
+            exact=False,
+        )
+        self.assertIn(
+            "manifest order",
+            json.dumps(
+                self.check_by_id(ordered_evidence, "html.offline-profile")[
+                    "evidence"
+                ]
+            ),
+        )
+
+    def test_figure_crop_caption_and_ownership_matrix(self) -> None:
+        publication = self.fresh_publication()
+        manifest = read_json(publication / "assembly-manifest.json")
+        figure, part = (
+            manifest["figures"][0],
+            manifest["figures"][0]["parts"][0],
+        )
+        html = publication / "index.html"
+        content = html.read_text(encoding="utf-8")
+        content = content.replace(
+            f'aria-label="{figure["alt"]}"',
+            'aria-label="wrong figure label"',
+            1,
+        )
+        content = re.sub(
+            r'viewBox="[^"]+"', 'viewBox="0 0 1 1"', content, count=1
+        )
+        content = re.sub(
+            r"<figcaption>.*?</figcaption>",
+            "<figcaption>Wrong caption.</figcaption>",
+            content,
+            count=1,
+            flags=re.DOTALL,
+        )
+        content = re.sub(
+            r'(<image\b[^>]*\bhref=")[^"]+("[^>]*>)',
+            r"\1inputs/source-package.json\2",
+            content,
+            count=1,
+        )
+        crop_match = re.search(
+            rf'(<svg\b[^>]*data-crop-id="{re.escape(part["id"])}".*?</svg>)',
+            content,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(crop_match)
+        crop_markup = crop_match.group(1)
+        content = content.replace(crop_markup, "", 1)
+        content = content.replace("</figure>", f"</figure>{crop_markup}", 1)
+        extra = (
+            '<figure data-figure-id="unbound"><figcaption>extra</figcaption>'
+            '<svg data-crop-id="unbound-crop" role="img" '
+            'aria-label="extra" viewBox="0 0 1 1">'
+            '<image href="inputs/source-package.json"></image></svg></figure>'
+        )
+        html.write_text(
+            content.replace("</section>", extra + "</section>", 1),
+            encoding="utf-8",
+        )
+        self.refresh_asset(publication, "index.html")
         evidence = self.assert_blocked(
             publication,
             self.case_root / "review",
-            {"render.geometry-overflow"},
+            {"figures.crop-bindings"},
+            exact=False,
         )
+        figure_check = self.check_by_id(evidence, "figures.crop-bindings")[
+            "evidence"
+        ]
+        findings = json.dumps(figure_check, ensure_ascii=False)
+        for expected in (
+            "cardinality",
+            "aria-label",
+            "caption mismatch",
+            "ownership mismatch",
+            "viewBox mismatch",
+            "source mismatch",
+            "unbound",
+        ):
+            self.assertIn(expected, findings)
+        crop = next(
+            item for item in figure_check["crops"] if item["id"] == part["id"]
+        )
+        self.assertFalse(crop["source_matches"])
+        self.assertFalse(crop["viewbox_matches"])
 
-        assert evidence is not None
-        self.assertTrue(
-            self.check_by_id(evidence, "manifest.integrity")["passed"]
-        )
-        self.assertTrue(
-            self.check_by_id(evidence, "html.offline-profile")["passed"]
-        )
-        self.assertTrue(
-            self.check_by_id(
-                evidence,
-                "render.geometry-overflow",
-            )["evidence"]["overflow"]
-        )
+    def test_manifest_integrity_and_no_review_operational_matrix(self) -> None:
+        invalid = self.fresh_publication("schema-invalid")
+        invalid_manifest_path = invalid / "assembly-manifest.json"
+        invalid_manifest = read_json(invalid_manifest_path)
+        invalid_manifest.pop("publication_id")
+        write_json(invalid_manifest_path, invalid_manifest)
+        invalid_review = self.case_root / "review-schema-invalid"
+        invalid_result = _invoke(self.arguments(invalid, invalid_review))
+        self.assertEqual(2, invalid_result.exit_code, invalid_result)
+        self.assertFalse(invalid_review.exists())
 
-    def test_block_keep_together_wraps_without_horizontal_overflow(
-        self,
-    ) -> None:
-        publication = build_rendered_publication(
-            self.case_root / "keep-together-pipeline",
-            reconstruct_pdf,
-            assemble_print,
-            browser=BROWSER,
-            fragment_html=KEEP_TOGETHER_FRAGMENT,
+        malformed = self.fresh_publication("load-invalid")
+        (malformed / "assembly-manifest.json").write_text(
+            "{",
+            encoding="utf-8",
         )
-        review = self.case_root / "review-keep-together"
+        malformed_review = self.case_root / "review-load-invalid"
+        malformed_result = _invoke(self.arguments(malformed, malformed_review))
+        self.assertEqual(2, malformed_result.exit_code, malformed_result)
+        self.assertFalse(malformed_review.exists())
 
-        result = invoke(self.arguments(publication, review))
+        publication = self.fresh_publication("integrity-findings")
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        manifest["policies"]["publication_profile"]["sha256"] = "0" * 64
+        manifest["fragments"][0]["asset"]["sha256"] = "1" * 64
+        manifest["fragments"].append(copy.deepcopy(manifest["fragments"][0]))
+        manifest["figures"][0]["caption_sha256"] = "2" * 64
+        bbox = manifest["figures"][0]["parts"][0]["bbox"]
+        bbox[2] = bbox[0]
+        manifest["font_roles"]["body-latin"] = "Undeclared Fixture Font"
+        conflicting = copy.deepcopy(manifest["stylesheets"][0])
+        conflicting["sha256"] = "3" * 64
+        manifest["stylesheets"].append(conflicting)
+        write_json(manifest_path, manifest)
+        (publication / "undeclared.bin").write_bytes(b"extra")
+        evidence = self.assert_blocked(
+            publication,
+            self.case_root / "review-integrity-findings",
+            {"manifest.integrity"},
+            exact=False,
+        )
+        findings = json.dumps(
+            self.check_by_id(evidence, "manifest.integrity")["evidence"]
+        )
+        for expected in (
+            "publication-profile identity",
+            "binding mismatch",
+            "duplicate fragment IDs",
+            "caption hash",
+            "positive width",
+            "font role",
+            "conflicting semantic asset declarations",
+            "undeclared regular files",
+        ):
+            self.assertIn(expected, findings)
+
+    def test_shared_source_svg_completes_full_qa_review(self) -> None:
+        publication = self.fresh_publication("shared-svg")
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        figure = manifest["figures"][0]
+        original_part = figure["parts"][0]
+        shared_part = copy.deepcopy(original_part)
+        shared_part.update(
+            {
+                "id": "integration-figure-part-shared",
+                "order": 2,
+                "dom_selector": (
+                    '[data-crop-id="integration-figure-part-shared"]'
+                ),
+            }
+        )
+        figure["parts"].append(shared_part)
+        write_json(manifest_path, manifest)
+
+        html = publication / "index.html"
+        content = html.read_text(encoding="utf-8")
+        matched = re.search(
+            (
+                rf'(<svg\b[^>]*data-crop-id="{re.escape(original_part["id"])}"'
+                r".*?</svg>)"
+            ),
+            content,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(matched)
+        original_crop = matched.group(1)
+        shared_crop = original_crop.replace(
+            f'data-crop-id="{original_part["id"]}"',
+            'data-crop-id="integration-figure-part-shared"',
+            1,
+        ).replace(
+            f"{figure['alt']} - part 1",
+            f"{figure['alt']} - part 2",
+        )
+        html.write_text(
+            content.replace(
+                original_crop,
+                original_crop + shared_crop,
+                1,
+            ),
+            encoding="utf-8",
+        )
+        self.refresh_asset(publication, "index.html")
+        self.rerender_publication(publication)
+
+        review = self.case_root / "review-shared-svg"
+        result = _invoke(self.arguments(publication, review))
 
         self.assertEqual(0, result.exit_code, result)
         evidence = read_json(review / "qa-evidence.json")
-        overflow_check = self.check_by_id(
+        crop_records = self.check_by_id(
             evidence,
-            "render.geometry-overflow",
+            "figures.crop-bindings",
+        )["evidence"]["crops"]
+        self.assertEqual(
+            {
+                original_part["id"],
+                "integration-figure-part-shared",
+            },
+            {record["id"] for record in crop_records},
         )
-        self.assertTrue(overflow_check["passed"])
-        self.assertEqual({}, overflow_check["evidence"]["overflow"])
+        self.assertEqual(
+            {original_part["source_svg"]["sha256"]},
+            {record["source_svg_sha256"] for record in crop_records},
+        )
 
-    def test_fractional_bbox_pipeline_remains_qa_compatible(self) -> None:
-        publication = build_rendered_publication(
-            self.case_root / "fractional-bbox-pipeline",
-            reconstruct_pdf,
-            assemble_print,
-            browser=BROWSER,
-            fragment_html=PIPELINE_FRAGMENT,
-            figure_bbox=(
-                10.0004,
-                20.0004,
-                110.0006,
-                120.0006,
+    def test_repeatability_raster_completeness_and_page_bound(self) -> None:
+        publication = self.fresh_publication("repeatability")
+        original_render_once = audit_publication.render_once
+        render_number = 0
+
+        async def divergent_render(
+            browser: Any, context: Any, output: Path, evidence_root: Path
+        ) -> Any:
+            nonlocal render_number
+            rendered = await original_render_once(
+                browser, context, output, evidence_root
+            )
+            render_number += 1
+            if render_number == 2:
+                add_pdf_vector_mark(output)
+                content = output.read_bytes()
+                rendered.pdf = type(rendered.pdf)(
+                    rendered.pdf.path,
+                    output,
+                    sha256_bytes(content),
+                    len(content),
+                )
+            return rendered
+
+        with mock.patch.object(
+            audit_publication, "render_once", side_effect=divergent_render
+        ):
+            evidence = self.assert_blocked(
+                publication,
+                self.case_root / "review-repeatability",
+                {"render.repeatability"},
+            )
+        self.assertFalse(
+            self.check_by_id(evidence, "render.repeatability")["evidence"][
+                "render_rasters_equal"
+            ]
+        )
+
+        rasters = self.fresh_publication("raster-completeness")
+        original_inspect_pdf = audit_publication.inspect_pdf
+
+        def duplicate_raster(  # noqa: PLR0913, PLR0917
+            path: Path,
+            logical: str,
+            page_size: str,
+            raster_dir: Path,
+            raster_source: str,
+            evidence_root: Path,
+            manifest: dict[str, Any],
+        ) -> Any:
+            report = original_inspect_pdf(
+                path,
+                logical,
+                page_size,
+                raster_dir,
+                raster_source,
+                evidence_root,
+                manifest,
+            )
+            if raster_source == "render-2":
+                report.rasters.append(dict(report.rasters[0]))
+            return report
+
+        with mock.patch.object(
+            audit_publication, "inspect_pdf", side_effect=duplicate_raster
+        ):
+            raster_evidence = self.assert_blocked(
+                rasters,
+                self.case_root / "review-raster-completeness",
+                {"rasters.complete"},
+            )
+        raster_check = self.check_by_id(raster_evidence, "rasters.complete")[
+            "evidence"
+        ]
+        self.assertGreater(raster_check["observed"], raster_check["expected"])
+
+    def test_render_timeout_bounds_pdf_and_does_not_publish_output(
+        self,
+    ) -> None:
+        publication = self.fresh_publication("render-timeout")
+        context = audit_publication.load_context(
+            publication / "assembly-manifest.json",
+            publication / "index.html",
+            "letter",
+        )
+        pdf_bytes = (publication / "publication.pdf").read_bytes()
+
+        async def delayed_pdf(**_kwargs: Any) -> bytes:
+            await asyncio.sleep(0.15)
+            return pdf_bytes
+
+        page, browser_context, browser, manager = self.browser_stack(
+            context,
+            delayed_pdf,
+        )
+
+        async def delayed_context(**_kwargs: Any) -> Any:
+            await asyncio.sleep(0.1)
+            return browser_context
+
+        browser.new_context.side_effect = delayed_context
+
+        with (
+            mock.patch(
+                "playwright.async_api.async_playwright",
+                return_value=manager,
+            ),
+            mock.patch.object(audit_publication, "RENDER_TIMEOUT_MS", 200),
+            self.assertRaisesRegex(  # noqa: PT027
+                audit_publication.AuditError,
+                "fixed 200 ms deadline",
+            ),
+        ):
+            audit_publication.render_pair(
+                context,
+                self.case_root / "timeout-renders",
+                self.case_root,
+                BROWSER,
+            )
+
+        page.pdf.assert_awaited_once()
+        self.assertNotIn("path", page.pdf.await_args.kwargs)
+        self.assertEqual(
+            f"1-{audit_publication.MAX_PDF_PAGES + 1}",
+            page.pdf.await_args.kwargs["page_ranges"],
+        )
+        browser_context.close.assert_awaited_once_with()
+        browser.close.assert_awaited_once_with()
+        manager.__aexit__.assert_awaited_once()
+        self.assertFalse(
+            (self.case_root / "timeout-renders" / "render-1.pdf").exists()
+        )
+
+    def test_pdf_page_ceiling_precedes_render_and_rasterization(  # noqa: PLR0915
+        self,
+    ) -> None:
+        oversized = self.fresh_publication("oversized-canonical")
+        oversized_pdf = oversized / "publication.pdf"
+        write_pdf(
+            oversized_pdf,
+            (
+                PdfPage(vector_marks=False)
+                for _page in range(audit_publication.MAX_PDF_PAGES + 1)
             ),
         )
-        manifest = read_json(publication / "assembly-manifest.json")
+        self.refresh_asset(oversized, "publication.pdf")
+        raster_dir = self.case_root / "oversized-pages"
+
+        with (
+            mock.patch.object(fitz.Page, "get_pixmap") as get_pixmap,
+            self.assertRaisesRegex(  # noqa: PT027
+                audit_publication.PublicationError,
+                "fixed 500-page ceiling",
+            ),
+        ):
+            audit_publication.inspect_pdf(
+                oversized_pdf,
+                "publication.pdf",
+                "letter",
+                raster_dir,
+                "canonical",
+                self.case_root,
+                {"fonts": [], "font_roles": {}},
+            )
+        get_pixmap.assert_not_called()
+        self.assertFalse(raster_dir.exists())
+
+        maximum_pages = self.case_root / "maximum-pages.pdf"
+        write_pdf(
+            maximum_pages,
+            (
+                PdfPage(vector_marks=False)
+                for _page in range(audit_publication.MAX_PDF_PAGES)
+            ),
+        )
         self.assertEqual(
-            [10.0, 20.0, 110.001, 120.001],
-            manifest["figures"][0]["parts"][0]["bbox"],
-        )
-        review = self.case_root / "review"
-
-        result = invoke(self.arguments(publication, review))
-
-        self.assertEqual(0, result.exit_code, result)
-        evidence = read_json(review / "qa-evidence.json")
-        self.assertEqual("pass", evidence["mechanical_status"])
-        self.assertTrue(
-            self.check_by_id(
-                evidence,
-                "figures.crop-bindings",
-            )["passed"]
+            audit_publication.MAX_PDF_PAGES,
+            audit_publication.pdf_page_count(
+                maximum_pages,
+                "maximum-page fixture",
+            ),
         )
 
-    def test_unsafe_manifest_font_names_publish_blocking_evidence(self) -> None:
-        cases = (
-            ("control", "\u0001"),
-            ("format", "\u200b"),
-            ("surrogate", "\ud800"),
-        )
-        for name, character in cases:
-            with self.subTest(case=name):
-                publication = self.fresh_publication(name)
-                review = self.case_root / f"review-{name}"
-                success = invoke(self.arguments(publication, review))
-                self.assertEqual(0, success.exit_code, success)
-                previous = tree_snapshot(review)
+        oversized_geometry = self.case_root / "oversized-geometry.pdf"
+        write_pdf(oversized_geometry, [PdfPage(vector_marks=False)])
+        scale_pdf_user_unit(oversized_geometry, scale=100)
+        geometry_rasters = self.case_root / "oversized-geometry-pages"
+        with (
+            mock.patch.object(fitz.Page, "get_pixmap") as geometry_pixmap,
+            self.assertRaisesRegex(  # noqa: PT027
+                audit_publication.PublicationError,
+                "too large to rasterize safely",
+            ),
+        ):
+            audit_publication.inspect_pdf(
+                oversized_geometry,
+                "oversized-geometry.pdf",
+                "letter",
+                geometry_rasters,
+                "canonical",
+                self.case_root,
+                {"fonts": [], "font_roles": {}},
+            )
+        geometry_pixmap.assert_not_called()
 
-                manifest_path = publication / "assembly-manifest.json"
-                manifest = read_json(manifest_path)
-                family = f"Fixture{character}Serif"
-                manifest["fonts"][0]["family"] = family
-                manifest["font_roles"] = {
-                    "body-cjk": family,
-                    "body-latin": family,
-                }
-                manifest_path.write_text(
-                    json.dumps(
-                        manifest,
-                        ensure_ascii=True,
-                        indent=2,
-                        sort_keys=True,
-                    )
-                    + "\n",
-                    encoding="utf-8",
-                )
-
-                evidence = self.assert_blocked(
-                    publication,
-                    review,
-                    {"manifest.integrity"},
-                )
-
-                assert evidence is not None
-                self.assertEqual(9, len(evidence["checks"]))
-                self.assertNotEqual(previous, tree_snapshot(review))
-                self.assertFalse((review / "release-manifest.json").exists())
-
-        unsafe_role = "private-token=qa-font-role-sentinel\u200b"
-        publication = self.fresh_publication("unsafe-undeclared-role")
-        review = self.case_root / "review-unsafe-undeclared-role"
-        success = invoke(self.arguments(publication, review))
-        self.assertEqual(0, success.exit_code, success)
-        manifest_path = publication / "assembly-manifest.json"
-        manifest = read_json(manifest_path)
-        manifest["font_roles"]["body-latin"] = unsafe_role
-        write_json(manifest_path, manifest)
-
-        evidence = self.assert_blocked(
-            publication,
-            review,
-            {"manifest.integrity"},
-        )
-
-        assert evidence is not None
-        serialized = json.dumps(evidence, ensure_ascii=False)
-        self.assertNotIn("qa-font-role-sentinel", serialized)
-        self.assertIn(
-            sha256_bytes(unsafe_role.encode("utf-8")),
-            serialized,
-        )
-
-        unsafe_family = "private-token=qa-family-sentinel\u200b"
-        publication = self.fresh_publication("unsafe-family-leak")
-        review = self.case_root / "review-unsafe-family-leak"
-        success = invoke(self.arguments(publication, review))
-        self.assertEqual(0, success.exit_code, success)
-        manifest_path = publication / "assembly-manifest.json"
-        manifest = read_json(manifest_path)
-        manifest["fonts"][0]["family"] = unsafe_family
-        manifest["fonts"][0]["postscript_name"] = None
-        manifest["fonts"][0]["full_name"] = None
-        manifest["font_roles"] = {
-            "body-cjk": unsafe_family,
-            "body-latin": unsafe_family,
-        }
-        write_json(manifest_path, manifest)
-
-        evidence = self.assert_blocked(
-            publication,
-            review,
-            {"manifest.integrity", "pdf.fonts"},
-        )
-
-        assert evidence is not None
-        serialized = json.dumps(evidence, ensure_ascii=False)
-        self.assertNotIn("qa-family-sentinel", serialized)
-        self.assertIn(
-            sha256_bytes(unsafe_family.encode("utf-8")),
-            serialized,
-        )
-
-    def test_figure_and_crop_ids_may_share_a_value(self) -> None:
-        publication = build_rendered_publication(
-            self.case_root / "overlapping-figure-crop-id",
-            reconstruct_pdf,
-            assemble_print,
-            browser=BROWSER,
-            fragment_html=PIPELINE_FRAGMENT,
-            figure_part_id="integration-figure",
-        )
-        manifest = read_json(publication / "assembly-manifest.json")
+        boundary_geometry = self.case_root / "boundary-geometry.pdf"
+        with fitz.open() as boundary_document:
+            boundary_document.new_page(width=612, height=792)
+            boundary_document.save(boundary_geometry)
+        scale_pdf_user_unit(boundary_geometry, scale=2)
+        boundary_rasters = self.case_root / "boundary-geometry-pages"
+        with fitz.open(boundary_geometry) as boundary_document:
+            page = boundary_document.load_page(0)
+            observed_area = math.ceil(
+                page.rect.width * audit_publication.RASTER_SCALE
+            ) * math.ceil(page.rect.height * audit_publication.RASTER_SCALE)
+        width, height = audit_publication.PAGE_POINTS["letter"]
         self.assertEqual(
-            manifest["figures"][0]["dom_id"],
-            manifest["figures"][0]["parts"][0]["id"],
+            width
+            * height
+            * audit_publication.RASTER_SCALE**2
+            * audit_publication.MAX_RASTER_AREA_FACTOR,
+            observed_area,
         )
-        review = self.case_root / "review-overlapping-id"
+        pixmap = mock.Mock()
+        pixmap.tobytes.return_value = b"bounded-raster"
+        with mock.patch.object(
+            fitz.Page,
+            "get_pixmap",
+            return_value=pixmap,
+        ) as boundary_pixmap:
+            boundary_report = audit_publication.inspect_pdf(
+                boundary_geometry,
+                "boundary-geometry.pdf",
+                "letter",
+                boundary_rasters,
+                "canonical",
+                self.case_root,
+                {"fonts": [], "font_roles": {}},
+            )
+        boundary_pixmap.assert_called_once()
+        self.assertEqual(1, len(boundary_report.rasters))
 
-        result = invoke(self.arguments(publication, review))
+        review = self.case_root / "review-oversized-canonical"
+        with mock.patch.object(audit_publication, "render_pair") as render_pair:
+            result = _invoke(self.arguments(oversized, review))
+        self.assertEqual(2, result.exit_code, result)
+        self.assertIn("fixed 500-page ceiling", result.stderr)
+        render_pair.assert_not_called()
+        self.assertFalse(review.exists())
 
-        self.assertEqual(0, result.exit_code, result)
-        evidence = read_json(review / "qa-evidence.json")
-        self.assertTrue(
-            self.check_by_id(evidence, "manifest.integrity")["passed"]
+        generated = self.fresh_publication("oversized-generated")
+        generated_context = audit_publication.load_context(
+            generated / "assembly-manifest.json",
+            generated / "index.html",
+            "letter",
         )
-        self.assertTrue(
-            self.check_by_id(
-                evidence,
-                "figures.crop-bindings",
-            )["passed"]
+
+        async def return_oversized(**_kwargs: Any) -> bytes:
+            return oversized_pdf.read_bytes()
+
+        _page, browser_context, browser, _manager = self.browser_stack(
+            generated_context, return_oversized
         )
+        output = self.case_root / "generated-ceiling" / "render.pdf"
 
-    def test_repeatability_and_raster_contract_seams_block_release(
-        self,
-    ) -> None:
-        with self.subTest(check="render.repeatability"):
-            publication = self.fresh_publication("repeatability")
-            review = self.case_root / "review-repeatability"
-            original_render_once = audit_publication.render_once
-            render_number = 0
-
-            def divergent_render(
-                browser: Any,
-                context: Any,
-                output: Path,
-                evidence_root: Path,
-            ) -> Any:
-                nonlocal render_number
-                rendered = original_render_once(
+        with (
+            mock.patch.object(fitz.Page, "get_pixmap") as generated_pixmap,
+            self.assertRaisesRegex(  # noqa: PT027
+                audit_publication.AuditError,
+                "fixed 500-page ceiling",
+            ),
+        ):
+            asyncio.run(
+                audit_publication.render_once(
                     browser,
-                    context,
+                    generated_context,
                     output,
-                    evidence_root,
+                    self.case_root,
                 )
-                render_number += 1
-                if render_number == 2:
-                    add_pdf_vector_mark(output)
-                    self.refresh_render_asset(rendered, output)
-                return rendered
-
-            with mock.patch.object(
-                audit_publication,
-                "render_once",
-                side_effect=divergent_render,
-            ):
-                evidence = self.assert_blocked(
-                    publication,
-                    review,
-                    {"render.repeatability"},
-                )
-            assert evidence is not None
-            self.assertFalse(
-                self.check_by_id(
-                    evidence,
-                    "render.repeatability",
-                )["evidence"]["render_rasters_equal"]
             )
+        generated_pixmap.assert_not_called()
+        self.assertNotIn("path", _page.pdf.await_args.kwargs)
+        browser_context.close.assert_awaited_once_with()
+        self.assertFalse(output.exists())
 
-        with self.subTest(check="rasters.complete"):
-            publication = self.fresh_publication("rasters")
-            review = self.case_root / "review-rasters"
-            original_inspect_pdf = audit_publication.inspect_pdf
-
-            def duplicate_raster_binding(  # noqa: PLR0913, PLR0917
-                path: Path,
-                logical: str,
-                page_size: str,
-                raster_dir: Path,
-                raster_source: str,
-                evidence_root: Path,
-                manifest: dict[str, Any],
-            ) -> Any:
-                report = original_inspect_pdf(
-                    path,
-                    logical,
-                    page_size,
-                    raster_dir,
-                    raster_source,
-                    evidence_root,
-                    manifest,
-                )
-                if raster_source == "render-2":
-                    report.rasters.append(dict(report.rasters[0]))
-                return report
-
-            with mock.patch.object(
-                audit_publication,
-                "inspect_pdf",
-                side_effect=duplicate_raster_binding,
-            ):
-                evidence = self.assert_blocked(
-                    publication,
-                    review,
-                    {"rasters.complete"},
-                )
-            assert evidence is not None
-            raster_check = self.check_by_id(evidence, "rasters.complete")
-            self.assertGreater(
-                raster_check["evidence"]["observed"],
-                raster_check["evidence"]["expected"],
-            )
-
-    def test_publication_change_during_real_render_blocks_release(self) -> None:
+    def test_publication_mutation_is_completed_mechanical_failure(self) -> None:
         publication = self.fresh_publication()
         review = self.case_root / "review"
         before = tree_snapshot(publication)
         original_render_once = audit_publication.render_once
         mutated = False
 
-        def mutate_after_render(
-            browser: Any,
-            context: Any,
-            output: Path,
-            evidence_root: Path,
+        async def mutate_after_render(
+            browser: Any, context: Any, output: Path, evidence_root: Path
         ) -> Any:
             nonlocal mutated
-            rendered = original_render_once(
-                browser,
-                context,
-                output,
-                evidence_root,
+            rendered = await original_render_once(
+                browser, context, output, evidence_root
             )
             if not mutated:
                 (context.root / "late-change.bin").write_bytes(b"late")
@@ -2693,331 +1735,602 @@ class AuditPublicationReplacementTests(unittest.TestCase):
             return rendered
 
         with mock.patch.object(
-            audit_publication,
-            "render_once",
-            side_effect=mutate_after_render,
+            audit_publication, "render_once", side_effect=mutate_after_render
         ):
-            result = invoke(self.arguments(publication, review))
-
+            result = _invoke(self.arguments(publication, review))
         self.assertEqual(1, result.exit_code, result)
         evidence = read_json(review / "qa-evidence.json")
-        self.assertFalse(
-            self.check_by_id(
-                evidence,
-                "publication.tree-unchanged",
-            )["passed"]
-        )
+        self.assert_evidence_assets(evidence, publication, review)
         self.assertFalse(evidence["publication_tree"]["unchanged"])
+        self.assertFalse(
+            self.check_by_id(evidence, "publication.tree-unchanged")["passed"]
+        )
         self.assertFalse((review / "release-manifest.json").exists())
         self.assertNotEqual(before, tree_snapshot(publication))
 
-    def test_prior_review_survives_rerun_operational_failure(self) -> None:
-        publication = self.fresh_publication()
-        review = self.case_root / "review"
-        success = invoke(self.arguments(publication, review))
-        self.assertEqual(0, success.exit_code, success)
-        before = tree_snapshot(review)
-
-        with mock.patch.object(
-            audit_publication,
-            "launch_browser",
-            side_effect=audit_publication.AuditError(
-                "synthetic browser failure"
+    def test_existing_review_roots_are_rejected_unchanged(self) -> None:
+        factories = {
+            "file": lambda path: path.write_text("occupied", encoding="utf-8"),
+            "empty-directory": lambda path: path.mkdir(),
+            "nonempty-directory": lambda path: (
+                path.mkdir(),
+                (path / "prior.txt").write_text("prior", encoding="utf-8"),
             ),
-        ):
-            failure = invoke(self.arguments(publication, review))
+        }
+        for name, create in factories.items():
+            with self.subTest(name=name):
+                publication = self.fresh_publication(f"existing-{name}")
+                review = self.case_root / f"review-existing-{name}"
+                create(review)
+                before = tree_snapshot(review) if review.is_dir() else None
+                result = _invoke(self.arguments(publication, review))
+                self.assertEqual(2, result.exit_code, result)
+                self.assertTrue(review.exists())
+                if name == "file":
+                    self.assertEqual(
+                        "occupied",
+                        review.read_text(encoding="utf-8"),
+                    )
+                elif name == "empty-directory":
+                    self.assertEqual([], list(review.iterdir()))
+                elif name == "nonempty-directory":
+                    self.assertEqual(
+                        "prior",
+                        (review / "prior.txt").read_text(encoding="utf-8"),
+                    )
+                if before is not None:
+                    self.assertEqual(before, tree_snapshot(review))
 
-        self.assertEqual(2, failure.exit_code, failure)
-        self.assertEqual({}, failure.report)
-        self.assertEqual(before, tree_snapshot(review))
-        self.assertFalse(
-            any(
-                path.name.startswith(
-                    (f".{review.name}.staging-", f".{review.name}.backup-")
-                )
-                for path in review.parent.iterdir()
+    def test_posix_special_review_root_is_rejected_or_skipped(self) -> None:
+        mkfifo = getattr(os, "mkfifo", None)
+        if os.name == "nt":
+            self.skipTest(
+                "POSIX FIFO creation is not supported on this platform."
             )
-        )
-
-    def test_prior_review_survives_publication_load_or_inspection_failure(
-        self,
-    ) -> None:
-        for name in ("manifest-load", "canonical-pdf"):
-            with self.subTest(case=name):
-                publication = self.fresh_publication(name)
-                review = self.case_root / f"review-{name}"
-                success = invoke(self.arguments(publication, review))
-                self.assertEqual(0, success.exit_code, success)
-                before = tree_snapshot(review)
-
-                if name == "manifest-load":
-                    manifest_path = publication / "assembly-manifest.json"
-                    manifest = read_json(manifest_path)
-                    manifest.pop("publication_id")
-                    write_json(manifest_path, manifest)
-                    patcher = mock.patch.object(
-                        audit_publication,
-                        "render_pair",
-                        return_value=[],
-                    )
-                else:
-                    pdf = publication / "publication.pdf"
-                    pdf.write_bytes(b"%PDF-1.7\nbroken\n%%EOF\n")
-                    self.refresh_asset(publication, "publication.pdf")
-                    patcher = mock.patch.object(
-                        audit_publication,
-                        "render_pair",
-                        return_value=[],
-                    )
-
-                with patcher:
-                    failure = invoke(
-                        self.arguments(
-                            publication,
-                            review,
-                        )
-                    )
-
-                self.assertEqual(2, failure.exit_code, failure)
-                self.assertEqual({}, failure.report)
-                self.assertEqual(before, tree_snapshot(review))
-                self.assertFalse(
-                    any(
-                        path.name.startswith(
-                            (
-                                f".{review.name}.staging-",
-                                f".{review.name}.backup-",
-                            )
-                        )
-                        for path in review.parent.iterdir()
-                    )
-                )
-
-    @unittest.skipUnless(
-        sys.platform == "win32",
-        "Windows short-name aliases are platform-specific.",
-    )
-    def test_short_name_output_alias_preserves_prior_review(self) -> None:
-        publication = self.fresh_publication()
-        review = self.case_root / "review"
-        evidence_name = "qa-evidence-manifest-long-name.json"
-        success = invoke(
-            self.arguments(
-                publication,
-                review,
-                evidence_name=evidence_name,
+        if not callable(mkfifo):
+            self.skipTest(
+                "POSIX FIFO creation is not supported on this platform."
             )
-        )
-        self.assertEqual(0, success.exit_code, success)
-        before = tree_snapshot(review)
+        publication = self.fresh_publication("existing-special")
+        review = self.case_root / "review-existing-special"
+        try:
+            mkfifo(review)
+        except OSError as error:
+            self.skipTest(f"POSIX FIFO creation is unavailable: {error}")
 
-        short_path = windows_short_path(review / evidence_name)
-        if short_path is None:
-            self.skipTest("GetShortPathNameW is unavailable for this path.")
-        short_name = short_path.name
-        if short_name.casefold() == evidence_name.casefold():
-            self.skipTest("8.3 short-name generation is disabled.")
-
-        result = invoke(
-            self.arguments(
-                publication,
-                review,
-                evidence_name=evidence_name,
-                release_name=short_name,
-            )
-        )
+        result = _invoke(self.arguments(publication, review))
 
         self.assertEqual(2, result.exit_code, result)
-        self.assertEqual({}, result.report)
-        self.assertEqual(before, tree_snapshot(review))
-        self.assertIn("alias the same filesystem object", result.stderr)
-        self.assertFalse(
-            any(
-                path.name.startswith(
-                    (f".{review.name}.staging-", f".{review.name}.backup-")
-                )
-                for path in review.parent.iterdir()
+        self.assertTrue(review.exists())
+
+    def test_symlinked_review_path_component_uses_resolved_root(self) -> None:
+        publication = self.fresh_publication("symlink-component")
+        physical_parent = self.case_root / "physical-parent"
+        physical_parent.mkdir()
+        linked_parent = self.case_root / "linked-parent"
+        try:
+            linked_parent.symlink_to(
+                physical_parent,
+                target_is_directory=True,
             )
-        )
+        except (NotImplementedError, OSError) as error:
+            self.skipTest(f"directory symlinks are unavailable: {error}")
+        review = linked_parent / "review"
 
-    @unittest.skipUnless(
-        sys.platform == "win32",
-        "Windows short-name aliases are platform-specific.",
-    )
-    def test_short_name_ancestor_alias_preserves_prior_review(self) -> None:
-        publication = self.fresh_publication()
-        review = self.case_root / "review"
-        evidence_directory = "QA evidence output directory"
-        evidence_name = f"{evidence_directory}/qa-evidence.json"
-        success = invoke(
-            self.arguments(
-                publication,
-                review,
-                evidence_name=evidence_name,
-            )
-        )
-        self.assertEqual(0, success.exit_code, success)
-        before = tree_snapshot(review)
+        result = _invoke(self.arguments(publication, review))
 
-        short_directory = windows_short_path(review / evidence_directory)
-        if short_directory is None:
-            self.skipTest("GetShortPathNameW is unavailable for this path.")
-        if short_directory.name.casefold() == evidence_directory.casefold():
-            self.skipTest("8.3 short-name generation is disabled.")
-
-        pdf = publication / "publication.pdf"
-        add_pdf_javascript(pdf, "open-action")
-        self.refresh_asset(publication, "publication.pdf")
-        result = invoke(
-            self.arguments(
-                publication,
-                review,
-                evidence_name=evidence_name,
-                release_name=short_directory.name,
-            )
-        )
-
-        self.assertEqual(2, result.exit_code, result)
-        self.assertEqual({}, result.report)
-        self.assertEqual(before, tree_snapshot(review))
-        self.assertIn(
-            "overlap after resolving filesystem aliases",
-            result.stderr,
-        )
-        self.assertFalse(
-            any(
-                path.name.startswith(
-                    (f".{review.name}.staging-", f".{review.name}.backup-")
-                )
-                for path in review.parent.iterdir()
-            )
-        )
-
-    def test_completed_blocking_rerun_replaces_prior_success(self) -> None:
-        publication = self.fresh_publication()
-        review = self.case_root / "review"
-        success = invoke(self.arguments(publication, review))
-        self.assertEqual(0, success.exit_code, success)
-        previous = tree_snapshot(review)
-        self.assertIn("release-manifest.json", previous)
-
-        pdf = publication / "publication.pdf"
-        add_pdf_javascript(pdf, "open-action")
-        self.refresh_asset(publication, "publication.pdf")
-        blocked = invoke(self.arguments(publication, review))
-
-        self.assertEqual(1, blocked.exit_code, blocked)
-        self.assertEqual({}, blocked.report)
-        evidence = read_json(review / "qa-evidence.json")
-        self.assertEqual("fail", evidence["mechanical_status"])
-        self.assertFalse((review / "release-manifest.json").exists())
-        self.assertNotEqual(previous, tree_snapshot(review))
-        self.assertEqual(
-            ["javascript"],
-            self.check_by_id(
-                evidence,
-                "pdf.actions-type3-text",
-            )["evidence"]["observations"]["canonical"]["actions"][
-                "unsafe_kinds"
-            ],
+        self.assertEqual(0, result.exit_code, result)
+        self.assertTrue(
+            (physical_parent / "review" / "qa-evidence.json").is_file()
         )
         self.assertTrue(
-            (review / "independent-renders" / "render-1.pdf").is_file()
-        )
-        self.assertTrue(
-            (review / "pages" / "canonical" / "page-0001.png").is_file()
+            (physical_parent / "review" / "release-manifest.json").is_file()
         )
 
-    def test_unrelated_nonempty_review_root_is_rejected_unchanged(
-        self,
-    ) -> None:
-        publication = self.fresh_publication()
-        review = self.case_root / "review"
-        review.mkdir()
-        (review / "unrelated.bin").write_bytes(b"unrelated review owner\n")
-        before = tree_snapshot(review)
-
-        result = invoke(self.arguments(publication, review))
-
-        self.assertEqual(2, result.exit_code, result)
-        self.assertEqual({}, result.report)
-        self.assertEqual(before, tree_snapshot(review))
-        self.assertIn("ownership marker", result.stderr)
-
-    def test_publication_rename_failure_restores_prior_review(self) -> None:
-        publication = self.fresh_publication()
-        review = self.case_root / "review"
-        success = invoke(self.arguments(publication, review))
-        self.assertEqual(0, success.exit_code, success)
-        before = tree_snapshot(review)
-        final_root = review.resolve()
-        original_replace = Path.replace
-
-        def fail_stage_publish(source: Path, target: Path) -> Path:
-            destination = Path(target)
-            if (
-                source.parent == final_root.parent
-                and source.name.startswith(f".{final_root.name}.staging-")
-                and destination == final_root
-            ):
-                message = "synthetic final-root rename failure"
-                raise OSError(message)
-            return original_replace(source, target)
-
-        with mock.patch.object(Path, "replace", new=fail_stage_publish):
-            result = invoke(self.arguments(publication, review))
-
-        self.assertEqual(2, result.exit_code, result)
-        self.assertEqual({}, result.report)
-        self.assertEqual(before, tree_snapshot(review))
-        self.assertIn("synthetic final-root rename failure", result.stderr)
-        self.assertFalse(
-            any(
-                path.name.startswith(
-                    (f".{review.name}.staging-", f".{review.name}.backup-")
-                )
-                for path in review.parent.iterdir()
-            )
+        publication_alias = self.case_root / "publication-alias"
+        publication_alias.symlink_to(
+            publication,
+            target_is_directory=True,
         )
-
-    def test_operational_errors_exit_two_without_publication_changes(
-        self,
-    ) -> None:
-        publication = self.fresh_publication()
+        aliased_review = publication_alias / "review-via-alias"
         before = tree_snapshot(publication)
 
-        missing_flag_review = self.case_root / "review-missing-flag"
-        missing_flag = invoke(
-            self.arguments(
-                publication,
-                missing_flag_review,
-                render_twice=False,
-            )
-        )
-        self.assertEqual(2, missing_flag.exit_code, missing_flag)
-        self.assertEqual({}, missing_flag.report)
-        self.assertFalse((missing_flag_review / "qa-evidence.json").exists())
+        aliased_result = _invoke(self.arguments(publication, aliased_review))
+
+        self.assertEqual(2, aliased_result.exit_code, aliased_result)
+        self.assertFalse(aliased_review.exists())
         self.assertEqual(before, tree_snapshot(publication))
 
-        browser_failure_review = self.case_root / "review-browser-failure"
+        manifest_alias = self.case_root / "manifest-alias"
+        manifest_alias.mkdir()
+        manifest_link = manifest_alias / "assembly-manifest.json"
+        manifest_link.symlink_to(publication / "assembly-manifest.json")
+        nested_review = publication / "review-via-manifest-link"
+        before = tree_snapshot(publication)
+        arguments = self.arguments(publication, nested_review)
+        arguments[arguments.index("--assembly-manifest") + 1] = str(
+            manifest_link
+        )
+
+        nested_result = _invoke(arguments)
+
+        self.assertEqual(2, nested_result.exit_code, nested_result)
+        self.assertFalse(nested_review.exists())
+        self.assertEqual(before, tree_snapshot(publication))
+
+    def test_windows_junction_review_path_component_uses_resolved_root(
+        self,
+    ) -> None:
+        if os.name != "nt":
+            self.skipTest("Windows directory junctions are Windows-specific.")
+        publication = self.fresh_publication("junction-component")
+        physical_parent = self.case_root / "junction-target"
+        physical_parent.mkdir()
+        junction = self.case_root / "junction-parent"
+        command = [
+            os.environ.get("COMSPEC", "cmd.exe"),
+            "/d",
+            "/c",
+            "mklink",
+            "/J",
+            str(junction),
+            str(physical_parent),
+        ]
+        completed = subprocess.run(  # noqa: S603
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            self.skipTest(
+                "Windows directory junction creation is unavailable: "
+                f"{completed.stderr or completed.stdout}"
+            )
+        review = junction / "review"
+
+        result = _invoke(self.arguments(publication, review))
+
+        self.assertEqual(0, result.exit_code, result)
+        self.assertTrue(
+            (physical_parent / "review" / "qa-evidence.json").is_file()
+        )
+        self.assertTrue(
+            (physical_parent / "review" / "release-manifest.json").is_file()
+        )
+
+    def test_completed_review_uses_one_final_rename(self) -> None:
+        publication = self.fresh_publication("single-rename")
+        review = self.case_root / "review-single-rename"
+        original_rename = Path.rename
+        rename_calls: list[tuple[Path, Path]] = []
+
+        def tracked_rename(source: Path, target: Path) -> Path:
+            rename_calls.append((source, target))
+            return original_rename(source, target)
+
+        with mock.patch.object(Path, "rename", tracked_rename):
+            result = _invoke(self.arguments(publication, review))
+        self.assertEqual(0, result.exit_code, result)
+        self.assertEqual(1, len(rename_calls))
+        self.assertEqual(review, rename_calls[0][1])
+        self.assertEqual(review.parent, rename_calls[0][0].parent)
+
+    def test_failed_review_operations_clean_candidates(self) -> None:
+        rename_publication = self.fresh_publication("rename-failure")
+        rename_review = self.case_root / "review-rename-failure"
+        with mock.patch.object(
+            Path, "rename", side_effect=OSError("rename blocked")
+        ):
+            result = _invoke(self.arguments(rename_publication, rename_review))
+        self.assertEqual(2, result.exit_code, result)
+        self.assertFalse(rename_review.exists())
+        self.assertEqual([], self.candidates(rename_review))
+
+        operational_publication = self.fresh_publication("operational-failure")
+        operational_review = self.case_root / "review-operational-failure"
         with mock.patch.object(
             audit_publication,
-            "launch_browser",
-            side_effect=audit_publication.AuditError(
-                "synthetic browser failure"
+            "audit_candidate",
+            side_effect=audit_publication.PublicationError(
+                "forced audit failure"
             ),
         ):
-            browser_failure = invoke(
-                self.arguments(publication, browser_failure_review)
+            result = _invoke(
+                self.arguments(operational_publication, operational_review)
             )
-        self.assertEqual(2, browser_failure.exit_code, browser_failure)
-        self.assertEqual({}, browser_failure.report)
-        self.assertFalse((browser_failure_review / "qa-evidence.json").exists())
-        self.assertFalse(
-            (browser_failure_review / "release-manifest.json").exists()
+        self.assertEqual(2, result.exit_code, result)
+        self.assertFalse(operational_review.exists())
+        self.assertEqual([], self.candidates(operational_review))
+
+    def test_cleanup_failure_reports_the_orphan_candidate(self) -> None:
+        orphan_publication = self.fresh_publication("cleanup-failure")
+        orphan_review = self.case_root / "review-cleanup-failure"
+        original_rmtree = shutil.rmtree
+
+        def reject_candidate_cleanup(
+            path: Path | str, *args: Any, **kwargs: Any
+        ) -> None:
+            candidate = Path(path)
+            if candidate.name.startswith(f".{orphan_review.name}.candidate-"):
+                message = "cleanup blocked"
+                raise OSError(message)
+            original_rmtree(path, *args, **kwargs)
+
+        with (
+            mock.patch.object(
+                audit_publication,
+                "audit_candidate",
+                side_effect=audit_publication.PublicationError(
+                    "forced audit failure"
+                ),
+            ),
+            mock.patch.object(
+                audit_publication.shutil,
+                "rmtree",
+                side_effect=reject_candidate_cleanup,
+            ),
+        ):
+            result = _invoke(self.arguments(orphan_publication, orphan_review))
+        self.assertEqual(2, result.exit_code, result)
+        self.assertFalse(orphan_review.exists())
+        candidates = self.candidates(orphan_review)
+        self.assertEqual(1, len(candidates))
+        self.assertIn("candidate cleanup failed", result.stderr)
+        self.assertIn("orphan candidate", result.stderr)
+        self.assertIn(str(candidates[0]), result.stderr)
+
+    def test_review_path_validation_and_bounded_path_neutral_diagnostics(
+        self,
+    ) -> None:
+        publication = self.fresh_publication("path-rules")
+        for name in ("bad. ", "bad."):
+            review = self.case_root / "review-parent" / name / "review"
+            result = _invoke(self.arguments(publication, review))
+            self.assertEqual(2, result.exit_code, result)
+            self.assertFalse(review.exists())
+        overlap_review = publication / "review"
+        overlap_result = _invoke(self.arguments(publication, overlap_review))
+        self.assertEqual(2, overlap_result.exit_code, overlap_result)
+        self.assertFalse(overlap_review.exists())
+
+        case_alias_review = self.case_root / "review-case-alias"
+        case_alias_arguments = self.arguments(publication, case_alias_review)
+        case_alias_arguments[
+            case_alias_arguments.index("--release-manifest") + 1
+        ] = str(case_alias_review / "QA-EVIDENCE.JSON")
+        case_alias_result = _invoke(case_alias_arguments)
+        self.assertEqual(2, case_alias_result.exit_code, case_alias_result)
+        self.assertFalse(case_alias_review.exists())
+
+        raw = "https://example.invalid/" + ("sensitive" * 100)
+        resource = audit_publication.resource_url_diagnostic(
+            raw,
+            "dormant-dom-url",
         )
-        self.assertEqual(before, tree_snapshot(publication))
+        self.assertNotIn(raw, json.dumps(resource))
+        self.assertEqual("resource-url", resource["kind"])
+        self.assertIn("sha256", resource)
+        bounded = audit_publication.bounded_diagnostic(
+            [
+                audit_publication.resource_url_diagnostic(
+                    raw,
+                    "blocked-request",
+                )
+                for _ in range(audit_publication.MAX_DIAGNOSTIC_ITEMS + 8)
+            ]
+        )
+        self.assertIsInstance(bounded, dict)
+        self.assertLessEqual(
+            len(bounded["samples"]),
+            audit_publication.MAX_DIAGNOSTIC_ITEMS,
+        )
+        self.assertNotIn(raw, json.dumps(bounded))
+        nested_raw = "nested-sensitive-" + ("value" * 300)
+        checks: list[dict[str, Any]] = []
+        audit_publication.add_check(
+            checks,
+            "fixture.bounded-diagnostic",
+            passed=False,
+            message="fixture",
+            evidence={
+                "nested": [
+                    {"payload": nested_raw}
+                    for _ in range(audit_publication.MAX_DIAGNOSTIC_ITEMS + 7)
+                ]
+            },
+        )
+        nested = checks[0]["evidence"]["nested"]
+        self.assertEqual(
+            audit_publication.MAX_DIAGNOSTIC_ITEMS + 7,
+            nested["total"],
+        )
+        self.assertEqual(7, nested["omitted"])
+        self.assertIn("sha256", nested)
+        self.assertNotIn(nested_raw, json.dumps(checks))
+        self.assertIn(
+            sha256_bytes(nested_raw.encode()),
+            nested["samples"][0]["payload"],
+        )
+        read_failure = audit_publication.text_read_diagnostic(
+            "inputs/fragment.html",
+            "read-error",
+            OSError("C:\\private\\absolute\\secret.txt"),
+        )
+        self.assertNotIn("absolute", json.dumps(read_failure))
+
+    def assert_local_pdf_destination_contract(self) -> None:
+        valid_name = "qa-valid-local-destination"
+        invalid_name = "qa-invalid-local-destination-canary"
+        non_page_name = "qa-non-page-local-destination-canary"
+        valid = (valid_name, "[{page} 0 R /Fit]")
+        out_of_range = (invalid_name, "[-1 /Fit]")
+        non_page = (non_page_name, "[0 /Fit]")
+        reports: list[dict[str, Any]] = []
+        cases = (
+            ("open", "array-valid", "[{page} 0 R /Fit]", None, False),
+            ("open", "array-invalid", "[]", None, True),
+            ("open", "name-valid", f"/{valid_name}", valid, False),
+            (
+                "open",
+                "name-out-of-range",
+                f"/{invalid_name}",
+                out_of_range,
+                True,
+            ),
+            (
+                "open",
+                "name-non-page",
+                f"/{non_page_name}",
+                non_page,
+                True,
+            ),
+            ("open", "string-valid", f"({valid_name})", valid, False),
+            ("open", "string-unresolved", f"({invalid_name})", None, True),
+            ("open", "wrong-type", "42", None, True),
+            ("goto", "array-valid", "[{page} 0 R /Fit]", None, False),
+            ("goto", "array-non-page", "[0 /Fit]", None, True),
+            ("goto", "name-valid", f"/{valid_name}", valid, False),
+            (
+                "goto",
+                "name-out-of-range",
+                f"/{invalid_name}",
+                out_of_range,
+                True,
+            ),
+            (
+                "goto",
+                "string-non-page",
+                f"({non_page_name})",
+                non_page,
+                True,
+            ),
+            ("goto", "string-valid", f"({valid_name})", valid, False),
+            ("goto", "string-unresolved", f"({invalid_name})", None, True),
+            ("goto", "missing", None, None, True),
+            ("goto", "wrong-type", "42", None, True),
+        )
+        for kind, name, raw, named, invalid in cases:
+            with self.subTest(destination=f"{kind}-{name}"):
+                path = self.case_root / f"{kind}-{name}.pdf"
+                write_pdf(path, [PdfPage()])
+                _set_pdf_local_destination(
+                    path,
+                    kind,
+                    raw,
+                    named,
+                )
+                report = _pdf_action_observation(path)
+                reports.append(report)
+                self.assertEqual(
+                    ["invalid-action"] if invalid else [],
+                    report["unsafe_kinds"],
+                )
+
+        path = self.case_root / "goto-invalid-with-next.pdf"
+        write_pdf(path, [PdfPage()])
+        _set_pdf_local_destination(path, "goto", None, None, "/URI")
+        next_report = _pdf_action_observation(path)
+        reports.append(next_report)
+        self.assertEqual(
+            ["invalid-action", "uri"],
+            next_report["unsafe_kinds"],
+        )
+
+        direct_cases = (
+            (
+                "annotation",
+                "array-valid",
+                "[{page} 0 R /Fit]",
+                None,
+                False,
+            ),
+            ("annotation", "array-invalid", "[]", None, True),
+            (
+                "annotation",
+                "name-valid",
+                f"/{valid_name}",
+                valid,
+                False,
+            ),
+            (
+                "annotation",
+                "name-unresolved",
+                f"/{invalid_name}",
+                None,
+                True,
+            ),
+            (
+                "outline",
+                "array-valid",
+                "[{page} 0 R /Fit]",
+                None,
+                False,
+            ),
+            ("outline", "array-invalid", "[]", None, True),
+            (
+                "outline",
+                "name-unresolved",
+                f"/{invalid_name}",
+                None,
+                True,
+            ),
+        )
+        for source, name, raw, named, invalid in direct_cases:
+            with self.subTest(destination=f"{source}-{name}"):
+                path = self.case_root / f"{source}-{name}.pdf"
+                write_pdf(path, [PdfPage()])
+                _set_pdf_direct_destination(path, source, raw, named)
+                report = _pdf_action_observation(path)
+                reports.append(report)
+                self.assertEqual(
+                    ["invalid-action"] if invalid else [],
+                    report["unsafe_kinds"],
+                )
+                self.assertEqual(
+                    (
+                        [
+                            {
+                                "kind": "invalid-action",
+                                "source_category": source,
+                            }
+                        ]
+                        if invalid
+                        else []
+                    ),
+                    report["witnesses"],
+                )
+
+        serialized = json.dumps(reports, ensure_ascii=False)
+        self.assertNotIn(valid_name, serialized)
+        self.assertNotIn(invalid_name, serialized)
+        self.assertNotIn(non_page_name, serialized)
+        self.assertTrue(
+            all(
+                len(report["witnesses"])
+                <= audit_publication.MAX_DIAGNOSTIC_ITEMS
+                for report in reports
+            )
+        )
+
+    def test_pdf_action_classification_is_fixed_bounded_and_non_cardinal(
+        self,
+    ) -> None:
+        safe = self.case_root / "actions-safe.pdf"
+        write_pdf(safe, [PdfPage()])
+        _add_pdf_page_link(
+            safe, {"kind": fitz.LINK_GOTO, "page": 0, "to": fitz.Point(24, 24)}
+        )
+        safe_report = _pdf_action_observation(safe)
+        self.assertFalse(safe_report["unsafe_detected"])
+        self.assertEqual([], safe_report["witnesses"])
+
+        named_destination = self.case_root / "actions-direct-destination.pdf"
+        write_pdf(named_destination, [PdfPage()])
+        _add_pdf_named_destination(named_destination)
+        self.assertFalse(
+            _pdf_action_observation(named_destination)["unsafe_detected"]
+        )
+
+        self.assert_local_pdf_destination_contract()
+
+        action_cases = (
+            ("goto-remote", "/GoToR"),
+            ("import-data", "/ImportData"),
+            ("javascript", "/JavaScript"),
+            ("launch", "/Launch"),
+            ("named", "/Named"),
+            ("submit-form", "/SubmitForm"),
+            ("uri", "/URI"),
+        )
+        for expected_kind, subtype in action_cases:
+            with self.subTest(action=expected_kind):
+                path = self.case_root / f"actions-{expected_kind}.pdf"
+                raw_target = f"https://example.invalid/{expected_kind}/" + (
+                    "target" * 100
+                )
+                write_pdf(path, [PdfPage()])
+                _add_pdf_action(path, subtype, raw_target)
+                report = _pdf_action_observation(path)
+                self.assertEqual([expected_kind], report["unsafe_kinds"])
+                self.assertEqual(
+                    [
+                        {
+                            "kind": expected_kind,
+                            "source_category": "catalog",
+                        }
+                    ],
+                    report["witnesses"],
+                )
+                self.assertNotIn(
+                    raw_target,
+                    json.dumps(report, ensure_ascii=False),
+                )
+
+        diagnostic_reports: dict[str, dict[str, Any]] = {}
+        for name, subtype in (
+            ("unknown-action", "/UnexpectedSubtype"),
+            ("invalid-action", None),
+        ):
+            path = self.case_root / f"actions-{name}.pdf"
+            write_pdf(path, [PdfPage()])
+            _add_pdf_action(path, subtype)
+            diagnostic_reports[name] = _pdf_action_observation(path)
+        self.assertEqual(
+            ["unknown-action"],
+            diagnostic_reports["unknown-action"]["unsafe_kinds"],
+        )
+        self.assertEqual(
+            "catalog",
+            diagnostic_reports["unknown-action"]["witnesses"][0][
+                "source_category"
+            ],
+        )
+        self.assertIn(
+            "subtype_sha256",
+            diagnostic_reports["unknown-action"]["witnesses"][0],
+        )
+        self.assertEqual(
+            [
+                {
+                    "kind": "invalid-action",
+                    "source_category": "catalog",
+                }
+            ],
+            diagnostic_reports["invalid-action"]["witnesses"],
+        )
+        serialized = json.dumps(diagnostic_reports, ensure_ascii=False)
+        self.assertNotIn("UnexpectedSubtype", serialized)
+        self.assertNotIn("xref", serialized.casefold())
+        self.assertNotIn("count", serialized.casefold())
+        self.assertNotIn("total", serialized.casefold())
+        self.assertNotIn("omitted", serialized.casefold())
+        self.assertTrue(
+            all(
+                len(report["witnesses"])
+                <= audit_publication.MAX_DIAGNOSTIC_ITEMS
+                for report in diagnostic_reports.values()
+            )
+        )
+        fixed_kinds = {
+            "goto",
+            "goto-remote",
+            "import-data",
+            "uri",
+            "launch",
+            "javascript",
+            "named",
+            "submit-form",
+            "unknown-action",
+            "invalid-action",
+        }
+        observed = {
+            kind
+            for report in diagnostic_reports.values()
+            for kind in report["unsafe_kinds"]
+        } | {kind for kind, _subtype in action_cases}
+        self.assertTrue(observed <= fixed_kinds)
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    unittest.main()

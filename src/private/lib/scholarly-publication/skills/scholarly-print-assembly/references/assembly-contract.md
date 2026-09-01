@@ -82,11 +82,12 @@ contain Unicode control, format, or surrogate characters.
 `assets/publication-profile.json` is a compact closed allowlist shared
 byte-for-byte with QA. It carries only policy identity, HTML element and
 attribute allowlists, CSS property/at-rule/selector allowlists, and explicit
-global prohibitions. Attribute values, selector syntax, and CSS values are
-fixed runtime policy rather than an interpreted profile language. Assembly,
-QA, and package validation each carry the same fixed positive ceiling for
-element/local-attribute pairs, global attributes, and CSS properties. The JSON
-profile may narrow those sets but cannot add authority.
+global prohibitions. Attribute values, selector syntax, and CSS values are fixed Assembly runtime
+policy rather than an interpreted profile language. Assembly carries the
+corresponding positive ceilings, and package validation binds the
+byte-identical profile copies. QA binds the bundled profile identity and hash
+but does not replay those authored-content validators. The JSON profile may
+narrow Assembly's sets but cannot add authority.
 
 ### Fragment HTML
 
@@ -112,7 +113,9 @@ same-document anchor.
 ### Untrusted stylesheets
 
 Untrusted CSS is restricted to profile-listed selectors and properties, then
-checked by fixed value rules in both Assembly and QA. The policy permits
+checked by Assembly's fixed value rules. QA independently scans dormant CSS
+resources and observes browser outcomes without replaying those rules. The
+policy permits
 practical typography, mixed-script line breaking, list/table styling,
 borders, opaque foreground/text-decoration colors, and break, widow/orphan,
 and keep properties.
@@ -145,12 +148,14 @@ profile. They use a separate closed profile:
 - assembler-owned inline crop `svg`, `title`, and `image` nodes with exact
   geometry and local used-page-SVG bindings;
 - generated CSS composed from the bundled base, declared local `@font-face`
-  rules, exactly declared page geometry, role rules, and validated untrusted
-  stylesheet content.
+  rules, exactly one assembler-emitted unqualified `@page` rule carrying the
+  declared page geometry, role rules, and validated untrusted stylesheet
+  content.
 
 Generated nodes and declarations have exact assembler-owned attribute and
 property sets. They are not a general exception that fragments may imitate.
-QA independently applies this generated-output profile.
+QA does not independently reapply this generated-output profile; it checks
+manifest-bound browser and PDF outcomes instead.
 
 ## Figure and text bindings
 

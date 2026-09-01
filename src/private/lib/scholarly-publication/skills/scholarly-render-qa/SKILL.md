@@ -1,113 +1,151 @@
 ---
 name: scholarly-render-qa
-description: Independently audit an assembled scholarly publication by validating its assembly manifest and retained tree, rendering the HTML twice, and using observable HTML/PDF, geometry, font, figure, repeatability, and raster data for release checks. Use before release. Do not use to reconstruct upstream inputs, assemble or repair output, approve language, or complete human review.
+description: Independently audit an assembled scholarly publication by validating its assembly manifest and retained tree, rendering the HTML twice, and using observable HTML/PDF, geometry, font, figure, repeatability, and raster outcomes for release checks. Use before release. Do not use to reconstruct upstream inputs, assemble or repair output, approve language, or complete human review.
 ---
 
 # Scholarly Render QA
 
-Observe the assembled publication from a separate work area. QA is read-only
-with respect to the publication tree and does not repair failures.
+Observe an assembled publication without modifying it. QA is an independent,
+outcome-oriented observer, not a second Assembly validator.
 
-## Input boundary
+## Input and authority boundary
 
 QA consumes:
 
-- `assembly-manifest.json`;
-- the manifest-declared retained publication tree;
-- canonical HTML/CSS/PDF; and
-- the shared `assets/publication-profile.json`.
+- `assembly-manifest.json` as the authority for the assembled publication;
+- the manifest-declared retained tree;
+- canonical HTML, CSS, and required PDF; and
+- the bundled `assets/publication-profile.json` only for closed
+  identity/version/hash binding.
 
-QA does not load source-package, source-block, translation-bundle, figure-map,
-or assembly-spec schemas. It does not replay the original PDF or reconstruct
-unretained upstream semantics. Fragment, figure, font, geometry, and output
-expectations come from the validated assembly manifest.
+QA validates the Assembly manifest schema, semantic asset union, path
+confinement, exact retained regular-file closure, hashes and lengths, canonical
+output bindings, IDs, figure/font relations, canonical crop boxes, and initial
+publication fingerprint. Retained source-package, translation-bundle, and
+assembly-spec snapshots are opaque lineage assets. QA hashes them but does not
+parse or replay them.
 
-Read [references/qa-contract.md](references/qa-contract.md) before auditing.
-Read [references/music-notation-qa-profile.md](references/music-notation-qa-profile.md)
-when the assembly manifest declares `music-notation`.
+Consult [references/qa-contract.md](references/qa-contract.md) for the strict
+runtime and artifact contract. When the manifest declares `music-notation`,
+use [references/music-notation-qa-profile.md](references/music-notation-qa-profile.md)
+to inform the required human review.
 
-## Trust and independence
+## Independence and trust
 
-Trust the caller/workspace owner, exclusive writes to QA output paths, the
-operating system, standard library, and pinned mature parser, font, PDF, and
-browser tooling. Treat the publication tree and its content as untrusted.
-Hashes bind observed bytes; they do not prove authorship.
+QA never imports, calls, or shares Assembly runtime validation. It does not
+independently reapply Assembly's authored-fragment policy, generated markup
+profile, generated CSS recipe, or exact topology checks.
 
-Write evidence, independent renders, and rasters outside the publication
-tree. Do not:
+Trust the caller/workspace owner, exclusive access to declared output paths,
+the operating system, standard library, and pinned schema, CSS, XML, PDF, and
+browser tooling. Trust Assembly's standalone validation of the exact generated
+HTML/CSS profile, topology, crop attributes and children, raw ARIA attributes,
+pseudo-content prohibition, opaque colors, and exact CSS composition. Manifest
+hashes and retained-tree closure catch ordinary byte corruption; a coherent
+rewrite by the trusted caller or workspace owner is outside scope. SHA-256
+binds observed bytes for consistency; it is not a signature or proof of
+authorship.
 
-- modify HTML, CSS, PDF, assets, or the assembly manifest;
-- regenerate assembly evidence;
-- turn a failure into a pass by mutation;
-- delete publication artifacts; or
-- claim editorial, subject-matter, or visual approval.
+Keep evidence, independent renders, and rasters outside the publication tree.
+Do not repair, delete, or rewrite publication artifacts.
 
-The parent directory of `--release-manifest` is the dedicated review
-transaction root. The evidence, release manifest, rasters, and independent
-renders must all be beneath that root.
+## Required outcomes and decision points
 
-## Workflow
+This Skill does not prescribe an agent's investigation order, decomposition,
+or reporting sequence. Choose an efficient approach for the publication at
+hand, and use equivalent observation techniques where the runtime contract
+allows them. Preserve the following decisions and outcomes.
 
-1. Validate the assembly manifest schema, policy identity, manifest-declared
-   semantic asset closure, hashes, path confinement, node types, and initial
-   tree fingerprint.
-2. Apply the shared publication profile to copied fragments and untrusted
-   stylesheets. Apply the documented generated-output profile to the
-   assembler-owned document wrapper, figure/crop markup, and generated CSS.
-3. Validate offline resource closure within the retained tree, semantic HTML,
-   IDs, language, fragment text bindings, figure/caption/crop bindings, used
-   page SVG hashes, local fonts, and declared print geometry.
-4. Render the canonical HTML twice in fresh JavaScript-disabled contexts with
-   nonlocal requests blocked.
-5. Inspect both render PDFs, request behavior, printable geometry, horizontal
-   overflow, fonts, page boxes, unsafe PDF action witnesses, Type 3 fonts,
-   extractable text, replacement characters, figures, and crops. Combine
-   target-aware page-link observations with low-level kind/source witnesses;
-   do not claim action cardinality or a complete action inventory. PDF
-   image/vector object counts are not a mechanical gate. Visual figure presence
-   and fidelity belong to mandatory human review of the full-page rasters.
-   Known action subtype names use fixed kinds, missing or non-name subtypes use
-   `invalid-action`, and every other valid name uses `unknown-action`. Unknown
-   subtype witnesses retain only bounded length/hash metadata, never encoded or
-   decoded subtype text. Retain only compact path-neutral summaries or bounded
-   failure diagnostics.
-6. Compare raw bytes and normalized geometry, text, and full-page rasters for
-   repeatability.
-7. Export a full-page raster for every page of the canonical PDF and both
-   independent renders.
-8. Re-fingerprint the publication tree and fail if it changed.
-9. Write schema-valid `qa-evidence.json`. Its stable root binds the assembly
-   manifest, both render PDFs, every raster, the before/after publication
-   tree, tool/profile identity, nine blocking core checks, and human-review
-   state. Stable asset records explicitly name `publication-root` or
-   `evidence-root` as their relative path base. Full browser probes remain
-   transient; check evidence may retain compact summaries or bounded failure
-   diagnostics. Asset paths are canonical relative POSIX paths: they contain
-   no absolute or URI prefix, backslash, `.` or `..` segment, repeated `/`, or
-   trailing `/`.
-10. When all blocking checks pass, write a thin `release-manifest.json`
-    indexing only the assembly manifest, QA evidence, mechanical status, and
-    interpreting tool identity/version. Its QA-evidence binding uses
-    `release-root`; its assembly-manifest binding uses `publication-root`.
-11. Build the complete review candidate in a unique sibling staging directory,
-    then replace the dedicated review root. A completed blocking failure
-    publishes evidence, renders, and rasters without a release manifest.
+### Publication admissibility
 
-Successful request inventories, raw DOM probes, exact browser dimensions, and
-image/drawing totals are not guaranteed stable evidence fields.
-PDF image/vector object counts must not be used as a nonzero graphics gate;
-visual figure presence is established by mandatory human full-page raster
-review.
+A completed audit binds the closed Assembly manifest, required canonical PDF,
+deduplicated semantic asset union, exact retained regular-file tree, hashes,
+relations, and publication fingerprints. Identical shared records are valid;
+conflicting records are not.
 
-Text-read diagnostics for generated HTML/CSS, retained stylesheets, and
-fragments contain only a stable category, manifest-relative logical path,
-`os`/`unicode` failure category, optional fragment ID, and available `errno`.
-PDF action observations contain `unsafe_detected`, bounded sorted unsafe kinds
-and kind/source witnesses, plus bounded target metadata samples when page-link
-inspection exposes a target. They contain no action totals or exact
-action-list digest.
+If the manifest or required artifacts cannot be loaded far enough to create
+the complete evidence contract, classify the result as operational. Integrity
+findings that still permit a complete audit remain blocking mechanical
+findings rather than being converted into an operational abort.
 
-## Script
+### Observable mechanical eligibility
+
+Mechanical eligibility requires all of these outcome groups:
+
+- narrow passive CSS/SVG resource safety, without authored/generated profile
+  replay;
+- exactly two independent fresh render observations with page JavaScript
+  disabled, service workers blocked, one fixed bound around each complete
+  render, and role-aware resource routing: canonical HTML as document,
+  canonical CSS as stylesheet, declared fonts as fonts, and declared figure
+  source SVGs as images;
+- canonical stylesheet, effective UTF-8 without `meta[http-equiv]`, fragment
+  cardinality/order and visibility-aware text outcomes, inherited
+  document/title language, absence of active DOM/SVG/animation elements,
+  normalized manifest-bound figure/crop `aria-label` values, crop `role=img`,
+  relative crop aspect-ratio comparison, active conditional page CSS, and
+  printable-width outcomes in both renders;
+- canonical plus render PDF geometry, normalized text, embedded subset fonts,
+  required font roles, Type 3/action safety, fixed 500-page admission, and
+  bounded evidence;
+- one bounded full-page raster for every page of all three PDF sources;
+- normalized render repeatability, with raw byte inequality advisory when the
+  normalized observations agree; and
+- an unchanged final publication fingerprint.
+
+Visibility-aware fragment text may be established through rendered text
+nodes, ranges, computed visibility, or an equivalent browser observation. Do
+not substitute exact `innerHTML`, subtree, generated-markup, or generated-CSS
+reproduction.
+
+The sole admitted page rule is one active unqualified `@page` rule. Inactive
+stylesheet/media/supports branches do not compete; active qualified or
+additional unqualified rules block. Every admitted PDF is nonempty and has at
+most 500 pages, and every page of an admitted PDF is still rasterized.
+
+### Artifact and release decision
+
+Every completed audit emits schema-valid evidence beginning with the nine
+ordered blocking core checks and records required human-review state. The
+schema permits additional namespaced blocking or advisory checks after that
+core. A release manifest is valid only for a mechanical pass. A changed
+publication is a completed blocking result that may publish evidence; it is
+not release eligible.
+
+The legacy check ID `html.offline-profile` means bundled profile identity plus
+observable offline, passive-resource, stylesheet, language, and semantic
+content outcomes. It does not claim authored or generated profile
+conformance.
+
+## Fresh review transaction
+
+The parent of `--release-manifest` is the dedicated final review root. The
+requested evidence, rasters, independent renders, and release manifest must be
+beneath it and canonically disjoint from the publication. On Windows, reject
+output components ending in a dot or space.
+
+The final review root must be absent. Any existing entry—file, directory,
+symlink, reparse point, or special node—is rejected unchanged. Reruns require a
+new root or caller-managed deletion.
+
+A publishable candidate must already contain the complete schema-valid
+pass/fail artifact set. Publication is exactly one sibling
+candidate-to-review-root rename:
+
+- pass: evidence, two renders, every raster, and release; exit `0`;
+- completed blocking failure: evidence, two renders, every raster, and no
+  release; exit `1`;
+- operational failure: no final review root; clean the candidate when one was
+  created and exit `2`. If cleanup fails, report the orphan candidate
+  explicitly.
+
+There is no ownership marker, prior-review replacement, backup, rollback,
+hostile-writer defense, or crash-recovery protocol.
+
+## Runtime invocation
+
+The package runtime is the canonical interpreter of the machine contract. One
+valid invocation is:
 
 ```powershell
 uv run --script scripts/audit_publication.py `
@@ -122,49 +160,43 @@ uv run --script scripts/audit_publication.py `
 
 `--page-size` is an assertion, not an override.
 
-Exit codes:
-
-- `0`: blocking mechanical checks passed.
-- `1`: the audit completed with blocking findings.
-- `2`: arguments, dependencies, or operation failed.
-
-An existing non-empty review root is replaceable only when the requested
-evidence path is a regular non-symlink ownership marker within it. Empty and
-nonexistent roots are allowed. Pre-publication exit-2 failures remove only
-staging and preserve any prior review. Publication uses sibling staging, a
-temporary sibling backup rename, and in-process rollback. This preserves prior
-results for ordinary operational failures and rollback handled by the running
-process; it is not atomic against power loss or process termination.
-
 ## Required mechanical core
 
-Evidence must include checks for:
+Evidence begins with these core checks once, in order, with
+`severity: blocking`:
 
-- manifest and retained-tree integrity;
-- offline HTML and publication-profile conformance;
-- two-render geometry and overflow;
-- fonts;
-- PDF actions, Type 3 fonts, and extractable text;
-- figure and crop binding;
-- repeatability;
-- raster completeness; and
-- unchanged publication tree.
+1. `manifest.integrity`
+2. `html.offline-profile`
+3. `render.geometry-overflow`
+4. `pdf.fonts`
+5. `pdf.actions-type3-text`
+6. `figures.crop-bindings`
+7. `render.repeatability`
+8. `rasters.complete`
+9. `publication.tree-unchanged`
 
-All nine core checks are blocking. A failed core check cannot coexist with
-`mechanical_status: pass`. Additional checks may use stable namespaced IDs.
+Any additional namespaced blocking or advisory checks follow this core.
+A mechanical pass forbids failed blocking checks.
+
+Stable asset records name their base: `publication-root` for the Assembly
+manifest, `evidence-root` for render PDFs and rasters, and `release-root` for
+QA evidence in the release index.
 
 ## Human review
 
-`qa-evidence.json` always records `human_review.status: required`. Mechanical
-success does not replace readable-zoom inspection of every raster for
-cropping, page breaks, mixed-script spacing, figures, captions, continuation
-order, notation fidelity, source labels, embedded-language inventories,
-translations, glosses, and errata notes.
+`qa-evidence.json` always records `human_review.status: required`. A person
+must inspect every full-page raster at readable zoom for crop loss, overflow,
+pagination, mixed-script typography, figures, captions, continuation order,
+notation fidelity, source labels, translations, glosses, and errata.
 
-## Non-goals
+## Non-guarantees
 
-- Upstream source, block, translation, figure-map, or recipe replay
-- Translation or editorial revision
-- HTML/PDF assembly or repair
-- Artifact deletion or archival finalization
-- Authenticity, nonrepudiation, or accessibility-conformance claims
+QA does not guarantee:
+
+- independent authored-fragment/profile conformance;
+- exact generated markup, topology, or CSS reproduction;
+- upstream snapshot, recipe, source PDF, or source-semantic replay;
+- visual, editorial, subject-matter, translation, or accessibility approval;
+- authenticity, nonrepudiation, or archival completeness;
+- safety against hostile concurrent writers or compromised tooling; or
+- rollback, power-loss atomicity, or crash recovery.

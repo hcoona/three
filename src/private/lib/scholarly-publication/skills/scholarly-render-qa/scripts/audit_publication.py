@@ -2,7 +2,6 @@
 # requires-python = "==3.12.11"
 # dependencies = [
 #   "defusedxml==0.7.1",
-#   "html5lib==1.1",
 #   "jsonschema==4.25.1",
 #   "playwright==1.56.0",
 #   "pymupdf==1.26.6",
@@ -13,7 +12,9 @@
 from __future__ import annotations
 
 import argparse
-import functools
+import asyncio
+import base64
+import binascii
 import hashlib
 import json
 import math
@@ -24,9 +25,8 @@ import stat
 import sys
 import tempfile
 import unicodedata
-import uuid
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
@@ -34,7 +34,6 @@ from urllib.parse import unquote, urlsplit
 from urllib.request import url2pathname
 from xml.etree.ElementTree import ParseError
 
-import html5lib
 import tinycss2
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring
@@ -56,14 +55,13 @@ PDF_TOLERANCE = 0.75
 RASTER_SCALE = 2.0
 MAX_RASTER_AREA_FACTOR = 4.0
 MAX_PDF_OBJECTS = 100_000
+MAX_PDF_PAGES = 500
 MAX_DIAGNOSTIC_STRING = 256
 MAX_DIAGNOSTIC_ITEMS = 25
+NAVIGATION_TIMEOUT_MS = 60_000
+RENDER_TIMEOUT_MS = 120_000
 PAGE_POINTS = {"letter": (612.0, 792.0), "a4": (595.276, 841.89)}
 PAGE_CSS_NAMES = {"letter": "Letter", "a4": "A4"}
-CSS_LENGTH_UNITS = frozenset({"ch", "cm", "em", "ex", "in", "mm", "pc", "pt", "px", "q", "rem"})
-GENERATED_CLASSES = frozenset({"publication-figure", "figure-parts", "figure-part"})
-FIGURE_MARKER = re.compile(r"\s*figure\s*:\s*(?P<id>[a-z0-9][a-z0-9._-]*)\s*")
-LANGUAGE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 SVG_LENGTH = re.compile(r"\s*([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)(?:pt|px)?\s*")
 CORE_CHECK_IDS = (
     "manifest.integrity", "html.offline-profile", "render.geometry-overflow",
@@ -77,190 +75,43 @@ HUMAN_REVIEW_SCOPE = (
     "Check mixed-script typography and notation fidelity.",
     "Review source labels, language inventories, translations, glosses, and errata.",
 )
-VOID_ELEMENTS = {
-    "area", "base", "br", "col", "embed", "hr", "img", "input",
-    "link", "meta", "param", "source", "track", "wbr",
+PROFILE_ID = "scholarly-fragment-and-stylesheet-v1"
+PROFILE_SCHEMA_VERSION = "1.0"
+DOM_URL_ATTRIBUTES = frozenset({
+    "action", "background", "cite", "data", "formaction", "href", "longdesc",
+    "manifest", "ping", "poster", "src", "srcset", "xlink:href",
+})
+ACTIVE_DOM_ELEMENTS = frozenset({
+    "applet", "audio", "base", "button", "canvas", "datalist", "details", "dialog",
+    "embed", "form", "frame", "frameset", "iframe", "input", "object", "script",
+    "select", "source", "textarea", "track", "video",
+})
+SVG_ACTIVE_ELEMENTS = frozenset({
+    "audio", "foreignobject", "iframe", "script", "video",
+})
+SVG_ANIMATION_ELEMENTS = frozenset({
+    "animate", "animatemotion", "animatetransform", "discard", "set",
+})
+SVG_RESOURCE_ATTRIBUTES = frozenset({"href", "src", "xlink:href"})
+SVG_URL_PRESENTATION_ATTRIBUTES = frozenset({
+    "clip-path", "cursor", "fill", "filter", "marker-end", "marker-mid",
+    "marker-start", "mask", "stroke",
+})
+OBSERVED_ACTIVE_ELEMENTS = frozenset({
+    *ACTIVE_DOM_ELEMENTS,
+    *SVG_ACTIVE_ELEMENTS,
+    *SVG_ANIMATION_ELEMENTS,
+})
+CSS_LENGTH_INCHES = {
+    "in": 1.0,
+    "cm": 1.0 / 2.54,
+    "mm": 1.0 / 25.4,
+    "q": 1.0 / 101.6,
+    "pt": 1.0 / POINTS_PER_INCH,
+    "pc": 1.0 / 6.0,
+    "px": 1.0 / PX_PER_INCH,
 }
-SELF_CLOSING_ELEMENTS = VOID_ELEMENTS | {"image"}
-RESOURCE_ATTRIBUTES = {"background", "data", "href", "poster", "src", "srcset", "xlink:href"}
-ACTIVE_ELEMENTS = {
-    "applet", "audio", "base", "button", "canvas", "datalist", "details", "dialog", "embed", "form", "frame",
-    "frameset", "iframe", "img", "input", "listing", "meter", "noembed", "noframes", "noscript", "object",
-    "plaintext", "progress", "rp", "script", "select", "source", "style", "textarea", "video", "xmp",
-}
-PROFILE_PROHIBITIONS = frozenset({
-    "active-content", "browser-default-hidden-content", "css-custom-properties", "css-functions",
-    "css-important", "css-pseudo-elements", "css-url-values", "event-handler-attributes",
-    "external-urls", "inline-style", "parser-changing-markup",
-})
-PROFILE_SELECTOR_SURFACE = frozenset({
-    "type", "universal", "class", "id", "lang-attribute", "lang-pseudo-class", "child", "descendant",
-})
-ATTRIBUTE_PLAIN_LIMITS = {"abbr": 128, "aria-label": 512, "title": 512, "value": 512}
-ATTRIBUTE_TOKEN_LIMITS = {
-    "aria-describedby": 32, "aria-labelledby": 32, "headers": 32,
-}
-FIXED_ELEMENT_ATTRIBUTES = {
-    "a": frozenset({"href"}),
-    "abbr": frozenset(),
-    "address": frozenset(),
-    "aside": frozenset(),
-    "b": frozenset(),
-    "bdi": frozenset(),
-    "bdo": frozenset(),
-    "blockquote": frozenset(),
-    "br": frozenset(),
-    "caption": frozenset(),
-    "cite": frozenset(),
-    "code": frozenset(),
-    "col": frozenset({"span"}),
-    "colgroup": frozenset({"span"}),
-    "data": frozenset({"value"}),
-    "dd": frozenset(),
-    "del": frozenset({"datetime"}),
-    "dfn": frozenset(),
-    "div": frozenset(),
-    "dl": frozenset(),
-    "dt": frozenset(),
-    "em": frozenset(),
-    "h1": frozenset(),
-    "h2": frozenset(),
-    "h3": frozenset(),
-    "h4": frozenset(),
-    "h5": frozenset(),
-    "h6": frozenset(),
-    "hr": frozenset(),
-    "i": frozenset(),
-    "ins": frozenset({"datetime"}),
-    "kbd": frozenset(),
-    "li": frozenset({"value"}),
-    "mark": frozenset(),
-    "ol": frozenset({"reversed", "start", "type"}),
-    "p": frozenset(),
-    "pre": frozenset(),
-    "q": frozenset(),
-    "rb": frozenset(),
-    "rt": frozenset(),
-    "rtc": frozenset(),
-    "ruby": frozenset(),
-    "s": frozenset(),
-    "samp": frozenset(),
-    "section": frozenset(),
-    "small": frozenset(),
-    "span": frozenset(),
-    "strong": frozenset(),
-    "sub": frozenset(),
-    "sup": frozenset(),
-    "table": frozenset(),
-    "tbody": frozenset(),
-    "td": frozenset({"colspan", "headers", "rowspan"}),
-    "tfoot": frozenset(),
-    "th": frozenset({"abbr", "colspan", "headers", "rowspan", "scope"}),
-    "thead": frozenset(),
-    "time": frozenset({"datetime"}),
-    "tr": frozenset(),
-    "u": frozenset(),
-    "ul": frozenset(),
-    "var": frozenset(),
-    "wbr": frozenset(),
-}
-FIXED_GLOBAL_ATTRIBUTES = frozenset({
-    "aria-describedby", "aria-label", "aria-labelledby", "class", "dir", "id", "lang", "title",
-})
-FIXED_ATTRIBUTE_NAMES = FIXED_GLOBAL_ATTRIBUTES | frozenset().union(*FIXED_ELEMENT_ATTRIBUTES.values())
-CSS_WIDE_KEYWORDS = frozenset({"inherit", "initial", "unset"})
-CSS_GENERIC_FAMILIES = frozenset({"monospace", "sans-serif", "serif"})
-CSS_NAMED_COLORS = frozenset({
-    "black", "currentcolor", "darkblue", "darkgreen", "darkred", "dimgray", "gray", "maroon", "navy",
-})
-CSS_BORDER_STYLE_PROPERTIES = frozenset({
-    "border-bottom-style", "border-left-style", "border-right-style", "border-top-style",
-})
-CSS_BORDER_WIDTH_PROPERTIES = frozenset({
-    "border-bottom-width", "border-left-width", "border-right-width", "border-top-width",
-})
-CSS_COLOR_PROPERTIES = frozenset({
-    "border-bottom-color", "border-left-color", "border-right-color", "border-top-color", "color",
-    "text-decoration-color",
-})
-CSS_NONNEGATIVE_LENGTH_PERCENTAGE_PROPERTIES = frozenset({
-    "margin-block-end", "margin-block-start", "margin-bottom", "margin-inline-end", "margin-inline-start",
-    "margin-left", "margin-right", "margin-top", "padding-block-end", "padding-block-start", "padding-bottom",
-    "padding-inline-end", "padding-inline-start", "padding-left", "padding-right", "padding-top",
-})
-CSS_SIGNED_SPACING_PROPERTIES = frozenset({"letter-spacing", "text-underline-offset", "word-spacing"})
-CSS_WIDOW_ORPHAN_PROPERTIES = frozenset({"orphans", "widows"})
-CSS_ENUM_VALUES = {
-    "border-collapse": frozenset({"collapse", "separate"}),
-    "box-decoration-break": frozenset({"clone", "slice"}),
-    "break-after": frozenset({"auto", "avoid", "avoid-page", "left", "page", "recto", "right", "verso"}),
-    "break-before": frozenset({"auto", "avoid", "avoid-page", "left", "page", "recto", "right", "verso"}),
-    "break-inside": frozenset({"auto", "avoid", "avoid-page"}),
-    "caption-side": frozenset({"bottom", "top"}),
-    "font-kerning": frozenset({"auto", "none", "normal"}),
-    "font-style": frozenset({"italic", "normal"}),
-    "font-variant-caps": frozenset({
-        "all-small-caps", "normal", "petite-caps", "small-caps", "titling-caps", "unicase",
-    }),
-    "hyphens": frozenset({"auto", "manual", "none"}),
-    "line-break": frozenset({"anywhere", "auto", "loose", "normal", "strict"}),
-    "list-style-position": frozenset({"inside", "outside"}),
-    "list-style-type": frozenset({
-        "circle", "cjk-ideographic", "decimal", "decimal-leading-zero", "disc", "hiragana", "katakana",
-        "lower-alpha", "lower-roman", "none", "simp-chinese-informal", "square", "trad-chinese-informal",
-        "upper-alpha", "upper-roman",
-    }),
-    "overflow-wrap": frozenset({"anywhere", "break-word", "normal"}),
-    "page-break-after": frozenset({"always", "auto", "avoid", "left", "right"}),
-    "page-break-before": frozenset({"always", "auto", "avoid", "left", "right"}),
-    "page-break-inside": frozenset({"auto", "avoid"}),
-    "ruby-align": frozenset({"center", "space-around", "space-between", "start"}),
-    "ruby-position": frozenset({"over", "under"}),
-    "table-layout": frozenset({"auto", "fixed"}),
-    "text-align": frozenset({"center", "end", "justify", "left", "match-parent", "right", "start"}),
-    "text-align-last": frozenset({"auto", "center", "end", "justify", "left", "right", "start"}),
-    "text-decoration-style": frozenset({"dashed", "dotted", "double", "solid", "wavy"}),
-    "text-justify": frozenset({"auto", "inter-character", "inter-word", "none"}),
-    "text-rendering": frozenset({"auto", "geometricprecision", "optimizelegibility", "optimizespeed"}),
-    "white-space": frozenset({"break-spaces", "normal", "nowrap", "pre", "pre-line", "pre-wrap"}),
-    "word-break": frozenset({"break-all", "keep-all", "normal"}),
-}
-CSS_KEYWORD_SET_VALUES = {
-    "font-variant-east-asian": frozenset({
-        "full-width", "jis04", "jis78", "jis83", "jis90", "normal", "proportional-width", "ruby",
-        "simplified", "traditional",
-    }),
-    "font-variant-ligatures": frozenset({
-        "common-ligatures", "contextual", "discretionary-ligatures", "historical-ligatures",
-        "no-common-ligatures", "no-contextual", "no-discretionary-ligatures", "no-historical-ligatures",
-        "none", "normal",
-    }),
-    "font-variant-numeric": frozenset({
-        "diagonal-fractions", "lining-nums", "normal", "oldstyle-nums", "ordinal", "proportional-nums",
-        "slashed-zero", "stacked-fractions", "tabular-nums",
-    }),
-    "text-decoration-line": frozenset({"line-through", "none", "overline", "underline"}),
-}
-CSS_KEYWORD_EXCLUSIVE_GROUPS = {
-    "font-variant-east-asian": (
-        {"jis04", "jis78", "jis83", "jis90", "simplified", "traditional"}, {"full-width", "proportional-width"},
-    ),
-    "font-variant-ligatures": (
-        {"common-ligatures", "no-common-ligatures"}, {"contextual", "no-contextual"},
-        {"discretionary-ligatures", "no-discretionary-ligatures"}, {"historical-ligatures", "no-historical-ligatures"},
-    ),
-    "font-variant-numeric": (
-        {"lining-nums", "oldstyle-nums"}, {"proportional-nums", "tabular-nums"},
-        {"diagonal-fractions", "stacked-fractions"},
-    ),
-}
-FIXED_CSS_PROPERTIES = frozenset({
-    *CSS_BORDER_STYLE_PROPERTIES, *CSS_BORDER_WIDTH_PROPERTIES, *CSS_COLOR_PROPERTIES,
-    *CSS_NONNEGATIVE_LENGTH_PERCENTAGE_PROPERTIES, *CSS_SIGNED_SPACING_PROPERTIES,
-    *CSS_WIDOW_ORPHAN_PROPERTIES, *CSS_ENUM_VALUES, *CSS_KEYWORD_SET_VALUES,
-    "border-spacing", "font-family", "font-size", "font-weight", "line-height", "tab-size",
-    "text-decoration-thickness", "text-indent", "vertical-align",
-})
+MAX_EMBEDDED_IMAGE_BYTES = 64 * 1024 * 1024
 REPARSE_POINT_ATTRIBUTE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 ASSET_ROOT = Path(__file__).resolve().parents[1] / "assets"
 ASSEMBLY_SCHEMA = ASSET_ROOT / "assembly-manifest.schema.json"
@@ -269,65 +120,6 @@ RELEASE_SCHEMA = ASSET_ROOT / "release-manifest.schema.json"
 PROFILE_PATH = ASSET_ROOT / "publication-profile.json"
 CSS_UNSAFE_STRING_CATEGORIES = frozenset({"Cc", "Cf", "Cs"})
 
-# The generated-output profile is deliberately small and closed. Values are
-# normalized with tinycss2 before comparison.
-BASE_RULES: dict[str, tuple[tuple[str, str], ...]] = {
-    "html": (
-        ("color", "var(--ink)"), ("font-family", "var(--body-latin)"), ("font-size", "10.5pt"),
-        ("font-style", "normal"), ("font-synthesis", "none"), ("font-weight", "400"),
-        ("hyphenate-character", '"-"'), ("line-height", "1.52"),
-        ("text-autospace", "normal"), ("text-spacing-trim", "trim-start"),
-        ("hanging-punctuation", "first allow-end last"), ("print-color-adjust", "exact"),
-        ("-webkit-print-color-adjust", "exact"),
-    ),
-    "body": (("margin", "0"),),
-    "body :where(*)": (("font-family", "inherit"), ("font-style", "inherit"), ("font-weight", "inherit")),
-    "[lang]": (("font-family", "var(--body-latin)"),),
-    (
-        '[lang|="zh" i], [lang|="ja" i], [lang|="ko" i], '
-        '[lang$="-Hans" i], [lang*="-Hans-" i], [lang$="-Hant" i], '
-        '[lang*="-Hant-" i], [lang$="-Hani" i], [lang*="-Hani-" i], '
-        '[lang$="-Jpan" i], [lang*="-Jpan-" i], [lang$="-Kore" i], '
-        '[lang*="-Kore-" i]'
-    ): (("font-family", "var(--body-cjk)"),),
-    "h1, h2, h3, h4, h5, h6": (
-        ("break-after", "avoid-page"), ("font-weight", "700"), ("line-height", "1.24"),
-        ("margin-block", "1.25em 0.48em"),
-    ),
-    "b, strong, th": (("font-weight", "700"),),
-    "cite, em, i": (("font-style", "italic"),),
-    "q": (("quotes", '"\u201c" "\u201d" "\u2018" "\u2019"'),),
-    "ul": (("list-style-type", "disc"),),
-    "p": (("margin-block", "0 0.58em"), ("orphans", "2"), ("widows", "2")),
-    "figure": (("break-inside", "avoid-page"), ("margin", "1em auto")),
-    ".figure-parts": (("display", "grid"), ("gap", "0.45em")),
-    ".figure-part": (("display", "block"), ("height", "auto"), ("margin-inline", "auto"), ("max-width", "100%")),
-    "figcaption": (
-        ("color", "var(--muted-ink)"), ("font-size", "0.9em"), ("margin-block-start", "0.42em"),
-        ("text-align", "center"),
-    ),
-    ".keep-with-next": (("break-after", "avoid-page"),),
-    ".keep-together": (("break-inside", "avoid"),),
-    ".atomic, .bilingual-term, .music-token, .figure-label": (
-        ("break-inside", "avoid"), ("display", "inline-block"), ("white-space", "nowrap"),
-    ),
-    "a": (("color", "inherit"), ("text-decoration", "none")),
-}
-SCREEN_RULES = {
-    "html": (("background", "#ddd"),),
-    "body": (
-        ("background", "white"), ("box-shadow", "0 0.08in 0.28in rgb(0 0 0 / 22%)"),
-        ("margin", "0.35in auto"), ("max-width", "7.14in"), ("min-height", "9.7in"),
-        ("padding", "0.62in 0.68in 0.68in"),
-    ),
-}
-BASE_ROOT = (
-    ("--body-cjk", '"Publication CJK", serif'),
-    ("--body-latin", '"Publication Latin", serif'),
-    ("--ink", "#111"),
-    ("--muted-ink", "#555"),
-)
-BASE_PAGE = (("size", "Letter"), ("margin", "0.62in 0.68in 0.68in"))
 class AuditError(RuntimeError):
     pass
 class PublicationError(RuntimeError):
@@ -359,29 +151,6 @@ class TreeSnapshot:
                 "special_nodes": list(self.special)}
 
 @dataclass
-class TextNode:
-    text: str
-
-@dataclass
-class CommentNode:
-    text: str
-
-@dataclass
-class Element:
-    tag: str
-    attrs: dict[str, str | None]
-    attr_names: tuple[str, ...]
-    children: list[HtmlNode] = field(default_factory=list)
-
-type HtmlNode = Element | TextNode | CommentNode
-
-@dataclass
-class ParsedHtml:
-    root: Element
-    errors: list[str]
-    doctypes: int
-
-@dataclass
 class Context:
     root: Path
     manifest_path: Path
@@ -394,15 +163,13 @@ class Context:
     css: Asset
     pdf: Asset
     before: TreeSnapshot
-    errors: list[str]
+    errors: list[Any]
 
 @dataclass
-class StaticAudit:
+class PassiveAudit:
     errors: list[Any]
     binding_errors: list[Any]
-    document: dict[str, Any]
-    figures: list[dict[str, Any]]
-    crops: list[dict[str, Any]]
+    source_svgs: dict[str, tuple[float, float]]
 
 @dataclass
 class Render:
@@ -416,6 +183,7 @@ class Pdf:
     evidence: dict[str, Any]
     detail: dict[str, Any]
     rasters: list[dict[str, Any]]
+
 @dataclass(frozen=True)
 class ReviewLayout:
     root: Path
@@ -423,61 +191,35 @@ class ReviewLayout:
     release: Path
     rasters: Path
     renders: Path
-class TreeParser(HTMLParser):
+
+class CaptionTextParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.root = Element("#document", {}, ())
-        self.stack = [self.root]
-        self.errors: list[str] = []
-        self.doctypes = 0
-        self.seen_element = False
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        self._start(tag, attrs, closing=False)
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        self._start(tag, attrs, closing=True)
-    def _start(self, tag: str, attrs: list[tuple[str, str | None]], closing: bool) -> None:
-        name = tag.casefold()
-        names = tuple(key.casefold() for key, _ in attrs)
-        duplicates = sorted(key for key, count in Counter(names).items() if count > 1)
-        if duplicates:
-            self.errors.append(f"<{name}> has duplicate attributes: {duplicates}")
-        node = Element(name, {key.casefold(): value for key, value in attrs}, names)
-        self.stack[-1].children.append(node)
-        self.seen_element = True
-        if closing and name not in SELF_CLOSING_ELEMENTS:
-            self.errors.append(f"non-void <{name}/> is not allowed")
-        if not closing and name not in VOID_ELEMENTS:
-            self.stack.append(node)
+        self.parts: list[str] = []
+        self.hidden_depth = 0
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        del attrs
+        if tag.casefold() in {"script", "style", "template"}:
+            self.hidden_depth += 1
+
     def handle_endtag(self, tag: str) -> None:
-        name = tag.casefold()
-        if name in VOID_ELEMENTS:
-            self.errors.append(f"void element has end tag </{name}>")
-        elif len(self.stack) == 1:
-            self.errors.append(f"unmatched end tag </{name}>")
-        elif self.stack[-1].tag != name:
-            self.errors.append(f"misnested end tag </{name}>; expected </{self.stack[-1].tag}>")
-        else:
-            self.stack.pop()
+        if tag.casefold() in {"script", "style", "template"} and self.hidden_depth:
+            self.hidden_depth -= 1
+
     def handle_data(self, data: str) -> None:
-        self.stack[-1].children.append(TextNode(data))
-    def handle_comment(self, data: str) -> None:
-        self.stack[-1].children.append(CommentNode(data))
-    def handle_decl(self, decl: str) -> None:
-        if decl.strip().casefold() == "doctype html" and not self.seen_element:
-            self.doctypes += 1
-        else:
-            self.errors.append(f"unexpected declaration <!{decl}>")
-    def unknown_decl(self, data: str) -> None:
-        self.errors.append(f"unexpected declaration <![{data}]>")
-    def handle_pi(self, data: str) -> None:
-        self.errors.append(f"unexpected processing instruction <?{data}>")
-    def result(self) -> ParsedHtml:
-        self.close()
-        if len(self.stack) > 1:
-            self.errors.append("unclosed elements: " + ", ".join(node.tag for node in self.stack[1:]))
-        return ParsedHtml(self.root, self.errors, self.doctypes)
+        if not self.hidden_depth:
+            self.parts.append(data)
+
+
 def eprint(message: str) -> None:
     print(message, file=sys.stderr)
+
+
 def canonical_json(value: Any) -> bytes:
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
 def atomic_write(path: Path, content: bytes) -> None:
@@ -700,78 +442,19 @@ def projected_assets(manifest: dict[str, Any]) -> list[tuple[str, dict[str, Any]
     return records
 def duplicate_values(values: list[str]) -> list[str]:
     return sorted(value for value, count in Counter(values).items() if count > 1)
-@functools.cache
 def load_profile() -> tuple[dict[str, Any], bytes]:
-    profile_bytes = PROFILE_PATH.read_bytes()
+    try:
+        profile_bytes = PROFILE_PATH.read_bytes()
+    except OSError as error:
+        raise AuditError("cannot read the bundled publication profile") from error
     profile = read_json(PROFILE_PATH)
-    if not isinstance(profile, dict) or set(profile) != {
-        "schema_version", "profile_id", "closed", "fragment_html", "untrusted_stylesheet",
-        "global_prohibitions",
-    }:
-        raise AuditError("publication profile has an unexpected top-level shape")
     if (
-        profile.get("schema_version") != "1.0"
-        or profile.get("profile_id") != "scholarly-fragment-and-stylesheet-v1"
+        not isinstance(profile, dict)
+        or profile.get("schema_version") != PROFILE_SCHEMA_VERSION
+        or profile.get("profile_id") != PROFILE_ID
         or profile.get("closed") is not True
     ):
-        raise AuditError("publication profile identity is not supported")
-    html = profile.get("fragment_html")
-    css = profile.get("untrusted_stylesheet")
-    if (
-        not isinstance(html, dict)
-        or set(html) != {"elements", "global_attributes"}
-        or not isinstance(html.get("elements"), dict)
-        or not isinstance(html.get("global_attributes"), list)
-    ):
-        raise AuditError("publication profile HTML allowlists are malformed")
-    elements = html["elements"]
-    global_attributes = html["global_attributes"]
-    if any(
-        not isinstance(tag, str)
-        or tag != tag.casefold()
-        or tag not in FIXED_ELEMENT_ATTRIBUTES
-        or not isinstance(attributes, list)
-        or not all(isinstance(name, str) for name in attributes)
-        or not set(attributes) <= FIXED_ELEMENT_ATTRIBUTES[tag]
-        or len(attributes) != len(set(attributes))
-        for tag, attributes in elements.items()
-    ):
-        raise AuditError("publication profile element allowlist is unsupported")
-    if (
-        not all(isinstance(name, str) and name in FIXED_GLOBAL_ATTRIBUTES for name in global_attributes)
-        or len(global_attributes) != len(set(global_attributes))
-    ):
-        raise AuditError("publication profile global attribute allowlist is unsupported")
-    if (
-        not isinstance(css, dict)
-        or set(css) != {"properties", "at_rules", "selector_surface"}
-        or not isinstance(css.get("properties"), list)
-        or not isinstance(css.get("at_rules"), list)
-        or not isinstance(css.get("selector_surface"), list)
-    ):
-        raise AuditError("publication profile stylesheet allowlists are malformed")
-    if (
-        not all(isinstance(name, str) and not name.startswith("--") and name in FIXED_CSS_PROPERTIES
-                for name in css["properties"])
-        or len(css["properties"]) != len(set(css["properties"]))
-    ):
-        raise AuditError("publication profile CSS property allowlist is unsupported")
-    if css["at_rules"] != []:
-        raise AuditError("publication profile at-rules are unsupported")
-    if (
-        not all(isinstance(name, str) for name in css["selector_surface"])
-        or not set(css["selector_surface"]) <= PROFILE_SELECTOR_SURFACE
-        or len(css["selector_surface"]) != len(set(css["selector_surface"]))
-    ):
-        raise AuditError("publication profile selector surface is unsupported")
-    prohibitions = profile.get("global_prohibitions")
-    if (
-        not isinstance(prohibitions, list)
-        or not all(isinstance(name, str) for name in prohibitions)
-        or set(prohibitions) != PROFILE_PROHIBITIONS
-        or len(prohibitions) != len(set(prohibitions))
-    ):
-        raise AuditError("publication profile global prohibitions are unsupported")
+        raise AuditError("bundled publication profile identity is not supported")
     return profile, profile_bytes
 
 
@@ -786,16 +469,29 @@ def css_unsafe_categories(value: str) -> list[str]:
     )
 
 
-def manifest_bbox(value: list[Any], context: str) -> list[float]:
+def manifest_bbox(value: list[Any]) -> list[float] | None:
     try:
         bbox = [float(coordinate) for coordinate in value]
-    except (OverflowError, TypeError, ValueError) as error:
-        raise PublicationError(
-            f"{context} bbox coordinates are not representable"
-        ) from error
+    except (OverflowError, TypeError, ValueError):
+        return None
     if not all(math.isfinite(coordinate) for coordinate in bbox):
-        raise PublicationError(f"{context} bbox coordinates must be finite")
+        return None
     return bbox
+
+
+def bbox_within_source(
+    value: list[Any],
+    source: tuple[float, float],
+) -> bool:
+    bbox = manifest_bbox(value)
+    width, height = source
+    return (
+        bbox is not None
+        and width > 0
+        and height > 0
+        and 0 <= bbox[0] < bbox[2] <= width + 0.001
+        and 0 <= bbox[1] < bbox[3] <= height + 0.001
+    )
 
 
 def load_context(manifest_file: Path, html_file: Path, page_size: str) -> Context:
@@ -811,14 +507,10 @@ def load_context(manifest_file: Path, html_file: Path, page_size: str) -> Contex
     if schema_findings:
         raise PublicationError("assembly manifest schema validation failed: " + "; ".join(schema_findings))
     manifest = cast("dict[str, Any]", value)
-    errors: list[str] = []
+    errors: list[Any] = []
     profile, profile_bytes = load_profile()
     profile_hash = hash_bytes(profile_bytes)
     policy = manifest["policies"]["publication_profile"]
-    expected_identity = {"schema_version": "1.0", "profile_id": "scholarly-fragment-and-stylesheet-v1", "closed": True}
-    for key, expected in expected_identity.items():
-        if profile.get(key) != expected:
-            errors.append(f"publication profile {key} is not {expected!r}")
     if (
         policy["id"] != profile.get("profile_id")
         or policy["schema_version"] != profile.get("schema_version")
@@ -859,9 +551,6 @@ def load_context(manifest_file: Path, html_file: Path, page_size: str) -> Contex
         assets[logical] = observed
         if observed.sha256 != record["sha256"] or observed.bytes != record["bytes"]:
             errors.append(f"manifest-declared asset binding mismatch: {logical}")
-    unavailable = sorted(set(declared_records) - set(assets))
-    if unavailable:
-        raise PublicationError(f"manifest-declared regular files are unavailable: {unavailable}")
     html_logical = manifest_path(manifest["outputs"]["html"]["path"])
     css_logical = manifest_path(manifest["outputs"]["css"]["path"])
     pdf_record = manifest["outputs"]["draft_pdf"]
@@ -903,7 +592,12 @@ def load_context(manifest_file: Path, html_file: Path, page_size: str) -> Contex
         for part in figure["parts"]:
             if part["dom_selector"] != f'[data-crop-id="{part["id"]}"]':
                 errors.append(f"crop {part['id']} DOM selector is inconsistent")
-            bbox = manifest_bbox(part["bbox"], f"crop {part['id']}")
+            bbox = manifest_bbox(part["bbox"])
+            if bbox is None:
+                errors.append(
+                    f"crop {part['id']} bbox coordinates must be finite and representable"
+                )
+                continue
             canonical_bbox = [float(f"{value:.3f}") for value in bbox]
             if bbox != canonical_bbox:
                 errors.append(
@@ -954,676 +648,33 @@ def load_context(manifest_file: Path, html_file: Path, page_size: str) -> Contex
         errors.append("assembly manifest must not track itself")
     return Context(root, manifest_file, manifest, profile, profile_hash, relative_asset(manifest_file, root),
                    assets, assets[html_logical], assets[css_logical], assets[pdf_logical], before, errors)
-def parse_html(content: str) -> ParsedHtml:
-    parser = TreeParser()
-    parser.feed(content)
-    return parser.result()
-def html5_parser() -> Any:
-    return html5lib.HTMLParser(tree=html5lib.getTreeBuilder("etree"), strict=False, namespaceHTMLElements=False)
-def html5_findings(content: str, label: str) -> list[str]:
-    parser = html5_parser()
-    parser.parse(content)
-    return [f"{label}: HTML parse error at {position[0]}:{position[1]} ({code})"
-            for position, code, _data in parser.errors[:10]]
-def parse_html5_fragment(content: str, label: str) -> ParsedHtml:
-    parser = html5_parser()
-    source = parser.parseFragment(content, container="div")
-    root = Element("#document", {}, ())
-    def append_children(source_node: Any, target: Element) -> None:
-        if source_node.text:
-            target.children.append(TextNode(source_node.text))
-        for child in source_node:
-            if isinstance(child.tag, str):
-                node = Element(child.tag.casefold(), dict(child.attrib), tuple(child.attrib))
-                append_children(child, node)
-                target.children.append(node)
-            else:
-                target.children.append(CommentNode(child.text or ""))
-            if child.tail:
-                target.children.append(TextNode(child.tail))
-
-    append_children(source, root)
-    errors = [f"{label}: HTML parse error at {position[0]}:{position[1]} ({code})"
-              for position, code, _data in parser.errors[:10]]
-    return ParsedHtml(root, errors, 0)
-def elements(node: Element) -> list[Element]:
-    return [child for child in node.children if isinstance(child, Element)]
-def walk(node: Element) -> list[Element]:
-    result: list[Element] = []
-    pending = list(reversed(elements(node)))
-    while pending:
-        current = pending.pop()
-        result.append(current)
-        pending.extend(reversed(elements(current)))
-    return result
 def normalize_text(value: str) -> str:
     return " ".join(unicodedata.normalize("NFC", value).split())
-def visible_text(node: Element, *, skip_figures: bool = False, skip_templates: bool = False) -> str:
-    parts: list[str] = []
-    def visit(item: HtmlNode) -> None:
-        if isinstance(item, TextNode):
-            parts.append(item.text)
-        elif isinstance(item, Element):
-            if skip_figures and item.tag == "figure" and item.attrs.get("data-figure-id"):
-                return
-            if skip_templates and item.tag == "template":
-                return
-            for child in item.children:
-                visit(child)
 
-    for child in node.children:
-        visit(child)
-    return normalize_text("".join(parts))
-def structure_signature(
-    items: list[HtmlNode],
-    *,
-    drop_figures: bool,
-) -> tuple[Any, ...]:
-    result: list[Any] = []
-    for item in items:
-        if isinstance(item, TextNode):
-            text = normalize_text(item.text)
-            if text:
-                if result and result[-1][0] == "text":
-                    result[-1] = ("text", normalize_text(f"{result[-1][1]} {text}"))
-                else:
-                    result.append(("text", text))
-        elif isinstance(item, CommentNode):
-            marker = FIGURE_MARKER.fullmatch(item.text)
-            if marker:
-                result.append(("figure", marker.group("id")))
-            else:
-                result.append(("comment", normalize_text(item.text)))
-        elif drop_figures and item.tag == "figure" and item.attrs.get("data-figure-id"):
-            result.append(("figure", item.attrs["data-figure-id"]))
-        else:
-            result.append(
-                (
-                    item.tag,
-                    tuple(sorted((key, value or "") for key, value in item.attrs.items())),
-                    structure_signature(item.children, drop_figures=drop_figures),
-                )
-            )
-    return tuple(result)
-def nonwhitespace_text(node: Element) -> bool:
-    return any(isinstance(item, TextNode) and item.text.strip() for item in node.children)
-def exact_attrs(node: Element, expected: dict[str, str | None], label: str) -> list[str]:
-    if node.attrs == expected and len(node.attr_names) == len(expected):
-        return []
-    return [f"{label} attributes are not canonical"]
-def validate_attribute(  # noqa: PLR0911
-    name: str,
-    value: str | None,
-) -> bool:
-    text = "" if value is None else value
-    if "\x00" in text:
-        return False
-    try:
-        text.encode()
-    except UnicodeEncodeError:
-        return False
-    if name in ATTRIBUTE_PLAIN_LIMITS:
-        return len(text) <= ATTRIBUTE_PLAIN_LIMITS[name]
-    if name in ATTRIBUTE_TOKEN_LIMITS:
-        tokens = text.split()
-        return 0 < len(tokens) <= ATTRIBUTE_TOKEN_LIMITS[name] and all(
-            re.fullmatch(r"[A-Za-z][A-Za-z0-9._-]{0,127}", token)
-            for token in tokens
-        )
-    if name == "class":
-        tokens = text.split()
-        return 0 < len(tokens) <= 16 and all(
-            re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", token)
-            for token in tokens
-        )
-    if name in {"colspan", "rowspan", "span"}:
-        return re.fullmatch(r"[+-]?[0-9]+", text) is not None and 1 <= int(text) <= 100
-    if name == "datetime":
-        return re.fullmatch(r"[0-9A-Za-z:+.TZ-]{1,64}", text) is not None
-    if name == "dir":
-        return text in {"auto", "ltr", "rtl"}
-    if name == "href":
-        return re.fullmatch(r"#[A-Za-z][A-Za-z0-9._-]{0,127}", text) is not None
-    if name == "id":
-        return re.fullmatch(r"[A-Za-z][A-Za-z0-9._-]{0,127}", text) is not None
-    if name == "lang":
-        return LANGUAGE_PATTERN.fullmatch(text) is not None
-    if name == "reversed":
-        return value in {None, ""}
-    if name == "scope":
-        return text in {"col", "colgroup", "row", "rowgroup"}
-    if name == "start":
-        try:
-            number = int(text)
-        except ValueError:
-            return False
-        return -1_000_000 <= number <= 1_000_000 and re.fullmatch(r"[+-]?[0-9]+", text) is not None
-    if name == "type":
-        return text in {"1", "A", "I", "a", "i"}
-    return False
-def figure_class_ok(value: str | None) -> bool:
-    tokens = (value or "").split()
-    extras = tokens[1:]
-    return (
-        bool(tokens)
-        and tokens[0] == "publication-figure"
-        and value == " ".join(tokens)
-        and len(tokens) == len(set(tokens))
-        and not GENERATED_CLASSES.intersection(extras)
-        and (not extras or validate_attribute("class", " ".join(extras)))
-    )
-def validate_fragment(
-    content: str,
-    profile: dict[str, Any],
-    label: str,
-) -> tuple[list[str], set[str]]:
-    parsed = parse_html5_fragment(content, label)
-    errors = list(parsed.errors)
-    policy = profile["fragment_html"]
-    allowed_elements = policy["elements"]
-    global_attrs = set(policy["global_attributes"])
-    identifiers: set[str] = set()
-    for node in walk(parsed.root):
-        allowed = allowed_elements.get(node.tag)
-        if not isinstance(allowed, list):
-            errors.append(f"{label}: element <{node.tag}> is not allowed")
-            continue
-        for name, value in node.attrs.items():
-            if name not in allowed and name not in global_attrs:
-                errors.append(f"{label}: <{node.tag}> attribute {name} is not allowed")
-            elif not validate_attribute(name, value):
-                errors.append(f"{label}: <{node.tag}> attribute {name} is invalid")
-            elif name == "class":
-                reserved = GENERATED_CLASSES.intersection((value or "").split())
-                if reserved:
-                    errors.append(
-                        f"{label}: <{node.tag}> class uses assembler-owned "
-                        f"classes: {', '.join(sorted(reserved))}"
-                    )
-            if name == "id":
-                text = value or ""
-                if text in identifiers:
-                    errors.append(f"{label}: duplicate ID {text!r}")
-                identifiers.add(text)
-    pending = list(parsed.root.children)
-    while pending:
-        item = pending.pop()
-        if isinstance(item, CommentNode):
-            if FIGURE_MARKER.fullmatch(item.text) is None:
-                errors.append(f"{label}: comment is not allowed")
-        elif isinstance(item, Element):
-            pending.extend(item.children)
-    return errors, identifiers
-def css_text(tokens: list[Any]) -> str:
-    return re.sub(r"\s+", " ", tinycss2.serialize(tokens).strip())
-def css_groups(tokens: list[Any]) -> list[list[Any]]:
-    groups: list[list[Any]] = [[]]
-    for token in tokens:
-        if token.type == "literal" and token.value == ",":
-            groups.append([])
-        else:
-            groups[-1].append(token)
-    return groups
-def css_ident(token: Any) -> str | None:
-    return str(token.lower_value) if token.type == "ident" else None
 
-def lang_selector_ok(token: Any) -> bool:
-    content = significant(token.content if token.type == "[] block" else token.arguments)
-    if token.type == "function":
-        return (
-            len(content) == 1
-            and content[0].type in {"ident", "string"}
-            and LANGUAGE_PATTERN.fullmatch(str(content[0].value)) is not None
-        )
-    if len(content) == 1:
-        return css_ident(content[0]) == "lang"
-    return (
-        len(content) in {3, 4}
-        and css_ident(content[0]) == "lang"
-        and content[1].type == "literal"
-        and content[1].value in {"=", "|="}
-        and content[2].type in {"ident", "string"}
-        and LANGUAGE_PATTERN.fullmatch(str(content[2].value)) is not None
-        and (len(content) == 3 or css_ident(content[3]) in {"i", "s"})
-    )
+def caption_text(value: str) -> str:
+    parser = CaptionTextParser()
+    parser.feed(value)
+    parser.close()
+    return normalize_text("".join(parser.parts))
 
-def selector_ok(  # noqa: PLR0911
-    tokens: list[Any],
-    allowed_elements: set[str],
-    surface: set[str],
-) -> bool:
-    clean = [token for token in tokens if token.type != "comment"]
-    while clean and clean[0].type == "whitespace":
-        clean.pop(0)
-    while clean and clean[-1].type == "whitespace":
-        clean.pop()
-    if not clean:
-        return False
-    index = 0
-    has_simple = False
-    while index < len(clean):
-        token = clean[index]
-        if token.type == "whitespace":
-            while index < len(clean) and clean[index].type == "whitespace":
-                index += 1
-            if index == len(clean):
-                break
-            if clean[index].type == "literal" and clean[index].value == ">":
-                continue
-            if not has_simple:
-                continue
-            if "descendant" not in surface:
-                return False
-            has_simple = False
-            continue
-        if token.type == "literal" and token.value == ">":
-            if not has_simple or "child" not in surface:
-                return False
-            has_simple = False
-            index += 1
-            continue
-        step = 1
-        if token.type == "ident":
-            if "type" not in surface or has_simple or str(token.lower_value) not in allowed_elements:
-                return False
-        elif token.type == "literal" and token.value == "*":
-            if "universal" not in surface or has_simple:
-                return False
-        elif token.type == "hash" and token.is_identifier:
-            if (
-                "id" not in surface
-                or re.fullmatch(r"[A-Za-z][A-Za-z0-9._-]{0,127}", token.value) is None
-            ):
-                return False
-        elif token.type == "literal" and token.value == ".":
-            if (
-                "class" not in surface
-                or
-                index + 1 >= len(clean)
-                or clean[index + 1].type != "ident"
-                or re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", str(clean[index + 1].value)) is None
-            ):
-                return False
-            step = 2
-        elif token.type == "[] block":
-            if "lang-attribute" not in surface or not lang_selector_ok(token):
-                return False
-        elif token.type == "literal" and token.value == ":":
-            if (
-                "lang-pseudo-class" not in surface
-                or index + 1 >= len(clean)
-                or clean[index + 1].type != "function"
-            ):
-                return False
-            pseudo = clean[index + 1]
-            if pseudo.lower_name != "lang" or not lang_selector_ok(pseudo):
-                return False
-            step = 2
-        else:
-            return False
-        has_simple = True
-        index += step
-    return has_simple
-def significant(tokens: list[Any]) -> list[Any]:
-    return [token for token in tokens if token.type not in {"comment", "whitespace"}]
-def number_ok(
-    token: Any,
-    units: frozenset[str],
-    minimum: float,
-    maximum: float,
-    maximum_percentage: float | None = None,
-    minimum_percentage: float | None = None,
-) -> bool:
-    if token.type == "dimension" and token.lower_unit in units:
-        value = float(token.value)
-        lower = minimum
-        upper = maximum
-    elif token.type == "percentage" and maximum_percentage is not None:
-        value = float(token.value)
-        lower = (
-            minimum if minimum_percentage is None else minimum_percentage
-        )
-        upper = maximum_percentage
-    elif token.type == "number" and float(token.value) == 0:
-        value = 0.0
-        lower = minimum
-        upper = maximum
-    else:
-        return False
-    return math.isfinite(value) and lower <= value <= upper
-def color_ok(token: Any) -> bool:
-    if token.type == "ident":
-        return token.value.casefold() in CSS_NAMED_COLORS
-    if token.type != "hash" or re.fullmatch(r"[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}", token.value) is None:
-        return False
-    value = token.value
-    if len(value) == 3:
-        rgb = [int(character * 2, 16) for character in value]
-    else:
-        rgb = [int(value[index : index + 2], 16) for index in range(0, 6, 2)]
-    def linear(channel: int) -> float:
-        fraction = channel / 255
-        return fraction / 12.92 if fraction <= 0.04045 else ((fraction + 0.055) / 1.055) ** 2.4
 
-    luminance = 0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
-    return 1.05 / (luminance + 0.05) + 1e-09 >= 3
-def family_list(tokens: list[Any]) -> list[tuple[str, bool]] | None:
-    families: list[tuple[str, bool]] = []
-    for group in css_groups(tokens):
-        values = significant(group)
-        if len(values) == 1 and values[0].type == "string":
-            families.append((str(values[0].value), False))
-        elif values and all(value.type == "ident" for value in values):
-            families.append((" ".join(str(value.value) for value in values), len(values) == 1))
-        else:
-            return None
-    return families
-def css_value_ok(  # noqa: PLR0911
-    tokens: list[Any],
-    property_name: str,
-    families: set[str],
-) -> bool:
-    values = significant(tokens)
-    if not values or any(
-        token.type in {"() block", "[] block", "{} block", "error", "function", "url"} for token in values
-    ):
-        return False
-    text = css_text(values).casefold()
-    if len(values) == 1 and values[0].type == "ident" and text in CSS_WIDE_KEYWORDS:
-        return True
-    if property_name == "font-family":
-        names = family_list(tokens)
-        declared = {value.casefold() for value in families}
-        return (
-            names is not None
-            and len(names) <= 8
-            and all(name.casefold() in declared or (identifier and name.casefold() in CSS_GENERIC_FAMILIES)
-                    for name, identifier in names)
-        )
-    if property_name == "border-spacing":
-        return 1 <= len(values) <= 2 and all(
-            number_ok(value, CSS_LENGTH_UNITS, 0, 256) for value in values
-        )
-    if property_name in CSS_ENUM_VALUES:
-        return len(values) == 1 and text in CSS_ENUM_VALUES[property_name]
-    if property_name in CSS_BORDER_STYLE_PROPERTIES:
-        return len(values) == 1 and text in {"dashed", "dotted", "double", "none", "solid"}
-    if property_name in CSS_KEYWORD_SET_VALUES:
-        words = [str(value.value).casefold() for value in values if value.type == "ident"]
-        word_set = set(words)
-        return (
-            len(words) == len(values) == len(set(words))
-            and word_set <= CSS_KEYWORD_SET_VALUES[property_name]
-            and (not word_set.intersection({"none", "normal"}) or len(words) == 1)
-            and all(
-                len(word_set.intersection(group)) <= 1
-                for group in CSS_KEYWORD_EXCLUSIVE_GROUPS.get(property_name, ())
-            )
-        )
-    if property_name == "font-weight":
-        if len(values) == 1 and text in {"bold", "normal"}:
-            return True
-        return (
-            len(values) == 1
-            and values[0].type == "number"
-            and math.isfinite(float(values[0].value))
-            and float(values[0].value).is_integer()
-            and 100 <= float(values[0].value) <= 900
-            and int(values[0].value) % 100 == 0
-        )
-    if property_name in CSS_WIDOW_ORPHAN_PROPERTIES:
-        return (
-            len(values) == 1
-            and values[0].type == "number"
-            and math.isfinite(float(values[0].value))
-            and float(values[0].value).is_integer()
-            and 1 <= float(values[0].value) <= 10
-        )
-    if property_name == "tab-size":
-        return (
-            len(values) == 1
-            and values[0].type == "number"
-            and math.isfinite(float(values[0].value))
-            and float(values[0].value).is_integer()
-            and 1 <= float(values[0].value) <= 16
-        )
-    if len(values) != 1:
-        return False
-    token = values[0]
-    if property_name in CSS_COLOR_PROPERTIES:
-        return color_ok(token)
-    if property_name in CSS_NONNEGATIVE_LENGTH_PERCENTAGE_PROPERTIES:
-        return number_ok(token, CSS_LENGTH_UNITS, 0, 256, 100)
-    if property_name in CSS_BORDER_WIDTH_PROPERTIES:
-        return text in {"medium", "thick", "thin"} or number_ok(token, CSS_LENGTH_UNITS, 0, 12)
-    if property_name == "font-size":
-        return text in {"large", "larger", "medium", "small", "smaller", "x-large", "x-small"} or number_ok(
-            token, CSS_LENGTH_UNITS, 0.5, 200, 200
-        )
-    if property_name == "text-decoration-thickness":
-        return text in {"auto", "from-font"} or number_ok(token, CSS_LENGTH_UNITS, 0, 8)
-    if property_name == "vertical-align":
-        return text in {
-            "baseline", "bottom", "middle", "sub", "super", "text-bottom", "text-top", "top",
-        } or number_ok(token, CSS_LENGTH_UNITS, -4, 4, 100)
-    if property_name == "line-height":
-        if text == "normal":
-            return True
-        if token.type == "number":
-            value = float(token.value)
-            return math.isfinite(value) and 0.8 <= value <= 4
-        return number_ok(
-            token,
-            CSS_LENGTH_UNITS,
-            0.8,
-            4,
-            minimum_percentage=80,
-            maximum_percentage=400,
-        )
-    if property_name in CSS_SIGNED_SPACING_PROPERTIES:
-        return text == "normal" or number_ok(
-            token, frozenset({"ch", "em", "ex", "pt", "px", "rem"}), -4, 16
-        )
-    if property_name == "text-indent":
-        return number_ok(
-            token, frozenset({"ch", "em", "ex", "pt", "px", "rem"}), 0, 16, 25
-        )
-    return False
-def declaration_tuple(
-    content: list[Any],
-    *,
-    profile: dict[str, Any] | None = None,
-    families: set[str] | None = None,
-) -> tuple[tuple[str, str], ...] | None:
-    result: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    policy = profile["untrusted_stylesheet"] if profile else None
-    for declaration in tinycss2.parse_declaration_list(content, skip_comments=True, skip_whitespace=True):
-        if declaration.type != "declaration" or declaration.important:
-            return None
-        if policy:
-            properties = set(policy["properties"])
-            if declaration.lower_name in seen or declaration.lower_name not in properties or not css_value_ok(
-                declaration.value,
-                declaration.lower_name,
-                families or set(),
-            ):
-                return None
-            seen.add(declaration.lower_name)
-        result.append((declaration.lower_name, css_text(declaration.value)))
-    return tuple(result) if result or not policy else None
-def validate_stylesheet(
-    content: str,
-    profile: dict[str, Any],
-    families: set[str],
-    label: str,
-) -> tuple[list[str], list[tuple[tuple[str, ...], tuple[tuple[str, str], ...]]]]:
-    errors: list[str] = []
-    records: list[tuple[tuple[str, ...], tuple[tuple[str, str], ...]]] = []
-    allowed_elements = set(profile["fragment_html"]["elements"])
-    selector_surface = set(profile["untrusted_stylesheet"]["selector_surface"])
-    for index, rule in enumerate(
-        tinycss2.parse_stylesheet(content, skip_comments=True, skip_whitespace=True),
-        1,
-    ):
-        if rule.type != "qualified-rule":
-            errors.append(f"{label} rule {index}: only qualified rules are allowed")
-            continue
-        declarations = declaration_tuple(rule.content, profile=profile, families=families)
-        if declarations is None:
-            errors.append(f"{label} rule {index}: declarations violate the profile")
-            continue
-        selectors: list[str] = []
-        groups = css_groups(rule.prelude)
-        for group in groups:
-            selector = css_text(group)
-            if not selector_ok(group, allowed_elements, selector_surface):
-                errors.append(f"{label} rule {index}: selector violates the profile")
-            else:
-                selectors.append(selector)
-        if len(selectors) == len(groups):
-            records.append((tuple(selectors), declarations))
-    return errors, records
-def css_string(value: str) -> str:
-    escaped: list[str] = []
-    for character in value:
-        if unicodedata.category(character) in CSS_UNSAFE_STRING_CATEGORIES:
-            escaped.append(f"\\{ord(character):x} ")
-        elif character in {'"', "\\"}:
-            escaped.append("\\" + character)
-        else:
-            escaped.append(character)
-    return '"' + "".join(escaped) + '"'
-def relative_url(owner: Path, resource: Path) -> str:
-    return manifest_path(os.path.relpath(resource, owner.parent).replace("\\", "/"))
-def scoped_selector(selectors: tuple[str, ...]) -> str:
-    return ", ".join(f"[data-fragment-id] {selector}" for selector in selectors)
-def validate_generated_css(context: Context) -> list[Any]:
-    errors: list[Any] = []
-    try:
-        content = context.css.file.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as error:
-        return [text_read_diagnostic(context.css.path, "generated-css", error)]
-    families = {font["family"] for font in context.manifest["fonts"]}
-    expected_additional: list[tuple[tuple[str, ...], tuple[tuple[str, str], ...]]] = []
-    for record in context.manifest["stylesheets"]:
-        try:
-            stylesheet = confined(context.root, record["path"]).read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as error:
-            errors.append(text_read_diagnostic(record["path"], "retained-stylesheet", error))
-            continue
-        findings, records = validate_stylesheet(
-            stylesheet,
-            context.profile,
-            families,
-            f"stylesheet {record['path']}",
-        )
-        errors.extend(findings)
-        expected_additional.extend(records)
-    expected_fonts = []
-    for font in context.manifest["fonts"]:
-        path = relative_url(context.css.file, confined(context.root, font["asset"]["path"]))
-        fmt = "truetype" if path.casefold().endswith(".ttf") else "opentype"
-        expected_fonts.append(
-            (
-                ("font-family", css_string(font["family"])),
-                ("src", f"url({css_string(path)}) format({css_string(fmt)})"),
-                ("font-style", font["style"]),
-                ("font-weight", str(font["weight"])),
-                ("font-display", "block"),
-            )
-        )
-    margins = context.manifest["print_geometry"]["margin_in"]
-    expected_page = (
-        (
-            "size",
-            PAGE_CSS_NAMES[context.manifest["print_geometry"]["page_size"]],
-        ),
-        (
-            "margin",
-            (f"{margins['top']}in {margins['right']}in {margins['bottom']}in {margins['left']}in"),
-        ),
-    )
-    roles = context.manifest["font_roles"]
-    role_root = (
-        ("--body-cjk", css_string(roles["body-cjk"])),
-        ("--body-latin", css_string(roles["body-latin"])),
-    )
-    expected: list[Any] = [
-        *(("font-face", declarations) for declarations in expected_fonts),
-        ("rule", ":root", BASE_ROOT),
-        ("page", BASE_PAGE),
-        *(("rule", selector, declarations) for selector, declarations in BASE_RULES.items()),
-        ("media-screen", tuple(SCREEN_RULES.items())),
-        ("page", expected_page),
-        ("rule", ":root", role_root),
-        *(("rule", scoped_selector(selectors), declarations) for selectors, declarations in expected_additional),
-    ]
-    seen: list[Any] = []
-    rules = tinycss2.parse_stylesheet(content, skip_comments=True, skip_whitespace=True)
-    for rule in rules:
-        if rule.type == "error":
-            errors.append(f"generated CSS parse error: {rule.message}")
-            continue
-        if rule.type == "at-rule":
-            declarations = declaration_tuple(rule.content or [])
-            if rule.lower_at_keyword == "font-face" and not significant(rule.prelude) and declarations is not None:
-                seen.append(("font-face", declarations))
-            elif rule.lower_at_keyword == "page" and not significant(rule.prelude) and declarations is not None:
-                seen.append(("page", declarations))
-            elif rule.lower_at_keyword == "media" and css_text(rule.prelude).casefold() == "screen":
-                nested = tinycss2.parse_rule_list(rule.content or [], skip_comments=True, skip_whitespace=True)
-                nested_records: list[Any] = []
-                for child in nested:
-                    if child.type != "qualified-rule":
-                        errors.append("generated @media screen contains a non-rule")
-                        continue
-                    selector = css_text(child.prelude)
-                    nested_records.append((selector, declaration_tuple(child.content)))
-                seen.append(("media-screen", tuple(nested_records)))
-            else:
-                errors.append(f"generated CSS has unsupported @{rule.lower_at_keyword}")
-            continue
-        if rule.type != "qualified-rule":
-            errors.append("generated CSS contains an unsupported rule")
-            continue
-        selector = css_text(rule.prelude)
-        declarations = declaration_tuple(rule.content)
-        if declarations is None:
-            errors.append(f"generated CSS rule {selector!r} is invalid")
-        seen.append(("rule", selector, declarations))
-    if seen != expected:
-        errors.append("generated CSS rule sequence differs from the closed profile")
-    return errors
-def parse_svg_geometry(path: Path, logical: str) -> tuple[float, float, list[dict[str, Any]]]:
-    try:
-        content = path.read_bytes()
-    except OSError:
-        return 0, 0, [source_svg_diagnostic(logical, "read-error")]
-    try:
-        root = fromstring(content)
-    except (ParseError, DefusedXmlException):
-        return 0, 0, [source_svg_diagnostic(logical, "xml-parse-error")]
-    errors: list[dict[str, Any]] = []
-    if root.tag != f"{{{SVG_NAMESPACE}}}svg":
-        errors.append(source_svg_diagnostic(logical, "wrong-root"))
-    width_match = SVG_LENGTH.fullmatch(root.attrib.get("width", ""))
-    height_match = SVG_LENGTH.fullmatch(root.attrib.get("height", ""))
-    if width_match is None or height_match is None:
-        return 0, 0, [*errors, source_svg_diagnostic(logical, "invalid-geometry")]
-    width, height = float(width_match.group(1)), float(height_match.group(1))
-    if not math.isfinite(width) or not math.isfinite(height) or width <= 0 or height <= 0:
-        errors.append(source_svg_diagnostic(logical, "invalid-geometry"))
-    view_box = root.attrib.get("viewBox")
-    if not same_numbers(parse_numbers(view_box), [0, 0, width, height]):
-        errors.append(source_svg_diagnostic(logical, "invalid-viewbox"))
-    return width, height, errors
 def parse_numbers(value: str | None) -> list[float] | None:
     try:
-        numbers = [float(part) for part in re.split(r"[\s,]+", value.strip()) if part] if value else None
-    except ValueError:
+        numbers = (
+            [float(part) for part in re.split(r"[\s,]+", value.strip()) if part]
+            if value
+            else None
+        )
+    except (OverflowError, ValueError):
         return None
-    return numbers if numbers and all(math.isfinite(number) for number in numbers) else None
+    return (
+        numbers
+        if numbers and all(math.isfinite(number) for number in numbers)
+        else None
+    )
+
+
 def same_numbers(
     actual: list[float] | None,
     expected: list[float],
@@ -1632,494 +683,381 @@ def same_numbers(
     return (
         actual is not None
         and len(actual) == len(expected)
-        and all(abs(left - right) <= tolerance for left, right in zip(actual, expected, strict=True))
+        and all(
+            abs(left - right) <= tolerance
+            for left, right in zip(actual, expected, strict=True)
+        )
     )
+
+
+def same_aspect_ratio(
+    rendered_width: float,
+    rendered_height: float,
+    expected_width: float,
+    expected_height: float,
+    tolerance: float = 0.01,
+) -> bool:
+    dimensions = (
+        rendered_width,
+        rendered_height,
+        expected_width,
+        expected_height,
+    )
+    if not all(math.isfinite(value) and value > 0 for value in dimensions):
+        return False
+    rendered_cross = rendered_width * expected_height
+    expected_cross = rendered_height * expected_width
+    if (
+        not math.isfinite(rendered_cross)
+        or not math.isfinite(expected_cross)
+        or rendered_cross <= 0
+        or expected_cross <= 0
+    ):
+        return False
+    return abs(rendered_cross - expected_cross) <= (
+        tolerance * max(rendered_cross, expected_cross)
+    )
+
+
 def resolve_url(root: Path, owner: Path, value: str) -> Path:
     try:
         parsed = urlsplit(value)
     except (UnicodeError, ValueError) as error:
         raise ResourceUrlError("invalid", value) from error
-    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment or value.startswith(("//", "/", "\\")):
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or parsed.query
+        or parsed.fragment
+        or value.startswith(("//", "/", "\\"))
+    ):
         raise ResourceUrlError("nonlocal", value)
     if "\x00" in value or re.search(r"%(?![0-9A-Fa-f]{2})", parsed.path):
         raise ResourceUrlError("invalid", value)
     try:
         decoded = unquote(parsed.path, errors="strict")
-        path = (owner.parent / decoded).resolve()
+        target = (owner.parent / decoded).resolve()
     except (OSError, UnicodeError, ValueError) as error:
         raise ResourceUrlError("invalid", value) from error
     try:
-        path.relative_to(root)
+        target.relative_to(root)
     except ValueError as error:
         raise ResourceUrlError("escapes-root", value) from error
-    return path
-def caption_matches(node: Element, expected: str) -> bool:
-    parsed = parse_html5_fragment(expected, "caption")
-    if parsed.errors or parsed.doctypes:
-        return False
-    def signature(items: list[HtmlNode]) -> tuple[Any, ...]:
-        result: list[Any] = []
-        for item in items:
-            if isinstance(item, TextNode):
-                text = normalize_text(item.text)
-                if text:
-                    result.append(("text", text))
-            elif isinstance(item, CommentNode):
-                result.append(("comment", normalize_text(item.text)))
-            else:
-                result.append(
-                    (
-                        item.tag,
-                        tuple(sorted((key, value or "") for key, value in item.attrs.items())),
-                        signature(item.children),
-                    )
-                )
-        return tuple(result)
+    return target
 
-    return signature(node.children) == signature(parsed.root.children)
-def validate_crop(
-    node: Element,
-    figure: dict[str, Any],
-    part: dict[str, Any],
-    context: Context,
-) -> tuple[list[Any], dict[str, Any]]:
-    errors: list[Any] = []
-    bbox = [float(value) for value in part["bbox"]]
-    crop_width, crop_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    title = f"{figure['alt']} - part {part['order']}"
-    expected_attrs = {
-        "class": "figure-part",
-        "data-crop-id": part["id"],
-        "xmlns": SVG_NAMESPACE,
-        "viewbox": f"{bbox[0]:.3f} {bbox[1]:.3f} {crop_width:.3f} {crop_height:.3f}",
-        "width": f"{crop_width:.3f}",
-        "height": f"{crop_height:.3f}",
-        "role": "img",
-        "aria-label": title,
-        "preserveaspectratio": "xMidYMid meet",
+
+def css_resource_diagnostic(logical: str, category: str) -> dict[str, Any]:
+    return {
+        "kind": "css-resource",
+        "category": category,
+        "path": logical,
     }
-    errors.extend(exact_attrs(node, expected_attrs, f"crop {part['id']}"))
-    children = elements(node)
-    if nonwhitespace_text(node):
-        errors.append(f"crop {part['id']} has unexpected direct text")
-    source = confined(context.root, part["source_svg"]["path"])
-    source_width, source_height, svg_errors = parse_svg_geometry(
-        source,
-        part["source_svg"]["path"],
-    )
-    errors.extend(svg_errors)
-    structure_ok = [child.tag for child in children] == ["title", "image"]
-    if not structure_ok:
-        errors.append(f"crop {part['id']} must contain title then image")
-    else:
-        title_node, image = children
-        if title_node.attrs or elements(title_node) or visible_text(title_node) != normalize_text(title):
-            errors.append(f"crop {part['id']} title is not canonical")
-        expected_image: dict[str, str | None] = {
-            "href": relative_url(context.html.file, source),
-            "x": "0",
-            "y": "0",
-            "width": f"{source_width:.3f}",
-            "height": f"{source_height:.3f}",
-        }
-        errors.extend(exact_attrs(image, expected_image, f"crop {part['id']} image"))
-        if elements(image) or nonwhitespace_text(image):
-            errors.append(f"crop {part['id']} image must be empty")
-        href = image.attrs.get("href") or ""
-        try:
-            resolved = resolve_url(context.root, context.html.file, href)
-        except ResourceUrlError as error:
-            errors.append(
-                {
-                    **error.diagnostic,
-                    "context": "figure-href",
-                    "crop_id": part["id"],
-                }
-            )
-        else:
-            category = None
-            if resolved != source:
-                category = "wrong-binding"
-            elif href != expected_image["href"]:
-                category = "noncanonical"
-            if category is not None:
-                errors.append(
-                    {
-                        **resource_url_diagnostic(href, category),
-                        "context": "figure-href",
-                        "crop_id": part["id"],
-                    }
-                )
-    bounds_ok = (
-        source_width > 0
-        and source_height > 0
-        and 0 <= bbox[0] < bbox[2] <= source_width + 0.01
-        and 0 <= bbox[1] < bbox[3] <= source_height + 0.01
-    )
-    bbox_ok = bounds_ok and same_numbers(parse_numbers(node.attrs.get("viewbox")), [bbox[0], bbox[1], crop_width, crop_height])
-    geometry_ok = (
-        same_numbers(parse_numbers(node.attrs.get("width")), [crop_width])
-        and same_numbers(parse_numbers(node.attrs.get("height")), [crop_height])
-        and structure_ok
-        and source_width > 0
-        and source_height > 0
-    )
-    return errors, {
-        "id": part["id"],
-        "figure_id": figure["id"],
-        "pdf_page": part["pdf_page"],
-        "dom_matches": 1,
-        "source_svg_sha256": part["source_svg"]["sha256"],
-        "bbox_matches": bbox_ok,
-        "geometry_matches": geometry_ok,
-    }
-def validate_figure(
-    node: Element,
-    figure: dict[str, Any],
-    context: Context,
-) -> tuple[list[Any], dict[str, Any], list[dict[str, Any]]]:
-    class_value = node.attrs.get("class")
-    errors: list[Any] = exact_attrs(
-        node,
-        {
-            "id": figure["dom_id"],
-            "class": class_value,
-            "data-figure-id": figure["id"],
-            "role": "group",
-            "aria-label": figure["alt"],
-        },
-        f"figure {figure['id']}",
-    )
-    if not figure_class_ok(class_value):
-        errors.append(f"figure {figure['id']} class list is not canonical")
-    children = elements(node)
-    if nonwhitespace_text(node):
-        errors.append(f"figure {figure['id']} has unexpected direct text")
-    caption_ok = False
-    crops: list[dict[str, Any]] = []
-    if [child.tag for child in children] != ["div", "figcaption"]:
-        errors.append(f"figure {figure['id']} must contain parts then caption")
-    else:
-        parts, caption = children
-        errors.extend(exact_attrs(parts, {"class": "figure-parts"}, "figure parts"))
-        errors.extend(exact_attrs(caption, {}, "figcaption"))
-        if nonwhitespace_text(parts):
-            errors.append(f"figure {figure['id']} parts have unexpected direct text")
-        caption_findings, _ = validate_fragment(
-            figure["caption_html"],
-            context.profile,
-            f"figure {figure['id']} caption",
-        )
-        errors.extend(caption_findings)
-        caption_matches_manifest = caption_matches(
-            caption,
-            figure["caption_html"],
-        )
-        caption_ok = not caption_findings and caption_matches_manifest
-        if not caption_matches_manifest:
-            errors.append(f"figure {figure['id']} caption does not match manifest")
-        crop_nodes = elements(parts)
-        if len(crop_nodes) != len(figure["parts"]):
-            errors.append(f"figure {figure['id']} crop count differs from manifest")
-        for part, crop in zip(figure["parts"], crop_nodes, strict=False):
-            if crop.tag != "svg":
-                errors.append(f"figure {figure['id']} contains a non-SVG crop")
-                continue
-            findings, record = validate_crop(crop, figure, part, context)
-            errors.extend(findings)
-            crops.append(record)
-    return (
-        errors,
-        {
-            "id": figure["id"],
-            "dom_id": figure["dom_id"],
-            "source_label": figure["source_label"],
-            "profile": figure["profile"],
-            "embedded_language_inventory": figure[
-                "embedded_language_inventory"
-            ],
-            "matches": 1,
-            "caption_matches": caption_ok,
-        },
-        crops,
-    )
-def collect_ids(root: Element) -> tuple[set[str], list[str]]:
-    values = [node.attrs["id"] for node in walk(root) if node.attrs.get("id")]
-    return set(values), duplicate_values(values)
-def resource_errors(parsed: ParsedHtml, context: Context) -> list[Any]:
-    errors: list[Any] = []
-    identifiers, _ = collect_ids(parsed.root)
-    for node in walk(parsed.root):
-        for name in ("aria-describedby", "aria-labelledby", "headers"):
-            for target in (node.attrs.get(name) or "").split():
-                if target not in identifiers:
-                    errors.append(f"<{node.tag}> {name} target is missing: {target!r}")
-        for name in node.attrs:
-            if name.startswith(("on", "shadowroot")) or name in {
-                "srcdoc",
-                "http-equiv",
-                "style",
+
+
+def css_url_values(
+    tokens: list[Any],
+    *,
+    depth: int = 0,
+) -> tuple[list[str], list[str]]:
+    if depth > 64:
+        return [], ["recursion-limit"]
+    urls: list[str] = []
+    errors: list[str] = []
+    for token in tokens:
+        css_type = getattr(token, "type", "")
+        if css_type == "error":
+            errors.append("parse-error")
+            continue
+        if css_type == "url":
+            urls.append(str(token.value))
+            continue
+        if css_type == "function" and token.lower_name == "url":
+            significant = [
+                item
+                for item in token.arguments
+                if getattr(item, "type", "") not in {"comment", "whitespace"}
+            ]
+            if len(significant) == 1 and getattr(significant[0], "type", "") in {
+                "ident",
+                "string",
+                "url",
             }:
-                errors.append(f"<{node.tag}> has active attribute {name}")
-        for name in RESOURCE_ATTRIBUTES:
-            value = node.attrs.get(name)
-            if value is None:
-                continue
-            if node.tag == "a" and name == "href" and value.startswith("#"):
-                if not value[1:] or value[1:] not in identifiers:
-                    errors.append(
-                        {
-                            **resource_url_diagnostic(
-                                value,
-                                "missing-internal-target",
-                            ),
-                            "element": node.tag,
-                            "attribute": name,
-                        }
-                    )
-                continue
-            if name == "srcset" or not (
-                (node.tag == "link" and name == "href") or (node.tag == "image" and name == "href")
-            ):
-                errors.append(
-                    {
-                        **resource_url_diagnostic(
-                            value,
-                            "unsupported-attribute",
-                        ),
-                        "element": node.tag,
-                        "attribute": name,
-                    }
-                )
-                continue
+                urls.append(str(significant[0].value))
+            else:
+                errors.append("invalid-url")
+            continue
+        nested = None
+        if css_type == "function":
+            nested = token.arguments
+        elif hasattr(token, "content") and token.content is not None:
+            nested = token.content
+        if nested is not None:
+            nested_urls, nested_errors = css_url_values(
+                list(nested),
+                depth=depth + 1,
+            )
+            urls.extend(nested_urls)
+            errors.extend(nested_errors)
+    return urls, errors
+
+
+def scan_css_resources(
+    content: str,
+    logical: str,
+    owner: Path,
+    context: Context,
+    allowed_fonts: set[Path],
+) -> list[Any]:
+    findings: list[Any] = []
+    try:
+        rules = tinycss2.parse_stylesheet(
+            content,
+            skip_comments=True,
+            skip_whitespace=True,
+        )
+    except (RecursionError, TypeError, ValueError):
+        return [css_resource_diagnostic(logical, "parser-failure")]
+    for rule in rules:
+        if rule.type == "error":
+            findings.append(css_resource_diagnostic(logical, "parse-error"))
+            continue
+        if rule.type == "at-rule" and rule.lower_at_keyword == "import":
+            findings.append(css_resource_diagnostic(logical, "import"))
+        tokens = list(getattr(rule, "prelude", ()) or ())
+        tokens.extend(list(getattr(rule, "content", ()) or ()))
+        try:
+            urls, errors = css_url_values(tokens)
+        except (RecursionError, TypeError, ValueError):
+            findings.append(css_resource_diagnostic(logical, "parser-failure"))
+            continue
+        findings.extend(
+            css_resource_diagnostic(logical, category) for category in errors
+        )
+        for value in urls:
             try:
-                resource = resolve_url(context.root, context.html.file, value)
+                target = resolve_url(context.root, owner, value)
             except ResourceUrlError as error:
-                errors.append(
+                findings.append(
                     {
                         **error.diagnostic,
-                        "element": node.tag,
-                        "attribute": name,
+                        "context": "css-resource",
+                        "path": logical,
                     }
                 )
                 continue
-            logical = resource.relative_to(context.root).as_posix()
-            if logical not in context.assets or not resource.is_file():
-                errors.append(
+            if target not in allowed_fonts:
+                findings.append(
                     {
                         **resource_url_diagnostic(
                             value,
-                            "untracked-or-missing",
+                            "undeclared-font-resource",
                         ),
-                        "element": node.tag,
-                        "attribute": name,
+                        "context": "css-resource",
+                        "path": logical,
                     }
                 )
-    return errors
-def audit_html(context: Context) -> StaticAudit:
+    return findings
+
+
+def embedded_image_ok(value: str) -> bool:
+    matched = re.fullmatch(
+        r"data:(image/(?:png|jpeg));base64,([A-Za-z0-9+/]*={0,2})",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if matched is None:
+        return False
+    try:
+        content = base64.b64decode(matched.group(2), validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    if not content or len(content) > MAX_EMBEDDED_IMAGE_BYTES:
+        return False
+    media_type = matched.group(1).casefold()
+    return (
+        media_type == "image/png" and content.startswith(b"\x89PNG\r\n\x1a\n")
+    ) or (
+        media_type == "image/jpeg" and content.startswith(b"\xff\xd8")
+        and content.endswith(b"\xff\xd9")
+    )
+
+
+def svg_reference_ok(value: str, identifiers: set[str]) -> bool:
+    if value.startswith("#"):
+        return len(value) > 1 and value[1:] in identifiers
+    return embedded_image_ok(value)
+
+
+def split_xml_name(value: str) -> tuple[str, str]:
+    if value.startswith("{"):
+        namespace, local = value[1:].split("}", maxsplit=1)
+        return namespace, local.casefold()
+    return "", value.casefold()
+
+
+def source_svg_resource_values(value: str) -> tuple[list[str], list[str]]:
+    try:
+        tokens = tinycss2.parse_component_value_list(value)
+        return css_url_values(tokens)
+    except (RecursionError, TypeError, ValueError):
+        return [], ["parser-failure"]
+
+
+def inspect_source_svg(
+    path: Path,
+    logical: str,
+) -> tuple[float, float, list[Any]]:
+    try:
+        content = path.read_bytes()
+    except OSError:
+        return 0.0, 0.0, [source_svg_diagnostic(logical, "read-error")]
+    findings: list[Any] = []
+    if re.search(br"<!DOCTYPE|<!ENTITY", content, flags=re.IGNORECASE):
+        findings.append(source_svg_diagnostic(logical, "unsafe-declaration"))
+    without_declaration = re.sub(
+        br"^(?:\xef\xbb\xbf)?\s*<\?xml\b[^?]*\?>",
+        b"",
+        content,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    if b"<?" in without_declaration:
+        findings.append(source_svg_diagnostic(logical, "processing-instruction"))
+    try:
+        root = fromstring(content)
+    except (ParseError, DefusedXmlException):
+        return 0.0, 0.0, [
+            *findings,
+            source_svg_diagnostic(logical, "xml-parse-error"),
+        ]
+    if root.tag != f"{{{SVG_NAMESPACE}}}svg":
+        findings.append(source_svg_diagnostic(logical, "wrong-root"))
+    width_match = SVG_LENGTH.fullmatch(root.attrib.get("width", ""))
+    height_match = SVG_LENGTH.fullmatch(root.attrib.get("height", ""))
+    width = float(width_match.group(1)) if width_match else 0.0
+    height = float(height_match.group(1)) if height_match else 0.0
+    if (
+        not math.isfinite(width)
+        or not math.isfinite(height)
+        or width <= 0
+        or height <= 0
+    ):
+        findings.append(source_svg_diagnostic(logical, "invalid-geometry"))
+        width = height = 0.0
+    if not same_numbers(
+        parse_numbers(root.attrib.get("viewBox")),
+        [0.0, 0.0, width, height],
+    ):
+        findings.append(source_svg_diagnostic(logical, "invalid-viewbox"))
+    identifiers = {
+        value
+        for element in root.iter()
+        if isinstance(element.tag, str)
+        and isinstance((value := element.attrib.get("id")), str)
+        and value
+    }
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue
+        _namespace, local = split_xml_name(element.tag)
+        if local in SVG_ACTIVE_ELEMENTS:
+            findings.append(source_svg_diagnostic(logical, f"active-{local}"))
+        if local in SVG_ANIMATION_ELEMENTS:
+            findings.append(source_svg_diagnostic(logical, "animation"))
+        for raw_name, value in element.attrib.items():
+            namespace, name = split_xml_name(raw_name)
+            qualified = f"xlink:{name}" if namespace.endswith("/xlink") else name
+            if name.startswith("on"):
+                findings.append(source_svg_diagnostic(logical, "event-attribute"))
+            if qualified in SVG_RESOURCE_ATTRIBUTES:
+                if not svg_reference_ok(value, identifiers):
+                    findings.append(source_svg_diagnostic(logical, "nonlocal-resource"))
+                continue
+            if qualified == "style" or qualified in SVG_URL_PRESENTATION_ATTRIBUTES:
+                urls, errors = source_svg_resource_values(value)
+                if errors:
+                    findings.append(source_svg_diagnostic(logical, "css-resource-parse"))
+                if any(not svg_reference_ok(url, identifiers) for url in urls):
+                    findings.append(source_svg_diagnostic(logical, "nonlocal-resource"))
+        if local == "style" and element.text:
+            try:
+                rules = tinycss2.parse_stylesheet(
+                    element.text,
+                    skip_comments=True,
+                    skip_whitespace=True,
+                )
+            except (RecursionError, TypeError, ValueError):
+                findings.append(source_svg_diagnostic(logical, "css-resource-parse"))
+                continue
+            for rule in rules:
+                if rule.type == "error" or (
+                    rule.type == "at-rule" and rule.lower_at_keyword == "import"
+                ):
+                    findings.append(source_svg_diagnostic(logical, "css-resource-parse"))
+                tokens = list(getattr(rule, "prelude", ()) or ())
+                tokens.extend(list(getattr(rule, "content", ()) or ()))
+                urls, errors = css_url_values(tokens)
+                if errors:
+                    findings.append(source_svg_diagnostic(logical, "css-resource-parse"))
+                if any(not svg_reference_ok(url, identifiers) for url in urls):
+                    findings.append(source_svg_diagnostic(logical, "nonlocal-resource"))
+    unique = {canonical_json(item): item for item in findings}
+    return width, height, [unique[key] for key in sorted(unique)]
+
+
+def audit_passive(context: Context) -> PassiveAudit:
     errors: list[Any] = []
     binding_errors: list[Any] = []
-    figures: list[dict[str, Any]] = []
-    crops: list[dict[str, Any]] = []
-    try:
-        content = context.html.file.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as error:
-        return StaticAudit(
-            [text_read_diagnostic(context.html.path, "generated-html", error)],
-            [],
-            {},
-            [],
-            [],
-        )
-    errors.extend(html5_findings(content, "generated HTML"))
-    parsed = parse_html(content)
-    errors.extend(parsed.errors)
-    if parsed.doctypes != 1:
-        errors.append("HTML must have exactly one leading doctype")
-    roots = elements(parsed.root)
-    if [node.tag for node in roots] != ["html"]:
-        return StaticAudit([*errors, "HTML must have one html root"], [], {}, [], [])
-    html = roots[0]
-    language = context.manifest["document"]["language"]
-    errors.extend(exact_attrs(html, {"lang": language}, "html"))
-    if nonwhitespace_text(parsed.root) or nonwhitespace_text(html):
-        errors.append("document has text outside head/body content")
-    html_children = elements(html)
-    if [node.tag for node in html_children] != ["head", "body"]:
-        return StaticAudit([*errors, "html must contain head then body"], [], {}, [], [])
-    head, body = html_children
-    errors.extend(exact_attrs(head, {}, "head"))
-    if nonwhitespace_text(head) or nonwhitespace_text(body):
-        errors.append("head/body has non-whitespace direct text")
-    head_children = elements(head)
-    if [node.tag for node in head_children] != ["meta", "title", "link"]:
-        errors.append("head must contain meta, title, link")
-    else:
-        charset, title, link = head_children
-        errors.extend(exact_attrs(charset, {"charset": "utf-8"}, "charset meta"))
-        errors.extend(
-            exact_attrs(
-                title,
-                {"lang": context.manifest["document"]["title_language"]},
-                "title",
-            )
-        )
-        if elements(title) or visible_text(title) != normalize_text(context.manifest["document"]["title"]):
-            errors.append("title is not the manifest plain-text title")
-        errors.extend(
-            exact_attrs(
-                link,
-                {
-                    "rel": "stylesheet",
-                    "href": relative_url(context.html.file, context.css.file),
-                },
-                "stylesheet link",
-            )
-        )
-    errors.extend(exact_attrs(body, {}, "body"))
-    body_children = elements(body)
-    if [node.tag for node in body_children] != ["main"]:
-        return StaticAudit([*errors, "body must contain one main"], [], {}, [], [])
-    main = body_children[0]
-    errors.extend(exact_attrs(main, {"id": context.manifest["publication_id"]}, "main"))
-    if nonwhitespace_text(main):
-        errors.append("main has non-whitespace direct text")
-    sections = elements(main)
-    fragment_ids = [fragment["id"] for fragment in context.manifest["fragments"]]
-    observed_fragments = [
-        section.attrs.get("data-fragment-id") if section.tag == "section" else None for section in sections
-    ]
-    if observed_fragments != fragment_ids:
-        errors.append("fragment section order does not match manifest")
-    fragment_dom_ids: set[str] = set()
-    fragment_text: list[dict[str, str]] = []
-    for fragment, section in zip(context.manifest["fragments"], sections, strict=False):
-        errors.extend(
-            exact_attrs(
-                section,
-                {"data-fragment-id": fragment["id"]},
-                f"fragment section {fragment['id']}",
-            )
-        )
-        path = confined(context.root, fragment["asset"]["path"])
+    allowed_fonts = {
+        confined(context.root, font["asset"]["path"])
+        for font in context.manifest["fonts"]
+    }
+    css_records = [context.manifest["outputs"]["css"], *context.manifest["stylesheets"]]
+    scanned_css: set[str] = set()
+    for record in css_records:
+        logical = manifest_path(record["path"])
+        if logical in scanned_css:
+            continue
+        scanned_css.add(logical)
+        owner = confined(context.root, logical)
         try:
-            content = path.read_text(encoding="utf-8")
+            content = owner.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as error:
             errors.append(
                 text_read_diagnostic(
-                    fragment["asset"]["path"],
-                    "fragment",
+                    logical,
+                    "generated-css" if logical == context.css.path else "retained-stylesheet",
                     error,
-                    fragment_id=fragment["id"],
                 )
             )
             continue
-        findings, identifiers = validate_fragment(content, context.profile, f"fragment {fragment['id']}")
-        errors.extend(findings)
-        overlap = fragment_dom_ids & identifiers
-        if overlap:
-            errors.append(f"duplicate IDs across fragments: {sorted(overlap)}")
-        fragment_dom_ids.update(identifiers)
-        copied = parse_html5_fragment(content, f"fragment {fragment['id']}")
-        copied_hash = hash_bytes(visible_text(copied.root, skip_templates=True).encode())
-        section_hash = hash_bytes(visible_text(section, skip_figures=True, skip_templates=True).encode())
-        if copied_hash != fragment["visible_text_sha256"]:
-            errors.append(f"fragment {fragment['id']} visible-text hash mismatch")
-        if section_hash != fragment["visible_text_sha256"]:
-            errors.append(f"fragment section {fragment['id']} text mismatch")
-        copied_structure = structure_signature(copied.root.children, drop_figures=False)
-        rendered_structure = structure_signature(section.children, drop_figures=True)
-        if copied_structure != rendered_structure:
-            errors.append(f"fragment section {fragment['id']} structure mismatch")
-        fragment_text.append({"id": fragment["id"], "visible_text_sha256": section_hash})
-    observed_figure_nodes = [node for node in walk(main) if node.tag == "figure" and node.attrs.get("data-figure-id")]
-    observed_crop_nodes = [node for node in walk(main) if node.tag == "svg" and node.attrs.get("data-crop-id")]
-    expected_figure_ids = [figure["id"] for figure in context.manifest["figures"]]
-    expected_crop_ids = [part["id"] for figure in context.manifest["figures"] for part in figure["parts"]]
-    observed_figure_ids = [node.attrs.get("data-figure-id") for node in observed_figure_nodes]
-    observed_crop_ids = [node.attrs.get("data-crop-id") for node in observed_crop_nodes]
-    if observed_figure_ids != expected_figure_ids:
-        binding_errors.append("figure order does not match manifest")
-    if observed_crop_ids != expected_crop_ids:
-        binding_errors.append("crop order does not match manifest")
-    tag_counts = Counter(node.tag for node in walk(main))
-    for tag, expected in {
-        "figure": len(expected_figure_ids),
-        "figcaption": len(expected_figure_ids),
-        "svg": len(expected_crop_ids),
-        "image": len(expected_crop_ids),
-        "title": len(expected_crop_ids),
-    }.items():
-        if tag_counts[tag] != expected:
-            binding_errors.append(f"generated <{tag}> count is {tag_counts[tag]}, expected {expected}")
-    for figure in context.manifest["figures"]:
-        matches = [node for node in observed_figure_nodes if node.attrs.get("data-figure-id") == figure["id"]]
-        if len(matches) != 1:
-            binding_errors.append(f"figure {figure['id']} occurs {len(matches)} times")
-            figures.append(
-                {
-                    "id": figure["id"],
-                    "dom_id": figure["dom_id"],
-                    "source_label": figure["source_label"],
-                    "profile": figure["profile"],
-                    "embedded_language_inventory": figure[
-                        "embedded_language_inventory"
-                    ],
-                    "matches": len(matches),
-                    "caption_matches": False,
-                }
+        errors.extend(
+            scan_css_resources(
+                content,
+                logical,
+                owner,
+                context,
+                allowed_fonts,
             )
-            continue
-        findings, record, crop_records = validate_figure(matches[0], figure, context)
-        binding_errors.extend(findings)
-        figures.append(record)
-        crops.extend(crop_records)
-    crop_map = {record["id"]: record for record in crops}
+        )
+    source_svgs: dict[str, tuple[float, float]] = {}
     for figure in context.manifest["figures"]:
         for part in figure["parts"]:
-            crop_map.setdefault(
-                part["id"],
-                {
-                    "id": part["id"],
-                    "figure_id": figure["id"],
-                    "pdf_page": part["pdf_page"],
-                    "dom_matches": observed_crop_ids.count(part["id"]),
-                    "source_svg_sha256": part["source_svg"]["sha256"],
-                    "bbox_matches": False,
-                    "geometry_matches": False,
-                },
-            )
-    crops = [crop_map[part["id"]] for figure in context.manifest["figures"] for part in figure["parts"]]
-    allowed = set(context.profile["fragment_html"]["elements"])
-    generated = {"section", "figure", "figcaption", "svg", "title", "image"}
-    for node in walk(main):
-        if node.tag not in allowed | generated:
-            errors.append(f"generated document contains unsupported <{node.tag}>")
-        if node.tag in ACTIVE_ELEMENTS and not (node.tag == "svg" and node.attrs.get("data-crop-id")):
-            errors.append(f"generated document contains active <{node.tag}>")
-    pending = list(parsed.root.children)
-    while pending:
-        item = pending.pop()
-        if isinstance(item, CommentNode):
-            errors.append("generated document retains a comment")
-        elif isinstance(item, Element):
-            pending.extend(item.children)
-    _, duplicate_ids = collect_ids(parsed.root)
-    if duplicate_ids:
-        errors.append(f"document has duplicate IDs: {duplicate_ids}")
-    errors.extend(resource_errors(parsed, context))
-    errors.extend(validate_generated_css(context))
-    document = {
-        "language": html.attrs.get("lang"),
-        "body_language": body.attrs.get("lang") or html.attrs.get("lang"),
-        "main_id": main.attrs.get("id"),
-        "fragment_ids": observed_fragments,
-        "fragment_text": fragment_text,
-        "figure_ids": observed_figure_ids,
-        "crop_ids": observed_crop_ids,
-        "duplicate_ids": duplicate_ids,
-    }
-    return StaticAudit(errors, binding_errors, document, figures, crops)
+            logical = manifest_path(part["source_svg"]["path"])
+            if logical not in source_svgs:
+                width, height, findings = inspect_source_svg(
+                    confined(context.root, logical),
+                    logical,
+                )
+                source_svgs[logical] = (width, height)
+                errors.extend(findings)
+            if not bbox_within_source(part["bbox"], source_svgs[logical]):
+                binding_errors.append(
+                    f"crop {part['id']} bbox is outside its source SVG viewBox"
+                )
+    return PassiveAudit(errors, binding_errors, source_svgs)
+
+
 def browser_candidates() -> list[Path]:
     candidates: list[Path] = []
     configured = os.environ.get("SCHOLARLY_PUBLICATION_BROWSER")
@@ -2153,7 +1091,7 @@ def file_url_path(value: str) -> Path | None:
     if parsed.scheme.casefold() != "file" or parsed.netloc not in {
         "",
         "localhost",
-    }:
+    } or parsed.query or parsed.fragment:
         return None
     try:
         converted = url2pathname(parsed.path)
@@ -2162,24 +1100,346 @@ def file_url_path(value: str) -> Path | None:
     if os.name == "nt" and re.match(r"^/[A-Za-z]:", converted):
         converted = converted[1:]
     return Path(converted).resolve()
+def dom_expectations(context: Context) -> dict[str, Any]:
+    return {
+        "stylesheet_url": context.css.file.as_uri(),
+        "crop_sources": {
+            part["id"]: confined(
+                context.root,
+                part["source_svg"]["path"],
+            ).as_uri()
+            for figure in context.manifest["figures"]
+            for part in figure["parts"]
+        },
+        "url_attributes": sorted(DOM_URL_ATTRIBUTES),
+        "active_elements": sorted(OBSERVED_ACTIVE_ELEMENTS),
+    }
+
+
 DOM_SCRIPT = r"""
-() => {
- const norm=v=>(v||"").normalize("NFC").replace(/\s+/gu," ").trim();
- const attrs=e=>Object.fromEntries(e.getAttributeNames().map(n=>[n.toLowerCase(),e.getAttribute(n)]));
- const children=e=>e?[...e.children].map(c=>c.localName):[];
- const root=document.documentElement, body=document.body, mains=[...document.querySelectorAll("main")], main=mains[0]||null;
- const ids=[...document.querySelectorAll("[id]")].map(e=>e.id);
- const fragments=main?[...main.children].map(s=>{const c=s.cloneNode(true);c.querySelectorAll("figure[data-figure-id],template").forEach(n=>n.remove());return {tag:s.localName,attrs:attrs(s),id:s.getAttribute("data-fragment-id"),text:norm(c.textContent),html:s.innerHTML};}):[];
- const figures=[...document.querySelectorAll("figure")].map(f=>{const c=[...f.children].filter(n=>n.localName==="figcaption");return {id:f.getAttribute("data-figure-id"),dom_id:f.id||null,attrs:attrs(f),children:children(f),caption_html:c.length===1?c[0].innerHTML:null};});
- const crops=[...document.querySelectorAll("[data-crop-id]")].map(c=>{const images=[...c.children].filter(n=>n.localName==="image"),titles=[...c.children].filter(n=>n.localName==="title"),i=images[0]||null,r=c.getBoundingClientRect(),h=i&&i.href&&typeof i.href.baseVal==="string"?i.href.baseVal:null;let resolved=null;try{resolved=h?new URL(h,i.baseURI).href:null;}catch{}return {id:c.getAttribute("data-crop-id"),owner:c.closest("figure[data-figure-id]")?.getAttribute("data-figure-id")||null,attrs:attrs(c),children:children(c),title:titles.length===1?norm(titles[0].textContent):null,image_attrs:i?attrs(i):null,image_url:resolved,rect:{left:r.left,right:r.right,width:r.width,height:r.height}};});
- const text_segments=[];if(body){const w=document.createTreeWalker(body,NodeFilter.SHOW_TEXT);while(w.nextNode()){const n=w.currentNode,t=norm(n.data);if(!t)continue;const range=document.createRange();range.selectNodeContents(n);if([...range.getClientRects()].some(r=>r.width>0&&r.height>0))text_segments.push({text:t,leading:/^\s/u.test(n.data),trailing:/\s$/u.test(n.data)});}}
- const overflow=[];for(const e of body?body.querySelectorAll("*"):[]){const crop=e.closest("svg[data-crop-id]");if(crop&&crop!==e)continue;const r=e.getBoundingClientRect();if(r.left<-.5||r.right>root.clientWidth+.5){overflow.push({tag:e.localName,id:e.id||null,left:r.left,right:r.right});if(overflow.length>=25)break;}}
- return {structure:{html:children(root),head:children(document.head),body:children(body),main_count:mains.length,main_id:main?main.id:null},language:{html:root.lang||null,body:body?.lang||root.lang||null,title:document.querySelector("head>title")?.lang||null},title:norm(document.querySelector("head>title")?.textContent),duplicates:[...new Set(ids.filter((v,i)=>ids.indexOf(v)!==i))],fragments,figures,crops,text_segments,geometry:{client:root.clientWidth,scroll:root.scrollWidth,overflow:root.scrollWidth>root.clientWidth+1||overflow.length>0,elements:overflow}};
+(payload) => {
+ const observationLimit = 25;
+ const localName = element => (element?.localName || "").toLowerCase();
+ const norm = value => (value || "").normalize("NFC").replace(/\s+/gu, " ").trim();
+ const contextVisible = element => {
+   if (!element || !element.isConnected) return false;
+   for (let current = element; current; current = current.parentElement) {
+     const style = getComputedStyle(current);
+     const opacity = Number.parseFloat(style.opacity);
+     if (current.hidden || style.display === "none" ||
+         style.visibility === "hidden" || style.visibility === "collapse" ||
+         style.contentVisibility === "hidden" ||
+         (Number.isFinite(opacity) && opacity <= 0)) return false;
+   }
+   return true;
+ };
+ const elementVisible = element => {
+   if (!contextVisible(element)) return false;
+   const rect = element.getBoundingClientRect();
+   return Number.isFinite(rect.width) && Number.isFinite(rect.height) &&
+          rect.width > 0 && rect.height > 0;
+ };
+ const textVisible = node => {
+   if (!node.parentElement || !contextVisible(node.parentElement)) return false;
+   if (!/\S/u.test(node.data)) return true;
+   const range = document.createRange();
+   range.selectNodeContents(node);
+   return [...range.getClientRects()].some(rect =>
+     Number.isFinite(rect.width) && Number.isFinite(rect.height) &&
+     rect.width > 0 && rect.height > 0);
+ };
+ const visibleText = (root, omitFigures = false) => {
+   if (!root) return "";
+   const parts = [];
+   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+   while (walker.nextNode()) {
+     const node = walker.currentNode;
+     if (omitFigures && node.parentElement?.closest("figure[data-figure-id]")) continue;
+     if (textVisible(node)) parts.push(node.data);
+   }
+   return norm(parts.join(""));
+ };
+ const resolved = (value, base) => {
+   try { return new URL(value, base).href; } catch { return null; }
+ };
+ const effectiveLanguage = element => {
+   for (let current = element; current; current = current.parentElement) {
+     if (current.hasAttribute("lang")) return current.getAttribute("lang");
+   }
+   return null;
+ };
+ const root = document.documentElement;
+ const body = document.body;
+ const mains = [...document.querySelectorAll("main")];
+ const main = mains.length === 1 ? mains[0] : null;
+ const ids = [...document.querySelectorAll("[id]")].map(element => element.id);
+ const duplicates = [...new Set(ids.filter((value, index) => ids.indexOf(value) !== index))];
+ const fragmentNodes = [...document.querySelectorAll("[data-fragment-id]")];
+ const fragments = fragmentNodes.map(node => ({
+   id: node.getAttribute("data-fragment-id"),
+   tag: node.localName,
+   under_main: !!main && main.contains(node),
+   visible_text: visibleText(node, true),
+ }));
+ const mainFragmentOrder = main
+   ? [...main.querySelectorAll("[data-fragment-id]")].map(node => node.getAttribute("data-fragment-id"))
+   : [];
+ const outsideText = [];
+ const textSegments = [];
+ if (body) {
+   const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+   while (walker.nextNode()) {
+     const node = walker.currentNode;
+     const text = norm(node.data);
+     if (!text || !textVisible(node)) continue;
+     textSegments.push({
+       text,
+       leading: /^\s/u.test(node.data),
+       trailing: /\s$/u.test(node.data),
+     });
+     if (!node.parentElement?.closest("[data-fragment-id]")) {
+       outsideText.push({tag: node.parentElement?.localName || null, id: node.parentElement?.id || null});
+     }
+   }
+ }
+ const mediaSelector = "img,svg,image,video,audio,canvas,object,embed,iframe";
+ const outsideMedia = body ? [...body.querySelectorAll(mediaSelector)]
+   .filter(element => elementVisible(element) && !element.closest("[data-fragment-id]"))
+   .map(element => ({tag: element.localName, id: element.id || null})) : [];
+ const figures = [...document.querySelectorAll("figure")].map((figure, index) => ({
+   id: figure.getAttribute("data-figure-id"),
+   dom_id: figure.id || null,
+   aria_label: figure.getAttribute("aria-label"),
+   order: index,
+   fragment_id: figure.closest("[data-fragment-id]")?.getAttribute("data-fragment-id") || null,
+ }));
+ const dataFigureNodes = [...document.querySelectorAll("[data-figure-id]")].map(node => ({
+   tag: node.localName,
+   id: node.getAttribute("data-figure-id"),
+ }));
+ const captions = [...document.querySelectorAll("figcaption")].map(caption => ({
+   owner: caption.closest("figure")?.getAttribute("data-figure-id") || null,
+   visible: elementVisible(caption),
+   text: visibleText(caption),
+ }));
+ const crops = [...document.querySelectorAll("[data-crop-id]")].map((crop, index) => {
+   const images = [...crop.querySelectorAll("image,img")];
+   const image = images.length === 1 ? images[0] : null;
+   const rect = crop.getBoundingClientRect();
+   const viewBox = crop.viewBox?.baseVal;
+   const href = image?.href?.baseVal ?? image?.getAttribute("href") ?? image?.getAttribute("xlink:href");
+   return {
+     id: crop.getAttribute("data-crop-id"),
+     tag: crop.localName,
+     order: index,
+     owner: crop.closest("figure")?.getAttribute("data-figure-id") || null,
+     fragment_id: crop.closest("[data-fragment-id]")?.getAttribute("data-fragment-id") || null,
+     role: crop.getAttribute("role"),
+     aria_label: crop.getAttribute("aria-label"),
+     view_box: viewBox ? [viewBox.x, viewBox.y, viewBox.width, viewBox.height] : null,
+     image_count: images.length,
+     image_url: href ? resolved(href, image.baseURI) : null,
+     visible: elementVisible(crop),
+     rect: {width: rect.width, height: rect.height},
+   };
+ });
+ const svgNodes = [...document.querySelectorAll("svg")].map(node => node.getAttribute("data-crop-id"));
+ const imageNodes = [...document.querySelectorAll("image,img")].map(node => ({
+   tag: localName(node),
+   crop_id: node.closest("[data-crop-id]")?.getAttribute("data-crop-id") || null,
+ }));
+ const active = [...document.querySelectorAll("*")]
+   .map(element => localName(element))
+   .filter(name => payload.active_elements.includes(name));
+ const eventAttributes = [];
+ const inlineStyles = [];
+ const urlViolations = [];
+ const expectedCropSources = new Map(Object.entries(payload.crop_sources));
+ for (const element of document.querySelectorAll("*")) {
+   const tag = localName(element);
+   for (const attribute of element.attributes) {
+     const name = attribute.name.toLowerCase();
+     if (name.startsWith("on")) eventAttributes.push({tag, attribute: name});
+     if (name === "style") inlineStyles.push({tag});
+     if (!payload.url_attributes.includes(name)) continue;
+     const value = attribute.value;
+     let allowed = false;
+     if (tag === "a" && name === "href" && value.startsWith("#") && value.length > 1) {
+       const target = resolved(value, element.baseURI);
+       const current = new URL(document.location.href);
+       const candidate = target ? new URL(target) : null;
+       let identifier = "";
+       try { identifier = decodeURIComponent(candidate?.hash.slice(1) || ""); } catch {}
+       allowed = !!candidate && candidate.origin === current.origin &&
+         candidate.pathname === current.pathname && candidate.search === current.search &&
+         !!identifier && !!document.getElementById(identifier);
+     } else if (tag === "link" && name === "href" &&
+                element.relList.contains("stylesheet")) {
+       allowed = resolved(value, element.baseURI) === payload.stylesheet_url;
+     } else if (tag === "image" && (name === "href" || name === "xlink:href")) {
+       const cropId = element.closest("[data-crop-id]")?.getAttribute("data-crop-id");
+       allowed = !!cropId && resolved(value, element.baseURI) === expectedCropSources.get(cropId);
+     }
+     if (!allowed) urlViolations.push({tag, attribute: name, value});
+   }
+ }
+ const httpEquivMetadata = [];
+ const httpEquivNodes = [...document.querySelectorAll("meta[http-equiv]")];
+ for (const meta of httpEquivNodes.slice(0, observationLimit)) {
+   httpEquivMetadata.push({
+     value: (meta.getAttribute("http-equiv") || "").trim().toLowerCase(),
+   });
+ }
+ const stylesheetLinks = [...document.querySelectorAll("link[rel~='stylesheet']")]
+   .map(link => resolved(link.getAttribute("href") || "", link.baseURI));
+ const loadedStylesheets = [...document.styleSheets].map(sheet => sheet.href);
+ const pageRules = [];
+ const stylesheetErrors = [];
+ const isPageRule = rule =>
+   rule?.constructor?.name === "CSSPageRule" || rule?.type === 6;
+ const nestedRules = rule => {
+   try { return rule.cssRules || null; } catch { return undefined; }
+ };
+ const containsPageRules = (rules, depth = 0) => {
+   if (!rules || depth > 32) return depth > 32;
+   for (const rule of rules) {
+     if (isPageRule(rule)) return true;
+     const nested = nestedRules(rule);
+     if (nested === undefined || containsPageRules(nested, depth + 1)) return true;
+   }
+   return false;
+ };
+ const mediaMatches = condition => {
+   const query = (condition || "").trim();
+   return !query || matchMedia(query).matches;
+ };
+ const walkRules = rules => {
+   for (const rule of rules) {
+     if (isPageRule(rule)) {
+       const declarations = [];
+       for (let index = 0; index < rule.style.length; index++) {
+         const name = rule.style.item(index);
+         declarations.push({
+           name: name.toLowerCase(),
+           value: rule.style.getPropertyValue(name).trim(),
+           priority: rule.style.getPropertyPriority(name).toLowerCase(),
+         });
+       }
+       pageRules.push({selector: (rule.selectorText || "").trim(), declarations});
+       continue;
+     }
+     const nested = nestedRules(rule);
+     if (nested === undefined) {
+       stylesheetErrors.push("cssom-group-access");
+       continue;
+     }
+     if (!nested) continue;
+     const kind = rule.constructor?.name || "";
+     if (kind === "CSSMediaRule") {
+       try {
+         if (mediaMatches(rule.conditionText || rule.media?.mediaText)) {
+           walkRules(nested);
+         }
+       } catch {
+         if (containsPageRules(nested)) stylesheetErrors.push("indeterminate-media-page-group");
+       }
+       continue;
+     }
+     if (kind === "CSSSupportsRule") {
+       try {
+         if (!rule.conditionText || typeof CSS?.supports !== "function") {
+           throw new Error("unsupported CSS supports observation");
+         }
+         if (CSS.supports(rule.conditionText)) walkRules(nested);
+       } catch {
+         if (containsPageRules(nested)) stylesheetErrors.push("indeterminate-supports-page-group");
+       }
+       continue;
+     }
+     if (kind === "CSSLayerBlockRule") {
+       walkRules(nested);
+       continue;
+     }
+     if (containsPageRules(nested)) stylesheetErrors.push("unknown-page-group");
+   }
+ };
+ for (const sheet of document.styleSheets) {
+   if (sheet.disabled) continue;
+   let rules = null;
+   try { rules = sheet.cssRules; } catch {
+     stylesheetErrors.push("cssom-access");
+     continue;
+   }
+   try {
+     if (!mediaMatches(sheet.media?.mediaText)) continue;
+   } catch {
+     if (containsPageRules(rules)) stylesheetErrors.push("indeterminate-stylesheet-media");
+     continue;
+   }
+   walkRules(rules);
+ }
+ const overflowElements = [];
+ if (body) {
+   for (const element of body.querySelectorAll("*")) {
+     const crop = element.closest("svg[data-crop-id]");
+     if (crop && crop !== element) continue;
+     const rect = element.getBoundingClientRect();
+     if (rect.left < -0.5 || rect.right > root.clientWidth + 0.5) {
+       overflowElements.push({tag: localName(element), id: element.id || null, left: rect.left, right: rect.right});
+       if (overflowElements.length >= 25) break;
+     }
+   }
+ }
+ return {
+   stylesheet: {
+     links: stylesheetLinks,
+     loaded: loadedStylesheets,
+     inline_count: document.querySelectorAll("style").length,
+     cssom_errors: stylesheetErrors,
+   },
+   main: {count: mains.length, id: main?.id || null},
+   language: {
+     document: effectiveLanguage(root),
+     title: effectiveLanguage(document.querySelector("title")),
+   },
+   title: norm(document.title),
+   duplicates,
+   fragments,
+   main_fragment_order: mainFragmentOrder,
+   outside_text: outsideText,
+   outside_media: outsideMedia,
+   figures,
+   data_figure_nodes: dataFigureNodes,
+   captions,
+   crops,
+   svg_nodes: svgNodes,
+   image_nodes: imageNodes,
+   active,
+   event_attributes: eventAttributes,
+   inline_styles: inlineStyles,
+   character_set: document.characterSet || null,
+   http_equiv_metadata: httpEquivMetadata,
+   http_equiv_metadata_count: httpEquivNodes.length,
+   http_equiv_metadata_truncated: httpEquivNodes.length > httpEquivMetadata.length,
+   url_violations: urlViolations,
+   page_rules: pageRules,
+   text_segments: textSegments,
+   geometry: {
+     client: root.clientWidth,
+     scroll: root.scrollWidth,
+     overflow: root.scrollWidth > root.clientWidth + 1 || overflowElements.length > 0,
+     elements: overflowElements,
+   },
+ };
 }
 """
 
-def launch_browser(playwright: Any, browser_path: Path | None) -> Any:
-    options: dict[str, Any] = {"headless": True}
+
+async def launch_browser(playwright: Any, browser_path: Path | None) -> Any:
+    options: dict[str, Any] = {
+        "headless": True,
+        "args": ["--allow-file-access-from-files"],
+    }
     if browser_path:
         path = browser_path.resolve()
         if not path.is_file():
@@ -2191,8 +1451,26 @@ def launch_browser(playwright: Any, browser_path: Path | None) -> Any:
         options["executable_path"] = playwright.chromium.executable_path
     elif os.name == "nt":
         options["channel"] = "msedge"
-    return playwright.chromium.launch(**options)
-def render_once(
+    return await playwright.chromium.launch(**options)
+
+
+def browser_resource_roles(context: Context) -> dict[Path, set[str]]:
+    roles: dict[Path, set[str]] = {}
+
+    def allow(path: Path, resource_type: str) -> None:
+        roles.setdefault(path.resolve(), set()).add(resource_type)
+
+    allow(context.html.file, "document")
+    allow(context.css.file, "stylesheet")
+    for font in context.manifest["fonts"]:
+        allow(confined(context.root, font["asset"]["path"]), "font")
+    for figure in context.manifest["figures"]:
+        for part in figure["parts"]:
+            allow(confined(context.root, part["source_svg"]["path"]), "image")
+    return roles
+
+
+async def render_once(
     browser: Any,
     context: Context,
     output: Path,
@@ -2200,58 +1478,87 @@ def render_once(
 ) -> Render:
     blocked: set[str] = set()
     failed: set[str] = set()
-    aborted: set[str] = set()
-    allowed = {item.file.resolve() for item in context.assets.values()}
+    aborted: set[int] = set()
+    allowed = browser_resource_roles(context)
     width_points = PAGE_POINTS[context.manifest["print_geometry"]["page_size"]][0]
     margins = context.manifest["print_geometry"]["margin_in"]
     printable = (width_points / POINTS_PER_INCH - margins["left"] - margins["right"]) * PX_PER_INCH
     probe = max(1, round(printable))
-    browser_context = browser.new_context(
-        viewport={"width": probe, "height": 960},
-        service_workers="block",
-        java_script_enabled=False,
+    browser_context = None
+    output.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=output.parent,
+        prefix=f".{output.name}.",
     )
-    def route_request(route: Any, request: Any) -> None:
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+
+    async def route_request(route: Any, request: Any) -> None:
         value = request.url
         path = file_url_path(value)
-        if value.strip().casefold() == "about:blank" or path in allowed:
-            route.continue_()
+        if value.strip().casefold() == "about:blank" or (
+            path is not None
+            and request.resource_type in allowed.get(path, set())
+        ):
+            await route.continue_()
         else:
-            aborted.add(value)
+            aborted.add(id(request))
             blocked.add(value)
-            route.abort("blockedbyclient")
-    browser_context.route("**/*", route_request)
-    browser_context.on(
-        "requestfailed",
-        lambda request: (
-            failed.add(request.url) if request.url not in aborted and file_url_path(request.url) is not None else None
-        ),
-    )
-    page = browser_context.new_page()
+            await route.abort("blockedbyclient")
+
     try:
-        page.goto(context.html.file.as_uri(), wait_until="load", timeout=60_000)
-        page.emulate_media(media="print")
-        page.evaluate("document.fonts.ready")
-        dom = cast("dict[str, Any]", page.evaluate(DOM_SCRIPT))
-        output.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary_name = tempfile.mkstemp(dir=output.parent, prefix=f".{output.name}.")
-        os.close(descriptor)
-        temporary = Path(temporary_name)
+        async with asyncio.timeout(RENDER_TIMEOUT_MS / 1000):
+            browser_context = await browser.new_context(
+                viewport={"width": probe, "height": 960},
+                service_workers="block",
+                java_script_enabled=False,
+            )
+            await browser_context.route("**/*", route_request)
+            browser_context.on(
+                "requestfailed",
+                lambda request: failed.add(request.url)
+                if id(request) not in aborted
+                else None,
+            )
+            page = await browser_context.new_page()
+            await page.goto(
+                context.html.file.as_uri(),
+                wait_until="load",
+                timeout=NAVIGATION_TIMEOUT_MS,
+            )
+            await page.emulate_media(media="print")
+            await page.evaluate("document.fonts.ready")
+            dom = cast(
+                "dict[str, Any]",
+                await page.evaluate(DOM_SCRIPT, dom_expectations(context)),
+            )
+            pdf_bytes = await page.pdf(
+                print_background=True,
+                prefer_css_page_size=True,
+                display_header_footer=False,
+                page_ranges=f"1-{MAX_PDF_PAGES + 1}",
+            )
+        temporary.write_bytes(pdf_bytes)
         try:
-            page.pdf(path=str(temporary), print_background=True, prefer_css_page_size=True)
-            if temporary.stat().st_size == 0:
-                raise AuditError("browser render did not produce a PDF")
-            temporary.replace(output)
-        finally:
-            temporary.unlink(missing_ok=True)
+            pdf_page_count(temporary, "generated browser PDF")
+        except PublicationError as error:
+            raise AuditError(str(error)) from error
+        temporary.replace(output)
+    except TimeoutError as error:
+        raise AuditError(
+            "Chromium render exceeded the fixed "
+            f"{RENDER_TIMEOUT_MS} ms deadline"
+        ) from error
     finally:
-        browser_context.close()
+        temporary.unlink(missing_ok=True)
+        if browser_context is not None:
+            await browser_context.close()
     observed = dom["geometry"]
     return Render(
         relative_asset(output, evidence_root),
         {
-            "blocked_nonlocal": sorted(blocked),
-            "failed_local": sorted(failed),
+            "blocked_requests": sorted(blocked),
+            "failed_requests": sorted(failed),
         },
         {
             "printable_width_css_px": round(printable, 6),
@@ -2270,33 +1577,36 @@ def render_pair(
     browser_path: Path | None,
 ) -> tuple[Render, Render]:
     try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
+        from playwright.async_api import Error as PlaywrightError
+        from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+        from playwright.async_api import async_playwright
     except ImportError as error:
         raise AuditError("Playwright is unavailable; run with uv run --script") from error
-    with sync_playwright() as playwright:
-        browser = None
-        try:
-            browser = launch_browser(playwright, browser_path)
-            return (
-                render_once(
+
+    async def render() -> tuple[Render, Render]:
+        async with async_playwright() as playwright:
+            browser = await launch_browser(playwright, browser_path)
+            try:
+                first = await render_once(
                     browser,
                     context,
                     render_root / "render-1.pdf",
                     evidence_root,
-                ),
-                render_once(
+                )
+                second = await render_once(
                     browser,
                     context,
                     render_root / "render-2.pdf",
                     evidence_root,
-                ),
-            )
-        except PlaywrightError as error:
-            raise AuditError(f"Chromium rendering failed: {error}") from error
-        finally:
-            if browser is not None:
-                browser.close()
+                )
+                return first, second
+            finally:
+                await browser.close()
+
+    try:
+        return asyncio.run(render())
+    except (PlaywrightError, PlaywrightTimeoutError) as error:
+        raise AuditError(f"Chromium rendering failed: {error}") from error
 def normalize_font(value: str) -> str:
     return unicodedata.normalize("NFC", re.sub(r"^[A-Z]{6}\+", "", value)).casefold().strip()
 def text_search_key(value: str) -> str:
@@ -2349,7 +1659,6 @@ def font_observation(
     }
     return record, {
         **record,
-        "xref": xref,
         "extension": str(raw[1]),
         "resource_name": str(raw[4]),
         "encoding": str(raw[5]),
@@ -2357,7 +1666,7 @@ def font_observation(
 def pdf_actions(document: Any, fitz: Any) -> dict[str, Any]:
     kinds = {
         fitz.LINK_NONE: "none", fitz.LINK_GOTO: "goto", fitz.LINK_URI: "uri",
-        fitz.LINK_LAUNCH: "launch", fitz.LINK_NAMED: "named", fitz.LINK_GOTOR: "goto-remote",
+        fitz.LINK_LAUNCH: "launch", fitz.LINK_GOTOR: "goto-remote",
     }
     safe_kinds = {"none", "goto"}
     unsafe_kinds: set[str] = set()
@@ -2393,15 +1702,11 @@ def pdf_actions(document: Any, fitz: Any) -> dict[str, Any]:
     for page_number in range(document.page_count):
         for link in document.load_page(page_number).get_links():
             raw_kind = link.get("kind")
-            destination_page = link.get("page")
-            if (
-                raw_kind == fitz.LINK_NAMED
-                and type(destination_page) is int
-                and 0 <= destination_page < document.page_count
-            ):
-                kind = "goto"
-            else:
-                kind = kinds.get(raw_kind, f"kind-{raw_kind}")
+            if raw_kind == fitz.LINK_NAMED:
+                # PyMuPDF conflates direct /Dest forms with /Named actions here.
+                # The bounded low-level traversal below owns both classifications.
+                continue
+            kind = kinds.get(raw_kind, "invalid-action")
             target_category, target = next(
                 (
                     (category, str(link[key]))
@@ -2432,6 +1737,40 @@ def pdf_actions(document: Any, fitz: Any) -> dict[str, Any]:
     }
     mupdf = fitz.mupdf
     pdf = mupdf.pdf_document_from_fz_document(document.this)
+
+    def destination_page(raw: Any) -> int | None:
+        if raw is None:
+            return None
+        item = mupdf.pdf_resolve_indirect(raw)
+        if item is None or mupdf.pdf_is_null(item):
+            return None
+        if mupdf.pdf_is_name(item) or mupdf.pdf_is_string(item):
+            item = mupdf.pdf_resolve_indirect(
+                mupdf.pdf_lookup_dest(pdf, item)
+            )
+            if item is None or mupdf.pdf_is_null(item):
+                return None
+            if mupdf.pdf_is_dict(item):
+                item = mupdf.pdf_resolve_indirect(
+                    mupdf.pdf_dict_gets(item, "D")
+                )
+        if (
+            item is None
+            or not mupdf.pdf_is_array(item)
+            or mupdf.pdf_array_len(item) < 1
+        ):
+            return None
+        page = mupdf.pdf_array_get(item, 0)
+        if not mupdf.pdf_is_indirect(page):
+            return None
+        page_number = mupdf.pdf_lookup_page_number(pdf, page)
+        return (
+            page_number
+            if type(page_number) is int
+            and 0 <= page_number < document.page_count
+            else None
+        )
+
     visited = 0
     def enter(item: Any) -> Any | None:
         nonlocal visited
@@ -2444,6 +1783,24 @@ def pdf_actions(document: Any, fitz: Any) -> dict[str, Any]:
         if visited > MAX_PDF_OBJECTS:
             raise PublicationError("PDF object graph exceeds the action-inspection limit")
         return item
+
+    def inspect_action(item: Any, source_category: str) -> Any:
+        next_action = mupdf.pdf_dict_gets(item, "Next")
+        subtype = mupdf.pdf_resolve_indirect(mupdf.pdf_dict_gets(item, "S"))
+        if subtype is None or not mupdf.pdf_is_name(subtype):
+            observe("invalid-action", source_category)
+            return next_action
+        name = str(mupdf.pdf_to_name(subtype))
+        kind = action_names.get(name)
+        if kind is None:
+            observe("unknown-action", source_category, subtype=name)
+        elif kind == "goto" and destination_page(
+            mupdf.pdf_dict_gets(item, "D")
+        ) is None:
+            observe("invalid-action", source_category)
+        else:
+            observe(kind, source_category)
+        return next_action
 
     def visit_action(raw: Any, source_category: str, *, arrays: bool = False) -> None:
         pending = [(raw, arrays)]
@@ -2461,17 +1818,31 @@ def pdf_actions(document: Any, fitz: Any) -> dict[str, Any]:
                 continue
             if not mupdf.pdf_is_dict(item):
                 continue
-            subtype = mupdf.pdf_resolve_indirect(mupdf.pdf_dict_gets(item, "S"))
-            if subtype is None or not mupdf.pdf_is_name(subtype):
-                observe("invalid-action", source_category)
-                continue
-            name = str(mupdf.pdf_to_name(subtype))
-            kind = action_names.get(name)
-            if kind is None:
-                observe("unknown-action", source_category, subtype=name)
-            else:
-                observe(kind, source_category)
-            pending.append((mupdf.pdf_dict_gets(item, "Next"), True))
+            pending.append((inspect_action(item, source_category), True))
+
+    def visit_open_action(raw: Any) -> None:
+        item = enter(raw)
+        if item is None:
+            return
+        if mupdf.pdf_is_dict(item):
+            visit_action(inspect_action(item, "catalog"), "catalog", arrays=True)
+        elif (
+            mupdf.pdf_is_array(item)
+            or mupdf.pdf_is_name(item)
+            or mupdf.pdf_is_string(item)
+        ):
+            if destination_page(item) is None:
+                observe("invalid-action", "catalog")
+        else:
+            observe("invalid-action", "catalog")
+
+    def visit_destination(raw: Any, source_category: str) -> None:
+        if (
+            raw is not None
+            and not mupdf.pdf_is_null(raw)
+            and destination_page(raw) is None
+        ):
+            observe("invalid-action", source_category)
 
     def visit_aa(raw: Any, source_category: str) -> None:
         item = enter(raw)
@@ -2479,7 +1850,13 @@ def pdf_actions(document: Any, fitz: Any) -> dict[str, Any]:
             for index in range(mupdf.pdf_dict_len(item)):
                 visit_action(mupdf.pdf_dict_get_val(item, index), source_category)
 
-    def visit_tree(raw: Any, child_keys: tuple[str, ...], source_category: str) -> None:
+    def visit_tree(
+        raw: Any,
+        child_keys: tuple[str, ...],
+        source_category: str,
+        *,
+        direct_destinations: bool = False,
+    ) -> None:
         pending = [raw]
         while pending:
             item = enter(pending.pop())
@@ -2492,6 +1869,11 @@ def pdf_actions(document: Any, fitz: Any) -> dict[str, Any]:
                 continue
             visit_action(mupdf.pdf_dict_gets(item, "A"), source_category)
             visit_aa(mupdf.pdf_dict_gets(item, "AA"), source_category)
+            if direct_destinations:
+                visit_destination(
+                    mupdf.pdf_dict_gets(item, "Dest"),
+                    source_category,
+                )
             pending.extend(mupdf.pdf_dict_gets(item, key) for key in child_keys)
 
     def visit_javascript_names(raw: Any) -> None:
@@ -2513,11 +1895,16 @@ def pdf_actions(document: Any, fitz: Any) -> dict[str, Any]:
 
     catalog = enter(mupdf.pdf_dict_gets(mupdf.pdf_trailer(pdf), "Root"))
     if catalog is not None and mupdf.pdf_is_dict(catalog):
-        visit_action(mupdf.pdf_dict_gets(catalog, "OpenAction"), "catalog")
+        visit_open_action(mupdf.pdf_dict_gets(catalog, "OpenAction"))
         visit_aa(mupdf.pdf_dict_gets(catalog, "AA"), "catalog")
         outlines = enter(mupdf.pdf_dict_gets(catalog, "Outlines"))
         if outlines is not None and mupdf.pdf_is_dict(outlines):
-            visit_tree(mupdf.pdf_dict_gets(outlines, "First"), ("First", "Next"), "outline")
+            visit_tree(
+                mupdf.pdf_dict_gets(outlines, "First"),
+                ("First", "Next"),
+                "outline",
+                direct_destinations=True,
+            )
         form = enter(mupdf.pdf_dict_gets(catalog, "AcroForm"))
         if form is not None and mupdf.pdf_is_dict(form):
             visit_tree(mupdf.pdf_dict_gets(form, "Fields"), ("Kids",), "form-field")
@@ -2534,6 +1921,10 @@ def pdf_actions(document: Any, fitz: Any) -> dict[str, Any]:
                 if annot is not None and mupdf.pdf_is_dict(annot):
                     visit_action(mupdf.pdf_dict_gets(annot, "A"), "annotation")
                     visit_aa(mupdf.pdf_dict_gets(annot, "AA"), "annotation")
+                    visit_destination(
+                        mupdf.pdf_dict_gets(annot, "Dest"),
+                        "annotation",
+                    )
 
     ordered_kinds = sorted(unsafe_kinds)
     ordered_witnesses = [witnesses[key] for key in sorted(witnesses)]
@@ -2559,6 +1950,42 @@ def page_box_ok(box: list[float], width: float, height: float, scale: float = 1.
         and abs((box[2] - box[0]) * scale - width) <= PDF_TOLERANCE
         and abs((box[3] - box[1]) * scale - height) <= PDF_TOLERANCE
     )
+
+
+def admit_pdf_document(document: Any, path: Path, context: str) -> int:
+    if not document.is_pdf or document.needs_pass or document.page_count < 1:
+        raise PublicationError(
+            f"{context} is not an inspectable, unencrypted, nonempty PDF: {path}"
+        )
+    if document.page_count > MAX_PDF_PAGES:
+        raise PublicationError(
+            f"{context} exceeds the fixed {MAX_PDF_PAGES}-page ceiling: {path}"
+        )
+    return int(document.page_count)
+
+
+def pdf_page_count(path: Path, context: str) -> int:
+    try:
+        if path.stat().st_size < 1:
+            raise PublicationError(f"{context} is empty: {path}")
+    except OSError as error:
+        raise AuditError(f"cannot inspect {context}: {error}") from error
+    try:
+        import fitz
+    except ImportError as error:
+        raise AuditError("PyMuPDF is unavailable; run with uv run --script") from error
+    try:
+        document = fitz.open(path)
+    except fitz.FileDataError as error:
+        raise PublicationError(f"cannot inspect {context} {path}: {error}") from error
+    except (OSError, RuntimeError, ValueError) as error:
+        raise AuditError(f"cannot open {context} {path}: {error}") from error
+    try:
+        return admit_pdf_document(document, path, context)
+    finally:
+        document.close()
+
+
 def inspect_pdf(path: Path, logical: str, page_size: str, raster_dir: Path, raster_source: str,
                 evidence_root: Path, manifest: dict[str, Any]) -> Pdf:
     try:
@@ -2573,10 +2000,8 @@ def inspect_pdf(path: Path, logical: str, page_size: str, raster_dir: Path, rast
         raise PublicationError(f"cannot inspect PDF {path}: {error}") from error
     except (OSError, RuntimeError, ValueError) as error:
         raise AuditError(f"cannot open PDF {path}: {error}") from error
-    if not document.is_pdf or document.needs_pass or document.page_count < 1:
-        document.close()
-        raise PublicationError(f"file is not an inspectable, unencrypted, nonempty PDF: {path}")
     try:
+        page_count = admit_pdf_document(document, path, "file")
         pages: list[dict[str, Any]] = []
         details: list[dict[str, Any]] = []
         rasters: list[dict[str, Any]] = []
@@ -2587,7 +2012,7 @@ def inspect_pdf(path: Path, logical: str, page_size: str, raster_dir: Path, rast
         replacements = 0
         pdf_document = fitz.mupdf.pdf_document_from_fz_document(document.this)
         raster_dir.mkdir(parents=True, exist_ok=True)
-        for index in range(document.page_count):
+        for index in range(page_count):
             page = document.load_page(index)
             media, crop = box_values(page.mediabox), box_values(page.cropbox)
             effective = box_values(page.rect)
@@ -2657,7 +2082,7 @@ def inspect_pdf(path: Path, logical: str, page_size: str, raster_dir: Path, rast
         pdf_asset = asset(path, logical)
         evidence = {
             "asset": pdf_asset.json(),
-            "page_count": document.page_count,
+            "page_count": page_count,
             "pages": pages,
             "fonts": [fonts[key] for key in ordered_keys],
             "actions": actions,
@@ -2681,112 +2106,349 @@ def inspect_pdf(path: Path, logical: str, page_size: str, raster_dir: Path, rast
     finally:
         document.close()
 
-def dom_errors(dom: dict[str, Any], context: Context) -> tuple[list[Any], list[str]]:
+def css_length_inches(value: str) -> float | None:
+    matched = re.fullmatch(
+        r"\s*([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)\s*([A-Za-z]+)\s*",
+        value,
+    )
+    if matched is None:
+        return 0.0 if value.strip() == "0" else None
+    try:
+        number = float(matched.group(1))
+    except (OverflowError, ValueError):
+        return None
+    factor = CSS_LENGTH_INCHES.get(matched.group(2).casefold())
+    if factor is None or not math.isfinite(number):
+        return None
+    return number * factor
+
+
+def expand_margin(value: str) -> dict[str, str] | None:
+    parts = value.split()
+    if not 1 <= len(parts) <= 4:
+        return None
+    if len(parts) == 1:
+        top = right = bottom = left = parts[0]
+    elif len(parts) == 2:
+        top = bottom = parts[0]
+        right = left = parts[1]
+    elif len(parts) == 3:
+        top, right, bottom = parts
+        left = right
+    else:
+        top, right, bottom, left = parts
+    return {
+        "margin-top": top,
+        "margin-right": right,
+        "margin-bottom": bottom,
+        "margin-left": left,
+    }
+
+
+def page_binding(
+    rules: list[dict[str, Any]],
+    context: Context,
+) -> tuple[list[str], dict[str, Any]]:
+    errors: list[str] = []
+    qualified = [rule.get("selector") for rule in rules if rule.get("selector")]
+    unqualified = [rule for rule in rules if not rule.get("selector")]
+    if len(unqualified) != 1:
+        errors.append("CSSOM must have exactly one active unqualified @page rule")
+    if qualified:
+        errors.append("CSSOM has active competing qualified @page rules")
+    effective: dict[str, tuple[str, bool]] = {}
+
+    def assign(name: str, value: str, important: bool) -> None:
+        current = effective.get(name)
+        if current is None or important or not current[1]:
+            effective[name] = (value, important)
+
+    for rule in unqualified if len(unqualified) == 1 else []:
+        for declaration in rule.get("declarations", []):
+            name = str(declaration.get("name", "")).casefold()
+            value = str(declaration.get("value", "")).strip()
+            important = declaration.get("priority") == "important"
+            if name == "margin":
+                expanded = expand_margin(value)
+                if expanded is None:
+                    errors.append("CSSOM effective @page margin is not a fixed length shorthand")
+                    continue
+                for side, side_value in expanded.items():
+                    assign(side, side_value, important)
+            elif name in {
+                "size",
+                "margin-top",
+                "margin-right",
+                "margin-bottom",
+                "margin-left",
+            }:
+                assign(name, value, important)
+    expected_size = PAGE_CSS_NAMES[context.manifest["print_geometry"]["page_size"]]
+    observed_size = effective.get("size", ("", False))[0]
+    if len(unqualified) == 1 and observed_size.casefold() != expected_size.casefold():
+        errors.append("CSSOM effective @page size does not match the manifest")
+    expected_margins = context.manifest["print_geometry"]["margin_in"]
+    observed_margins: dict[str, float | None] = {}
+    for side in ("top", "right", "bottom", "left"):
+        value = effective.get(f"margin-{side}", ("", False))[0]
+        observed = css_length_inches(value)
+        observed_margins[side] = (
+            round(observed, 6) if observed is not None else None
+        )
+        if len(unqualified) == 1 and (
+            observed is None
+            or abs(observed - float(expected_margins[side])) > 0.0001
+        ):
+            errors.append(f"CSSOM effective @page {side} margin does not match the manifest")
+    return errors, {
+        "active_unqualified_rules": len(unqualified),
+        "active_qualified_rules": len(qualified),
+        "effective_size": observed_size,
+        "effective_margin_in": observed_margins,
+    }
+
+
+def dom_errors(
+    dom: dict[str, Any],
+    context: Context,
+) -> tuple[list[Any], list[Any], dict[str, Any]]:
     errors: list[Any] = []
-    bindings: list[str] = []
+    bindings: list[Any] = []
     manifest = context.manifest
-    if dom.get("structure") != {
-        "html": ["head", "body"],
-        "head": ["meta", "title", "link"],
-        "body": ["main"],
-        "main_count": 1,
-        "main_id": manifest["publication_id"],
+    expected_stylesheet = context.css.file.as_uri()
+    stylesheet = dom.get("stylesheet", {})
+    if (
+        stylesheet.get("links") != [expected_stylesheet]
+        or stylesheet.get("loaded") != [expected_stylesheet]
+        or stylesheet.get("inline_count") != 0
+        or stylesheet.get("cssom_errors")
+    ):
+        errors.append("canonical stylesheet was not the one exclusively loaded stylesheet")
+    if dom.get("main") != {
+        "count": 1,
+        "id": manifest["publication_id"],
     }:
-        errors.append("browser DOM structure is not canonical")
+        errors.append("browser must expose one main with the manifest publication ID")
     if dom.get("language") != {
-        "html": manifest["document"]["language"],
-        "body": manifest["document"]["language"],
+        "document": manifest["document"]["language"],
         "title": manifest["document"]["title_language"],
     }:
-        errors.append("browser DOM language does not match manifest")
+        errors.append("browser document or title language does not match the manifest")
     if dom.get("title") != normalize_text(manifest["document"]["title"]):
-        errors.append("browser DOM title does not match manifest")
+        errors.append("browser title does not match the manifest")
     if dom.get("duplicates"):
         errors.append(f"browser DOM duplicate IDs: {dom['duplicates']}")
+    if dom.get("active"):
+        errors.append({"kind": "active-elements", "elements": dom["active"]})
+    if dom.get("event_attributes"):
+        errors.append({"kind": "event-attributes", "items": dom["event_attributes"]})
+    if dom.get("inline_styles"):
+        errors.append({"kind": "inline-styles", "items": dom["inline_styles"]})
+    character_set = str(dom.get("character_set") or "")
+    if character_set.casefold() != "utf-8":
+        errors.append(
+            {
+                "kind": "effective-character-set",
+                "expected": "UTF-8",
+                "observed": character_set or None,
+            }
+        )
+    http_equiv_count = dom.get("http_equiv_metadata_count", 0)
+    if http_equiv_count:
+        errors.append(
+            {
+                "kind": "http-equiv-metadata",
+                "count": http_equiv_count,
+                "samples": dom.get("http_equiv_metadata", []),
+                "truncated": bool(
+                    dom.get("http_equiv_metadata_truncated")
+                ),
+            }
+        )
+    for violation in dom.get("url_violations", []):
+        value = str(violation.get("value", ""))
+        errors.append(
+            {
+                **resource_url_diagnostic(value, "dormant-dom-url"),
+                "element": violation.get("tag"),
+                "attribute": violation.get("attribute"),
+            }
+        )
+    expected_fragment_ids = [item["id"] for item in manifest["fragments"]]
     fragments = dom.get("fragments", [])
-    if [item.get("id") for item in fragments] != [item["id"] for item in manifest["fragments"]]:
-        errors.append("browser fragment order does not match manifest")
-    for expected, observed in zip(manifest["fragments"], fragments, strict=False):
-        if observed.get("tag") != "section" or observed.get("attrs") != {"data-fragment-id": expected["id"]}:
-            errors.append(f"browser fragment {expected['id']} wrapper is invalid")
-        if hash_bytes(normalize_text(str(observed.get("text", ""))).encode()) != expected["visible_text_sha256"]:
-            errors.append(f"browser fragment {expected['id']} text mismatch")
-        try:
-            copied = confined(context.root, expected["asset"]["path"]).read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as error:
-            errors.append(
-                text_read_diagnostic(
-                    expected["asset"]["path"],
-                    "fragment",
-                    error,
-                    fragment_id=expected["id"],
-                )
-            )
+    observed_fragment_ids = [item.get("id") for item in fragments]
+    if observed_fragment_ids != expected_fragment_ids or dom.get("main_fragment_order") != expected_fragment_ids:
+        errors.append("manifest fragments are not exactly once under main in manifest order")
+    if any(not item.get("under_main") for item in fragments):
+        errors.append("browser has fragment nodes outside main")
+    for expected in manifest["fragments"]:
+        matches = [item for item in fragments if item.get("id") == expected["id"]]
+        if len(matches) != 1:
             continue
-        expected_structure = structure_signature(
-            parse_html5_fragment(copied, f"fragment {expected['id']}").root.children,
-            drop_figures=False,
+        observed_hash = hash_bytes(
+            normalize_text(str(matches[0].get("visible_text", ""))).encode()
         )
-        observed_structure = structure_signature(
-            parse_html5_fragment(str(observed.get("html", "")), f"browser fragment {expected['id']}").root.children,
-            drop_figures=True,
+        if observed_hash != expected["visible_text_sha256"]:
+            errors.append(f"browser fragment {expected['id']} visible-text hash mismatch")
+    if dom.get("outside_text") or dom.get("outside_media"):
+        errors.append(
+            {
+                "kind": "visible-content-outside-fragments",
+                "text_nodes": dom.get("outside_text", []),
+                "media_nodes": dom.get("outside_media", []),
+            }
         )
-        if observed_structure != expected_structure:
-            errors.append(f"browser fragment {expected['id']} structure mismatch")
+    page_errors, page_summary = page_binding(dom.get("page_rules", []), context)
+    errors.extend(page_errors)
 
+    expected_figures = manifest["figures"]
+    expected_figure_ids = [figure["id"] for figure in expected_figures]
     figures = dom.get("figures", [])
-    if [item.get("id") for item in figures] != [item["id"] for item in manifest["figures"]]:
-        bindings.append("browser figure order does not match manifest")
-    for expected, observed in zip(manifest["figures"], figures, strict=False):
-        attrs = observed.get("attrs")
-        class_value = attrs.get("class") if isinstance(attrs, dict) else None
-        if attrs != {
-            "id": expected["dom_id"],
-            "class": class_value,
-            "data-figure-id": expected["id"],
-            "role": "group",
-            "aria-label": expected["alt"],
-        } or not figure_class_ok(class_value) or observed.get("children") != ["div", "figcaption"]:
-            bindings.append(f"browser figure {expected['id']} is not canonical")
-        actual_caption = parse_html(str(observed.get("caption_html") or ""))
-        if actual_caption.errors or not caption_matches(actual_caption.root, expected["caption_html"]):
-            bindings.append(f"browser figure {expected['id']} caption mismatch")
-
+    data_figure_nodes = dom.get("data_figure_nodes", [])
+    if [item.get("id") for item in figures] != expected_figure_ids:
+        bindings.append("browser figure order or cardinality differs from the manifest")
+    if data_figure_nodes != [
+        {"tag": "figure", "id": identifier}
+        for identifier in expected_figure_ids
+    ]:
+        bindings.append("browser has unbound or mistyped data-figure-id nodes")
+    captions = dom.get("captions", [])
+    expected_parts = [
+        (figure, part)
+        for figure in expected_figures
+        for part in figure["parts"]
+    ]
     crops = dom.get("crops", [])
-    expected_parts = [(figure, part) for figure in manifest["figures"] for part in figure["parts"]]
-    if [item.get("id") for item in crops] != [part["id"] for _, part in expected_parts]:
-        bindings.append("browser crop order does not match manifest")
-    for (figure, part), observed in zip(expected_parts, crops, strict=False):
-        bbox = [float(value) for value in part["bbox"]]
-        crop_width, crop_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        if observed.get("owner") != figure["id"]:
-            bindings.append(f"browser crop {part['id']} owner mismatch")
-        if not same_numbers(
-            parse_numbers(observed.get("attrs", {}).get("viewbox")),
-            [bbox[0], bbox[1], crop_width, crop_height],
-        ):
-            bindings.append(f"browser crop {part['id']} viewBox mismatch")
-        if observed.get("children") != ["title", "image"] or observed.get("title") != normalize_text(
-            f"{figure['alt']} - part {part['order']}"
-        ):
-            bindings.append(f"browser crop {part['id']} structure mismatch")
-        source = confined(context.root, part["source_svg"]["path"])
-        if file_url_path(str(observed.get("image_url") or "")) != source:
-            bindings.append(f"browser crop {part['id']} source href mismatch")
-        rect = observed.get("rect", {})
-        width, height = (
-            float(rect.get("width", 0)),
-            float(rect.get("height", 0)),
+    expected_crop_ids = [part["id"] for _figure, part in expected_parts]
+    if [item.get("id") for item in crops] != expected_crop_ids:
+        bindings.append("browser crop order or cardinality differs from the manifest")
+    if dom.get("svg_nodes") != expected_crop_ids:
+        bindings.append("browser has unbound SVG nodes")
+    image_nodes = dom.get("image_nodes", [])
+    if len(image_nodes) != len(expected_crop_ids) or [
+        item.get("crop_id") for item in image_nodes
+    ] != expected_crop_ids or any(item.get("tag") != "image" for item in image_nodes):
+        bindings.append("browser has unbound crop image nodes")
+
+    figure_summaries: list[dict[str, Any]] = []
+    crop_summaries: list[dict[str, Any]] = []
+    figure_fragments: dict[str, str | None] = {}
+    for expected in expected_figures:
+        matches = [item for item in figures if item.get("id") == expected["id"]]
+        caption_matches = False
+        label_matches = False
+        if len(matches) == 1:
+            observed = matches[0]
+            figure_fragments[expected["id"]] = observed.get("fragment_id")
+            if observed.get("dom_id") != expected["dom_id"]:
+                bindings.append(f"browser figure {expected['id']} DOM ID mismatch")
+            if not observed.get("fragment_id"):
+                bindings.append(f"browser figure {expected['id']} is outside a bound fragment")
+            label_matches = normalize_text(
+                str(observed.get("aria_label") or "")
+            ) == normalize_text(expected["alt"])
+            if not label_matches:
+                bindings.append(f"browser figure {expected['id']} aria-label mismatch")
+            owned_captions = [
+                item for item in captions if item.get("owner") == expected["id"]
+            ]
+            caption_matches = (
+                len(owned_captions) == 1
+                and owned_captions[0].get("visible") is True
+                and owned_captions[0].get("text") == caption_text(expected["caption_html"])
+            )
+            if not caption_matches:
+                bindings.append(f"browser figure {expected['id']} caption mismatch")
+        figure_summaries.append(
+            {
+                "id": expected["id"],
+                "matches": len(matches),
+                "accessible_label_matches": label_matches,
+                "caption_matches": caption_matches,
+            }
         )
-        if (
-            crop_width <= 0
-            or crop_height <= 0
-            or width <= 0
-            or height <= 0
-            or abs(width / height - crop_width / crop_height) > 0.01
-        ):
-            bindings.append(f"browser crop {part['id']} geometry mismatch")
-    return errors, bindings
+    if len(captions) != len(expected_figures):
+        bindings.append("browser has unbound figcaption nodes")
+    for figure, part in expected_parts:
+        matches = [item for item in crops if item.get("id") == part["id"]]
+        source_matches = viewbox_matches = geometry_matches = label_matches = False
+        if len(matches) == 1:
+            observed = matches[0]
+            if observed.get("tag") != "svg" or observed.get("owner") != figure["id"]:
+                bindings.append(f"browser crop {part['id']} ownership mismatch")
+            if observed.get("fragment_id") != figure_fragments.get(figure["id"]):
+                bindings.append(f"browser crop {part['id']} fragment ownership mismatch")
+            label_matches = (
+                observed.get("role") == "img"
+                and normalize_text(str(observed.get("aria_label") or ""))
+                == normalize_text(f"{figure['alt']} - part {part['order']}")
+            )
+            if not label_matches:
+                bindings.append(f"browser crop {part['id']} role or aria-label mismatch")
+            bbox = manifest_bbox(part["bbox"])
+            if bbox is not None:
+                expected_viewbox = [
+                    bbox[0],
+                    bbox[1],
+                    bbox[2] - bbox[0],
+                    bbox[3] - bbox[1],
+                ]
+                viewbox_matches = same_numbers(
+                    observed.get("view_box"),
+                    expected_viewbox,
+                )
+                rect = observed.get("rect", {})
+                try:
+                    width = float(rect.get("width", 0))
+                    height = float(rect.get("height", 0))
+                except (TypeError, ValueError):
+                    width = height = 0.0
+                geometry_matches = (
+                    observed.get("visible") is True
+                    and same_aspect_ratio(
+                        width,
+                        height,
+                        expected_viewbox[2],
+                        expected_viewbox[3],
+                    )
+                )
+            source_matches = (
+                observed.get("image_count") == 1
+                and file_url_path(str(observed.get("image_url") or ""))
+                == confined(context.root, part["source_svg"]["path"])
+            )
+            if not viewbox_matches:
+                bindings.append(f"browser crop {part['id']} viewBox mismatch")
+            if not geometry_matches:
+                bindings.append(f"browser crop {part['id']} rendered geometry mismatch")
+            if not source_matches:
+                bindings.append(f"browser crop {part['id']} source mismatch")
+        crop_summaries.append(
+            {
+                "id": part["id"],
+                "figure_id": figure["id"],
+                "matches": len(matches),
+                "accessible_label_matches": label_matches,
+                "source_matches": source_matches,
+                "viewbox_matches": viewbox_matches,
+                "geometry_matches": geometry_matches,
+            }
+        )
+    summary = {
+        "document": {
+            "main_id": dom.get("main", {}).get("id"),
+            "fragment_ids": observed_fragment_ids,
+            "duplicate_ids": dom.get("duplicates", []),
+            "character_set": character_set or None,
+            "http_equiv_metadata_count": http_equiv_count,
+            "page_binding": page_summary,
+        },
+        "figures": figure_summaries,
+        "crops": crop_summaries,
+    }
+    return errors, bindings, summary
+
+
 def pdf_signature(report: Pdf, field: str) -> list[Any]:
     if field == "geometry":
         return [
@@ -2811,12 +2473,14 @@ def pdf_findings(
         font_record = {
             "font_count": len(font_items),
             "unembedded": [item["base_name"] for item in font_items if not item["embedded"] and not item["type3"]],
+            "unsubset": [item["base_name"] for item in font_items if not item["subset"] and not item["type3"]],
             "undeclared": [item["base_name"] for item in font_items if not item["declared"]],
             "missing_roles": report.detail["missing_roles"],
         }
         if (
             not font_items
             or font_record["unembedded"]
+            or font_record["unsubset"]
             or font_record["undeclared"]
             or font_record["missing_roles"]
         ):
@@ -2887,7 +2551,7 @@ def request_failure_summary(
     requests: dict[str, list[str]],
 ) -> dict[str, dict[str, Any]]:
     summary: dict[str, dict[str, Any]] = {}
-    for category in ("blocked_nonlocal", "failed_local"):
+    for category in ("blocked_requests", "failed_requests"):
         values = requests[category]
         if values:
             summary[category] = {
@@ -2897,35 +2561,45 @@ def request_failure_summary(
     return summary
 def build_evidence(
     context: Context,
-    static: StaticAudit,
+    passive: PassiveAudit,
     renders: tuple[Render, Render],
     reports: dict[str, Pdf],
     after: TreeSnapshot,
 ) -> dict[str, Any]:
     first, second = renders
-    first_dom, first_bindings = dom_errors(first.dom, context)
-    second_dom, second_bindings = dom_errors(second.dom, context)
+    first_dom, first_bindings, first_summary = dom_errors(first.dom, context)
+    second_dom, second_bindings, second_summary = dom_errors(second.dom, context)
     request_errors = {
         f"render_{index}": summary
         for index, render in enumerate(renders, 1)
         if (summary := request_failure_summary(render.requests))
     }
-    html_errors = [*static.errors, *first_dom, *second_dom]
+    html_errors = [*passive.errors, *first_dom, *second_dom]
     geometry_errors, font_errors, behavior_errors = pdf_findings(reports)
-    first_segments = cast("list[dict[str, Any]]", first.dom.get("text_segments", []))
-    second_segments = cast("list[dict[str, Any]]", second.dom.get("text_segments", []))
+    first_segments = cast(
+        "list[dict[str, Any]]",
+        first.dom.get("text_segments", []),
+    )
+    second_segments = cast(
+        "list[dict[str, Any]]",
+        second.dom.get("text_segments", []),
+    )
     if first_segments != second_segments:
-        html_errors.append("browser visible-text segments differ between renders")
+        html_errors.append("browser visible-text observations differ between renders")
     for name, report in reports.items():
         missing = missing_text_segments(report, first_segments)
         if missing:
-            behavior_errors.setdefault(name, {})["missing_expected_text_sha256"] = missing
+            behavior_errors.setdefault(name, {})[
+                "missing_expected_text_sha256"
+            ] = missing
     behavior_observations = {
         name: {
             "actions": report.evidence["actions"],
             "type3_fonts": report.evidence["type3_fonts"],
             "text_characters": report.evidence["text_characters"],
-            "replacement_characters": report.evidence["replacement_characters"],
+            "replacement_characters": report.evidence[
+                "replacement_characters"
+            ],
         }
         for name, report in reports.items()
     }
@@ -2933,14 +2607,31 @@ def build_evidence(
         f"render_{index}": render.geometry
         for index, render in enumerate(renders, 1)
         if render.geometry["horizontal_overflow"]
-        or abs(render.geometry["client_width_css_px"] - render.geometry["probe_width_css_px"]) > 1
+        or abs(
+            render.geometry["client_width_css_px"]
+            - render.geometry["probe_width_css_px"]
+        )
+        > 1
     }
-    binding_errors = [*static.binding_errors, *first_bindings, *second_bindings]
-    figure_records = {item["id"]: dict(item) for item in static.figures}
-    crop_records = {item["id"]: dict(item) for item in static.crops}
+    binding_errors = [
+        *passive.binding_errors,
+        *first_bindings,
+        *second_bindings,
+    ]
+    first_figures = {
+        item["id"]: item for item in first_summary["figures"]
+    }
+    second_figures = {
+        item["id"]: item for item in second_summary["figures"]
+    }
+    first_crops = {item["id"]: item for item in first_summary["crops"]}
+    second_crops = {item["id"]: item for item in second_summary["crops"]}
+    figures: list[dict[str, Any]] = []
+    crops: list[dict[str, Any]] = []
     for figure in context.manifest["figures"]:
-        figure_records.setdefault(
-            figure["id"],
+        first_figure = first_figures.get(figure["id"], {})
+        second_figure = second_figures.get(figure["id"], {})
+        figures.append(
             {
                 "id": figure["id"],
                 "dom_id": figure["dom_id"],
@@ -2949,39 +2640,77 @@ def build_evidence(
                 "embedded_language_inventory": figure[
                     "embedded_language_inventory"
                 ],
-                "matches": 0,
-                "caption_matches": False,
-            },
+                "render_matches": [
+                    first_figure.get("matches", 0),
+                    second_figure.get("matches", 0),
+                ],
+                "accessible_labels_match": all(
+                    item.get("accessible_label_matches") is True
+                    for item in (first_figure, second_figure)
+                ),
+                "captions_match": all(
+                    item.get("caption_matches") is True
+                    for item in (first_figure, second_figure)
+                ),
+            }
         )
         for part in figure["parts"]:
-            crop_records.setdefault(
-                part["id"],
+            first_crop = first_crops.get(part["id"], {})
+            second_crop = second_crops.get(part["id"], {})
+            width, height = passive.source_svgs.get(
+                part["source_svg"]["path"],
+                (0.0, 0.0),
+            )
+            bbox_confined = bbox_within_source(
+                part["bbox"],
+                (width, height),
+            )
+            crops.append(
                 {
                     "id": part["id"],
                     "figure_id": figure["id"],
                     "pdf_page": part["pdf_page"],
-                    "dom_matches": 0,
                     "source_svg_sha256": part["source_svg"]["sha256"],
-                    "bbox_matches": False,
-                    "geometry_matches": False,
-                },
+                    "source_bbox_confined": bbox_confined,
+                    "render_matches": [
+                        first_crop.get("matches", 0),
+                        second_crop.get("matches", 0),
+                    ],
+                    "accessible_labels_match": all(
+                        item.get("accessible_label_matches") is True
+                        for item in (first_crop, second_crop)
+                    ),
+                    "source_matches": all(
+                        item.get("source_matches") is True
+                        for item in (first_crop, second_crop)
+                    ),
+                    "viewbox_matches": all(
+                        item.get("viewbox_matches") is True
+                        for item in (first_crop, second_crop)
+                    ),
+                    "geometry_matches": all(
+                        item.get("geometry_matches") is True
+                        for item in (first_crop, second_crop)
+                    ),
+                }
             )
-    figures = [
-        {
-            **figure_records[item["id"]],
-            "source_label": item["source_label"],
-            "profile": item["profile"],
-            "embedded_language_inventory": item[
-                "embedded_language_inventory"
-            ],
-        }
-        for item in context.manifest["figures"]
-    ]
-    crops = [crop_records[part["id"]] for figure in context.manifest["figures"] for part in figure["parts"]]
     binding_pass = (
         not binding_errors
-        and all(item["matches"] == 1 and item["caption_matches"] for item in figures)
-        and all(item["dom_matches"] == 1 and item["bbox_matches"] and item["geometry_matches"] for item in crops)
+        and all(
+            item["render_matches"] == [1, 1]
+            and item["accessible_labels_match"]
+            and item["captions_match"]
+            for item in figures
+        )
+        and all(
+            item["source_bbox_confined"]
+            and item["render_matches"] == [1, 1]
+            and item["accessible_labels_match"]
+            and item["source_matches"]
+            and item["viewbox_matches"]
+            and item["geometry_matches"]
+            for item in crops
+        )
     )
     canonical, render_1, render_2 = (
         reports["canonical"],
@@ -2989,16 +2718,31 @@ def build_evidence(
         reports["render_2"],
     )
     repeatability = {
-        "raw_render_pdfs_equal": render_1.detail["raw_sha256"] == render_2.detail["raw_sha256"],
-        "render_geometry_equal": pdf_signature(render_1, "geometry") == pdf_signature(render_2, "geometry"),
-        "render_text_equal": pdf_signature(render_1, "text_sha256") == pdf_signature(render_2, "text_sha256"),
-        "render_rasters_equal": pdf_signature(render_1, "raster_sha256") == pdf_signature(render_2, "raster_sha256"),
-        "canonical_geometry_matches": pdf_signature(canonical, "geometry")
-        == pdf_signature(render_1, "geometry")
-        == pdf_signature(render_2, "geometry"),
-        "canonical_text_matches": pdf_signature(canonical, "text_sha256")
-        == pdf_signature(render_1, "text_sha256")
-        == pdf_signature(render_2, "text_sha256"),
+        "raw_render_pdfs_equal": (
+            render_1.detail["raw_sha256"] == render_2.detail["raw_sha256"]
+        ),
+        "render_geometry_equal": (
+            pdf_signature(render_1, "geometry")
+            == pdf_signature(render_2, "geometry")
+        ),
+        "render_text_equal": (
+            pdf_signature(render_1, "text_sha256")
+            == pdf_signature(render_2, "text_sha256")
+        ),
+        "render_rasters_equal": (
+            pdf_signature(render_1, "raster_sha256")
+            == pdf_signature(render_2, "raster_sha256")
+        ),
+        "canonical_geometry_matches": (
+            pdf_signature(canonical, "geometry")
+            == pdf_signature(render_1, "geometry")
+            == pdf_signature(render_2, "geometry")
+        ),
+        "canonical_text_matches": (
+            pdf_signature(canonical, "text_sha256")
+            == pdf_signature(render_1, "text_sha256")
+            == pdf_signature(render_2, "text_sha256")
+        ),
     }
     repeatability_pass = all(
         repeatability[key]
@@ -3010,8 +2754,13 @@ def build_evidence(
             "canonical_text_matches",
         )
     )
+    repeatability["raw_byte_difference_advisory"] = (
+        not repeatability["raw_render_pdfs_equal"] and repeatability_pass
+    )
     rasters = [item for report in reports.values() for item in report.rasters]
-    expected_rasters = sum(report.evidence["page_count"] for report in reports.values())
+    expected_rasters = sum(
+        report.evidence["page_count"] for report in reports.values()
+    )
     raster_keys = {(item["source"], item["page"]) for item in rasters}
     raster_pass = len(rasters) == expected_rasters == len(raster_keys)
     tree_same = unchanged(context.before, after)
@@ -3020,67 +2769,108 @@ def build_evidence(
         checks,
         "manifest.integrity",
         not context.errors,
-        "Assembly manifest, profile identity, declared regular-file tree, hashes, path confinement, and initial fingerprint match.",
+        (
+            "Assembly manifest schema, bundled profile identity/hash, semantic "
+            "asset union, retained regular-file closure, relations, and initial "
+            "publication fingerprint match."
+        ),
         {"findings": context.errors},
     )
     add_check(
         checks,
         "html.offline-profile",
         not html_errors and not request_errors,
-        "Copied fragments and retained stylesheets satisfy the shared positive profile; generated HTML/CSS is closed, passive, local, and manifest-bound.",
+        (
+            "Bundled profile identity and observable offline, passive-resource, "
+            "stylesheet, document-language, and semantic-content outcomes match."
+        ),
         {
             "findings": html_errors,
             "request_findings": request_errors,
-            "static_document": static.document,
+            "render_observations": [
+                first_summary["document"],
+                second_summary["document"],
+            ],
         },
     )
     add_check(
         checks,
         "render.geometry-overflow",
         not geometry_errors and not overflow,
-        "Both render DOMs fit the printable width, and all MediaBox/CropBox geometry matches the declared page size.",
+        (
+            "Both fresh render DOMs fit the printable width, and canonical plus "
+            "rendered PDF page count and physical geometry match the manifest."
+        ),
         {
             "overflow": overflow,
             "findings": geometry_errors,
-            "pdf_pages": {name: report.detail["pages"] for name, report in reports.items()},
+            "pdf_pages": {
+                name: report.detail["pages"]
+                for name, report in reports.items()
+            },
         },
     )
     add_check(
         checks,
         "pdf.fonts",
         not font_errors,
-        "Canonical and rendered PDFs use embedded manifest-declared fonts and include the required role families.",
+        (
+            "Canonical and rendered PDFs use embedded, subset, manifest-declared "
+            "fonts and include the required role families."
+        ),
         {
             "findings": font_errors,
-            "fonts": {name: report.detail["fonts"] for name, report in reports.items()},
+            "fonts": {
+                name: report.detail["fonts"]
+                for name, report in reports.items()
+            },
         },
     )
     add_check(
         checks,
         "pdf.actions-type3-text",
         not behavior_errors,
-        "Canonical and rendered PDFs have no detected unsafe action witnesses or Type 3 fonts and retain extractable text without replacement characters.",
-        {"findings": behavior_errors, "observations": behavior_observations},
+        (
+            "Canonical and rendered PDFs have no unsafe action witnesses or "
+            "Type 3 fonts and retain normalized extractable text without "
+            "replacement characters."
+        ),
+        {
+            "findings": behavior_errors,
+            "observations": behavior_observations,
+        },
     )
     add_check(
         checks,
         "figures.crop-bindings",
         binding_pass,
-        "Every manifest figure and crop binds exactly once to its caption, copied source SVG, source box, and browser geometry; bounded source-fact samples are included in evidence.",
-        {"findings": binding_errors, "figures": figures, "crops": crops},
+        (
+            "Both renders bind every manifest figure, visible caption, crop, "
+            "source SVG, source box, and viewBox exactly once; computed "
+            "accessible names and rendered aspect ratios match within relative "
+            "tolerance."
+        ),
+        {
+            "findings": binding_errors,
+            "figures": figures,
+            "crops": crops,
+        },
     )
     add_check(
         checks,
         "render.repeatability",
         repeatability_pass,
-        "Independent renders agree in geometry, normalized text, and rasters; canonical geometry and text match both.",
+        (
+            "Fresh renders agree in normalized geometry, text, and rasters; raw "
+            "PDF byte inequality is advisory when normalized outcomes agree."
+        ),
         repeatability,
     )
     add_check(
         checks,
         "rasters.complete",
         raster_pass,
-        "Every page of the canonical PDF and both renders has one full-page raster.",
+        "Every page of the canonical PDF and both renders has one bounded full-page raster.",
         {
             "expected": expected_rasters,
             "observed": len(rasters),
@@ -3097,7 +2887,14 @@ def build_evidence(
     check_counts = Counter(check["id"] for check in checks)
     if any(check_counts[identifier] != 1 for identifier in CORE_CHECK_IDS):
         raise AuditError("implementation did not emit every core check exactly once")
-    status = "pass" if all(check["passed"] for check in checks) else "fail"
+    status = (
+        "fail"
+        if any(
+            check["severity"] == "blocking" and not check["passed"]
+            for check in checks
+        )
+        else "pass"
+    )
     evidence = {
         "schema_version": "1.0",
         "publication_id": context.manifest["publication_id"],
@@ -3137,8 +2934,11 @@ def build_evidence(
     }
     findings = validate_schema(evidence, EVIDENCE_SCHEMA)
     if findings:
-        raise AuditError("generated QA evidence violates schema: " + "; ".join(findings))
+        raise AuditError(
+            "generated QA evidence violates schema: " + "; ".join(findings)
+        )
     return evidence
+
 
 def beneath(path: Path, root: Path) -> bool:
     try:
@@ -3146,278 +2946,150 @@ def beneath(path: Path, root: Path) -> bool:
     except ValueError:
         return False
     return True
-def is_reparse(path: Path) -> bool:
-    try:
-        info = path.lstat()
-    except FileNotFoundError:
-        return False
-    return stat.S_ISLNK(info.st_mode) or bool(
-        getattr(info, "st_file_attributes", 0) & REPARSE_POINT_ATTRIBUTE
-    )
+
+
 def strictly_beneath(path: Path, root: Path) -> bool:
     try:
         relative = path.relative_to(root)
     except ValueError:
         return False
     return bool(relative.parts)
-def windows_alias_key(path: Path) -> tuple[str, ...]:
-    return tuple(part.rstrip(" .").casefold() for part in path.parts)
-def same_filesystem_object(left: Path, right: Path) -> bool:
+
+
+def paths_overlap(left: Path, right: Path) -> bool:
+    portable_left = Path(str(left).casefold())
+    portable_right = Path(str(right).casefold())
+    return beneath(portable_left, portable_right) or beneath(
+        portable_right,
+        portable_left,
+    )
+
+
+def windows_path_ok(path: Path) -> bool:
+    return all(
+        not part.endswith((".", " "))
+        for part in path.parts
+        if part not in {path.anchor, path.drive, "\\", "/"}
+    )
+
+
+def require_fresh_root(root: Path) -> None:
     try:
-        return left.samefile(right)
-    except OSError as error:
-        raise AuditError(f"cannot compare QA output filesystem identity: {error}") from error
-def nearest_existing_ancestor(path: Path) -> Path:
-    candidate = path
-    while True:
-        try:
-            candidate.lstat()
-        except FileNotFoundError:
-            parent = candidate.parent
-            if parent == candidate:
-                raise AuditError(
-                    f"QA output path has no existing filesystem ancestor: {path}"
-                ) from None
-            candidate = parent
-        except OSError as error:
-            raise AuditError(f"cannot inspect QA output filesystem identity: {error}") from error
-        else:
-            return candidate
-def physically_contains(container: Path, candidate: Path) -> bool:
-    try:
-        container.lstat()
+        root.lstat()
     except FileNotFoundError:
-        return False
+        return
     except OSError as error:
-        raise AuditError(f"cannot inspect QA output filesystem identity: {error}") from error
-    existing = nearest_existing_ancestor(candidate)
-    try:
-        resolved = existing.resolve(strict=True)
-    except OSError as error:
-        raise AuditError(f"cannot resolve QA output filesystem identity: {error}") from error
-    return any(
-        same_filesystem_object(container, ancestor)
-        for ancestor in (resolved, *resolved.parents)
-    )
-def physically_overlaps(left: Path, right: Path) -> bool:
-    return physically_contains(left, right) or physically_contains(right, left)
-def aliases_existing_ancestor(path: Path, other: Path, root: Path) -> bool:
-    for ancestor in other.parents:
-        if same_filesystem_object(path, ancestor):
-            return True
-        if same_filesystem_object(root, ancestor):
-            break
-    return False
-def validate_candidate_layout(layout: ReviewLayout) -> None:
-    try:
-        root = layout.root.resolve(strict=True)
-    except OSError as error:
-        raise AuditError(f"cannot resolve QA candidate root: {error}") from error
-    outputs = (
-        ("QA evidence", layout.evidence),
-        ("release manifest", layout.release),
-        ("raster directory", layout.rasters),
-        ("render directory", layout.renders),
-    )
-    existing: list[tuple[str, Path, Path]] = []
-    for label, path in outputs:
-        if not (path.exists() or path.is_symlink()):
-            continue
-        try:
-            resolved = path.resolve(strict=True)
-        except OSError as error:
-            raise AuditError(f"cannot resolve {label}: {error}") from error
-        if not strictly_beneath(resolved, root):
-            raise AuditError(f"{label} resolves outside the QA candidate root")
-        existing.append((label, path, resolved))
-    for index, (left_label, left, left_resolved) in enumerate(existing):
-        for right_label, right, right_resolved in existing[index + 1 :]:
-            if same_filesystem_object(left, right):
-                raise AuditError(
-                    f"{left_label} and {right_label} alias the same filesystem object"
-                )
-            if beneath(left_resolved, right_resolved) or beneath(
-                right_resolved,
-                left_resolved,
-            ) or aliases_existing_ancestor(
-                left,
-                right,
-                root,
-            ) or aliases_existing_ancestor(
-                right,
-                left,
-                root,
-            ):
-                raise AuditError(
-                    f"{left_label} and {right_label} overlap after resolving filesystem aliases"
-                )
-def validate_publication_disjoint(publication: Path, layout: ReviewLayout) -> None:
-    try:
-        publication = publication.resolve(strict=True)
-    except OSError as error:
-        raise AuditError(f"cannot resolve publication root for QA output safety: {error}") from error
-    outputs = (
-        (layout.root, "review root must be disjoint from the publication tree"),
-        (layout.evidence, "QA evidence must be disjoint from the publication tree"),
-        (layout.release, "release manifest must be disjoint from the publication tree"),
-        (layout.rasters, "rasters must be disjoint from the publication tree"),
-        (layout.renders, "independent renders must be disjoint from the publication tree"),
-    )
-    for path, message in outputs:
-        if physically_overlaps(publication, path):
-            raise AuditError(message)
-def validate_review_root(layout: ReviewLayout) -> bool:
-    try:
-        root_info = layout.root.lstat()
-    except FileNotFoundError:
-        return False
-    root_reparse = (
-        stat.S_ISLNK(root_info.st_mode)
-        or bool(getattr(root_info, "st_file_attributes", 0) & REPARSE_POINT_ATTRIBUTE)
-    )
-    if root_reparse or not stat.S_ISDIR(root_info.st_mode):
-        raise AuditError(f"review root exists and is not a regular directory: {layout.root}")
-    if next(layout.root.iterdir(), None) is None:
-        return True
-    try:
-        marker_info = layout.evidence.lstat()
-        marker = layout.evidence.resolve(strict=True)
-    except OSError as error:
-        raise AuditError(
-            f"non-empty review root requires a QA evidence ownership marker at {layout.evidence}: {error}"
-        ) from error
-    marker_reparse = (
-        stat.S_ISLNK(marker_info.st_mode)
-        or bool(getattr(marker_info, "st_file_attributes", 0) & REPARSE_POINT_ATTRIBUTE)
-    )
-    if (
-        marker_reparse
-        or not stat.S_ISREG(marker_info.st_mode)
-        or not strictly_beneath(marker, layout.root)
-    ):
-        raise AuditError(
-            f"non-empty review root requires a regular non-symlink QA evidence ownership marker: "
-            f"{layout.evidence}"
-        )
-    return True
+        raise AuditError("cannot inspect the final review root") from error
+    raise AuditError("final review root already exists; use a fresh root")
+
+
 def prepare_outputs(
     evidence: Path,
     release: Path,
     rasters: Path,
     publication: Path,
 ) -> ReviewLayout:
-    evidence, release, rasters, publication = (
-        Path(os.path.abspath(path))  # noqa: PTH100 - validate requested layout without following stale outputs.
+    if os.name == "nt" and any(
+        not windows_path_ok(path) for path in (evidence, release, rasters)
+    ):
+        raise AuditError(
+            "QA output paths must not contain Windows components ending in a dot or space"
+        )
+    requested = [
+        Path(os.path.abspath(path))  # noqa: PTH100 - inspect requested paths without following a stale root.
         for path in (evidence, release, rasters, publication)
-    )
+    ]
+    evidence, release, rasters, publication = requested
     review_root = release.parent
     renders = evidence.parent / RENDER_DIRECTORY
+    require_fresh_root(review_root)
     if evidence == release:
         raise AuditError("evidence and release manifests must be distinct")
+    if not strictly_beneath(evidence, review_root):
+        raise AuditError("evidence must be beneath the final review root")
+    if not strictly_beneath(rasters, review_root):
+        raise AuditError("rasters must be beneath the final review root")
+    if not strictly_beneath(renders, review_root):
+        raise AuditError("independent renders must be beneath the final review root")
+    if not strictly_beneath(rasters, evidence.parent):
+        raise AuditError("rasters must be beneath the evidence directory")
+    lexical_outputs = [evidence, release, rasters, renders]
+    for index, left in enumerate(lexical_outputs):
+        for right in lexical_outputs[index + 1 :]:
+            if paths_overlap(left, right):
+                raise AuditError("QA output paths overlap lexically")
     try:
-        evidence_relative = evidence.relative_to(review_root)
-    except ValueError as error:
-        raise AuditError("evidence must be beneath the release-manifest directory") from error
-    if not evidence_relative.parts:
-        raise AuditError("evidence must be beneath the release-manifest directory")
-    try:
-        rasters.relative_to(evidence.parent)
-    except ValueError as error:
-        raise AuditError("rasters must be beneath the evidence directory") from error
-    relative_outputs = (
-        (evidence, "QA evidence"), (release, "release manifest"),
-        (rasters, "rasters"), (renders, "independent renders"),
-    )
-    if os.name == "nt":
-        aliases: dict[tuple[str, ...], str] = {}
-        for path, label in relative_outputs:
-            key = windows_alias_key(path)
-            if key != tuple(part.casefold() for part in path.parts):
-                raise AuditError(
-                    f"{label} must not contain Windows path components ending in a dot or space"
-                )
-            if key in aliases:
-                raise AuditError(
-                    f"{label} aliases {aliases[key]} under Windows path semantics"
-                )
-            aliases[key] = label
-    for path, label in relative_outputs:
-        if not strictly_beneath(path, review_root):
-            raise AuditError(f"{label} must be beneath the review root")
-    if is_reparse(review_root):
-        raise AuditError(f"review root is a symlink or reparse point: {review_root}")
-    resolved_root = review_root.resolve(strict=False)
-    def remap(path: Path) -> Path:
-        return resolved_root.joinpath(*path.relative_to(review_root).parts)
+        publication_root = publication.resolve(strict=True)
+    except OSError as error:
+        raise AuditError("cannot resolve the publication root") from error
+    canonical_root = review_root.resolve(strict=False)
+
+    def canonical(path: Path) -> Path:
+        resolved = path.resolve(strict=False)
+        if not strictly_beneath(resolved, canonical_root):
+            raise AuditError("QA output resolves outside the final review root")
+        return resolved
+
     layout = ReviewLayout(
-        resolved_root,
-        remap(evidence),
-        remap(release),
-        remap(rasters),
-        remap(renders),
+        canonical_root,
+        canonical(evidence),
+        canonical(release),
+        canonical(rasters),
+        canonical(renders),
     )
-    outputs = (
-        (layout.evidence, "QA evidence"), (layout.release, "release manifest"),
-        (layout.rasters, "rasters"), (layout.renders, "independent renders"),
-    )
-    validate_publication_disjoint(publication, layout)
-    paths = [path for path, _label in outputs]
-    for index, left in enumerate(paths):
-        for right in paths[index + 1 :]:
-            if beneath(left, right) or beneath(right, left):
-                raise AuditError("QA output paths must not overlap")
-    validate_review_root(layout)
+    canonical_outputs = [
+        layout.evidence,
+        layout.release,
+        layout.rasters,
+        layout.renders,
+    ]
+    for index, left in enumerate(canonical_outputs):
+        for right in canonical_outputs[index + 1 :]:
+            if paths_overlap(left, right):
+                raise AuditError("QA output paths overlap canonically")
+    if paths_overlap(publication_root, layout.root) or any(
+        paths_overlap(publication_root, output)
+        for output in canonical_outputs
+    ):
+        raise AuditError("final review output must be disjoint from the publication tree")
     return layout
-def make_stage(layout: ReviewLayout) -> Path:
+
+
+def make_candidate(layout: ReviewLayout) -> Path:
     layout.root.parent.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix=f".{layout.root.name}.staging-", dir=layout.root.parent))
-def stage_layout(layout: ReviewLayout, stage: Path) -> ReviewLayout:
+    return Path(
+        tempfile.mkdtemp(
+            prefix=f".{layout.root.name}.candidate-",
+            dir=layout.root.parent,
+        )
+    )
+
+
+def candidate_layout(layout: ReviewLayout, candidate: Path) -> ReviewLayout:
     def remap(path: Path) -> Path:
-        return stage.joinpath(*path.relative_to(layout.root).parts)
+        return candidate.joinpath(*path.relative_to(layout.root).parts)
+
     return ReviewLayout(
-        stage,
+        candidate,
         remap(layout.evidence),
         remap(layout.release),
         remap(layout.rasters),
         remap(layout.renders),
     )
+
+
 def initialize_candidate(layout: ReviewLayout) -> None:
     layout.evidence.parent.mkdir(parents=True, exist_ok=True)
     layout.rasters.mkdir(parents=True, exist_ok=True)
     layout.renders.mkdir(parents=True, exist_ok=True)
-    validate_candidate_layout(layout)
-def publish_review(stage: Path, layout: ReviewLayout, publication: Path) -> None:
-    had_root = validate_review_root(layout)
-    validate_publication_disjoint(publication, layout)
-    backup: Path | None = None
+
+
+def publish_review(candidate: Path, layout: ReviewLayout) -> None:
     try:
-        if had_root:
-            backup = layout.root.with_name(f".{layout.root.name}.backup-{uuid.uuid4().hex}")
-            layout.root.replace(backup)
-        stage.replace(layout.root)
-    except (OSError, KeyboardInterrupt) as error:
-        try:
-            if backup is not None and backup.exists():
-                if layout.root.exists():
-                    shutil.rmtree(layout.root)
-                backup.replace(layout.root)
-            elif not had_root and layout.root.exists():
-                shutil.rmtree(layout.root)
-        except OSError as rollback_error:
-            raise AuditError(
-                f"cannot restore review output after {error}; backup remains at {backup}: {rollback_error}"
-            ) from rollback_error
-        if isinstance(error, KeyboardInterrupt):
-            raise
-        raise AuditError(f"cannot publish review directory: {error}") from error
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
-    if backup is not None:
-        try:
-            shutil.rmtree(backup)
-        except OSError as error:
-            eprint(f"warning: review committed but backup remains at {backup}: {error}")
+        candidate.rename(layout.root)
+    except OSError as error:
+        raise AuditError("cannot rename the completed review candidate") from error
+
 
 def release_manifest(context: Context, evidence: Path, release: Path) -> dict[str, Any]:
     value = {
@@ -3444,12 +3116,17 @@ def audit_candidate(
     layout: ReviewLayout,
 ) -> int:
     initialize_candidate(layout)
-    renders = render_pair(context, layout.renders, layout.evidence.parent, args.browser)
-    static = audit_html(context)
+    passive = audit_passive(context)
     page_size = context.manifest["print_geometry"]["page_size"]
     canonical = inspect_pdf(
         context.pdf.file, context.pdf.path, page_size, layout.rasters / "canonical",
         "canonical", layout.evidence.parent, context.manifest,
+    )
+    renders = render_pair(
+        context,
+        layout.renders,
+        layout.evidence.parent,
+        args.browser,
     )
     try:
         render_1 = inspect_pdf(
@@ -3473,44 +3150,67 @@ def audit_candidate(
     except PublicationError as error:
         raise AuditError(f"cannot inspect generated browser PDF: {error}") from error
     reports = {"canonical": canonical, "render_1": render_1, "render_2": render_2}
-    evidence = build_evidence(context, static, renders, reports, snapshot(context.root))
+    evidence = build_evidence(
+        context,
+        passive,
+        renders,
+        reports,
+        snapshot(context.root),
+    )
     write_json(layout.evidence, evidence)
-    validate_candidate_layout(layout)
     if evidence["mechanical_status"] != "pass":
         return 1
-    write_json(layout.release, release_manifest(context, layout.evidence, layout.release))
-    validate_candidate_layout(layout)
+    release = release_manifest(context, layout.evidence, layout.release)
+    write_json(layout.release, release)
     return 0
 def audit(args: argparse.Namespace) -> int:
     if not args.render_twice:
         raise AuditError("--render-twice is required")
-    publication_root = args.assembly_manifest.resolve().parent
+    try:
+        manifest_file = args.assembly_manifest.resolve(strict=True)
+    except OSError as error:
+        raise AuditError("cannot resolve the assembly manifest") from error
+    publication_root = manifest_file.parent
     final_layout = prepare_outputs(
         args.evidence, args.release_manifest, args.rasters, publication_root
     )
-    context = load_context(args.assembly_manifest, args.html, args.page_size)
-    stage = make_stage(final_layout)
+    context = load_context(manifest_file, args.html, args.page_size)
+    candidate = make_candidate(final_layout)
+    report: str | None = None
     try:
-        result = audit_candidate(args, context, stage_layout(final_layout, stage))
-        publish_review(stage, final_layout, context.root)
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
+        result = audit_candidate(
+            args,
+            context,
+            candidate_layout(final_layout, candidate),
+        )
+        if result == 0:
+            report = json.dumps(
+                {
+                    "publication_id": context.manifest["publication_id"],
+                    "mechanical_status": "pass",
+                    "human_review": "required",
+                    "evidence": str(final_layout.evidence),
+                    "release_manifest": str(final_layout.release),
+                },
+                ensure_ascii=True,
+            )
+        publish_review(candidate, final_layout)
+    except BaseException:
+        if candidate.exists():
+            try:
+                shutil.rmtree(candidate)
+            except OSError as cleanup_error:
+                raise AuditError(
+                    "QA operation failed and candidate cleanup failed; "
+                    f"orphan candidate: {candidate}"
+                ) from cleanup_error
+        raise
     if result != 0:
         eprint("QA completed with blocking findings")
         return result
-    print(
-        json.dumps(
-            {
-                "publication_id": context.manifest["publication_id"],
-                "mechanical_status": "pass",
-                "human_review": "required",
-                "evidence": str(final_layout.evidence),
-                "release_manifest": str(final_layout.release),
-            },
-            ensure_ascii=False,
-        )
-    )
+    if report is None:
+        raise AuditError("passing audit did not serialize its completion report")
+    print(report)
     return 0
 
 def parser() -> argparse.ArgumentParser:
