@@ -173,9 +173,11 @@ namespaces need not be disjoint because crop identity is carried by
 `data-crop-id`, not the HTML `id` attribute. Manifest validation rejects source
 boxes that are not already in their canonical three-decimal form.
 
-The retained page SVG width and height must serialize to the same
-three-decimal values as the source-package page dimensions. Its `viewBox` must
-match its own width and height within the QA geometry tolerance.
+During build, the retained page SVG width and height must serialize to the same
+three-decimal values as the source-package page dimensions. During standalone
+validation, dimensions come from the retained SVG itself. Its `viewBox` must
+match its own positive finite width and height, and every canonical
+three-decimal crop box must be finite, positive, and within those dimensions.
 
 Only page SVGs actually used by emitted figure parts are retained by default.
 
@@ -200,9 +202,9 @@ closure.
 
 During build, selected figure source labels, profiles, embedded-language
 inventories, parts, and boxes are projected from the validated figure map.
-Because that map is not retained, standalone validation checks the manifest
-structure, source-profile membership, and retained crop/SVG bindings, but does
-not replay source labels or language inventories.
+Because that map is not retained, standalone validation checks manifest
+structure, figure-profile membership in the manifest, and retained crop/SVG
+bindings, but does not replay source labels or language inventories.
 
 ## Assembly manifest
 
@@ -217,38 +219,55 @@ not replay source labels or language inventories.
 - font roles and copied font records;
 - copied stylesheet records;
 - HTML, CSS, and optional rendered PDF;
-- the exact retained-file inventory; and
 - assembled status.
 
 The manifest does not repeat full source-package or translation-bundle
-semantics. `tracked_files` covers every retained regular file except the
-self-referential assembly manifest. No unlisted file or special filesystem
-node is part of a valid publication tree.
+semantics. Its authoritative asset inventory is the deduplicated union of
+`inputs.*`, fragment assets, figure-part source SVGs, font assets, stylesheet
+assets, and non-null outputs. Shared paths are valid only when every complete
+asset record is identical. That union must exactly cover every retained
+regular file except the self-referential assembly manifest. No unlisted file,
+link, reparse point, or special filesystem node is part of a valid publication
+tree.
 
 ## Build, render, and validation
 
-Build in a fresh staging directory. Before publication, validate every
-retained byte binding, confined path, profile decision, manifest projection,
-and tree inventory. Publish using same-filesystem replacement within the
-trusted exclusive-write model. Resolve the output parent while preserving its
-lexical final component, so staging remains a sibling and a final symlink,
-junction, dangling link, or other reparse point is rejected. Trusted links in
-ancestor components retain ordinary filesystem semantics. On Windows, reject a
-requested output whose final component ends in a dot or space before any
-replacement work. An existing ordinary output directory is canonicalized
-before staging, replacement, and reporting so a short-name or other filesystem
-alias does not rename the publication. Without `--force`, any existing output
-is rejected. With `--force`, an empty output directory may be replaced; a
-non-empty directory must contain a regular, non-symlink
-`assembly-manifest.json` ownership marker. The marker is not otherwise
-validated, allowing damaged or older Assembly output to be recovered without
-granting replacement authority over an unrelated directory.
+Build remains the strict upstream boundary. Validate the source, bundle, and
+recipe schemas; effective source pass state; closed bundle approval and source
+binding; selected fragments and source blocks; selected figures, page SVGs,
+and boxes; local fonts; authored stylesheets; and only consumed upstream
+material. Build writes one sibling candidate, validates it, and publishes it
+to an absent output through exactly one `candidate.rename(output)`. Any
+existing output entry is rejected unchanged before staging. Failure removes
+the candidate, and a cleanup failure is surfaced. Replacement, ownership
+markers, backups, rollback, alias machinery, and `--force` are not part of the
+contract.
+
+After build, standalone validation loads only `assembly-manifest.json` and the
+files declared by its semantic asset union. The three retained input snapshots
+are opaque hash/length-bound lineage assets: validation does not parse the
+source package, translation bundle, or recipe; replay the recipe; reconstruct
+manifest values; or regenerate and byte-compare composed HTML/CSS. It validates
+the manifest schema, status, policy identity, semantic declaration
+consistency, exact retained-tree closure, hashes and lengths, authored
+fragment/style policy, generated document/CSS structure and local-resource
+bindings, figure/crop/SVG geometry, font parsing and metadata, and bounded PDF
+parseability. The recorded Python runtime need only satisfy the manifest
+schema; the validating patch version need not be identical.
+
+Assembly validates declared font files and authored/generated font bindings,
+but it does not simulate CSS cascade inheritance or prove glyph selection.
+Chromium rendering and downstream QA/PDF inspection own actual glyph
+selection.
 
 Rendering uses JavaScript-disabled Chromium with one request route that permits
-only manifest-tracked local files and `about:blank`. It
-records the resulting PDF binding after validating that the PDF is non-empty
-and parseable. Validation may repeat assembly checks over retained content, but
-it does not require absent upstream assets or the original PDF.
+only manifest-declared semantic assets and `about:blank`, with bounded
+navigation and PDF generation. Render requires both a null
+`outputs.draft_pdf` and an absent destination. It validates a temporary,
+non-empty, parseable PDF with at most 500 pages, moves it into place, then
+atomically rewrites only `outputs.draft_pdf`. A handled failure removes the
+new PDF and restores the prior manifest bytes. Browser path, hash, and
+provenance are not recorded. A second render is rejected unchanged.
 
 ## Non-guarantees
 

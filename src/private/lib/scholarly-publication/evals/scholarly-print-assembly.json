@@ -12,7 +12,8 @@
       "assertions": [
         "publication/assembly-manifest.json validates against assets/assembly-manifest.schema.json and has status assembled.",
         "The manifest binds retained snapshots of the source package, approved translation bundle, and assembly specification, plus the selected approved fragment, local font, stylesheet, HTML, and CSS.",
-        "Every manifest tracked_files entry exists with the recorded hash and byte length, and the publication tree contains no undeclared regular file.",
+        "Standalone validation treats the retained input snapshots as opaque hash/length-bound lineage assets and does not replay their schemas or the recipe.",
+        "The deduplicated semantic asset declarations exactly cover the retained regular files, and every declared asset has the recorded hash and byte length.",
         "The HTML is local and semantic, and neither the manifest nor the response claims independent QA, human review, or release approval."
       ]
     },
@@ -41,7 +42,9 @@
         "The assembly manifest validates against assets/assembly-manifest.schema.json, has status assembled, declares zh-Hans content, Letter geometry, and the music-notation profile.",
         "The HTML preserves the English language span within Chinese prose and contains one captioned logical figure with two ordered crop SVGs.",
         "The manifest figure parts retain the supplied page numbers and boxes and hash-bind the two copied source page SVGs used by the crops.",
-        "The declared local font, approved stylesheet, HTML, CSS, and rendered PDF are tracked with matching hashes and byte lengths.",
+        "The declared local font, approved stylesheet, HTML, CSS, and rendered PDF belong to the manifest semantic asset closure with matching hashes and byte lengths.",
+        "Assembly validates font metadata and CSS bindings without claiming browser glyph selection; the rendered PDF and downstream QA own that observation.",
+        "The build and render use fresh destinations; rerunning either command against the committed path is rejected unchanged.",
         "The output remains an assembly artifact and does not claim independent QA, human approval, or release eligibility."
       ]
     }

@@ -1,7 +1,6 @@
 # /// script
 # requires-python = "==3.12.11"
 # dependencies = [
-#   "cssselect2==0.8.0",
 #   "defusedxml==0.7.1",
 #   "fonttools==4.60.1",
 #   "html5lib==1.1",
@@ -14,8 +13,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import importlib
+import json
+import os
 import sys
 import tempfile
 import time
@@ -23,6 +25,8 @@ import unittest
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest import mock
+
+import fitz
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -47,7 +51,6 @@ read_json = publication_test_support.read_json
 sha256_bytes = publication_test_support.sha256_bytes
 tree_snapshot = publication_test_support.tree_snapshot
 visible_text_sha256 = publication_test_support.visible_text_sha256
-windows_short_path = publication_test_support.windows_short_path
 write_json = publication_test_support.write_json
 write_test_font = publication_test_support.write_test_font
 
@@ -431,7 +434,7 @@ class PublicationProfileContractTests(unittest.TestCase):
             self.load_profile(malformed)
 
 
-class AssemblePrintReplacementTests(unittest.TestCase):
+class AssemblePrintScenarioTests(unittest.TestCase):
     suite_temporary: tempfile.TemporaryDirectory[str]
     suite_root: Path
     baseline_input: Path
@@ -483,7 +486,6 @@ class AssemblePrintReplacementTests(unittest.TestCase):
     def build(
         workspace: Path,
         *,
-        force: bool = False,
         output: Path | None = None,
     ) -> MainResult:
         arguments = [
@@ -493,8 +495,6 @@ class AssemblePrintReplacementTests(unittest.TestCase):
             "--output",
             str(output or workspace / "publication"),
         ]
-        if force:
-            arguments.append("--force")
         return invoke(arguments)
 
     @staticmethod
@@ -512,19 +512,17 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         publication: Path,
         browser: Path,
         *,
-        force: bool = False,
+        pdf: Path | None = None,
     ) -> MainResult:
         arguments = [
             "render",
             "--html",
             str(publication / "index.html"),
             "--pdf",
-            str(publication / "draft.pdf"),
+            str(pdf or publication / "draft.pdf"),
             "--browser",
             str(browser),
         ]
-        if force:
-            arguments.append("--force")
         return invoke(arguments)
 
     @staticmethod
@@ -582,6 +580,30 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         record.update(asset_record(workspace, fragment_path))
         record["visible_text_sha256"] = visible_text_sha256(content)
         write_json(bundle_path, bundle)
+
+    @staticmethod
+    def refresh_output_asset(publication: Path, key: str) -> None:
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        record = manifest["outputs"][key]
+        if not isinstance(record, dict):
+            message = f"manifest output {key!r} is not an asset record"
+            raise TypeError(message)
+        output = publication.joinpath(*Path(record["path"]).parts)
+        manifest["outputs"][key] = asset_record(publication, output)
+        write_json(manifest_path, manifest)
+
+    @staticmethod
+    def write_valid_pdf(
+        _html: Path,
+        output: Path,
+        _browser: Path,
+        _allowed: set[Path],
+    ) -> None:
+        document = fitz.open()
+        document.new_page(width=612, height=792)
+        document.save(output)
+        document.close()
 
     def assert_build_rejected(self, workspace: Path) -> None:
         result = self.build(workspace)
@@ -697,8 +719,6 @@ class AssemblePrintReplacementTests(unittest.TestCase):
             "inputs/source-package.json",
             "inputs/translation-bundle.json",
         ]
-        tracked = [record["path"] for record in manifest["tracked_files"]]
-        self.assertEqual(expected, tracked)
         self.assertEqual(
             expected,
             sorted(
@@ -711,27 +731,47 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         self.assertFalse((publication / "fragments/unused.html").exists())
         self.assertFalse((publication / "maps").exists())
 
-    def test_validate_rejects_recipe_only_figure_profile(self) -> None:
+    def test_validate_uses_manifest_figure_profile_without_recipe_replay(
+        self,
+    ) -> None:
         workspace = self.fresh_workspace()
-        self.update_json(
-            workspace / "assembly-spec.json",
-            lambda value: value["profiles"].append("notation-review"),
-        )
         built = self.build(workspace)
         self.assertEqual(0, built.exit_code, built)
         publication = workspace / "publication"
         manifest_path = publication / "assembly-manifest.json"
         manifest = read_json(manifest_path)
         manifest["figures"][0]["profile"] = "notation-review"
+        manifest["profiles"].append("notation-review")
         write_json(manifest_path, manifest)
 
         validated = self.validate(publication)
 
-        self.assertEqual(2, validated.exit_code, validated)
-        self.assertIn(
-            "profile is not declared by the source package",
-            validated.stderr,
-        )
+        self.assertEqual(0, validated.exit_code, validated)
+
+    def test_validate_treats_input_snapshots_as_opaque_bound_assets(
+        self,
+    ) -> None:
+        publication = self.fresh_publication()
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        payloads = {
+            "source_package": b"{not source JSON",
+            "translation_bundle": b"\xffopaque bundle snapshot",
+            "assembly_spec": b"not a recipe",
+        }
+        for role, payload in payloads.items():
+            record = manifest["inputs"][role]
+            path = publication.joinpath(
+                *Path(record["path"]).parts,
+            )
+            path.write_bytes(payload)
+            record.update(asset_record(publication, path))
+        manifest["generator"]["runtime"] = "python-3.12.10"
+        write_json(manifest_path, manifest)
+
+        validated = self.validate(publication)
+
+        self.assertEqual(0, validated.exit_code, validated)
 
     def test_markup_nesting_limit_accepts_fragment_and_caption_boundary(
         self,
@@ -845,7 +885,7 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         previous_limit = sys.get_int_max_str_digits()
         try:
             sys.set_int_max_str_digits(640)
-            result = self.build(workspace, force=True, output=output)
+            result = self.build(workspace, output=output)
         finally:
             sys.set_int_max_str_digits(previous_limit)
 
@@ -907,7 +947,7 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         previous_limit = sys.get_int_max_str_digits()
         try:
             sys.set_int_max_str_digits(640)
-            result = self.build(workspace, force=True, output=output)
+            result = self.build(workspace, output=output)
         finally:
             sys.set_int_max_str_digits(previous_limit)
 
@@ -922,6 +962,93 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         )
         self.assertNotIn("Traceback", result.stderr)
         self.assertEqual(before, tree_snapshot(output))
+
+    def test_standalone_validate_translates_generated_html_errors(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "numeric-reference",
+                "</body>",
+                f"&#{'9' * 5000};",
+                640,
+                "generated HTML is not valid HTML: Exceeds the limit",
+            ),
+            (
+                "nested-elements",
+                '<h1 id="opening">',
+                nested_span_markup(sys.getrecursionlimit() + 100),
+                None,
+                "generated HTML exceeds runtime validation limits",
+            ),
+        )
+        for name, marker, insertion, integer_limit, message in cases:
+            with self.subTest(case=name):
+                publication = self.fresh_publication(name)
+                html_path = publication / "index.html"
+                content = html_path.read_text(encoding="utf-8")
+                self.assertIn(marker, content)
+                html_path.write_text(
+                    content.replace(marker, f"{insertion}{marker}", 1),
+                    encoding="utf-8",
+                )
+                self.refresh_output_asset(publication, "html")
+
+                previous_limit = sys.get_int_max_str_digits()
+                try:
+                    if integer_limit is not None:
+                        sys.set_int_max_str_digits(integer_limit)
+                    result = self.validate(publication)
+                finally:
+                    sys.set_int_max_str_digits(previous_limit)
+
+                self.assertEqual(2, result.exit_code, result)
+                self.assertEqual({}, result.report)
+                self.assertEqual("", result.stdout)
+                self.assertIn(f"error: {message}", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_standalone_validate_translates_generated_css_parser_errors(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "numeric-value",
+                f"\n:root {{ --oversized: {'9' * 5000}; }}\n",
+                640,
+                "Exceeds the limit",
+            ),
+            (
+                "nested-functions",
+                "\na { x: " + "f(" * 2000 + "x" + ")" * 2000 + "; }\n",
+                None,
+                "maximum recursion depth exceeded",
+            ),
+        )
+        for name, addition, integer_limit, message in cases:
+            with self.subTest(case=name):
+                publication = self.fresh_publication(name)
+                css_path = publication / "assets" / "print.css"
+                with css_path.open("a", encoding="utf-8") as stream:
+                    stream.write(addition)
+                self.refresh_output_asset(publication, "css")
+
+                previous_limit = sys.get_int_max_str_digits()
+                try:
+                    if integer_limit is not None:
+                        sys.set_int_max_str_digits(integer_limit)
+                    result = self.validate(publication)
+                finally:
+                    sys.set_int_max_str_digits(previous_limit)
+
+                self.assertEqual(2, result.exit_code, result)
+                self.assertEqual({}, result.report)
+                self.assertEqual("", result.stdout)
+                self.assertIn(
+                    f"error: generated CSS is not valid CSS: {message}",
+                    result.stderr,
+                )
+                self.assertNotIn("Traceback", result.stderr)
 
     def test_cli_rejects_oversized_json_integer_without_mutating_output(
         self,
@@ -944,7 +1071,7 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         previous_limit = sys.get_int_max_str_digits()
         try:
             sys.set_int_max_str_digits(640)
-            result = self.build(workspace, force=True, output=output)
+            result = self.build(workspace, output=output)
         finally:
             sys.set_int_max_str_digits(previous_limit)
 
@@ -971,7 +1098,7 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         output = self.fresh_publication("deeply-nested-json-output")
         before = tree_snapshot(output)
 
-        result = self.build(workspace, force=True, output=output)
+        result = self.build(workspace, output=output)
 
         self.assertEqual(2, result.exit_code, result)
         self.assertEqual({}, result.report)
@@ -998,7 +1125,7 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         output = self.fresh_publication("unrepresentable-integer-output")
         before = tree_snapshot(output)
 
-        result = self.build(workspace, force=True, output=output)
+        result = self.build(workspace, output=output)
 
         self.assertEqual(2, result.exit_code, result)
         self.assertEqual({}, result.report)
@@ -1285,6 +1412,32 @@ class AssemblePrintReplacementTests(unittest.TestCase):
         validated = self.validate(publication)
         self.assertEqual(0, validated.exit_code, validated)
 
+        part = manifest["figures"][0]["parts"][0]
+        retained_svg = publication.joinpath(
+            *Path(part["source_svg"]["path"]).parts
+        )
+        retained_svg.write_bytes(
+            retained_svg.read_bytes().replace(
+                b'width="360" height="480" viewBox="0 0 360 480"',
+                b'width="400" height="500" viewBox="0 0 400 500"',
+                1,
+            )
+        )
+        part["source_svg"] = asset_record(publication, retained_svg)
+        html_path = publication / "index.html"
+        html_path.write_text(
+            html_path.read_text(encoding="utf-8").replace(
+                'width="360.000" height="480.000"></image>',
+                'width="400.000" height="500.000"></image>',
+                1,
+            ),
+            encoding="utf-8",
+        )
+        manifest["outputs"]["html"] = asset_record(publication, html_path)
+        write_json(publication / "assembly-manifest.json", manifest)
+        retained_dimensions = self.validate(publication)
+        self.assertEqual(0, retained_dimensions.exit_code, retained_dimensions)
+
         manifest["figures"][0]["parts"][0]["bbox"] = [
             10.0001,
             20.0001,
@@ -1331,27 +1484,31 @@ class AssemblePrintReplacementTests(unittest.TestCase):
             manifest["fonts"][0]["postscript_name"],
         )
 
-        cases = (
-            (
-                "invalid",
-                lambda workspace: (
-                    workspace / "fonts" / "fixture.ttf"
-                ).write_bytes(b"not a font"),
-            ),
-            (
-                "undercoverage",
-                lambda workspace: write_test_font(
-                    workspace / "fonts" / "fixture.ttf",
-                    characters=" A",
-                    family="Fixture Serif",
-                ),
-            ),
+        limited = self.fresh_workspace("limited-coverage")
+        write_test_font(
+            limited / "fonts" / "fixture.ttf",
+            characters=" A",
+            family="Fixture Serif",
         )
-        for name, mutation in cases:
-            with self.subTest(case=name):
-                workspace = self.fresh_workspace(name)
-                mutation(workspace)
-                self.assert_build_rejected(workspace)
+        limited_result = self.build(limited)
+        self.assertEqual(0, limited_result.exit_code, limited_result)
+        self.assertEqual(
+            0,
+            self.validate(limited / "publication").exit_code,
+        )
+
+        invalid = self.fresh_workspace("invalid")
+        (invalid / "fonts" / "fixture.ttf").write_bytes(b"not a font")
+        self.assert_build_rejected(invalid)
+
+        publication = self.fresh_publication("invalid-metadata")
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        manifest["fonts"][0]["postscript_name"] = "Incorrect-Name"
+        write_json(manifest_path, manifest)
+        rejected = self.validate(publication)
+        self.assertEqual(2, rejected.exit_code, rejected)
+        self.assertIn("metadata is inconsistent", rejected.stderr)
 
     def test_font_names_reject_css_unsafe_characters(self) -> None:
         cases = (
@@ -1376,238 +1533,151 @@ class AssemblePrintReplacementTests(unittest.TestCase):
                 self.assertIn("CSS-unsafe", rejected.stderr)
                 self.assertFalse((workspace / "publication").exists())
 
-    def test_build_force_replacement_and_late_failure_rollback(self) -> None:
-        workspace = self.fresh_workspace()
+    def test_validate_rejects_css_string_payload_whitespace_drift(
+        self,
+    ) -> None:
+        publication = self.fresh_publication("string-payload-drift")
+        css_path = publication / "assets" / "print.css"
+        content = css_path.read_text(encoding="utf-8")
+        self.assertIn('"Fixture Serif"', content)
+        css_path.write_text(
+            content.replace(
+                '"Fixture Serif"',
+                '"Fixture  Serif"',
+                1,
+            ),
+            encoding="utf-8",
+        )
+        self.refresh_output_asset(publication, "css")
+
+        rejected = self.validate(publication)
+
+        self.assertEqual(2, rejected.exit_code, rejected)
+        self.assertIn(
+            "generated CSS does not match the manifest-bound generated profile",
+            rejected.stderr,
+        )
+
+    def test_build_rejects_every_existing_output_entry_unchanged(self) -> None:
+        workspace = self.fresh_workspace("rerun")
         first = self.build(workspace)
         self.assertEqual(0, first.exit_code, first)
         output = workspace / "publication"
-        original = tree_snapshot(output)
-
-        refused = self.build(workspace)
-        self.assertEqual(2, refused.exit_code)
-        self.assertEqual({}, refused.report)
-        self.assertEqual(original, tree_snapshot(output))
-
-        self.refresh_fragment(
-            workspace,
-            RICH_FRAGMENT.replace(
-                "代表性中文段落",
-                "中文段落代表性",
-            ),
-        )
-        replaced = self.build(workspace, force=True)
-        self.assertEqual(0, replaced.exit_code, replaced)
-        replacement = tree_snapshot(output)
-        self.assertNotEqual(original, replacement)
-
-        self.refresh_fragment(
-            workspace,
-            RICH_FRAGMENT.replace(
-                "代表性中文段落",
-                "段落中文代表性",
-            ),
-        )
-        original_replace = Path.replace
-        parent_before = tree_snapshot(workspace)
-        publish_failed = False
-        failure_message = "synthetic publish failure"
-
-        def fail_late(path: Path, target: Path) -> Path:
-            nonlocal publish_failed
-            if not publish_failed and path != output and Path(target) == output:
-                publish_failed = True
-                raise PermissionError(failure_message)
-            return original_replace(path, target)
-
-        with mock.patch.object(Path, "replace", new=fail_late):
-            failed = self.build(workspace, force=True)
-
-        self.assertEqual(2, failed.exit_code)
-        self.assertEqual({}, failed.report)
-        self.assertEqual(replacement, tree_snapshot(output))
-        self.assertEqual(parent_before, tree_snapshot(workspace))
-
-    @unittest.skipUnless(
-        sys.platform == "win32",
-        "Windows alias suffix behavior is platform-specific.",
-    )
-    def test_windows_output_alias_suffixes_are_rejected_without_replacement(
-        self,
-    ) -> None:
-        workspace = self.fresh_workspace()
-        output = workspace / "publication"
-        initial = self.build(workspace)
-        self.assertEqual(0, initial.exit_code, initial)
         before = tree_snapshot(output)
 
+        rerun = self.build(workspace)
+
+        self.assertEqual(2, rerun.exit_code, rerun)
+        self.assertIn("assembly output already exists", rerun.stderr)
+        self.assertEqual(before, tree_snapshot(output))
+
+        directory_workspace = self.fresh_workspace("existing-directory")
+        directory_output = directory_workspace / "publication"
+        directory_output.mkdir()
+        sentinel = directory_output / "sentinel.txt"
+        sentinel.write_text("unchanged\n", encoding="utf-8")
+        directory_before = tree_snapshot(directory_output)
+
+        directory_result = self.build(directory_workspace)
+
+        self.assertEqual(2, directory_result.exit_code, directory_result)
+        self.assertEqual(directory_before, tree_snapshot(directory_output))
+
+        file_workspace = self.fresh_workspace("existing-file")
+        file_output = file_workspace / "publication"
+        file_output.write_bytes(b"unchanged")
+
+        file_result = self.build(file_workspace)
+
+        self.assertEqual(2, file_result.exit_code, file_result)
+        self.assertEqual(b"unchanged", file_output.read_bytes())
+
+    def test_rejects_unrepresentable_windows_output_paths(self) -> None:
+        if os.name != "nt":
+            self.skipTest("Windows path normalization does not apply")
         for suffix in (".", " "):
             with self.subTest(suffix=repr(suffix)):
-                result = self.build(
-                    workspace,
-                    force=True,
-                    output=workspace / f"publication{suffix}",
-                )
-
-                self.assertEqual(2, result.exit_code, result)
-                self.assertEqual(before, tree_snapshot(output))
-                self.assertIn(
-                    "must not end in a dot or space",
-                    result.stderr,
-                )
-                self.assertFalse(
-                    any(
-                        path.name.startswith(
-                            (
-                                f".{output.name}.staging-",
-                                f".{output.name}.backup-",
-                            )
-                        )
-                        for path in workspace.iterdir()
+                for label, relative in (
+                    ("final", Path(f"publication{suffix}")),
+                    ("parent", Path(f"nested{suffix}") / "publication"),
+                ):
+                    workspace = self.fresh_workspace(
+                        f"windows-output-{label}-{ord(suffix)}"
                     )
-                )
+                    before = tree_snapshot(workspace)
+                    rejected = self.build(
+                        workspace,
+                        output=workspace / relative,
+                    )
+                    self.assertEqual(2, rejected.exit_code, rejected)
+                    self.assertIn(
+                        "must not end in a dot or space",
+                        rejected.stderr,
+                    )
+                    self.assertEqual(before, tree_snapshot(workspace))
 
-    @unittest.skipUnless(
-        sys.platform == "win32",
-        "Windows short-name aliases are platform-specific.",
-    )
-    def test_existing_short_name_alias_preserves_canonical_output_name(
+                for label, component in (
+                    ("missing", f"nested{suffix}"),
+                    ("existing", f"assets{suffix}"),
+                ):
+                    publication = self.fresh_publication(
+                        f"windows-render-{label}-{ord(suffix)}"
+                    )
+                    before = tree_snapshot(publication)
+                    rejected = self.render(
+                        publication,
+                        self.case_root / "unused-browser.exe",
+                        pdf=publication / component / "draft.pdf",
+                    )
+                    self.assertEqual(2, rejected.exit_code, rejected)
+                    self.assertIn(
+                        "must not end in a dot or space",
+                        rejected.stderr,
+                    )
+                    self.assertEqual(before, tree_snapshot(publication))
+
+    def test_build_uses_one_final_rename_and_cleans_rename_failure(
         self,
     ) -> None:
-        workspace = self.fresh_workspace()
-        output = workspace / "owned publication directory"
-        initial = self.build(workspace, output=output)
-        self.assertEqual(0, initial.exit_code, initial)
-        before = tree_snapshot(output)
-
-        short_output = windows_short_path(output)
-        if short_output is None:
-            self.skipTest("Win32 short-name lookup is unavailable")
-        if short_output.name.casefold() == output.name.casefold():
-            self.skipTest("8.3 short names are disabled for this volume")
-        self.assertTrue(output.samefile(short_output))
-
-        self.refresh_fragment(
-            workspace,
-            RICH_FRAGMENT.replace(
-                "代表性中文段落",
-                "中文段落代表性",
-            ),
-        )
-        replaced = self.build(
-            workspace,
-            force=True,
-            output=short_output,
-        )
-
-        self.assertEqual(0, replaced.exit_code, replaced)
-        self.assertTrue(output.is_dir())
-        self.assertTrue(output.samefile(short_output))
-        self.assertNotEqual(before, tree_snapshot(output))
-        self.assertEqual(
-            str(output.resolve() / "assembly-manifest.json"),
-            replaced.report["manifest"],
-        )
-        self.assertIn(output.name, {path.name for path in workspace.iterdir()})
-        self.assertNotIn(
-            short_output.name,
-            {path.name for path in workspace.iterdir()},
-        )
-
-    def test_build_force_requires_assembly_ownership_marker(self) -> None:
-        workspace = self.fresh_workspace()
+        workspace = self.fresh_workspace("rename-success")
         output = workspace / "publication"
-        output.mkdir()
-        sentinel = output / "unrelated-sentinel.txt"
-        sentinel.write_text("must survive\n", encoding="utf-8")
-        before = tree_snapshot(output)
+        original_rename = Path.rename
+        calls: list[tuple[Path, Path]] = []
 
-        refused = self.build(workspace, force=True)
+        def recording_rename(path: Path, target: Path) -> Path:
+            calls.append((path, Path(target)))
+            return original_rename(path, target)
 
-        self.assertEqual(2, refused.exit_code)
-        self.assertIn("assembly ownership marker", refused.stderr)
-        self.assertEqual(before, tree_snapshot(output))
-        self.assertEqual("must survive\n", sentinel.read_text(encoding="utf-8"))
+        with mock.patch.object(Path, "rename", new=recording_rename):
+            result = self.build(workspace)
 
-    def test_build_force_rejects_final_output_links(self) -> None:
-        workspace = self.fresh_workspace("directory-link")
-        output = workspace / "publication"
-        external = self.case_root / "external-publication"
-        external.mkdir()
-        (external / "assembly-manifest.json").write_text(
-            "damaged owned output\n",
-            encoding="utf-8",
-        )
-        sentinel = external / "external-sentinel.txt"
-        sentinel.write_text("must survive\n", encoding="utf-8")
-        external_before = tree_snapshot(external)
-        try:
-            output.symlink_to(external, target_is_directory=True)
-        except (NotImplementedError, OSError) as error:
-            self.skipTest(f"directory symlinks are unavailable: {error}")
-        link_target = output.readlink()
+        self.assertEqual(0, result.exit_code, result)
+        self.assertEqual(1, len(calls))
+        candidate, target = calls[0]
+        self.assertEqual(output, target)
+        self.assertEqual(output.parent, candidate.parent)
+        self.assertNotEqual(output, candidate)
 
-        refused = self.build(workspace, force=True)
+        failed_workspace = self.fresh_workspace("rename-failure")
+        failed_output = failed_workspace / "publication"
+        failure_message = "synthetic final rename failure"
+        failed_calls: list[tuple[Path, Path]] = []
 
-        self.assertEqual(2, refused.exit_code)
-        self.assertEqual({}, refused.report)
-        self.assertEqual("", refused.stdout)
-        self.assertIn(
-            "error: assembly output exists and is not a regular directory",
-            refused.stderr,
-        )
-        self.assertTrue(output.is_symlink())
-        self.assertEqual(link_target, output.readlink())
-        self.assertEqual(external_before, tree_snapshot(external))
-        self.assertEqual("must survive\n", sentinel.read_text(encoding="utf-8"))
+        def failing_rename(path: Path, target: Path) -> Path:
+            failed_calls.append((path, Path(target)))
+            self.assertEqual(failed_output.parent, path.parent)
+            self.assertNotEqual(failed_output, path)
+            self.assertEqual(failed_output, Path(target))
+            raise PermissionError(failure_message)
 
-        dangling_workspace = self.fresh_workspace("dangling-link")
-        dangling_output = dangling_workspace / "publication"
-        missing_target = self.case_root / "missing-publication"
-        missing_target.mkdir()
-        dangling_output.symlink_to(missing_target, target_is_directory=True)
-        dangling_link_target = dangling_output.readlink()
-        missing_target.rmdir()
+        with mock.patch.object(Path, "rename", new=failing_rename):
+            failed = self.build(failed_workspace)
 
-        dangling_refused = self.build(dangling_workspace, force=True)
-
-        self.assertEqual(2, dangling_refused.exit_code)
-        self.assertEqual({}, dangling_refused.report)
-        self.assertEqual("", dangling_refused.stdout)
-        self.assertIn(
-            "error: assembly output exists and is not a regular directory",
-            dangling_refused.stderr,
-        )
-        self.assertTrue(dangling_output.is_symlink())
-        self.assertEqual(dangling_link_target, dangling_output.readlink())
-        self.assertFalse(missing_target.exists())
-        self.assertEqual(external_before, tree_snapshot(external))
-
-    def test_build_force_allows_empty_or_damaged_owned_directory(
-        self,
-    ) -> None:
-        for name, populate in (
-            ("empty", False),
-            ("damaged-owned", True),
-        ):
-            with self.subTest(case=name):
-                workspace = self.fresh_workspace(name)
-                output = workspace / "publication"
-                output.mkdir()
-                if populate:
-                    (output / "assembly-manifest.json").write_text(
-                        "damaged older manifest\n",
-                        encoding="utf-8",
-                    )
-                    (output / "stale.bin").write_bytes(b"stale")
-
-                result = self.build(workspace, force=True)
-
-                self.assertEqual(0, result.exit_code, result)
-                self.assertEqual(
-                    "assembled",
-                    read_json(output / "assembly-manifest.json")["status"],
-                )
-                self.assertFalse((output / "stale.bin").exists())
+        self.assertEqual(2, failed.exit_code, failed)
+        self.assertIn(failure_message, failed.stderr)
+        self.assertFalse(failed_output.exists())
+        self.assertEqual(1, len(failed_calls))
+        self.assertFalse(failed_calls[0][0].exists())
 
     def test_actual_edge_render_then_validate(self) -> None:
         if BROWSER is None:
@@ -1627,7 +1697,6 @@ class AssemblePrintReplacementTests(unittest.TestCase):
 
         self.assertEqual(0, rendered.exit_code, rendered)
         self.assertEqual("rendered", rendered.report["status"])
-        self.assertEqual(str(BROWSER.resolve()), rendered.report["browser"])
         pdf = publication / "draft.pdf"
         self.assertTrue(pdf.is_file())
         self.assertGreater(pdf.stat().st_size, 0)
@@ -1647,6 +1716,8 @@ class AssemblePrintReplacementTests(unittest.TestCase):
                 built = self.build(workspace)
                 self.assertEqual(0, built.exit_code, built)
                 publication = workspace / "publication"
+                manifest_path = publication / "assembly-manifest.json"
+                manifest_before = manifest_path.read_bytes()
                 browser = workspace / "browser.exe"
                 browser.write_bytes(b"fixture browser")
 
@@ -1670,8 +1741,199 @@ class AssemblePrintReplacementTests(unittest.TestCase):
                 self.assertEqual(2, result.exit_code)
                 self.assertEqual({}, result.report)
                 self.assertFalse((publication / "draft.pdf").exists())
-                manifest = read_json(publication / "assembly-manifest.json")
+                self.assertEqual(manifest_before, manifest_path.read_bytes())
+                manifest = read_json(manifest_path)
                 self.assertIsNone(manifest["outputs"]["draft_pdf"])
+
+    def test_render_pdf_enforces_fixed_deadline_and_cleans_browser(
+        self,
+    ) -> None:
+        html_path = self.case_root / "index.html"
+        html_path.write_text("<!doctype html><title>Timeout</title>")
+        output_path = self.case_root / "draft.pdf"
+        browser_path = self.case_root / "browser.exe"
+        browser_path.write_bytes(b"fixture browser")
+
+        async def wait_past_deadline(**_kwargs: Any) -> None:
+            await asyncio.sleep(60)
+
+        page = mock.Mock()
+        page.goto = mock.AsyncMock()
+        page.emulate_media = mock.AsyncMock()
+        page.pdf = mock.AsyncMock(side_effect=wait_past_deadline)
+        context = mock.Mock()
+        context.route = mock.AsyncMock()
+        context.new_page = mock.AsyncMock(return_value=page)
+        context.close = mock.AsyncMock()
+        browser = mock.Mock()
+        browser.new_context = mock.AsyncMock(return_value=context)
+        browser.close = mock.AsyncMock()
+        chromium = mock.Mock()
+        chromium.launch = mock.AsyncMock(return_value=browser)
+        playwright = mock.Mock(chromium=chromium)
+        manager = mock.MagicMock()
+        manager.__aenter__ = mock.AsyncMock(return_value=playwright)
+        manager.__aexit__ = mock.AsyncMock(return_value=None)
+
+        with (
+            mock.patch(
+                "playwright.async_api.async_playwright",
+                return_value=manager,
+            ),
+            mock.patch.object(assemble_print, "PDF_TIMEOUT_MS", 1),
+            self.assertRaisesRegex(  # noqa: PT027
+                assemble_print.ContractError,
+                "fixed 1 ms deadline",
+            ),
+        ):
+            assemble_print.render_pdf(
+                html_path,
+                output_path,
+                browser_path,
+                {html_path.resolve()},
+            )
+
+        browser.new_context.assert_awaited_once_with(
+            java_script_enabled=False,
+            service_workers="block",
+        )
+        context.route.assert_awaited_once()
+        page.goto.assert_awaited_once_with(
+            html_path.as_uri(),
+            wait_until="networkidle",
+            timeout=assemble_print.NAVIGATION_TIMEOUT_MS,
+        )
+        page.pdf.assert_awaited_once()
+        context.close.assert_awaited_once_with()
+        browser.close.assert_awaited_once_with()
+        self.assertFalse(output_path.exists())
+
+    def test_validate_rejects_pdf_over_page_ceiling(self) -> None:
+        publication = self.fresh_publication("oversized-pdf")
+        pdf = publication / "draft.pdf"
+        document = fitz.open()
+        for _page in range(assemble_print.MAX_PDF_PAGES + 1):
+            document.new_page(width=612, height=792)
+        document.save(pdf)
+        document.close()
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        manifest["outputs"]["draft_pdf"] = asset_record(publication, pdf)
+        write_json(manifest_path, manifest)
+
+        rejected = self.validate(publication)
+
+        self.assertEqual(2, rejected.exit_code, rejected)
+        self.assertIn("page validation ceiling", rejected.stderr)
+
+    def test_manifest_rejects_blank_figure_alternative(self) -> None:
+        publication = self.fresh_publication("blank-figure-alt")
+        manifest_path = publication / "assembly-manifest.json"
+        manifest = read_json(manifest_path)
+        manifest["figures"][0]["alt"] = "   "
+        write_json(manifest_path, manifest)
+
+        rejected = self.validate(publication)
+
+        self.assertEqual(2, rejected.exit_code, rejected)
+        self.assertIn("does not match", rejected.stderr)
+
+    def test_render_is_fresh_only_and_rolls_back_manifest_commit_failure(
+        self,
+    ) -> None:
+        browser = self.case_root / "browser.exe"
+        browser.write_bytes(b"fixture browser")
+
+        existing = self.fresh_publication("existing-destination")
+        destination = existing / "draft.pdf"
+        destination.write_bytes(b"must remain")
+        existing_before = tree_snapshot(existing)
+        refused = self.render(existing, browser)
+        self.assertEqual(2, refused.exit_code, refused)
+        self.assertIn("destination already exists", refused.stderr)
+        self.assertEqual(existing_before, tree_snapshot(existing))
+
+        publication = self.fresh_publication("successful-render")
+        requested_pdf = (
+            publication
+            / ("ASSETS" if os.name == "nt" else "assets")
+            / "draft.pdf"
+        )
+        with mock.patch.object(
+            assemble_print,
+            "render_pdf",
+            side_effect=self.write_valid_pdf,
+        ):
+            rendered = self.render(
+                publication,
+                browser,
+                pdf=requested_pdf,
+            )
+        self.assertEqual(0, rendered.exit_code, rendered)
+        self.assertEqual(
+            "assets/draft.pdf",
+            read_json(publication / "assembly-manifest.json")["outputs"][
+                "draft_pdf"
+            ]["path"],
+        )
+        committed = tree_snapshot(publication)
+        manifest_bytes = (publication / "assembly-manifest.json").read_bytes()
+
+        alternate = publication / "alternate.pdf"
+        second = self.render(publication, browser, pdf=alternate)
+        self.assertEqual(2, second.exit_code, second)
+        self.assertIn("assembly already has a draft PDF", second.stderr)
+        self.assertEqual(committed, tree_snapshot(publication))
+        self.assertFalse(alternate.exists())
+        self.assertEqual(
+            manifest_bytes,
+            (publication / "assembly-manifest.json").read_bytes(),
+        )
+
+        rollback = self.fresh_publication("commit-failure")
+        rollback_manifest = rollback / "assembly-manifest.json"
+        before = rollback_manifest.read_bytes()
+        original_write_atomic = assemble_print.write_atomic
+        failed = False
+        failure_message = "synthetic manifest commit failure"
+
+        def fail_at_manifest_publication(path: Path, content: bytes) -> None:
+            nonlocal failed
+            if path == rollback_manifest and content != before and not failed:
+                failed = True
+                pending_manifest = json.loads(content)
+                pending_record = pending_manifest["outputs"]["draft_pdf"]
+                self.assertIsInstance(pending_record, dict)
+                final_pdf = rollback.joinpath(
+                    *Path(pending_record["path"]).parts
+                )
+                self.assertTrue(final_pdf.is_file())
+                self.assertEqual(
+                    pending_record,
+                    asset_record(rollback, final_pdf),
+                )
+                original_write_atomic(path, content)
+                raise PermissionError(failure_message)
+            original_write_atomic(path, content)
+
+        with (
+            mock.patch.object(
+                assemble_print,
+                "render_pdf",
+                side_effect=self.write_valid_pdf,
+            ),
+            mock.patch.object(
+                assemble_print,
+                "write_atomic",
+                side_effect=fail_at_manifest_publication,
+            ),
+        ):
+            rejected = self.render(rollback, browser)
+
+        self.assertEqual(2, rejected.exit_code, rejected)
+        self.assertIn(failure_message, rejected.stderr)
+        self.assertFalse((rollback / "draft.pdf").exists())
+        self.assertEqual(before, rollback_manifest.read_bytes())
 
     def test_visible_text_normalization_unit(self) -> None:
         cases = (
@@ -1735,39 +1997,75 @@ class AssemblePrintReplacementTests(unittest.TestCase):
                             case["id"],
                         )
 
-    def test_retained_tree_identity_unit(self) -> None:
-        publication = self.fresh_publication()
-        manifest = read_json(publication / "assembly-manifest.json")
-        inventory = assemble_print.validate_manifest_inventory(
-            publication,
-            manifest,
+    def test_manifest_asset_projection_and_tree_closure(self) -> None:
+        shared = self.fresh_publication("shared")
+        shared_manifest_path = shared / "assembly-manifest.json"
+        shared_manifest = read_json(shared_manifest_path)
+        first_source = copy.deepcopy(
+            shared_manifest["figures"][0]["parts"][0]["source_svg"]
         )
-        self.assertEqual(
-            {record["path"] for record in manifest["tracked_files"]}
-            | {"assembly-manifest.json"},
-            set(inventory),
+        second_part = shared_manifest["figures"][0]["parts"][1]
+        old_path = second_part["source_svg"]["path"]
+        second_part["source_svg"] = first_source
+        html_path = shared / "index.html"
+        html_path.write_text(
+            html_path.read_text(encoding="utf-8").replace(
+                f'href="{old_path}"',
+                f'href="{first_source["path"]}"',
+                1,
+            ),
+            encoding="utf-8",
+        )
+        shared_manifest["outputs"]["html"] = asset_record(shared, html_path)
+        shared.joinpath(*Path(old_path).parts).unlink()
+        write_json(shared_manifest_path, shared_manifest)
+        shared_result = self.validate(shared)
+        self.assertEqual(0, shared_result.exit_code, shared_result)
+
+        conflicting = self.fresh_publication("conflicting")
+        conflicting_manifest = read_json(conflicting / "assembly-manifest.json")
+        conflicting_manifest["stylesheets"][0]["path"] = conflicting_manifest[
+            "outputs"
+        ]["css"]["path"]
+        write_json(
+            conflicting / "assembly-manifest.json",
+            conflicting_manifest,
+        )
+        conflict = self.validate(conflicting)
+        self.assertEqual(2, conflict.exit_code, conflict)
+        self.assertIn(
+            "conflicting semantic asset declarations",
+            conflict.stderr,
         )
 
         rogue = self.fresh_publication("rogue")
         (rogue / "rogue.txt").write_text("rogue", encoding="utf-8")
-        with self.assertRaises(  # noqa: PT027
-            assemble_print.ContractError
-        ):
-            assemble_print.validate_manifest_inventory(
-                rogue,
-                read_json(rogue / "assembly-manifest.json"),
-            )
+        self.assertEqual(2, self.validate(rogue).exit_code)
 
-        unsorted = self.fresh_publication("unsorted")
-        unsorted_manifest = read_json(unsorted / "assembly-manifest.json")
-        unsorted_manifest["tracked_files"].reverse()
-        with self.assertRaises(  # noqa: PT027
-            assemble_print.ContractError
+        missing = self.fresh_publication("missing")
+        (missing / "fragments" / "section-one.html").unlink()
+        self.assertEqual(2, self.validate(missing).exit_code)
+
+        for name, field, value in (
+            ("hash-drift", "sha256", "0" * 64),
+            ("byte-drift", "bytes", 1),
         ):
-            assemble_print.validate_manifest_inventory(
-                unsorted,
-                unsorted_manifest,
-            )
+            with self.subTest(case=name):
+                drift = self.fresh_publication(name)
+                manifest_path = drift / "assembly-manifest.json"
+                drift_manifest = read_json(manifest_path)
+                drift_manifest["outputs"]["html"][field] = value
+                write_json(manifest_path, drift_manifest)
+                self.assertEqual(2, self.validate(drift).exit_code)
+
+        linked = self.fresh_publication("linked")
+        link = linked / "linked-index.html"
+        try:
+            link.symlink_to(linked / "index.html")
+        except (NotImplementedError, OSError):
+            pass
+        else:
+            self.assertEqual(2, self.validate(linked).exit_code)
 
 
 if __name__ == "__main__":

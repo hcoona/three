@@ -389,7 +389,7 @@ class Context:
     profile: dict[str, Any]
     profile_sha256: str
     manifest_asset: Asset
-    tracked: dict[str, Asset]
+    assets: dict[str, Asset]
     html: Asset
     css: Asset
     pdf: Asset
@@ -827,39 +827,41 @@ def load_context(manifest_file: Path, html_file: Path, page_size: str) -> Contex
         errors.append("manifest publication-profile identity does not match QA")
     if manifest["print_geometry"]["page_size"] != page_size:
         errors.append(f"--page-size {page_size} conflicts with manifest geometry")
-    tracked: dict[str, Asset] = {}
     declared_records: dict[str, dict[str, Any]] = {}
-    aliases: dict[str, str] = {}
-    for record in manifest["tracked_files"]:
+    declaration_labels: dict[str, str] = {}
+    for label, record in projected_assets(manifest):
         logical = manifest_path(record["path"])
         if logical in declared_records:
-            errors.append(f"duplicate tracked path: {logical}")
+            if declared_records[logical] != record:
+                errors.append(
+                    "conflicting semantic asset declarations for "
+                    f"{logical}: {declaration_labels[logical]} and {label}"
+                )
             continue
         declared_records[logical] = record
+        declaration_labels[logical] = label
+    assets: dict[str, Asset] = {}
+    aliases: dict[str, str] = {}
+    for logical, record in declared_records.items():
         path = confined(root, logical)
         alias = os.path.normcase(str(path))
         if alias in aliases:
-            errors.append(f"tracked paths alias: {aliases[alias]!r}, {logical!r}")
+            errors.append(
+                "semantic asset paths alias: "
+                f"{aliases[alias]!r}, {logical!r}"
+            )
             continue
         aliases[alias] = logical
         if not path.is_file():
-            errors.append(f"tracked file is missing: {logical}")
+            errors.append(f"manifest-declared asset is missing: {logical}")
             continue
         observed = asset(path, logical)
-        tracked[logical] = observed
+        assets[logical] = observed
         if observed.sha256 != record["sha256"] or observed.bytes != record["bytes"]:
-            errors.append(f"tracked file binding mismatch: {logical}")
-    unavailable = sorted(set(declared_records) - set(tracked))
+            errors.append(f"manifest-declared asset binding mismatch: {logical}")
+    unavailable = sorted(set(declared_records) - set(assets))
     if unavailable:
         raise PublicationError(f"manifest-declared regular files are unavailable: {unavailable}")
-    projections = projected_assets(manifest)
-    for label, record in projections:
-        logical = manifest_path(record["path"])
-        if declared_records.get(logical) != record:
-            errors.append(f"{label} does not exactly match tracked_files")
-    unprojected = sorted(set(declared_records) - {manifest_path(record["path"]) for _label, record in projections})
-    if unprojected:
-        errors.append(f"tracked_files has unprojected assets: {unprojected}")
     html_logical = manifest_path(manifest["outputs"]["html"]["path"])
     css_logical = manifest_path(manifest["outputs"]["css"]["path"])
     pdf_record = manifest["outputs"]["draft_pdf"]
@@ -869,7 +871,7 @@ def load_context(manifest_file: Path, html_file: Path, page_size: str) -> Contex
     if confined(root, html_logical) != html_file:
         errors.append("--html does not match manifest outputs.html")
     for label, logical in (("HTML", html_logical), ("CSS", css_logical), ("PDF", pdf_logical)):
-        if logical not in tracked:
+        if logical not in assets:
             raise PublicationError(f"manifest {label} output is unavailable")
     id_groups = {
         "fragment": [item["id"] for item in manifest["fragments"]],
@@ -951,7 +953,7 @@ def load_context(manifest_file: Path, html_file: Path, page_size: str) -> Contex
     if "assembly-manifest.json" in declared_records:
         errors.append("assembly manifest must not track itself")
     return Context(root, manifest_file, manifest, profile, profile_hash, relative_asset(manifest_file, root),
-                   tracked, tracked[html_logical], tracked[css_logical], tracked[pdf_logical], before, errors)
+                   assets, assets[html_logical], assets[css_logical], assets[pdf_logical], before, errors)
 def parse_html(content: str) -> ParsedHtml:
     parser = TreeParser()
     parser.feed(content)
@@ -1902,7 +1904,7 @@ def resource_errors(parsed: ParsedHtml, context: Context) -> list[Any]:
                 )
                 continue
             logical = resource.relative_to(context.root).as_posix()
-            if logical not in context.tracked or not resource.is_file():
+            if logical not in context.assets or not resource.is_file():
                 errors.append(
                     {
                         **resource_url_diagnostic(
@@ -2199,7 +2201,7 @@ def render_once(
     blocked: set[str] = set()
     failed: set[str] = set()
     aborted: set[str] = set()
-    allowed = {item.file.resolve() for item in context.tracked.values()}
+    allowed = {item.file.resolve() for item in context.assets.values()}
     width_points = PAGE_POINTS[context.manifest["print_geometry"]["page_size"]][0]
     margins = context.manifest["print_geometry"]["margin_in"]
     printable = (width_points / POINTS_PER_INCH - margins["left"] - margins["right"]) * PX_PER_INCH

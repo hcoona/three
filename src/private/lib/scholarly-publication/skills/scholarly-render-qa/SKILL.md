@@ -48,9 +48,9 @@ renders must all be beneath that root.
 
 ## Workflow
 
-1. Validate the assembly manifest schema, policy identity, retained-file
-   inventory, hashes, path confinement, node types, and initial tree
-   fingerprint.
+1. Validate the assembly manifest schema, policy identity, manifest-declared
+   semantic asset closure, hashes, path confinement, node types, and initial
+   tree fingerprint.
 2. Apply the shared publication profile to copied fragments and untrusted
    stylesheets. Apply the documented generated-output profile to the
    assembler-owned document wrapper, figure/crop markup, and generated CSS.

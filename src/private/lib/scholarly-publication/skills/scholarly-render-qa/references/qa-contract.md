@@ -86,10 +86,12 @@ comparison; it does not accept those manifest values.
 
 ### Manifest and tree integrity
 
-Verify the closed manifest, retained inventory, regular-file types, hashes,
-lengths, path confinement, no symlinks, and unchanged before/after
-manifest-declared file fingerprints. Empty-directory and directory/node-graph
-proofs are not required.
+Verify the closed manifest and the deduplicated union of its input, fragment,
+figure-SVG, font, stylesheet, and output asset records. That semantic asset
+closure must exactly cover retained regular files, with identical complete
+records for any shared path. Verify hashes, lengths, path confinement, no
+symlinks, and unchanged before/after manifest-declared file fingerprints.
+Empty-directory and directory/node-graph proofs are not required.
 
 ### Offline HTML and profile conformance
 
@@ -123,7 +125,7 @@ and are treated as an operational publication-input failure.
 ### Two renders and geometry
 
 Render twice in fresh JavaScript-disabled contexts. Install one pre-load route
-per context that permits only manifest-tracked local files and the required
+per context that permits only manifest-declared semantic assets and the required
 `about:` URL. Bind each output PDF in the stable evidence root. Inspect request
 results, printable width, probe/client/scroll widths, overflow state, and
 offending element boxes for check decisions. Keep raw probes transient; retain
@@ -293,8 +295,8 @@ remain distinct. Paths are canonical relative POSIX paths and cannot contain
 `.` or `..` segments, repeated `/`, trailing `/`, backslashes, or an absolute
 or URI-style prefix.
 
-It does not repeat HTML, PDF, page, figure, crop, font, stylesheet, or tracked
-file inventories. Those remain in the assembly manifest and QA evidence.
+It does not repeat HTML, PDF, page, figure, crop, font, stylesheet, or semantic
+asset inventories. Those remain in the assembly manifest and QA evidence.
 
 ## Output isolation
 

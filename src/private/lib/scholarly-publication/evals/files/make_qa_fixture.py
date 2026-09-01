@@ -1,7 +1,6 @@
 # /// script
 # requires-python = "==3.12.11"
 # dependencies = [
-#   "cssselect2==0.8.0",
 #   "defusedxml==0.7.1",
 #   "fonttools==4.60.1",
 #   "html5lib==1.1",
@@ -31,7 +30,6 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 FONT_FAMILY = "QA Fixture Publication"
 MISSING_ASSEMBLY_SCRIPT = "cannot locate assemble_print.py"
 MISSING_PDF = "assembled fixture has no PDF"
-UNTRACKED_PDF = "assembled fixture did not track its PDF"
 
 
 class FixtureError(RuntimeError):
@@ -338,12 +336,6 @@ def update_pdf_binding(publication: Path) -> None:
     pdf = publication / pdf_record["path"]
     updated = asset(publication, pdf)
     manifest["outputs"]["draft_pdf"] = updated
-    for index, record in enumerate(manifest["tracked_files"]):
-        if record["path"] == updated["path"]:
-            manifest["tracked_files"][index] = updated
-            break
-    else:
-        raise FixtureError(UNTRACKED_PDF)
     write_json(manifest_path, manifest)
 
 

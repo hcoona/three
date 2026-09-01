@@ -19,7 +19,6 @@
     "fonts",
     "stylesheets",
     "outputs",
-    "tracked_files",
     "status"
   ],
   "properties": {
@@ -209,7 +208,8 @@
           },
           "alt": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "parts": {
             "type": "array",
@@ -323,60 +323,10 @@
         }
       }
     },
-    "tracked_files": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {
-        "$ref": "#/$defs/asset"
-      }
-    },
-    "draft_render": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["browser", "browser_sha256", "command_mode"],
-      "properties": {
-        "browser": {
-          "type": "string",
-          "minLength": 1
-        },
-        "browser_sha256": {
-          "$ref": "#/$defs/sha256"
-        },
-        "command_mode": {
-          "const": "headless-print-to-pdf-offline"
-        }
-      }
-    },
     "status": {
       "const": "assembled"
     }
   },
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "outputs": {
-            "properties": {
-              "draft_pdf": {
-                "type": "null"
-              }
-            },
-            "required": ["draft_pdf"]
-          }
-        },
-        "required": ["outputs"]
-      },
-      "then": {
-        "not": {
-          "required": ["draft_render"]
-        }
-      },
-      "else": {
-        "required": ["draft_render"]
-      }
-    }
-  ],
   "$defs": {
     "id": {
       "type": "string",

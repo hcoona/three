@@ -1,7 +1,6 @@
 # /// script
 # requires-python = "==3.12.11"
 # dependencies = [
-#   "cssselect2==0.8.0",
 #   "defusedxml==0.7.1",
 #   "fonttools==4.60.1",
 #   "html5lib==1.1",
@@ -16,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import base64
 import binascii
 import functools
@@ -31,7 +31,6 @@ import struct
 import sys
 import tempfile
 import unicodedata
-import uuid
 from dataclasses import dataclass
 from html import escape
 from io import BytesIO
@@ -48,7 +47,6 @@ from fontTools.ttLib import TTFont, TTLibError
 from jsonschema import Draft202012Validator
 
 html5lib: Any = importlib.import_module("html5lib")
-cssselect2: Any = importlib.import_module("cssselect2")
 
 SCRIPT_VERSION = "0.1.0"
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -59,6 +57,9 @@ GENERATED_DOCUMENT_PROFILE = "scholarly-generated-document-v1"
 GENERATED_CSS_PROFILE = "scholarly-generated-css-v1"
 FONT_ROLES = ("body-cjk", "body-latin")
 PAGE_SIZES = {"letter": "Letter", "a4": "A4"}
+MAX_PDF_PAGES = 500
+NAVIGATION_TIMEOUT_MS = 120_000
+PDF_TIMEOUT_MS = 120_000
 ID_PATTERN = re.compile("^[a-z0-9][a-z0-9._-]*$")
 BLOCK_ID_PATTERN = re.compile("^(?P<page>pdf-[0-9]{4,})-block-[0-9]{4,}$")
 LANGUAGE_PATTERN = re.compile("^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
@@ -108,24 +109,6 @@ SVG_LOCAL_URL_PATTERN = re.compile('^url\\(\\s*([\'"]?)(#[A-Za-z_][A-Za-z0-9_.:-
 SVG_DATA_IMAGE_PATTERN = re.compile("^data:image/(?P<media>png|jpeg);base64,(?P<data>.*)$", re.IGNORECASE | re.DOTALL)
 SVG_STYLE_PATTERN = re.compile("^mix-blend-mode\\s*:\\s*([a-z-]+)\\s*;?$", re.IGNORECASE)
 SVG_EXTERNAL_SCHEME_PATTERN = re.compile("(?:^|[\\s('\\\"])(?:data|file|ftp|https?|javascript):", re.IGNORECASE)
-LIST_MARKER_CHARACTERS = {
-    "none": "",
-    "disc": "\u2022",
-    "circle": "\u25e6",
-    "square": "\u25aa",
-    "decimal": "0123456789.-",
-    "decimal-leading-zero": "0123456789.-",
-    "lower-alpha": "abcdefghijklmnopqrstuvwxyz0123456789.-",
-    "upper-alpha": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-",
-    "lower-roman": "ivxlcdm0123456789.-",
-    "upper-roman": "IVXLCDM0123456789.-",
-    "hiragana": "\u3042\u3044\u3046\u3048\u304a\u304b\u304d\u304f\u3051\u3053\u3055\u3057\u3059\u305b\u305d\u305f\u3061\u3064\u3066\u3068\u306a\u306b\u306c\u306d\u306e\u306f\u3072\u3075\u3078\u307b\u307e\u307f\u3080\u3081\u3082\u3084\u3086\u3088\u3089\u308a\u308b\u308c\u308d\u308f\u3090\u3091\u3092\u30930123456789.-\u3001",
-    "katakana": "\u30a2\u30a4\u30a6\u30a8\u30aa\u30ab\u30ad\u30af\u30b1\u30b3\u30b5\u30b7\u30b9\u30bb\u30bd\u30bf\u30c1\u30c4\u30c6\u30c8\u30ca\u30cb\u30cc\u30cd\u30ce\u30cf\u30d2\u30d5\u30d8\u30db\u30de\u30df\u30e0\u30e1\u30e2\u30e4\u30e6\u30e8\u30e9\u30ea\u30eb\u30ec\u30ed\u30ef\u30f0\u30f1\u30f2\u30f30123456789.-\u3001",
-    "cjk-ideographic": "\u3007\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343\u4e07\u842c\u4ebf\u5104\u5146\u8d1f\u8ca00123456789.-\u3001",
-    "simp-chinese-informal": "\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343\u4e07\u4ebf\u5146\u8d1f0123456789.-\u3001",
-    "trad-chinese-informal": "\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343\u842c\u5104\u5146\u8ca00123456789.-\u3001",
-}
-OL_TYPE_STYLES = {"1": "decimal", "a": "lower-alpha", "A": "upper-alpha", "i": "lower-roman", "I": "upper-roman"}
 CSS_KEYWORD_EXCLUSIVE_GROUPS = {
     "font-variant-east-asian": (
         {"jis04", "jis78", "jis83", "jis90", "simplified", "traditional"}, {"full-width", "proportional-width"},
@@ -352,7 +335,6 @@ class BuildMaterial:
     used_pages: dict[str, tuple[JsonObject, bytes]]
     fonts: list[tuple[JsonObject, bytes, JsonObject]]
     stylesheets: list[tuple[bytes, str]]
-    consumed_paths: list[Path]
 
 @dataclass
 class ValidationResult:
@@ -385,8 +367,7 @@ def _reject_json_constant(value: str) -> Never:
 def _unique_json_object(pairs: list[tuple[str, Any]]) -> JsonObject:
     result: JsonObject = {}
     for key, value in pairs:
-        if key in result:
-            fail(f"duplicate JSON object key: {key}")
+        require(key not in result, f"duplicate JSON object key: {key}")
         result[key] = value
     return result
 
@@ -413,18 +394,31 @@ def checked_node(path: Path, context: str) -> os.stat_result:
     except OSError as error:
         fail(f"cannot inspect {context} {path}: {error}")
     reparse = getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
-    if stat.S_ISLNK(info.st_mode) or reparse:
-        fail(f"{context} is a link or reparse point: {path}")
+    require(not stat.S_ISLNK(info.st_mode) and not reparse,
+            f"{context} is a link or reparse point: {path}")
     return info
+
+def reject_existing(path: Path, message: str) -> None:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    fail(message)
 
 def read_regular(path: Path, context: str) -> bytes:
     candidate = path.expanduser().absolute()
     try:
-        if not stat.S_ISREG(checked_node(candidate, context).st_mode):
-            fail(f"{context} is not a regular file: {candidate}")
+        require(stat.S_ISREG(checked_node(candidate, context).st_mode),
+                f"{context} is not a regular file: {candidate}")
         return candidate.read_bytes()
     except OSError as error:
         fail(f"cannot read {context} {path}: {error}")
+
+def decode_utf8(content: bytes, context: str) -> str:
+    try:
+        return content.decode()
+    except UnicodeDecodeError as error:
+        fail(f"{context} is not UTF-8: {error}")
 
 def read_snapshot(path: Path, context: str) -> Snapshot:
     candidate = path.expanduser().absolute()
@@ -541,8 +535,8 @@ def resolve_relative(base: Path, value: Any, context: str) -> Path:
         resolved.relative_to(root)
     except (OSError, ValueError):
         fail(f"{context} escapes or is missing beneath {root}: {identity!r}")
-    if not stat.S_ISREG(resolved.stat().st_mode):
-        fail(f"{context} is not a regular file: {resolved}")
+    require(stat.S_ISREG(resolved.stat().st_mode),
+            f"{context} is not a regular file: {resolved}")
     return resolved
 
 def asset_from_bytes(identity: str, content: bytes) -> AssetRecord:
@@ -558,16 +552,16 @@ def read_bound_asset(base: Path, record: Any, context: str) -> tuple[Path, bytes
         fail(f"{context} record must be an object")
     path = resolve_relative(base, record.get("path"), context)
     content = read_regular(path, context)
-    if record.get("bytes") != len(content):
-        fail(f"{context} byte length does not match its manifest record")
-    if record.get("sha256") != sha256_bytes(content):
-        fail(f"{context} SHA-256 does not match its manifest record")
+    require(record.get("bytes") == len(content),
+            f"{context} byte length does not match its manifest record")
+    require(record.get("sha256") == sha256_bytes(content),
+            f"{context} SHA-256 does not match its manifest record")
     return (path, content)
 
-def scan_tree(root: Path) -> dict[str, FileState]:
+def scan_tree(root: Path, hash_paths: set[str] | None=None) -> dict[str, FileState]:
     candidate = root.expanduser().absolute()
-    if not stat.S_ISDIR(checked_node(candidate, "publication root").st_mode):
-        fail(f"publication root is not a directory: {candidate}")
+    require(stat.S_ISDIR(checked_node(candidate, "publication root").st_mode),
+            f"publication root is not a directory: {candidate}")
     resolved = candidate.resolve(strict=True)
     inventory: dict[str, FileState] = {}
     pending = [resolved]
@@ -579,22 +573,12 @@ def scan_tree(root: Path) -> dict[str, FileState]:
             if stat.S_ISDIR(mode):
                 pending.append(child)
             elif stat.S_ISREG(mode):
-                content = child.read_bytes()
-                inventory[child.relative_to(resolved).as_posix()] = FileState(child, len(content), sha256_bytes(content))
+                identity = child.relative_to(resolved).as_posix()
+                digest = sha256_bytes(child.read_bytes()) if hash_paths is None or identity in hash_paths else ""
+                inventory[identity] = FileState(child, info.st_size, digest)
             else:
                 fail(f"publication tree contains a special node: {child}")
     return dict(sorted(inventory.items()))
-
-def verify_asset_record(record: Any, inventory: dict[str, FileState], context: str) -> FileState:
-    if not isinstance(record, dict) or set(record) != {"path", "sha256", "bytes"}:
-        fail(f"{context} must be an exact asset record")
-    identity = normalized_relative_path(record["path"], f"{context} path")
-    state = inventory.get(identity)
-    if state is None:
-        fail(f"{context} is missing from the publication tree: {identity}")
-    if record["bytes"] != state.size or record["sha256"] != state.sha256:
-        fail(f"{context} content does not match {identity}")
-    return state
 
 def ensure_utf8_text(value: Any, context: str, *, nonempty: bool=False) -> str:
     if not isinstance(value, str):
@@ -611,20 +595,20 @@ def ensure_utf8_text(value: Any, context: str, *, nonempty: bool=False) -> str:
 
 def validate_css_string(value: Any, context: str, *, nonempty: bool=False) -> str:
     text = ensure_utf8_text(value, context, nonempty=nonempty)
-    if any(unicodedata.category(character) in {"Cc", "Cf", "Cs"} for character in text):
-        fail(f"{context} contains a CSS-unsafe control, format, or surrogate character")
+    require(not any(unicodedata.category(character) in {"Cc", "Cf", "Cs"} for character in text),
+            f"{context} contains a CSS-unsafe control, format, or surrogate character")
     return text
 
 def validate_identifier(value: Any, context: str) -> str:
     text = ensure_utf8_text(value, context, nonempty=True)
-    if not ID_PATTERN.fullmatch(text):
-        fail(f"{context} is not a canonical identifier: {text!r}")
+    require(ID_PATTERN.fullmatch(text) is not None,
+            f"{context} is not a canonical identifier: {text!r}")
     return text
 
 def validate_language(value: Any, context: str) -> str:
     text = ensure_utf8_text(value, context, nonempty=True)
-    if not LANGUAGE_PATTERN.fullmatch(text):
-        fail(f"{context} is not a supported language tag: {text!r}")
+    require(LANGUAGE_PATTERN.fullmatch(text) is not None,
+            f"{context} is not a supported language tag: {text!r}")
     return text
 
 def finite_number(value: Any, context: str) -> float:
@@ -634,8 +618,7 @@ def finite_number(value: Any, context: str) -> float:
         number = float(value)
     except OverflowError:
         fail(f"{context} must be representable as a finite number")
-    if not math.isfinite(number):
-        fail(f"{context} must be finite")
+    require(math.isfinite(number), f"{context} must be finite")
     return number
 
 def normalize_visible_text(parts: list[str]) -> str:
@@ -1242,128 +1225,6 @@ def compose_css(spec: JsonObject, font_records: list[JsonObject], scoped_stylesh
         sections.append(additions.rstrip())
     return ("\n\n".join(section for section in sections if section) + "\n").encode()
 
-def resolved_font_value(name: str, tokens: list[Any], inherited: Any, roles: dict[str, str], context: str) -> Any:  # noqa: PLR0911
-    compact = css_tokens(tokens)
-    require(bool(compact), f"{context} has an empty {name}")
-    keyword = css_ident(compact[0]) if len(compact) == 1 else None
-    if keyword in {"inherit", "unset"}:
-        return inherited
-    if keyword == "initial":
-        return (None,) if name == "font-family" else ("normal" if name == "font-style" else 400)
-    if name == "font-family":
-        if len(compact) == 1 and compact[0].type == "function" and compact[0].lower_name == "var":
-            arguments = css_tokens(compact[0].arguments)
-            require(len(arguments) == 1 and arguments[0].type == "ident", f"{context} has an invalid font role")
-            role = str(arguments[0].value).casefold()
-            require(role in roles, f"{context} references an unknown font role")
-            return (roles[role],)
-        families: list[str | None] = []
-        for group in split_css(tokens, ","):
-            family = css_tokens(group)
-            if len(family) == 1 and family[0].type == "string":
-                families.append(str(family[0].value).casefold())
-            else:
-                require(bool(family) and all(token.type == "ident" for token in family), f"{context} has an invalid font family")
-                value = " ".join(str(token.value) for token in family).casefold()
-                families.append(None if len(family) == 1 and value in {"monospace", "sans-serif", "serif"} else value)
-        return tuple(families)
-    if name == "font-style":
-        require(keyword in {"normal", "italic"}, f"{context} has an unsupported font style")
-        return keyword
-    if keyword == "normal":
-        return 400
-    if keyword == "bold":
-        return 700
-    token = one_css_token(compact, context)
-    require(token.type == "number" and token.is_integer, f"{context} has an unsupported font weight")
-    return int(css_number(token, context))
-
-def resolved_inherited_keyword(tokens: list[Any], inherited: str, initial: str, context: str) -> str:
-    token = one_css_token(css_tokens(tokens), context)
-    value = css_ident(token)
-    if value is None:
-        fail(f"{context} requires a keyword")
-    if value in {"inherit", "unset"}:
-        return inherited
-    return initial if value == "initial" else value
-
-def require_font_glyphs(characters: str, selected: tuple[tuple[str | None, ...], str, int],
-                        coverage: dict[tuple[str, str, int], frozenset[int]], context: str) -> None:
-    for codepoint in sorted({ord(character) for character in characters if not character.isspace()}):
-        for family in selected[0]:
-            if family is None:
-                fail(f"{context} reaches a generic or initial font family")
-            face = (family, selected[1], selected[2])
-            require(face in coverage, f"{context} selects undeclared font face {family!r} {selected[1]} {selected[2]}")
-            if codepoint in coverage[face]:
-                break
-        else:
-            fail(f"{context} has no declared font glyph for U+{codepoint:04X}")
-
-def validate_selected_font_faces(html_content: bytes, css_content: bytes, roles: JsonObject,
-                                 coverage: dict[tuple[str, str, int], frozenset[int]]) -> None:
-    parser = html5lib.HTMLParser(tree=html5lib.getTreeBuilder("etree"), strict=False, namespaceHTMLElements=False)
-    document = parser.parse(html_content.decode())
-    require(not parser.errors, "generated HTML cannot be parsed for font selection")
-    matcher = cssselect2.Matcher()
-    for rule_index, rule in enumerate(tinycss2.parse_stylesheet(css_content.decode(), skip_comments=True, skip_whitespace=True), start=1):
-        if rule.type == "error":
-            fail(f"generated CSS rule {rule_index} cannot be parsed for font selection")
-        if rule.type != "qualified-rule":
-            continue
-        declarations: dict[str, list[Any]] = {}
-        for declaration in tinycss2.parse_declaration_list(rule.content, skip_comments=True, skip_whitespace=True):
-            if declaration.type == "declaration" and declaration.lower_name in {"font-family", "font-style", "font-weight", "hyphens", "list-style-type"}:
-                declarations[str(declaration.lower_name)] = declaration.value
-        if not declarations:
-            continue
-        try:
-            selectors = cssselect2.compile_selector_list(tinycss2.serialize(rule.prelude))
-        except cssselect2.SelectorError as error:
-            fail(f"generated CSS rule {rule_index} has an invalid selector: {error}")
-        for selector in selectors:
-            require(selector.pseudo_element is None, f"generated CSS rule {rule_index} has a font-selecting pseudo-element")
-            matcher.add_selector(selector, declarations)
-    role_values = {"--body-cjk": str(roles["body-cjk"]).casefold(),
-                   "--body-latin": str(roles["body-latin"]).casefold()}
-    computed: dict[Element, tuple[tuple[str | None, ...], str, int, str, str]] = {}
-    in_body: dict[Element, bool] = {}
-    wrapped = cssselect2.ElementWrapper.from_html_root(document)
-    for node in wrapped.iter_subtree():
-        element = node.etree_element
-        parent = node.parent.etree_element if node.parent is not None else None
-        inherited = computed[parent] if parent is not None else ((role_values["--body-latin"],), "normal", 400, "manual", "disc")
-        tag = element.tag if isinstance(element.tag, str) else ""
-        local = tag.rsplit("}", maxsplit=1)[-1]
-        values: list[Any] = list(inherited)
-        if local == "ul":
-            values[4] = "disc"
-        elif local == "ol":
-            values[4] = OL_TYPE_STYLES.get(element.attrib.get("type", "1"), "decimal")
-        for _specificity, _order, _pseudo, declarations in matcher.match(node):
-            for index, name in enumerate(("font-family", "font-style", "font-weight")):
-                if name in declarations:
-                    values[index] = resolved_font_value(name, declarations[name], inherited[index], role_values, f"generated CSS {name}")
-            if "hyphens" in declarations:
-                values[3] = resolved_inherited_keyword(declarations["hyphens"], inherited[3], "manual", "generated CSS hyphens")
-            if "list-style-type" in declarations:
-                values[4] = resolved_inherited_keyword(declarations["list-style-type"], inherited[4], "disc", "generated CSS list-style-type")
-        selected = (tuple(values[0]), str(values[1]), int(values[2]), str(values[3]), str(values[4]))
-        computed[element] = selected
-        body = local == "body" or (parent is not None and in_body.get(parent, False))
-        in_body[element] = body
-        text = (element.text or "") + "".join(child.tail or "" for child in list(element))
-        face = (selected[0], selected[1], selected[2])
-        if body and not tag.startswith("{"):
-            if text.strip():
-                require_font_glyphs(text, face, coverage, f"rendered <{local}> text")
-                if selected[3] == "auto" or (selected[3] == "manual" and "\u00ad" in text):
-                    require_font_glyphs("-", face, coverage, f"rendered <{local}> hyphen")
-            if local == "q":
-                require_font_glyphs("\u201c\u201d\u2018\u2019", face, coverage, "generated quotation marks")
-            if local == "li":
-                require_font_glyphs(LIST_MARKER_CHARACTERS[selected[4]], face, coverage, f"generated {selected[4]} list marker")
-
 def split_xml_name(value: str) -> tuple[str, str]:
     if value.startswith("{"):
         namespace, local = value[1:].split("}", maxsplit=1)
@@ -1386,13 +1247,15 @@ def svg_css_is_obfuscated(value: str) -> bool:
             or re.search("@import\\b", value, flags=re.IGNORECASE) is not None
             or re.search("(?:var|env)\\s*\\(", value, flags=re.IGNORECASE) is not None)
 
-def validate_page_svg(content: bytes, page: JsonObject, context: str) -> None:
-    try:
-        text = content.decode()
-    except UnicodeDecodeError as error:
-        fail(f"{context} is not UTF-8: {error}")
-    if "<!--" in text or "<?" in text or "<![CDATA[" in text:
-        fail(f"{context} contains XML comments, instructions, or CDATA")
+def validate_page_svg(
+    content: bytes,
+    context: str,
+    *,
+    expected_dimensions: tuple[float, float] | None=None,
+) -> tuple[float, float]:
+    text = decode_utf8(content, context)
+    require(not any(token in text for token in ("<!--", "<?", "<![CDATA[")),
+            f"{context} contains XML comments, instructions, or CDATA")
     try:
         parser = iterparse(BytesIO(content), events=("start", "pi"), forbid_dtd=True,
                            forbid_entities=True, forbid_external=True)
@@ -1405,49 +1268,34 @@ def validate_page_svg(content: bytes, page: JsonObject, context: str) -> None:
     if root is None:
         fail(f"{context} has no SVG root")
     namespace, local = split_xml_name(root.tag)
-    if namespace != SVG_NAMESPACE or local != "svg":
-        fail(f"{context} root must be an SVG namespace <svg>")
+    require(namespace == SVG_NAMESPACE and local == "svg",
+            f"{context} root must be an SVG namespace <svg>")
     width = svg_length(root.attrib.get("width"), f"{context} width")
     height = svg_length(root.attrib.get("height"), f"{context} height")
-    page_width = finite_number(page["width"], f"{context} source page width")
-    page_height = finite_number(page["height"], f"{context} source page height")
-    if (
-        f"{width:.3f}" != f"{page_width:.3f}"
-        or f"{height:.3f}" != f"{page_height:.3f}"
-    ):
-        fail(f"{context} dimensions do not match the source package page")
+    if expected_dimensions is not None:
+        expected_width, expected_height = expected_dimensions
+        require(f"{width:.3f}" == f"{expected_width:.3f}"
+                and f"{height:.3f}" == f"{expected_height:.3f}",
+                f"{context} dimensions do not match the source package page")
     view_box = root.attrib.get("viewBox")
-    if not isinstance(view_box, str):
-        fail(f"{context} requires a viewBox")
+    require(isinstance(view_box, str), f"{context} requires a viewBox")
     try:
         values = [float(value) for value in re.split("[\\s,]+", view_box.strip())]
     except ValueError as error:
         fail(f"{context} has an invalid viewBox: {error}")
-    if (
-        len(values) != 4
-        or any(not math.isfinite(value) for value in values)
-        or any(
-            abs(actual - expected) > 0.001
-            for actual, expected in zip(
-                values,
-                (0.0, 0.0, width, height),
-                strict=True,
-            )
-        )
-    ):
-        fail(f"{context} viewBox does not match the source page")
+    require(len(values) == 4 and all(math.isfinite(value) for value in values)
+            and all(abs(actual - expected) <= 0.001
+                    for actual, expected in zip(values, (0.0, 0.0, width, height), strict=True)),
+            f"{context} viewBox does not match the source page")
     identifiers: set[str] = set()
     references: set[str] = set()
     for node in root.iter():
-        if not isinstance(node.tag, str):
-            fail(f"{context} contains unsupported XML nodes")
+        require(isinstance(node.tag, str), f"{context} contains unsupported XML nodes")
         node_namespace, node_name = split_xml_name(node.tag)
-        if node_namespace != SVG_NAMESPACE or node_name not in SVG_ELEMENTS:
-            fail(f"{context} contains undeclared SVG element <{node_name}>")
-        if node.text and node.text.strip():
-            fail(f"{context} contains unexpected SVG text nodes")
-        if node.tail and node.tail.strip():
-            fail(f"{context} contains unexpected SVG tail text")
+        require(node_namespace == SVG_NAMESPACE and node_name in SVG_ELEMENTS,
+                f"{context} contains undeclared SVG element <{node_name}>")
+        require(not node.text or not node.text.strip(), f"{context} contains unexpected SVG text nodes")
+        require(not node.tail or not node.tail.strip(), f"{context} contains unexpected SVG tail text")
         for raw_name, raw_value in node.attrib.items():
             attribute_namespace, attribute_name = split_xml_name(raw_name)
             value = ensure_utf8_text(raw_value, f"{context} {attribute_name}")
@@ -1462,13 +1310,13 @@ def validate_page_svg(content: bytes, page: JsonObject, context: str) -> None:
                 fail(f"{context} contains undeclared namespaced attribute {raw_name!r}")
             if attribute_name == "style":
                 match = SVG_STYLE_PATTERN.fullmatch(value.strip())
-                if (svg_css_is_obfuscated(value) or node_name != "g" or match is None
-                        or match.group(1).casefold() not in SVG_STANDARD_BLEND_MODES):
-                    fail(f"{context} allows only a standard mix-blend-mode style on <g>")
+                require(not svg_css_is_obfuscated(value) and node_name == "g" and match is not None
+                        and match.group(1).casefold() in SVG_STANDARD_BLEND_MODES,
+                        f"{context} allows only a standard mix-blend-mode style on <g>")
                 continue
             if attribute_name == "href":
-                if node_name not in {"image", "linearGradient", "pattern", "radialGradient", "use"}:
-                    fail(f"{context} contains href on unsupported SVG element <{node_name}>")
+                require(node_name in {"image", "linearGradient", "pattern", "radialGradient", "use"},
+                        f"{context} contains href on unsupported SVG element <{node_name}>")
                 reference = value.strip()
                 if SVG_FRAGMENT_PATTERN.fullmatch(reference):
                     references.add(reference[1:])
@@ -1481,18 +1329,16 @@ def validate_page_svg(content: bytes, page: JsonObject, context: str) -> None:
                 except (binascii.Error, ValueError) as error:
                     fail(f"{context} contains invalid embedded image data: {error}")
                 media = match.group("media").casefold()
-                if (media == "png" and not decoded.startswith(b"\x89PNG\r\n\x1a\n")) or (
-                    media == "jpeg" and not decoded.startswith(b"\xff\xd8\xff")
-                ):
-                    fail(f"{context} embedded image signature does not match its media type")
+                require((media == "png" and decoded.startswith(b"\x89PNG\r\n\x1a\n"))
+                        or (media == "jpeg" and decoded.startswith(b"\xff\xd8\xff")),
+                        f"{context} embedded image signature does not match its media type")
                 continue
-            if attribute_name not in SVG_ATTRIBUTES:
-                fail(f"{context} contains undeclared SVG attribute {attribute_name!r}")
+            require(attribute_name in SVG_ATTRIBUTES,
+                    f"{context} contains undeclared SVG attribute {attribute_name!r}")
             if attribute_name == "id":
-                if SVG_FRAGMENT_PATTERN.fullmatch(f"#{value}") is None:
-                    fail(f"{context} contains invalid SVG id {value!r}")
-                if value in identifiers:
-                    fail(f"{context} contains duplicate SVG id {value!r}")
+                require(SVG_FRAGMENT_PATTERN.fullmatch(f"#{value}") is not None,
+                        f"{context} contains invalid SVG id {value!r}")
+                require(value not in identifiers, f"{context} contains duplicate SVG id {value!r}")
                 identifiers.add(value)
             if attribute_name in SVG_PRESENTATION_ATTRIBUTES:
                 if svg_css_is_obfuscated(value):
@@ -1506,8 +1352,8 @@ def validate_page_svg(content: bytes, page: JsonObject, context: str) -> None:
                 elif SVG_EXTERNAL_SCHEME_PATTERN.search(value):
                     fail(f"{context} contains an external scheme in SVG {attribute_name}")
     missing = sorted(references - identifiers)
-    if missing:
-        fail(f"{context} references missing SVG IDs: {', '.join(missing)}")
+    require(not missing, f"{context} references missing SVG IDs: {', '.join(missing)}")
+    return (width, height)
 
 def index_objects(items: list[Any], key: str, context: str) -> dict[Any, JsonObject]:
     indexed: dict[Any, JsonObject] = {}
@@ -1522,9 +1368,8 @@ def index_objects(items: list[Any], key: str, context: str) -> dict[Any, JsonObj
 
 def source_pages(source: JsonObject) -> tuple[dict[str, JsonObject], dict[int, JsonObject]]:
     pages = source["pages"]
-    by_id = index_objects(pages, "id", "source page")
-    by_number = index_objects(pages, "pdf_page", "source page")
-    return (by_id, by_number)
+    return (index_objects(pages, "id", "source page"),
+            index_objects(pages, "pdf_page", "source page"))
 
 def validate_source_and_bundle(source: Snapshot, bundle: Snapshot, recipe: Recipe, *,
                                require_original_binding: bool) -> tuple[dict[str, JsonObject], dict[int, JsonObject], dict[str, JsonObject]]:
@@ -1534,25 +1379,24 @@ def validate_source_and_bundle(source: Snapshot, bundle: Snapshot, recipe: Recip
             or any(page["status"] != "pass" for page in source.value["pages"])):
         fail("source package effective status must be pass")
     source_record = bundle.value["source_package"]
-    if (source_record["sha256"] != sha256_bytes(source.content)
-            or source_record["bytes"] != len(source.content)):
-        fail("translation bundle source-package hash binding does not match")
+    require(source_record["sha256"] == sha256_bytes(source.content)
+            and source_record["bytes"] == len(source.content),
+            "translation bundle source-package hash binding does not match")
     if require_original_binding:
         bound_source = resolve_relative(bundle.path.parent, source_record["path"],
                                         "translation bundle source_package")
-        if bound_source != source.path:
-            fail("translation bundle source_package path does not resolve to the assembly source package")
-    if bundle.value["target_language"] != recipe.value["language"]:
-        fail("translation target language does not match assembly language")
+        require(bound_source == source.path,
+                "translation bundle source_package path does not resolve to the assembly source package")
+    require(bundle.value["target_language"] == recipe.value["language"],
+            "translation target language does not match assembly language")
     missing_profiles = sorted(set(source.value["profiles"]) - set(recipe.value["profiles"]))
-    if missing_profiles:
-        fail("assembly profiles omit source profiles: " + ", ".join(missing_profiles))
+    require(not missing_profiles, "assembly profiles omit source profiles: " + ", ".join(missing_profiles))
     pages_by_id, pages_by_number = source_pages(source.value)
     fragments = index_objects(bundle.value["fragments"], "id", "translation fragment")
     order = recipe.value["fragment_order"]
     missing_fragments = [identifier for identifier in order if identifier not in fragments]
-    if missing_fragments:
-        fail("assembly fragment_order references absent approved fragments: " + ", ".join(missing_fragments))
+    require(not missing_fragments,
+            "assembly fragment_order references absent approved fragments: " + ", ".join(missing_fragments))
     for identifier in order:
         for block_id in fragments[identifier]["source_block_ids"]:
             match = BLOCK_ID_PATTERN.fullmatch(block_id)
@@ -1561,8 +1405,7 @@ def validate_source_and_bundle(source: Snapshot, bundle: Snapshot, recipe: Recip
             page = pages_by_id.get(match.group("page"))
             if page is None:
                 fail(f"fragment {identifier} references an absent source page")
-            if page["status"] != "pass":
-                fail(f"fragment {identifier} references a non-passing source page")
+            require(page["status"] == "pass", f"fragment {identifier} references a non-passing source page")
     return (pages_by_id, pages_by_number, fragments)
 
 def load_assembly(spec: Snapshot, *, source: Snapshot | None = None, bundle: Snapshot | None = None,
@@ -1570,41 +1413,36 @@ def load_assembly(spec: Snapshot, *, source: Snapshot | None = None, bundle: Sna
     profile, _profile_content = load_profile()
     recipe = validate_recipe(spec.value, profile)
     if source is None:
-        source_path = resolve_relative(spec.path.parent, recipe.value["source_package"],
-                                       "assembly source package")
+        source_path = resolve_relative(
+            spec.path.parent, recipe.value["source_package"], "assembly source package")
         source = read_snapshot(source_path, "source package")
     if bundle is None:
-        bundle_path = resolve_relative(spec.path.parent, recipe.value["translation_bundle"],
-                                       "assembly translation bundle")
+        bundle_path = resolve_relative(
+            spec.path.parent, recipe.value["translation_bundle"], "assembly translation bundle")
         bundle = read_snapshot(bundle_path, "translation bundle")
     pages_by_id, pages_by_number, fragments = validate_source_and_bundle(
         source, bundle, recipe, require_original_binding=require_original_binding)
     return Assembly(spec, recipe, source, bundle, profile, pages_by_id, pages_by_number, fragments)
 
-def load_fragments(assembly: Assembly) -> tuple[dict[str, Markup], dict[str, bytes], list[Path]]:
+def load_fragments(assembly: Assembly) -> tuple[dict[str, Markup], dict[str, bytes]]:
     markups: dict[str, Markup] = {}
     contents: dict[str, bytes] = {}
-    paths: list[Path] = []
     claimed_paths: set[Path] = set()
     for identifier in assembly.recipe.value["fragment_order"]:
         record = assembly.bundle_fragments[identifier]
         path, content = read_bound_asset(assembly.bundle.path.parent, record, f"approved fragment {identifier}")
-        if path in claimed_paths:
-            fail("distinct selected fragment IDs cannot share one asset path")
+        require(path not in claimed_paths, "distinct selected fragment IDs cannot share one asset path")
         claimed_paths.add(path)
-        try:
-            text = content.decode()
-        except UnicodeDecodeError as error:
-            fail(f"approved fragment {identifier} is not UTF-8: {error}")
-        markup = parse_markup(text, assembly.profile, f"approved fragment {identifier}", allow_figure_markers=True)
-        if markup.visible_sha256 != record["visible_text_sha256"]:
-            fail(f"approved fragment {identifier} visible-text hash does not match")
+        text = decode_utf8(content, f"approved fragment {identifier}")
+        markup = parse_markup(
+            text, assembly.profile, f"approved fragment {identifier}", allow_figure_markers=True)
+        require(markup.visible_sha256 == record["visible_text_sha256"],
+                f"approved fragment {identifier} visible-text hash does not match")
         markups[identifier] = markup
         contents[identifier] = content
-        paths.append(path)
-    return (markups, contents, paths)
+    return (markups, contents)
 
-def validate_consumed_blocks(assembly: Assembly) -> list[Path]:
+def validate_consumed_blocks(assembly: Assembly) -> None:
     requested: dict[str, set[str]] = {}
     for identifier in assembly.recipe.value["fragment_order"]:
         for block_id in assembly.bundle_fragments[identifier]["source_block_ids"]:
@@ -1612,62 +1450,53 @@ def validate_consumed_blocks(assembly: Assembly) -> list[Path]:
             if match is None:
                 fail(f"fragment {identifier} has an invalid source block ID")
             requested.setdefault(match.group("page"), set()).add(block_id)
-    paths: list[Path] = []
     for page_id, block_ids in requested.items():
         page = assembly.pages_by_id[page_id]
-        path, content = read_bound_asset(assembly.source.path.parent, page["assets"]["blocks"], f"source blocks for {page_id}")
+        _path, content = read_bound_asset(
+            assembly.source.path.parent, page["assets"]["blocks"], f"source blocks for {page_id}")
         blocks = parse_json_bytes(content, f"source blocks for {page_id}")
         validate_schema(blocks, "source-blocks.schema.json", f"source blocks for {page_id}")
-        if blocks["page_id"] != page_id:
-            fail(f"source block file page_id does not match {page_id}")
+        require(blocks["page_id"] == page_id, f"source block file page_id does not match {page_id}")
         indexed = index_objects(blocks["blocks"], "id", "source block")
         width = finite_number(page["width"], "page width")
         height = finite_number(page["height"], "page height")
         for position, block in enumerate(blocks["blocks"], start=1):
             block_id = block["id"]
             expected_id = f"{page_id}-block-{position:04d}"
-            if block_id != expected_id:
-                fail(f"source block {position} id must be {expected_id}")
-            if block["source_order"] != position:
-                fail(f"source block {block_id} source_order must be {position}")
-            if not block["text"].strip():
-                fail(f"source block {block_id} text is blank")
-            bbox = [
-                finite_number(value, f"source block {block_id} bbox coordinate")
-                for value in block["bbox"]
-            ]
+            require(block_id == expected_id, f"source block {position} id must be {expected_id}")
+            require(block["source_order"] == position,
+                    f"source block {block_id} source_order must be {position}")
+            require(bool(block["text"].strip()), f"source block {block_id} text is blank")
+            bbox = [finite_number(value, f"source block {block_id} bbox coordinate")
+                    for value in block["bbox"]]
             x0, y0, x1, y1 = bbox
-            if x0 < 0 or y0 < 0 or x1 <= x0 or y1 <= y0 or x1 > width or y1 > height:
-                fail(f"source block {block_id} bbox is outside the source page")
+            require(x0 >= 0 and y0 >= 0 and x1 > x0 and y1 > y0 and x1 <= width and y1 <= height,
+                    f"source block {block_id} bbox is outside the source page")
         available = set(indexed)
         missing = sorted(block_ids - available)
-        if missing:
-            fail(f"selected source blocks are absent on {page_id}: " + ", ".join(missing))
-        paths.append(path)
-    return paths
+        require(not missing, f"selected source blocks are absent on {page_id}: " + ", ".join(missing))
 
-def validated_bbox(value: Any, page: JsonObject, context: str) -> list[float]:
-    if not isinstance(value, list) or len(value) != 4:
-        fail(f"{context} bbox must contain four numbers")
+def validated_bbox(value: Any, dimensions: tuple[float, float], context: str) -> list[float]:
+    require(isinstance(value, list) and len(value) == 4, f"{context} bbox must contain four numbers")
     bbox = [finite_number(number, f"{context} bbox coordinate") for number in value]
     x0, y0, x1, y1 = bbox
-    width = finite_number(page["width"], f"{context} page width")
-    height = finite_number(page["height"], f"{context} page height")
-    if x0 < 0 or y0 < 0 or x1 <= x0 or (y1 <= y0) or x1 > width or y1 > height:
-        fail(f"{context} bbox is outside the source page")
+    width, height = dimensions
+    require(x0 >= 0 and y0 >= 0 and x1 > x0 and y1 > y0 and x1 <= width and y1 <= height,
+            f"{context} bbox is outside the source page")
     canonical = [float(f"{number:.3f}") for number in bbox]
-    if canonical[2] <= canonical[0] or canonical[3] <= canonical[1]:
-        fail(f"{context} bbox collapses under three-decimal canonicalization")
+    require(canonical[2] > canonical[0] and canonical[3] > canonical[1],
+            f"{context} bbox collapses under three-decimal canonicalization")
     return canonical
 
-def load_figures(assembly: Assembly) -> tuple[list[JsonObject], dict[str, tuple[JsonObject, bytes]], list[Path]]:
+def load_figures(assembly: Assembly) -> tuple[list[JsonObject], dict[str, tuple[JsonObject, bytes]]]:
     declarations = assembly.recipe.value["figures"]
     if not declarations:
-        return ([], {}, [])
+        return ([], {})
     figure_map_record = assembly.source.value.get("figure_map")
     if not isinstance(figure_map_record, dict):
         fail("assembly figures require a source-package figure_map")
-    map_path, map_content = read_bound_asset(assembly.source.path.parent, figure_map_record, "source figure map")
+    _map_path, map_content = read_bound_asset(
+        assembly.source.path.parent, figure_map_record, "source figure map")
     figure_map = parse_json_bytes(map_content, "source figure map")
     figure_schema = load_schema("figure-map.schema.json")
     require(set(figure_map) == {"schema_version", "coordinate_space", "figures"}
@@ -1687,7 +1516,6 @@ def load_figures(assembly: Assembly) -> tuple[list[JsonObject], dict[str, tuple[
         figures_by_id[identifier] = item
     selected: list[JsonObject] = []
     used_pages: dict[str, tuple[JsonObject, bytes]] = {}
-    consumed_paths = [map_path]
     part_ids: set[str] = set()
     for declaration in declarations:
         identifier = declaration["id"]
@@ -1695,44 +1523,37 @@ def load_figures(assembly: Assembly) -> tuple[list[JsonObject], dict[str, tuple[
         if source_figure is None:
             fail(f"assembly figure is absent from the figure map: {identifier}")
         source_profile = source_figure["profile"]
-        if (
-            source_profile is not None
-            and source_profile not in assembly.source.value["profiles"]
-        ):
-            fail(
-                f"figure {identifier} profile is not declared by the "
-                f"source package: {source_profile!r}"
-            )
+        require(source_profile is None or source_profile in assembly.source.value["profiles"],
+                f"figure {identifier} profile is not declared by the source package: {source_profile!r}")
         parts = source_figure["parts"]
-        if [part["order"] for part in parts] != list(range(1, len(parts) + 1)):
-            fail(f"figure {identifier} parts are not in canonical order")
+        require([part["order"] for part in parts] == list(range(1, len(parts) + 1)),
+                f"figure {identifier} parts are not in canonical order")
         for part in parts:
             part_id = part["id"]
-            if part_id in part_ids:
-                fail(f"duplicate source figure part id: {part_id}")
+            require(part_id not in part_ids, f"duplicate source figure part id: {part_id}")
             part_ids.add(part_id)
             page = assembly.pages_by_number.get(part["pdf_page"])
             if page is None:
                 fail(f"figure part {part_id} references an absent page")
-            if page["status"] != "pass":
-                fail(f"figure part {part_id} references a non-passing page")
-            validated_bbox(part["bbox"], page, f"figure part {part_id}")
+            require(page["status"] == "pass", f"figure part {part_id} references a non-passing page")
+            dimensions = (finite_number(page["width"], f"figure part {part_id} page width"),
+                          finite_number(page["height"], f"figure part {part_id} page height"))
+            validated_bbox(part["bbox"], dimensions, f"figure part {part_id}")
             page_id = page["id"]
             if page_id not in used_pages:
-                svg_path, svg_content = read_bound_asset(assembly.source.path.parent, page["assets"]["svg"], f"source page SVG {page_id}")
-                validate_page_svg(svg_content, page, f"source page SVG {page_id}")
+                _svg_path, svg_content = read_bound_asset(assembly.source.path.parent, page["assets"]["svg"], f"source page SVG {page_id}")
+                validate_page_svg(svg_content, f"source page SVG {page_id}",
+                                  expected_dimensions=dimensions)
                 used_pages[page_id] = (page, svg_content)
-                consumed_paths.append(svg_path)
         selected.append(source_figure)
-    return (selected, used_pages, consumed_paths)
+    return (selected, used_pages)
 
-def inspect_font_bytes(content: bytes, context: str) -> tuple[JsonObject, frozenset[int]]:
+def inspect_font_bytes(content: bytes, context: str) -> JsonObject:
     font: TTFont | None = None
     try:
         font = TTFont(BytesIO(content), lazy=False, fontNumber=0)
         codepoints = frozenset(font.getBestCmap() or ())
-        if not codepoints:
-            fail(f"{context} has no Unicode cmap")
+        require(bool(codepoints), f"{context} has no Unicode cmap")
         name_table = font.get("name")
 
         def font_name(name_id: int) -> str | None:
@@ -1745,7 +1566,7 @@ def inspect_font_bytes(content: bytes, context: str) -> tuple[JsonObject, frozen
                     except UnicodeError:
                         continue
             return None
-        return ({"postscript_name": font_name(6), "full_name": font_name(4)}, codepoints)
+        return {"postscript_name": font_name(6), "full_name": font_name(4)}
     except ContractError:
         raise
     except (AssertionError, AttributeError, IndexError, KeyError, OSError, OverflowError, TTLibError, TypeError, ValueError, struct.error) as error:
@@ -1754,73 +1575,61 @@ def inspect_font_bytes(content: bytes, context: str) -> tuple[JsonObject, frozen
         if font is not None:
             font.close()
 
-def validate_document_bindings(recipe: Recipe, fragments: dict[str, Markup]) -> None:
-    order = recipe.value["fragment_order"]
-    figure_ids = [declaration["id"] for declaration in recipe.value["figures"]]
-    markers = [marker for identifier in order for marker in fragments[identifier].markers]
-    if markers != figure_ids:
-        fail("figure markers must match assembly figure IDs and order exactly")
-    known_ids = {recipe.value["publication_id"]}
+def validate_document_bindings(publication_id: str, fragment_order: list[str],
+                               fragments: dict[str, Markup],
+                               figures: list[tuple[str, str, Markup]]) -> None:
+    figure_ids = [identifier for identifier, _dom_id, _caption in figures]
+    markers = [marker for identifier in fragment_order for marker in fragments[identifier].markers]
+    require(markers == figure_ids, "figure markers must match figure IDs and order exactly")
+    known_ids = {publication_id}
     references: list[tuple[str, str]] = []
-    for identifier in order:
+    for identifier in fragment_order:
         markup = fragments[identifier]
         duplicates = known_ids.intersection(markup.ids)
-        if duplicates:
-            fail("duplicate document IDs: " + ", ".join(sorted(duplicates)))
+        require(not duplicates, "duplicate document IDs: " + ", ".join(sorted(duplicates)))
         known_ids.update(markup.ids)
         references.extend(markup.references)
-    for figure_id in figure_ids:
-        if figure_id in known_ids:
-            fail(f"figure ID conflicts with another document ID: {figure_id}")
-        known_ids.add(figure_id)
-        caption = recipe.captions[figure_id]
+    for identifier, dom_id, caption in figures:
+        require(dom_id not in known_ids,
+                f"figure {identifier} DOM ID conflicts with another document ID: {dom_id}")
+        known_ids.add(dom_id)
         duplicates = known_ids.intersection(caption.ids)
-        if duplicates:
-            fail("duplicate caption document IDs: " + ", ".join(sorted(duplicates)))
+        require(not duplicates, "duplicate caption document IDs: " + ", ".join(sorted(duplicates)))
         known_ids.update(caption.ids)
         references.extend(caption.references)
     missing = sorted({target for _context, target in references if target not in known_ids})
-    if missing:
-        fail("same-document references have no target: " + ", ".join(missing))
+    require(not missing, "same-document references have no target: " + ", ".join(missing))
 
 def load_build_material(assembly: Assembly) -> BuildMaterial:
-    fragments, fragment_contents, fragment_paths = load_fragments(assembly)
-    block_paths = validate_consumed_blocks(assembly)
-    figures, used_pages, figure_paths = load_figures(assembly)
-    validate_document_bindings(assembly.recipe, fragments)
+    fragments, fragment_contents = load_fragments(assembly)
+    validate_consumed_blocks(assembly)
+    figures, used_pages = load_figures(assembly)
+    spec = assembly.recipe.value
+    bindings = [(figure["id"], figure["id"], assembly.recipe.captions[figure["id"]])
+                for figure in spec["figures"]]
+    validate_document_bindings(spec["publication_id"], spec["fragment_order"], fragments, bindings)
     fonts: list[tuple[JsonObject, bytes, JsonObject]] = []
-    font_paths: list[Path] = []
     for index, declaration in enumerate(assembly.recipe.value["fonts"], start=1):
         path = resolve_relative(assembly.spec.path.parent, declaration["path"], f"font {index}")
         content = read_regular(path, f"font {index}")
-        metadata, _codepoints = inspect_font_bytes(content, f"font {index}")
+        metadata = inspect_font_bytes(content, f"font {index}")
         fonts.append((declaration, content, metadata))
-        font_paths.append(path)
     families = {font["family"].casefold() for font in assembly.recipe.value["fonts"]}
     stylesheets: list[tuple[bytes, str]] = []
-    stylesheet_paths: list[Path] = []
     for index, identity in enumerate(assembly.recipe.value["stylesheets"], start=1):
         path = resolve_relative(assembly.spec.path.parent, identity, f"stylesheet {index}")
         content = read_regular(path, f"stylesheet {index}")
-        try:
-            text = content.decode()
-        except UnicodeDecodeError as error:
-            fail(f"stylesheet {index} is not UTF-8: {error}")
+        text = decode_utf8(content, f"stylesheet {index}")
         stylesheets.append((content, validate_and_scope_stylesheet(text, assembly.profile, families, f"stylesheet {index}")))
-        stylesheet_paths.append(path)
-    consumed_paths = [
-        assembly.spec.path, assembly.source.path, assembly.bundle.path, *fragment_paths, *block_paths,
-        *figure_paths, *font_paths, *stylesheet_paths,
-    ]
-    return BuildMaterial(assembly, fragments, fragment_contents, figures, used_pages, fonts,
-                         stylesheets, consumed_paths)
+    return BuildMaterial(assembly, fragments, fragment_contents, figures, used_pages, fonts, stylesheets)
 
 def crop_markup(part: JsonObject, page: JsonObject, source_svg: AssetRecord, alternative: str) -> str:
-    x0, y0, x1, y1 = validated_bbox(part["bbox"], page, f"crop {part['id']}")
-    width = x1 - x0
-    height = y1 - y0
     page_width = finite_number(page["width"], "source page width")
     page_height = finite_number(page["height"], "source page height")
+    x0, y0, x1, y1 = validated_bbox(
+        part["bbox"], (page_width, page_height), f"crop {part['id']}")
+    width = x1 - x0
+    height = y1 - y0
     accessible = f"{alternative} - part {part['order']}"
     return (
         f'<svg class="figure-part" data-crop-id="{escape(part["id"], quote=True)}" '
@@ -1859,8 +1668,8 @@ def figure_markup(declaration: JsonObject, manifest_figure: JsonObject,
 def compose_html(recipe: Recipe, fragments: dict[str, Markup], manifest_figures: list[JsonObject],
                  pages_by_number: dict[int, JsonObject]) -> bytes:
     declarations = recipe.value["figures"]
-    if len(declarations) != len(manifest_figures):
-        fail("manifest figure count does not match assembly specification")
+    require(len(declarations) == len(manifest_figures),
+            "manifest figure count does not match assembly specification")
     figures = {
         declaration["id"]: figure_markup(declaration, manifest_figure, pages_by_number,
                                           recipe.captions[declaration["id"]],
@@ -1904,68 +1713,6 @@ def publication_policies() -> JsonObject:
         "generated_css_profile": GENERATED_CSS_PROFILE,
     }
 
-def ensure_output_is_separate(output: Path, inputs: list[Path]) -> None:
-    destination = output.expanduser().resolve()
-    for input_path in inputs:
-        try:
-            input_path.resolve(strict=True).relative_to(destination)
-        except ValueError:
-            continue
-        fail(f"assembly output would contain and replace input {input_path}")
-
-def make_stage(output: Path) -> Path:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix=f".{output.name}.staging-", dir=output.parent))
-
-def publish_directory(stage: Path, output: Path, *, force: bool) -> None:
-    try:
-        output_info = output.lstat()
-    except FileNotFoundError:
-        output_info = None
-    if output_info is not None:
-        reparse = getattr(output_info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
-        if stat.S_ISLNK(output_info.st_mode) or reparse or not stat.S_ISDIR(output_info.st_mode):
-            fail(f"assembly output exists and is not a regular directory: {output}")
-    if output_info is not None and (not force):
-        fail(f"assembly output already exists; pass --force: {output}")
-    if output_info is not None and next(output.iterdir(), None) is not None:
-        marker = output / MANIFEST_NAME
-        try:
-            marker_info = marker.lstat()
-        except OSError as error:
-            fail(f"--force requires an assembly ownership marker at {marker}: {error}")
-        reparse = getattr(marker_info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
-        if stat.S_ISLNK(marker_info.st_mode) or reparse or not stat.S_ISREG(marker_info.st_mode):
-            fail(f"--force requires a regular non-symlink assembly ownership marker: {marker}")
-    had_output = output_info is not None
-    backup: Path | None = None
-    try:
-        if had_output:
-            backup = output.with_name(f".{output.name}.backup-{uuid.uuid4().hex}")
-            output.replace(backup)
-        stage.replace(output)
-    except (OSError, KeyboardInterrupt) as error:
-        try:
-            if backup is not None and backup.exists():
-                if output.exists():
-                    shutil.rmtree(output)
-                backup.replace(output)
-            elif not had_output and output.exists():
-                shutil.rmtree(output)
-        except OSError as rollback_error:
-            fail(f"cannot restore assembly output after {error}; backup remains at {backup}: {rollback_error}")
-        if isinstance(error, KeyboardInterrupt):
-            raise
-        fail(f"cannot publish assembly directory: {error}")
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
-    if backup is not None:
-        try:
-            shutil.rmtree(backup)
-        except OSError as error:
-            eprint(f"warning: assembly committed but backup remains at {backup}: {error}")
-
 def build_candidate(stage: Path, material: BuildMaterial) -> JsonObject:
     assembly = material.assembly
     recipe = assembly.recipe
@@ -1994,9 +1741,13 @@ def build_candidate(stage: Path, material: BuildMaterial) -> JsonObject:
         parts = []
         for source_part in source_figure["parts"]:
             page = assembly.pages_by_number[source_part["pdf_page"]]
+            dimensions = (
+                finite_number(page["width"], "source page width"),
+                finite_number(page["height"], "source page height"),
+            )
             canonical_bbox = validated_bbox(
                 source_part["bbox"],
-                page,
+                dimensions,
                 f"figure part {source_part['id']}",
             )
             parts.append({
@@ -2065,11 +1816,8 @@ def build_candidate(stage: Path, material: BuildMaterial) -> JsonObject:
             "css": css_record,
             "draft_pdf": None,
         },
-        "tracked_files": [],
         "status": "assembled",
     }
-    manifest["tracked_files"] = [{"path": identity, "sha256": state.sha256, "bytes": state.size}
-                                 for identity, state in scan_tree(stage).items()]
     manifest_path = stage / MANIFEST_NAME
     write_bytes(manifest_path, json_bytes(manifest))
     validate_publication(manifest_path)
@@ -2085,230 +1833,380 @@ def print_json(value: JsonObject) -> None:
     print(json.dumps(value, ensure_ascii=False, sort_keys=True))
 
 def build_publication(args: argparse.Namespace) -> int:
-    requested_output = args.output.expanduser()
-    if (
-        sys.platform == "win32"
-        and requested_output.name.rstrip(" .") != requested_output.name
-    ):
-        fail("Windows output names must not end in a dot or space")
     spec = read_snapshot(args.spec, "assembly specification")
     material = load_build_material(load_assembly(spec, require_original_binding=True))
-    output = requested_output
-    output = output.parent.resolve() / output.name
-    if sys.platform == "win32":
-        try:
-            output_info = output.lstat()
-        except FileNotFoundError:
-            output_info = None
-        if output_info is not None:
-            reparse = getattr(
-                output_info,
-                "st_file_attributes",
-                0,
-            ) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
-            if (
-                not stat.S_ISLNK(output_info.st_mode)
-                and not reparse
-                and stat.S_ISDIR(output_info.st_mode)
-            ):
-                try:
-                    output = output.resolve(strict=True)
-                except OSError as error:
-                    fail(f"cannot resolve existing assembly output: {error}")
-    ensure_output_is_separate(output, material.consumed_paths)
-    stage = make_stage(output)
+    requested_output = args.output.expanduser()
+    if os.name == "nt" and any(
+        part not in {".", ".."} and part.rstrip(" .") != part
+        for part in requested_output.parts
+    ):
+        fail("Windows assembly output path components must not end in a dot or space")
+    output = requested_output.parent.resolve() / requested_output.name
+    reject_existing(output, f"assembly output already exists: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.staging-", dir=output.parent))
     try:
         summary = build_candidate(stage, material)
-        publish_directory(stage, output, force=args.force)
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
+        try:
+            stage.rename(output)
+        except OSError as error:
+            fail(f"cannot publish assembly directory: {error}")
+    except BaseException as error:
+        try:
+            if stage.exists():
+                shutil.rmtree(stage)
+        except OSError as cleanup_error:
+            fail(f"{error}; cannot remove assembly candidate {stage}: {cleanup_error}")
+        raise
     print_json({"committed": True, "manifest": str(output / MANIFEST_NAME), **summary})
     return 0
 
-def semantic_asset_records(manifest: JsonObject) -> list[AssetRecord]:
-    records = list(manifest["inputs"].values())
-    records.extend(fragment["asset"] for fragment in manifest["fragments"])
-    records.extend(part["source_svg"] for figure in manifest["figures"] for part in figure["parts"])
-    records.extend(font["asset"] for font in manifest["fonts"])
-    records.extend(manifest["stylesheets"])
-    records.extend((manifest["outputs"]["html"], manifest["outputs"]["css"]))
-    if isinstance(manifest["outputs"]["draft_pdf"], dict):
-        records.append(manifest["outputs"]["draft_pdf"])
+def semantic_asset_records(manifest: JsonObject) -> list[tuple[str, AssetRecord]]:
+    records = [(f"inputs.{role}", record) for role, record in manifest["inputs"].items()]
+    records += [(f"fragments[{index}].asset", item["asset"]) for index, item in enumerate(manifest["fragments"], 1)]
+    records += [(f"figures[{fi}].parts[{pi}].source_svg", part["source_svg"])
+                for fi, figure in enumerate(manifest["figures"], 1)
+                for pi, part in enumerate(figure["parts"], 1)]
+    records += [(f"fonts[{index}].asset", item["asset"]) for index, item in enumerate(manifest["fonts"], 1)]
+    records += [(f"stylesheets[{index}]", item) for index, item in enumerate(manifest["stylesheets"], 1)]
+    records += [(f"outputs.{role}", record) for role, record in manifest["outputs"].items()
+                if isinstance(record, dict)]
     return records
 
+def semantic_asset_map(manifest: JsonObject) -> dict[str, AssetRecord]:
+    assets: dict[str, AssetRecord] = {}
+    labels: dict[str, str] = {}
+    for label, record in semantic_asset_records(manifest):
+        require(isinstance(record, dict) and set(record) == {"path", "sha256", "bytes"},
+                f"{label} must be an exact asset record")
+        identity = normalized_relative_path(record["path"], f"{label} path")
+        if identity in assets and assets[identity] != record:
+            fail(f"conflicting semantic asset declarations for {identity}: {labels[identity]} and {label}")
+        assets.setdefault(identity, record)
+        labels.setdefault(identity, label)
+    require(MANIFEST_NAME not in assets, "assembly manifest must not declare itself as a semantic asset")
+    return dict(sorted(assets.items()))
+
 def validate_manifest_inventory(root: Path, manifest: JsonObject) -> dict[str, FileState]:
-    inventory = scan_tree(root)
-    if MANIFEST_NAME not in inventory:
-        fail("publication tree is missing assembly-manifest.json")
-    tracked = manifest["tracked_files"]
-    paths = [record["path"] for record in tracked]
-    if paths != sorted(paths) or len(paths) != len(set(paths)):
-        fail("tracked_files must be path-sorted with unique paths")
-    expected = set(inventory) - {MANIFEST_NAME}
-    if set(paths) != expected:
-        fail(f"tracked_files does not exactly match retained regular files; missing={sorted(expected - set(paths))}, extra={sorted(set(paths) - expected)}")
-    tracked_by_path = {}
-    for index, record in enumerate(tracked, start=1):
-        verify_asset_record(record, inventory, f"tracked file {index}")
-        tracked_by_path[record["path"]] = record
-    semantic = semantic_asset_records(manifest)
-    semantic_paths = {record["path"] for record in semantic}
-    if semantic_paths != expected:
-        fail("manifest semantic assets do not exactly cover the retained tree; "
-             f"unreferenced={sorted(expected - semantic_paths)}, "
-             f"absent={sorted(semantic_paths - expected)}")
-    for index, record in enumerate(semantic, start=1):
-        verify_asset_record(record, inventory, f"manifest asset {index}")
-        if tracked_by_path.get(record["path"]) != record:
-            fail(f"manifest asset {record['path']} does not equal its tracked_files record")
+    assets = semantic_asset_map(manifest)
+    expected = set(assets) | {MANIFEST_NAME}
+    inventory = scan_tree(root, expected)
+    missing, extra = sorted(expected - set(inventory)), sorted(set(inventory) - expected)
+    require(not missing and not extra,
+            f"manifest semantic assets do not exactly cover the retained tree; missing={missing}, extra={extra}")
+    for identity, record in assets.items():
+        state = inventory[identity]
+        require(record["bytes"] == state.size and record["sha256"] == state.sha256,
+                f"manifest asset {identity} content does not match")
     return inventory
 
-def input_snapshot(manifest: JsonObject, inventory: dict[str, FileState], role: str, expected_path: str) -> Snapshot:
-    record = manifest["inputs"][role]
-    if record["path"] != expected_path:
-        fail(f"manifest input {role} must use {expected_path}")
-    state = verify_asset_record(record, inventory, f"input {role}")
-    content = state.path.read_bytes()
-    return Snapshot(state.path, content, parse_json_bytes(content, f"input {role}"))
+def read_utf8_asset(state: FileState, context: str) -> str:
+    return decode_utf8(read_regular(state.path, context), context)
 
-def validate_fragment_projection(manifest: JsonObject, assembly: Assembly, inventory: dict[str, FileState]) -> dict[str, Markup]:
-    records = manifest["fragments"]
-    order = assembly.recipe.value["fragment_order"]
-    if [record["id"] for record in records] != order:
-        fail("manifest fragment IDs do not match assembly fragment order")
-    markups = {}
-    for index, (identifier, record) in enumerate(zip(order, records, strict=True), start=1):
-        asset = record["asset"]
-        if asset["path"] != f"fragments/{identifier}.html":
-            fail(f"manifest fragment {identifier} has a noncanonical path")
-        state = verify_asset_record(asset, inventory, f"manifest fragment {identifier}")
-        approved = assembly.bundle_fragments[identifier]
-        if state.size != approved["bytes"] or state.sha256 != approved["sha256"]:
-            fail(f"retained fragment {identifier} does not match the translation bundle")
-        try:
-            content = state.path.read_text(encoding="utf-8")
-        except UnicodeDecodeError as error:
-            fail(f"retained fragment {identifier} is not UTF-8: {error}")
-        markup = parse_markup(content, assembly.profile, f"retained fragment {identifier}", allow_figure_markers=True)
-        expected = {
-            "id": identifier,
-            "asset": asset,
-            "dom_selector": f'[data-fragment-id="{identifier}"]',
-            "visible_text_sha256": approved["visible_text_sha256"],
-            "source_block_ids": approved["source_block_ids"],
-        }
-        if record != expected:
-            fail(f"manifest fragment {index} does not project the approved fragment")
-        if markup.visible_sha256 != record["visible_text_sha256"]:
-            fail(f"retained fragment {identifier} visible-text hash changed")
-        markups[identifier] = markup
-    return markups
-
-def validate_figure_projection(manifest: JsonObject, assembly: Assembly, inventory: dict[str, FileState]) -> list[JsonObject]:
-    declarations = assembly.recipe.value["figures"]
-    figures = manifest["figures"]
-    if len(declarations) != len(figures):
-        fail("manifest figures do not match assembly figures")
-    seen_parts: set[str] = set()
-    validated_svgs: set[str] = set()
-    for declaration, figure in zip(declarations, figures, strict=True):
-        identifier = declaration["id"]
-        caption = declaration["caption_html"]
-        expected = {
-            "id": identifier,
-            "dom_id": identifier,
-            "caption_html": caption,
-            "caption_sha256": sha256_bytes(caption.encode()),
-            "alt": declaration["alt"],
-        }
-        if {key: figure[key] for key in expected} != expected:
-            fail(f"manifest figure {identifier} projection is inconsistent")
-        profile = figure["profile"]
-        if profile is not None and profile not in assembly.source.value["profiles"]:
-            fail(
-                f"manifest figure {identifier} profile is not declared by "
-                f"the source package: {profile!r}"
-            )
+def load_manifest_material(manifest: JsonObject, inventory: dict[str, FileState],
+                           profile: JsonObject) -> tuple[dict[str, Markup], dict[str, Markup],
+                                                         dict[str, tuple[float, float]], list[str]]:
+    for role in ("source_package", "translation_bundle", "assembly_spec"):
+        path = f"inputs/{role.replace('_', '-')}.json"
+        require(manifest["inputs"][role]["path"] == path, f"manifest input {role} must use {path}")
+    fragments: dict[str, Markup] = {}
+    for index, record in enumerate(manifest["fragments"], start=1):
+        identifier = record["id"]
+        require(identifier not in fragments, f"duplicate manifest fragment id: {identifier}")
+        require(record["asset"]["path"] == f"fragments/{identifier}.html",
+                f"manifest fragment {identifier} has a noncanonical path")
+        require(record["dom_selector"] == f'[data-fragment-id="{identifier}"]',
+                f"manifest fragment {identifier} has a noncanonical selector")
+        context = f"manifest fragment {identifier}"
+        markup = parse_markup(read_utf8_asset(inventory[record["asset"]["path"]], context), profile, context,
+                              allow_figure_markers=True)
+        require(markup.visible_sha256 == record["visible_text_sha256"],
+                f"manifest fragment {index} visible-text hash is inconsistent")
+        fragments[identifier] = markup
+    captions: dict[str, Markup] = {}
+    part_ids: set[str] = set()
+    dimensions: dict[str, tuple[float, float]] = {}
+    for figure in manifest["figures"]:
+        identifier = figure["id"]
+        require(identifier not in captions, f"duplicate manifest figure id: {identifier}")
+        figure_profile = figure["profile"]
+        require(figure_profile is None or figure_profile in manifest["profiles"],
+                f"manifest figure {identifier} profile is not declared by the assembly manifest: {figure_profile!r}")
+        caption = figure["caption_html"]
+        require(figure["caption_sha256"] == sha256_bytes(caption.encode()),
+                f"manifest figure {identifier} caption hash is inconsistent")
+        captions[identifier] = parse_markup(
+            caption, profile, f"manifest figure {identifier} caption", allow_figure_markers=False)
         parts = figure["parts"]
-        if [part["order"] for part in parts] != list(range(1, len(parts) + 1)):
-            fail(f"manifest figure {identifier} part order is invalid")
+        require([part["order"] for part in parts] == list(range(1, len(parts) + 1)),
+                f"manifest figure {identifier} part order is invalid")
         for part in parts:
             part_id = part["id"]
-            if part_id in seen_parts:
-                fail(f"duplicate manifest crop id: {part_id}")
-            seen_parts.add(part_id)
-            if part["dom_selector"] != f'[data-crop-id="{part_id}"]':
-                fail(f"crop {part_id} has a noncanonical selector")
-            page = assembly.pages_by_number.get(part["pdf_page"])
-            if page is None:
-                fail(f"crop {part_id} references an absent source page")
-            if page["status"] != "pass":
-                fail(f"crop {part_id} references a non-passing source page")
-            canonical_bbox = validated_bbox(
-                part["bbox"],
-                page,
-                f"crop {part_id}",
-            )
-            if part["bbox"] != canonical_bbox:
-                fail(
-                    f"crop {part_id} bbox is not canonical to three decimals"
-                )
-            source_record = page["assets"]["svg"]
+            require(part_id not in part_ids, f"duplicate manifest crop id: {part_id}")
+            part_ids.add(part_id)
+            require(part["dom_selector"] == f'[data-crop-id="{part_id}"]',
+                    f"crop {part_id} has a noncanonical selector")
             retained = part["source_svg"]
-            page_id = page["id"]
-            if retained["path"] != f"assets/pages/{page_id}.svg":
-                fail(f"crop {part_id} source SVG path is not canonical")
-            if retained["sha256"] != source_record["sha256"] or retained["bytes"] != source_record["bytes"]:
-                fail(f"crop {part_id} source SVG does not match the source-package asset")
-            if retained["path"] not in validated_svgs:
-                state = verify_asset_record(retained, inventory, f"crop {part_id} source SVG")
-                validate_page_svg(state.path.read_bytes(), page, f"retained source page SVG {page_id}")
-                validated_svgs.add(retained["path"])
-    return figures
-
-def validate_font_projection(manifest: JsonObject, assembly: Assembly, inventory: dict[str, FileState]) -> tuple[list[JsonObject], dict[tuple[str, str, int], frozenset[int]]]:
-    declarations = assembly.recipe.value["fonts"]
-    records = manifest["fonts"]
-    coverage: dict[tuple[str, str, int], frozenset[int]] = {}
-    if len(declarations) != len(records):
-        fail("manifest fonts do not match assembly fonts")
-    for index, (declaration, record) in enumerate(zip(declarations, records, strict=True), start=1):
-        extension = Path(declaration["path"]).suffix.casefold()
+            path = PurePosixPath(retained["path"])
+            require(path.parent.as_posix() == "assets/pages" and path.suffix == ".svg"
+                    and ID_PATTERN.fullmatch(path.stem) is not None,
+                    f"crop {part_id} source SVG path is not canonical")
+            if retained["path"] not in dimensions:
+                dimensions[retained["path"]] = validate_page_svg(
+                    inventory[retained["path"]].path.read_bytes(),
+                    f"retained source page SVG {retained['path']}")
+            canonical = validated_bbox(part["bbox"], dimensions[retained["path"]], f"crop {part_id}")
+            require(part["bbox"] == canonical, f"crop {part_id} bbox is not canonical to three decimals")
+    figure_bindings = [(figure["id"], figure["dom_id"], captions[figure["id"]])
+                       for figure in manifest["figures"]]
+    validate_document_bindings(manifest["publication_id"],
+                               [fragment["id"] for fragment in manifest["fragments"]],
+                               fragments, figure_bindings)
+    faces: set[tuple[str, str, int]] = set()
+    families: set[str] = set()
+    for index, record in enumerate(manifest["fonts"], start=1):
+        family = validate_css_string(record["family"], f"manifest font {index} family", nonempty=True)
         asset = record["asset"]
-        if asset["path"] != f"assets/fonts/font-{index:03d}{extension}":
-            fail(f"manifest font {index} has a noncanonical path")
-        state = verify_asset_record(asset, inventory, f"manifest font {index}")
-        metadata, codepoints = inspect_font_bytes(state.path.read_bytes(), f"manifest font {index}")
-        expected = {"family": declaration["family"], "style": declaration["style"], "weight": declaration["weight"], **metadata, "asset": asset}
-        if record != expected:
-            fail(f"manifest font {index} metadata is inconsistent")
-        coverage[(declaration["family"].casefold(), declaration["style"], declaration["weight"])] = codepoints
-    if manifest["font_roles"] != assembly.recipe.value["font_roles"]:
-        fail("manifest font_roles do not match the assembly specification")
-    return (records, coverage)
+        extension = PurePosixPath(asset["path"]).suffix.casefold()
+        require(asset["path"] == f"assets/fonts/font-{index:03d}{extension}",
+                f"manifest font {index} has a noncanonical path")
+        require(extension in {".otf", ".ttf"}, f"manifest font {index} must be an OTF or TTF file")
+        face = (family.casefold(), record["style"], record["weight"])
+        require(face not in faces, f"duplicate manifest font face: {family} {record['style']} {record['weight']}")
+        faces.add(face)
+        families.add(family.casefold())
+        metadata = inspect_font_bytes(inventory[asset["path"]].path.read_bytes(), f"manifest font {index}")
+        require({"postscript_name": record["postscript_name"], "full_name": record["full_name"]} == metadata,
+                f"manifest font {index} metadata is inconsistent")
+    for role in FONT_ROLES:
+        family = validate_css_string(manifest["font_roles"][role], f"font role {role}", nonempty=True)
+        require(family.casefold() in families, f"font role {role} references undeclared family {family!r}")
+        require((family.casefold(), "normal", 400) in faces, f"font role {role} has no normal 400 face")
+    scoped: list[str] = []
+    for index, record in enumerate(manifest["stylesheets"], start=1):
+        require(record["path"] == f"assets/stylesheets/stylesheet-{index:03d}.css",
+                f"manifest stylesheet {index} has a noncanonical path")
+        context = f"manifest stylesheet {index}"
+        scoped.append(validate_and_scope_stylesheet(
+            read_utf8_asset(inventory[record["path"]], context), profile, families, context))
+    return (fragments, captions, dimensions, scoped)
 
-def validate_stylesheet_projection(manifest: JsonObject, assembly: Assembly, inventory: dict[str, FileState]) -> list[str]:
-    records = manifest["stylesheets"]
-    if len(assembly.recipe.value["stylesheets"]) != len(records):
-        fail("manifest stylesheets do not match assembly stylesheets")
-    families = {font["family"].casefold() for font in assembly.recipe.value["fonts"]}
-    scoped = []
-    for index, record in enumerate(records, start=1):
-        if record["path"] != f"assets/stylesheets/stylesheet-{index:03d}.css":
-            fail(f"manifest stylesheet {index} has a noncanonical path")
-        state = verify_asset_record(record, inventory, f"manifest stylesheet {index}")
-        try:
-            content = state.path.read_text(encoding="utf-8")
-        except UnicodeDecodeError as error:
-            fail(f"manifest stylesheet {index} is not UTF-8: {error}")
-        scoped.append(validate_and_scope_stylesheet(content, assembly.profile, families, f"manifest stylesheet {index}"))
-    return scoped
+def generated_css_records(content: str, context: str) -> list[Any]:
+    def canonical_tokens(tokens: list[Any]) -> tuple[Any, ...]:
+        result: list[Any] = []
+        pending_whitespace = False
+        for token in tokens:
+            if token.type == "comment":
+                continue
+            if token.type == "whitespace":
+                pending_whitespace = bool(result)
+                continue
+            if pending_whitespace:
+                result.append(("whitespace",))
+                pending_whitespace = False
+            if token.type in {"string", "url"}:
+                result.append((token.type, str(token.value)))
+            elif token.type == "function":
+                result.append(("function", str(token.name), canonical_tokens(token.arguments)))
+            elif token.type in {"() block", "[] block", "{} block"}:
+                result.append((token.type, canonical_tokens(token.content)))
+            else:
+                result.append((token.type, tinycss2.serialize([token])))
+        return tuple(result)
+
+    def records(rules: list[Any], *, nested: bool) -> list[Any]:
+        result: list[Any] = []
+        for index, rule in enumerate(rules, start=1):
+            item_context = f"{context} rule {index}"
+            require(rule.type != "error", f"{item_context} cannot be parsed: {getattr(rule, 'message', '')}")
+            if rule.type == "qualified-rule":
+                result.append(("rule", canonical_tokens(rule.prelude), canonical_tokens(rule.content)))
+                continue
+            require(rule.type == "at-rule" and not nested, f"{item_context} is outside the generated CSS profile")
+            keyword = str(rule.lower_at_keyword)
+            if keyword in {"font-face", "page"}:
+                require(not css_tokens(rule.prelude) and rule.content is not None,
+                        f"{item_context} has an invalid @{keyword} rule")
+                result.append((keyword, canonical_tokens(rule.content)))
+            elif keyword == "media":
+                prelude = css_tokens(rule.prelude)
+                require(len(prelude) == 1 and css_ident(prelude[0]) == "screen" and rule.content is not None,
+                        f"{item_context} has an invalid @media rule")
+                nested_rules = tinycss2.parse_rule_list(rule.content, skip_comments=True, skip_whitespace=True)
+                result.append(("media-screen", tuple(records(nested_rules, nested=True))))
+            else:
+                fail(f"{item_context} uses unsupported @{keyword}")
+        return result
+
+    try:
+        rules = tinycss2.parse_stylesheet(content, skip_comments=True, skip_whitespace=True)
+        return records(rules, nested=False)
+    except ContractError:
+        raise
+    except (RecursionError, ValueError) as error:
+        fail(f"{context} is not valid CSS: {error}")
+
+def validate_generated_css(content: str, manifest: JsonObject,
+                           scoped_stylesheets: list[str]) -> None:
+    css_path = Path(manifest["outputs"]["css"]["path"])
+    margins = manifest["print_geometry"]["margin_in"]
+    roles = manifest["font_roles"]
+    expected = (
+        "".join(font_face_css(font, css_path) for font in manifest["fonts"])
+        + decode_utf8(read_regular(ASSETS / "print-base.css", "bundled print CSS"), "bundled print CSS")
+        + "@page {\n"
+        f"  size: {PAGE_SIZES[manifest['print_geometry']['page_size']]};\n"
+        f"  margin: {margins['top']}in {margins['right']}in "
+        f"{margins['bottom']}in {margins['left']}in;\n"
+        "}\n:root {\n"
+        f"  --body-cjk: {css_string(roles['body-cjk'], 'body-cjk family')};\n"
+        f"  --body-latin: {css_string(roles['body-latin'], 'body-latin family')};\n"
+        "}\n"
+        + "".join(scoped_stylesheets)
+    )
+    require(generated_css_records(content, "generated CSS")
+            == generated_css_records(expected, "manifest-bound CSS"),
+            "generated CSS does not match the manifest-bound generated profile")
+
+def local_name(node: Element) -> str:
+    return node.tag.rsplit("}", maxsplit=1)[-1] if isinstance(node.tag, str) else ""
+
+def checked_children(node: Element, tag: str, attributes: dict[str, str], context: str, *,
+                     text: str | None=None, mixed: bool=False) -> list[Element]:
+    require(local_name(node) == tag, f"{context} must be <{tag}>")
+    require(dict(node.attrib) == attributes, f"{context} attributes do not match the generated profile")
+    children = [child for child in list(node) if not is_comment(child)]
+    if mixed:
+        return children
+    if text is not None:
+        require(not children and (node.text or "") == text, f"{context} content is inconsistent")
+    else:
+        require(not (node.text or "").strip() and not any((child.tail or "").strip() for child in list(node)),
+                f"{context} contains unexpected direct text")
+    return children
+
+def fragment_signature(parent: Element, *, generated: bool) -> tuple[Any, ...]:
+    signature: list[Any] = [("text", parent.text or "")]
+    for child in list(parent):
+        if is_comment(child):
+            require(not generated, "generated HTML contains a comment")
+            match = FIGURE_COMMENT_PATTERN.fullmatch(child.text or "")
+            if match is None:
+                fail("retained fragment contains an invalid comment")
+            signature.append(("figure", match.group("id")))
+        elif generated and local_name(child) == "figure" and "data-figure-id" in child.attrib:
+            signature.append(("figure", child.attrib["data-figure-id"]))
+        else:
+            signature.append(("element", local_name(child), tuple(sorted(child.attrib.items())),
+                              fragment_signature(child, generated=generated)))
+        signature.append(("tail", child.tail or ""))
+    return tuple(signature)
+
+def validate_crop_element(node: Element, figure: JsonObject, part: JsonObject,
+                          dimensions: tuple[float, float]) -> None:
+    part_id = part["id"]
+    x0, y0, x1, y1 = validated_bbox(part["bbox"], dimensions, f"crop {part_id}")
+    width, height = x1 - x0, y1 - y0
+    accessible = f"{figure['alt']} - part {part['order']}"
+    attributes = {
+        "class": "figure-part", "data-crop-id": part_id,
+        "{http://www.w3.org/2000/xmlns/}xmlns": SVG_NAMESPACE,
+        "viewBox": f"{x0:.3f} {y0:.3f} {width:.3f} {height:.3f}",
+        "width": f"{width:.3f}", "height": f"{height:.3f}", "role": "img",
+        "aria-label": accessible, "preserveAspectRatio": "xMidYMid meet"}
+    children = checked_children(node, "svg", attributes, f"crop {part_id}")
+    require(len(children) == 2, f"crop {part_id} must contain title and image")
+    title, image = children
+    checked_children(title, "title", {}, f"crop {part_id} title", text=accessible)
+    page_width, page_height = dimensions
+    image_attributes = {"href": part["source_svg"]["path"], "x": "0", "y": "0",
+                        "width": f"{page_width:.3f}", "height": f"{page_height:.3f}"}
+    checked_children(image, "image", image_attributes, f"crop {part_id} image", text="")
+
+def validate_figure_element(node: Element, figure: JsonObject, caption: Markup,
+                            svg_dimensions: dict[str, tuple[float, float]]) -> None:
+    identifier = figure["id"]
+    attributes = dict(node.attrib)
+    class_value = attributes.pop("class", "")
+    classes = class_value.split()
+    require(bool(classes) and len(classes) == len(set(classes))
+            and classes[0] == "publication-figure" and not (set(classes[1:]) & GENERATED_CLASSES),
+            f"figure {identifier} classes are outside the generated profile")
+    require(all(re.fullmatch("[A-Za-z][A-Za-z0-9_-]{0,63}", token) for token in classes),
+            f"figure {identifier} has invalid class tokens")
+    expected = {"id": figure["dom_id"], "data-figure-id": identifier,
+                "role": "group", "aria-label": figure["alt"]}
+    require(attributes == expected, f"figure {identifier} attributes do not match the generated profile")
+    children = checked_children(node, "figure", {"class": class_value, **expected}, f"figure {identifier}")
+    require(len(children) == 2, f"figure {identifier} must contain parts and caption")
+    parts_node, caption_node = children
+    crop_nodes = checked_children(parts_node, "div", {"class": "figure-parts"},
+                                  f"figure {identifier} parts wrapper")
+    require(len(crop_nodes) == len(figure["parts"]), f"figure {identifier} crop count is inconsistent")
+    for part, crop in zip(figure["parts"], crop_nodes, strict=True):
+        validate_crop_element(crop, figure, part, svg_dimensions[part["source_svg"]["path"]])
+    checked_children(caption_node, "figcaption", {}, f"figure {identifier} caption", mixed=True)
+    require(fragment_signature(caption_node, generated=True) == fragment_signature(caption.root, generated=False),
+            f"figure {identifier} caption content is inconsistent")
+
+def validate_generated_html(content: str, manifest: JsonObject, fragments: dict[str, Markup],
+                            captions: dict[str, Markup],
+                            svg_dimensions: dict[str, tuple[float, float]]) -> None:
+    require(content.startswith("<!doctype html>"), "generated HTML requires an HTML doctype")
+    parser = html5lib.HTMLParser(tree=html5lib.getTreeBuilder("etree"), strict=False,
+                                 namespaceHTMLElements=False)
+    try:
+        document = parser.parse(content)
+    except html5lib.html5parser.ParseError as error:
+        fail(f"generated HTML is not valid HTML: {error}")
+    except ValueError as error:
+        fail(f"generated HTML is not valid HTML: {error}")
+    if parser.errors:
+        findings = ", ".join(f"{position[0]}:{position[1]} {code}"
+                             for position, code, _data in parser.errors[:10])
+        fail(f"generated HTML has parse errors: {findings}")
+    for node in document.iter():
+        require(not is_comment(node), "generated HTML contains a comment")
+    root_children = checked_children(
+        document, "html", {"lang": manifest["document"]["language"]}, "generated <html>")
+    require([local_name(node) for node in root_children] == ["head", "body"],
+            "generated HTML must contain one head followed by one body")
+    head, body = root_children
+    head_children = checked_children(head, "head", {}, "generated <head>")
+    require([local_name(node) for node in head_children] == ["meta", "title", "link"],
+            "generated head structure is invalid")
+    meta, title, link = head_children
+    checked_children(meta, "meta", {"charset": "utf-8"}, "generated charset metadata", text="")
+    checked_children(title, "title", {"lang": manifest["document"]["title_language"]},
+                     "generated title", text=manifest["document"]["title"])
+    checked_children(link, "link", {"rel": "stylesheet",
+                                    "href": manifest["outputs"]["css"]["path"]},
+                     "generated stylesheet link", text="")
+    body_children = checked_children(body, "body", {}, "generated <body>")
+    require(len(body_children) == 1 and local_name(body_children[0]) == "main",
+            "generated body must contain one main")
+    main = body_children[0]
+    sections = checked_children(main, "main", {"id": manifest["publication_id"]}, "generated <main>")
+    expected_fragments = manifest["fragments"]
+    require(len(sections) == len(expected_fragments), "generated fragment section count is inconsistent")
+    for record, section in zip(expected_fragments, sections, strict=True):
+        identifier = record["id"]
+        checked_children(section, "section", {"data-fragment-id": identifier},
+                         f"fragment section {identifier}", mixed=True)
+        require(fragment_signature(section, generated=True)
+                == fragment_signature(fragments[identifier].root, generated=False),
+                f"fragment section {identifier} content is inconsistent")
+    observed_figures = [node for section in sections for node in section.iter()
+                        if local_name(node) == "figure"]
+    require([node.attrib.get("data-figure-id") for node in observed_figures]
+            == [figure["id"] for figure in manifest["figures"]],
+            "generated figure order is inconsistent")
+    for figure, node in zip(manifest["figures"], observed_figures, strict=True):
+        validate_figure_element(node, figure, captions[figure["id"]], svg_dimensions)
 
 def validate_pdf(path: Path, context: str) -> None:
     content = read_regular(path, context)
-    if not content:
-        fail(f"{context} is empty")
+    require(bool(content), f"{context} is empty")
     try:
         import fitz
     except ImportError:
@@ -2319,8 +2217,9 @@ def validate_pdf(path: Path, context: str) -> None:
         fail(f"{context} is not a parseable PDF: {error}")
     try:
         try:
-            if not document.is_pdf or document.page_count < 1:
-                fail(f"{context} is not a nonempty PDF")
+            require(document.is_pdf and document.page_count >= 1, f"{context} is not a nonempty PDF")
+            require(document.page_count <= MAX_PDF_PAGES,
+                    f"{context} exceeds the {MAX_PDF_PAGES}-page validation ceiling")
             for page_index in range(document.page_count):
                 document.load_page(page_index)
         except (fitz.mupdf.FzErrorBase, OSError, RuntimeError, ValueError) as error:
@@ -2330,68 +2229,44 @@ def validate_pdf(path: Path, context: str) -> None:
 
 def validate_publication(manifest_path: Path) -> ValidationResult:
     entry = manifest_path.expanduser().absolute()
-    if entry.name != MANIFEST_NAME:
-        fail(f"manifest must be named {MANIFEST_NAME}")
-    if not stat.S_ISDIR(checked_node(entry.parent, "publication root").st_mode):
-        fail(f"publication root is not a directory: {entry.parent}")
+    require(entry.name == MANIFEST_NAME, f"manifest must be named {MANIFEST_NAME}")
+    require(stat.S_ISDIR(checked_node(entry.parent, "publication root").st_mode),
+            f"publication root is not a directory: {entry.parent}")
     manifest_bytes = read_regular(entry, "assembly manifest")
     resolved = entry.resolve(strict=True)
     manifest = parse_json_bytes(manifest_bytes, "assembly manifest")
     validate_schema(manifest, "assembly-manifest.schema.json", "assembly manifest")
-    if manifest["generator"] != generator_record():
-        fail("assembly manifest generator does not match this runtime")
-    if manifest["policies"] != publication_policies():
-        fail("assembly manifest policies do not match bundled profiles")
+    require(manifest["policies"] == publication_policies(),
+            "assembly manifest policies do not match bundled profiles")
     inventory = validate_manifest_inventory(resolved.parent, manifest)
-    source = input_snapshot(manifest, inventory, "source_package", "inputs/source-package.json")
-    bundle = input_snapshot(manifest, inventory, "translation_bundle", "inputs/translation-bundle.json")
-    spec = input_snapshot(manifest, inventory, "assembly_spec", "inputs/assembly-spec.json")
-    assembly = load_assembly(spec, source=source, bundle=bundle, require_original_binding=False)
-    recipe = assembly.recipe
-    expected_document = {"title": recipe.value["title"], "title_language": recipe.value["title_language"], "language": recipe.value["language"]}
-    expected_geometry = {"page_size": recipe.value["page"]["size"], "margin_in": recipe.value["page"]["margin_in"]}
-    if manifest["publication_id"] != recipe.value["publication_id"]:
-        fail("manifest publication_id does not match the assembly specification")
-    if manifest["document"] != expected_document:
-        fail("manifest document does not match the assembly specification")
-    if manifest["profiles"] != recipe.value["profiles"]:
-        fail("manifest profiles do not match the assembly specification")
-    if manifest["print_geometry"] != expected_geometry:
-        fail("manifest print geometry does not match the assembly specification")
-    fragments = validate_fragment_projection(manifest, assembly, inventory)
-    validate_document_bindings(recipe, fragments)
-    figures = validate_figure_projection(manifest, assembly, inventory)
-    fonts, font_coverage = validate_font_projection(manifest, assembly, inventory)
-    stylesheets = validate_stylesheet_projection(manifest, assembly, inventory)
+    profile, _profile_content = load_profile()
+    fragments, captions, svg_dimensions, stylesheets = load_manifest_material(
+        manifest,
+        inventory,
+        profile,
+    )
     outputs = manifest["outputs"]
-    if outputs["html"]["path"] != "index.html":
-        fail("manifest HTML output must be index.html")
-    if outputs["css"]["path"] != "assets/print.css":
-        fail("manifest CSS output must be assets/print.css")
-    html = verify_asset_record(outputs["html"], inventory, "HTML output")
-    css = verify_asset_record(outputs["css"], inventory, "CSS output")
-    html_content = html.path.read_bytes()
-    css_content = css.path.read_bytes()
-    if html_content != compose_html(recipe, fragments, figures, assembly.pages_by_number):
-        fail("generated HTML does not match the closed document profile")
-    if css_content != compose_css(recipe.value, fonts, stylesheets):
-        fail("generated CSS does not match the closed CSS profile")
-    validate_selected_font_faces(html_content, css_content, manifest["font_roles"], font_coverage)
+    require(outputs["html"]["path"] == "index.html", "manifest HTML output must be index.html")
+    require(outputs["css"]["path"] == "assets/print.css",
+            "manifest CSS output must be assets/print.css")
+    html = inventory[outputs["html"]["path"]]
+    css = inventory[outputs["css"]["path"]]
+    try:
+        validate_generated_html(read_utf8_asset(html, "HTML output"), manifest, fragments,
+                                captions, svg_dimensions)
+    except RecursionError as error:
+        fail(f"generated HTML exceeds runtime validation limits: {error}")
+    validate_generated_css(read_utf8_asset(css, "CSS output"), manifest, stylesheets)
     draft_pdf = outputs["draft_pdf"]
     if isinstance(draft_pdf, dict):
-        pdf = verify_asset_record(draft_pdf, inventory, "draft PDF")
-        if pdf.path.suffix.casefold() != ".pdf":
-            fail("draft PDF must use a .pdf extension")
+        pdf = inventory[draft_pdf["path"]]
+        require(pdf.path.suffix.casefold() == ".pdf", "draft PDF must use a .pdf extension")
         validate_pdf(pdf.path, "draft PDF")
     summary = {
-        "manifest": str(resolved),
-        "publication_id": manifest["publication_id"],
-        "fragments": len(manifest["fragments"]),
-        "figures": len(figures),
-        "crops": sum(len(figure["parts"]) for figure in figures),
-        "pdf": draft_pdf["path"] if isinstance(draft_pdf, dict) else None,
-        "status": "valid",
-    }
+        "manifest": str(resolved), "publication_id": manifest["publication_id"],
+        "fragments": len(manifest["fragments"]), "figures": len(manifest["figures"]),
+        "crops": sum(len(figure["parts"]) for figure in manifest["figures"]),
+        "pdf": draft_pdf["path"] if isinstance(draft_pdf, dict) else None, "status": "valid"}
     return ValidationResult(resolved, manifest_bytes, manifest, inventory, summary)
 
 def browser_candidates() -> list[Path]:
@@ -2426,8 +2301,7 @@ def browser_candidates() -> list[Path]:
 def select_browser(requested: Path | None) -> Path:
     if requested is not None:
         path = requested.expanduser().resolve(strict=True)
-        if not stat.S_ISREG(path.stat().st_mode):
-            fail(f"browser is not a regular file: {path}")
+        require(stat.S_ISREG(path.stat().st_mode), f"browser is not a regular file: {path}")
         return path
     candidates = browser_candidates()
     if candidates:
@@ -2450,130 +2324,120 @@ def file_url_path(value: str) -> Path | None:
 
 def render_pdf(html_path: Path, output_path: Path, browser_path: Path, allowed_files: set[Path]) -> None:
     try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-        from playwright.sync_api import sync_playwright
+        from playwright.async_api import Error as PlaywrightError
+        from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+        from playwright.async_api import async_playwright
     except ImportError:
         fail("Playwright is unavailable; run with uv run --script")
     blocked: list[str] = []
 
-    def route_request(route: Any, request: Any) -> None:
+    async def route_request(route: Any, request: Any) -> None:
         url = request.url
         local = file_url_path(url)
         if url == "about:blank" or (local is not None and local in allowed_files):
-            route.continue_()
+            await route.continue_()
         else:
             blocked.append(url)
-            route.abort()
-    try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(
-                executable_path=str(browser_path),
-                headless=True,
-                args=[
-                    "--disable-background-networking",
-                    "--disable-component-update",
-                    "--disable-default-apps",
-                    "--disable-extensions",
-                    "--disable-sync",
-                    "--no-first-run",
-                ])
-            try:
-                context = browser.new_context(java_script_enabled=False, service_workers="block")
-                context.route("**/*", route_request)
-                page = context.new_page()
-                page.goto(html_path.as_uri(), wait_until="networkidle", timeout=120000)
-                if blocked:
-                    fail("Chromium requested files outside the manifest: " + ", ".join(sorted(set(blocked))))
-                page.emulate_media(media="print")
-                page.pdf(path=str(output_path), print_background=True, prefer_css_page_size=True, display_header_footer=False)
-                context.close()
-            finally:
-                browser.close()
-    except (PlaywrightError, PlaywrightTimeoutError) as error:
-        fail(f"Chromium PDF render failed: {error}")
+            await route.abort()
 
-def publish_render(result: ValidationResult, pdf_path: Path, temporary_pdf: Path, browser_path: Path, *, force: bool) -> None:
-    root = result.manifest_path.parent
-    existing_record = result.manifest["outputs"]["draft_pdf"]
-    existing_path = root / Path(*PurePosixPath(existing_record["path"]).parts) if isinstance(existing_record, dict) else None
-    if existing_path is not None and (not force):
-        fail("assembly already has a draft PDF; pass --force to replace it")
-    if pdf_path.exists() and (existing_path is None or pdf_path != existing_path or (not force)):
-        fail(f"PDF destination already exists outside the manifest: {pdf_path}")
-    pdf_content = read_regular(temporary_pdf, "rendered PDF")
-    pdf_record = asset_from_bytes(pdf_path.relative_to(root).as_posix(), pdf_content)
+    async def render() -> None:
+        try:
+            async with async_playwright() as playwright:
+                browser = await playwright.chromium.launch(
+                    executable_path=str(browser_path),
+                    headless=True,
+                    args=["--disable-background-networking", "--disable-component-update",
+                          "--disable-default-apps", "--disable-extensions", "--disable-sync",
+                          "--no-first-run"])
+                try:
+                    context = await browser.new_context(java_script_enabled=False, service_workers="block")
+                    try:
+                        await context.route("**/*", route_request)
+                        page = await context.new_page()
+                        await page.goto(html_path.as_uri(), wait_until="networkidle",
+                                        timeout=NAVIGATION_TIMEOUT_MS)
+                        require(not blocked,
+                                "Chromium requested files outside the manifest: "
+                                + ", ".join(sorted(set(blocked))))
+                        await page.emulate_media(media="print")
+                        try:
+                            async with asyncio.timeout(PDF_TIMEOUT_MS / 1000):
+                                await page.pdf(path=str(output_path), print_background=True,
+                                               prefer_css_page_size=True,
+                                               display_header_footer=False)
+                        except TimeoutError:
+                            fail(f"Chromium PDF render exceeded the fixed {PDF_TIMEOUT_MS} ms deadline")
+                    finally:
+                        await context.close()
+                finally:
+                    await browser.close()
+        except (PlaywrightError, PlaywrightTimeoutError) as error:
+            fail(f"Chromium PDF render failed: {error}")
+
+    asyncio.run(render())
+
+def publish_render(result: ValidationResult, pdf_path: Path, temporary_pdf: Path) -> None:
+    pdf_record = asset_from_bytes(
+        pdf_path.relative_to(result.manifest_path.parent).as_posix(),
+        read_regular(temporary_pdf, "rendered PDF"))
     updated = json.loads(json.dumps(result.manifest))
     updated["outputs"]["draft_pdf"] = pdf_record
-    updated["draft_render"] = {
-        "browser": browser_path.name,
-        "browser_sha256": sha256_bytes(read_regular(browser_path, "Chromium executable")),
-        "command_mode": "headless-print-to-pdf-offline",
-    }
-    retained = [record for record in updated["tracked_files"]
-                if not isinstance(existing_record, dict) or record["path"] != existing_record["path"]]
-    updated["tracked_files"] = sorted([*retained, pdf_record], key=lambda record: record["path"])
     validate_schema(updated, "assembly-manifest.schema.json", "rendered assembly manifest")
-    backup: Path | None = None
+    semantic_asset_map(updated)
+    moved = False
     try:
-        if existing_path is not None:
-            backup = root.parent / f".{root.name}.{existing_path.name}.backup-{uuid.uuid4().hex}"
-            existing_path.replace(backup)
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         temporary_pdf.replace(pdf_path)
+        moved = True
         write_atomic(result.manifest_path, json_bytes(updated))
-        validate_publication(result.manifest_path)
     except (ContractError, OSError, KeyboardInterrupt) as error:
+        cleanup_errors: list[str] = []
         try:
-            if backup is not None and backup.exists() and existing_path is not None:
+            if moved or pdf_path.exists():
                 pdf_path.unlink(missing_ok=True)
-                existing_path.parent.mkdir(parents=True, exist_ok=True)
-                backup.replace(existing_path)
-            elif existing_path is None or pdf_path != existing_path:
-                pdf_path.unlink(missing_ok=True)
-            write_atomic(result.manifest_path, result.manifest_bytes)
-        except OSError as rollback_error:
-            fail(f"cannot restore render after {error}; backup remains at {backup}: {rollback_error}")
+        except OSError as cleanup_error:
+            cleanup_errors.append(f"cannot remove rendered PDF: {cleanup_error}")
+        try:
+            if read_regular(result.manifest_path, "assembly manifest") != result.manifest_bytes:
+                write_atomic(result.manifest_path, result.manifest_bytes)
+        except (ContractError, OSError) as cleanup_error:
+            cleanup_errors.append(f"cannot restore assembly manifest: {cleanup_error}")
+        if cleanup_errors:
+            fail(f"cannot restore render after {error}; {'; '.join(cleanup_errors)}")
         if isinstance(error, KeyboardInterrupt):
             raise
         raise
-    finally:
-        temporary_pdf.unlink(missing_ok=True)
-    if backup is not None:
-        try:
-            backup.unlink(missing_ok=True)
-        except OSError as error:
-            eprint(f"warning: render committed but backup remains at {backup}: {error}")
 
 def render_publication(args: argparse.Namespace) -> int:
     html_entry = args.html.expanduser().absolute()
-    if not stat.S_ISDIR(checked_node(html_entry.parent, "publication root").st_mode):
-        fail(f"publication root is not a directory: {html_entry.parent}")
+    require(stat.S_ISDIR(checked_node(html_entry.parent, "publication root").st_mode),
+            f"publication root is not a directory: {html_entry.parent}")
     read_regular(html_entry, "HTML input")
-    result = validate_publication(html_entry.parent / MANIFEST_NAME)
-    root = result.manifest_path.parent
-    html_path = html_entry.resolve(strict=True)
-    expected_html = result.manifest["outputs"]["html"]["path"]
-    if html_path != root / Path(*PurePosixPath(expected_html).parts):
-        fail("--html must name the manifest-bound canonical HTML")
-    pdf_path = args.pdf.expanduser().resolve()
+    root = html_entry.parent.resolve(strict=True)
+    requested_pdf = args.pdf.expanduser()
+    if os.name == "nt" and any(
+        part not in {".", ".."} and part.rstrip(" .") != part
+        for part in requested_pdf.parts
+    ):
+        fail("Windows draft PDF path components must not end in a dot or space")
+    requested_pdf = requested_pdf.resolve(strict=False)
     try:
-        pdf_path.relative_to(root)
+        pdf_relative = requested_pdf.relative_to(root)
     except ValueError:
         fail(f"draft PDF must stay beneath the publication root: {root}")
-    if pdf_path.suffix.casefold() != ".pdf":
-        fail("draft PDF path must use a .pdf extension")
-    if pdf_path == result.manifest_path:
-        fail("draft PDF cannot replace the assembly manifest")
-    current = result.manifest["outputs"]["draft_pdf"]
-    if isinstance(current, dict) and not args.force:
-        fail("assembly already has a draft PDF; pass --force to replace it")
-    current_path = (root / Path(*PurePosixPath(current["path"]).parts)).resolve() if isinstance(current, dict) else None
-    existing_paths = {state.path.resolve() for state in result.inventory.values()}
-    if pdf_path in existing_paths and pdf_path != current_path:
-        fail("draft PDF destination would replace another tracked file")
+    pdf_identity = normalized_relative_path(pdf_relative.as_posix(), "draft PDF path")
+    pdf_path = root.joinpath(*PurePosixPath(pdf_identity).parts)
+    reject_existing(pdf_path, f"draft PDF destination already exists: {pdf_path}")
+    result = validate_publication(root / MANIFEST_NAME)
+    html_path = html_entry.resolve(strict=True)
+    expected_html = result.manifest["outputs"]["html"]["path"]
+    require(html_path == root / Path(*PurePosixPath(expected_html).parts),
+            "--html must name the manifest-bound canonical HTML")
+    require(pdf_path.suffix.casefold() == ".pdf", "draft PDF path must use a .pdf extension")
+    require(result.manifest["outputs"]["draft_pdf"] is None, "assembly already has a draft PDF")
     browser_path = select_browser(args.browser)
-    allowed_files = {result.inventory[record["path"]].path.resolve() for record in result.manifest["tracked_files"]}
+    allowed_files = {result.inventory[identity].path.resolve()
+                     for identity in semantic_asset_map(result.manifest)}
     with tempfile.NamedTemporaryFile(prefix=f".{pdf_path.name}.render-", suffix=".pdf", dir=root.parent, delete=False) as stream:
         temporary_pdf = Path(stream.name)
     temporary_pdf.unlink()
@@ -2581,10 +2445,10 @@ def render_publication(args: argparse.Namespace) -> int:
         render_pdf(html_path, temporary_pdf, browser_path, allowed_files)
         validate_pdf(temporary_pdf, "rendered PDF")
         pdf_sha256 = sha256_bytes(temporary_pdf.read_bytes())
-        publish_render(result, pdf_path, temporary_pdf, browser_path, force=args.force)
+        publish_render(result, pdf_path, temporary_pdf)
     finally:
         temporary_pdf.unlink(missing_ok=True)
-    print_json({"browser": str(browser_path), "committed": True, "pdf": str(pdf_path), "sha256": pdf_sha256, "status": "rendered"})
+    print_json({"committed": True, "pdf": str(pdf_path), "sha256": pdf_sha256, "status": "rendered"})
     return 0
 
 def validate_command(args: argparse.Namespace) -> int:
@@ -2597,17 +2461,11 @@ def build_parser() -> argparse.ArgumentParser:
     build = subparsers.add_parser("build", help="build a publication tree")
     build.add_argument("--spec", type=Path, required=True)
     build.add_argument("--output", type=Path, required=True)
-    build.add_argument(
-        "--force",
-        action="store_true",
-        help="replace a non-link output directory when empty or marked by a regular non-symlink assembly-manifest.json",
-    )
     build.set_defaults(handler=build_publication)
     render = subparsers.add_parser("render", help="render the canonical HTML")
     render.add_argument("--html", type=Path, required=True)
     render.add_argument("--pdf", type=Path, required=True)
     render.add_argument("--browser", type=Path)
-    render.add_argument("--force", action="store_true")
     render.set_defaults(handler=render_publication)
     validate = subparsers.add_parser("validate", help="validate an assembled publication tree")
     validate.add_argument("--manifest", type=Path, required=True)

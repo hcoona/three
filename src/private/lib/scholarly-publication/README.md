@@ -49,14 +49,23 @@ The retained guarantees are intentionally local:
   and optional exact source replay;
 - assembly validates upstream schemas, status, manifest hashes, approved
   fragments, and only the blocks, maps, and SVGs it consumes;
-- QA validates the assembly manifest, its declared tree, and observable
-  HTML/PDF behavior without loading upstream contract schemas;
+- QA validates the assembly manifest, its semantic asset closure, and
+  observable HTML/PDF behavior without loading upstream contract schemas;
 - publication output retains the input manifest snapshots, approved fragment
   copies, used page SVGs, fonts, stylesheets, HTML, CSS, PDF when rendered, and
   the assembly manifest.
 
 The publication tree is not a complete archival closure of the source package
 or translation approval workspace.
+
+After build, standalone Assembly validation treats the three retained input
+snapshots as opaque lineage assets bound only by path, hash, and length. It
+does not parse them, replay the recipe, or reconstruct manifest values.
+The deduplicated union of manifest input, fragment, figure-SVG, font,
+stylesheet, and non-null output records is the complete retained regular-file
+inventory. Assembly validates authored HTML/CSS policy and generated
+structure/resource bindings; browser rendering and QA determine actual glyph
+selection.
 
 Reconstruction publishes only to an absent output path. It validates a sibling
 candidate and performs one final rename into place; reruns require a new path
@@ -65,6 +74,12 @@ emitted. Text volume, replacement characters, and raster-image presence are
 recomputed from the bound block JSON and page SVG bytes. Canonical
 hidden/nonpainting-text and trace-failure observations remain extraction-time
 issues.
+
+Assembly follows the same fresh-output lifecycle: build publishes one validated
+sibling candidate to an absent path with one final rename. Render is also
+fresh-only: it requires a null manifest PDF output and an absent destination,
+then adds only the PDF asset record. Reruns require a new build path or
+caller-managed deletion.
 
 ## Publication profiles
 

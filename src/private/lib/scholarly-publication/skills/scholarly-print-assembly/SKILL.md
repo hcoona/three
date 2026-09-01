@@ -69,18 +69,23 @@ page CSS use the separate closed generated-output profile defined in
 4. Sanitize fragments and stylesheets with the shared publication profile.
 5. Compose semantic HTML, generated CSS, continued figures, and local
    resources in a fresh staging tree.
-6. Copy only retained replay/audit assets: the three input manifest
+6. Copy only retained lineage/audit assets: the three input manifest
    snapshots, approved fragments actually used, page SVGs used by figures,
    declared fonts and stylesheets, HTML, CSS, and PDF when rendered.
-7. Emit `assembly-manifest.json` with the complete retained-file inventory,
-   byte bindings, fragment and figure projections, geometry, policy identity,
-   and tool versions.
-8. Validate the staged tree, publish it atomically within the trusted
-   exclusive-write model, and optionally render its canonical HTML to PDF.
+7. Emit `assembly-manifest.json` whose semantic input, fragment, figure-SVG,
+   font, stylesheet, and output asset records exactly cover every retained
+   regular file other than the manifest itself.
+8. Validate the staged tree, publish one sibling candidate to an absent output
+   with one final rename, and optionally render its canonical HTML once to an
+   absent PDF destination.
 9. Hand the immutable tree to `scholarly-render-qa`.
 
-The output is replayable for assembly/QA observations from retained inputs.
-It is not a complete source or approval archive.
+After build, standalone validation uses only the assembly manifest and its
+declared files. The retained input snapshots are opaque hash/length-bound
+lineage assets; validation does not replay their schemas, the recipe, or
+upstream semantics. The output is not a complete source or approval archive.
+Actual browser glyph selection belongs to rendering and downstream QA, not an
+Assembly CSS-cascade simulator.
 
 ## Script
 
@@ -100,13 +105,11 @@ uv run --script scripts/assemble_print.py validate `
   --manifest work\publication\assembly-manifest.json
 ```
 
-The final `--output` path component may be absent or an ordinary directory; a
-symlink, junction, dangling link, or other reparse point is rejected. Trusted
-links in ancestor components retain ordinary filesystem semantics.
-`build --force` may replace an existing empty output directory. A non-empty
-output is replaceable only when it contains a regular, non-symlink
-`assembly-manifest.json` ownership marker; the old manifest need not be valid,
-so damaged or older Assembly output remains recoverable.
+Both build output and the initial render destination must be absent. Build
+validates one sibling candidate and publishes it with one final rename. Render
+is allowed only while `outputs.draft_pdf` is null; on success it adds that one
+asset record and atomically rewrites the manifest. A rerun requires a new path
+or caller-managed deletion of the prior output.
 
 ## Required publication payload
 

@@ -1,7 +1,6 @@
 # /// script
 # requires-python = "==3.12.11"
 # dependencies = [
-#   "cssselect2==0.8.0",
 #   "defusedxml==0.7.1",
 #   "fonttools==4.60.1",
 #   "html5lib==1.1",
@@ -1221,15 +1220,8 @@ class AuditPublicationReplacementTests(unittest.TestCase):
             if record["path"] == logical:
                 record.update(replacement)
                 semantic_matches += 1
-        tracked_matches = 0
-        for record in manifest["tracked_files"]:
-            if record["path"] == logical:
-                record.update(replacement)
-                tracked_matches += 1
-        if semantic_matches < 1 or tracked_matches != 1:
-            message = (
-                f"manifest does not uniquely bind tracked asset {logical!r}"
-            )
+        if semantic_matches < 1:
+            message = f"manifest does not bind semantic asset {logical!r}"
             raise AssertionError(message)
         write_json(manifest_path, manifest)
 
@@ -1608,6 +1600,93 @@ class AuditPublicationReplacementTests(unittest.TestCase):
                     self.case_root / f"review-{name}",
                     expected,
                 )
+
+    def test_manifest_projection_accepts_identical_shared_records(
+        self,
+    ) -> None:
+        def share_figure_page_svg(
+            publication: Path,
+        ) -> dict[str, Any]:
+            manifest = read_json(publication / "assembly-manifest.json")
+            figure = manifest["figures"][0]
+            first_part = figure["parts"][0]
+            second_part = copy.deepcopy(first_part)
+            second_part.update(
+                {
+                    "id": f"{first_part['id']}-shared",
+                    "order": 2,
+                    "dom_selector": (
+                        f'[data-crop-id="{first_part["id"]}-shared"]'
+                    ),
+                }
+            )
+            figure["parts"].append(second_part)
+            html_path = publication / "index.html"
+            content = html_path.read_text(encoding="utf-8")
+            start = content.index('<svg class="figure-part"')
+            end = content.index("</svg>", start) + len("</svg>")
+            second_crop = (
+                content[start:end]
+                .replace(
+                    f'data-crop-id="{first_part["id"]}"',
+                    f'data-crop-id="{second_part["id"]}"',
+                    1,
+                )
+                .replace(
+                    " - part 1",
+                    " - part 2",
+                )
+            )
+            html_path.write_text(
+                content[:end] + second_crop + content[end:],
+                encoding="utf-8",
+            )
+            manifest["outputs"]["html"] = asset_record(
+                publication,
+                html_path,
+            )
+            return manifest
+
+        accepted = self.fresh_publication("identical")
+        write_json(
+            accepted / "assembly-manifest.json",
+            share_figure_page_svg(accepted),
+        )
+        accepted_context = audit_publication.load_context(
+            accepted / "assembly-manifest.json",
+            accepted / "index.html",
+            "letter",
+        )
+        self.assertFalse(
+            any(
+                "conflicting semantic asset declarations" in error
+                for error in accepted_context.errors
+            )
+        )
+
+        conflicting = self.fresh_publication("conflicting")
+        conflicting_manifest = share_figure_page_svg(conflicting)
+        conflicting_manifest["figures"][0]["parts"][1]["source_svg"][
+            "bytes"
+        ] += 1
+        write_json(
+            conflicting / "assembly-manifest.json",
+            conflicting_manifest,
+        )
+        conflicting_context = audit_publication.load_context(
+            conflicting / "assembly-manifest.json",
+            conflicting / "index.html",
+            "letter",
+        )
+        conflicts = [
+            error
+            for error in conflicting_context.errors
+            if "conflicting semantic asset declarations" in error
+        ]
+        self.assertEqual(
+            1,
+            len(conflicts),
+        )
 
     def test_figure_profile_must_be_declared_by_manifest(self) -> None:
         publication = self.fresh_publication()
