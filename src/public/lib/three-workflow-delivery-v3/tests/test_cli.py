@@ -107,7 +107,7 @@ EXPECTED_ELAPSED_SECONDS = 60
 
 def _head() -> str:
     return subprocess.run(
-        ("git", "rev-parse", "HEAD"),
+        ("git", "rev-parse", "HEAD"),  # noqa: S607
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
@@ -1180,6 +1180,7 @@ def test_authorization_formatter_runs_isolated_without_indexes_or_cache(
     assert completed.returncode == 0, completed.stderr
     authorization = json.loads(output.read_bytes())
     assert authorization["approval-job-id"] == approval_job_id
+    assert authorization["environment"] == "workflow-delivery-v3-buddy-approval"
     assert (
         authorization["publication-snapshot-digest"]
         == (formatter["snapshot-payload-digest"])
@@ -1393,8 +1394,10 @@ def test_ci_plan_cli_closes_repository_only_and_manual_scope(
         ("descriptor", "first-slice Release Unit descriptor is missing"),
         (
             "quality",
-            "Quality selection does not exist: "
-            f"{PRODUCT_PATH}/workflow-delivery.quality.yml",
+            (
+                "Quality selection does not exist: "
+                f"{PRODUCT_PATH}/workflow-delivery.quality.yml"
+            ),
         ),
         (
             "policy",
@@ -2255,7 +2258,7 @@ def test_capability_cli_persists_expiry_decision_before_returning_one(  # noqa: 
         run_attempt=attempt.run_attempt,
         approval_job_id=711,
         approval_job="approval",
-        environment="workflow-delivery-v3-buddy-smoke-approval",
+        environment="workflow-delivery-v3-buddy-approval",
         channel="buddy",
         completed_at="2026-08-13T16:00:00Z",
         producer="approval",

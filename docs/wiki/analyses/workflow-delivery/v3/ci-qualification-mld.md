@@ -4,7 +4,8 @@
 
 Architecture version: **v3**.
 
-Review state: **Confirmed on 2026-08-03**.
+Review state: **Confirmed; approved normal Live baseline incorporated on
+2026-08-31**.
 
 This middle-level design defines how CI Qualification identifies an immutable
 candidate, derives affected scope, resolves project-selected quality policy,
@@ -296,48 +297,89 @@ HK internally plans and executes the steps needed to satisfy the composite
 definition. Its internal steps are not CI obligations and do not produce
 independent CI Evidence.
 
+HK outputs remain internal to `SourceTreeConformance` and are never admissible
+as Live Eligibility authority. Release forms its own exact-target
+`git-target` result.
+
 ### First-Slice v3 Control Tests
 
-The current root HK configuration does not yet run the new v3 control package
-pytest suite because that package does not exist. The implementation commit that
-adds the package also adds one HK-internal step.
-
-That step runs when the comparison includes:
-
-- `src/public/lib/three-workflow-delivery-v3/**`;
-- any addition, deletion, rename, or modification matching
-  `src/**/workflow-delivery.release-unit.yml`;
-- any addition, deletion, rename, or modification matching
-  `src/**/workflow-delivery.quality.yml`;
-- `eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml`;
-- `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`;
-- every v3 control, catalog, and test path;
-- every governed v3 workflow, action, and directly invoked script;
-- `.github/CODEOWNERS`;
-- root `pyproject.toml`, `uv.lock`, and other direct Python workspace inputs;
-  and
-- `hk.pkl`, imported HK configuration modules, and directly invoked HK helpers.
+Root HK contains an expensive v3 control-package pytest step. It is
+path-selected when changes affect the v3 control package, catalogs, or tests;
+first-slice descriptors; the exact first-slice Release policy; a v3 workflow
+consumer; direct Python workspace or lock inputs; or HK configuration and
+helpers.
 
 Manual `slice-validation` forces the step to run regardless of changed paths.
 It remains part of the single `SourceTreeConformance` obligation and creates no
 separate CI obligation, Evidence record, or job. Unrelated product source alone
-does not select this control-test step. A policy-only change to the exact
-first-slice policy does.
+does not select this control-test step. Other root HK invocations retain
+path-selected execution.
 
-### Permanent Disposable-Package Consumer Policy
+### Bounded Static-Reference Policy
 
-Root HK permanently includes a repository-wide dependency-policy step for
-`@hcoona/hcoona-release-smoke-npm`. It scans dependency manifests, lockfiles,
-workflows, install/bootstrap scripts, package-manager configuration, and other
-cataloged dependency surfaces for normal developer, CI, or production
-consumption.
+Whenever root HK runs, it runs the lightweight static-reference policy in the
+caller-selected `index` or `worktree` feedback mode:
 
-Dependency-surface changes select the step. Manual `slice-validation` forces it
-to run regardless of changed paths. The smoke package's own declaration and
-explicit destination-acceptance fixtures are narrowly classified exceptions,
-not consumers. Any other consumption fails `SourceTreeConformance` and reopens
-the first-slice Governance exception. The step remains internal to root HK and
-does not create a separate CI obligation or Evidence record.
+- `index` enumerates and reads stage-0 Git index entries for staged or
+  pre-commit feedback.
+- `worktree` enumerates tracked plus eligible untracked paths and reads their
+  filesystem bytes for manual feedback.
+
+The third source kind, `git-target`, is Release-only admissible evidence. It
+enumerates and reads exact blobs from an explicit full commit SHA. Root HK does
+not convert `index` or `worktree` output into Live Eligibility evidence, and
+neither source may be represented as `HEAD` or another commit identity.
+
+The closed supported surface is the first-slice LLD's selector-to-fact matrix.
+Each retained disjoint selector has one exact Ecosystem Authority Graph. Git
+Source Authority supplies exact bytes directly or through a Session-owned
+isolated snapshot containing only declared files from one source kind. The
+graph binds authoritative artifact schemas and standards, exact
+library/CLI/runtime identities and versions, lock or checksum provenance,
+public APIs or commands, input mode, admitted format generation, required
+facts, applicable prohibited forms, and unsupported cases.
+
+Authoritative artifacts, official ecosystem libraries or CLIs, and published
+standards emit normalized manifest, lock, descriptor, locator, workspace, and
+package-reference facts. Policy code does not recreate source schemas or
+grammar, split locators, cross-check an authority with another implementation,
+or harden invariants owned by the graph. It reports only the prohibited
+coordinate and local-dependency facts assigned to the selecting row.
+
+The producer root is not globally prohibited because workflows may
+legitimately build it. The package name is allowed only as the top-level
+`package.json` `name` at an exact known producer path.
+
+This is repository hygiene and accidental-consumption prevention. A finding
+fails the HK internal step and therefore the composite
+`SourceTreeConformance` obligation.
+
+Every result binds schema, result, source kind, exact target when applicable,
+policy ID and digest, sorted exact implementation identities actually loaded,
+canonical error kind when result is error, and sorted findings.
+Findings are prohibited references, not proven runtime consumers. File,
+surface, and finding counts and temporary snapshot paths are diagnostics only.
+A clean result does not prove universal consumer absence or GitHub token or
+package isolation.
+
+The canonical policy binds the exact authority graph and strict byte-input
+contract. The invocation schema rejects an omitted or unknown feedback mode and
+malformed required source parameters before Result construction; HK propagates
+that nonzero failure without synthesizing a Result.
+`source-acquisition-failed`, `encoding-rejected`, `authority-rejected`,
+`authority-execution-failed`, `unsupported-projection`,
+`authority-mismatch`, and `cleanup-failed` are distinct fail-closed errors. The
+policy requires no evaluator, dataflow model, Tree-sitter dependency, trigger
+catalog, whole-file digest exception, scanned-surface digest, or fixed inventory
+count. It also forbids handwritten ecosystem grammars or schemas,
+competing-authority cross-validation, and defensive checks that duplicate
+guarantees of the bound graph. Exact target, snapshot isolation, authority
+identity, normalized-fact, and finding behavior is covered by semantic
+scenarios and adapter contracts rather than foreign-library grammar-branch
+tests.
+
+The static-reference step remains internal to root HK and does not create a
+separate CI obligation, Evidence record, or job.
 
 ### Root Configuration Authority
 
@@ -775,6 +817,8 @@ CI planning or qualification fails closed when:
 - a required capability, target, dimension, or runner is unsupported;
 - an affected Release Unit variant cannot be built;
 - the obligation DAG is incomplete or cyclic;
+- the selected root-HK static-reference feedback mode is invalid or its
+  required result is malformed;
 - the root HK definition cannot execute successfully;
 - required Evidence is missing, invalid, or conflicting; or
 - a required obligation fails or remains incomplete.
@@ -791,8 +835,31 @@ A normal wiki Markdown change is repository-conformance-only.
 - The Plan contains the required HK composite obligation.
 - No Project Node or Release Unit scope is added unless another definition
   declares the document as an input.
+- Root HK still runs the lightweight static-reference policy in the
+  caller-selected feedback mode.
 - HK internally selects applicable checks.
 - No matching HK step is a legitimate successful internal decision.
+
+### Static-Reference Sources and Findings
+
+The policy contract supports each source kind.
+
+- `git-target` reads the exact explicit commit and is the only source admissible
+  for Release Live Eligibility.
+- `index` reads stage-0 entries and produces staged or pre-commit feedback.
+- `worktree` reads tracked plus eligible untracked filesystem paths and
+  produces manual feedback.
+- Direct coordinate forms and dependency-position local paths to a known
+  producer root produce findings.
+- A workflow may name the producer root to build it, and the exact producer
+  `package.json` may use the package name in its top-level `name`.
+- File-oriented ecosystem libraries or CLIs receive only a minimal isolated snapshot
+  materialized from the selected source kind and report their exact loaded
+  identities.
+- A selected file rejected by its authority graph, or unable to produce its
+  row's required normalized facts, fails closed rather than using a fallback
+  grammar.
+- Sorted findings determine the policy result; inventory counts do not.
 
 ### .NET Dependency Change
 
@@ -848,6 +915,15 @@ compatibility probe.
 
 ## Deferred LLD Decisions
 
+The [`hcoona-release-smoke-npm` LLD](./hcoona-release-smoke-npm-lld.md) is the
+sole normative owner of the first-slice bounded static-reference Result schema,
+policy identity, Ecosystem Authority manifest and graph, source enumeration,
+snapshot/input contracts, normalized-fact contracts, failure taxonomy, and
+semantic scenarios. The first CI LLD must reference and must not redefine those
+contracts. It owns only root-HK and `SourceTreeConformance` integration,
+including adapter invocation, `index`/`worktree` feedback selection, failure
+propagation, and CI-local Result transport.
+
 The first CI LLD must define:
 
 - candidate request, Plan, Evidence, Decision, and Advisory Report schemas;
@@ -855,8 +931,11 @@ The first CI LLD must define:
 - the initial preset catalog and custom-policy representation;
 - Provider contracts for ownership, capabilities, supporting tests, dimensions,
   and control consumers;
-- exact HK adapter invocation and root CI gate configuration;
-- exact GitHub runner lanes, dynamic matrix encoding, and empty-lane handling;
+- HK adapter invocation, root CI gate configuration, separate
+  `index`/`worktree` feedback selection, static-policy failure propagation, and
+  CI-local Result transport against the release-smoke LLD-owned contract;
+- runner-lane, batching, matrix, and empty-lane representation without freezing
+  an exact job DAG;
 - batch request and per-obligation result transport;
 - execution and advisory deadlines;
 - artifact and Evidence naming and retention;

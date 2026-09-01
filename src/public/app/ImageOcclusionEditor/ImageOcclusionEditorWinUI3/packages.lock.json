@@ -72,25 +72,25 @@
       },
       "Nerdbank.GitVersioning": {
         "type": "Direct",
-        "requested": "[3.10.91, )",
-        "resolved": "3.10.91",
-        "contentHash": "9MtEXm/um2lQAEoek1EkF4CXNH4JuXxv2jV3Ew2XlzP0LXxFaFiECS7ji8zf1ZaMnPGYbbom+Nm6y4ADc5HNHQ=="
+        "requested": "[3.10.94, )",
+        "resolved": "3.10.94",
+        "contentHash": "sn6gFIx6bwFj3Me0XGmek3gLZi/MZC8C4tRLwslXGeBcXcVxvFpZyDrQA93G8TiYgxTS7J7triKB7hj5wXzSxA=="
       },
       "Svg.Skia": {
         "type": "Direct",
-        "requested": "[5.2.2, )",
-        "resolved": "5.2.2",
-        "contentHash": "CMGnr+wSV3znhxbvAXBBNbdCxOSxXkCySjIzVV4tbiQvXtZ90QT86l9nu85geqR8OWh9AoB2PSkAgBhDvx/4Wg==",
+        "requested": "[5.2.3, )",
+        "resolved": "5.2.3",
+        "contentHash": "slGSy5Aje/30Ou2a5aezbGGWLZspBIBYlEzqgtaIVex4FUYAR3mxaYrvMZj1tHy+ESDFCGY7+2FjF6UzqGUZew==",
         "dependencies": {
           "HarfBuzzSharp": "14.2.0",
           "HarfBuzzSharp.NativeAssets.Linux": "14.2.0",
           "HarfBuzzSharp.NativeAssets.Win32": "14.2.0",
           "HarfBuzzSharp.NativeAssets.macOS": "14.2.0",
           "SkiaSharp": "4.148.0",
-          "Svg.Animation": "5.2.2",
-          "Svg.Custom": "5.2.2",
-          "Svg.Model": "5.2.2",
-          "Svg.SceneGraph": "5.2.2"
+          "Svg.Animation": "5.2.3",
+          "Svg.Custom": "5.2.3",
+          "Svg.Model": "5.2.3",
+          "Svg.SceneGraph": "5.2.3"
         }
       },
       "HarfBuzzSharp": {
@@ -234,8 +234,8 @@
       },
       "ShimSkiaSharp": {
         "type": "Transitive",
-        "resolved": "5.2.2",
-        "contentHash": "nIENlLbsjtamYjNUTMdanIM6T8tk8YsJnwfBLTwpyGsWBdomS3ZubWg9C7LoRzI6KezmfjVKibiOS5zRbELyUA=="
+        "resolved": "5.2.3",
+        "contentHash": "BBmIvh70WduWEF8C9HeU12LmHkg6+h2SRwJzey/tmztRk4ttAxhyu9eAD/jlsNGlqquYpoCQyyTx+QynavyfVA=="
       },
       "SkiaSharp": {
         "type": "Transitive",
@@ -252,40 +252,40 @@
       },
       "Svg.Animation": {
         "type": "Transitive",
-        "resolved": "5.2.2",
-        "contentHash": "gMbkCbnWqeGfy/dPXXAyzHaHGgu9PDv1IZTnHZQRJsU7h/9U3ClNK39PpFypVh4N7patYCsxEUFE2Mb/TeBU2w==",
+        "resolved": "5.2.3",
+        "contentHash": "mlbLFKzSVL2wMvDxnlMKLbdbbCbZBjDwSgmCZ7dHE4l0DtVUX5kHixngZlUP8AuBoikzqsXZt4+IXJhbeJjAdA==",
         "dependencies": {
-          "ShimSkiaSharp": "5.2.2",
+          "ShimSkiaSharp": "5.2.3",
           "SkiaSharp": "4.148.0",
-          "Svg.Custom": "5.2.2",
-          "Svg.Model": "5.2.2"
+          "Svg.Custom": "5.2.3",
+          "Svg.Model": "5.2.3"
         }
       },
       "Svg.Custom": {
         "type": "Transitive",
-        "resolved": "5.2.2",
-        "contentHash": "eTa1cIHBFlCvmYBAX7jrktdqHWqaJzg82LIcqnhr/wX5Qjyr3FdcGlliyxTYtTWGcBIo1oeKqcaZm/gwDKmmEQ==",
+        "resolved": "5.2.3",
+        "contentHash": "epicuKTb55l7Y6c3f9pdP0RkoifVieS9sWvA9HsppTfYyV7RFZg89+fUA9TTPcuccqi0GUGwiPEi+9b881zlDw==",
         "dependencies": {
           "ExCSS": "4.3.1"
         }
       },
       "Svg.Model": {
         "type": "Transitive",
-        "resolved": "5.2.2",
-        "contentHash": "52Q3gtZt/5bU16wlMGf1LMi5gUeLn2a7mv79Wnf61gjysljQ8M/Ck+WvjXWGfpDJdHcQf9l6vbyFPjfUIpUbDg==",
+        "resolved": "5.2.3",
+        "contentHash": "iZInP4/48rIkpFxVJNMmxDDjIBaUcGOHrzancQ3cmneHXrtH4MYkm6bzggL9hCiS2dxfLhk3JCiERoGf8j0MlA==",
         "dependencies": {
-          "ShimSkiaSharp": "5.2.2",
-          "Svg.Custom": "5.2.2"
+          "ShimSkiaSharp": "5.2.3",
+          "Svg.Custom": "5.2.3"
         }
       },
       "Svg.SceneGraph": {
         "type": "Transitive",
-        "resolved": "5.2.2",
-        "contentHash": "hGtb1J41UnPs/yuL76DpgHmNfjIKTkTmF3wyPeksIi5SMhUW98gzQrCUNvkaxOgYP7qzpwRGbfawOtv0L4yw2g==",
+        "resolved": "5.2.3",
+        "contentHash": "t9HrB1n499YCvziq+sdapDjMvgY7iSzyldEDalWnoZCP3cncu92gEktBqzhUgo8A+r9mfow2TNf0u5jgV5FvlQ==",
         "dependencies": {
-          "ShimSkiaSharp": "5.2.2",
-          "Svg.Custom": "5.2.2",
-          "Svg.Model": "5.2.2"
+          "ShimSkiaSharp": "5.2.3",
+          "Svg.Custom": "5.2.3",
+          "Svg.Model": "5.2.3"
         }
       },
       "System.Numerics.Tensors": {
@@ -301,9 +301,9 @@
       },
       "Microsoft.Web.WebView2": {
         "type": "CentralTransitive",
-        "requested": "[1.0.4129.50, )",
-        "resolved": "1.0.4129.50",
-        "contentHash": "BuJC70c7SCl8wlvojLZbc/E5ONmGyG3fhAMmpftCpKerxae//TxgKOTELRK2QRD7m7jigNFQRf6cfVT3ZiIQoQ=="
+        "requested": "[1.0.4191.47, )",
+        "resolved": "1.0.4191.47",
+        "contentHash": "Snb6mlTpuz6ZFjWMwIdg28Xp6kAUMy3zaLUyGbFSaw+/AJKlwoX8EiaWJ1eUMfKyJHksPkFjJHl1LIB7kX+0AQ=="
       },
       "OpenMcdf": {
         "type": "CentralTransitive",
@@ -372,9 +372,9 @@
       },
       "Microsoft.Web.WebView2": {
         "type": "CentralTransitive",
-        "requested": "[1.0.4129.50, )",
-        "resolved": "1.0.4129.50",
-        "contentHash": "BuJC70c7SCl8wlvojLZbc/E5ONmGyG3fhAMmpftCpKerxae//TxgKOTELRK2QRD7m7jigNFQRf6cfVT3ZiIQoQ=="
+        "requested": "[1.0.4191.47, )",
+        "resolved": "1.0.4191.47",
+        "contentHash": "Snb6mlTpuz6ZFjWMwIdg28Xp6kAUMy3zaLUyGbFSaw+/AJKlwoX8EiaWJ1eUMfKyJHksPkFjJHl1LIB7kX+0AQ=="
       }
     }
   }

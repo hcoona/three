@@ -323,7 +323,7 @@ def _closure(scenario, *, with_action: bool):
         run_attempt=attempt.run_attempt,
         approval_job_id=711,
         approval_job="approval",
-        environment="workflow-delivery-v3-buddy-smoke-approval",
+        environment="workflow-delivery-v3-buddy-approval",
         channel="buddy",
         completed_at="2026-08-13T16:00:00Z",
         producer="approval",
@@ -955,9 +955,7 @@ def test_successful_approval_only_forms_bound_authorization_without_scheduling(
     assert authorization.reviewer_summary_artifact_id == 710
     assert authorization.reviewer_summary_payload_digest == SUMMARY_DIGEST
     assert authorization.approval_job_id == 711
-    assert authorization.environment == (
-        "workflow-delivery-v3-buddy-smoke-approval"
-    )
+    assert authorization.environment == "workflow-delivery-v3-buddy-approval"
     assert calls == []
 
 
@@ -1536,7 +1534,7 @@ def test_after_marker_governance_failure_requires_reobservation(
         ),
     ],
 )
-def test_start_marker_without_valid_terminal_state_is_possibly_mutated(  # noqa: PLR0913
+def test_start_marker_without_valid_terminal_state_is_possibly_mutated(  # noqa: PLR0913, PLR0917
     qualified_simulation,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,

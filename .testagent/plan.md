@@ -6806,3 +6806,221 @@ UNAUTHORIZED.**
 | Governance and external-state boundary | Exact changed-path review, protected Governance byte comparison, and read-only post-merge inventory |
 
 <!-- END APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-plan -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-design-plan -->
+
+## Workflow Delivery v3 Environment identity design plan
+
+### Phase 1: correct the normative hierarchy
+
+- [x] Add a requirements-level Environment Profile and exact compatibility
+  contract.
+- [x] Define Approval Environment identity by reviewer/Governance policy and
+  Capability Environment identity by destination/credential/access policy.
+- [x] Make reuse preserve fresh per-Attempt approval and package-bound
+  Governance, Authorization, Capability, and Attempt/package lineage.
+- [x] Map the first slice to `workflow-delivery-v3-buddy-approval` and
+  `workflow-delivery-v3-buddy-github-packages`.
+- [x] Preserve the package-specific smoke risk exception and the rule that
+  future destinations require their own threat and cost decision.
+
+### Phase 2: synchronize current truth
+
+- [x] Update the v3 glossary, migration strategy, README, handoff, and top-level
+  overview.
+- [x] Record that PR #624 merged readiness repair while both permanent
+  Environments remained absent and Governance remained false.
+- [x] State explicitly that merged workflow/source contracts still use the
+  earlier names until a separate implementation PR lands.
+- [x] Keep this phase documentation-only and perform no Environment, workflow
+  run, deployment, package, tag, legacy, or Break-Glass mutation.
+
+### Phase 3: validate and deliver the design
+
+- [ ] Run scoped formatting, markdown, link, and repository checks already
+  configured for the changed files.
+- [ ] Run independent Requirements/HLD/MLD/LLD consistency and
+  overdesign/abstraction review.
+- [ ] Independently adjudicate every finding and iterate to no findings.
+- [ ] Append final evidence to `.testagent/status.md`.
+- [ ] Commit the normative design and current-state/ledger updates in
+  human-reviewable commits.
+- [ ] Push a protected design PR, resolve CI and Copilot review, and merge
+  without bypass.
+
+### Follow-up boundaries
+
+1. After design merge, atomically update workflow, source, record, formatter,
+   validator, test, marker, and current-state contracts to the exact final names
+   while `live_enabled` remains false.
+2. After implementation merge, request separate authorization before creating
+   or configuring either permanent Environment.
+3. Preparation, activation, dispatch, approval, package mutation, and terminal
+   rollout remain separately gated.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-design-plan -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-creation-supersession -->
+
+### Supersession of obsolete Environment-creation items
+
+The unchecked Phase 2 Environment-creation items in the 2026-08-29 normal Live
+future delivery plan are retained for history but are canceled and must not be
+executed. The `workflow-delivery-v3-buddy-smoke-approval` and
+`workflow-delivery-v3-buddy-smoke-github-packages` permanent Environments must
+not be created.
+
+Those items are superseded by the protected all-surface rename while
+`live_enabled: false`, followed by separate explicit authorization to create,
+configure, and read back only `workflow-delivery-v3-buddy-approval` and
+`workflow-delivery-v3-buddy-github-packages`.
+
+This clarification authorizes no external mutation.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-creation-supersession -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-implementation-plan -->
+
+## Workflow Delivery v3 Environment identity implementation plan
+
+### Phase 1: atomically rename the contract
+
+- [x] Reconcile design PR #629 and confirm post-merge CI, Governance false,
+  absent final/transitional Environments and markers, zero normal workflow
+  runs, and unchanged package state.
+- [x] Replace approval and capability Environment names and marker values in
+  the live Attempt workflow without changing guards, gates, permissions, or
+  topology.
+- [x] Replace the approval identity in the exact-revision Authorization
+  formatter, Release helper, record validator, and all existing executable
+  tests.
+- [x] Synchronize current-state README, handoff, LLD, migration, overview, log,
+  research, and plan contracts while preserving normative and historical
+  references.
+
+### Phase 2: validate and review
+
+- [ ] Run the focused workflow, CLI, Release boundary, scenario, and record test
+  set, then the complete Workflow Delivery v3 package suite.
+- [ ] Run Actionlint, Ruff, Ruff format check, Pyrefly, Prettier, markdownlint,
+  `git diff --check`, and unstaged/staged HK gates already configured for the
+  changed paths.
+- [ ] Run independent workflow/runtime, test-contract, authority-boundary, and
+  documentation reviews. Independently adjudicate every finding and iterate
+  until closure reviewers return no findings.
+- [ ] Append exact implementation and validation evidence to
+  `.testagent/status.md`.
+
+### Phase 3: protected delivery
+
+- [ ] Commit the atomic implementation and its current-state evidence in
+  human-reviewable commits.
+- [ ] Push a protected implementation PR, resolve CI and Copilot review, and
+  merge without bypass.
+- [ ] Reconcile post-merge CI, Governance false, absent final/transitional
+  Environments and marker variables, zero normal Live runs, and unchanged
+  package/tag state.
+
+### External-state boundary
+
+Permanent Environment creation remains blocked until implementation merge and
+separate explicit authorization. This plan does not authorize configuration,
+preparation, activation, dispatch, approval, package mutation, retry, legacy
+restoration, or Break-Glass.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-plan -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-implementation-closure-plan -->
+
+## Workflow Delivery v3 Environment identity implementation closure
+
+This closure supersedes the unchecked execution boxes in the immediately
+preceding implementation plan without rewriting that append-only planning
+record.
+
+### Completed implementation delivery
+
+- [x] Passed the focused and complete Workflow Delivery v3 test suites,
+  Actionlint, Ruff, Ruff format, Pyrefly, Prettier, markdownlint, diff checks,
+  and exact unstaged/staged HK gates.
+- [x] Completed independent runtime, test-contract, authority/current-state,
+  test-gap, assertion-quality, and final changed-file reviews with no remaining
+  findings.
+- [x] Committed and pushed the atomic implementation, opened protected PR #630,
+  passed all required checks, received a clean 18/18-file Copilot review, and
+  rebase-merged without bypass as
+  `9c9901cc38297d212de48d4b51349872ef60d5b4`.
+- [x] Reconciled exact post-merge CodeQL and the non-overlapping successor
+  `main` CI/CodeQL, Governance false, absent final/transitional Environments,
+  deployments, and markers, zero normal Live runs, and unchanged package/tag
+  state.
+
+### Remaining external gate
+
+- [ ] Obtain separate explicit user authorization before creating or reading
+  back either permanent Environment.
+
+The implementation merge prerequisite is complete. This closure authorizes no
+Environment, marker variable, deployment, preparation, activation, normal Live
+dispatch, approval, package, tag, acceptance ref, retry, legacy, or Break-Glass
+mutation.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-closure-plan -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-plan -->
+
+## Workflow Delivery v3 permanent Environment provisioning
+
+### Authorized scope
+
+- [x] Interpret the user's continuation after implementation closure as
+  authorization for permanent Environment creation and authenticated readback
+  only.
+- [x] Revalidate `main`, Governance false, absent final/transitional
+  Environments and deployments, absent repository markers, zero normal
+  workflow runs, and unchanged package/tag state.
+- [x] Create the approval and capability Environments with their exact
+  reviewer, wait, branch-policy, secret, marker, and administrator-bypass
+  configurations.
+- [x] Complete API readback and authenticated UI save/reload confirmation for
+  administrator bypass.
+- [ ] Deliver the provisioning evidence through a protected documentation PR,
+  required checks, Copilot review, merge without bypass, and post-merge
+  read-only reconciliation.
+
+### Next gated phase
+
+- [ ] Obtain separate explicit authorization before opening or executing the
+  protected preparation phase.
+
+This plan authorizes no Governance refresh, preparation, activation, normal
+Live dispatch, approval, package/tag mutation, acceptance ref, retry, legacy,
+or Break-Glass operation.
+
+<!-- END APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-plan -->
+
+<!-- BEGIN APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-plan -->
+
+## Workflow Delivery v3 permanent Environment provisioning closure
+
+This closure supersedes the outstanding delivery box in the preceding
+append-only provisioning plan.
+
+- [x] Rebase the evidence branch over non-overlapping dependency successors.
+- [x] Pass exact-head required checks and 9/9-file Copilot review with zero
+  comments.
+- [x] Record the authenticated owner's final UI save/reload verification in PR
+  #635.
+- [x] Rebase-merge PR #635 without bypass as
+  `5cae672c139de1956a96e75f02f224c826c06939`.
+- [x] Pass post-merge Continuous Integration run `33343870709`.
+- [x] Reconcile exact Environment settings and markers, zero secrets,
+  deployments, and normal runs, Governance false, and unchanged package/tag
+  state.
+
+Permanent Environment provisioning is complete. Protected preparation remains
+blocked pending separate explicit authorization. This closure grants no
+preparation, activation, normal Live dispatch, approval, package/tag mutation,
+acceptance ref, retry, legacy, or Break-Glass authority.
+
+<!-- END APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-plan -->

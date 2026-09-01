@@ -4,13 +4,14 @@
 
 Architecture version: **v3**.
 
-Review state: **Confirmed on 2026-08-04**.
+Review state: **Confirmed; approved normal Live baseline incorporated on
+2026-08-31**.
 
 This middle-level design defines the reusable mechanism layer used by CI
-Qualification and Release Delivery. It covers record primitives, artifact
-identity and provenance, Repository Model compilation, ecosystem Providers,
+Qualification and Release Delivery. It covers canonical records and digests,
+Artifact References, Repository Model compilation, ecosystem Providers,
 mechanism Definitions, Build and Quality Adapters, execution bindings,
-mechanical outcomes, and generic platform client primitives.
+mechanical outcomes, and generic Git, GitHub, registry, and process clients.
 
 It realizes the
 [Workflow Delivery v3 Requirements](./requirements.md),
@@ -40,91 +41,104 @@ It does not own:
 
 - an aggregate root;
 - a business lifecycle;
-- a universal Plan or record model;
+- a universal Plan, Evidence, Release, or record wrapper;
 - workflow orchestration;
-- scheduling or retries;
-- qualification or release policy;
-- authorization;
+- scheduling or retry;
+- CI or Release policy;
+- approval or authorization;
+- GitHub Environment selection;
 - publication credentials;
-- CI or Release finalization; or
+- finalization or verdicts; or
 - a durable service database.
 
 CI Qualification and Release Delivery call Foundation mechanisms but retain
-complete ownership of their own scope, Plans, authoritative records, state
-transitions, and verdicts.
+complete ownership of their scope, Plans, authoritative records, state
+transitions, and outcomes.
 
 ## Scope
 
 This MLD owns:
 
-- canonicalization, digest, and strict validation primitives;
-- stable identity and binding value types;
+- deterministic canonicalization and digest primitives;
+- strict parsing and exact binding helpers;
+- stable identity and context-discriminator value types;
 - shared Artifact Reference and internal provenance primitives;
+- static-reference source-reading mechanisms;
 - Repository Model Provider contracts;
 - target-bound Fact Bundle contracts;
 - the read-only Repository Model Compiler;
 - Build, Quality, and other mechanism Definition schemas and static catalogs;
 - Build and Quality Adapter contracts;
 - family-specific Invocation and mechanical Result contracts;
-- execution-class and capability-requirement declarations;
+- execution-class and generic Publication Capability declarations;
 - closed mechanical outcome and error taxonomies;
 - transparent non-authoritative cache semantics;
-- generic platform client primitives;
-- selective versioning for intentional cross-revision exchange contracts; and
+- generic Git, GitHub, registry, HTTP, artifact, and process clients;
+- selective versioning for intentional cross-revision exchange; and
 - conformance and contract-test expectations.
 
 This MLD does not own:
 
-- CI affected-scope policy;
-- required or advisory selection;
+- CI affected-scope or required/advisory policy;
 - Release Unit or channel policy;
-- Buddy or Official identity;
+- Buddy, Official, Execution, or Attempt identity;
 - logical destination projection selection;
-- destination observation classification;
-- publication action planning;
-- Observation Record or Receipt semantics;
-- job topology, matrix partitioning, or concurrency;
-- GitHub Environment selection;
+- destination Observation classification;
+- Publication Action planning;
+- Approval Bundle, Publication Authorization, Publication Result, Receipt, or
+  Attempt Outcome semantics;
+- mutable-resource concurrency policy;
+- new-dispatch retry;
+- Break-Glass Remediation policy;
+- job topology or matrix partitioning;
+- GitHub Environment configuration or approval;
 - OIDC or credential grant;
-- Evidence Admission or Final Decision;
-- Release completion or remediation policy; or
+- an Environment Profile abstraction;
+- a first-slice second publication Environment;
+- a separate post-approval admission record;
+- capability-group manifest or result wrappers;
+- exhaustive Actions history discovery or admission; or
 - runtime plugin loading.
 
 ## Governing Principles
 
 1. Share mechanisms only when their inputs, outputs, and semantics are genuinely
    common.
-2. Shared Foundation never chooses business scope, policy, authority, or
-   verdict.
-3. Providers resolve facts and capabilities; Adapters execute closed mechanical
-   invocations.
-4. A universal plugin, executor, Plan, Evidence model, or record envelope is not
-   introduced.
+2. Foundation never chooses business scope, policy, authority, or verdict.
+3. Providers resolve facts and capabilities; Adapters execute closed
+   mechanical invocations.
+4. A universal plugin, executor, Plan, Release, Evidence, or record envelope is
+   not introduced.
 5. Contexts form and admit authoritative records from mechanical results.
 6. Same-revision static registration is preferred over dynamic extension.
-7. Target-influenced evaluation never runs in an authoritative decision
+7. Target-influenced evaluation never runs in an authoritative pure-control
    process.
 8. Platform credentials are granted outside Foundation and injected only into
-   the exact runtime boundary that needs them.
+   the runtime boundary that needs them.
 9. Cache changes performance only; it never changes identity, scope, Evidence,
    provenance, or verdict.
 10. Cross-revision compatibility is introduced only for a concrete
     cross-revision consumer.
+11. Normal-Live `github.run_attempt` omission is contextual, not a universal
+    removal from simulation or other execution contracts.
+12. Future OIDC or multiple-action abstractions require a concrete second
+    scenario rather than speculative symmetry.
 
 ## Ownership Map
 
-| Concern                           | Shared Foundation             | CI Qualification             | Release Delivery               | Delivery Governance           |
-| --------------------------------- | ----------------------------- | ---------------------------- | ------------------------------ | ----------------------------- |
-| Canonicalization and digest       | Owns mechanism                | Uses                         | Uses                           | Does not own                  |
-| Repository facts                  | Discovers and compiles        | Consumes for impact          | Consumes for complete closure  | Does not own                  |
-| Definition schemas and catalogs   | Owns mechanism contracts      | Selects through CI policy    | Selects through Release policy | Protects changes              |
-| Build and Quality execution       | Executes closed invocations   | Schedules and admits results | Schedules and admits results   | Protects workflow permissions |
-| Artifact identity and provenance  | Defines shared primitives     | Admits CI artifacts          | Admits Release artifacts       | Protects artifact access      |
-| Destination projection semantics  | Provides generic clients only | Does not own                 | Owns ports and adapters        | Grants destination authority  |
-| Authoritative Evidence or Receipt | Provides binding helpers      | Owns                         | Owns                           | Does not create               |
-| Scheduling, batching, and retry   | Provides hints only           | Owns                         | Owns                           | Does not own                  |
-| Capability grant                  | Declares requirements only    | Has no publication grant     | Requests through jobs          | Owns grant and denial         |
-| Final business verdict            | Does not own                  | Owns CI Decision             | Owns Release state             | Supplies authority outcomes   |
+| Concern                          | Shared Foundation           | CI Qualification          | Release Delivery               | Delivery Governance        |
+| -------------------------------- | --------------------------- | ------------------------- | ------------------------------ | -------------------------- |
+| Canonicalization and digest      | Owns mechanism              | Uses                      | Uses                           | Does not own               |
+| Repository facts                 | Discovers and compiles      | Consumes for impact       | Consumes for complete closure  | Does not own               |
+| Definition schemas and catalogs  | Owns mechanism contracts    | Selects through CI policy | Selects through Release policy | Protects changes           |
+| Build and Quality execution      | Executes closed invocations | Schedules and admits      | Schedules and admits           | Protects permissions       |
+| Artifact identity and provenance | Defines primitives          | Admits CI artifacts       | Admits Release artifacts       | Protects access            |
+| Static-reference file access     | Defines source mechanisms   | Selects feedback use      | Selects eligibility use        | Protects policy            |
+| Destination semantics            | Generic clients only        | Does not own              | Owns ports and Adapters        | Grants authority           |
+| Approval and publication records | Canonical helpers only      | Does not own              | Owns                           | Supplies authority outcome |
+| Scheduling and retry             | Hints only                  | Owns                      | Owns                           | Does not own               |
+| Publication Capability           | Declares requirement shape  | Has no grant              | Requests in governed runtime   | Owns grant and denial      |
+| Final verdict                    | Does not own                | Owns CI Decision          | Owns Release outcome           | Does not create            |
 
 ## Logical Module Decomposition
 
@@ -135,96 +149,114 @@ module.
 
 Record Primitives provide:
 
-- deterministic canonicalization;
+- deterministic canonical JSON or equivalent serialization;
 - content digest computation;
-- deterministic canonicalization and digesting of context-owned platform
-  serialization projections without defining their fields or concurrency
-  semantics;
 - strict parsing and unknown-field rejection;
 - immutable identity value types;
-- explicit context and purpose discriminators covered by identity and digest;
-- Git target, workflow run, attempt, job, and producer bindings;
-- definition, request, Plan, artifact, and result digest bindings;
+- explicit context and purpose discriminators;
+- exact Git target, workflow run, producer, Definition, request, artifact, and
+  result binding helpers;
+- context-selectable `github.run_attempt` binding where required;
 - timestamp and diagnostic-reference primitives; and
-- reusable admission checks.
+- reusable exact-admission checks.
 
-They do not define one universal record envelope.
+They do not define a universal record envelope.
 
-CI Plan, CI Evidence, CI Decision, Release Snapshots, Release Evidence,
-Authorization Record, Approval Outcome Evidence, Observation Record, Receipt,
-Attempt Outcome, Execution History Admission Snapshot, Reconciliation Record,
-and Remediation Record remain context-owned schemas.
+CI Plans, CI Evidence, CI Decisions, Release Snapshots, Release Evidence,
+Observation Records, Approval Bundles, Publication Authorizations,
+Publication Results, Receipts, Attempt Outcomes, Reconciliation Records, and
+Remediation Records remain context-owned schemas.
 
-Foundation may provide strict primitives for admitting GitHub run/job
-conclusions and phase-state bindings. Release owns whether those facts prove
-pre-capability no-side-effect termination, indicate possible mutation, or
-require a context-owned Approval Outcome Evidence record. Foundation does not
-promise that a canceled or expired platform run can execute a downstream
-Finalizer.
+Foundation may canonicalize or validate those records through typed
+family-specific helpers. It does not choose their business meaning.
 
-Foundation admission helpers accept a trusted caller-selected mode; serialized
-payloads cannot choose it. `current-authority` mechanically verifies exact
-current purpose, request, run, run attempt, Attempt, target, producer, control,
-artifact, and digest bindings and rejects prior attempts. `execution-history`
-mechanically binds only platform-exposed artifact ID/digest, source workflow run
-ID, head SHA, payload integrity, and available artifact/run metadata. Jobs and
-Run API helpers separately return run-attempt, job, conclusion, and phase facts.
-The source may be another run or an earlier attempt of the current run; same-run
-history requires separately queried existence of that earlier attempt.
-Producer-job, exact-run-attempt, reusable-workflow, purpose, and control claims
-inside a historical payload remain diagnostic self-assertions. Release alone
-may invoke history mode during pre-Attempt admission and owns correlation to the
-same Execution/live purpose/target, the history-only Snapshot, and the
-prohibition against satisfying current authority. Foundation does not claim
-strict historical workflow/attempt provenance without separately approved
-Artifact Attestations or OIDC; the first slice enables no `id-token`.
-The helpers never manufacture an artifact-to-attempt or artifact-to-job edge.
+### Contextual Run Binding
+
+Run-attempt binding is selected by the owning execution contract.
+
+For normal Live:
+
+- every authoritative job independently requires
+  `github.run_attempt == 1`;
+- current-Attempt records and Artifact References bind
+  `workflow_run_id`, target, purpose, producer, and digest; and
+- `github.run_attempt` is omitted from domain identity, authoritative record
+  fields, artifact bindings, and Publication Authorization.
+
+For simulation:
+
+- the Repository Model Snapshot and Simulation Identity retain
+  `github.run_attempt`; and
+- a rerun is a distinct simulation pass.
+
+CI and other existing contexts retain their own approved run-attempt contracts.
+Foundation must not erase or infer those bindings through a universal default.
 
 ### Artifact and Provenance Primitives
 
 Artifact primitives define:
 
 - logical artifact identity;
-- content identity;
+- content digest, size, and media or package kind;
 - immutable transport identity;
 - producer invocation identity;
 - target and purpose binding;
 - expected output role;
-- content digest and size;
-- media or package kind;
 - internal provenance; and
 - artifact-set manifests.
 
+They do not decide whether an artifact is admissible for CI or Release.
+
 For package formats that require durable target attribution, Foundation may
 provide canonical target-witness encoding and parsing. The first-slice npm
-witness is `workflow-delivery/provenance.json` inside the tarball and binds
-target, Release Unit, canonical/native version facts, Build Definition,
-catalog/control digests, purpose, and schema while excluding run/Attempt IDs.
-Release and Build/Quality Adapters own when that witness is required and how it
-affects exact-state classification.
+witness is `workflow-delivery/provenance.json` inside the tarball and binds:
 
-The primitives do not decide whether an artifact is admissible for CI or
-Release.
+- target;
+- Release Unit;
+- canonical and native NBGV facts;
+- Build Definition;
+- catalog and control digests;
+- purpose; and
+- schema.
 
-Actions artifact helpers treat names as non-authoritative metadata. Uploads use
-deterministic names unique across the complete workflow run and disable
-overwrite. Every physical name incorporates `github.run_attempt` directly or in
-the deterministic hash preimage. Helpers return artifact ID, digest, and URL.
-Downloads require an explicit ID and expose name, producer, run ID, run attempt,
-and digest for context-owned admission. They provide no name fallback or
-latest-artifact selection.
+It excludes run and Attempt identity so repeated builds of one target can
+remain deterministic. The selected Release Unit and Build Definition freeze
+whether the witness is required and its exact contract. Build and Quality
+Adapters only execute and verify that requirement. Release policy carries the
+frozen requirement into desired state, and Release-owned Destination Adapters
+classify observed state against it; they do not redefine artifact semantics.
 
-Foundation also provides generic fixed-source freshness primitives for
-context-owned Governance checks. Given immutable repository, fully qualified
-ref, and path fields, the GitHub client verifies ref protection, resolves the
-ref, reads the blob, canonicalizes content, and returns resolved commit, blob
-OID, content digest, and observation time. A read-only live-state helper returns
-the current configured value without treating an earlier workflow-context value
-as fresh. Comparison helpers detect changed source fields, provenance, content,
-schema/binding validation facts, or expiry. Release owns the decision to block,
-require a new Attempt, and compare against a Live Eligibility Decision;
-Foundation creates no Governance authority, credential, service, or
-malicious-writer boundary.
+### Static-Reference Mechanisms
+
+Foundation may provide deterministic enumeration and byte-reading mechanisms
+for the approved static-reference source kinds:
+
+- `git-target`: exact blobs from an explicit full commit SHA;
+- `index`: stage-0 Git index entries; and
+- `worktree`: tracked plus eligible untracked filesystem paths.
+
+The mechanical result binds source kind, exact target when applicable, policy
+ID and digest, sorted exact ecosystem-authority implementation identities
+actually loaded, result, canonical error kind when result is error, and sorted
+findings.
+Index and worktree bytes are never represented as `HEAD` or commit identity.
+
+The typed invocation boundary rejects an omitted or unknown source kind and
+malformed required source parameters before constructing a mechanical result.
+For an admitted source request, inability to deterministically enumerate, read,
+or minimally materialize the declared exact source returns
+`source-acquisition-failed`.
+
+Foundation may also provide the isolated exact-source snapshot transport and
+typed adapter envelope used by the LLD's Ecosystem Authority Graph. The graph
+owns foreign ecosystem models through authoritative artifacts, official
+libraries or CLIs, and published standards; Foundation owns only source
+binding, snapshot closure, envelope validation, repository path normalization,
+and canonical result construction.
+
+Foundation does not decide whether a finding blocks CI feedback or Live
+eligibility. It does not claim exhaustive consumer discovery, dataflow
+analysis, interpreter behavior, or a universal scanned-surface digest.
 
 ### Repository Model Mechanisms
 
@@ -233,7 +265,7 @@ Repository Model mechanisms include:
 - Provider contracts;
 - Provider Results and Provider Request Manifests;
 - Fact Bundles;
-- fact admission;
+- strict fact admission;
 - normalized Project Node and dependency facts;
 - path and global-input facts;
 - capability and dimension facts;
@@ -251,10 +283,10 @@ Definition catalogs contain statically registered:
 - Quality Definitions;
 - ecosystem capability definitions;
 - generic execution-class definitions; and
-- generic platform client definitions.
+- generic client definitions.
 
 Release-owned Destination Definitions and Destination Adapters are not part of
-Shared Foundation. They may use Foundation clients and primitives.
+Shared Foundation. They may consume Foundation clients and value types.
 
 ### Build and Quality Adapters
 
@@ -264,10 +296,12 @@ They do not:
 
 - add themselves to a Plan;
 - choose required or advisory status;
-- choose a Release channel;
-- schedule dependent work;
-- authorize a side effect; or
-- emit a final business verdict.
+- select a Release channel;
+- schedule work;
+- authorize a side effect;
+- classify a Release projection;
+- emit a Publication Result or Receipt; or
+- produce a final business verdict.
 
 ### Execution and Client Primitives
 
@@ -276,94 +310,127 @@ Execution primitives provide:
 - family-specific Invocation bindings;
 - execution-class declarations;
 - capability-requirement descriptions;
-- environment and toolchain identity primitives;
+- environment and toolchain identity;
 - batching compatibility hints;
 - cache identity hints;
 - timeout and cancellation inputs;
 - normalized mechanical outcomes; and
-- generic API and command client helpers.
+- generic API and process clients.
 
-They do not create jobs, Environments, permissions, credentials, matrices, or
-concurrency groups.
+They do not create jobs, Environments, permissions, credentials, matrices,
+concurrency groups, or approval policy.
 
-When Release Delivery supplies a closed platform serialization projection,
-Foundation may canonicalize and digest that payload and validate exact
-round-trip binding. Foundation does not choose the projection, decide whether
-it safely covers mutable-resource overlap, or treat its digest as a substitute
-for the context-owned complete resource-key set.
+When Release supplies a closed platform serialization projection, Foundation
+may canonicalize, digest, and round-trip validate it. Foundation does not decide
+whether the projection safely serializes overlapping mutable-resource keys and
+does not treat its digest as a substitute for the complete key set.
 
 ## Shared Record Boundary
 
 ### No Universal Record Envelope
 
-The architecture intentionally does not introduce a cross-context
-`RecordEnvelope`.
-
-Fields that look mechanically similar may have different authority and
-lifecycle semantics. For example:
+Fields that look mechanically similar can carry different authority and
+lifecycle semantics:
 
 - CI Evidence belongs to one candidate and obligation;
-- Release Evidence belongs to one Release Attempt and obligation;
-- an Observation Record binds one Release Attempt, logical projection,
-  immutable desired-state basis, and canonical remote response and observed
-  facts; and
-- a Receipt proves one authorized Release action.
+- Release Evidence belongs to one live Attempt and obligation;
+- an Observation Record binds one Attempt, desired-state basis, and remote
+  facts;
+- a Publication Authorization binds one action-bearing current Attempt;
+- a Publication Result records one controlled action outcome; and
+- a Receipt exists exactly once inside a successful first-slice
+  `published` Result.
 
-Shared value types and binding helpers prevent accidental inconsistency without
-claiming that these records are one domain type.
-
-An Observation Record cannot bind a future Publication Snapshot. Release later
-admits the Record and seals it, the resulting desired state, and any materialized
-actions into the Publication Snapshot.
+A controlled failed Publication Result after the mutation marker may omit the
+Receipt while preserving mutation classification and diagnostics. Foundation
+may validate this shape only through a Release-owned schema; it does not turn
+the optional Receipt rule into a universal result wrapper.
 
 ### Strict Validation
 
-Every Foundation parser or admission helper:
+Every Foundation record parser or admission helper:
 
 - rejects unknown fields unless the family contract explicitly allows an
   extension map;
 - rejects duplicate or ambiguous identities;
-- validates canonical encodings before digest comparison;
-- validates all required target, producer, definition, request, and artifact
-  bindings;
-- rejects a record whose context or purpose discriminator does not match the
-  admitting execution, including live Release versus release simulation;
-- rejects conflicting duplicate records; and
+- validates canonical encoding before digest comparison;
+- validates required target, purpose, producer, Definition, request, artifact,
+  and result bindings;
+- applies the owning context's run-attempt contract;
+- rejects cross-purpose and cross-context inputs;
+- rejects conflicting duplicates; and
 - returns a typed mechanical failure rather than silently defaulting.
 
-Strict validation is a mechanism. The calling context decides whether the
-failure blocks planning, fails an obligation, requires reconciliation, or
-changes another business state.
+Strict validation is a mechanism. The calling context decides whether failure
+blocks planning, fails an obligation, requires reconciliation, or changes an
+outcome.
+
+For foreign ecosystem semantics, strict Foundation validation starts at the
+normalized authority-fact envelope. The exact Ecosystem Authority Graph owns
+its manifest, lock, descriptor, locator, workspace, action, or language model
+through authoritative artifacts, official libraries or CLIs, and published
+standards, including syntax, comments, quoting, duplicate handling, case rules,
+and normalization. Foundation must not recreate the source schema, run a
+competing authority for cross-validation, reject an official normalized model
+because a local implementation disagrees, or add defensive checks for
+invariants guaranteed by the selected graph. `source-acquisition-failed`,
+`encoding-rejected`, `authority-rejected`, `authority-execution-failed`,
+`unsupported-projection`, and `authority-mismatch` remain distinct typed
+failures. Required Session-owned snapshot or scratch cleanup adds
+`cleanup-failed`.
+
+### Current-Context Admission
+
+Foundation provides strict helpers for current-context admission when the
+mechanics are shared across CI and Release.
+
+For a normal-Live current-Attempt artifact, admission verifies:
+
+- immutable artifact ID;
+- transport digest;
+- record kind and payload digest;
+- current `workflow_run_id`;
+- exact target and purpose;
+- expected producer and output role; and
+- context-owned lineage digests.
+
+It does not search prior runs, select by name, use latest-artifact fallback, or
+admit an earlier Attempt. Native history may be returned as raw diagnostics by
+a generic client, but Foundation defines no exhaustive history Snapshot,
+history-admission mode, historical record authority, or aggregate Execution
+reconstruction.
 
 ### Authoritative Record Formation
 
-Providers and Adapters emit family-specific mechanical result payloads.
+Providers and Adapters emit family-specific mechanical Results.
 
-The context executor then:
+The calling context then:
 
-1. binds the result to the context-owned Plan or Attempt;
-2. binds the exact obligation or action identity;
-3. binds producer job and workflow attempt;
+1. binds the Result to its Plan or Attempt;
+2. binds the exact obligation, Observation, or action identity;
+3. binds producer and current execution context;
 4. binds artifacts and diagnostics;
 5. canonicalizes and digests the record; and
 6. persists the context-owned authoritative record.
 
-The context Finalizer performs Evidence, Observation, or Receipt admission.
-Foundation does not run a shared Finalizer.
+The context Finalizer performs Evidence, Observation, Result, or Receipt
+admission. Foundation does not run a shared Finalizer.
 
 ## Selective Contract Versioning
 
 ### Same-Revision Internal Records
 
 Internal records whose producers and consumers run from the same revision and
-workflow attempt do not require a universal API version.
+execution context do not require a universal API version.
 
-Their exact schema is bound by:
+Their exact shape is bound by:
 
-- the same target revision;
-- the same workflow attempt;
-- the definition and request digests; and
-- strict producer and consumer code from that revision.
+- same-revision producer and consumer code;
+- context and purpose;
+- exact target;
+- current execution identity;
+- Definition and request digests; and
+- strict schema and digest checks.
 
 ### Cross-Revision Exchange Contracts
 
@@ -372,86 +439,75 @@ contain:
 
 - stable `kind`;
 - explicit `contract-version`;
-- producer revision;
+- producer repository, workflow, job, and revision;
+- original domain lineage;
 - canonical payload digest; and
 - compatibility constraints.
 
-The initial concrete example is a reconciliation request produced by an older
-Release Attempt and consumed by a current protected Break-Glass Remediation
-workflow.
-
-Adding `contract-version` to this exchange contract does not imply a universal
-version field on every internal record.
+The initial concrete example is a reconciliation or remediation request from an
+older Release Attempt consumed by current protected Break-Glass code.
 
 Compatibility rules are explicit:
 
-- a consumer accepts only declared compatible versions;
+- only declared compatible versions are accepted;
 - unknown major versions fail closed;
-- a migration must preserve the original payload and append the transformed
-  representation;
-- current code never guesses an omitted or unknown version; and
-- compatibility code is owner-reviewed control code.
+- migration preserves the original payload and appends the transformed form;
+- current code never guesses a missing version; and
+- compatibility code is owner-reviewed.
+
+This exception does not create a universal version field or a universal Release
+wrapper.
 
 ## Definition and Catalog Model
 
 ### Stable Logical Identity
 
-Every Definition has a stable logical ID identifying its intended mechanism
-role.
-
-The exact behavior used by one Plan is frozen through:
+Every Definition has a stable logical ID. Exact behavior is frozen through:
 
 - Definition Snapshot;
-- definition digest;
+- Definition digest;
 - selected implementation identity;
 - implementation or catalog digest;
 - toolchain constraints; and
 - normalized parameters.
 
-The logical ID is not sufficient to reconstruct historical behavior without the
-snapshot and digests.
+The logical ID alone is insufficient to reconstruct historical behavior.
 
 ### Static Same-Revision Catalog
 
-The initial design uses a statically registered catalog contained in the same
-revision as the calling Planner and Finalizer.
+The initial design uses a statically registered catalog in the same revision as
+the calling Planner and Finalizer.
 
 It does not support:
 
-- dynamic code loading from descriptors;
+- dynamic code paths from descriptors;
 - remote plugin download;
 - runtime package discovery;
 - an external plugin marketplace;
 - unreviewed adapter scripts; or
 - a stable cross-version plugin ABI.
 
-Descriptors and policies may select only allowlisted logical IDs and parameters.
-They cannot provide executable implementation paths.
+Descriptors and policies may select only allowlisted logical IDs and
+parameters.
 
 ### Definition Versus Policy
 
-A Definition states mechanical semantics such as:
+A Definition states mechanical semantics:
 
 - accepted input type;
 - parameter model;
-- supported dimensions;
-- required toolchain;
-- expected outputs;
+- dimensions;
+- toolchain;
+- outputs;
 - execution class;
-- capability requirements;
+- capability requirement;
 - mechanical prerequisites; and
-- result contract.
+- Result contract.
 
-A Definition does not decide:
-
-- whether it applies to a candidate;
-- whether it is required or advisory;
-- whether a Release channel selects it;
-- which Release Unit is delivered;
-- whether a destination projection is authorized; or
-- whether a failure changes a business verdict.
-
-Those decisions belong to CI or Release policy and planning.
+It does not decide whether the Definition applies, whether it is required,
+which channel selects it, which Release Unit is delivered, whether a
+Publication Action is authorized, or how a failure affects the business
+verdict.
 
 ## Provider Model
 
@@ -467,25 +523,19 @@ Provider responsibilities include:
 - dependency direction and edge type;
 - path ownership;
 - global-input relationships;
-- supporting test target discovery;
-- native aggregate target resolution;
+- supporting test and aggregate-target discovery;
 - dimensions and runner constraints;
-- build and packaging capability discovery; and
+- build and packaging capability discovery;
+- target-bound NBGV facts when assigned; and
 - unresolved or conflicting fact reporting.
 
-A Provider does not:
-
-- select a CI comparison range;
-- compute the final affected closure;
-- create CI obligations;
-- select Release Units;
-- choose Release variants;
-- execute Build or Quality Definitions; or
-- emit a business verdict.
+A Provider does not compute final CI affected scope, create obligations, select
+Release Units or variants, execute Build or Quality Definitions, choose a
+channel, or emit a business verdict.
 
 ### Provider Execution Modes
 
-Every Provider produces one family-specific Provider Result binding:
+Every Provider emits a Provider Result binding:
 
 - exact target;
 - Provider logical and implementation identity;
@@ -503,88 +553,58 @@ Every Provider declares one execution mode.
 A pure Provider:
 
 - reads files and immutable configuration only;
-- does not invoke target-defined build hooks or scripts;
-- may run in the authoritative Planner process; and
-- returns its Provider Result directly to Repository Model compilation.
+- executes no target-defined hooks or scripts;
+- may run in an authoritative pure-control process; and
+- returns its Result directly to Repository Model compilation.
 
 #### Target-Evaluating Provider
 
-A target-evaluating Provider may invoke an ecosystem tool whose behavior is
-influenced by target-controlled content.
+A target-evaluating Provider may invoke an ecosystem tool influenced by
+target-controlled content.
 
-Examples may include:
+It runs in an unprivileged job that:
 
-- MSBuild project or graph evaluation;
-- package-manager workspace commands;
-- build-backend metadata evaluation; or
-- another native graph facility with executable extension points.
-
-It must run in an unprivileged discovery job that:
-
-- has no publication capability;
-- has no destination secret;
+- has no publication capability or destination secret;
 - cannot write protected repository state;
 - receives the exact target;
-- receives a closed Provider request bound to request identity, explicit
-  purpose, `github.run_id` and `github.run_attempt`, target, producer, and control
-  identities; and
-- emits an immutable target-bound Fact Bundle wrapping its Provider Result.
+- receives a closed Provider request with current context bindings; and
+- emits an immutable target-bound Fact Bundle.
 
-When a target-evaluating Provider owns NBGV facts whose version height depends
-on Git history, it must materialize the exact target with complete ancestry and
-tags, equivalent to `fetch-depth: 0`, verify that the checkout remains pinned to
-the exact target, and fail before NBGV invocation if the repository is shallow,
-required tags or ancestry are incomplete, or the guarantee cannot be proved.
-
-The authoritative Repository Model Compiler consumes the Fact Bundle only after
-strict admission.
+When a Provider owns NBGV facts dependent on Git history, it materializes the
+exact target with complete ancestry and tags, verifies that the checkout remains
+pinned, and fails before NBGV invocation if completeness cannot be proved.
 
 ### Fact Bundle
 
 A Fact Bundle binds:
 
-- complete Provider Result payload and digest;
-- authoritative target-bound canonical and native NBGV projection facts when
-  the wrapped Provider Result owns version resolution;
-- request identity, explicit purpose, `github.run_id` and `github.run_attempt`,
-  target, producer job, and control identity;
+- complete Provider Result and digest;
+- target-bound canonical and native NBGV facts when owned by the Provider;
+- request identity and purpose;
+- `workflow_run_id`;
+- target, producer job, and control identity;
 - request artifact and digest;
 - immutable transport identity; and
-- Fact Bundle digest.
+- Bundle digest.
 
-A Fact Bundle does not contain CI or Release policy.
-Strict admission requires its run-attempt binding to equal the current
-`github.run_attempt`; a prior-attempt Bundle is invalid even when its request
-identity, `github.run_id`, and target match.
+For normal Live it omits `github.run_attempt`; the producing and consuming jobs
+must independently satisfy the attempt-1 guard. For simulation it includes the
+simulation run-attempt binding. CI follows its own contract.
+
+A Fact Bundle contains no CI or Release policy.
 
 ### Provider Determinism
 
-For the same:
-
-- target;
-- Provider implementation;
-- request;
-- declared toolchain; and
-- authoritative dependency metadata,
-
-a Provider must emit canonically equivalent normalized facts.
+For the same target, Provider implementation, request, toolchain, and
+authoritative dependency metadata, a Provider emits canonically equivalent
+facts.
 
 Time, branch display name, workflow URL, cache availability, or unrelated
 environment state must not change semantic facts.
 
-When an ecosystem cannot provide a required fact, the Provider emits
-`unsupported`, `unknown`, or `conflicting` rather than inventing a default.
-
-Strict Fact Bundle admission proves identity, integrity, and contract
-conformance. It does not independently re-prove every ecosystem semantic fact.
-Semantic completeness is an accepted Provider contract obligation, validated
-through conformance fixtures and integration scenarios against the
-ecosystem-native authoritative abstraction.
-
-A Provider must not emit a narrower dependency, path, global-input, capability,
-or dimension model when the authoritative abstraction cannot establish
-completeness. Such state is `unknown`, `unsupported`, or `conflicting` and
-blocks model closure.
+When a required fact cannot be established, the Provider returns
+`unsupported`, `unknown`, or `conflicting` rather than inventing a default or a
+narrower graph.
 
 ## Repository Model Compiler
 
@@ -596,104 +616,79 @@ It consumes:
 - Release Unit declarations;
 - closed Provider Request Manifest;
 - direct pure-Provider Results;
-- Provider Results extracted from admitted Fact Bundles;
+- Provider Results from admitted Fact Bundles;
 - static Definition catalogs;
 - NBGV facts;
 - declared extra inputs; and
-- repository path policy facts.
+- repository path-policy facts.
 
 It emits one immutable Repository Model Snapshot containing:
 
-- exact target, compilation purpose, caller request identity,
-  `github.run_id`, `github.run_attempt`, producer, and control bindings;
-- caller-selected channel and Release Unit binding when required by Release
-  simulation purpose;
-- Project Nodes;
-- dependency and reverse-dependency facts;
+- exact target, purpose, caller request, `workflow_run_id`, producer, and
+  control bindings;
+- context-selected `github.run_attempt` binding when required;
+- purpose-required selected channel and Release Unit;
+- sealed Provider Request Manifest identity and digest;
+- the complete ordered terminal Provider Result identity-and-digest closure;
+- admitted Fact Bundle payload and immutable transport identities and digests
+  where target-evaluating Providers are used;
+- Project Nodes and dependency facts;
 - path ownership and global-input facts;
-- supported capabilities and dimensions;
+- capabilities and dimensions;
 - Release Units and artifact variants;
 - Build Definition references;
-- build and declared-input closures;
-- target-bound NBGV canonical facts and required native ecosystem projections;
+- build and declared-input closure;
+- canonical and native NBGV facts;
 - reverse indexes; and
-- explicit unresolved or conflicting model facts.
+- explicit unresolved or conflicting facts.
 
-Canonical Repository Model Snapshot serialization and its digest cover every
-binding above, including request identity, `github.run_id`,
-`github.run_attempt`, target, producer, and control identity.
+A ready Snapshot closes every required descriptor, Project Node, dependency,
+Build Definition, modeled output, version fact, build scope, and artifact
+scope. Missing, unknown, or conflicting facts produce blocking state rather
+than a partial ready Snapshot.
 
-A ready Snapshot closes descriptor loading, Project Nodes and dependency graph,
-Build Definitions, modeled variants and outputs, canonical and required native
-NBGV facts, including `npmPackageVersion` where required, and complete build and
-artifact scope. The compiler emits blocking state rather than a partial ready
-Snapshot when any of those facts is missing, unknown, or conflicting.
+For a normal-Live request, Release compiles one Snapshot before Execution
+lookup and reuses it through the resulting Attempt. The Snapshot does not bind
+`github.run_attempt`. Every authoritative producer and consumer independently
+enforces attempt 1.
 
-For each Release candidate run attempt, the live-release or release-simulation
-caller compiles exactly one authoritative Snapshot for its purpose and reuses it
-throughout the resulting live Attempt or simulation pass. A new
-`github.run_attempt` compiles a new Snapshot even when request identity,
-`github.run_id`, and target remain unchanged. Shared transport schemas may be
-reused across these purposes only when the purpose discriminator is explicit
-and digest-bound; admission rejects the other purpose.
+For simulation, Release compiles one Snapshot per simulation pass and binds
+`github.run_attempt`, selected channel, and Release Unit. The Snapshot does not
+bind a future Simulation Identity; Release derives that identity only after
+validation.
 
-For simulation, the Repository Model Snapshot binds validated purpose, request,
-run, target, channel, Release Unit, version facts, producer, and control inputs;
-it does not bind a future Simulation Identity. Release derives that Identity
-only after Snapshot validation, and later simulation records may bind both.
+CI independently compiles its own context-bound Snapshot. Cross-purpose,
+other-request, and prior-Attempt Snapshots are rejected.
+
+The compiler validates and records NBGV facts produced by the NBGV-owning
+Provider. It does not invoke NBGV or recompute canonical or native version
+facts.
 
 ### Provider Request Manifest
 
-Before launching target-evaluating discovery, the authoritative compilation
-coordinator closes one Provider Request Manifest.
+Before target-evaluating discovery, the compilation coordinator closes one
+Provider Request Manifest.
 
-The manifest binds:
+It binds:
 
 - exact target;
-- caller request identity, purpose, `github.run_id`, `github.run_attempt`,
-  producer, and control identities;
-- caller-selected channel and Release Unit when required by simulation purpose;
+- caller request, purpose, `workflow_run_id`, producer, and control identities;
+- context-required `github.run_attempt` when applicable;
+- purpose-required selected channel and Release Unit;
 - static catalog digest;
-- every expected Provider logical and implementation identity;
+- every expected Provider and implementation identity;
 - execution mode;
-- request ID and request digest;
+- request ID and digest;
 - discovery basis;
-- expected terminal result identity; and
+- expected terminal Result identity; and
 - manifest digest.
 
-Pure structural discovery may determine which target-evaluating Provider
-requests are required. Once the manifest seals, no Provider or discovery job may
-add or remove a request.
+Once sealed, no Provider may be added or removed. Compilation requires exactly
+one terminal Result for every entry. Missing, duplicate, conflicting, or
+unexpected Results block the Snapshot.
 
-Compilation requires exactly one terminal Provider Result for every manifest
-entry. A result may arrive directly from a pure Provider or through an admitted
-Fact Bundle. Missing, duplicate, conflicting, or unexpected results block the
-Repository Model Snapshot.
-
-The compiler validates structure and closure but does not:
-
-- compute one CI candidate's affected scope;
-- select quality policy;
-- create obligations;
-- select Buddy or Official;
-- choose destination projections; or
-- authorize execution.
-
-CI and Release use the same compiler and Snapshot contract but independently
-compile context-bound Snapshot instances. Each Release candidate run attempt
-branches to live Release or release simulation and compiles exactly one
-same-revision, request-local Snapshot for that purpose before live Execution
-lookup, coalescing, or admission. Compilation failure creates no Attempt. The
-resulting live Attempt or simulation pass reuses that Snapshot without a second
-compilation. Live planning validates channel-selected variants and obligations,
-selects and freezes native projections, and then derives and validates
-destination projections and coordinates, Adapter and version bindings, logical
-operations, potential action and dependency schemas, capability policy, and
-deterministic complete mutable-resource-key derivation and enforceability basis.
-Actual live actions, inputs, and complete action key sets materialize only after
-build, qualification, and observation and freeze in the Publication Snapshot. A
-new run attempt compiles a new Snapshot. Cross-purpose, other-request, and
-prior-attempt Snapshots are rejected.
+The compiler does not select CI scope, quality policy, Release channel,
+destination projections, Publication Actions, approval, or authority.
 
 ## Adapter Model
 
@@ -704,30 +699,26 @@ Build and Quality use separate Adapter interfaces.
 The architecture does not define one universal:
 
 - plugin interface;
-- request payload;
-- result payload;
+- Invocation payload;
+- Result payload;
 - retry model;
 - exit-code interpretation; or
 - artifact contract.
 
-Shared binding primitives remain common, while each family defines only the
-fields required by its mechanical semantics.
-
-One ecosystem package may implement Provider, Build Adapter, and Quality Adapter
-interfaces, but the interfaces remain separately invocable and permissioned.
+One ecosystem package may implement several interfaces, but each remains
+separately invocable and permissioned.
 
 ### Build Adapter
 
 A Build Adapter receives a closed Build Invocation containing:
 
 - exact target;
-- Release Unit and artifact variant identity;
+- Release Unit and artifact-variant identity;
 - Build Definition Snapshot and digest;
 - Build Request digest;
-- exact selected authoritative native NBGV projection and source fact binding;
+- exact selected native NBGV projection and source-fact binding;
 - dimensions;
-- declared toolchain;
-- declared inputs;
+- declared toolchain and inputs;
 - expected output roles;
 - execution class;
 - cache hints; and
@@ -736,26 +727,17 @@ A Build Adapter receives a closed Build Invocation containing:
 It emits a Build Result containing:
 
 - mechanical outcome;
-- materialized output references;
+- materialized outputs;
 - content digests and sizes;
 - output-role mapping;
 - toolchain identity;
-- internal provenance inputs;
-- cache-use diagnostics;
+- provenance inputs;
+- cache diagnostics;
 - producer identity; and
 - diagnostic reference.
 
-The Adapter does not decide whether the output satisfies CI or Release.
-
-The Adapter applies and verifies the exact frozen projection from the Build
-Invocation. It must not invoke NBGV to recompute the value, derive a substitute
-from another version field, or fall back to a manifest or ambient build-system
-version.
-
-For Official, the canonical NBGV version remains an Official Product Identity
-binding and immutable target completes Release Execution Identity. The Build
-Invocation still carries the exact frozen native ecosystem projection used by
-publication or dry-run.
+The Adapter applies and verifies the frozen version projection. It must not
+recompute NBGV, derive a substitute, or fall back to ambient manifest state.
 
 ### Quality Adapter
 
@@ -763,11 +745,10 @@ A Quality Adapter receives a closed Quality Invocation containing:
 
 - exact target;
 - Quality Definition Snapshot and digest;
-- request and obligation identity inputs;
-- concrete target;
-- dimensions;
+- request and obligation bindings;
+- concrete target and dimensions;
 - runner and toolchain constraints;
-- prerequisite output references;
+- prerequisite outputs;
 - timeout and cancellation inputs; and
 - cache hints.
 
@@ -780,58 +761,45 @@ It emits a Quality Result containing:
 - tool-specific summary;
 - diagnostic reference;
 - producer identity; and
-- optional structured measurements.
+- optional measurements.
 
-The Adapter does not know whether the obligation is required or advisory and
-does not emit CI or Release Evidence directly.
+It does not know whether an obligation is required or advisory and does not emit
+CI or Release Evidence directly.
 
 ### Destination Boundary
 
-Logical destination projections, projection-atomic classification,
-Publication Actions, Receipts, replay rules, and remediation are Release
-Delivery semantics.
+Release Delivery owns Destination ports and Adapters, including:
 
-Release Delivery therefore owns:
-
-- Destination port contracts;
-- Destination Definitions;
-- destination-specific observation and publication Adapters;
-- projection classification;
-- action decomposition;
-- Receipt payload semantics; and
+- projection Observation and classification;
+- publication operation semantics;
+- action formation;
+- complete mutable-resource keys;
+- Publication Result and Receipt meaning;
+- new-dispatch recovery; and
 - remediation operations.
 
-Shared Foundation may provide generic clients for:
+Foundation may provide generic clients for:
 
-- authenticated or anonymous HTTP;
-- GitHub API and CLI invocation;
-- complete REST pagination and GraphQL cursor traversal with recorded query
-  basis;
-- registry API invocation;
+- anonymous or authenticated HTTP;
+- Git and GitHub API access;
+- registry API access;
 - retryable transport;
 - response canonicalization;
 - digest parsing;
-- artifact upload and download streams; and
+- artifact streams; and
 - capability-requirement declaration.
 
-Generic clients expose remote facts and responses. They do not classify a
-Release projection, plan a publication action, decide replay safety, or emit a
-Receipt.
+Generic clients expose facts and responses. They do not classify a projection,
+plan a Publication Action, decide whether exact state is sufficient, create a
+Publication Authorization, or emit a Publication Result or Receipt.
 
-GitHub clients may expose workflow run `node_id`, run attempt, jobs,
-deployments, and deployment-review facts. Deployment Review data is raw
-diagnostic material, not authoritative current-attempt denial Evidence: it lacks
-documented `run_attempt`/job binding and no review-ID delta helper may manufacture
-that authority. Release owns any future exact admission contract.
-
-## Invocation Model
+## Invocation and Execution Model
 
 ### Closed Invocation
 
 Before execution, the calling context closes the semantic request.
 
-An Invocation must not allow the Adapter to discover new business scope.
-It identifies:
+An Invocation identifies:
 
 - exact target or remote object;
 - Definition Snapshot and digest;
@@ -844,9 +812,8 @@ It identifies:
 - timeout and cancellation contract; and
 - producer binding inputs.
 
-An Adapter may perform mechanical discovery required by the selected operation,
-such as enumerating tests inside a chosen aggregate target. It cannot add a new
-obligation, variant, projection, or action.
+An Adapter may perform mechanical discovery inside the selected operation, but
+it cannot add a new obligation, variant, projection, or publication action.
 
 ### Context-Owned Scheduling
 
@@ -855,79 +822,70 @@ CI and Release own:
 - DAG construction;
 - prerequisite semantics;
 - ready-work selection;
-- matrix partitioning;
 - batching;
+- matrix partitioning;
 - fail-stop;
 - retry;
 - supersession;
 - skip behavior; and
 - final aggregation.
 
-Foundation may emit a batching compatibility key when invocations share:
-
-- Adapter implementation;
-- toolchain;
-- runner;
-- dimensions;
-- compatible prerequisites; and
-- cache or workspace requirements.
-
-The context may batch only while preserving each invocation's semantic identity
-and individual result.
+Foundation may emit a compatibility key for invocations sharing Adapter,
+toolchain, runner, dimensions, prerequisites, and cache or workspace needs.
+Batching must preserve each Invocation and Result identity.
 
 ### Execution Classes
 
-Every Provider or Adapter declares one execution class.
+Initial execution classes are:
 
-Initial classes are:
-
-- `authoritative-pure`: same-revision control code with no target project/build
-  execution; its governance trust eligibility is context-owned;
-- `unprivileged-target-evaluation`: target-influenced discovery;
-- `unprivileged-target-execution`: build or quality execution;
-- `read-only-remote-observation`: remote reads with minimal read capability;
-- `privileged-side-effect`: authorized remote mutation; and
-- `privileged-remediation`: separately authorized exceptional mutation.
+- `authoritative-pure`;
+- `unprivileged-target-evaluation`;
+- `unprivileged-target-execution`;
+- `read-only-remote-observation`;
+- `privileged-side-effect`; and
+- `privileged-remediation`.
 
 Foundation declares the class and minimum capability requirements. The calling
-context and Delivery Governance create the actual job, Environment,
-permissions, OIDC trust, and credential grant.
+context and Delivery Governance create the job, permissions, Environment,
+identity trust, and credential grant.
 
-Release Qualification may bind declared Capability requirements into its
-Snapshot, but it cannot request, approve, or create live Capability. Only an
-authorized side-effect capability group in the normal v3 flow may request
-destination Capability after a credential-free context-owned admission decision
-validates the Authorization Record and exact Snapshot, summary, action,
-artifact, resource-key, and group bindings. The credential-bearing invocation
-also revalidates them. The first-slice writer-TCB exception is context-owned and
-does not change Foundation contracts for other destinations.
+### Publication Capability Declaration
 
-### Capability Consumption
+Publication Capability is a generic declaration of the minimum external
+authority required by one closed privileged Invocation.
 
-Foundation never:
+The declaration may bind:
 
-- grants a credential;
-- selects an Environment;
-- broadens permissions;
-- searches for ambient fallback credentials;
-- substitutes a personal token;
-- selects a weaker identity; or
-- retries through an alternate authority path.
+- destination family;
+- allowed origin, audience, or resource;
+- operation class;
+- minimum GitHub permission;
+- OIDC requirement when applicable; and
+- credential lifetime expectations.
 
-A privileged client consumes only the capability explicitly injected into the
-authorized runtime boundary.
+Foundation does not:
 
-The client validates the Invocation binding that the external credential format
-cannot express. A credential's platform scope and the semantic action
-authorization remain distinct.
+- grant the capability;
+- select an Environment;
+- decide approval;
+- broaden permissions;
+- find ambient fallback credentials;
+- substitute a PAT;
+- create a capability group; or
+- retry through another authority path.
+
+For the first-slice publisher, Release and Governance inject the short-lived
+repository token only after the Approval job emits Publication Authorization.
+Foundation defines no second Environment or separate admission decision.
+
+A future OIDC Environment or multiple-action capability model requires a
+concrete second scenario and external trust claim contract.
 
 ## Mechanical Outcomes and Diagnostics
 
 ### Closed Outcome Taxonomy
 
-Foundation families use a closed mechanical taxonomy.
-
-Initial categories are:
+Foundation families use a closed mechanical taxonomy:
 
 - `succeeded`;
 - `invalid-request`;
@@ -946,27 +904,24 @@ Family contracts may refine details without changing the top-level category.
 Foundation does not emit:
 
 - required or advisory;
-- CI passed or failed;
-- Release replayable;
+- CI success or failure;
+- Release exact-satisfied or published;
 - Release reconciliation-required;
-- Release completed; or
-- publication authorized.
-
-The calling context maps mechanical outcomes to its own state model.
+- publication authorized; or
+- final Attempt outcome.
 
 ### Diagnostics
 
-Every non-success result includes:
+Every non-success Result includes:
 
 - stable category;
 - human-readable summary;
 - machine-readable detail code;
-- diagnostic artifact or log reference when available;
-- relevant target, definition, request, and producer bindings; and
-- whether any output or remote mutation may have occurred.
+- diagnostic reference when available;
+- relevant target, Definition, request, and producer bindings; and
+- whether output or remote mutation may have occurred.
 
-Diagnostics never substitute for a required result payload or authoritative
-record.
+Diagnostics never substitute for a required Result or authoritative record.
 
 ## Artifact Identity and Provenance
 
@@ -974,14 +929,12 @@ record.
 
 Foundation separates:
 
-1. **Logical identity**: Release Unit, variant, output role, and purpose.
-2. **Content identity**: canonical digest, size, and media or package kind.
-3. **Transport identity**: immutable Actions artifact ID or equivalent storage
-   identity.
-4. **Producer identity**: target, Definition, request, job, workflow run, and
-   attempt.
+1. logical identity;
+2. content identity;
+3. immutable transport identity; and
+4. producer identity.
 
-No one layer substitutes for another.
+No layer substitutes for another.
 
 ### Internal Provenance
 
@@ -996,29 +949,71 @@ Internal provenance binds:
 - dimensions;
 - declared inputs;
 - toolchain identity;
-- producer job and workflow attempt;
+- producer job and `workflow_run_id`;
+- context-required `github.run_attempt` only when applicable;
 - output role;
 - content identity; and
 - transport identity.
 
-CI and Release may use the same provenance structure while applying different
-admission rules.
-
-A valid CI provenance object is not sufficient for Release admission because
-its context, purpose, Plan, and producer bindings differ.
+CI and Release may reuse the structure while applying independent admission.
+Matching bytes do not make a CI artifact admissible for Release.
 
 ### Artifact Materialization
 
-The consumer:
+Actions artifact names are non-authoritative indexes. Uploads use
+collision-safe names within the workflow run and disable overwrite.
 
-- retrieves by immutable transport identity;
-- verifies expected producer and artifact metadata;
-- recomputes content digest and size;
-- verifies artifact-set manifest consistency;
-- verifies provenance bindings; and
-- rejects missing, extra, or conflicting outputs.
+Producers capture:
 
-Artifact name alone is never authoritative.
+- artifact ID;
+- digest;
+- URL;
+- producer;
+- target;
+- purpose; and
+- payload identity.
+
+Consumers retrieve by immutable ID, recompute content digest and size, validate
+manifest and provenance, and reject missing, extra, or conflicting outputs.
+
+Normal-Live artifacts omit `github.run_attempt`. Simulation and other contexts
+retain it where their contracts require it.
+
+Name fallback, latest selection, and history-based artifact authority are not
+provided.
+
+## Git and GitHub Client Primitives
+
+Foundation clients may provide bounded mechanical operations for:
+
+- resolving a fully qualified Git ref;
+- reading an exact blob by repository, ref, and path;
+- enumerating commits that touch one path between two lineage points;
+- validating exact target checkout and complete ancestry or tags;
+- retrieving an artifact by immutable ID;
+- reading current workflow, run, job, deployment, or Environment facts;
+- validating supported REST response schemas;
+- reading native Environment settings for Governance attestation;
+- reading current destination facts; and
+- returning native run history as non-authoritative diagnostics.
+
+The protected-path helper returns mechanical lineage and content facts.
+Release owns the decision that any path touch invalidates an Attempt and that
+unrelated `main` commits are allowed.
+
+The Environment client returns native reviewer, self-review, bypass, branch or
+tag, wait, variable, and secret facts that the API or authenticated readback can
+establish. Governance owns the approved configuration and attestation. Runtime
+marker validation does not replace this readback.
+
+The client layer does not:
+
+- claim exhaustive package-grant enumeration;
+- construct a history-admission Snapshot;
+- infer an artifact-to-prior-attempt edge;
+- reconstruct aggregate Release state;
+- infer approval or authorization from diagnostics; or
+- blind-redispatch after an ambiguous workflow-dispatch response.
 
 ## Cache and Mechanical Reuse
 
@@ -1026,107 +1021,77 @@ Artifact name alone is never authoritative.
 
 CI and Release may share non-authoritative caches for:
 
-- tool downloads verified by trusted distribution identity or digest;
-- package-manager downloads verified against authoritative lock or package
-  metadata;
-- restored immutable dependencies;
-- content-addressed intermediates whose action identity closes every semantic
-  input; and
-- compiler outputs only when cache writer trust and material provenance are
-  acceptable to the consuming execution class.
+- verified tool downloads;
+- package-manager downloads validated by lock or package metadata;
+- immutable dependencies;
+- content-addressed intermediates whose key closes semantic inputs; and
+- compiler outputs only when writer trust and provenance are acceptable.
 
-Cache keys may use:
+Cache keys may include:
 
 - target or input digests;
 - Definition and request digests;
-- toolchain identity;
+- toolchain;
 - dimensions;
 - platform;
-- declared dependency metadata; and
+- dependency metadata; and
 - Adapter-specific compatibility data.
 
-Cross-context cache entries also bind:
+Cross-context cache use additionally binds producer trust class, repository and
+workflow identity, namespace, complete input closure, Invocation digest, and
+material provenance.
 
-- producer trust class;
-- writer repository and workflow identity;
-- cache namespace;
-- source target or complete input closure;
-- action or Invocation digest; and
-- material provenance.
-
-An ordinary pull-request, fork, or otherwise lower-trust job cannot populate a
-compiler or intermediate cache namespace consumed by Release.
-
-Release may consume target-derived compiler or intermediate outputs from
-another context only when:
-
-- authenticated cache infrastructure prevents substitution under an existing
-  action identity;
-- the producer class is explicitly trusted for Release cache consumption;
-- the cache key closes target inputs, Definition, request, dimensions,
-  toolchain, and declared dependencies;
-- material provenance is available and verified; and
-- a cache miss can rederive the same semantic output from authoritative inputs.
-
-Otherwise cross-context reuse is limited to independently verifiable immutable
-downloads and dependencies.
+A pull request or lower-trust job cannot populate a compiler or intermediate
+namespace consumed by Release. A cache miss must permit rederivation from
+authoritative inputs.
 
 ### Release Independence
 
 Release still:
 
-- runs its own Build Invocation;
-- materializes its own final output set;
-- recomputes output digests;
+- performs its own Build Invocation;
+- materializes final outputs;
+- recomputes digests;
 - creates Release-purpose provenance;
 - performs Release quality obligations; and
-- admits only Release Attempt records.
+- admits only current Release Attempt records.
 
-A cache hit does not import:
-
-- a CI, simulation, other-request, or prior-Attempt Repository Model Snapshot;
-- CI Artifact Reference identity;
-- CI Evidence;
-- CI producer identity;
-- CI success;
-- a dry-run result; or
-- an earlier Release Attempt result.
-
-Continuous cache unavailability may reduce performance but cannot change
-semantic output, scope, or verdict.
+A cache hit does not import a CI, simulation, other-request, or prior-Attempt
+Snapshot, Artifact Reference, Evidence, success, or Result.
 
 ## Security Model
 
 ### Static Supply-Chain Boundary
 
-All executable Provider, Adapter, compiler, canonicalization, and client code is
-contained in the selected revision and static catalog.
+Executable Provider, Adapter, compiler, canonicalization, and client code comes
+from the selected revision and static catalog.
 
-Definitions and descriptors may select allowlisted implementation IDs and
-parameters but cannot inject executable paths, packages, commands, or remote
-code.
+Definitions and descriptors may select allowlisted IDs and parameters but
+cannot inject executable paths, packages, commands, or remote code.
+
+Static-reference authority implementations are exact-version dependencies or
+toolchain nodes selected by the static catalog, not target-selected plugins.
+File-oriented libraries and CLIs see only a Session-owned isolated snapshot
+containing declared exact-source bytes and controlled environment. They receive
+no publication capability, registry credential, undeclared worktree input, or
+external writable cache.
 
 ### Target-Controlled Input
 
-Target-controlled manifests and configuration are untrusted inputs to trusted
-Foundation code.
+Target-controlled manifests and configuration are untrusted inputs.
 
-Pure Providers must not cross into target execution.
-Target-evaluating Providers, Build Adapters, and Quality Adapters run only in
-unprivileged execution classes.
+Pure Providers do not execute target code. Target-evaluating Providers, Build
+Adapters, and Quality Adapters run only in unprivileged classes.
 
-No runtime that evaluates or executes target-defined product/build content
-receives publication capability. The context-owned, explicitly accepted
-`hcoona-release-smoke-npm` live Buddy GitHub Packages exception runs
-target-revision control and publisher code after dedicated Environment
-approval, but does not execute target-defined product/build code in that
-side-effect invocation. That target-revision publisher remains a
-`privileged-side-effect` invocation and validates exact bindings by contract,
-but is not an independent adversarial boundary. Every repository writer is
-inside the slice publisher TCB and may author alternate write-capable workflow
-jobs; Environment approval governs the normal flow rather than imposing a
-malicious-writer permission ceiling. Foundation does not generalize this
-exception to Official or another Buddy destination.
+No runtime that executes target-defined product or build code receives
+publication capability.
+
+The first-slice Buddy exception permits target-revision publisher control code
+after Approval Environment review. That publisher remains a
+`privileged-side-effect` Invocation and validates exact bindings by contract,
+but it is not an independent boundary against the accepted writer TCB.
+Foundation does not generalize the exception to Official or another
+destination.
 
 ### Boundary Validation
 
@@ -1137,282 +1102,225 @@ Every process boundary validates:
 - execution class;
 - expected artifact inputs;
 - producer binding;
-- result shape;
+- Result shape;
 - output digests; and
-- absence of undeclared outputs where the family contract requires closure.
+- absence of undeclared outputs where closure requires it.
 
-No Adapter result is trusted solely because the process exited zero.
+An exit code of zero is not sufficient authority.
 
 ### Generic Client Safety
 
-Generic remote clients:
+Credential-bearing clients:
 
-- accept endpoint and operation inputs only from a closed invocation and static
+- accept endpoint and operation only from a closed Invocation and static
   destination configuration;
-- receive credentials only through the authorized runtime;
-- receive a capability handle binding the credential to allowed origin,
-  audience or resource, endpoint family, identity, and operation class;
-- refuse to attach credentials when the requested endpoint or operation falls
-  outside the capability handle;
+- receive capability only through the governed runtime;
+- bind capability to allowed origin, audience or resource, identity, and
+  operation class;
+- refuse credentials outside that binding;
 - reject credential-bearing cross-origin redirects;
-- never log secrets or tokens;
-- do not infer a stronger operation from a weaker request;
+- never log secrets;
+- do not infer a stronger operation;
 - expose conflict and unknown state explicitly;
 - do not enable destructive overwrite by default; and
-- return typed mechanical responses for the Release-owned adapter to interpret.
+- return typed mechanical responses for context-owned interpretation.
 
 ## Failure Conditions
 
-Foundation processing fails closed when:
+Foundation fails closed when:
 
-- a logical implementation ID is absent or ambiguous;
+- an implementation ID is absent or ambiguous;
 - a descriptor attempts dynamic code selection;
-- a Definition or request is malformed;
+- a Definition, request, or record is malformed;
 - canonicalization or digest verification fails;
-- a target, producer, request, artifact, or result binding mismatches;
-- a Provider Request, Fact Bundle, or Repository Model Snapshot does not match
-  the current `github.run_attempt`, including reuse from a prior run attempt;
-- a pure Provider attempts a target-evaluating operation;
-- a target-evaluating Provider lacks an unprivileged execution boundary;
-- a Provider Request Manifest is absent or changes after isolated discovery
-  starts;
-- an expected Provider Result is missing, duplicated, conflicting, or
+- a target, purpose, producer, request, artifact, or Result binding mismatches;
+- a normal-Live record contains or requires `github.run_attempt` as authority;
+- a simulation record omits or mismatches its required run-attempt binding;
+- a pure Provider attempts target evaluation;
+- a target-evaluating Provider lacks an unprivileged boundary;
+- a Provider Request Manifest changes after sealing;
+- an expected Provider Result is missing, duplicate, conflicting, or
   unexpected;
-- a Provider emits unresolved or conflicting required facts;
-- the Repository Model cannot close required facts;
-- an Adapter receives unsupported dimensions or inputs;
+- required Repository Model facts cannot close;
+- an Adapter receives unsupported inputs or dimensions;
 - an Adapter emits missing, extra, or conflicting outputs;
-- artifact content differs from its manifest or provenance;
-- a context attempts to admit another context's artifact or result;
-- a live Release or release simulation attempts to admit a Snapshot, Fact
-  Bundle, artifact, or record from the other purpose;
-- an untrusted cache writer or incomplete cache provenance is offered to a
-  higher-trust consumer;
+- a Build Adapter recomputes or substitutes the frozen version;
+- artifact content differs from manifest or provenance;
+- a context attempts to admit another context's artifact or Result;
+- a live Release and simulation input are mixed;
+- a current-context helper attempts prior-run or latest-artifact admission;
+- an untrusted cache entry is offered to a higher-trust consumer;
 - a capability requirement cannot be satisfied;
-- a credential-bearing client request falls outside the capability handle's
-  origin, audience, resource, identity, or operation binding;
+- a credential-bearing request escapes its capability binding;
 - a client attempts credential fallback;
 - an unknown mechanical outcome is returned;
-- a cross-revision contract version is absent, unknown, or incompatible; or
-- a required mechanical result cannot be persisted.
+- a cross-revision contract is absent, unknown, or incompatible; or
+- a required mechanical Result cannot be persisted.
 
-Foundation does not convert any of these conditions into a weaker operation.
+Foundation does not convert any condition into a weaker operation.
 
 ## Acceptance Scenarios
 
-### Target-Evaluating .NET Provider
+### Target-Evaluating Provider
 
-The .NET Provider requires native MSBuild graph evaluation.
+A Provider needs ecosystem-native graph evaluation.
 
-- The Provider declares `unprivileged-target-evaluation`.
-- A discovery job receives the exact target and closed Provider request.
-- It has no publication credential or Environment.
+- It declares `unprivileged-target-evaluation`.
+- The job receives the exact target and closed request.
+- It has no publication capability or Environment.
 - It emits a target-bound Fact Bundle.
-- The Repository Model Compiler admits the bundle and normalizes Project Nodes
-  and dependency facts.
-- CI later computes affected scope; Release later selects one complete Release
-  Unit closure.
+- The compiler strictly admits the Bundle and normalizes repository facts.
 
-### Pure Descriptor Provider
+### Normal-Live Fact Bundle
 
-A fixed-basename Release Unit descriptor is parsed without executing target
-code.
+A normal-Live Provider emits a Fact Bundle.
 
-- The Provider declares `authoritative-pure`.
-- Strict parsing rejects unknown fields and executable implementation paths.
-- The result enters Repository Model compilation directly.
-- The descriptor can select only static catalog IDs.
+- The Bundle binds current `workflow_run_id`, target, purpose, producer, and
+  digest.
+- It omits `github.run_attempt`.
+- Producer and consumer independently require attempt 1.
+- A partial GitHub rerun fails at the job guard rather than creating a second
+  domain identity.
 
-### Shared Build Definition With Separate Contexts
+### Simulation Fact Bundle
 
-CI and Release invoke the same Build Definition for one artifact variant.
+A simulation rerun executes.
 
-- Their Build Invocations have different context, purpose, target, Plan, and
-  producer bindings.
-- Both may hit the same transparent compiler or dependency cache.
-- Each rematerializes outputs and recomputes digests.
-- CI forms CI-owned artifact provenance and Evidence.
-- Release forms Release-owned artifact provenance and Evidence.
-- Release cannot admit the CI Artifact Reference.
+- The Bundle and Snapshot bind the new `github.run_attempt`.
+- The new pass derives a distinct Simulation Identity.
+- No normal-Live contraction is applied.
 
-### Quality Result Wrapping
+### Shared Build Definition
 
-A Quality Adapter executes one concrete test target.
+CI and Release invoke the same Build Definition.
 
-- The Adapter does not know whether the obligation is required or advisory.
-- It emits one Quality Result with mechanical outcome and diagnostics.
-- CI binds it to a CI obligation and creates CI Evidence.
-- Release may invoke the same Definition and bind a separate result to a
-  Release obligation.
-- Neither context consumes the other's Evidence.
+- Their context, purpose, target, Plan, and producer bindings differ.
+- Both may use admissible non-authoritative caches.
+- Each rematerializes output and recomputes digests.
+- CI forms CI provenance and Evidence.
+- Release forms Release provenance and Evidence.
+- Neither context admits the other's artifact identity.
 
-### Identity-Preserving Batch
+### Static-Reference Sources
 
-Five compatible Quality Invocations share Adapter, toolchain, runner, and
-dimensions.
+The same scanner mechanism is used in three source modes.
 
-- Foundation exposes one compatibility key.
-- CI chooses to batch the invocations.
-- The Adapter returns five separately identified Quality Results.
-- One failed result does not change the identity or meaning of the other four.
-- The CI Finalizer admits each Evidence object independently.
+- `git-target` reads exact commit blobs and may support Live Eligibility.
+- `index` reads stage-0 entries for staged feedback.
+- `worktree` reads eligible filesystem bytes for manual feedback.
+- Every Result binds its source kind.
+- File-oriented ecosystem APIs receive a minimal isolated snapshot made only
+  from those exact bytes; the source mode, not the snapshot, remains authority.
+- The exact authority graph emits normalized facts before Foundation applies
+  repository-specific prohibited-form comparison.
+- Foundation reports findings but does not decide business eligibility.
 
-### GitHub Release Destination Split
+### Approval and Publication Records
 
-A GitHub Release projection has one missing installer.
+Release forms an action-bearing Approval Bundle and later Publication
+Authorization.
 
-- Release-owned GitHub destination logic classifies the projection as partial.
-- Foundation GitHub client primitives only return release, target, asset, and
-  digest facts.
-- Foundation does not decide replay or remediation.
-- The Release adapter creates the reconciliation or remediation semantics.
-- Governance grants any required capability outside Foundation.
+- Foundation canonicalizes and validates typed bindings.
+- It does not select the Approval Environment or grant capability.
+- A successful Publication Result validates exactly one embedded Receipt.
+- A controlled failed Result may omit Receipt while retaining mutation
+  classification.
+- No generic group result wrapper is introduced.
 
-### Cross-Revision Remediation Request
+### Protected Governance Freshness
 
-An old Release Attempt emits a reconciliation request consumed later by current
-protected remediation code.
+Release asks Foundation clients for current protected-path facts.
 
-- The request carries stable kind, contract version, producer revision, and
-  payload digest.
+- The client returns repository, ref, path, resolved commit, blob/content
+  identity, and path-touch lineage.
+- An unrelated `main` commit does not alter the blob or path lineage.
+- A change-then-revert still reports a protected-path touch.
+- Release, not Foundation, invalidates the current Attempt.
+
+### Cross-Revision Remediation
+
+Current protected remediation code consumes an older reconciliation request.
+
+- The request has stable kind, contract version, producer identity, original
+  lineage, and payload digest.
 - Current code accepts only declared compatible versions.
-- An incompatible version fails before approval or mutation.
-- Any explicit migration preserves the original request and appends the
-  migrated representation.
+- Incompatible input fails before approval or mutation.
+- Any migration preserves the original payload.
 
 ### Cache Unavailable
 
-The shared package and compiler caches are unavailable.
+Shared caches are unavailable.
 
 - Provider, Build, and Quality requests remain unchanged.
-- Adapters retrieve authoritative dependencies and execute normally.
+- Adapters retrieve authoritative dependencies and run normally.
 - Artifact identity, provenance, Evidence, and verdict semantics remain
   unchanged.
-- Only elapsed time and cache diagnostics differ.
+- Only elapsed time and diagnostics differ.
 
-### Lower-Trust Cache Entry
+### Credential-Bound Client
 
-A pull-request job writes a compiler output under a key that resembles a
-Release-compatible action identity.
+A faulty Invocation names an endpoint outside the allowed destination origin.
 
-- The entry belongs to a lower-trust writer and namespace.
-- Release refuses the entry before materialization.
-- Release rederives the output from authoritative inputs or uses an admissible
-  trusted cache entry.
-- No CI artifact identity, producer claim, or cached bytes become Release
-  provenance.
-
-### Credential-Bound Generic Client
-
-A faulty destination invocation supplies an endpoint outside the static
-destination origin while a registry credential is present.
-
-- The capability handle identifies the allowed origin, audience or resource,
-  endpoint family, identity, and operation class.
-- The generic client refuses to attach the credential or follow a cross-origin
-  redirect.
-- No request reaches the unbound endpoint with authorization material.
-- Release records the mechanical client failure through its own action result.
-
-### Unsupported Mechanism
-
-A policy selects a Quality Definition whose Provider cannot resolve a required
-target for the ecosystem.
-
-- The Provider returns `unsupported` with diagnostics.
-- Foundation does not silently choose another target or Definition.
-- The context maps the result to its own blocked or failed state.
+- The client refuses to attach the credential.
+- It rejects a cross-origin redirect.
+- No authorized request reaches the unbound endpoint.
+- Release records the typed mechanical failure through its own Result.
 
 ## Conformance and Testing
 
 Every Foundation implementation requires:
 
-- strict contract parsing tests;
+- strict record-parser and admission tests;
 - canonicalization and digest golden tests;
-- opaque platform-serialization-projection canonicalization and binding tests
-  that preserve, rather than replace, context-owned complete resource-key sets;
-- Provider fixture tests;
-- target-binding and producer-binding negative tests;
-- Repository Model compilation scenarios;
-- Repository Model ready-versus-blocked completeness-gate tests;
-- Build Adapter artifact-manifest tests;
-- Build Adapter frozen-version-projection tests that reject recomputation,
-  alternative derivation, and fallback;
-- Quality Adapter result-shape tests;
-- context-isolation tests proving CI outputs cannot satisfy Release;
+- context and purpose isolation tests;
+- normal-Live no-`run_attempt` and simulation run-attempt binding tests;
+- Provider fixtures and target-binding negative tests;
+- Repository Model ready-versus-blocked scenarios;
+- exact-target NBGV ancestry and tag completeness tests;
+- Build Adapter artifact-manifest and frozen-version tests;
+- Quality Adapter Result-shape tests;
+- Artifact Reference ID-only transport tests;
+- static-reference source-kind tests;
+- static-reference exact-authority identity, snapshot-isolation, normalized
+  fact, and typed authority-failure tests;
+- Git protected-path touch and change-then-revert fixtures;
+- current-context admission tests that reject prior-run and latest selection;
 - cache-disabled equivalence scenarios;
 - execution-class and capability-denial tests;
-- static catalog allowlist tests;
-- cross-revision contract compatibility tests where applicable; and
-- integration tests against the actual ecosystem or platform abstraction.
+- generic client credential-boundary tests;
+- cross-revision compatibility tests where applicable; and
+- integration tests against actual ecosystem or platform abstractions.
 
-Adapter acceptance tests validate trusted ecosystem behavior once at the
-implementation boundary. Runtime planning relies on the accepted contract
-rather than repeatedly re-proving the underlying build or platform system.
+Contract tests validate lower-layer behavior once at the implementation
+boundary. Runtime planning relies on the accepted contract rather than
+reimplementing the platform.
 
 ## Deferred LLD Decisions
 
-The first Shared Foundation LLD must define:
+Lower-layer design may define:
 
 - logical package and executable decomposition;
-- exact canonicalization and digest algorithm;
-- opaque context-owned platform-serialization-projection canonicalization,
-  digest, and exact-binding fixtures without Foundation-owned lock semantics;
-- strict value-type and binding schemas;
-- family-specific Invocation and Result schemas;
-- Fact Bundle and Repository Model Snapshot transport, including authoritative
-  target-bound canonical and native NBGV projections and explicit
-  `github.run_id` and `github.run_attempt` bindings;
-- Repository Model Snapshot purpose, request identity, run ID, run attempt,
-  producer, control, and target bindings, plus Release pre-admission
-  compilation, exactly-once per-run-attempt reuse, and replay-recompilation
-  tests;
-- static catalog registration syntax;
-- Provider execution-mode declaration;
-- Provider Result, Fact Bundle, and Provider Request Manifest schemas;
-- NBGV-owning Provider checkout contracts and control fixtures proving exact
-  target pinning, `fetch-depth: 0` or equivalent complete ancestry/tag
-  availability, and fail-closed rejection of shallow or incomplete history
-  before canonical or native NBGV facts are compiled;
-- exact mechanical outcome and diagnostic codes;
-- Artifact Reference, artifact-set manifest, and provenance schemas;
-- Actions artifact upload results and ID-only download contracts, deterministic
-  workflow-run-unique physical naming with `github.run_attempt` directly or in
-  the deterministic hash preimage, overwrite disabled, and rejection of
-  prior-attempt ID, name-fallback, and latest-selection behavior;
-- generic protected-ref fixed-source and live-state freshness helpers, including
-  exact repository/ref/path input binding, uncached repeated observation,
-  commit/blob/content provenance comparison, current-time expiry evaluation,
-  and change/disablement fixtures without context-owned admission policy;
-- caller-selected current-authority versus execution-history helpers,
-  platform-limited historical artifact/run attribution, separate Jobs/Run phase
-  facts, and negative tests proving self-asserted producer/attempt/workflow
-  claims never become authority;
-- canonical package target-witness encoding/parsing and npm fixture coverage
-  without run/Attempt identity;
-- cache-key construction and cache namespace policy;
-- implementation and catalog digest calculation;
-- batch compatibility-key calculation;
-- generic GitHub and registry client surfaces;
-- complete REST/GraphQL pagination and query-basis capture, workflow
-  run/node/job response fixtures, diagnostic-only deployment-review fixtures,
-  and malformed, 403/404, timeout, and truncation handling;
-- cross-revision contract version and compatibility rules;
-- process-boundary validation entry points;
-- contract-test harnesses and fixtures;
-- negative binding tests rejecting mismatched and prior-attempt Provider
-  Requests, Fact Bundles, and Repository Model Snapshots, plus replay tests
-  proving `Re-run all jobs` recompiles for the new `github.run_attempt` and
-  rejects prior-attempt artifacts;
-- purpose-discriminator schema and admission tests proving live Release and
-  simulation may reuse mechanical shapes only while rejecting every
-  cross-purpose Snapshot, Fact Bundle, artifact, and record;
-- generic Approval Outcome Evidence binding helpers only for platforms with
-  documented exact attempt-bound proof, plus first-slice negative tests proving
-  GitHub Deployment Review data and review-ID deltas cannot create such Evidence
-  or grant Capability;
-- platform conclusion and phase-state binding helpers plus tests distinguishing
-  pre-capability no-side-effect cancellation/expiry from cancellation after a
-  capability job may have started, without requiring a distinction GitHub does
-  not expose;
-- acceptance tests for every scenario in this MLD.
+- exact canonicalization and digest algorithms;
+- strict value types and family-specific schemas;
+- context-selectable run-attempt binding representation;
+- Provider Result, Fact Bundle, Request Manifest, and Repository Model
+  Snapshot schemas;
+- static catalog registration;
+- exact target-pinning and complete-history checks;
+- Build and Quality Invocation and Result schemas;
+- Artifact Reference, manifest, and provenance schemas;
+- collision-safe artifact naming and ID-only transport;
+- static-reference enumeration and parsing implementations;
+- protected-ref, protected-path history, and Environment readback clients;
+- supported workflow-dispatch response validation;
+- generic GitHub, registry, HTTP, and process client surfaces;
+- cache keys and trust namespaces;
+- batching compatibility keys;
+- cross-revision contract compatibility;
+- mechanical outcome and diagnostic codes; and
+- tests for every scenario and failure condition above.
+
+Lower-layer design must not add a universal Release wrapper, first-slice
+Environment Profile, separate post-approval admission abstraction,
+capability-group manifest or result wrapper, Actions history admission, or
+future OIDC or multiple-action abstractions without a concrete second scenario.

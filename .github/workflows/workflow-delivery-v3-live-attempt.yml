@@ -102,7 +102,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.6'
+          version: '0.12.7'
       - name: Download Release Intent by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -259,7 +259,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.6'
+          version: '0.12.7'
       - name: Install exact toolchain
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -385,7 +385,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.6'
+          version: '0.12.7'
       - name: Install exact toolchain
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -532,7 +532,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.6'
+          version: '0.12.7'
       - name: Install exact toolchain
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -633,7 +633,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.6'
+          version: '0.12.7'
       - name: Install exact toolchain
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -849,7 +849,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.6'
+          version: '0.12.7'
       - name: Download Qualification Snapshot by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -1015,7 +1015,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.6'
+          version: '0.12.7'
       - name: Download Qualification Snapshot by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -1157,7 +1157,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.6'
+          version: '0.12.7'
       - name: Download Intent by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -1290,7 +1290,7 @@ jobs:
     timeout-minutes: 30
     permissions: {}
     environment:
-      name: workflow-delivery-v3-buddy-smoke-approval
+      name: workflow-delivery-v3-buddy-approval
       url: ${{ needs.materialize-publication.outputs.reviewer-artifact-url }}
     outputs:
       authorization-artifact-name: ${{ steps.authorize.outputs.authorization-artifact-name }}
@@ -1333,7 +1333,7 @@ jobs:
         env:
           ACTUAL_ENVIRONMENT_MARKER: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
         run: |
-          if [[ "${ACTUAL_ENVIRONMENT_MARKER}" != "workflow-delivery-v3-buddy-smoke-approval/v1" ]]; then
+          if [[ "${ACTUAL_ENVIRONMENT_MARKER}" != "workflow-delivery-v3-buddy-approval/v1" ]]; then
             echo "::error::Environment marker does not match the approval Environment contract" >&2
             exit 1
           fi
@@ -1475,7 +1475,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.6'
+          version: '0.12.7'
       - name: Download Publication Snapshot by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -1630,7 +1630,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    environment: workflow-delivery-v3-buddy-smoke-github-packages
+    environment: workflow-delivery-v3-buddy-github-packages
     concurrency:
       group: wdv3-resource-${{ needs.approval-finalizer.outputs.resource-concurrency-key }}
       cancel-in-progress: false
@@ -1652,7 +1652,7 @@ jobs:
         env:
           ACTUAL_ENVIRONMENT_MARKER: ${{ vars.WDV3_CAPABILITY_ENVIRONMENT_MARKER }}
         run: |
-          if [[ "${ACTUAL_ENVIRONMENT_MARKER}" != "workflow-delivery-v3-buddy-smoke-github-packages/v1" ]]; then
+          if [[ "${ACTUAL_ENVIRONMENT_MARKER}" != "workflow-delivery-v3-buddy-github-packages/v1" ]]; then
             echo "::error::Environment marker does not match the capability Environment contract" >&2
             exit 1
           fi
@@ -1667,7 +1667,7 @@ jobs:
         if: success() && steps.capability-environment-marker.outcome == 'success'
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.6'
+          version: '0.12.7'
       - name: Install exact toolchain
         if: success() && steps.capability-environment-marker.outcome == 'success'
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
@@ -1952,7 +1952,7 @@ jobs:
         if: always()
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.6'
+          version: '0.12.7'
       - name: Download Release Attempt binding by artifact ID
         if: always() && needs.admit.outputs.attempt-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8

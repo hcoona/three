@@ -11903,3 +11903,378 @@ Status: **INDEPENDENT REVIEW CLEAN; FINAL STAGED GATE PASSED.**
   **4,230 tests** and all configured checks.
 
 <!-- END APPEND: 2026-08-30-wdv3-normal-live-readiness-repair-review -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-design-status -->
+
+## Workflow Delivery v3 Environment identity design correction
+
+Status: **DESIGN COMPLETE; INDEPENDENT REVIEW CLEAN; DELIVERY PENDING.**
+
+### Final design
+
+- Delivery Governance now owns Environment Profile compatibility and stable
+  profile-to-name mappings. Release requests and consumes those mappings; the
+  first-slice LLD records exact mappings and usage constraints without
+  duplicating the compatibility schema.
+- Buddy Approval Environment identity is reusable only for an identical
+  Approval Environment Profile. GitHub Packages capability identity is
+  reusable only for an identical destination, credential identity, permission,
+  access, and native-protection profile.
+- Capability reviewer policy is fixed to `none` under the current architecture.
+  An Attempt that reaches the approval gate requires one fresh current-Attempt
+  human approval, and package-bound Authorization is emitted only after
+  successful approval. A reviewer-bearing destination requires a new
+  architecture decision.
+- The first slice maps to
+  `workflow-delivery-v3-buddy-approval` and
+  `workflow-delivery-v3-buddy-github-packages`, with exact marker contracts
+  `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`
+  and
+  `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1`.
+- Shared Environment identities aggregate GitHub Environment deployment
+  history but do not transfer Governance eligibility, approval, Authorization,
+  Capability, package authorization, or Attempt/package lineage.
+- No persistent Profile-ID or mirrored Profile-record subsystem was added.
+  Compatibility remains a Governance design/provisioning decision evidenced by
+  the LLD mapping, authenticated native readback, and other required policy
+  evidence. Marker values and first-step guards remain mapping/consumer
+  contracts rather than Profile identity dimensions.
+
+### Ordered delivery boundary
+
+- PR #624 remains the completed fail-closed readiness mechanism under the
+  transitional `buddy-smoke` identities.
+- Before either final Environment is created, one protected implementation PR
+  must atomically update workflow, source, record, formatter, validator, test,
+  marker, and current-state contracts while `live_enabled` remains false.
+- The earlier unchecked plan items that named permanent `buddy-smoke`
+  Environments are explicitly canceled through an append-only supersession.
+- External Environment creation/readback remains separately unauthorized.
+  Preparation, activation, dispatch, deployment approval, package/tag mutation,
+  retry, legacy restoration, and Break-Glass also remain unauthorized.
+
+### Review and validation
+
+- Three initial independent reviews covered architecture/overdesign,
+  authority/operability, and cross-document consistency. Every finding was
+  independently adjudicated; true positives were corrected and proposals for a
+  persistent Profile registry or marker-based identity key were rejected as
+  overdesign.
+- Repeated architecture and documentation rereviews continued until the final
+  two independent closure reviewers both returned **No findings**.
+- OCR delegation preview reported all 13 changed files and excluded all 13 as
+  unsupported Markdown extensions; deterministic scope accounting was retained,
+  and the host reviews above performed the actual design review.
+- `pnpm exec -- prettier --check -- <11 changed normative/current-state docs>`:
+  exit 0.
+- `pnpm exec -- markdownlint-cli2 -- <11 changed normative/current-state
+  docs>`: exit 0; 0 issues.
+- `hk check --no-progress --unstaged`: exit 0 across all applicable checks for
+  the final 14 changed paths.
+- `git diff --check`: exit 0.
+
+### Scope and external-state evidence
+
+- Exactly 14 Markdown paths are changed: the seven normative/design documents,
+  three current-state documents, `docs/wiki/log.md`, and the append-only
+  research/plan/status ledgers after this entry.
+- Workflow, Python source, tests, protected Governance, manifests, and lockfiles
+  are unchanged. The protected Governance diff is empty and
+  `live_enabled` remains false with expiry `2026-11-12T17:19:12Z`.
+- Read-only GitHub reconciliation found the final and transitional approval and
+  capability Environment names all absent. Both repository marker variables are
+  absent.
+- Normal workflow IDs `340952169` and `340952170` remain active and have no
+  runs. No Environment, deployment, workflow run, package, tag, ref, legacy, or
+  Break-Glass mutation occurred.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-design-status -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-pr-review-closure -->
+
+## Workflow Delivery v3 Environment identity PR review closure
+
+Status: **PR REVIEW REMEDIATION COMPLETE; PUSH PENDING.**
+
+- PR #629 is open from
+  `workflow-delivery-v3-environment-identity-design`; all CI, Workflow Delivery
+  v3 CI, and CodeQL checks on pushed head
+  `a756281913201a7f61accb8f6e16308476e54b92` passed.
+- Copilot reviewed all 14 pushed design paths and reported three mandatory
+  comments where permanent normal-Live Environments were still described as
+  per-slice dedicated resources. Independent adjudication retained all three as
+  true positives.
+- Repository-wide follow-up found and corrected the same stale model in the
+  README, shared-foundation MLD, Governance/Release wording, and agent handoff.
+  Historical temporary acceptance Environments and the dedicated disposable
+  package remain described as dedicated because those resources are
+  intentionally one-purpose.
+- A later independent review found residual logical-Profile/runtime-object
+  conflation and an activation condition that incorrectly required the reusable
+  Environment identity itself to be isolated. Independent adjudications retained
+  the normative defects, rejected the finding against the Release MLD Scope
+  summary because that summary is acceptable at design level, and corrected the
+  retained findings.
+- Approval wording now consistently attributes human approval to the fresh
+  current-Attempt deployment created after the approval job binds the stable
+  Environment identity mapped from the Governance-selected Approval Environment
+  Profile. Capability Profile policy fixes reviewer policy to `none`; the mapped
+  capability Environment deployment adds no human approval, and the
+  Environment-referencing destination job is the runtime capability boundary.
+- Environment identity reuse remains limited to complete applicable Profile
+  compatibility and transfers no Governance eligibility, approval,
+  Authorization, Capability, package authorization, first-slice exception, or
+  Attempt/package lineage. Isolation remains attached to the package,
+  destination, token/permission, and no-consumer boundaries rather than to
+  per-slice Environment identity.
+- OCR delegation preview accounted for all nine Markdown review-fix paths and
+  excluded them as unsupported extensions. Two independent closure reviews then
+  split the normative and supporting-document diffs; both returned **No
+  findings**.
+- No workflow, source, test, protected Governance, marker variable, Environment,
+  deployment, workflow run, package, tag, ref, legacy, or Break-Glass mutation
+  was authorized or performed during review closure. `live_enabled: false`
+  remains the delivery boundary.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-pr-review-closure -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-second-review -->
+
+## Workflow Delivery v3 Environment identity second PR review
+
+Status: **SECOND REVIEW REMEDIATION COMPLETE; FINAL PUSH PENDING.**
+
+- Copilot's rereview of pushed head
+  `06ca725e6e24db990ab43ddf609ec5a3420867ac` covered all 15 PR paths and
+  reported two additional comments. CI, Workflow Delivery v3 CI, and CodeQL
+  subsequently passed on that head.
+- The overview still used `dedicated Buddy Environment approval`. Independent
+  adjudication retained this as a true current-state contradiction. The summary
+  now requires approval of the current Attempt's fresh deployment to the
+  Environment identity mapped from its Governance-selected Buddy Approval
+  Environment Profile.
+- The scope comment was partially true. The earlier 14-path statement remains
+  accurate historical evidence for pushed head
+  `a756281913201a7f61accb8f6e16308476e54b92`, and its seven-document
+  normative/design category included `migration-strategy.md`. Review
+  remediation added `shared-foundation-mld.md`, so the current PR scope is 15
+  Markdown paths: eight normative/design documents, three current-state
+  documents, `docs/wiki/log.md`, and the three append-only test-agent ledgers.
+  This append supersedes only the old entry's use as a current-head inventory;
+  the historical entry remains unchanged.
+- The explicit current-worktree 15-path HK gate uses the NUL-delimited
+  `origin/main...HEAD` path list, and the complete current-worktree diff check
+  compares against `origin/main`. Both pass before the final corrective commit.
+  The committed-range gate must pass again after that commit before the review
+  thread is closed.
+- No workflow, source, test, protected Governance, marker variable, Environment,
+  deployment, workflow run, package, tag, ref, legacy, or Break-Glass mutation
+  was authorized or performed. `live_enabled: false` remains the delivery
+  boundary.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-second-review -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-implementation-status -->
+
+## Workflow Delivery v3 Environment identity implementation
+
+Status: **IMPLEMENTATION COMPLETE; INDEPENDENT REVIEW CLEAN; DELIVERY PENDING.**
+
+### Implementation
+
+- Environment identity design PR #629 rebase-merged as
+  `d2de3356b744e39d31bb4ac0038bdee438c5592d`; post-merge Continuous
+  Integration run `33331702348` passed.
+- The live Attempt workflow now binds
+  `workflow-delivery-v3-buddy-approval` and
+  `workflow-delivery-v3-buddy-github-packages`. Its exact marker values are
+  `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`
+  and
+  `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1`.
+- The same final approval identity now binds the dependency-free
+  exact-revision Authorization formatter, the Release helper, and the
+  Authorization Record validator. Existing workflow, CLI, Release boundary,
+  scenario, and record tests use the final mappings.
+- The rename preserves guard IDs, literal first-step ordering, quoted
+  case-sensitive Bash comparison, downstream marker-success gates,
+  non-mutating exceptional handling, permissions, workflow topology, and
+  capability timing. It adds no Profile registry or runtime Profile object.
+- Current-state README, handoff, LLD, migration, overview, log, research, and
+  plan now treat the all-surface rename as the implementation target rather
+  than as a still-pending design step. Normative Requirements and append-only
+  history retain the old names only where they describe the required transition
+  or exact historical revisions.
+
+### Test and review evidence
+
+- The focused workflow/CLI/Release contract command passed **464 tests** before
+  test-gap completion and passed again after lint compatibility corrections.
+- The first complete Workflow Delivery v3 package run passed **4,230 tests**.
+  Pseudo-mutation review then found two real gaps: the direct formatter test did
+  not assert its emitted Environment, and the record validator lacked exact
+  rejection cases for the old, capability, and case-altered identities.
+- The existing formatter test now asserts the final Environment. The existing
+  record substitution table now rejects all three non-exact identities.
+  Focused generated-test validation passed **22 tests**, and independent
+  assertion-quality review returned **No assertion-quality findings**.
+- The final complete package run passed **4,233 tests**.
+- Actionlint passed for the live workflow. Ruff 0.16.5 check and format check
+  pass for all eight changed Python files, and Pyrefly reports **0 errors**.
+  Minimal parentheses, inline Ruff suppressions, and one existing invalid-value
+  test type suppression resolve diagnostics exposed on otherwise unchanged
+  lines without changing behavior.
+- Prettier and markdownlint pass for every changed workflow/current-state
+  document to which they apply, and `git diff --check` passes.
+- Independent runtime, test-contract, and authority/current-state reviewers
+  split the changed files and all returned **No findings** after the two
+  confirmed test gaps were corrected.
+- OCR delegation preview recognized the workflow and excluded eight Markdown
+  paths, but omitted the eight changed Python paths. Git's exact 17-path
+  pre-status inventory and the split host reviews therefore remained the
+  authoritative review scope.
+- Final `hk check --no-progress --unstaged` and
+  `hk check --no-progress --staged` gates pass across the exact 18-path
+  implementation diff, including this append.
+
+### Scope and external-state boundary
+
+- Exactly 18 paths change: one workflow, three production Python files, five
+  existing Python test files, six current-state documents, and three
+  append-only test-agent ledgers.
+- Protected Governance is unchanged and remains `live_enabled: false` with
+  expiry `2026-11-12T17:19:12Z`.
+- Final and transitional approval/capability Environments, related deployments,
+  and both repository marker variables remain absent. Normal workflow IDs
+  `340952169` and `340952170` remain active with zero runs.
+- The smoke package retains exactly nine acceptance versions, with retry-5
+  `.17` through `.20` newest. No Environment, variable, deployment, workflow
+  run, preparation, activation, approval, package, tag, ref, legacy, or
+  Break-Glass mutation was authorized or performed.
+- Permanent Environment creation remains blocked until this implementation
+  merges and the user gives separate explicit authorization.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-status -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-environment-identity-implementation-closure-status -->
+
+## Workflow Delivery v3 Environment identity implementation closure
+
+### Protected merge and review
+
+- Atomic implementation commit `cb0f2053` changed exactly 18 paths.
+- PR #630 passed every required check. Copilot reviewed 18/18 changed files,
+  generated zero comments, and recommended approval.
+- PR #630 rebase-merged without bypass as
+  `9c9901cc38297d212de48d4b51349872ef60d5b4`.
+
+### Post-merge checks
+
+- Exact post-merge CodeQL run `33336241756` passed.
+- Exact-SHA Continuous Integration run `33336241729` was canceled only because
+  non-overlapping dependency PR #631 advanced `main` to
+  `abe6d5b6e76ef64e4b7be26b5d7211e9323934d8`.
+- PR #631 changed six package-manifest/lockfile paths and none of the 18
+  implementation paths. Successor Continuous Integration run `33336305571`
+  and CodeQL run `33336305602` passed.
+
+### Fresh read-only reconciliation
+
+- Protected Governance is unchanged at `live_enabled: false`, expiring
+  `2026-11-12T17:19:12Z`.
+- Final and transitional approval/capability Environments, related
+  deployments, and repository variables
+  `WDV3_APPROVAL_ENVIRONMENT_MARKER` and
+  `WDV3_CAPABILITY_ENVIRONMENT_MARKER` are absent.
+- Normal workflow IDs `340952169` and `340952170` are active and retain zero
+  runs.
+- The package has nine total versions: eight acceptance versions
+  (`.1`, `.5`, `.9`, `.13`, and `.17`-`.20`) plus pre-existing
+  `1.0.0-beta.255.g9fa9b96`. The `latest` and eight acceptance npm dist-tags
+  remain exact. This supersedes the preceding append's inaccurate phrase
+  "exactly nine acceptance versions."
+- No Environment, marker variable, deployment, preparation, activation, normal
+  Live dispatch, approval, package, tag, acceptance ref, retry, legacy, or
+  Break-Glass mutation occurred.
+
+The implementation merge prerequisite is complete. Permanent Environment
+creation and authenticated readback remain blocked pending separate explicit
+user authorization.
+
+<!-- END APPEND: 2026-08-30-wdv3-environment-identity-implementation-closure-status -->
+
+<!-- BEGIN APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-status -->
+
+## Workflow Delivery v3 permanent Environment provisioning
+
+### Preflight
+
+- Work base: `main@bbff05e32bc1e74861ffd44bbf610c154406e1d8`.
+- Protected Governance: `live_enabled: false`, expiry
+  `2026-11-12T17:19:12Z`.
+- Final and transitional Environment names and related deployments: absent.
+- Same-name repository markers: absent; organization scope not applicable to
+  User owner `hcoona`.
+- Normal workflow IDs `340952169` and `340952170`: active, zero runs.
+
+### Created configuration
+
+| Environment | ID | Protection | Marker |
+| --- | ---: | --- | --- |
+| `workflow-delivery-v3-buddy-approval` | `20895030723` | Rule `64124473`; sole reviewer `hcoona` / `712433`; self-review permitted | `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1` |
+| `workflow-delivery-v3-buddy-github-packages` | `20895037877` | No reviewer or protection rule | `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1` |
+
+Both Environments have all-branch policy, no wait-timer rule, zero secrets, and
+exactly one Environment-scoped marker. Repeated API readback returns
+`can_admins_bypass: false`. The authenticated owner saved and reloaded both
+settings pages and confirmed that "Allow administrators to bypass configured
+protection rules" remained unchecked.
+
+### Post-creation boundary
+
+- Related deployments remain absent.
+- Both normal workflows retain zero runs.
+- Protected Governance and the nine-version package/dist-tag inventory are
+  unchanged.
+- No preparation, activation, normal Live dispatch, approval, package/tag
+  mutation, acceptance ref, retry, legacy, or Break-Glass operation occurred.
+
+Environment creation and native-setting readback are complete. Protected
+preparation remains blocked pending separate explicit authorization.
+
+<!-- END APPEND: 2026-08-30-wdv3-permanent-environment-provisioning-status -->
+
+<!-- BEGIN APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-status -->
+
+## Workflow Delivery v3 permanent Environment provisioning closure
+
+### Protected delivery
+
+- Evidence commit was rebased to exact head
+  `7f9782ff4ee3d2199d6c03f78de017a38a756d4d` after non-overlapping PRs #633
+  and #634 advanced `main`.
+- All required PR checks passed.
+- Exact-head Copilot review covered 9/9 files and generated zero comments. Its
+  human-verification request was satisfied by authenticated owner comment
+  `5472131067`, which records save/reload confirmation for both Environment
+  bypass controls.
+- PR #635 rebase-merged without bypass as
+  `5cae672c139de1956a96e75f02f224c826c06939`.
+- Post-merge Continuous Integration run `33343870709` passed.
+
+### Final read-only reconciliation
+
+- Approval Environment `20895030723` retains rule `64124473`, sole reviewer
+  `hcoona` / `712433`, self-review permitted, all branches, zero secrets,
+  exact marker, and supplemental `can_admins_bypass: false`.
+- Capability Environment `20895037877` retains no protection rule, all
+  branches, zero secrets, exact marker, and supplemental
+  `can_admins_bypass: false`.
+- Related deployments and same-name repository variables remain absent.
+- Normal workflow IDs `340952169` and `340952170` remain active with zero runs.
+- Protected Governance remains `live_enabled: false`; package and dist-tag
+  inventory is unchanged.
+
+Permanent Environment provisioning and evidence delivery are complete.
+Protected preparation remains blocked pending separate explicit authorization.
+
+<!-- END APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-status -->
