@@ -13755,3 +13755,68 @@ are closed. Only human-reviewable commit construction and protected PR delivery
 remain, with `live_enabled=false` and the no-mutation boundary unchanged.
 
 <!-- END APPEND: 2026-09-01-wdv3-disabled-runtime-final-review-closure -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-python314-ci-repair -->
+
+## Workflow Delivery v3 Python 3.14 CI repair
+
+The first PR #644 Continuous Integration run against commit
+`1348f98d5060b0ebfc16770dd305d175a746fead` exposed a general Python-job
+integration gap that the dedicated Python 3.13 root-HK route did not exercise.
+
+### Observed failure
+
+- The Python 3.14 job installed all workspace packages and ran the complete
+  Python suite without first preparing the static-reference authorities.
+- The sidecar module fixture correctly rejected the missing preparation stamp:
+  95 cases ended in
+  `StaticReferenceAuthorityMismatchError: static-reference authority preparation is unavailable`.
+- A later test ran pinned Python 3.13 `uv run` from the same repository root as
+  the outer Python 3.14 suite. Reconciliation of the shared `.venv` invalidated
+  the `uv` executable path captured during collection.
+- The remote job ended with `1 failed, 4289 passed, 95 errors`.
+
+### Independent adjudication
+
+| Finding | Disposition | Bounded decision |
+|---|---|---|
+| General Python CI omitted explicit authority preparation | TP | Prepare after dependency sync and before the all-package test command. Keep the sidecar fixture validation-only. |
+| Pinned Python 3.13 nested runs shared the outer Python 3.14 `.venv` | TP | Use uv's official `--isolated` mode for both cross-version invocations. |
+| Re-resolve `uv` dynamically inside `test_package.py` | FP | That would mask environment mutation rather than remove its cause; the package test remains unchanged. |
+
+### Correction
+
+- `.github/workflows/ci.yml` now runs
+  `mise run prepare:static-reference-authorities` after
+  `uv sync --frozen --all-packages` and before pytest.
+- `prepare:static-reference-authorities` now executes its pinned Python 3.13
+  process with `uv run --isolated`.
+- The nested collection proof in `test_hk_trigger.py` also uses
+  `uv run --isolated --python 3.13`.
+- Exact workflow reconstruction tests were updated without changing their
+  baseline hash.
+- A direct contract now pins one general-Python-CI preparation call and its
+  order between dependency installation and tests.
+
+### Validation and review
+
+| Gate | Observed result |
+|---|---|
+| Focused workflow/mise contracts | `8 passed` |
+| Python 3.14 outer suite with the Python 3.13 nested command, sidecar authorities, and package provenance smoke | `97 passed` |
+| Actionlint and Taplo | passed |
+| Ruff check and format | passed |
+| Diff check | passed |
+| Full changed-worktree HK `small+medium` | passed; current v3 suite `4,234 passed` |
+| Independent correction review | **No findings** |
+
+Current AST and collection totals are 1,325 test functions and 4,234 pytest
+cases. `test_static_reference_delivery.py` now contains four test functions.
+These values supersede the immediately preceding 1,324/4,233 closure counts;
+the earlier entries remain unchanged as append-only history.
+
+The correction adds no runtime authority and does not change
+`live_enabled=false`. It performs no workflow dispatch, Approval, deployment,
+Governance or Environment mutation, package publication, or tag mutation.
+
+<!-- END APPEND: 2026-09-01-wdv3-python314-ci-repair -->
