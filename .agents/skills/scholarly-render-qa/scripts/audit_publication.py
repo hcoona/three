@@ -2059,7 +2059,13 @@ def page_box_ok(box: list[float], width: float, height: float, scale: float = 1.
 
 
 def admit_pdf_document(document: Any, path: Path, context: str) -> int:
-    if not document.is_pdf or document.needs_pass or document.page_count < 1:
+    if (
+        not document.is_pdf
+        or document.needs_pass
+        or document.is_encrypted
+        or document.xref_get_key(-1, "Encrypt") != ("null", "null")
+        or document.page_count < 1
+    ):
         raise PublicationError(
             f"{context} is not an inspectable, unencrypted, nonempty PDF: {path}"
         )

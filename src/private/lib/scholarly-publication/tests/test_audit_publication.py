@@ -47,6 +47,7 @@ build_rendered_publication = support.build_rendered_publication
 clear_pdf_page_contents = support.clear_pdf_page_contents
 copy_tree = support.copy_tree
 detect_browser = support.detect_browser
+encrypt_pdf = support.encrypt_pdf
 import_by_path = support.import_by_path
 invoke_main = support.invoke_main
 read_json = support.read_json
@@ -264,6 +265,50 @@ class AuditPublicationUnitTests(unittest.TestCase):
         self.assertTrue(
             audit_publication.same_aspect_ratio(18.0, 1800.0, 1.0, 100.0)
         )
+
+    def test_pdf_admission_rejects_empty_password_encryption(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "encrypted.pdf"
+            write_pdf(path, [PdfPage(text="Encrypted fixture.")])
+            encrypt_pdf(path)
+
+            with fitz.open(path) as document:
+                self.assertFalse(bool(document.needs_pass))
+                self.assertFalse(bool(document.is_encrypted))
+                self.assertNotEqual(
+                    ("null", "null"),
+                    document.xref_get_key(-1, "Encrypt"),
+                )
+                with self.assertRaisesRegex(  # noqa: PT027
+                    audit_publication.PublicationError,
+                    "unencrypted",
+                ):
+                    audit_publication.admit_pdf_document(
+                        document,
+                        path,
+                        "fixture",
+                    )
+
+    def test_pdf_admission_rejects_non_pdf_before_trailer_lookup(self) -> None:
+        pixmap = fitz.Pixmap(
+            fitz.csRGB,
+            fitz.IRect(0, 0, 1, 1),
+            False,  # noqa: FBT003
+        )
+        with fitz.open(
+            stream=pixmap.tobytes("png"),
+            filetype="png",
+        ) as document:
+            self.assertFalse(bool(document.is_pdf))
+            with self.assertRaisesRegex(  # noqa: PT027
+                audit_publication.PublicationError,
+                "unencrypted",
+            ):
+                audit_publication.admit_pdf_document(
+                    document,
+                    Path("fixture.png"),
+                    "fixture",
+                )
 
     def test_pdf_text_search_ignores_cjk_visual_line_wraps(self) -> None:
         cases = (
