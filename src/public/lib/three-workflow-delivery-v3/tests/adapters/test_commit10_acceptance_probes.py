@@ -3739,7 +3739,7 @@ def test_acceptance_capture_uses_real_npm_publish_request(
     assert capture.version_document["name"] == ACCEPTANCE_PACKAGE_NAME
     assert capture.version_document["version"] == ACCEPTANCE_VERSION
     assert capture.package_manifest == json.loads(
-        (ACCEPTANCE_PACKAGE_FIXTURE_ROOT / "package.json").read_bytes()
+        (ACCEPTANCE_PACKAGE_FIXTURE_ROOT / "package-manifest.json").read_bytes()
     )
     assert capture.attachment_members == (
         "package/README.md",
@@ -3945,6 +3945,9 @@ def capture_real_npm_publish(tmp_path: Path) -> NpmPublishCapture:
     (tmp_path / ".git").mkdir()
     package_root = tmp_path / "package"
     shutil.copytree(ACCEPTANCE_PACKAGE_FIXTURE_ROOT, package_root)
+    (package_root / "package-manifest.json").replace(
+        package_root / "package.json"
+    )
     requests: list[tuple[str, str, dict[str, str], bytes]] = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -9172,3 +9175,51 @@ def test_retry_5_validated_request_proof_rejects_every_other_two_xx_status(
     )
     assert upstream_status not in module._ACCEPTANCE_PUBLISH_SUCCESS_STATUSES
     assert (coordinate, tag) in module._ACCEPTANCE_COORDINATE_TAG_PAIRS
+
+
+def test_npm_publish_fixture_is_test_local_and_materializes_exact_package_manifest(
+    tmp_path: Path,
+) -> None:
+    producer_sources: list[tuple[Path, dict[str, Any]]] = []
+    for path in sorted(ACCEPTANCE_PACKAGE_FIXTURE_ROOT.rglob("*.json")):
+        document = json.loads(path.read_bytes())
+        if (
+            isinstance(document, dict)
+            and document.get("name") == ACCEPTANCE_PACKAGE_NAME
+            and document.get("version") == ACCEPTANCE_VERSION
+        ):
+            producer_sources.append((path, document))
+
+    assert len(producer_sources) == 1
+    source_path, source_document = producer_sources[0]
+    source_package_relative = source_path.relative_to(
+        ACCEPTANCE_PACKAGE_FIXTURE_ROOT
+    ).as_posix()
+    source_before = snapshot_tree(ACCEPTANCE_PACKAGE_FIXTURE_ROOT)
+
+    assert ACCEPTANCE_PACKAGE_FIXTURE_ROOT.name == "package"
+    assert source_package_relative == "package-manifest.json"
+    assert source_path.is_file()
+    assert "tests/fixtures/acceptance/" in source_path.as_posix()
+
+    capture = capture_real_npm_publish(tmp_path)
+
+    materialized_root = tmp_path / "package"
+    materialized_manifest = materialized_root / "package.json"
+    expected_materialized_files = tuple(
+        sorted(
+            "package.json" if relative == source_package_relative else relative
+            for relative in source_before
+        )
+    )
+    actual_materialized_files = tuple(
+        path.relative_to(materialized_root).as_posix()
+        for path in sorted(materialized_root.rglob("*"))
+        if path.is_file()
+    )
+
+    assert actual_materialized_files == expected_materialized_files
+    assert actual_materialized_files.count("package.json") == 1
+    assert materialized_manifest.read_bytes() == source_path.read_bytes()
+    assert capture.package_manifest == source_document
+    assert snapshot_tree(ACCEPTANCE_PACKAGE_FIXTURE_ROOT) == source_before
