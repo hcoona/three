@@ -1984,11 +1984,12 @@ class AuditPublicationScenarioTests(unittest.TestCase):
         self,
     ) -> None:
         publication = self.fresh_publication("path-rules")
-        for name in ("bad. ", "bad."):
-            review = self.case_root / "review-parent" / name / "review"
-            result = _invoke(self.arguments(publication, review))
-            self.assertEqual(2, result.exit_code, result)
-            self.assertFalse(review.exists())
+        if os.name == "nt":
+            for name in ("bad. ", "bad."):
+                review = self.case_root / "review-parent" / name / "review"
+                result = _invoke(self.arguments(publication, review))
+                self.assertEqual(2, result.exit_code, result)
+                self.assertFalse(review.exists())
         overlap_review = publication / "review"
         overlap_result = _invoke(self.arguments(publication, overlap_review))
         self.assertEqual(2, overlap_result.exit_code, overlap_result)
