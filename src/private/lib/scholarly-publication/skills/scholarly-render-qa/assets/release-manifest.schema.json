@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hcoona.github.io/schemas/scholarly-publication/release-manifest-1.0.json",
+  "title": "Scholarly publication release manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "publication_id",
+    "assembly_manifest",
+    "qa_evidence",
+    "mechanical_status",
+    "generator"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "publication_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "assembly_manifest": {
+      "$ref": "#/$defs/publicationRootAsset"
+    },
+    "qa_evidence": {
+      "$ref": "#/$defs/releaseRootAsset"
+    },
+    "mechanical_status": {
+      "const": "pass"
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "const": "audit_publication.py"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "anyOf": [
+          {
+            "pattern": "\\\\"
+          },
+          {
+            "pattern": "^/"
+          },
+          {
+            "pattern": "^[A-Za-z]:"
+          },
+          {
+            "pattern": "(^|/)\\.(/|$)"
+          },
+          {
+            "pattern": "//"
+          },
+          {
+            "pattern": "/$"
+          },
+          {
+            "pattern": "(^|/)\\.\\.(/|$)"
+          },
+          {
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+          }
+        ]
+      }
+    },
+    "nonemptyAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path_base", "path", "sha256", "bytes"],
+      "properties": {
+        "path_base": {
+          "enum": ["publication-root", "release-root"]
+        },
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "publicationRootAsset": {
+      "allOf": [
+        { "$ref": "#/$defs/nonemptyAsset" },
+        {
+          "properties": {
+            "path_base": { "const": "publication-root" }
+          }
+        }
+      ]
+    },
+    "releaseRootAsset": {
+      "allOf": [
+        { "$ref": "#/$defs/nonemptyAsset" },
+        {
+          "properties": {
+            "path_base": { "const": "release-root" }
+          }
+        }
+      ]
+    }
+  }
+}

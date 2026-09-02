@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hcoona.github.io/schemas/scholarly-publication/figure-map-1.0.json",
+  "title": "Scholarly publication figure map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "coordinate_space", "figures"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "coordinate_space": {
+      "const": "pdf-points-top-left"
+    },
+    "figures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "source_label", "profile", "embedded_language_inventory", "parts"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "source_label": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "profile": {
+            "type": ["string", "null"],
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "embedded_language_inventory": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+            }
+          },
+          "parts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "order", "pdf_page", "bbox"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "order": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "pdf_page": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "bbox": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 4,
+                  "maxItems": 4
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hcoona.github.io/schemas/scholarly-publication/source-package-1.0.json",
+  "title": "Scholarly publication source package",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source",
+    "selection",
+    "coordinate_system",
+    "profiles",
+    "pages",
+    "sections",
+    "figure_map",
+    "issues",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "bytes", "rights_note", "page_count"],
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rights_note": {
+          "type": "string",
+          "minLength": 1
+        },
+        "page_count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pdf_pages"],
+      "properties": {
+        "pdf_pages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "coordinate_system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["units", "origin", "bbox_order"],
+      "properties": {
+        "units": {
+          "const": "pdf-points"
+        },
+        "origin": {
+          "const": "top-left"
+        },
+        "bbox_order": {
+          "const": "x0-y0-x1-y1"
+        }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/profile"
+      }
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "pdf_page", "width", "height", "rotation", "assets", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^pdf-[0-9]{4,}$"
+          },
+          "pdf_page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "width": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "height": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "rotation": {
+            "type": "integer",
+            "multipleOf": 90
+          },
+          "assets": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["blocks", "svg"],
+            "properties": {
+              "blocks": {
+                "$ref": "#/$defs/asset"
+              },
+              "svg": {
+                "$ref": "#/$defs/asset"
+              }
+            }
+          },
+          "status": {
+            "$ref": "#/$defs/status"
+          }
+        }
+      }
+    },
+    "sections": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/asset"
+        }
+      ]
+    },
+    "figure_map": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/asset"
+        }
+      ]
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "message"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "severity": {
+            "enum": ["review_required", "fail"]
+          },
+          "page": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "status": {
+      "$ref": "#/$defs/status"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "profile": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "status": {
+      "enum": ["pass", "review_required", "fail"]
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "anyOf": [
+          {
+            "pattern": "\\\\"
+          },
+          {
+            "pattern": "^/"
+          },
+          {
+            "pattern": "^[A-Za-z]:"
+          },
+          {
+            "pattern": "(^|/)\\.\\.(/|$)"
+          },
+          {
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+          }
+        ]
+      }
+    }
+  }
+}

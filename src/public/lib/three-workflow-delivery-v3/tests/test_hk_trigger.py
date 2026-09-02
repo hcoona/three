@@ -174,6 +174,22 @@ RETIRED_CONSUMER_POLICY_SURFACES = frozenset(
         ),
     },
 )
+SCHOLARLY_STEP_NAME = "scholarly-publication-plugin-ci"
+SCHOLARLY_SKILL_ROOTS = (
+    ".agents/skills/scholarly-pdf-reconstruction",
+    ".agents/skills/scholarly-print-assembly",
+    ".agents/skills/scholarly-render-qa",
+)
+SCHOLARLY_SURFACE_PATHS = (
+    ".agents/skills/scholarly-pdf-reconstruction/SKILL.md",
+    ".agents/skills/scholarly-print-assembly/scripts/assemble_print.py",
+    ".agents/skills/scholarly-render-qa/assets/release-manifest.schema.json",
+    "apm.lock.yaml",
+    "apm.yml",
+    "mise.toml",
+    "pyproject.toml",
+    "src/private/lib/scholarly-publication/tests/test_validate_package.py",
+)
 GOVERNED_PATHS = (
     ".gitattributes",
     "Directory.Packages.props",
@@ -321,11 +337,12 @@ def _hk_executable() -> str:
 def _named_step_from_plan(
     result: subprocess.CompletedProcess[str],
     step_name: str,
+    required_profile: str = "small",
 ) -> HkStepJson:
     plan: HkPlanJson = json.loads(result.stdout)
     assert plan["hook"] == "check"
     assert plan["runType"] == "check"
-    assert "small" in plan["profiles"]
+    assert required_profile in plan["profiles"]
     assert len(plan["steps"]) == 1
     step = plan["steps"][0]
     assert step["name"] == step_name
@@ -357,6 +374,7 @@ def _named_step_plan(
     repo: Path,
     step_name: str,
     *arguments: str,
+    required_profile: str = "small",
 ) -> HkStepJson:
     result = _run(
         (
@@ -371,7 +389,7 @@ def _named_step_plan(
         ),
         cwd=repo,
     )
-    return _named_step_from_plan(result, step_name)
+    return _named_step_from_plan(result, step_name, required_profile)
 
 
 def _helper_changed_paths(
@@ -401,6 +419,8 @@ def _named_helper_step_plan(
     base: str,
     head: str,
     step_name: str,
+    *,
+    required_profile: str = "small",
 ) -> HkStepJson:
     result = _run(
         (
@@ -423,7 +443,7 @@ def _named_helper_step_plan(
         ),
         cwd=repo,
     )
-    return _named_step_from_plan(result, step_name)
+    return _named_step_from_plan(result, step_name, required_profile)
 
 
 def _helper_step_plan(repo: Path, base: str, head: str) -> HkStepJson:
@@ -1070,6 +1090,137 @@ def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
         cwd=REPO_ROOT,
     )
     assert sentinel in collection.stdout.splitlines()
+
+
+def test_real_hk_plan_triggers_scholarly_suite_for_bounded_surfaces(
+    tmp_path: Path,
+) -> None:
+    """Select the dedicated suite for every scholarly package path family."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    for path in SCHOLARLY_SURFACE_PATHS:
+        _write(repo, path, "scholarly publication surface\n")
+    head = _commit(repo, "scholarly publication surfaces")
+
+    paths = _helper_changed_paths(repo, base, head)
+    step = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        SCHOLARLY_STEP_NAME,
+    )
+
+    assert paths == tuple(sorted(SCHOLARLY_SURFACE_PATHS))
+    assert step["status"] == "included"
+    assert step["fileCount"] == len(SCHOLARLY_SURFACE_PATHS)
+
+
+def test_real_hk_plan_triggers_for_deployed_skill_root_symlinks(
+    tmp_path: Path,
+) -> None:
+    """Route committed skill-root symlinks through the dedicated suite."""
+    baseline_paths = tuple(
+        f"{skill_root}/SKILL.md" for skill_root in SCHOLARLY_SKILL_ROOTS
+    )
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo, baseline_paths=baseline_paths)
+
+    link_target = repo / ".symlink-target"
+    link_target.write_text("../canonical-skill\n", encoding="utf-8")
+    link_blob = _git(repo, "hash-object", "-w", str(link_target)).stdout.strip()
+    link_target.unlink()
+    for skill_root in SCHOLARLY_SKILL_ROOTS:
+        _git(repo, "rm", "--quiet", "-r", skill_root)
+        _git(
+            repo,
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            f"120000,{link_blob},{skill_root}",
+        )
+    _git(
+        repo,
+        "commit",
+        "--quiet",
+        "--message",
+        "replace skill roots with symlinks",
+    )
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    expected_paths = tuple(sorted((*SCHOLARLY_SKILL_ROOTS, *baseline_paths)))
+    paths = _helper_changed_paths(repo, base, head)
+    step = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        SCHOLARLY_STEP_NAME,
+    )
+
+    for skill_root in SCHOLARLY_SKILL_ROOTS:
+        tree_entry = _git(
+            repo,
+            "ls-tree",
+            head,
+            "--",
+            skill_root,
+        ).stdout
+        assert tree_entry.startswith("120000 blob ")
+    assert paths == expected_paths
+    assert step["status"] == "included"
+    assert step["fileCount"] == len(expected_paths)
+
+
+def test_real_hk_plan_keeps_scholarly_suite_outside_optional_profiles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run the package gate even when only an unrelated profile is enabled."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    path = ".agents/skills/scholarly-print-assembly/SKILL.md"
+    _write(repo, path, "scholarly publication surface\n")
+    head = _commit(repo, "scholarly publication surface")
+    monkeypatch.setenv("HK_PROFILE", "medium")
+
+    paths = _helper_changed_paths(repo, base, head)
+    step = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        SCHOLARLY_STEP_NAME,
+        required_profile="medium",
+    )
+
+    assert paths == (path,)
+    assert step["status"] == "included"
+    assert step["fileCount"] == 1
+
+
+def test_real_hk_plan_skips_sibling_packages_for_scholarly_suite(
+    tmp_path: Path,
+) -> None:
+    """Keep the dedicated suite bounded to the scholarly package."""
+    unrelated_paths = (
+        ".agents/skills/scholarly-unrelated/SKILL.md",
+        "src/private/lib/unrelated-package/source.py",
+    )
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    for path in unrelated_paths:
+        _write(repo, path, "unrelated package surface\n")
+    head = _commit(repo, "unrelated package surfaces")
+
+    paths = _helper_changed_paths(repo, base, head)
+    step = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        SCHOLARLY_STEP_NAME,
+    )
+
+    assert paths == tuple(sorted(unrelated_paths))
+    assert step["status"] == "skipped"
+    assert step["fileCount"] == 0
 
 
 def test_gitattributes_selects_both_v3_internal_steps(

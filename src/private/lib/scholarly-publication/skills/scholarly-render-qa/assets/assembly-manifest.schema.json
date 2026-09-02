@@ -1,0 +1,445 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hcoona.github.io/schemas/scholarly-publication/assembly-manifest-1.0.json",
+  "title": "Scholarly publication assembly manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "publication_id",
+    "generator",
+    "policies",
+    "document",
+    "profiles",
+    "print_geometry",
+    "inputs",
+    "fragments",
+    "figures",
+    "font_roles",
+    "fonts",
+    "stylesheets",
+    "outputs",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "publication_id": {
+      "$ref": "#/$defs/id"
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "runtime"],
+      "properties": {
+        "name": {
+          "const": "assemble_print.py"
+        },
+        "version": {
+          "const": "0.1.0"
+        },
+        "runtime": {
+          "type": "string",
+          "pattern": "^python-[0-9]+\\.[0-9]+\\.[0-9]+$"
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publication_profile", "generated_document_profile", "generated_css_profile"],
+      "properties": {
+        "publication_profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "schema_version", "sha256"],
+          "properties": {
+            "id": {
+              "const": "scholarly-fragment-and-stylesheet-v1"
+            },
+            "schema_version": {
+              "const": "1.0"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        },
+        "generated_document_profile": {
+          "const": "scholarly-generated-document-v1"
+        },
+        "generated_css_profile": {
+          "const": "scholarly-generated-css-v1"
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "title_language", "language"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title_language": {
+          "$ref": "#/$defs/language"
+        },
+        "language": {
+          "$ref": "#/$defs/language"
+        }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      }
+    },
+    "print_geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_size", "margin_in"],
+      "properties": {
+        "page_size": {
+          "enum": ["letter", "a4"]
+        },
+        "margin_in": {
+          "$ref": "#/$defs/margins"
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_package", "translation_bundle", "assembly_spec"],
+      "properties": {
+        "source_package": {
+          "$ref": "#/$defs/asset"
+        },
+        "translation_bundle": {
+          "$ref": "#/$defs/asset"
+        },
+        "assembly_spec": {
+          "$ref": "#/$defs/asset"
+        }
+      }
+    },
+    "fragments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "asset", "dom_selector", "visible_text_sha256", "source_block_ids"],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "asset": {
+            "$ref": "#/$defs/nonemptyAsset"
+          },
+          "dom_selector": {
+            "type": "string",
+            "pattern": "^\\[data-fragment-id=\"[a-z0-9][a-z0-9._-]*\"\\]$"
+          },
+          "visible_text_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "source_block_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^pdf-[0-9]{4,}-block-[0-9]{4,}$"
+            }
+          }
+        }
+      }
+    },
+    "figures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "dom_id",
+          "source_label",
+          "profile",
+          "embedded_language_inventory",
+          "caption_html",
+          "caption_sha256",
+          "alt",
+          "parts"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "dom_id": {
+            "$ref": "#/$defs/id"
+          },
+          "source_label": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "profile": {
+            "type": ["string", "null"],
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "embedded_language_inventory": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/language"
+            }
+          },
+          "caption_html": {
+            "type": "string"
+          },
+          "caption_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "alt": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "parts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "order", "pdf_page", "bbox", "dom_selector", "source_svg"],
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/id"
+                },
+                "order": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "pdf_page": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "bbox": {
+                  "$ref": "#/$defs/bbox"
+                },
+                "dom_selector": {
+                  "type": "string",
+                  "pattern": "^\\[data-crop-id=\"[a-z0-9][a-z0-9._-]*\"\\]$"
+                },
+                "source_svg": {
+                  "$ref": "#/$defs/nonemptyAsset"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "font_roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body-cjk", "body-latin"],
+      "properties": {
+        "body-cjk": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body-latin": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "fonts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["family", "style", "weight", "postscript_name", "full_name", "asset"],
+        "properties": {
+          "family": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style": {
+            "enum": ["normal", "italic"]
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 900,
+            "multipleOf": 100
+          },
+          "postscript_name": {
+            "type": ["string", "null"]
+          },
+          "full_name": {
+            "type": ["string", "null"]
+          },
+          "asset": {
+            "$ref": "#/$defs/nonemptyAsset"
+          }
+        }
+      }
+    },
+    "stylesheets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/asset"
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["html", "css", "draft_pdf"],
+      "properties": {
+        "html": {
+          "$ref": "#/$defs/nonemptyAsset"
+        },
+        "css": {
+          "$ref": "#/$defs/asset"
+        },
+        "draft_pdf": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/nonemptyAsset"
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "const": "assembled"
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "language": {
+      "type": "string",
+      "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "anyOf": [
+          {
+            "pattern": "\\\\"
+          },
+          {
+            "pattern": "^/"
+          },
+          {
+            "pattern": "^[A-Za-z]:"
+          },
+          {
+            "pattern": "(^|/)\\.\\.(/|$)"
+          },
+          {
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+          }
+        ]
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "nonemptyAsset": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/asset"
+        },
+        {
+          "properties": {
+            "bytes": {
+              "minimum": 1
+            }
+          }
+        }
+      ]
+    },
+    "bbox": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "margins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["top", "right", "bottom", "left"],
+      "properties": {
+        "top": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 2
+        },
+        "right": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 2
+        },
+        "bottom": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 2
+        },
+        "left": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 2
+        }
+      }
+    }
+  }
+}

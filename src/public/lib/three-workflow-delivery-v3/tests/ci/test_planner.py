@@ -328,6 +328,34 @@ def test_repository_only_change_selects_root_hk(path: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "path",
+    [
+        ".agents/skills/scholarly-pdf-reconstruction",
+        ".agents/skills/scholarly-print-assembly",
+        ".agents/skills/scholarly-render-qa",
+        ".agents/skills/scholarly-print-assembly/scripts/assemble_print.py",
+        "apm.lock.yaml",
+        "apm.yml",
+        (
+            "src/private/lib/scholarly-publication/tests/"
+            "test_validate_package.py"
+        ),
+    ],
+)
+def test_scholarly_publication_package_only_change_selects_root_hk(
+    path: str,
+) -> None:
+    """Route each package-only surface through permanent root HK."""
+    plan = _plan(changed_paths=(path,))
+    assert plan.ready
+    assert _selected_lanes(plan) == ("root-hk",)
+    assert plan.selected_project_nodes == ()
+    assert plan.selected_release_units == ()
+    assert plan.selected_variants == ()
+    assert plan.selected_outputs == ()
+
+
+@pytest.mark.parametrize(
     ("path", "selected_lanes"),
     [
         ("nested/package.json", ("root-hk",)),

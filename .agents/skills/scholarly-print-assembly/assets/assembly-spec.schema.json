@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hcoona.github.io/schemas/scholarly-publication/assembly-spec-1.0.json",
+  "title": "Scholarly publication assembly specification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "publication_id",
+    "title",
+    "title_language",
+    "language",
+    "source_package",
+    "translation_bundle",
+    "fragment_order",
+    "figures",
+    "font_roles",
+    "fonts",
+    "stylesheets",
+    "page",
+    "profiles"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "publication_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title_language": {
+      "type": "string",
+      "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+    },
+    "language": {
+      "type": "string",
+      "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+    },
+    "source_package": {
+      "type": "string",
+      "minLength": 1
+    },
+    "translation_bundle": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fragment_order": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+      },
+      "uniqueItems": true
+    },
+    "figures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "caption_html", "alt"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "caption_html": {
+            "type": "string"
+          },
+          "alt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "class": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "font_roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body-cjk", "body-latin"],
+      "properties": {
+        "body-cjk": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body-latin": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "fonts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["family", "path", "style", "weight"],
+        "properties": {
+          "family": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style": {
+            "enum": ["normal", "italic"]
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 900,
+            "multipleOf": 100
+          }
+        }
+      }
+    },
+    "stylesheets": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size", "margin_in"],
+      "properties": {
+        "size": {
+          "enum": ["letter", "a4"]
+        },
+        "margin_in": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["top", "right", "bottom", "left"],
+          "properties": {
+            "top": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 2
+            },
+            "right": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 2
+            },
+            "bottom": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 2
+            },
+            "left": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 2
+            }
+          }
+        }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      },
+      "uniqueItems": true
+    }
+  }
+}

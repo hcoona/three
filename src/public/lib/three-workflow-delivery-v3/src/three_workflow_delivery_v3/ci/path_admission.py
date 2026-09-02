@@ -40,14 +40,19 @@ def _install_bootstrap_patterns() -> tuple[str, ...]:
 
 
 _REPOSITORY_ONLY_PREFIXES = (
+    ".agents/skills/scholarly-pdf-reconstruction/",
+    ".agents/skills/scholarly-print-assembly/",
+    ".agents/skills/scholarly-render-qa/",
     ".testagent/",
     "docs/",
     "eng/",
     "LICENSES/",
+    "src/private/lib/scholarly-publication/",
     "tests/",
 )
 _REPOSITORY_ONLY_PATHS = frozenset(
     {
+        ".typos.toml",
         "AGENTS.md",
         "COPYING",
         "COPYING.LESSER",
@@ -56,6 +61,11 @@ _REPOSITORY_ONLY_PATHS = frozenset(
         "LICENSE",
         "README.md",
         ".gitattributes",
+        ".agents/skills/scholarly-pdf-reconstruction",
+        ".agents/skills/scholarly-print-assembly",
+        ".agents/skills/scholarly-render-qa",
+        "apm.lock.yaml",
+        "apm.yml",
         "biome.jsonc",
         "dirs.proj",
         "global.json",
