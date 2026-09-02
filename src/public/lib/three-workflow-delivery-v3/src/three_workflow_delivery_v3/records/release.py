@@ -355,8 +355,11 @@ def _subject_document(
 
 def _subject_run(
     subject: SimulationIdentity | ReleaseAttemptIdentity,
-) -> tuple[int, int]:
-    return subject.workflow_run_id, subject.run_attempt
+) -> tuple[int, int | None]:
+    run_attempt = (
+        subject.run_attempt if isinstance(subject, SimulationIdentity) else None
+    )
+    return subject.workflow_run_id, run_attempt
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,7 +373,6 @@ class ReleaseIntent:
     request_id: str
     actor: str
     workflow_run_id: int
-    run_attempt: int
     event_kind: str
     selected_ref: str
     target: str
@@ -401,7 +403,6 @@ class ReleaseIntent:
             raise ValueError(message)
         _string(self.actor, field="intent.actor")
         _positive(self.workflow_run_id, field="intent.workflow_run_id")
-        _positive(self.run_attempt, field="intent.run_attempt")
         if self.event_kind != "workflow_dispatch":
             message = "intent.event_kind must be workflow_dispatch"
             raise ValueError(message)
@@ -443,7 +444,6 @@ class ReleaseIntent:
             "request-id": self.request_id,
             "actor": self.actor,
             "workflow-run-id": self.workflow_run_id,
-            "run-attempt": self.run_attempt,
             "event-kind": self.event_kind,
             "selected-ref": self.selected_ref,
             "target": self.target,
@@ -546,11 +546,10 @@ type ReleaseExecutionIdentity = (
 
 @dataclass(frozen=True, slots=True)
 class ReleaseAttemptIdentity:
-    """Live Release Execution identity plus current workflow run attempt."""
+    """Live Release Execution identity plus one unique workflow run."""
 
     execution: ReleaseExecutionIdentity
     workflow_run_id: int
-    run_attempt: int
 
     def __post_init__(self) -> None:
         """Reject malformed live Attempt identity primitives."""
@@ -561,7 +560,6 @@ class ReleaseAttemptIdentity:
             message = "Release Attempt execution has the wrong runtime type"
             raise TypeError(message)
         _positive(self.workflow_run_id, field="attempt.workflow_run_id")
-        _positive(self.run_attempt, field="attempt.run_attempt")
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical live Attempt Identity."""
@@ -569,7 +567,6 @@ class ReleaseAttemptIdentity:
             "schema": RELEASE_ATTEMPT_IDENTITY_SCHEMA,
             "execution": self.execution.to_document(),
             "workflow-run-id": self.workflow_run_id,
-            "run-attempt": self.run_attempt,
         }
 
 
@@ -795,10 +792,10 @@ def release_artifact_transport_name(  # noqa: PLR0913
     output: ReleaseOutputIdentity,
     qualification_snapshot_digest: str,
     workflow_run_id: int,
-    run_attempt: int,
+    run_attempt: int | None,
     producer: str,
 ) -> str:
-    """Return the deterministic current-attempt physical artifact name."""
+    """Return the deterministic purpose-bound physical artifact name."""
     repository_value = _string(repository, field="artifact name.repository")
     owner, separator, name = repository_value.partition("/")
     if not separator or not owner or not name or "/" in name:
@@ -815,21 +812,29 @@ def release_artifact_transport_name(  # noqa: PLR0913
         field="artifact name.qualification_snapshot_digest",
     )
     run_id = _positive(workflow_run_id, field="artifact name.workflow_run_id")
-    attempt = _positive(run_attempt, field="artifact name.run_attempt")
     producer_value = _string(producer, field="artifact name.producer")
-    name_digest = canonical_sha256(
-        {
-            "schema": "workflow-delivery/v3/release-artifact-transport-name",
-            "repository": repository_value,
-            "purpose": purpose_value,
-            "output": output.to_document(),
-            "qualification-snapshot-digest": qualification_snapshot_digest,
-            "producer": producer_value,
-            "workflow-run-id": run_id,
-            "run-attempt": attempt,
-        }
-    )
+    name_basis: dict[str, JsonValue] = {
+        "schema": "workflow-delivery/v3/release-artifact-transport-name",
+        "repository": repository_value,
+        "purpose": purpose_value,
+        "output": output.to_document(),
+        "qualification-snapshot-digest": qualification_snapshot_digest,
+        "producer": producer_value,
+        "workflow-run-id": run_id,
+    }
     snapshot_digest = qualification_snapshot_digest.removeprefix("sha256:")
+    if purpose_value == "live-release":
+        if run_attempt is not None:
+            message = "live artifact name cannot bind run_attempt"
+            raise ValueError(message)
+        name_digest = canonical_sha256(name_basis)
+        return (
+            f"wdv3-live-{output.logical_role}-{run_id}-"
+            f"{snapshot_digest[:16]}-{name_digest.removeprefix('sha256:')}.tgz"
+        )
+    attempt = _positive(run_attempt, field="artifact name.run_attempt")
+    name_basis["run-attempt"] = attempt
+    name_digest = canonical_sha256(name_basis)
     return (
         f"wdv3-{purpose_value}-{output.logical_role}-ra{attempt}-"
         f"{snapshot_digest[:16]}-{name_digest.removeprefix('sha256:')}.tgz"
@@ -1465,7 +1470,7 @@ class ReleaseArtifact:
             self.transport.workflow_run_id != workflow_run_id
             or self.transport.run_attempt != run_attempt
         ):
-            message = "Release Artifact transport is from another run attempt"
+            message = "Release Artifact transport is from another run context"
             raise ValueError(message)
         if self.transport.producer != "build-tarball":
             message = "Release Artifact transport producer is not exact"
@@ -1559,7 +1564,7 @@ class QualificationEvidence:
     obligation: ReleaseObligation
     producer: str
     workflow_run_id: int
-    run_attempt: int
+    run_attempt: int | None
     raw_result: str
     normalized_outcome: str
     artifact_digests: tuple[str, ...]
@@ -1586,7 +1591,8 @@ class QualificationEvidence:
         )
         _string(self.producer, field="evidence.producer")
         _positive(self.workflow_run_id, field="evidence.workflow_run_id")
-        _positive(self.run_attempt, field="evidence.run_attempt")
+        if self.run_attempt is not None:
+            _positive(self.run_attempt, field="evidence.run_attempt")
         _string(self.raw_result, field="evidence.raw_result")
         _choice(
             self.normalized_outcome,
@@ -1611,12 +1617,12 @@ class QualificationEvidence:
             self.workflow_run_id != subject_run_id
             or self.run_attempt != subject_attempt
         ):
-            message = "Qualification Evidence is from another run attempt"
+            message = "Qualification Evidence is from another run context"
             raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical Qualification Evidence."""
-        return cast(
+        document = cast(
             "dict[str, JsonValue]",
             {
                 "schema": QUALIFICATION_EVIDENCE_SCHEMA,
@@ -1628,7 +1634,6 @@ class QualificationEvidence:
                 "obligation": self.obligation.to_document(),
                 "producer": self.producer,
                 "workflow-run-id": self.workflow_run_id,
-                "run-attempt": self.run_attempt,
                 "raw-result": self.raw_result,
                 "normalized-outcome": self.normalized_outcome,
                 "artifact-digests": list(self.artifact_digests),
@@ -1638,6 +1643,9 @@ class QualificationEvidence:
                 "diagnostics": list(self.diagnostics),
             },
         )
+        if self.run_attempt is not None:
+            document["run-attempt"] = self.run_attempt
+        return document
 
     @property
     def evidence_digest(self) -> str:
@@ -2947,7 +2955,7 @@ class ExecutionHistoryAdmissionSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class ReleaseAttemptBinding:
-    """Current Attempt bound only after eligibility and history admission."""
+    """Current Attempt bound after exact live eligibility admission."""
 
     intent_digest: str
     request_id: str
@@ -2958,11 +2966,9 @@ class ReleaseAttemptBinding:
     live_eligibility_artifact_digest: str
     live_eligibility_payload_digest: str
     attestation_provenance: tuple[tuple[str, str], ...]
-    history_snapshot_artifact_id: int
-    history_snapshot_artifact_digest: str
 
     def __post_init__(self) -> None:
-        """Reject missing pre-Attempt eligibility or history bindings."""
+        """Reject missing or inconsistent pre-Attempt eligibility bindings."""
         _digest(self.intent_digest, field="attempt binding.intent_digest")
         request_id = _string(
             self.request_id,
@@ -3015,14 +3021,6 @@ class ReleaseAttemptBinding:
         if {name for name, _ in provenance} != required:
             message = "Attempt binding attestation provenance is incomplete"
             raise ValueError(message)
-        _positive(
-            self.history_snapshot_artifact_id,
-            field="attempt binding.history_snapshot_artifact_id",
-        )
-        _digest(
-            self.history_snapshot_artifact_digest,
-            field="attempt binding.history_snapshot_artifact_digest",
-        )
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical immutable Attempt binding."""
@@ -3041,10 +3039,6 @@ class ReleaseAttemptBinding:
                 self.live_eligibility_payload_digest
             ),
             "attestation-provenance": _json_pairs(self.attestation_provenance),
-            "history-snapshot-artifact-id": (self.history_snapshot_artifact_id),
-            "history-snapshot-artifact-digest": (
-                self.history_snapshot_artifact_digest
-            ),
         }
 
     @property
@@ -3063,7 +3057,6 @@ class AuthorizationRecord:
     reviewer_summary_upload_digest: str
     reviewer_summary_payload_digest: str
     workflow_run_id: int
-    run_attempt: int
     approval_job_id: int
     approval_job: str
     environment: str
@@ -3094,14 +3087,10 @@ class AuthorizationRecord:
             self.reviewer_summary_payload_digest,
             field="authorization.reviewer_summary_payload_digest",
         )
-        if (
-            self.workflow_run_id != self.attempt.workflow_run_id
-            or self.run_attempt != self.attempt.run_attempt
-        ):
+        if self.workflow_run_id != self.attempt.workflow_run_id:
             message = "Authorization current Attempt binding mismatch"
             raise ValueError(message)
         _positive(self.workflow_run_id, field="authorization.workflow_run_id")
-        _positive(self.run_attempt, field="authorization.run_attempt")
         _positive(self.approval_job_id, field="authorization.approval_job_id")
         _string(self.approval_job, field="authorization.approval_job")
         _string(self.environment, field="authorization.environment")
@@ -3138,7 +3127,6 @@ class AuthorizationRecord:
                 self.reviewer_summary_payload_digest
             ),
             "workflow-run-id": self.workflow_run_id,
-            "run-attempt": self.run_attempt,
             "approval-job-id": self.approval_job_id,
             "approval-job": self.approval_job,
             "environment": self.environment,
@@ -3179,7 +3167,6 @@ class CapabilityAdmissionDecision:
     producer: str
     control: str
     workflow_run_id: int
-    run_attempt: int
     result: str
     diagnostics: tuple[str, ...]
 
@@ -3293,10 +3280,7 @@ class CapabilityAdmissionDecision:
         if self.producer != "approval-finalizer":
             message = "Capability admission producer is not exact"
             raise ValueError(message)
-        if (
-            self.workflow_run_id != self.attempt.workflow_run_id
-            or self.run_attempt != self.attempt.run_attempt
-        ):
+        if self.workflow_run_id != self.attempt.workflow_run_id:
             message = "Capability admission current Attempt binding mismatch"
             raise ValueError(message)
         _string_tuple(
@@ -3365,7 +3349,6 @@ class CapabilityAdmissionDecision:
             "producer": self.producer,
             "control": self.control,
             "workflow-run-id": self.workflow_run_id,
-            "run-attempt": self.run_attempt,
             "result": self.result,
             "diagnostics": _json_strings(self.diagnostics),
         }
@@ -3397,7 +3380,6 @@ class Receipt:
     producer: str
     control: str
     workflow_run_id: int
-    run_attempt: int
 
     def __post_init__(self) -> None:
         """Reject incomplete transport, tag, race, or current bindings."""
@@ -3464,9 +3446,8 @@ class Receipt:
             raise ValueError(message)
         if (
             self.workflow_run_id != self.attempt.workflow_run_id
-            or self.run_attempt != self.attempt.run_attempt
             or self.artifact_transport.workflow_run_id != self.workflow_run_id
-            or self.artifact_transport.run_attempt != self.run_attempt
+            or self.artifact_transport.run_attempt is not None
         ):
             message = "Receipt current Attempt/transport binding mismatch"
             raise ValueError(message)
@@ -3492,7 +3473,6 @@ class Receipt:
             "producer": self.producer,
             "control": self.control,
             "workflow-run-id": self.workflow_run_id,
-            "run-attempt": self.run_attempt,
         }
 
     @property
@@ -3544,7 +3524,6 @@ class ActionResult:
     producer: str
     control: str
     workflow_run_id: int
-    run_attempt: int
 
     def __post_init__(self) -> None:  # noqa: C901
         """Reject false success and incomplete current bindings."""
@@ -3636,10 +3615,7 @@ class ActionResult:
         if self.producer != "publish-github-packages":
             message = "Action Result producer is not exact"
             raise ValueError(message)
-        if (
-            self.workflow_run_id != self.attempt.workflow_run_id
-            or self.run_attempt != self.attempt.run_attempt
-        ):
+        if self.workflow_run_id != self.attempt.workflow_run_id:
             message = "Action Result current Attempt binding mismatch"
             raise ValueError(message)
 
@@ -3664,7 +3640,6 @@ class ActionResult:
             "producer": self.producer,
             "control": self.control,
             "workflow-run-id": self.workflow_run_id,
-            "run-attempt": self.run_attempt,
         }
 
     @property
@@ -3686,7 +3661,6 @@ class CapabilityGroupResultBundle:
     producer: str
     control: str
     workflow_run_id: int
-    run_attempt: int
 
     def __post_init__(self) -> None:
         """Require exact action-set equality and current-attempt closure."""
@@ -3741,10 +3715,7 @@ class CapabilityGroupResultBundle:
         if self.producer != "publish-github-packages":
             message = "Capability group producer is not exact"
             raise ValueError(message)
-        if (
-            self.workflow_run_id != self.attempt.workflow_run_id
-            or self.run_attempt != self.attempt.run_attempt
-        ):
+        if self.workflow_run_id != self.attempt.workflow_run_id:
             message = "Capability group current Attempt binding mismatch"
             raise ValueError(message)
 
@@ -3765,7 +3736,6 @@ class CapabilityGroupResultBundle:
             "producer": self.producer,
             "control": self.control,
             "workflow-run-id": self.workflow_run_id,
-            "run-attempt": self.run_attempt,
         }
 
     @property

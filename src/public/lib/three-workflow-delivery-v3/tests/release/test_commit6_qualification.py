@@ -115,7 +115,7 @@ def test_build_transport_rejects_prior_attempt_substitution(
         run_attempt=2,
     )
 
-    with pytest.raises(ValueError, match="another run attempt"):
+    with pytest.raises(ValueError, match="another run context"):
         form_uploaded_release_artifact(
             scenario.snapshot,
             scenario.mechanics,
@@ -157,7 +157,7 @@ def test_upload_metadata_binds_after_single_mechanical_build(
                 mechanics.qualification_snapshot_digest
             ),
             workflow_run_id=mechanics.subject.workflow_run_id,
-            run_attempt=mechanics.subject.run_attempt,
+            run_attempt=scenario.binding.simulation.run_attempt,
             producer="build-tarball",
         ),
         artifact_url=(
@@ -166,7 +166,7 @@ def test_upload_metadata_binds_after_single_mechanical_build(
         transport_digest="sha256:" + ("e" * 64),
         producer="build-tarball",
         workflow_run_id=mechanics.subject.workflow_run_id,
-        run_attempt=mechanics.subject.run_attempt,
+        run_attempt=scenario.binding.simulation.run_attempt,
     )
     assert transport.artifact_name.startswith(
         "wdv3-release-simulation-primary-package-ra3-"
@@ -335,9 +335,8 @@ def test_cross_purpose_and_prior_attempt_evidence_are_rejected(
             scenario.snapshot.target,
         ),
         workflow_run_id=evidence.workflow_run_id,
-        run_attempt=evidence.run_attempt,
     )
-    live_evidence = replace(evidence, subject=live_attempt)
+    live_evidence = replace(evidence, subject=live_attempt, run_attempt=None)
     with pytest.raises(ValueError, match="current Snapshot"):
         admit_evidence_for_snapshot(scenario.snapshot, live_evidence)
 
@@ -450,7 +449,6 @@ def _live_publication_action(scenario) -> PublicationAction:
             scenario.snapshot.target,
         ),
         workflow_run_id=scenario.binding.simulation.workflow_run_id,
-        run_attempt=scenario.binding.simulation.run_attempt,
     )
     live_snapshot = replace(scenario.snapshot, subject=attempt)
     live_transport = replace(
@@ -461,9 +459,10 @@ def _live_publication_action(scenario) -> PublicationAction:
             output=scenario.artifact.output,
             qualification_snapshot_digest=live_snapshot.snapshot_digest,
             workflow_run_id=attempt.workflow_run_id,
-            run_attempt=attempt.run_attempt,
+            run_attempt=None,
             producer=scenario.artifact.transport.producer,
         ),
+        run_attempt=None,
     )
     live_provenance = {
         "schema": "workflow-delivery/v3/release-artifact-provenance",

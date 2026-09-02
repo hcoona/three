@@ -113,7 +113,6 @@ def _main() -> int:
         raise ValueError("Publication Snapshot Execution is missing")
     if (
         attempt.get("workflow-run-id") != arguments.workflow_run_id
-        or attempt.get("run-attempt") != arguments.run_attempt
         or execution.get("target") != arguments.target
     ):
         raise ValueError("Authorization current Attempt binding mismatch")
@@ -129,7 +128,6 @@ def _main() -> int:
         "reviewer-summary-upload-digest": upload_digest,
         "reviewer-summary-payload-digest": summary_digest,
         "workflow-run-id": arguments.workflow_run_id,
-        "run-attempt": arguments.run_attempt,
         "approval-job-id": arguments.approval_job_id,
         "approval-job": "approval",
         "environment": "workflow-delivery-v3-buddy-approval",

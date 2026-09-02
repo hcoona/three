@@ -453,7 +453,7 @@ def _historical_payload_facts(  # noqa: C901
             raise ValueError(message)
         return _HistoricalPayloadFacts(
             diagnostic_claims=(),
-            declared_run_attempt=record.attempt.run_attempt,
+            declared_run_attempt=None,
             attempt_binding=True,
         )
     attempt = _record_attempt(record)
@@ -462,7 +462,7 @@ def _historical_payload_facts(  # noqa: C901
         raise ValueError(message)
     return _HistoricalPayloadFacts(
         diagnostic_claims=(),
-        declared_run_attempt=attempt.run_attempt,
+        declared_run_attempt=None,
         attempt_binding=False,
     )
 
@@ -1170,7 +1170,6 @@ def form_authorization_record(
             reviewer_artifact.summary_payload_digest
         ),
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
         approval_job_id=approval_job_id,
         approval_job="approval",
         environment="workflow-delivery-v3-buddy-approval",
@@ -1181,15 +1180,14 @@ def form_authorization_record(
     )
 
 
-def _demo_attempt(*, run_attempt: int = 1) -> ReleaseAttemptIdentity:
+def _demo_attempt(*, workflow_run_id: int = 1) -> ReleaseAttemptIdentity:
     return ReleaseAttemptIdentity(
         execution=BuddyExecutionIdentity(
             channel="buddy",
             release_unit="hcoona-release-smoke-npm",
             target=_DEFAULT_TARGET,
         ),
-        workflow_run_id=1,
-        run_attempt=run_attempt,
+        workflow_run_id=workflow_run_id,
     )
 
 
@@ -1235,7 +1233,6 @@ def _capability_decision(
         producer="approval-finalizer",
         control=control,
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
         result=result,
         diagnostics=diagnostics,
     )
@@ -1304,7 +1301,7 @@ def admit_live_capability(
             control=control,
         )
         restored_decision = _capability_decision(
-            attempt=_demo_attempt(run_attempt=2 if restored else 1),
+            attempt=_demo_attempt(workflow_run_id=2 if restored else 1),
             authorization_digest="sha256:" + ("4" * 64),
             publication_snapshot_digest="sha256:" + ("5" * 64),
             reviewer_artifact=reviewer,

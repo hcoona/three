@@ -6,7 +6,6 @@ from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 from three_workflow_delivery_v3.records.release import (
     OFFICIAL_SIMULATION_WORKFLOW_PATH,
     BuddyExecutionIdentity,
-    ExecutionHistoryAdmissionSnapshot,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
     ReleaseIntent,
@@ -43,14 +42,13 @@ def _request_id(
     return f"release-request:{digest.removeprefix('sha256:')}"
 
 
-def normalize_official_simulation_intent(  # noqa: PLR0913
+def normalize_official_simulation_intent(
     *,
     repository: str,
     selected_ref: str,
     target: str,
     actor: str,
     workflow_run_id: int,
-    run_attempt: int,
 ) -> ReleaseIntent:
     """Normalize the fixed Official simulation workflow_dispatch Intent."""
     return ReleaseIntent(
@@ -65,7 +63,6 @@ def normalize_official_simulation_intent(  # noqa: PLR0913
         ),
         actor=actor,
         workflow_run_id=workflow_run_id,
-        run_attempt=run_attempt,
         event_kind="workflow_dispatch",
         selected_ref=selected_ref,
         target=target,
@@ -110,12 +107,15 @@ def derive_simulation_binding(
         message = "Simulation identity requires the exact Official Intent"
         raise ValueError(message)
     context = snapshot.context
+    run_attempt = context.run_attempt
+    if type(run_attempt) is not int:
+        message = "Simulation identity requires attempt-bound model context"
+        raise ValueError(message)
     expected_control = f"workflow-delivery-v3:{intent.target}"
     bindings = (
         ("request_id", context.request_id, intent.request_id),
         ("purpose", context.purpose, intent.purpose),
         ("workflow_run_id", context.workflow_run_id, intent.workflow_run_id),
-        ("run_attempt", context.run_attempt, intent.run_attempt),
         ("target", context.target, intent.target),
         ("producer", context.producer, OFFICIAL_SIMULATION_PRODUCER),
         ("control", context.control, expected_control),
@@ -135,14 +135,14 @@ def derive_simulation_binding(
             "namespace": "release-simulation",
             "request-id": intent.request_id,
             "workflow-run-id": context.workflow_run_id,
-            "run-attempt": intent.run_attempt,
+            "run-attempt": run_attempt,
         }
     )
     simulation = SimulationIdentity(
         namespace="release-simulation",
         request_id=intent.request_id,
         workflow_run_id=context.workflow_run_id,
-        run_attempt=intent.run_attempt,
+        run_attempt=run_attempt,
         identity=(
             f"release-simulation:{identity_digest.removeprefix('sha256:')}"
         ),
@@ -159,14 +159,13 @@ def derive_simulation_binding(
     )
 
 
-def normalize_buddy_live_intent(  # noqa: PLR0913
+def normalize_buddy_live_intent(
     *,
     repository: str,
     selected_ref: str,
     target: str,
     actor: str,
     workflow_run_id: int,
-    run_attempt: int,
 ) -> ReleaseIntent:
     """Normalize the strict first-slice Buddy workflow_dispatch Intent."""
     return ReleaseIntent(
@@ -181,7 +180,6 @@ def normalize_buddy_live_intent(  # noqa: PLR0913
         ),
         actor=actor,
         workflow_run_id=workflow_run_id,
-        run_attempt=run_attempt,
         event_kind="workflow_dispatch",
         selected_ref=selected_ref,
         target=target,
@@ -224,34 +222,21 @@ def derive_release_attempt_binding(  # noqa: PLR0913
     live_eligibility_artifact_digest: str,
     live_eligibility_payload_digest: str,
     attestation_provenance: tuple[tuple[str, str], ...],
-    history_snapshot: ExecutionHistoryAdmissionSnapshot,
-    history_snapshot_artifact_id: int,
-    history_snapshot_artifact_digest: str,
 ) -> ReleaseAttemptBinding:
-    """Create the Attempt binding after exact eligibility and history."""
+    """Create the Attempt binding after exact live eligibility admission."""
     if type(intent) is not ReleaseIntent:
         message = "Attempt binding requires an exact ReleaseIntent"
         raise TypeError(message)
     if type(execution) is not BuddyExecutionIdentity:
         message = "Attempt binding requires exact Buddy Execution"
         raise TypeError(message)
-    if type(history_snapshot) is not ExecutionHistoryAdmissionSnapshot:
-        message = "Attempt binding requires admitted execution history"
-        raise TypeError(message)
     expected_execution = derive_buddy_execution_identity(intent)
-    if (
-        execution != expected_execution
-        or history_snapshot.execution != execution
-        or history_snapshot.request_id != intent.request_id
-        or history_snapshot.current_workflow_run_id != intent.workflow_run_id
-        or history_snapshot.current_run_attempt != intent.run_attempt
-    ):
+    if execution != expected_execution:
         message = "Attempt binding pre-Attempt admission mismatch"
         raise ValueError(message)
     attempt = ReleaseAttemptIdentity(
         execution=execution,
         workflow_run_id=intent.workflow_run_id,
-        run_attempt=intent.run_attempt,
     )
     return ReleaseAttemptBinding(
         intent_digest=intent.intent_digest,
@@ -263,8 +248,6 @@ def derive_release_attempt_binding(  # noqa: PLR0913
         live_eligibility_artifact_digest=live_eligibility_artifact_digest,
         live_eligibility_payload_digest=live_eligibility_payload_digest,
         attestation_provenance=attestation_provenance,
-        history_snapshot_artifact_id=history_snapshot_artifact_id,
-        history_snapshot_artifact_digest=history_snapshot_artifact_digest,
     )
 
 

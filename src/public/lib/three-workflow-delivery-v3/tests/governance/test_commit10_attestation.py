@@ -156,7 +156,6 @@ def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
         purpose="live-release",
         request_id="request-42",
         workflow_run_id=8101,
-        run_attempt=3,
         selected_ref="refs/heads/main",
         target="e" * 40,
         repository_model_digest="sha256:" + ("1" * 64),

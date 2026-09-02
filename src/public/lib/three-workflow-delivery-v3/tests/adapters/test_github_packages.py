@@ -145,7 +145,6 @@ def _attempt() -> ReleaseAttemptIdentity:
             target=TARGET,
         ),
         workflow_run_id=101,
-        run_attempt=2,
     )
 
 
@@ -216,7 +215,7 @@ def _receipt(*, creation_result: str = "created") -> Receipt:
             transport_digest="sha256:" + ("4" * 64),
             producer="build",
             workflow_run_id=attempt.workflow_run_id,
-            run_attempt=attempt.run_attempt,
+            run_attempt=None,
         ),
         artifact_content_sha256="sha256:" + ("5" * 64),
         artifact_content_sha512="sha512:" + ("6" * 128),
@@ -227,7 +226,6 @@ def _receipt(*, creation_result: str = "created") -> Receipt:
         producer="publish-github-packages",
         control=CONTROL,
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
     )
 
 
@@ -357,7 +355,7 @@ def test_github_packages_rejects_wrong_basis_before_transport() -> None:
         ("present", "present", None, None, VERSION, "unprovable"),
     ],
 )
-def test_github_packages_classifies_all_six_closed_states(  # noqa: PLR0913
+def test_github_packages_classifies_all_six_closed_states(  # noqa: PLR0913, PLR0917
     rest_state: str,
     npm_state: str,
     remote_sha512: str | None,
@@ -609,13 +607,17 @@ def test_github_packages_versions_link_next_is_authoritative() -> None:
     ("version_url", "expected_owner"),
     [
         (
-            "https://api.github.com/users/hcoona/packages/npm/"
-            "hcoona-release-smoke-npm/versions/42",
+            (
+                "https://api.github.com/users/hcoona/packages/npm/"
+                "hcoona-release-smoke-npm/versions/42"
+            ),
             "hcoona",
         ),
         (
-            "https://api.github.com/orgs/example/packages/npm/"
-            "hcoona-release-smoke-npm/versions/42",
+            (
+                "https://api.github.com/orgs/example/packages/npm/"
+                "hcoona-release-smoke-npm/versions/42"
+            ),
             "example",
         ),
     ],
@@ -853,8 +855,7 @@ def test_publish_rejects_receipt_and_response_substitution() -> None:
 
     with pytest.raises(ValueError, match="target tag mapping"):
         replace(receipt, tag_mapping=(("buddy-sha-" + ("b" * 40), VERSION),))
-    with pytest.raises(ValueError, match="current Attempt"):
-        replace(receipt, run_attempt=3)
+    assert "run-attempt" not in receipt.to_document()
     substitutions = (
         replace(receipt, action_digest="sha256:" + ("8" * 64)),
         replace(

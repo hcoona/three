@@ -119,7 +119,6 @@ def intent() -> ReleaseIntent:
         target=TARGET,
         actor="release-operator",
         workflow_run_id=RUN_ID,
-        run_attempt=RUN_ATTEMPT,
     )
 
 
@@ -262,7 +261,6 @@ def live_intent() -> ReleaseIntent:
         target=TARGET,
         actor="release-operator",
         workflow_run_id=RUN_ID,
-        run_attempt=RUN_ATTEMPT,
     )
 
 
@@ -305,7 +303,6 @@ def live_attempt_binding(
     attempt = ReleaseAttemptIdentity(
         execution=execution,
         workflow_run_id=live_intent.workflow_run_id,
-        run_attempt=live_intent.run_attempt,
     )
     return ReleaseAttemptBinding(
         intent_digest=live_intent.intent_digest,
@@ -332,8 +329,6 @@ def live_attempt_binding(
             ("repository", "hcoona/three"),
             ("resolved-commit", TARGET),
         ),
-        history_snapshot_artifact_id=7002,
-        history_snapshot_artifact_digest=DIGEST_B,
     )
 
 

@@ -53,6 +53,7 @@ from three_workflow_delivery_v3.release.workflow import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
+PLATFORM_RUN_ATTEMPT = 3
 
 
 def _write(path: Path, content: bytes) -> Path:
@@ -205,7 +206,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         "--workflow-run-id",
         str(live_intent.workflow_run_id),
         "--run-attempt",
-        str(live_intent.run_attempt),
+        str(PLATFORM_RUN_ATTEMPT),
         "--target",
         live_intent.target,
     ]
@@ -438,7 +439,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         expected_bindings=ReleaseAdmissionBindings(
             purpose="live-release",
             workflow_run_id=live_intent.workflow_run_id,
-            run_attempt=live_intent.run_attempt,
+            run_attempt=None,
             target=live_intent.target,
         ),
     )
@@ -490,7 +491,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         expected_bindings=ReleaseAdmissionBindings(
             purpose="live-release",
             workflow_run_id=live_intent.workflow_run_id,
-            run_attempt=live_intent.run_attempt,
+            run_attempt=None,
             target=live_intent.target,
         ),
     )
@@ -623,7 +624,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         expected_bindings=ReleaseAdmissionBindings(
             purpose="live-release",
             workflow_run_id=live_intent.workflow_run_id,
-            run_attempt=live_intent.run_attempt,
+            run_attempt=None,
             target=live_intent.target,
         ),
     )
@@ -668,7 +669,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         expected_bindings=ReleaseAdmissionBindings(
             purpose="live-release",
             workflow_run_id=live_intent.workflow_run_id,
-            run_attempt=live_intent.run_attempt,
+            run_attempt=None,
             target=live_intent.target,
         ),
     )
@@ -715,7 +716,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
             producer="build-tarball",
             purpose="live-release",
             workflow_run_id=live_intent.workflow_run_id,
-            run_attempt=live_intent.run_attempt,
+            run_attempt=None,
             target=live_intent.target,
         ),
     )
@@ -767,7 +768,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         expected_bindings=ReleaseAdmissionBindings(
             purpose="live-release",
             workflow_run_id=live_intent.workflow_run_id,
-            run_attempt=live_intent.run_attempt,
+            run_attempt=None,
             target=live_intent.target,
         ),
     )
@@ -864,7 +865,6 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         reviewer_summary_upload_digest="sha256:" + ("2" * 64),
         reviewer_summary_payload_digest="sha256:" + ("3" * 64),
         workflow_run_id=live_intent.workflow_run_id,
-        run_attempt=live_intent.run_attempt,
         approval_job_id=711,
         approval_job="approval",
         environment="workflow-delivery-v3-buddy-approval",
@@ -925,7 +925,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         expected_bindings=ReleaseAdmissionBindings(
             purpose="live-release",
             workflow_run_id=live_intent.workflow_run_id,
-            run_attempt=live_intent.run_attempt,
+            run_attempt=None,
             target=live_intent.target,
         ),
     )
@@ -1052,9 +1052,10 @@ def test_materialize_publication_cli_renders_complete_reviewer_context(  # noqa:
                 live_qualification_snapshot.snapshot_digest
             ),
             workflow_run_id=live_intent.workflow_run_id,
-            run_attempt=live_intent.run_attempt,
+            run_attempt=None,
             producer=source_artifact.transport.producer,
         ),
+        run_attempt=None,
     )
     provenance = source_artifact.provenance_document()
     provenance.update(
@@ -1152,7 +1153,7 @@ def test_materialize_publication_cli_renders_complete_reviewer_context(  # noqa:
         "--workflow-run-id",
         str(live_intent.workflow_run_id),
         "--run-attempt",
-        str(live_intent.run_attempt),
+        str(PLATFORM_RUN_ATTEMPT),
         "--target",
         live_intent.target,
     ]
@@ -1282,7 +1283,7 @@ def test_materialize_publication_rejects_selected_ref_substitution(
             "--workflow-run-id",
             str(live_intent.workflow_run_id),
             "--run-attempt",
-            str(live_intent.run_attempt),
+            str(PLATFORM_RUN_ATTEMPT),
             "--target",
             live_intent.target,
             "--selected-ref",
@@ -1379,23 +1380,23 @@ def test_live_qualification_snapshot_closes_attempt_execution_identity(
             )
 
 
-def test_live_planner_rejects_attempt_binding_for_different_rerun(
+def test_live_planner_rejects_attempt_binding_for_different_workflow_run(
     live_intent,
     live_attempt_binding,
     live_admitted_repository_model,
 ) -> None:
-    """Keep the retained live Attempt binding aligned with its Intent."""
+    """Keep the retained live Attempt binding aligned with its workflow run."""
     mismatched_binding = replace(
         live_attempt_binding,
         attempt=replace(
             live_attempt_binding.attempt,
-            run_attempt=live_intent.run_attempt + 1,
+            workflow_run_id=live_intent.workflow_run_id + 1,
         ),
     )
 
     with pytest.raises(
         ValueError,
-        match="Release Planner run attempt binding mismatch",
+        match="Release Planner workflow run binding mismatch",
     ):
         plan_live_qualification(
             live_intent,
@@ -1603,7 +1604,6 @@ def test_official_live_snapshot_closes_each_product_identity_field(
     attempt = ReleaseAttemptIdentity(
         execution=execution,
         workflow_run_id=qualified_simulation.binding.simulation.workflow_run_id,
-        run_attempt=qualified_simulation.binding.simulation.run_attempt,
     )
     official_snapshot = replace(snapshot, subject=attempt)
     official_projection = official_snapshot.destination_projections[0]
@@ -1763,7 +1763,7 @@ def test_finalize_live_rejects_each_partial_optional_transport_group(  # noqa: P
             "--workflow-run-id",
             str(live_intent.workflow_run_id),
             "--run-attempt",
-            str(live_intent.run_attempt),
+            str(PLATFORM_RUN_ATTEMPT),
             "--target",
             live_intent.target,
             *_uploaded_arguments(
@@ -1899,7 +1899,6 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         reviewer_summary_upload_digest="sha256:" + ("7" * 64),
         reviewer_summary_payload_digest="sha256:" + ("8" * 64),
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
         approval_job_id=912,
         approval_job="approval",
         environment="workflow-delivery-v3-buddy-approval",
@@ -1939,7 +1938,6 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         producer="approval-finalizer",
         control=control,
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
         result="success",
         diagnostics=(),
     )
@@ -1950,7 +1948,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         transport_digest=artifact_digest,
         producer="build-tarball",
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
+        run_attempt=None,
     )
     receipt = Receipt(
         attempt=attempt,
@@ -1975,7 +1973,6 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         producer="publish-github-packages",
         control=control,
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
     )
 
     binding_path = _write(
@@ -2026,7 +2023,6 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         producer="publish-github-packages",
         control=control,
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
     )
     group_bundle = CapabilityGroupResultBundle(
         attempt=attempt,
@@ -2038,7 +2034,6 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         producer="publish-github-packages",
         control=control,
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
     )
     group_bundle_path = _write(
         tmp_path / "forwarded-capability-group-result-bundle.json",
@@ -2119,7 +2114,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
             "--workflow-run-id",
             str(live_intent.workflow_run_id),
             "--run-attempt",
-            str(live_intent.run_attempt),
+            str(PLATFORM_RUN_ATTEMPT),
             "--target",
             live_intent.target,
             *_uploaded_arguments(
@@ -2230,7 +2225,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         expected_bindings=ReleaseAdmissionBindings(
             purpose="live-release",
             workflow_run_id=live_intent.workflow_run_id,
-            run_attempt=live_intent.run_attempt,
+            run_attempt=None,
             target=live_intent.target,
         ),
     )

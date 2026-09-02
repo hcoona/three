@@ -145,7 +145,6 @@ GOVERNANCE_COMMIT = "f" * 40
 GOVERNANCE_BLOB = "b" * 40
 NOW = datetime(2026, 8, 6, 12, 0, 0, tzinfo=UTC)
 WORKFLOW_RUN_ID = 7101
-RUN_ATTEMPT = 3
 PREFIXED_SHA256_LENGTH = 71
 FRESH_SOURCE_CALL_COUNT = 3
 EXPECTED_STATIC_REFERENCE_ERROR_KINDS = (
@@ -449,7 +448,6 @@ def _context(
         purpose="live-release",
         request_id=snapshot.context.request_id,
         workflow_run_id=snapshot.context.workflow_run_id,
-        run_attempt=RUN_ATTEMPT,
         selected_ref=selected_ref,
         target=snapshot.context.target,
         repository_model_digest=snapshot.snapshot_digest,
@@ -544,12 +542,6 @@ def _with_zero_workflow_run(
     context: LiveEligibilityContext,
 ) -> LiveEligibilityContext:
     return replace(context, workflow_run_id=0)
-
-
-def _with_boolean_attempt(
-    context: LiveEligibilityContext,
-) -> LiveEligibilityContext:
-    return replace(context, run_attempt=True)
 
 
 def _with_empty_producer(
@@ -697,7 +689,6 @@ def _transport_decision(
         purpose=live_intent.purpose,
         request_id=live_intent.request_id,
         workflow_run_id=live_intent.workflow_run_id,
-        run_attempt=live_intent.run_attempt,
         selected_ref=live_intent.selected_ref,
         target=live_intent.target,
         repository_model_digest=(
@@ -1064,11 +1055,6 @@ def test_artifact_cannot_select_live_eligibility_admission_mode(
             ("context", "workflow-run-id"),
             7300,
             id="prior-run",
-        ),
-        pytest.param(
-            ("context", "run-attempt"),
-            2,
-            id="prior-attempt",
         ),
         pytest.param(
             ("context", "selected-ref"),
@@ -1568,7 +1554,6 @@ def test_live_eligibility_passes_with_fresh_exact_target_inputs(
     assert decision.context.purpose == "live-release"
     assert decision.context.request_id == snapshot.context.request_id
     assert decision.context.workflow_run_id == snapshot.context.workflow_run_id
-    assert decision.context.run_attempt == RUN_ATTEMPT
     assert decision.context.target == TARGET
     assert decision.static_reference.source_kind == "git-target"
     assert decision.static_reference.target == TARGET
@@ -2470,7 +2455,6 @@ def test_attestation_expiry_requires_positive_lifetime(
         (_with_empty_request, "request_id"),
         (_with_empty_selected_ref, "selected_ref"),
         (_with_zero_workflow_run, "must be a positive integer"),
-        (_with_boolean_attempt, "must be a positive integer"),
         (_with_empty_producer, "producer"),
         (_with_empty_control, "control"),
         (_with_malformed_snapshot_digest, "must be SHA-256"),
@@ -2479,7 +2463,6 @@ def test_attestation_expiry_requires_positive_lifetime(
         "request",
         "selected-ref",
         "run",
-        "attempt",
         "producer",
         "control",
         "snapshot-digest",

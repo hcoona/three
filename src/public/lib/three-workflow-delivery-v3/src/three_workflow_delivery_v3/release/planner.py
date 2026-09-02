@@ -157,13 +157,13 @@ def _validate_inputs(  # noqa: PLR0912
         raise TypeError(message)
     snapshot = admitted_repository_model.snapshot
     live = isinstance(binding, ReleaseAttemptBinding)
+    binding_run_attempt: int | None = None
     if live:
         binding_target = binding.execution.target
         binding_channel = binding.execution.channel
         binding_unit = binding.execution.release_unit
         binding_request = binding.request_id
         binding_run_id = binding.attempt.workflow_run_id
-        binding_run_attempt = binding.attempt.run_attempt
         binding_control = f"workflow-delivery-v3:{intent.target}"
         if (
             intent.channel != "buddy"
@@ -204,15 +204,7 @@ def _validate_inputs(  # noqa: PLR0912
             snapshot.context.workflow_run_id,
         ),
     )
-    if live:
-        checks += (
-            (
-                "run attempt",
-                binding_run_attempt,
-                intent.run_attempt,
-            ),
-        )
-    else:
+    if not live:
         checks += (
             (
                 "run attempt",

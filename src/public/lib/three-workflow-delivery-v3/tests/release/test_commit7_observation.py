@@ -179,7 +179,7 @@ def _observation(
         ),
     ],
 )
-def test_finalize_simulation_maps_commit7_observation_outcomes(  # noqa: PLR0913
+def test_finalize_simulation_maps_commit7_observation_outcomes(  # noqa: PLR0913, PLR0917
     qualified_simulation: QualifiedSimulation,
     classification: str,
     terminal: str,
@@ -252,7 +252,7 @@ def test_projection_observation_crosses_transport_with_current_bindings(
     expected = ReleaseAdmissionBindings(
         purpose="release-simulation",
         workflow_run_id=qualified_simulation.intent.workflow_run_id,
-        run_attempt=qualified_simulation.intent.run_attempt,
+        run_attempt=qualified_simulation.binding.simulation.run_attempt,
         target=qualified_simulation.snapshot.target,
         producer=NPMJS_OBSERVER_PRODUCER,
     )
@@ -271,8 +271,11 @@ def test_projection_observation_crosses_transport_with_current_bindings(
     assert admitted.response_facts.body_sha256 is None
     validate_release_admission_bindings(admitted, expected)
     for bad in (
-        replace(expected, purpose="live-release"),
-        replace(expected, run_attempt=expected.run_attempt + 1),
+        replace(expected, purpose="live-release", run_attempt=None),
+        replace(
+            expected,
+            run_attempt=qualified_simulation.binding.simulation.run_attempt + 1,
+        ),
         replace(expected, target="f" * 40),
         replace(expected, producer="other-observer"),
     ):
@@ -393,7 +396,7 @@ def test_observation_set_rejects_producer_substitution(
         target=scenario.snapshot.target,
         producer=NPMJS_OBSERVER_PRODUCER,
         workflow_run_id=scenario.intent.workflow_run_id,
-        run_attempt=scenario.intent.run_attempt,
+        run_attempt=scenario.binding.simulation.run_attempt,
         qualification_snapshot_digest=scenario.snapshot.snapshot_digest,
         qualification_decision_digest=scenario.decision.decision_digest,
         observations=(observation,),
@@ -406,7 +409,7 @@ def test_observation_set_rejects_producer_substitution(
             target=scenario.snapshot.target,
             producer="other-observer",
             workflow_run_id=scenario.intent.workflow_run_id,
-            run_attempt=scenario.intent.run_attempt,
+            run_attempt=scenario.binding.simulation.run_attempt,
             qualification_snapshot_digest=scenario.snapshot.snapshot_digest,
             qualification_decision_digest=scenario.decision.decision_digest,
             observations=(observation,),
@@ -433,7 +436,7 @@ def test_hypothetical_actions_report_rejects_producer_substitution(
         target=scenario.snapshot.target,
         producer=NPMJS_OBSERVER_PRODUCER,
         workflow_run_id=scenario.intent.workflow_run_id,
-        run_attempt=scenario.intent.run_attempt,
+        run_attempt=scenario.binding.simulation.run_attempt,
         qualification_snapshot_digest=scenario.snapshot.snapshot_digest,
         qualification_decision_digest=scenario.decision.decision_digest,
         observations=(observation,),
@@ -449,7 +452,7 @@ def test_hypothetical_actions_report_rejects_producer_substitution(
             target=scenario.snapshot.target,
             producer="other-materializer",
             workflow_run_id=scenario.intent.workflow_run_id,
-            run_attempt=scenario.intent.run_attempt,
+            run_attempt=scenario.binding.simulation.run_attempt,
             qualification_snapshot_digest=scenario.snapshot.snapshot_digest,
             qualification_decision_digest=scenario.decision.decision_digest,
             observation_set_digest=observation_set.set_digest,
@@ -463,7 +466,7 @@ def test_hypothetical_actions_report_rejects_producer_substitution(
         target=scenario.snapshot.target,
         producer=HYPOTHETICAL_ACTIONS_REPORT_PRODUCER,
         workflow_run_id=scenario.intent.workflow_run_id,
-        run_attempt=scenario.intent.run_attempt,
+        run_attempt=scenario.binding.simulation.run_attempt,
         qualification_snapshot_digest=scenario.snapshot.snapshot_digest,
         qualification_decision_digest=scenario.decision.decision_digest,
         observation_set_digest=observation_set.set_digest,
@@ -523,7 +526,7 @@ def test_cli_observe_npmjs_skips_network_for_failed_qualification(
             "--workflow-run-id",
             str(scenario.intent.workflow_run_id),
             "--run-attempt",
-            str(scenario.intent.run_attempt),
+            str(scenario.binding.simulation.run_attempt),
             "--target",
             scenario.intent.target,
             *_uploaded_arguments(
@@ -557,7 +560,7 @@ def test_cli_observe_npmjs_skips_network_for_failed_qualification(
         target=scenario.snapshot.target,
         producer=NPMJS_OBSERVER_PRODUCER,
         workflow_run_id=scenario.intent.workflow_run_id,
-        run_attempt=scenario.intent.run_attempt,
+        run_attempt=scenario.binding.simulation.run_attempt,
         qualification_snapshot_digest=scenario.snapshot.snapshot_digest,
         qualification_decision_digest=failed.decision_digest,
         observations=(),
@@ -577,7 +580,7 @@ def test_cli_finalize_rejects_hypothetical_action_substitution(
         target=scenario.snapshot.target,
         producer=NPMJS_OBSERVER_PRODUCER,
         workflow_run_id=scenario.intent.workflow_run_id,
-        run_attempt=scenario.intent.run_attempt,
+        run_attempt=scenario.binding.simulation.run_attempt,
         qualification_snapshot_digest=scenario.snapshot.snapshot_digest,
         qualification_decision_digest=scenario.decision.decision_digest,
         observations=(observation,),
@@ -588,7 +591,7 @@ def test_cli_finalize_rejects_hypothetical_action_substitution(
         target=scenario.snapshot.target,
         producer=HYPOTHETICAL_ACTIONS_REPORT_PRODUCER,
         workflow_run_id=scenario.intent.workflow_run_id,
-        run_attempt=scenario.intent.run_attempt,
+        run_attempt=scenario.binding.simulation.run_attempt,
         qualification_snapshot_digest=scenario.snapshot.snapshot_digest,
         qualification_decision_digest=scenario.decision.decision_digest,
         observation_set_digest=observation_set.set_digest,
@@ -615,7 +618,7 @@ def test_cli_finalize_rejects_hypothetical_action_substitution(
             "--workflow-run-id",
             str(scenario.intent.workflow_run_id),
             "--run-attempt",
-            str(scenario.intent.run_attempt),
+            str(scenario.binding.simulation.run_attempt),
             "--target",
             scenario.intent.target,
             *_uploaded_arguments(

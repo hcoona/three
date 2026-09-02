@@ -37,7 +37,6 @@ TARGET = "e" * 40
 NOW = datetime(2026, 9, 1, 6, 0, tzinfo=UTC)
 REPOSITORY_ROOT = Path("/controlled/current-run-repository")
 WORKFLOW_RUN_ID = 8101
-RUN_ATTEMPT = 3
 COMPLETE_EVENT_COUNT = 3
 REJECTED_EVENT_COUNT = 2
 EXPECTED_OPERATIONAL_ERROR_COUNT = 7
@@ -57,7 +56,6 @@ def _context() -> LiveEligibilityContext:
         purpose="live-release",
         request_id="release-request-42",
         workflow_run_id=WORKFLOW_RUN_ID,
-        run_attempt=RUN_ATTEMPT,
         selected_ref="refs/heads/release",
         target=TARGET,
         repository_model_digest="sha256:" + ("1" * 64),
@@ -190,7 +188,6 @@ def test_live_eligibility_runs_its_own_exact_target_static_reference_scan(
     assert len(events) == COMPLETE_EVENT_COUNT
     assert decision.static_reference is expected
     assert decision.context.workflow_run_id == WORKFLOW_RUN_ID
-    assert decision.context.run_attempt == RUN_ATTEMPT
     assert decision.result is EligibilityResult.PASS
     assert decision.diagnostics == ()
 

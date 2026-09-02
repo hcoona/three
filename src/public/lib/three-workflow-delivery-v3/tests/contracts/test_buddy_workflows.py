@@ -50,9 +50,53 @@ _WORKFLOW_CANCELLATION_FACT = (
 _LEGACY_WORKFLOW_CANCELLATION_FACT = (
     "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'"
 )
+ATTEMPT_ONE_CONDITION = "github.run_attempt == 1"
 EXPECTED_VALID_IDENTITY_CONDITION = (
-    "always() && needs.admit.outputs.identity-admitted == 'true'"
+    "always() && github.run_attempt == 1 && "
+    "needs.admit.outputs.identity-admitted == 'true'"
 )
+EXPECTED_CALLER_JOB_CONDITIONS = {
+    "request": ATTEMPT_ONE_CONDITION,
+    "discover-node": ATTEMPT_ONE_CONDITION,
+    "compile-model": ATTEMPT_ONE_CONDITION,
+    "evaluate-live-eligibility": ATTEMPT_ONE_CONDITION,
+    "run-live-attempt": (
+        "github.run_attempt == 1 && "
+        "needs.evaluate-live-eligibility.outputs.live-result == 'admitted'"
+    ),
+}
+EXPECTED_CALLEE_JOB_CONDITIONS = {
+    "admit": ATTEMPT_ONE_CONDITION,
+    "plan-qualification": ATTEMPT_ONE_CONDITION,
+    "build-tarball": ATTEMPT_ONE_CONDITION,
+    "project-test": ATTEMPT_ONE_CONDITION,
+    "npm-artifact-qualification": (
+        "always() && github.run_attempt == 1 && "
+        "needs.build-tarball.result != 'skipped'"
+    ),
+    "qualification-finalizer": (
+        "always() && github.run_attempt == 1 && "
+        "needs.build-tarball.result != 'skipped'"
+    ),
+    "observe-github-packages": (
+        "github.run_attempt == 1 && "
+        "needs.qualification-finalizer.outputs.qualification-result "
+        "== 'success'"
+    ),
+    "materialize-publication": ATTEMPT_ONE_CONDITION,
+    "approval": ATTEMPT_ONE_CONDITION,
+    "approval-finalizer": (
+        "always() && github.run_attempt == 1 && "
+        "needs.materialize-publication.result != 'skipped'"
+    ),
+    "publish-github-packages": (
+        "success() && github.run_attempt == 1 && "
+        "needs.approval-finalizer.outputs.capability-result == 'success' && "
+        "needs.approval-finalizer.outputs.publish-required == 'true'"
+    ),
+    "workflow-cancellation": "cancelled() && github.run_attempt == 1",
+    "release-finalizer": EXPECTED_VALID_IDENTITY_CONDITION,
+}
 EXPECTED_JOBS = {
     "admit",
     "plan-qualification",
@@ -280,9 +324,7 @@ def test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact() -> None:
         ),
         "cancel-in-progress": False,
     }
-    assert invoke["if"] == (
-        "needs.evaluate-live-eligibility.outputs.live-result == 'admitted'"
-    )
+    assert invoke["if"] == EXPECTED_CALLER_JOB_CONDITIONS["run-live-attempt"]
     assert "runs-on" not in invoke
     for job_name in (
         "request",
@@ -304,6 +346,18 @@ def test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact() -> None:
         for line in compile_shell.splitlines()
         if "execution-concurrency-key" in line or "execution_key" in line
     ] == []
+
+
+def test_every_authoritative_buddy_job_has_its_own_attempt_one_guard() -> None:
+    caller_jobs = _document(CALLER)["jobs"]
+    callee_jobs = _document(CALLEE)["jobs"]
+
+    assert {
+        name: job.get("if") for name, job in caller_jobs.items()
+    } == EXPECTED_CALLER_JOB_CONDITIONS
+    assert {
+        name: job.get("if") for name, job in callee_jobs.items()
+    } == EXPECTED_CALLEE_JOB_CONDITIONS
 
 
 def test_live_eligibility_block_is_uploaded_before_status_propagates() -> None:
@@ -588,6 +642,7 @@ def test_live_attempt_dag_environments_and_capability_gate_are_exact() -> None:
         "qualification-finalizer",
     )
     assert jobs["observe-github-packages"]["if"] == (
+        "github.run_attempt == 1 && "
         "needs.qualification-finalizer.outputs.qualification-result "
         "== 'success'"
     )
@@ -977,7 +1032,8 @@ def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() ->
     release_finalizer = jobs["release-finalizer"]
 
     assert npm_qualification["if"] == (
-        "always() && needs.build-tarball.result != 'skipped'"
+        "always() && github.run_attempt == 1 && "
+        "needs.build-tarball.result != 'skipped'"
     )
     prerequisite = (
         "needs.build-tarball.outputs.release-artifact-artifact-id != '' && "
@@ -1038,7 +1094,8 @@ def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() ->
     )
 
     assert qualification_finalizer["if"] == (
-        "always() && needs.build-tarball.result != 'skipped'"
+        "always() && github.run_attempt == 1 && "
+        "needs.build-tarball.result != 'skipped'"
     )
     assert set(_needs(qualification_finalizer)) == {
         "build-tarball",
@@ -1187,11 +1244,13 @@ def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() ->
     assert "needs.build-tarball.outputs.release-artifact" in close
 
     assert jobs["observe-github-packages"]["if"] == (
+        "github.run_attempt == 1 && "
         "needs.qualification-finalizer.outputs.qualification-result "
         "== 'success'"
     )
     assert jobs["approval-finalizer"]["if"] == (
-        "always() && needs.materialize-publication.result != 'skipped'"
+        "always() && github.run_attempt == 1 && "
+        "needs.materialize-publication.result != 'skipped'"
     )
     assert {
         name: jobs["approval-finalizer"]["outputs"][name]
@@ -1587,7 +1646,7 @@ def test_reviewer_archive_is_decompressed_with_transport_and_payload_bindings() 
             assert step["with"]["skip-decompress"] is True
 
 
-def test_authorization_raw_upload_materializes_exact_attempt_basename() -> None:
+def test_authorization_raw_upload_materializes_exact_run_basename() -> None:
     document = _document(CALLEE)
     _assert_existing_raw_uploads_keep_physical_names(document)
     jobs = document["jobs"]
@@ -1637,7 +1696,7 @@ def test_authorization_raw_upload_materializes_exact_attempt_basename() -> None:
     )
     assert (
         'name="wdv3-live-buddy-authorization-r${GITHUB_RUN_ID}-'
-        'ra${GITHUB_RUN_ATTEMPT}-${digest}.json"' in approval
+        '${digest}.json"' in approval
     )
     assert 'mv .wdv3/authorization.json ".wdv3/${name}"' in approval
     assert 'base64 -w0 ".wdv3/${name}"' in approval
@@ -1736,9 +1795,7 @@ def test_authorization_raw_upload_materializes_exact_attempt_basename() -> None:
         )
 
 
-def test_mutation_marker_raw_upload_and_consumers_use_attempt_basename() -> (
-    None
-):
+def test_mutation_marker_raw_upload_and_consumers_use_run_basename() -> None:
     document = _document(CALLEE)
     _assert_existing_raw_uploads_keep_physical_names(document)
     publisher = document["jobs"]["publish-github-packages"]
@@ -1756,13 +1813,11 @@ def test_mutation_marker_raw_upload_and_consumers_use_attempt_basename() -> (
     bundle = _run(_step(publisher, "Form Capability Group Result Bundle"))
 
     marker_name = (
-        "wdv3-live-buddy-mutation-may-have-started-"
-        "r${{ github.run_id }}-ra${{ github.run_attempt }}"
+        "wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}"
     )
     marker_path = f".wdv3/{marker_name}"
     marker_shell_name = (
-        "wdv3-live-buddy-mutation-may-have-started-"
-        "r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}"
+        "wdv3-live-buddy-mutation-may-have-started-r${GITHUB_RUN_ID}"
     )
     marker_shell_path = f".wdv3/{marker_shell_name}"
     assert marker_step["id"] == "mark-mutation"
@@ -1924,7 +1979,7 @@ def test_commit8_publish_gate_compares_the_exact_success_result() -> None:
     publisher = _document(CALLEE)["jobs"]["publish-github-packages"]
 
     assert publisher["if"] == (
-        "success() && "
+        "success() && github.run_attempt == 1 && "
         "needs.approval-finalizer.outputs.capability-result == 'success' && "
         "needs.approval-finalizer.outputs.publish-required == 'true'"
     )
@@ -1987,7 +2042,9 @@ def test_publication_preparation_interruption_uses_direct_platform_facts() -> (
         step.get("name") != "Record workflow cancellation"
         for step in _steps(finalizer)
     )
-    assert jobs["workflow-cancellation"]["if"] == "cancelled()"
+    assert jobs["workflow-cancellation"]["if"] == (
+        "cancelled() && github.run_attempt == 1"
+    )
     assert _LEGACY_WORKFLOW_CANCELLATION_FACT not in command
     assert finalize["if"] == "success() || cancelled()"
     assert (
@@ -2238,7 +2295,8 @@ def test_commit8_missing_authorization_reaches_approval_finalizer() -> None:
     command = _run(_step(finalizer, "Admit exact capability closure"))
 
     assert finalizer["if"] == (
-        "always() && needs.materialize-publication.result != 'skipped'"
+        "always() && github.run_attempt == 1 && "
+        "needs.materialize-publication.result != 'skipped'"
     )
     assert set(_needs(finalizer)) == {"materialize-publication", "approval"}
     assert "needs.approval.result" in command
@@ -2250,10 +2308,12 @@ def test_commit8_dag_order_retention_and_error_propagation_are_exact() -> None:
     jobs = _document(CALLEE)["jobs"]
     assert set(jobs) == EXPECTED_JOBS
     assert jobs["qualification-finalizer"]["if"] == (
-        "always() && needs.build-tarball.result != 'skipped'"
+        "always() && github.run_attempt == 1 && "
+        "needs.build-tarball.result != 'skipped'"
     )
     assert jobs["approval-finalizer"]["if"] == (
-        "always() && needs.materialize-publication.result != 'skipped'"
+        "always() && github.run_attempt == 1 && "
+        "needs.materialize-publication.result != 'skipped'"
     )
     assert jobs["release-finalizer"]["if"] == EXPECTED_VALID_IDENTITY_CONDITION
 
@@ -2449,8 +2509,7 @@ def test_user_item11_publisher_preflight_and_start_marker_are_separate() -> (
     marker_command = _run(marker)
     preflight_path = ".wdv3/publication-preflight.json"
     marker_name = (
-        "wdv3-live-buddy-mutation-may-have-started-"
-        "r${{ github.run_id }}-ra${{ github.run_attempt }}"
+        "wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}"
     )
     marker_path = f".wdv3/{marker_name}"
 
@@ -2460,7 +2519,7 @@ def test_user_item11_publisher_preflight_and_start_marker_are_separate() -> (
     assert f"--preflight {preflight_path}" in marker_command
     assert (
         '--marker-output ".wdv3/wdv3-live-buddy-mutation-may-have-started-'
-        'r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}"' in marker_command
+        'r${GITHUB_RUN_ID}"' in marker_command
     )
     assert marker_path not in preflight_command
     assert ".wdv3/mutation-may-have-started.json" not in marker_command
@@ -2835,12 +2894,12 @@ def _phase2_assert_successful_finalizer(
     assert "finalizer-status=0" in execution["github_output"]
     assert re.search(
         r"outcome-artifact-name=wdv3-live-buddy-attempt-outcome-"
-        r"r424242-ra3-[0-9a-f]{64}\.json",
+        r"r424242-[0-9a-f]{64}\.json",
         execution["github_output"],
     )
     assert re.search(
         r"summary-artifact-name=wdv3-live-buddy-attempt-summary-"
-        r"r424242-ra3-[0-9a-f]{64}\.md",
+        r"r424242-[0-9a-f]{64}\.md",
         execution["github_output"],
     )
     return argv
@@ -3842,10 +3901,10 @@ def test_incomplete_preparation_retains_diagnostics_before_job_failure(
         execution["summary"].read_bytes()
     ).hexdigest()
     assert outputs["outcome-artifact-name"] == (
-        f"wdv3-live-buddy-attempt-outcome-r424242-ra3-{outcome_digest}.json"
+        f"wdv3-live-buddy-attempt-outcome-r424242-{outcome_digest}.json"
     )
     assert outputs["summary-artifact-name"] == (
-        f"wdv3-live-buddy-attempt-summary-r424242-ra3-{summary_digest}.md"
+        f"wdv3-live-buddy-attempt-summary-r424242-{summary_digest}.md"
     )
 
 
@@ -3968,7 +4027,7 @@ def test_workflow_cancellation_witness_has_exact_job_contract(
 
     assert set(jobs) == EXPECTED_JOBS
     witness = jobs["workflow-cancellation"]
-    assert witness["if"] == "cancelled()"
+    assert witness["if"] == "cancelled() && github.run_attempt == 1"
     assert _needs(witness) == _WORKFLOW_CANCELLATION_AUTHORITIES
     assert witness["permissions"] == {}
     assert [step.get("name") for step in _steps(witness)] == [

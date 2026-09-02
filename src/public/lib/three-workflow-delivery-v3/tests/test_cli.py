@@ -825,7 +825,6 @@ def test_compile_simulation_model_consumes_uploaded_provider_without_rerun(
         target=target,
         actor="release-operator",
         workflow_run_id=WORKFLOW_RUN_ID,
-        run_attempt=RUN_ATTEMPT,
     )
     intent_path = _write_canonical(
         tmp_path / "release-intent.json",
@@ -2216,7 +2215,6 @@ def test_capability_cli_persists_expiry_decision_before_returning_one(  # noqa: 
             target=target,
         ),
         workflow_run_id=WORKFLOW_RUN_ID,
-        run_attempt=RUN_ATTEMPT,
     )
     projection_id = "projection:npm:github-packages"
     publication = PublicationSnapshot(
@@ -2252,7 +2250,6 @@ def test_capability_cli_persists_expiry_decision_before_returning_one(  # noqa: 
             f"sha256:{hashlib.sha256(summary_bytes).hexdigest()}"
         ),
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
         approval_job_id=711,
         approval_job="approval",
         environment="workflow-delivery-v3-buddy-approval",
@@ -2402,7 +2399,6 @@ def test_capability_cli_persists_expiry_decision_before_returning_one(  # noqa: 
         producer="approval-finalizer",
         control=control,
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
         result="blocked",
         diagnostics=("governance-attestation-expired",),
     )
@@ -3070,7 +3066,6 @@ def _valid_mutation_marker_fixture(
             target="e" * 40,
         ),
         workflow_run_id=WORKFLOW_RUN_ID,
-        run_attempt=RUN_ATTEMPT,
     )
     action = SimpleNamespace(
         action_digest="sha256:" + ("c" * 64),
@@ -3240,7 +3235,6 @@ def _run_compile_live_model_scenario(
         target=target,
         actor="release-operator",
         workflow_run_id=WORKFLOW_RUN_ID,
-        run_attempt=RUN_ATTEMPT,
     )
     intent_path = _write_canonical(
         tmp_path / "live-release-intent.json",
@@ -3656,7 +3650,6 @@ def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
         purpose="live-release",
         request_id="release-request-live-root-forwarding",
         workflow_run_id=WORKFLOW_RUN_ID,
-        run_attempt=3,
         selected_ref="refs/heads/release",
         target=target,
         repository_model_digest=model_digest,

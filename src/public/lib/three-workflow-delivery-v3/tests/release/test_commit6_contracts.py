@@ -185,7 +185,7 @@ def test_simulation_identity_requires_admitted_current_model(
         )
 
 
-def test_release_request_is_stable_but_intent_binds_rerun_attempt(
+def test_release_intent_is_stable_while_simulation_reruns_are_distinct(
     intent: ReleaseIntent,
     admitted_repository_model: AdmittedRepositoryModelSnapshot,
     binding: SimulationBinding,
@@ -196,22 +196,24 @@ def test_release_request_is_stable_but_intent_binds_rerun_attempt(
         target=intent.target,
         actor=intent.actor,
         workflow_run_id=intent.workflow_run_id,
-        run_attempt=intent.run_attempt + 1,
     )
 
     assert intent.workflow_ref == intent.selected_ref
     assert intent.workflow_sha == intent.target
     assert rerun_intent.request_id == intent.request_id
-    assert rerun_intent.run_attempt == intent.run_attempt + 1
-    assert rerun_intent.intent_digest != intent.intent_digest
-    with pytest.raises(ValueError, match="run_attempt"):
+    assert rerun_intent.intent_digest == intent.intent_digest
+    assert "run-attempt" not in rerun_intent.to_document()
+    assert (
         derive_simulation_binding(rerun_intent, admitted_repository_model)
+        == binding
+    )
 
+    rerun_attempt = binding.simulation.run_attempt + 1
     rerun_snapshot = replace(
         admitted_repository_model.snapshot,
         context=replace(
             admitted_repository_model.snapshot.context,
-            run_attempt=rerun_intent.run_attempt,
+            run_attempt=rerun_attempt,
         ),
     )
     rerun_model = admit_repository_model_snapshot(
@@ -222,7 +224,7 @@ def test_release_request_is_stable_but_intent_binds_rerun_attempt(
     rerun_binding = derive_simulation_binding(rerun_intent, rerun_model)
 
     assert rerun_binding.simulation.request_id == intent.request_id
-    assert rerun_binding.simulation.run_attempt == rerun_intent.run_attempt
+    assert rerun_binding.simulation.run_attempt == rerun_attempt
     assert rerun_binding.simulation.identity != binding.simulation.identity
 
 
@@ -256,13 +258,14 @@ def test_identity_field_order_and_live_identity_shapes_are_exact() -> None:
         OfficialProductIdentity("official", "unit-b", "1.0.0"),
     )
     execution = OfficialExecutionIdentity(products[0], "a" * 40)
-    attempt = ReleaseAttemptIdentity(execution, 91, 2)
+    attempt = ReleaseAttemptIdentity(execution, 91)
+    retry = ReleaseAttemptIdentity(execution, 92)
     assert tuple(attempt.to_document()) == (
         "schema",
         "execution",
         "workflow-run-id",
-        "run-attempt",
     )
+    assert retry != attempt
 
 
 def test_canonical_release_record_admission_rejects_tampering(

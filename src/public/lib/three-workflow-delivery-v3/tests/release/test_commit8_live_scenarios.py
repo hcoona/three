@@ -195,7 +195,6 @@ def _closure(scenario, *, with_action: bool):
             target=scenario.snapshot.target,
         ),
         workflow_run_id=scenario.binding.simulation.workflow_run_id,
-        run_attempt=scenario.binding.simulation.run_attempt,
     )
     original = scenario.snapshot.destination_projections[0]
     coordinate = ExternalPackageCoordinate(
@@ -247,9 +246,10 @@ def _closure(scenario, *, with_action: bool):
                 output=scenario.artifact.output,
                 qualification_snapshot_digest=snapshot.snapshot_digest,
                 workflow_run_id=attempt.workflow_run_id,
-                run_attempt=attempt.run_attempt,
+                run_attempt=None,
                 producer=scenario.artifact.transport.producer,
             ),
+            run_attempt=None,
         )
         provenance = scenario.artifact.provenance_document()
         provenance["subject"] = attempt.to_document()
@@ -320,7 +320,6 @@ def _closure(scenario, *, with_action: bool):
         reviewer_summary_upload_digest="sha256:" + ("2" * 64),
         reviewer_summary_payload_digest=SUMMARY_DIGEST,
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
         approval_job_id=711,
         approval_job="approval",
         environment="workflow-delivery-v3-buddy-approval",
@@ -1042,7 +1041,6 @@ def _successful_action_records(publication: PublicationSnapshot):
         producer="publish-github-packages",
         control=CONTROL,
         workflow_run_id=publication.attempt.workflow_run_id,
-        run_attempt=publication.attempt.run_attempt,
     )
     result = ActionResult(
         attempt=publication.attempt,
@@ -1062,7 +1060,6 @@ def _successful_action_records(publication: PublicationSnapshot):
         producer="publish-github-packages",
         control=CONTROL,
         workflow_run_id=publication.attempt.workflow_run_id,
-        run_attempt=publication.attempt.run_attempt,
     )
     bundle = CapabilityGroupResultBundle(
         attempt=publication.attempt,
@@ -1074,7 +1071,6 @@ def _successful_action_records(publication: PublicationSnapshot):
         producer="publish-github-packages",
         control=CONTROL,
         workflow_run_id=publication.attempt.workflow_run_id,
-        run_attempt=publication.attempt.run_attempt,
     )
     return action, result, bundle, receipt
 
@@ -1228,7 +1224,6 @@ def test_live_finalizer_recomputes_action_result_receipt_transport_closure(
         producer=bundle.producer,
         control=bundle.control,
         workflow_run_id=bundle.workflow_run_id,
-        run_attempt=bundle.run_attempt,
     )
     with pytest.raises(ValueError, match="Action Result binding"):
         finalize_attempt_outcome(
@@ -1269,7 +1264,6 @@ def test_receipt_loss_after_possible_mutation_requires_reobservation() -> None:
             target=TARGET,
         ),
         workflow_run_id=101,
-        run_attempt=2,
     )
     incomplete = ActionResult(
         attempt=attempt,
@@ -1289,7 +1283,6 @@ def test_receipt_loss_after_possible_mutation_requires_reobservation() -> None:
         producer="publish-github-packages",
         control=CONTROL,
         workflow_run_id=101,
-        run_attempt=2,
     )
 
     assert incomplete.outcome == "incomplete"
@@ -1703,7 +1696,10 @@ def test_whole_release_replay_rejects_mixed_attempt_capability_records(
     attempt, decision, publication, authorization = _closure(
         qualified_simulation, with_action=False
     )
-    other_attempt = replace(attempt, run_attempt=attempt.run_attempt + 1)
+    other_attempt = replace(
+        attempt,
+        workflow_run_id=attempt.workflow_run_id + 1,
+    )
     foreign = CapabilityAdmissionDecision(
         attempt=other_attempt,
         authorization_digest=authorization.authorization_digest,
@@ -1732,7 +1728,6 @@ def test_whole_release_replay_rejects_mixed_attempt_capability_records(
         producer="approval-finalizer",
         control=CONTROL,
         workflow_run_id=other_attempt.workflow_run_id,
-        run_attempt=other_attempt.run_attempt,
         result="success",
         diagnostics=(),
     )
@@ -2004,7 +1999,6 @@ def _failed_action_bundle(
         producer="publish-github-packages",
         control=CONTROL,
         workflow_run_id=publication.attempt.workflow_run_id,
-        run_attempt=publication.attempt.run_attempt,
     )
     return CapabilityGroupResultBundle(
         attempt=publication.attempt,
@@ -2016,7 +2010,6 @@ def _failed_action_bundle(
         producer="publish-github-packages",
         control=CONTROL,
         workflow_run_id=publication.attempt.workflow_run_id,
-        run_attempt=publication.attempt.run_attempt,
     )
 
 

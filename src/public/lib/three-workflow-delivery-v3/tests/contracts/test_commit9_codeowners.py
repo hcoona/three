@@ -440,7 +440,7 @@ def test_actual_buddy_workflow_passes_github_ref_as_selected_ref_without_ownersh
     assert "release normalize-live-request" in command
     assert '--selected-ref "${GITHUB_REF}"' in command
     assert 'echo "selected-ref=${GITHUB_REF}" >> "${GITHUB_OUTPUT}"' in command
-    assert "if" not in request
+    assert request["if"] == "github.run_attempt == 1"
     assert "if" not in normalization_step
     assert all(
         "github.ref" not in condition.casefold() for condition in conditions

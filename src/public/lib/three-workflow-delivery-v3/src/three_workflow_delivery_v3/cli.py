@@ -2005,15 +2005,25 @@ def _release_bindings(
     request_id: str | None = None,
     execution: BuddyExecutionIdentity | None = None,
 ) -> ReleaseAdmissionBindings:
+    platform_run_attempt = _platform_run_attempt(arguments)
     return ReleaseAdmissionBindings(
         purpose=purpose,
         workflow_run_id=arguments.workflow_run_id,
-        run_attempt=arguments.run_attempt,
+        run_attempt=(
+            None if purpose == "live-release" else platform_run_attempt
+        ),
         target=arguments.target,
         producer=producer,
         request_id=request_id,
         execution=execution,
     )
+
+
+def _platform_run_attempt(arguments: argparse.Namespace) -> int:
+    value = arguments.run_attempt
+    if type(value) is not int or value <= 0:
+        raise ValueError("run-attempt must be a positive non-Boolean integer")
+    return value
 
 
 def _qualification_purpose(arguments: argparse.Namespace) -> str:
@@ -2122,12 +2132,16 @@ def _load_release_record(  # noqa: PLR0913
     return admitted
 
 
-def _release_model_context(intent: ReleaseIntent) -> CompilationContext:
+def _release_model_context(
+    intent: ReleaseIntent,
+    *,
+    run_attempt: int,
+) -> CompilationContext:
     return CompilationContext(
         request_id=intent.request_id,
         purpose="release-simulation",
         workflow_run_id=intent.workflow_run_id,
-        run_attempt=intent.run_attempt,
+        run_attempt=run_attempt,
         target=intent.target,
         producer="compile-simulation-model",
         control=f"workflow-delivery-v3:{intent.target}",
@@ -2191,7 +2205,10 @@ def _load_release_model(
     )
     return admit_repository_model_snapshot(
         content,
-        expected_context=_release_model_context(intent),
+        expected_context=_release_model_context(
+            intent,
+            run_attempt=_platform_run_attempt(arguments),
+        ),
         expected_digest=arguments.repository_model_digest,
     )
 
@@ -2362,13 +2379,13 @@ def _load_live_qualification_decision(
 
 
 def _release_normalize_request_command(arguments: argparse.Namespace) -> int:
+    _platform_run_attempt(arguments)
     intent = normalize_official_simulation_intent(
         repository=arguments.repository,
         selected_ref=arguments.selected_ref,
         target=arguments.target,
         actor=arguments.actor,
         workflow_run_id=arguments.workflow_run_id,
-        run_attempt=arguments.run_attempt,
     )
     _write_output(arguments.output, intent.to_document())
     _record_outputs(
@@ -2391,7 +2408,10 @@ def _release_admit_intent_command(arguments: argparse.Namespace) -> int:
 def _release_compile_model_command(arguments: argparse.Namespace) -> int:
     intent = _load_release_intent(arguments)
     repo_root = Path(arguments.repo_root).resolve()
-    context = _release_model_context(intent)
+    context = _release_model_context(
+        intent,
+        run_attempt=_platform_run_attempt(arguments),
+    )
     manifest = first_slice_provider_manifest(
         context,
         provider_producer="discover-node",
@@ -2529,7 +2549,11 @@ def _release_plan_qualification_command(arguments: argparse.Namespace) -> int:
                     output=snapshot.outputs[0],
                     qualification_snapshot_digest=snapshot.snapshot_digest,
                     workflow_run_id=arguments.workflow_run_id,
-                    run_attempt=arguments.run_attempt,
+                    run_attempt=(
+                        None
+                        if purpose == "live-release"
+                        else _platform_run_attempt(arguments)
+                    ),
                     producer="build-tarball",
                 ),
             ),
@@ -2585,6 +2609,7 @@ def _release_run_build_command(arguments: argparse.Namespace) -> int:
 
 def _release_form_artifact_command(arguments: argparse.Namespace) -> int:
     snapshot = _load_qualification_snapshot(arguments)
+    purpose = _qualification_purpose(arguments)
     context = _load_release_adapter_context(arguments, snapshot)
     tarball = Path(arguments.tarball).read_bytes()
     mechanics = mechanical_build_from_bytes(
@@ -2604,7 +2629,11 @@ def _release_form_artifact_command(arguments: argparse.Namespace) -> int:
         transport_digest=_normalized_digest(arguments.tarball_artifact_digest),
         producer="build-tarball",
         workflow_run_id=arguments.workflow_run_id,
-        run_attempt=arguments.run_attempt,
+        run_attempt=(
+            None
+            if purpose == "live-release"
+            else _platform_run_attempt(arguments)
+        ),
     )
     artifact, evidence = form_uploaded_release_artifact(
         snapshot,
@@ -2970,13 +2999,13 @@ def _release_finalize_simulation_command(
 def _release_normalize_live_request_command(
     arguments: argparse.Namespace,
 ) -> int:
+    _platform_run_attempt(arguments)
     intent = normalize_buddy_live_intent(
         repository=arguments.repository,
         selected_ref=arguments.selected_ref,
         target=arguments.target,
         actor=arguments.actor,
         workflow_run_id=arguments.workflow_run_id,
-        run_attempt=arguments.run_attempt,
     )
     _write_output(arguments.output, intent.to_document())
     _record_outputs(
@@ -3064,6 +3093,7 @@ def _release_compile_live_model_command(arguments: argparse.Namespace) -> int:
 def _release_evaluate_live_eligibility_command(
     arguments: argparse.Namespace,
 ) -> int:
+    _platform_run_attempt(arguments)
     intent = _load_live_intent(arguments)
     model = _load_live_model(arguments, intent)
     repository_root = Path(arguments.repo_root).resolve()
@@ -3079,7 +3109,6 @@ def _release_evaluate_live_eligibility_command(
         purpose="live-release",
         request_id=intent.request_id,
         workflow_run_id=arguments.workflow_run_id,
-        run_attempt=arguments.run_attempt,
         selected_ref=intent.selected_ref,
         target=arguments.target,
         repository_model_digest=model.canonical_digest,
@@ -3191,6 +3220,7 @@ def _admitted_live_eligibility_decision(
 
 
 def _release_bind_live_attempt_command(arguments: argparse.Namespace) -> int:
+    _platform_run_attempt(arguments)
     intent = _load_live_intent(arguments)
     model = _load_live_model(arguments, intent)
     eligibility, _policy = _admitted_live_eligibility_decision(
@@ -3199,7 +3229,6 @@ def _release_bind_live_attempt_command(arguments: argparse.Namespace) -> int:
         model,
         admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
     )
-    history_snapshot = _history_snapshot_from_file(arguments, intent)
     binding = derive_release_attempt_binding(
         intent=intent,
         execution=derive_buddy_execution_identity(intent),
@@ -3212,18 +3241,13 @@ def _release_bind_live_attempt_command(arguments: argparse.Namespace) -> int:
             arguments.live_eligibility_payload_digest
         ),
         attestation_provenance=eligibility.governance.provenance,
-        history_snapshot=history_snapshot,
-        history_snapshot_artifact_id=arguments.history_snapshot_artifact_id,
-        history_snapshot_artifact_digest=_normalized_digest(
-            arguments.history_snapshot_artifact_digest
-        ),
     )
     _write_output(arguments.output, binding.to_document())
     _record_outputs(
         arguments.github_output,
         role="attempt-binding",
         digest=binding.binding_digest,
-        extra=(("attempt-run-attempt", binding.attempt.run_attempt),),
+        extra=(("workflow-run-id", binding.attempt.workflow_run_id),),
     )
     return 0
 
@@ -3294,7 +3318,6 @@ def _render_publication_reviewer_summary(
         f"- Selected ref: `{intent.selected_ref}`",
         f"- Target SHA: `{qualification_snapshot.target}`",
         (f"- Workflow run: `{publication_snapshot.attempt.workflow_run_id}`"),
-        f"- Run attempt: `{publication_snapshot.attempt.run_attempt}`",
         (
             "- Package coordinate: "
             f"`{coordinate.package_name}@{coordinate.native_version}`"
@@ -4168,7 +4191,6 @@ def _release_form_github_packages_result_command(
         producer="publish-github-packages",
         control=cast("str", state_value["control"]),
         workflow_run_id=publication.attempt.workflow_run_id,
-        run_attempt=publication.attempt.run_attempt,
     )
     bundle = CapabilityGroupResultBundle(
         attempt=publication.attempt,
@@ -4182,7 +4204,6 @@ def _release_form_github_packages_result_command(
         producer="publish-github-packages",
         control=result.control,
         workflow_run_id=publication.attempt.workflow_run_id,
-        run_attempt=publication.attempt.run_attempt,
     )
     _write_output(arguments.result_output, result.to_document())
     _write_output(arguments.bundle_output, bundle.to_document())
@@ -6154,17 +6175,6 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     bind_attempt.add_argument(
         "--live-eligibility-payload-digest",
-        required=True,
-    )
-    bind_attempt.add_argument("--history-snapshot", required=True)
-    bind_attempt.add_argument("--history-snapshot-digest", required=True)
-    bind_attempt.add_argument(
-        "--history-snapshot-artifact-id",
-        required=True,
-        type=int,
-    )
-    bind_attempt.add_argument(
-        "--history-snapshot-artifact-digest",
         required=True,
     )
     bind_attempt.add_argument("--output", required=True)

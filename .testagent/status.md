@@ -14606,3 +14606,90 @@ identity, release transport, and current-context admission. Legacy record
 retirement remains a later phase within this record-model unit.
 
 <!-- END APPEND: 2026-09-02-wdv3-record-model-provider-compiler-closure -->
+
+<!-- BEGIN APPEND: 2026-09-02-wdv3-record-model-attempt-transport-closure -->
+
+## Workflow Delivery v3 Attempt/transport contraction closure
+
+### Implemented boundary
+
+- Normal-Live `ReleaseIntent` and `ReleaseAttemptIdentity` no longer carry
+  `run_attempt`. A Live Attempt is the exact Release Execution Identity plus
+  one unique `workflow_run_id`.
+- Live Eligibility, release artifact transport, qualification Evidence,
+  Authorization, capability admission, action Result, Receipt, capability
+  bundle, and current-authority admission omit and reject a Live run-attempt
+  field. Strict parsers provide no compatibility path for the superseded wire
+  shape.
+- Simulation and CI retain positive non-Boolean attempt binding. Simulation
+  Identity obtains its attempt from the admitted Repository Model context;
+  Release Intent bytes remain stable across reruns of the same workflow run.
+- Live CLI commands still validate the platform `--run-attempt` input and use
+  it for attempt-specific GitHub job lookup and diagnostics, but do not copy it
+  into normal-Live domain records.
+- `ReleaseAttemptBinding` no longer binds an Execution History Admission
+  Snapshot. Until the next legacy-retirement phase, a recognized new-format
+  history artifact without an attempt selector fails closed rather than
+  receiving inferred compatibility state.
+- Normal-Live JSON, Markdown, tarball, and mutation-marker basenames omit run
+  attempt. Simulation and CI naming remain attempt-bound.
+- All five outer workflow jobs and all thirteen reusable-workflow jobs now
+  independently require `github.run_attempt == 1`. Existing eligibility,
+  dependency, `success()`, `cancelled()`, and `always()` conditions remain
+  conjunctive.
+
+### Canonical closure
+
+| Record | Canonical digest |
+|---|---|
+| Official Simulation Intent | `sha256:a40a60a1b4699880038eeb57c51979f756778ab705b644c116750f71d358b4fc` |
+| Current Authority | `sha256:bfadf748e203e4d005d6fe29ea3b06ddccad3b22aea13b1364af0b65dc6d3d16` |
+
+The bounded static-reference policy digest remains
+`sha256:c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d`.
+
+### Validation
+
+| Evidence | Result |
+|---|---|
+| Initial complete v3 suite | 4,249 passed |
+| Post-fix workflow contracts | 164 passed |
+| Workflow plus CODEOWNERS contracts | 200 passed |
+| Production-source Pyrefly | 0 errors |
+| Final staged repository gate | Exit 0; 4,250 v3 tests passed |
+| Actionlint, Ruff, Ruff format, JSON, typos, EditorConfig | Passed |
+| Canonical index static-reference scan | `clean`; zero findings |
+| Final staged diff check | Exit 0 |
+
+The final staged gate covered 40 implementation, workflow, fixture, and test
+files. It ran static-reference authority preparation unconditionally and left
+`mise.lock` and `uv.lock` unchanged.
+
+### Review and adjudication
+
+- Independent core-record and runtime-integration reviewers reported
+  `No findings`.
+- The workflow reviewer found that attempt-free transport could be consumed by
+  a partial rerun because authoritative jobs lacked the normative independent
+  attempt-one admission. An independent adjudicator classified the finding TP,
+  blocking/high, with 9/10 confidence.
+- The fix added job-level attempt-one conditions to the complete five-job
+  caller and thirteen-job reusable workflow. A closed condition-map contract
+  fails if any guard is removed or weakened. The adjacent selected-ref test
+  now distinguishes the required attempt guard from a forbidden ownership
+  gate.
+- A fresh closure reviewer reported `No findings`.
+
+### Scope and next phase
+
+The phase contracted only normal-Live Attempt identity, related records,
+transport/admission, and the directly required attempt-one workflow invariant.
+It introduced no universal envelope, compatibility parser, default attempt,
+Governance change, activation, package mutation, deployment, cleanup, or other
+external operation. Protected Governance remains `live_enabled=false`.
+
+The next dependency-ordered phase retires the remaining legacy normal-Live
+history, Environment Profile, capability-group, and standalone Receipt
+transport surfaces, then closes record-model integration.
+
+<!-- END APPEND: 2026-09-02-wdv3-record-model-attempt-transport-closure -->

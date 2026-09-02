@@ -227,7 +227,9 @@ def _evidence(  # noqa: PLR0913
 ) -> QualificationEvidence:
     subject = _subject(snapshot)
     workflow_run_id = subject.workflow_run_id
-    run_attempt = subject.run_attempt
+    run_attempt = (
+        subject.run_attempt if isinstance(subject, SimulationIdentity) else None
+    )
     evidence = QualificationEvidence(
         evidence_id=obligation.expected_evidence_id,
         subject=subject,
@@ -265,7 +267,12 @@ def admit_evidence_for_snapshot(  # noqa: C901
         or evidence.evidence_id != planned.expected_evidence_id
         or evidence.producer != _producer(planned.obligation_id)
         or evidence.workflow_run_id != subject.workflow_run_id
-        or evidence.run_attempt != subject.run_attempt
+        or evidence.run_attempt
+        != (
+            subject.run_attempt
+            if isinstance(subject, SimulationIdentity)
+            else None
+        )
     ):
         message = "Qualification Evidence does not match the current Snapshot"
         raise ValueError(message)

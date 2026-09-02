@@ -383,6 +383,7 @@ def _binding_payload(
     source_run_id: int,
     run_attempt: int,
 ) -> bytes:
+    del run_attempt
     execution = BuddyExecutionIdentity(
         channel="buddy",
         release_unit="hcoona-release-smoke-npm",
@@ -395,7 +396,6 @@ def _binding_payload(
         attempt=ReleaseAttemptIdentity(
             execution=execution,
             workflow_run_id=source_run_id,
-            run_attempt=run_attempt,
         ),
         repository_model_digest="sha256:" + ("1" * 64),
         live_eligibility_artifact_id=709,
@@ -409,8 +409,6 @@ def _binding_payload(
             ("repository", "hcoona/three"),
             ("resolved-commit", TARGET),
         ),
-        history_snapshot_artifact_id=710,
-        history_snapshot_artifact_digest="sha256:" + ("5" * 64),
     )
     return json.dumps(
         binding.to_document(),
@@ -424,6 +422,7 @@ def _outcome_payload(
     source_run_id: int,
     run_attempt: int,
 ) -> bytes:
+    del run_attempt
     execution = BuddyExecutionIdentity(
         channel="buddy",
         release_unit="hcoona-release-smoke-npm",
@@ -433,7 +432,6 @@ def _outcome_payload(
         attempt=ReleaseAttemptIdentity(
             execution=execution,
             workflow_run_id=source_run_id,
-            run_attempt=run_attempt,
         ),
         qualification_decision_digest="sha256:" + ("d" * 64),
         publication_snapshot_digest=None,
@@ -751,7 +749,7 @@ def test_missing_binding_after_retention_remains_unavailable_history() -> None:
     assert snapshot.records == ()
 
 
-def test_recent_retained_binding_satisfies_platform_formation_expectation() -> (
+def test_recent_retained_binding_without_attempt_number_is_not_history() -> (
     None
 ):
     client = _DiscoveryClient(
@@ -775,16 +773,17 @@ def test_recent_retained_binding_satisfies_platform_formation_expectation() -> (
         },
     )
 
-    snapshot = _discover(
-        client,
-        observed_at=datetime(2026, 8, 20, tzinfo=UTC),
-    )
+    with pytest.raises(
+        ValueError,
+        match="recognized history artifact lacks run-attempt selector",
+    ):
+        _discover(
+            client,
+            observed_at=datetime(2026, 8, 20, tzinfo=UTC),
+        )
 
-    assert tuple(record.artifact_id for record in snapshot.records) == (92501,)
-    assert snapshot.records[0].queried_run_attempt == 1
 
-
-def test_raw_canonical_attempt_outcome_is_admitted_as_execution_history() -> (
+def test_attempt_outcome_without_attempt_number_is_not_execution_history() -> (
     None
 ):
     artifact_id = 92701
@@ -797,13 +796,11 @@ def test_raw_canonical_attempt_outcome_is_admitted_as_execution_history() -> (
         payloads={artifact_id: payload},
     )
 
-    snapshot = _discover(client)
-
-    record = snapshot.records[0]
-    assert record.artifact_id == artifact_id
-    assert record.artifact_digest == digest
-    assert record.payload_digest == digest
-    assert record.queried_run_attempt == 1
+    with pytest.raises(
+        ValueError,
+        match="recognized history artifact lacks run-attempt selector",
+    ):
+        _discover(client)
 
 
 def test_exact_attempt_job_truncation_fails_before_artifact_gating(
@@ -1120,8 +1117,10 @@ def test_discovery_retains_optional_terminal_phase_facts(
     ("phase", "normalized"),
     [
         (
-            "Run same-revision Buddy live Attempt / "
-            "Finalize live Attempt outcome",
+            (
+                "Run same-revision Buddy live Attempt / "
+                "Finalize live Attempt outcome"
+            ),
             "Finalize live Attempt outcome",
         ),
         (
@@ -1457,7 +1456,7 @@ def test_history_snapshot_admission_binds_complete_current_identity() -> None:
     bindings = ReleaseAdmissionBindings(
         purpose="live-release",
         workflow_run_id=snapshot.current_workflow_run_id,
-        run_attempt=snapshot.current_run_attempt,
+        run_attempt=None,
         target=snapshot.execution.target,
         request_id=snapshot.request_id,
         execution=snapshot.execution,
@@ -1496,10 +1495,6 @@ def test_history_snapshot_admission_binds_complete_current_identity() -> None:
                 workflow_run_id=bindings.workflow_run_id + 1,
             ),
             "workflow_run_id",
-        ),
-        (
-            replace(bindings, run_attempt=bindings.run_attempt + 1),
-            "run_attempt",
         ),
         (replace(bindings, target="f" * 40), "target"),
     ):
@@ -1633,31 +1628,15 @@ def test_same_run_prior_attempt_remains_history_only_without_provenance_claims()
     assert document["diagnostic-claims"] != []
 
 
-def test_attempt_binding_requires_preexisting_exact_history_snapshot() -> None:
+def test_attempt_binding_requires_exact_live_intent_and_execution() -> None:
     intent = normalize_buddy_live_intent(
         repository="hcoona/three",
         selected_ref="refs/heads/feature",
         target=TARGET,
         actor="reviewed-actor",
         workflow_run_id=700,
-        run_attempt=2,
     )
     execution = derive_buddy_execution_identity(intent)
-    history = form_execution_history_admission_snapshot(
-        authority="execution-history",
-        request_id=intent.request_id,
-        current_workflow_run_id=intent.workflow_run_id,
-        current_run_attempt=intent.run_attempt,
-        execution=execution,
-        query_basis=("workflow:runs",),
-        pagination_basis=("runs:exhausted",),
-        records=(),
-        queries_complete=True,
-        pagination_complete=True,
-        malformed_results=False,
-        expected_result_count=0,
-        attempt_created=False,
-    )
     provenance = (
         ("blob-oid", "blob"),
         ("content-sha256", "sha256:" + ("9" * 64)),
@@ -1675,18 +1654,16 @@ def test_attempt_binding_requires_preexisting_exact_history_snapshot() -> None:
         live_eligibility_artifact_digest="sha256:" + ("b" * 64),
         live_eligibility_payload_digest="sha256:" + ("c" * 64),
         attestation_provenance=provenance,
-        history_snapshot=history,
-        history_snapshot_artifact_id=HISTORY_SNAPSHOT_ARTIFACT_ID,
-        history_snapshot_artifact_digest="sha256:" + ("d" * 64),
     )
 
     assert binding.attempt.execution == execution
     assert binding.request_id == intent.request_id
-    assert binding.history_snapshot_artifact_id == HISTORY_SNAPSHOT_ARTIFACT_ID
+    assert binding.attempt.workflow_run_id == intent.workflow_run_id
+    assert "history-snapshot-artifact-id" not in binding.to_document()
     with pytest.raises(ValueError, match="pre-Attempt admission mismatch"):
         derive_release_attempt_binding(
             intent=intent,
-            execution=execution,
+            execution=replace(execution, target="f" * 40),
             repository_model_digest=binding.repository_model_digest,
             live_eligibility_artifact_id=binding.live_eligibility_artifact_id,
             live_eligibility_artifact_digest=(
@@ -1696,10 +1673,4 @@ def test_attempt_binding_requires_preexisting_exact_history_snapshot() -> None:
                 binding.live_eligibility_payload_digest
             ),
             attestation_provenance=provenance,
-            history_snapshot=replace(
-                history,
-                current_run_attempt=history.current_run_attempt + 1,
-            ),
-            history_snapshot_artifact_id=HISTORY_SNAPSHOT_ARTIFACT_ID,
-            history_snapshot_artifact_digest="sha256:" + ("d" * 64),
         )
