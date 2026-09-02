@@ -203,14 +203,22 @@ def _validate_inputs(  # noqa: PLR0912
             binding_run_id,
             snapshot.context.workflow_run_id,
         ),
-        (
-            "run attempt",
-            binding_run_attempt,
-            snapshot.context.run_attempt,
-        ),
     )
-    if not live:
+    if live:
         checks += (
+            (
+                "run attempt",
+                binding_run_attempt,
+                intent.run_attempt,
+            ),
+        )
+    else:
+        checks += (
+            (
+                "run attempt",
+                binding_run_attempt,
+                snapshot.context.run_attempt,
+            ),
             ("channel", binding_channel, snapshot.context.channel),
             ("Release Unit", binding_unit, snapshot.context.release_unit),
         )

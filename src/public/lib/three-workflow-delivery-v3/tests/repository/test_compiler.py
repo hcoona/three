@@ -25,6 +25,7 @@ from three_workflow_delivery_v3.repository.compiler import (
     compile_repository_model,
     first_slice_provider_manifest,
     provider_binding,
+    repository_model_snapshot_from_document,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
@@ -106,12 +107,6 @@ def _with_other_workflow_run_id(
     binding: ProviderBinding,
 ) -> ProviderBinding:
     return replace(binding, workflow_run_id=7102)
-
-
-def _with_other_run_attempt(
-    binding: ProviderBinding,
-) -> ProviderBinding:
-    return replace(binding, run_attempt=2)
 
 
 def _with_other_binding_target(
@@ -322,7 +317,7 @@ def _run(repo: Path, *command: str) -> str:
 
 def _target_bytes(repo: Path, target: str, path: str) -> bytes:
     return subprocess.run(  # noqa: S603
-        ("git", "show", f"{target}:{path}"),
+        ("git", "show", f"{target}:{path}"),  # noqa: S607
         cwd=repo,
         check=True,
         capture_output=True,
@@ -459,10 +454,12 @@ def target_authoring_tree(
 def _context(
     *,
     purpose: str = "live-release",
-    run_attempt: int = RUN_ATTEMPT,
+    run_attempt: int | None = None,
     target: str | None = None,
 ) -> CompilationContext:
     simulation = purpose == "release-simulation"
+    if purpose != "live-release" and run_attempt is None:
+        run_attempt = RUN_ATTEMPT
     selected_target = target or TARGET
     return CompilationContext(
         request_id="release-request-42",
@@ -483,20 +480,22 @@ def _expected_provider_request_document(
     *,
     provider_producer: str,
 ) -> dict[str, JsonValue]:
+    context_document: dict[str, JsonValue] = {
+        "request-id": context.request_id,
+        "purpose": context.purpose,
+        "workflow-run-id": context.workflow_run_id,
+        "target": context.target,
+        "producer": context.producer,
+        "control": context.control,
+        "catalog-digest": context.catalog_digest,
+        "channel": context.channel,
+        "release-unit": context.release_unit,
+    }
+    if context.run_attempt is not None:
+        context_document["run-attempt"] = context.run_attempt
     return {
         "schema": "workflow-delivery/v3/node-provider-request",
-        "context": {
-            "request-id": context.request_id,
-            "purpose": context.purpose,
-            "workflow-run-id": context.workflow_run_id,
-            "run-attempt": context.run_attempt,
-            "target": context.target,
-            "producer": context.producer,
-            "control": context.control,
-            "catalog-digest": context.catalog_digest,
-            "channel": context.channel,
-            "release-unit": context.release_unit,
-        },
+        "context": context_document,
         "entry-id": "node-first-slice",
         "provider-logical-id": PROVIDER_LOGICAL_ID,
         "provider-implementation-id": PROVIDER_IMPLEMENTATION_ID,
@@ -713,8 +712,10 @@ def test_compiler_closes_first_slice_repository_model() -> None:
         ),
         (
             f"{PRODUCT_PATH}/workflow-delivery.quality.yml",
-            "Quality selection does not exist: "
-            f"{PRODUCT_PATH}/workflow-delivery.quality.yml",
+            (
+                "Quality selection does not exist: "
+                f"{PRODUCT_PATH}/workflow-delivery.quality.yml"
+            ),
         ),
         (
             FIRST_SLICE_POLICY_PATH,
@@ -844,7 +845,7 @@ def test_compiler_preserves_provider_nbgv_facts_without_recomputation() -> None:
     assert "manifest-version" not in nbgv_document
 
 
-def test_compiler_binds_live_snapshot_to_current_run_attempt() -> None:
+def test_compiler_omits_run_attempt_from_live_snapshot() -> None:
     """Digest every current live request and same-revision authority binding."""
     context, manifest, result = _scenario()
 
@@ -855,7 +856,6 @@ def test_compiler_binds_live_snapshot_to_current_run_attempt() -> None:
         "request-id": "release-request-42",
         "purpose": "live-release",
         "workflow-run-id": 7101,
-        "run-attempt": 3,
         "target": TARGET,
         "producer": "compile-model",
         "control": f"workflow-delivery-v3:{TARGET}",
@@ -870,13 +870,13 @@ def test_compiler_binds_live_snapshot_to_current_run_attempt() -> None:
     assert document["ready"] is True
 
 
-def test_replay_compiles_distinct_snapshot_for_new_run_attempt() -> None:
-    """Bind a replay to a new manifest, Provider Result, and Snapshot digest."""
+def test_simulation_rerun_compiles_distinct_snapshot() -> None:
+    """Bind each simulation rerun to its own complete authority closure."""
     old_context, old_manifest, old_result = _scenario(
-        _context(run_attempt=RUN_ATTEMPT)
+        _context(purpose="release-simulation", run_attempt=RUN_ATTEMPT)
     )
     new_context, new_manifest, new_result = _scenario(
-        _context(run_attempt=REPLAY_ATTEMPT)
+        _context(purpose="release-simulation", run_attempt=REPLAY_ATTEMPT)
     )
 
     old_snapshot = _compile(
@@ -901,20 +901,46 @@ def test_replay_compiles_distinct_snapshot_for_new_run_attempt() -> None:
     assert old_snapshot.nbgv.npm_package_version == NPM_VERSION
 
 
+def test_snapshot_parser_rejects_live_run_attempt() -> None:
+    """Reject a retired normal-Live run-attempt field as unknown."""
+    context, manifest, result = _scenario()
+    document = _compile(REPO_ROOT, context, manifest, result).to_document()
+    context_document = cast("dict[str, JsonValue]", document["context"])
+    context_document["run-attempt"] = RUN_ATTEMPT
+
+    with pytest.raises(ValueError, match="unknown field: run-attempt"):
+        repository_model_snapshot_from_document(document)
+
+
+def test_snapshot_parser_requires_simulation_run_attempt() -> None:
+    """Keep the simulation pass identity in every Repository Model."""
+    context, manifest, result = _scenario(
+        _context(purpose="release-simulation")
+    )
+    document = _compile(REPO_ROOT, context, manifest, result).to_document()
+    context_document = cast("dict[str, JsonValue]", document["context"])
+    del context_document["run-attempt"]
+
+    with pytest.raises(ValueError, match="missing field: run-attempt"):
+        repository_model_snapshot_from_document(document)
+
+
 @pytest.mark.parametrize(
     "result_purpose",
-    ["live-release", "release-simulation"],
+    ["release-simulation", "live-release"],
     ids=["prior-attempt", "cross-purpose"],
 )
 def test_compiler_rejects_prior_attempt_and_cross_purpose_result(
     result_purpose: str,
 ) -> None:
     """Reject a prior-attempt or other-purpose Fact Bundle equivalent."""
-    context, manifest, _ = _scenario(_context(run_attempt=REPLAY_ATTEMPT))
+    context, manifest, _ = _scenario(
+        _context(purpose="release-simulation", run_attempt=REPLAY_ATTEMPT)
+    )
     result_context = _context(
         purpose=result_purpose,
         run_attempt=(
-            RUN_ATTEMPT if result_purpose == "live-release" else REPLAY_ATTEMPT
+            RUN_ATTEMPT if result_purpose == "release-simulation" else None
         ),
     )
     result_manifest = first_slice_provider_manifest(
@@ -939,7 +965,6 @@ def test_compiler_rejects_prior_attempt_and_cross_purpose_result(
     [
         _with_other_request_id,
         _with_other_workflow_run_id,
-        _with_other_run_attempt,
         _with_other_binding_target,
         _with_other_provider_producer,
         _with_other_control,
@@ -949,7 +974,6 @@ def test_compiler_rejects_prior_attempt_and_cross_purpose_result(
     ids=[
         "request",
         "run",
-        "attempt",
         "target",
         "producer",
         "control",
@@ -1248,7 +1272,14 @@ def test_manifest_is_closed_before_provider_execution() -> None:
     )
     manifest_context = manifest.to_document()["context"]
     assert isinstance(manifest_context, dict)
-    assert manifest_context["run-attempt"] == RUN_ATTEMPT
+    assert "run-attempt" not in manifest_context
+    simulation_manifest = first_slice_provider_manifest(
+        _context(purpose="release-simulation"),
+        provider_producer="discover-node",
+    )
+    simulation_context = simulation_manifest.to_document()["context"]
+    assert isinstance(simulation_context, dict)
+    assert simulation_context["run-attempt"] == RUN_ATTEMPT
     assert manifest.manifest_digest.startswith("sha256:")
     assert (
         _compile(REPO_ROOT, context, manifest, result).manifest_digest
@@ -1281,9 +1312,13 @@ def test_compiler_rejects_manifest_digest_not_bound_to_canonical_preimage(
     replacement_digest: str,
 ) -> None:
     """Reject stale or arbitrary digests even when the result repeats them."""
-    context, manifest, _ = _scenario(_context(run_attempt=REPLAY_ATTEMPT))
+    context, manifest, _ = _scenario(
+        _context(purpose="release-simulation", run_attempt=REPLAY_ATTEMPT)
+    )
     if replacement_digest == "stale":
-        _, stale_manifest, _ = _scenario(_context(run_attempt=RUN_ATTEMPT))
+        _, stale_manifest, _ = _scenario(
+            _context(purpose="release-simulation", run_attempt=RUN_ATTEMPT)
+        )
         replacement_digest = stale_manifest.requests[0].request_digest
     substituted = replace(
         manifest.requests[0],

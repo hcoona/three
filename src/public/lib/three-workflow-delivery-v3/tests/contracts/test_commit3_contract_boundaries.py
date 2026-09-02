@@ -128,7 +128,7 @@ def _context(*, target: str = TARGET) -> CompilationContext:
         request_id="release-request-42",
         purpose="live-release",
         workflow_run_id=7101,
-        run_attempt=RUN_ATTEMPT,
+        run_attempt=None,
         target=target,
         producer="compile-model",
         control=f"workflow-delivery-v3:{target}",
@@ -681,7 +681,7 @@ def _live_context(
         purpose="live-release",
         request_id=snapshot.context.request_id,
         workflow_run_id=snapshot.context.workflow_run_id,
-        run_attempt=snapshot.context.run_attempt,
+        run_attempt=RUN_ATTEMPT,
         selected_ref="refs/heads/feature/ref-neutral",
         target=snapshot.context.target,
         repository_model_digest=snapshot.snapshot_digest,
@@ -1056,7 +1056,6 @@ def test_node_provider_result_schema_contains_every_approved_field() -> None:
         "request-id",
         "purpose",
         "workflow-run-id",
-        "run-attempt",
         "target",
         "producer",
         "control",
@@ -1875,7 +1874,7 @@ def test_compilation_context_requires_exact_string_producer(
         validate_compilation_context(forged)
 
     assert forged.target == TARGET
-    assert forged.run_attempt == RUN_ATTEMPT
+    assert forged.run_attempt is None
 
 
 @pytest.mark.parametrize(
@@ -2260,7 +2259,7 @@ def test_repository_model_valid_tuples_keep_canonical_json_arrays() -> None:
         },
     }
     assert snapshot.snapshot_digest == (
-        "sha256:4dab3519f0d30d29e275f032ce2cd5a1dcf017bde4cbba67b4d556f0810d3f4d"
+        "sha256:db47876800cb5f09b416c0222b2609cd3bb64699cb022c7a491b98952de3b055"
     )
 
 
@@ -2287,11 +2286,11 @@ def test_exact_provider_result_and_repository_model_admission_preserve_concrete_
     assert result.nbgv.git_commit_id == TARGET
     assert result.nbgv.npm_package_version == NPM_VERSION
     assert result.result_digest == (
-        "sha256:fe55544be8ed1c0666dec70195675ec88941b2dcae2ff44d79d1bb79873fe440"
+        "sha256:56a59d6a237494431e86943eb4dfbe6147de14dfc030b76b1eee0a6ca6ce1fc6"
     )
     assert snapshot.release_units[0].builds[0].build_id == "npm-package"
     assert snapshot.quality[0].preset == "node/hcoona-release-smoke-npm-v1"
     assert snapshot.ready is True
     assert snapshot.snapshot_digest == (
-        "sha256:4dab3519f0d30d29e275f032ce2cd5a1dcf017bde4cbba67b4d556f0810d3f4d"
+        "sha256:db47876800cb5f09b416c0222b2609cd3bb64699cb022c7a491b98952de3b055"
     )

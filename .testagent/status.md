@@ -14523,3 +14523,86 @@ schema contraction:
   or separately authorized work.
 
 <!-- END APPEND: 2026-09-02-pr644-post-merge-reconciliation -->
+
+<!-- BEGIN APPEND: 2026-09-02-wdv3-record-model-provider-compiler-closure -->
+
+## Workflow Delivery v3 Provider/compiler contextual-binding closure
+
+### Implemented boundary
+
+- Normal-Live `CompilationContext` and `ProviderBinding` now carry
+  `run_attempt=None`. Provider requests, Provider manifests, Provider Results,
+  Fact Bundles, and Repository Model Snapshots omit `run-attempt`; strict
+  Snapshot admission rejects a supplied live field as unknown.
+- Simulation and CI continue to require a positive non-Boolean run attempt,
+  serialize it, and produce distinct rerun identities.
+- Live Repository Model consumers no longer compare a Snapshot attempt.
+  Release Intent and current-Attempt records remain in this dependency-ordered
+  phase, and the planner now checks their retained attempt values directly
+  against each other.
+- Provider-owned repository and NBGV facts remain authoritative. The compiler
+  validates and adopts them without recomputation or fallback.
+- The live CLI still accepts the current job attempt for the attempt-one guard
+  and retained downstream records, but passes `None` into the normal-Live
+  Provider/compiler boundary.
+
+### Canonical closure
+
+| Record | Canonical digest |
+|---|---|
+| Provider Result | `sha256:56a59d6a237494431e86943eb4dfbe6147de14dfc030b76b1eee0a6ca6ce1fc6` |
+| Provider Fact Bundle | `sha256:dfa75fad5d415f00f843b2887628cdf74c83e2cbf494ca0b57257fc6dc54a090` |
+| Live Provider request | `sha256:91842798f066b903d25ba777188a43ea439f0c9e281c106a034acf48e3ab30de` |
+| Live Provider manifest | `sha256:c3f53fbc1462b81d575d19c31adbecb3471f226e0c690543fb88dd4da9dfea33` |
+| Repository Model golden | `sha256:db47876800cb5f09b416c0222b2609cd3bb64699cb022c7a491b98952de3b055` |
+
+The bounded static-reference policy digest remains
+`sha256:c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d`.
+
+### Validation
+
+| Evidence | Result |
+|---|---|
+| Provider/compiler focused tests | 364 passed |
+| Affected CLI, release, and contract tests | 528 passed |
+| Focused release-binding tests | 13 passed |
+| Post-review release suite | 951 passed |
+| Pyrefly | 0 errors |
+| Post-review implementation staged HK | Exit 0; 4,254 v3 tests passed |
+| Canonical index static-reference scan | `clean`; zero findings |
+| Staged diff check | Exit 0 |
+
+The post-review implementation gate covered 18 files and completed Ruff, Ruff
+format, Biome JSON, typos, EditorConfig, authority preparation, canonical
+static-reference admission, and the complete v3 test suite. It left no
+`mise.lock` or other unstaged tool side effect.
+
+### Review and adjudication
+
+- The Provider/compiler correctness reviewer found that the live planner no
+  longer rejected a current-Attempt binding whose attempt differed from its
+  Release Intent. An independent adjudicator classified the finding TP with
+  10/10 confidence. The planner now compares those retained downstream
+  records directly, and a negative rerun-binding regression test proves the
+  failure.
+- The adversarial contraction reviewer proposed removing live
+  `--run-attempt` from the CLI immediately. An independent adjudicator
+  classified the finding FP with 9/10 confidence because the option remains
+  execution input for the current guard and retained Intent/Attempt transport;
+  it is already excluded at the Provider/compiler/Repository Model boundary.
+- Fresh same-scope correctness and adversarial closure reviewers both reported
+  `No findings`.
+
+### Scope and next phase
+
+The phase changed only the contextual Provider/compiler binding and directly
+coupled Repository Model consumers. It introduced no universal envelope,
+history fallback, Governance, authorization, publication, finalizer, workflow
+topology, activation, cleanup, or external mutation. Protected Governance
+remains `live_enabled=false`.
+
+The next dependency-ordered phase contracts Release Intent, current-Attempt
+identity, release transport, and current-context admission. Legacy record
+retirement remains a later phase within this record-model unit.
+
+<!-- END APPEND: 2026-09-02-wdv3-record-model-provider-compiler-closure -->

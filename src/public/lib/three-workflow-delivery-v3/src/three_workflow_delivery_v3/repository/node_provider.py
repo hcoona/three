@@ -128,12 +128,30 @@ class ProviderBinding:
     request_id: str
     purpose: str
     workflow_run_id: int
-    run_attempt: int
+    run_attempt: int | None
     target: str
     producer: str
     control: str
     catalog_digest: str
     request_digest: str
+
+
+def _provider_binding_document(
+    binding: ProviderBinding,
+) -> dict[str, JsonValue]:
+    document: dict[str, JsonValue] = {
+        "request-id": binding.request_id,
+        "purpose": binding.purpose,
+        "workflow-run-id": binding.workflow_run_id,
+        "target": binding.target,
+        "producer": binding.producer,
+        "control": binding.control,
+        "catalog-digest": binding.catalog_digest,
+        "request-digest": binding.request_digest,
+    }
+    if binding.run_attempt is not None:
+        document["run-attempt"] = binding.run_attempt
+    return document
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,17 +256,6 @@ class NodeProviderResult:
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical Provider Result payload."""
-        binding: dict[str, JsonValue] = {
-            "request-id": self.binding.request_id,
-            "purpose": self.binding.purpose,
-            "workflow-run-id": self.binding.workflow_run_id,
-            "run-attempt": self.binding.run_attempt,
-            "target": self.binding.target,
-            "producer": self.binding.producer,
-            "control": self.binding.control,
-            "catalog-digest": self.binding.catalog_digest,
-            "request-digest": self.binding.request_digest,
-        }
         toolchain: dict[str, JsonValue] = dict(self.toolchain)
         provider: dict[str, JsonValue] = {
             "logical-id": self.provider_logical_id,
@@ -296,7 +303,7 @@ class NodeProviderResult:
         conflicts: list[JsonValue] = list(self.conflicts)
         return {
             "schema": NODE_PROVIDER_RESULT_SCHEMA,
-            "binding": binding,
+            "binding": _provider_binding_document(self.binding),
             "provider": provider,
             "input-digests": input_digests,
             "checkout": checkout,
@@ -333,17 +340,6 @@ class NodeProviderFactBundle:
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the complete canonical Fact Bundle payload."""
-        binding: dict[str, JsonValue] = {
-            "request-id": self.binding.request_id,
-            "purpose": self.binding.purpose,
-            "workflow-run-id": self.binding.workflow_run_id,
-            "run-attempt": self.binding.run_attempt,
-            "target": self.binding.target,
-            "producer": self.binding.producer,
-            "control": self.binding.control,
-            "catalog-digest": self.binding.catalog_digest,
-            "request-digest": self.binding.request_digest,
-        }
         request_artifact: dict[str, JsonValue] = {
             "artifact-id": self.request_artifact_id,
             "artifact-digest": self.request_artifact_digest,
@@ -358,7 +354,7 @@ class NodeProviderFactBundle:
         }
         return {
             "schema": self.schema,
-            "binding": binding,
+            "binding": _provider_binding_document(self.binding),
             "provider-request-manifest-digest": self.manifest_digest,
             "provider-request-entry-id": self.manifest_entry_id,
             "request-artifact": request_artifact,
@@ -563,7 +559,12 @@ def validate_provider_binding(binding: ProviderBinding) -> None:
         message = "Provider purpose is not in the closed purpose set"
         raise ValueError(message)
     _positive_integer(binding.workflow_run_id, field="workflow_run_id")
-    _positive_integer(binding.run_attempt, field="run_attempt")
+    if binding.purpose == "live-release":
+        if binding.run_attempt is not None:
+            message = "live Provider binding cannot bind run_attempt"
+            raise ValueError(message)
+    else:
+        _positive_integer(binding.run_attempt, field="run_attempt")
     _full_sha(binding.target, field="target")
     _nonempty_string(binding.producer, field="Provider producer")
     _nonempty_string(binding.control, field="Provider control")

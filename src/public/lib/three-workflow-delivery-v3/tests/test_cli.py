@@ -754,7 +754,7 @@ def test_repository_compile_command_emits_bound_snapshot(
     assert output["context"]["request-id"] == "release-request-cli"
     assert output["context"]["purpose"] == "live-release"
     assert output["context"]["workflow-run-id"] == WORKFLOW_RUN_ID
-    assert output["context"]["run-attempt"] == RUN_ATTEMPT
+    assert "run-attempt" not in output["context"]
     assert output["context"]["target"] == target
     assert output["nbgv"]["canonical"]["gitCommitId"] == target
     assert output["nbgv"]["native"]["npmPackageVersion"]
@@ -3250,7 +3250,7 @@ def _run_compile_live_model_scenario(
         request_id=intent.request_id,
         purpose="live-release",
         workflow_run_id=WORKFLOW_RUN_ID,
-        run_attempt=RUN_ATTEMPT,
+        run_attempt=None,
         target=target,
         producer="compile-live-model",
         control=f"workflow-delivery-v3:{target}",
@@ -3343,7 +3343,7 @@ def test_compile_live_model_emits_canonical_buddy_execution_concurrency_key(
             ),
             purpose="live-release",
             workflow_run_id=WORKFLOW_RUN_ID,
-            run_attempt=RUN_ATTEMPT,
+            run_attempt=None,
             target="a" * 40,
             producer="compile-live-model",
             control=f"workflow-delivery-v3:{'a' * 40}",

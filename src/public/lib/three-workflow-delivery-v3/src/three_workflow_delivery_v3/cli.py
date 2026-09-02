@@ -360,7 +360,11 @@ def _compilation_context(
         request_id=arguments.request_id,
         purpose=arguments.purpose,
         workflow_run_id=arguments.workflow_run_id,
-        run_attempt=arguments.run_attempt,
+        run_attempt=(
+            None
+            if arguments.purpose == "live-release"
+            else arguments.run_attempt
+        ),
         target=arguments.target,
         producer=arguments.compiler_producer,
         control=arguments.control,
@@ -2138,7 +2142,7 @@ def _live_model_context(intent: ReleaseIntent) -> CompilationContext:
         request_id=intent.request_id,
         purpose="live-release",
         workflow_run_id=intent.workflow_run_id,
-        run_attempt=intent.run_attempt,
+        run_attempt=None,
         target=intent.target,
         producer="compile-live-model",
         control=f"workflow-delivery-v3:{intent.target}",
@@ -4634,16 +4638,19 @@ def _load_node_provider_result(
     )
     result_digest = _string(document.pop("result-digest"), context="digest")
     binding_document = _object(document["binding"], context="binding")
+    purpose = _string(binding_document["purpose"], context="purpose")
     binding = ProviderBinding(
         request_id=_string(
             binding_document["request-id"], context="request-id"
         ),
-        purpose=_string(binding_document["purpose"], context="purpose"),
+        purpose=purpose,
         workflow_run_id=_integer(
             binding_document["workflow-run-id"], context="run"
         ),
-        run_attempt=_integer(
-            binding_document["run-attempt"], context="attempt"
+        run_attempt=(
+            _integer(binding_document["run-attempt"], context="attempt")
+            if "run-attempt" in binding_document
+            else None
         ),
         target=_string(binding_document["target"], context="target"),
         producer=_string(binding_document["producer"], context="producer"),

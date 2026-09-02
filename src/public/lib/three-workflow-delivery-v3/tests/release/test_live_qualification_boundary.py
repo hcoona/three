@@ -42,6 +42,9 @@ from three_workflow_delivery_v3.release import finalizer as finalizer_module
 from three_workflow_delivery_v3.release.finalizer import (
     desired_projection_state_digest,
 )
+from three_workflow_delivery_v3.release.planner import (
+    plan_live_qualification,
+)
 from three_workflow_delivery_v3.release.simulation import (
     release_adapter_context_from_bytes,
 )
@@ -1374,6 +1377,31 @@ def test_live_qualification_snapshot_closes_attempt_execution_identity(
                 live_qualification_snapshot,
                 subject=invalid_subject,
             )
+
+
+def test_live_planner_rejects_attempt_binding_for_different_rerun(
+    live_intent,
+    live_attempt_binding,
+    live_admitted_repository_model,
+) -> None:
+    """Keep the retained live Attempt binding aligned with its Intent."""
+    mismatched_binding = replace(
+        live_attempt_binding,
+        attempt=replace(
+            live_attempt_binding.attempt,
+            run_attempt=live_intent.run_attempt + 1,
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Release Planner run attempt binding mismatch",
+    ):
+        plan_live_qualification(
+            live_intent,
+            mismatched_binding,
+            live_admitted_repository_model,
+        )
 
 
 def test_live_qualification_snapshot_transport_rejects_wrong_channel(
