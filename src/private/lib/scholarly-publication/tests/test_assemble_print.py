@@ -1546,13 +1546,34 @@ class AssemblePrintScenarioTests(unittest.TestCase):
 
     def test_validate_rejects_generated_css_external_resource(self) -> None:
         resources = {
-            "url": 'url("https://example.test/url.png")',
-            "image-set": 'image-set("https://example.test/standard.png" 1x)',
+            "url": (
+                'url("https://example.test/url.png")',
+                "nonlocal resource URL",
+            ),
+            "image-set": (
+                'image-set("https://example.test/standard.png" 1x)',
+                "nonlocal resource URL",
+            ),
             "webkit-image-set": (
-                '-webkit-image-set("https://example.test/webkit.png" 2x)'
+                '-webkit-image-set("https://example.test/webkit.png" 2x)',
+                "nonlocal resource URL",
+            ),
+            "image-set-var": (
+                (
+                    "image-set(var(--remote) 1x); "
+                    '--remote: "https://example.test/variable.png"'
+                ),
+                "unsupported var() inside image-set()",
+            ),
+            "image-set-if": (
+                (
+                    "image-set(if(media(width > 0px): "
+                    '"https://example.test/if.png"; else: "local.png") 1x)'
+                ),
+                "unsupported if() inside image-set()",
             ),
         }
-        for name, resource in resources.items():
+        for name, (resource, expected_error) in resources.items():
             with self.subTest(case=name):
                 publication = self.fresh_publication(
                     f"external-css-resource-{name}"
@@ -1567,7 +1588,7 @@ class AssemblePrintScenarioTests(unittest.TestCase):
                 rejected = self.validate(publication)
 
                 self.assertEqual(2, rejected.exit_code, rejected)
-                self.assertIn("nonlocal resource URL", rejected.stderr)
+                self.assertIn(expected_error, rejected.stderr)
 
     def test_validate_binds_crop_geometry_semantically(self) -> None:
         mutations = {
@@ -1733,6 +1754,27 @@ class AssemblePrintScenarioTests(unittest.TestCase):
             rejected.stderr,
         )
         self.assertNotIn("Traceback", rejected.stderr)
+
+    def test_validate_rejects_unbound_wrapper_text(self) -> None:
+        wrapper_text = {
+            "body": ("<body>", "<body>UNBOUND"),
+            "main": (
+                '<main id="fixture-publication">',
+                '<main id="fixture-publication">UNBOUND',
+            ),
+        }
+        for name, (marker, replacement) in wrapper_text.items():
+            with self.subTest(case=name):
+                publication = self.fresh_publication(f"wrapper-text-{name}")
+                html_path = publication / "index.html"
+                html = html_path.read_text(encoding="utf-8")
+                self.assertIn(marker, html)
+                html_path.write_text(
+                    html.replace(marker, replacement, 1),
+                    encoding="utf-8",
+                )
+                self.refresh_output_asset(publication, "html")
+                self.assertEqual(2, self.validate(publication).exit_code)
 
     def test_validate_closes_generated_topology_and_resource_attributes(
         self,

@@ -1995,12 +1995,24 @@ def validate_manifest_bindings(
                 f"manifest stylesheet {index} has a noncanonical path")
     return dimensions
 
-def generated_css_urls(tokens: list[Any], context: str, *, depth: int=0) -> list[str]:
+def generated_css_urls(
+    tokens: list[Any],
+    context: str,
+    *,
+    depth: int = 0,
+    image_set_context: bool = False,
+) -> list[str]:
     require(depth <= 64, f"{context} exceeds the resource nesting limit")
     values: list[str] = []
     for token in tokens:
         require(token.type != "error",
                 f"{context} contains invalid CSS: {getattr(token, 'message', '')}")
+        if (image_set_context and token.type == "function"
+                and token.lower_name != "url"):
+            fail(
+                f"{context} contains unsupported "
+                f"{token.lower_name}() inside image-set()"
+            )
         if token.type == "url":
             values.append(str(token.value))
             continue
@@ -2023,7 +2035,21 @@ def generated_css_urls(tokens: list[Any], context: str, *, depth: int=0) -> list
         elif token.type in {"() block", "[] block", "{} block"}:
             nested = token.content
         if nested is not None:
-            values.extend(generated_css_urls(list(nested), context, depth=depth + 1))
+            nested_image_set = (
+                image_set_context
+                or (
+                    token.type == "function"
+                    and token.lower_name in {"image-set", "-webkit-image-set"}
+                )
+            )
+            values.extend(
+                generated_css_urls(
+                    list(nested),
+                    context,
+                    depth=depth + 1,
+                    image_set_context=nested_image_set,
+                )
+            )
     return values
 
 def validate_generated_css(content: str, manifest: JsonObject) -> None:
@@ -2157,11 +2183,13 @@ def validate_generated_html(
     body_children = element_children(body)
     require(len(body_children) == 1 and local_name(body_children[0]) == "main",
             "generated body must contain one main")
+    require(has_only_formatting_text(body), "generated body has unbound text")
     main = body_children[0]
     require([node for node in nodes if local_name(node) == "main"] == [main],
             "generated HTML must contain exactly one main")
     require(dict(main.attrib) == {"id": manifest["publication_id"]},
             "generated main does not match the publication ID")
+    require(has_only_formatting_text(main), "generated main has unbound text")
     sections = element_children(main)
     expected_fragments = manifest["fragments"]
     require(len(sections) == len(expected_fragments)
