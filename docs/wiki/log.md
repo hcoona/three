@@ -3185,3 +3185,28 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
   dispatch, Governance, Environment, deployment, package, tag, or other
   external mutation occurred.
+
+## [2026-09-02] refactor | Contract preparation authority
+
+- Removed the ownerless static-reference preparation stamp. It recorded only
+  policy, lock, and runtime metadata and could not prove the identity of the
+  materialized Node or NuGet executable closure.
+- Retained the normative authority boundaries: checked-in lock and runtime
+  closure validation before and after locked preparation, official package
+  manager libraries and sidecars, actual loaded implementation identities, and
+  typed execution or mismatch failures.
+- Two independent reviews retained and closed two high-confidence HK findings.
+  Preparation is now an unconditional dependency for direct root-HK use, so a
+  docs-only path cannot filter it out. CI separately runs preparation once as
+  a global Node/NuGet tooling barrier, then passes
+  `--skip-step static-reference-authority-preparation` to both HK branches to
+  prevent duplicate work and avoid parallel root-Node-tool races.
+- Commit `8e980d78` changes the policy digest to
+  `sha256:c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d`.
+  Focused contracts, actionlint, HK configuration validation, a missing-artifact
+  barrier execution, canonical index and worktree scans, and the complete
+  affected HK gate passed. HK ran all 4,250 Workflow Delivery v3 tests, and two
+  final independent reviewers reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
+  dispatch, Governance, Environment, deployment, package, tag, or other
+  external mutation occurred.

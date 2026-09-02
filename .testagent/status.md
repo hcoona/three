@@ -14337,3 +14337,83 @@ merge, Governance, Environment, deployment, package, tag, or other external
 mutation occurred.
 
 <!-- END APPEND: 2026-09-02-pr644-nuget-live-closure -->
+
+<!-- BEGIN APPEND: 2026-09-02-pr644-preparation-authority-contraction -->
+
+## Workflow Delivery v3 PR #644 preparation-authority contraction
+
+### Authority decision
+
+The static-reference preparation stamp had no normative owner in the v3
+requirements or the npm LLD. It stored the policy digest and checked-in
+lock/runtime metadata, but did not bind the materialized `node_modules`
+closure, the published NuGet assemblies, or the implementations actually
+loaded by the sidecars. Retaining it would create a competing authority that
+still could not establish the property implied by its name.
+
+Commit `8e980d784d8d33939ce05f94eb04022b0cebe55e` removes the stamp writer,
+manifest metadata, public APIs, real-scan admission check, and stamp-specific
+tests. The contract-owned mechanisms remain:
+
+- dependency-lock and mise-runtime closure validation before and after
+  preparation;
+- frozen pnpm installation and locked NuGet restore/publish;
+- required NuGet publication-file verification;
+- source materialization before the real scan validates authority closure;
+- official npm, pnpm, and NuGet library or sidecar execution; and
+- binding of the clean result to the implementations actually loaded.
+
+The resulting policy digest is
+`sha256:c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d`.
+Earlier ledger entries and their previous digest remain historical evidence
+and were not rewritten.
+
+### HK ownership findings and closure
+
+Two independent review findings were retained:
+
+1. **TP, High:** the original preparation step glob allowed HK to filter out a
+   dependency for docs-only paths while still including the unconditional
+   static-reference consumer. The preparation step is now unconditional, and
+   a real docs-only HK plan proves that both preparation and static-reference
+   remain included while the v3 pytest consumer may remain filtered out.
+2. **TP, High:** removing workflow-level preparation allowed root Node-based
+   linters to start in parallel with HK's preparation dependency on a fresh
+   checkout. The workflow now runs
+   `mise run prepare:static-reference-authorities` once after toolchain
+   verification and before Hexo installation or HK. Both PR-range and full HK
+   branches pass `--skip-step static-reference-authority-preparation`, so the
+   global barrier is not repeated inside HK. Direct local or other root-HK
+   invocations continue to use the unconditional dependency.
+
+A real execution removed the generated NuGet authority directory, ran the
+workflow preparation barrier, verified the published DLL, and then ran a
+docs-only HK invocation with the preparation step explicitly skipped. HK
+reported the skip as a CLI exclusion and still completed the canonical index
+static-reference scan clean.
+
+### Validation and review
+
+| Gate | Result |
+|---|---|
+| Focused contraction scenarios | `8 passed` |
+| Affected static-reference and contract tests | `316 passed` |
+| HK ownership regressions | `6 passed` |
+| Final focused barrier contracts | `7 passed` |
+| Ruff check and format check | Passed |
+| Production-file Pyrefly | `0 errors` |
+| Actionlint and HK configuration validation | Passed |
+| Missing-artifact preparation plus HK skip execution | Passed; NuGet authority rebuilt and index scan clean |
+| Complete affected Workflow Delivery v3 HK gate | Passed; `4,250 passed in 439.04s` |
+| Canonical index static-reference scan | `clean`; new policy digest and exact implementation identities |
+| Canonical worktree static-reference scan | `clean`; new policy digest and exact implementation identities |
+| Independent HK barrier and skip-semantics review | **No findings** |
+| Independent authority-contraction review | **No findings** |
+
+The reviewed implementation and evidence are ready for a normal push, fresh
+automatic checks, and a fresh Copilot review. `live_enabled=false` remains
+unchanged, and no manual workflow rerun, approval, merge, Live dispatch,
+Governance, Environment, deployment, package, tag, or other external mutation
+occurred.
+
+<!-- END APPEND: 2026-09-02-pr644-preparation-authority-contraction -->
