@@ -60,6 +60,7 @@ env:
 jobs:
   admit:
     name: Admit live Attempt and retained history
+    if: github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -169,7 +170,7 @@ jobs:
         id: history-name
         run: |
           history_digest="${{ steps.discover.outputs.history-snapshot-digest }}"
-          history_name="wdv3-live-buddy-history-admission-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${history_digest#sha256:}.json"
+          history_name="wdv3-live-buddy-history-admission-r${GITHUB_RUN_ID}-${history_digest#sha256:}.json"
           mv .wdv3/execution-history-admission.json ".wdv3/${history_name}"
           echo "history-name=${history_name}" >> "${GITHUB_OUTPUT}"
       - name: Upload Execution History Admission Snapshot
@@ -203,17 +204,13 @@ jobs:
             --live-eligibility-artifact-id "${{ inputs.live-eligibility-artifact-id }}" \
             --live-eligibility-artifact-digest "${{ inputs.live-eligibility-artifact-digest }}" \
             --live-eligibility-payload-digest "${{ inputs.live-eligibility-digest }}" \
-            --history-snapshot ".wdv3/${{ steps.history-name.outputs.history-name }}" \
-            --history-snapshot-digest "${{ steps.discover.outputs.history-snapshot-digest }}" \
-            --history-snapshot-artifact-id "${{ steps.upload-history.outputs.artifact-id }}" \
-            --history-snapshot-artifact-digest "${{ steps.upload-history.outputs.artifact-digest }}" \
             --output .wdv3/release-attempt.json \
             --github-output "${GITHUB_OUTPUT}"
       - name: Materialize exact Attempt basename
         id: attempt-name
         run: |
           attempt_digest="${{ steps.bind.outputs.attempt-binding-digest }}"
-          attempt_name="wdv3-live-buddy-attempt-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${attempt_digest#sha256:}.json"
+          attempt_name="wdv3-live-buddy-attempt-r${GITHUB_RUN_ID}-${attempt_digest#sha256:}.json"
           mv .wdv3/release-attempt.json ".wdv3/${attempt_name}"
           echo "attempt-name=${attempt_name}" >> "${GITHUB_OUTPUT}"
       - name: Upload Release Attempt binding
@@ -230,6 +227,7 @@ jobs:
 
   plan-qualification:
     name: Plan live qualification
+    if: github.run_attempt == 1
     needs: admit
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -314,8 +312,8 @@ jobs:
         run: |
           snapshot_digest="${{ steps.plan.outputs.qualification-snapshot-digest }}"
           context_digest="${{ steps.plan.outputs.adapter-context-digest }}"
-          snapshot_name="wdv3-live-buddy-qualification-snapshot-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${snapshot_digest#sha256:}.json"
-          context_name="wdv3-live-buddy-adapter-context-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${context_digest#sha256:}.json"
+          snapshot_name="wdv3-live-buddy-qualification-snapshot-r${GITHUB_RUN_ID}-${snapshot_digest#sha256:}.json"
+          context_name="wdv3-live-buddy-adapter-context-r${GITHUB_RUN_ID}-${context_digest#sha256:}.json"
           mv .wdv3/qualification-snapshot.json ".wdv3/${snapshot_name}"
           mv .wdv3/adapter-context.json ".wdv3/${context_name}"
           echo "qualification-snapshot-name=${snapshot_name}" >> "${GITHUB_OUTPUT}"
@@ -345,6 +343,7 @@ jobs:
 
   build-tarball:
     name: Build exact npm tarball
+    if: github.run_attempt == 1
     needs: plan-qualification
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -478,11 +477,11 @@ jobs:
           BUILD_EVIDENCE_DIGEST: ${{ steps.form.outputs.build-evidence-digest || steps.build.outputs.build-evidence-digest }}
         run: |
           if [[ -f .wdv3/release-artifact.json ]]; then
-            artifact_name="wdv3-live-buddy-release-artifact-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${RELEASE_ARTIFACT_DIGEST#sha256:}.json"
+            artifact_name="wdv3-live-buddy-release-artifact-r${GITHUB_RUN_ID}-${RELEASE_ARTIFACT_DIGEST#sha256:}.json"
             mv .wdv3/release-artifact.json ".wdv3/${artifact_name}"
             echo "release-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
           fi
-          evidence_name="wdv3-live-buddy-build-evidence-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${BUILD_EVIDENCE_DIGEST#sha256:}.json"
+          evidence_name="wdv3-live-buddy-build-evidence-r${GITHUB_RUN_ID}-${BUILD_EVIDENCE_DIGEST#sha256:}.json"
           mv .wdv3/build-evidence.json ".wdv3/${evidence_name}"
           echo "build-evidence-name=${evidence_name}" >> "${GITHUB_OUTPUT}"
       - name: Upload Release Artifact record
@@ -512,6 +511,7 @@ jobs:
 
   project-test:
     name: Run independent project test
+    if: github.run_attempt == 1
     needs: plan-qualification
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -572,7 +572,7 @@ jobs:
             --output .wdv3/project-test-evidence.json \
             --github-output "${GITHUB_OUTPUT}"
           digest="$(sha256sum .wdv3/project-test-evidence.json | cut -d' ' -f1)"
-          artifact_name="wdv3-live-buddy-project-test-evidence-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          artifact_name="wdv3-live-buddy-project-test-evidence-r${GITHUB_RUN_ID}-${digest}.json"
           mv .wdv3/project-test-evidence.json ".wdv3/${artifact_name}"
           echo "project-test-evidence-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
       - name: Upload project-test Evidence
@@ -589,7 +589,7 @@ jobs:
 
   npm-artifact-qualification:
     name: Qualify exact npm artifact
-    if: always() && needs.build-tarball.result != 'skipped'
+    if: always() && github.run_attempt == 1 && needs.build-tarball.result != 'skipped'
     needs: build-tarball
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -765,8 +765,8 @@ jobs:
           CONTENTS_DIGEST: ${{ steps.contents.outputs.artifact-contents-evidence-digest || steps.incomplete-contents.outputs.artifact-contents-evidence-digest }}
           INSTALL_DIGEST: ${{ steps.install.outputs.install-import-evidence-digest || steps.incomplete-install.outputs.install-import-evidence-digest }}
         run: |
-          contents_name="wdv3-live-buddy-artifact-contents-evidence-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${CONTENTS_DIGEST#sha256:}.json"
-          install_name="wdv3-live-buddy-install-import-evidence-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${INSTALL_DIGEST#sha256:}.json"
+          contents_name="wdv3-live-buddy-artifact-contents-evidence-r${GITHUB_RUN_ID}-${CONTENTS_DIGEST#sha256:}.json"
+          install_name="wdv3-live-buddy-install-import-evidence-r${GITHUB_RUN_ID}-${INSTALL_DIGEST#sha256:}.json"
           mv .wdv3/artifact-contents-evidence.json ".wdv3/${contents_name}"
           mv .wdv3/install-import-evidence.json ".wdv3/${install_name}"
           echo "contents-evidence-name=${contents_name}" >> "${GITHUB_OUTPUT}"
@@ -796,7 +796,7 @@ jobs:
 
   qualification-finalizer:
     name: Finalize exact four-obligation qualification
-    if: always() && needs.build-tarball.result != 'skipped'
+    if: always() && github.run_attempt == 1 && needs.build-tarball.result != 'skipped'
     needs: [build-tarball, project-test, npm-artifact-qualification]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -957,7 +957,7 @@ jobs:
             --output .wdv3/qualification-decision.json \
             --github-output "${GITHUB_OUTPUT}"
           digest="$(sha256sum .wdv3/qualification-decision.json | cut -d' ' -f1)"
-          artifact_name="wdv3-live-buddy-qualification-decision-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          artifact_name="wdv3-live-buddy-qualification-decision-r${GITHUB_RUN_ID}-${digest}.json"
           mv .wdv3/qualification-decision.json ".wdv3/${artifact_name}"
           echo "qualification-decision-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
       - name: Upload Qualification Decision
@@ -974,7 +974,7 @@ jobs:
 
   observe-github-packages:
     name: Observe GitHub Packages destination
-    if: needs.qualification-finalizer.outputs.qualification-result == 'success'
+    if: github.run_attempt == 1 && needs.qualification-finalizer.outputs.qualification-result == 'success'
     needs: qualification-finalizer
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1085,7 +1085,7 @@ jobs:
             exit "${observation_status}"
           fi
           digest="$(sha256sum .wdv3/observation-set.json | cut -d' ' -f1)"
-          artifact_name="wdv3-live-buddy-observation-set-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          artifact_name="wdv3-live-buddy-observation-set-r${GITHUB_RUN_ID}-${digest}.json"
           mv .wdv3/observation-set.json ".wdv3/${artifact_name}"
           echo "observation-set-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
           exit "${observation_status}"
@@ -1110,6 +1110,7 @@ jobs:
 
   materialize-publication:
     name: Materialize publication Snapshot and reviewer summary
+    if: github.run_attempt == 1
     needs: observe-github-packages
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1231,8 +1232,8 @@ jobs:
         run: |
           snapshot_digest="${{ steps.materialize.outputs.publication-snapshot-digest }}"
           reviewer_digest="${{ steps.materialize.outputs.reviewer-digest }}"
-          snapshot_name="wdv3-live-buddy-publication-snapshot-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${snapshot_digest#sha256:}.json"
-          reviewer_name="wdv3-live-buddy-reviewer-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${reviewer_digest#sha256:}"
+          snapshot_name="wdv3-live-buddy-publication-snapshot-r${GITHUB_RUN_ID}-${snapshot_digest#sha256:}.json"
+          reviewer_name="wdv3-live-buddy-reviewer-r${GITHUB_RUN_ID}-${reviewer_digest#sha256:}"
           mv .wdv3/publication-snapshot.json ".wdv3/${snapshot_name}"
           mkdir -p ".wdv3/${reviewer_name}"
           cp ".wdv3/${snapshot_name}" ".wdv3/${reviewer_name}/publication-snapshot.json"
@@ -1285,6 +1286,7 @@ jobs:
 
   approval:
     name: Human approval and same-revision Authorization
+    if: github.run_attempt == 1
     needs: materialize-publication
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -1416,7 +1418,7 @@ jobs:
             --output .wdv3/authorization.json \
             --github-output "${GITHUB_OUTPUT}"
           digest="$(sha256sum .wdv3/authorization.json | cut -d' ' -f1)"
-          name="wdv3-live-buddy-authorization-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          name="wdv3-live-buddy-authorization-r${GITHUB_RUN_ID}-${digest}.json"
           mv .wdv3/authorization.json ".wdv3/${name}"
           authorization_base64="$(base64 -w0 ".wdv3/${name}")"
           echo "authorization-artifact-name=${name}" >> "${GITHUB_OUTPUT}"
@@ -1424,7 +1426,7 @@ jobs:
 
   approval-finalizer:
     name: Finalize approval and admit capability
-    if: always() && needs.materialize-publication.result != 'skipped'
+    if: always() && github.run_attempt == 1 && needs.materialize-publication.result != 'skipped'
     needs: [materialize-publication, approval]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1571,7 +1573,7 @@ jobs:
           status=$?
           set -e
           digest="$(sha256sum .wdv3/capability-decision.json | cut -d' ' -f1)"
-          name="wdv3-live-buddy-capability-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          name="wdv3-live-buddy-capability-r${GITHUB_RUN_ID}-${digest}.json"
           mv .wdv3/capability-decision.json ".wdv3/${name}"
           {
             echo "capability-decision-artifact-name=${name}"
@@ -1623,7 +1625,7 @@ jobs:
 
   publish-github-packages:
     name: Publish to GitHub Packages
-    if: success() && needs.approval-finalizer.outputs.capability-result == 'success' && needs.approval-finalizer.outputs.publish-required == 'true'
+    if: success() && github.run_attempt == 1 && needs.approval-finalizer.outputs.capability-result == 'success' && needs.approval-finalizer.outputs.publish-required == 'true'
     needs: approval-finalizer
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1741,15 +1743,15 @@ jobs:
             --publication-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-digest }}" \
             --preflight .wdv3/publication-preflight.json \
             --preflight-digest "${{ steps.preflight.outputs.publication-preflight-digest }}" \
-            --marker-output ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}" \
+            --marker-output ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${GITHUB_RUN_ID}" \
             --github-output "${GITHUB_OUTPUT}"
       - name: Upload mutation may-have-started marker
         id: upload-mutation-marker
         if: success() && steps.capability-environment-marker.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}-ra${{ github.run_attempt }}
-          path: .wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}-ra${{ github.run_attempt }}
+          name: wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}
+          path: .wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}
           if-no-files-found: error
           retention-days: 45
           overwrite: false
@@ -1800,7 +1802,7 @@ jobs:
             --github-token "${GITHUB_TOKEN}" \
             --preflight .wdv3/publication-preflight.json \
             --preflight-digest "${{ steps.preflight.outputs.publication-preflight-digest }}" \
-            --mutation-marker ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}-ra${{ github.run_attempt }}" \
+            --mutation-marker ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}" \
             --mutation-marker-digest "${{ steps.mark-mutation.outputs.mutation-may-have-started-digest }}" \
             --mutation-marker-artifact-id "${{ steps.upload-mutation-marker.outputs.artifact-id }}" \
             --mutation-marker-artifact-digest "${{ steps.upload-mutation-marker.outputs.artifact-digest }}" \
@@ -1813,7 +1815,7 @@ jobs:
           echo "publish-cli-status=${status}" >> "${GITHUB_OUTPUT}"
           if [[ -f .wdv3/receipt.json ]]; then
             receipt_digest="$(sha256sum .wdv3/receipt.json | cut -d' ' -f1)"
-            receipt_name="wdv3-live-buddy-receipt-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${receipt_digest}.json"
+            receipt_name="wdv3-live-buddy-receipt-r${GITHUB_RUN_ID}-${receipt_digest}.json"
             mv .wdv3/receipt.json ".wdv3/${receipt_name}"
             echo "receipt-artifact-name=${receipt_name}" >> "${GITHUB_OUTPUT}"
           fi
@@ -1844,7 +1846,7 @@ jobs:
           fi
           if [[ -n "${{ steps.upload-mutation-marker.outputs.artifact-id }}" ]]; then
             terminal_args+=(
-              --mutation-marker ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}-ra${{ github.run_attempt }}"
+              --mutation-marker ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}"
               --mutation-marker-artifact-id "${{ steps.upload-mutation-marker.outputs.artifact-id }}"
             )
           fi
@@ -1875,7 +1877,7 @@ jobs:
           form_status=$?
           set -e
           bundle_digest="$(sha256sum .wdv3/capability-group-bundle.json | cut -d' ' -f1)"
-          bundle_name="wdv3-live-buddy-capability-bundle-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${bundle_digest}.json"
+          bundle_name="wdv3-live-buddy-capability-bundle-r${GITHUB_RUN_ID}-${bundle_digest}.json"
           mv .wdv3/capability-group-bundle.json ".wdv3/${bundle_name}"
           echo "capability-group-bundle-artifact-name=${bundle_name}" >> "${GITHUB_OUTPUT}"
           echo "capability-group-bundle-digest=sha256:${bundle_digest}" >> "${GITHUB_OUTPUT}"
@@ -1904,7 +1906,7 @@ jobs:
 
   workflow-cancellation:
     name: Record workflow cancellation
-    if: cancelled()
+    if: cancelled() && github.run_attempt == 1
     needs:
       [
         admit,
@@ -1925,7 +1927,7 @@ jobs:
 
   release-finalizer:
     name: Finalize live Attempt outcome
-    if: always() && needs.admit.outputs.identity-admitted == 'true'
+    if: always() && github.run_attempt == 1 && needs.admit.outputs.identity-admitted == 'true'
     needs:
       [
         admit,
@@ -2255,8 +2257,8 @@ jobs:
           fi
           outcome_digest="$(sha256sum .wdv3/final-attempt/attempt-outcome.json | cut -d' ' -f1)"
           summary_digest="$(sha256sum .wdv3/final-attempt/attempt-summary.md | cut -d' ' -f1)"
-          outcome_name="wdv3-live-buddy-attempt-outcome-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${outcome_digest}.json"
-          summary_name="wdv3-live-buddy-attempt-summary-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${summary_digest}.md"
+          outcome_name="wdv3-live-buddy-attempt-outcome-r${GITHUB_RUN_ID}-${outcome_digest}.json"
+          summary_name="wdv3-live-buddy-attempt-summary-r${GITHUB_RUN_ID}-${summary_digest}.md"
           mv .wdv3/final-attempt/attempt-outcome.json ".wdv3/final-attempt/${outcome_name}"
           mv .wdv3/final-attempt/attempt-summary.md ".wdv3/final-attempt/${summary_name}"
           {

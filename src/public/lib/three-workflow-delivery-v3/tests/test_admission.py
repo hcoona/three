@@ -40,7 +40,6 @@ def _current_payload() -> dict[str, JsonValue]:
         "purpose": "live-release",
         "request": "request-17",
         "workflow_run_id": 4501,
-        "run_attempt": 3,
         "attempt": "attempt-9",
         "target": "f" * 40,
         "producer": "release-planner",
@@ -56,13 +55,31 @@ def _current_context(
         purpose="live-release",
         request="request-17",
         workflow_run_id=4501,
-        run_attempt=3,
+        run_attempt=None,
         attempt="attempt-9",
         target="f" * 40,
         producer="release-planner",
         control="workflow-delivery-v3",
         artifact_id=7102,
         artifact_digest=CURRENT_TRANSPORT_DIGEST,
+        payload_digest=canonical_sha256(payload),
+    )
+
+
+def _simulation_current_payload() -> dict[str, JsonValue]:
+    payload = _current_payload()
+    payload["purpose"] = "release-simulation"
+    payload["run_attempt"] = 3
+    return payload
+
+
+def _simulation_current_context(
+    payload: dict[str, JsonValue],
+) -> CurrentAuthorityContext:
+    return replace(
+        _current_context(payload),
+        purpose="release-simulation",
+        run_attempt=3,
         payload_digest=canonical_sha256(payload),
     )
 
@@ -173,6 +190,43 @@ def test_current_authority_admits_exact_current_artifact() -> None:
     assert result.control_identity == "workflow-delivery-v3"
     assert result.platform_run is None
     assert result.platform_job is None
+
+
+def test_simulation_current_authority_requires_run_attempt() -> None:
+    """Require an explicit positive attempt for attempt-bound authority."""
+    payload = _simulation_current_payload()
+    context = _simulation_current_context(payload)
+
+    result = admit(
+        mode=AdmissionMode.CURRENT_AUTHORITY,
+        payload=payload,
+        artifact_id=context.artifact_id,
+        artifact_digest=context.artifact_digest,
+        current=context,
+    )
+    assert result.purpose == "release-simulation"
+
+    missing = dict(payload)
+    del missing["run_attempt"]
+    with pytest.raises(ValueError, match="missing required field: run_attempt"):
+        _admit_current_payload(
+            missing,
+            context=replace(
+                context,
+                payload_digest=canonical_sha256(missing),
+            ),
+        )
+
+    malformed = dict(payload)
+    malformed["run_attempt"] = False
+    with pytest.raises(TypeError, match="wrong JSON type: run_attempt"):
+        _admit_current_payload(
+            malformed,
+            context=replace(
+                context,
+                payload_digest=canonical_sha256(malformed),
+            ),
+        )
 
 
 def test_current_authority_keeps_transport_and_payload_digests_distinct() -> (
@@ -546,7 +600,6 @@ def test_admit_rejects_unsupported_caller_mode() -> None:
                 "purpose",
                 "request",
                 "workflow_run_id",
-                "run_attempt",
                 "attempt",
                 "target",
                 "producer",
@@ -561,7 +614,6 @@ def test_admit_rejects_unsupported_caller_mode() -> None:
         "current-purpose",
         "current-request",
         "current-workflow-run-id",
-        "current-run-attempt",
         "current-attempt",
         "current-target",
         "current-producer",
@@ -601,12 +653,14 @@ def test_admission_schema_rejects_missing_required_field(
         ("history", "extension"),
         ("current", "admission_mode"),
         ("history", "admission_mode"),
+        ("current", "run_attempt"),
     ],
     ids=[
         "current-arbitrary",
         "history-arbitrary",
         "current-admission-mode",
         "history-admission-mode",
+        "current-live-run-attempt",
     ],
 )
 def test_admission_schema_rejects_unknown_field(
@@ -631,10 +685,8 @@ def test_admission_schema_rejects_unknown_field(
     ("field", "wrong_value"),
     [
         ("release_execution", 1),
-        ("purpose", 1),
         ("request", 1),
         ("workflow_run_id", True),
-        ("run_attempt", False),
         ("attempt", 1),
         ("target", 1),
         ("producer", 1),
@@ -642,10 +694,8 @@ def test_admission_schema_rejects_unknown_field(
     ],
     ids=[
         "release-execution",
-        "purpose",
         "request",
         "workflow-run-id-bool",
-        "run-attempt-bool",
         "attempt",
         "target",
         "producer",
@@ -761,14 +811,19 @@ def test_current_authority_rejects_each_payload_binding_mismatch(
     field: str,
 ) -> None:
     """Reject each independent current binding mutation."""
-    payload = _current_payload()
-    context = _current_context(payload)
+    if field == "run_attempt":
+        payload = _simulation_current_payload()
+        context = _simulation_current_context(payload)
+    else:
+        payload = _current_payload()
+        context = _current_context(payload)
     value = payload[field]
     if field in {"workflow_run_id", "run_attempt"}:
         assert isinstance(value, int)
         payload[field] = value + 1
     elif field == "purpose":
         payload[field] = "release-simulation"
+        payload["run_attempt"] = 3
     elif field == "target":
         payload[field] = "e" * 40
     else:
@@ -1148,14 +1203,18 @@ def test_execution_history_rejects_each_exposed_metadata_mismatch(
         (
             {"run_attempt": 0},
             {},
-            r"(?i)^(?=.*execution-history)(?=.*run_attempt)"
-            r"(?=.*positive.*integer).*$",
+            (
+                r"(?i)^(?=.*execution-history)(?=.*run_attempt)"
+                r"(?=.*positive.*integer).*$"
+            ),
         ),
         (
             {},
             {"job_id": 0},
-            r"(?i)^(?=.*execution-history)(?=.*job_id)"
-            r"(?=.*positive.*integer).*$",
+            (
+                r"(?i)^(?=.*execution-history)(?=.*job_id)"
+                r"(?=.*positive.*integer).*$"
+            ),
         ),
         (
             {},
@@ -2229,9 +2288,14 @@ def test_current_authority_accepts_each_closed_purpose(purpose: str) -> None:
     """Accept every and only every approved commit-2 purpose value."""
     payload = _current_payload()
     payload["purpose"] = purpose
+    run_attempt = None
+    if purpose != "live-release":
+        payload["run_attempt"] = 3
+        run_attempt = 3
     context = replace(
         _current_context(payload),
         purpose=purpose,
+        run_attempt=run_attempt,
         payload_digest=canonical_sha256(payload),
     )
 
@@ -2480,8 +2544,12 @@ def test_current_authority_rejects_invalid_positive_integer(
     invalid_value: JsonValue,
 ) -> None:
     """Reject all non-positive or non-integer current authority IDs."""
-    payload = _current_payload()
-    context = _current_context(payload)
+    if endpoint.endswith("run-attempt"):
+        payload = _simulation_current_payload()
+        context = _simulation_current_context(payload)
+    else:
+        payload = _current_payload()
+        context = _current_context(payload)
     artifact_id: object = context.artifact_id
     field = (
         "artifact_id"
@@ -2543,8 +2611,12 @@ def test_current_authority_accepts_positive_integer_lower_bound(
     primitive: str,
 ) -> None:
     """Accept one as the lower bound for every current integer primitive."""
-    payload = _current_payload()
-    context = _current_context(payload)
+    if primitive == "run-attempt":
+        payload = _simulation_current_payload()
+        context = _simulation_current_context(payload)
+    else:
+        payload = _current_payload()
+        context = _current_context(payload)
     artifact_id = context.artifact_id
     if primitive == "artifact-id":
         artifact_id = 1
@@ -2786,10 +2858,10 @@ def _admit_wrong_but_equal_primitive_pair(
         )
         return _admit_current_payload(payload, context=context)
     if primitive_pair == "current-run-attempt":
-        payload = _current_payload()
+        payload = _simulation_current_payload()
         payload["run_attempt"] = 0
         context = replace(
-            _current_context(payload),
+            _simulation_current_context(payload),
             run_attempt=0,
             payload_digest=canonical_sha256(payload),
         )

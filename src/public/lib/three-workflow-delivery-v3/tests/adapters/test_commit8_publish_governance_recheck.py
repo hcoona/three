@@ -141,7 +141,6 @@ def _attempt() -> ReleaseAttemptIdentity:
             target=TARGET,
         ),
         workflow_run_id=812,
-        run_attempt=4,
     )
 
 

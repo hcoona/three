@@ -55,7 +55,6 @@ EXECUTION = BuddyExecutionIdentity(
 ATTEMPT = ReleaseAttemptIdentity(
     execution=EXECUTION,
     workflow_run_id=101,
-    run_attempt=2,
 )
 
 COMMIT8_RECORD_TYPES = (
@@ -77,7 +76,6 @@ def _current_payload() -> dict[str, JsonValue]:
         "purpose": "live-release",
         "request": "release-request:" + ("d" * 64),
         "workflow_run_id": ATTEMPT.workflow_run_id,
-        "run_attempt": ATTEMPT.run_attempt,
         "attempt": canonical_sha256(ATTEMPT.to_document()),
         "target": TARGET,
         "producer": "commit8-contract-producer",
@@ -93,7 +91,7 @@ def _current_context(
         purpose=str(payload["purpose"]),
         request=str(payload["request"]),
         workflow_run_id=ATTEMPT.workflow_run_id,
-        run_attempt=ATTEMPT.run_attempt,
+        run_attempt=None,
         attempt=str(payload["attempt"]),
         target=str(payload["target"]),
         producer=str(payload["producer"]),
@@ -114,21 +112,19 @@ def test_commit8_record_contract_api_is_available() -> None:
     assert missing == (), f"missing commit-8 record contracts: {missing}"
 
 
-def test_attempt_identity_is_exact_frozen_and_current_attempt_bound() -> None:
+def test_attempt_identity_is_exact_frozen_and_workflow_run_bound() -> None:
     assert tuple(field.name for field in fields(ATTEMPT)) == (
         "execution",
         "workflow_run_id",
-        "run_attempt",
     )
     assert ATTEMPT.to_document() == {
         "schema": "workflow-delivery/v3/release-attempt-identity",
         "execution": EXECUTION.to_document(),
         "workflow-run-id": 101,
-        "run-attempt": 2,
     }
     assert hasattr(ReleaseAttemptIdentity, "__slots__")
     with pytest.raises(FrozenInstanceError):
-        ATTEMPT.run_attempt = 3  # type: ignore[misc]
+        ATTEMPT.workflow_run_id = 102  # type: ignore[misc]
 
 
 def test_exact_current_attempt_authority_preserves_every_trusted_binding() -> (
@@ -164,7 +160,6 @@ def test_exact_current_attempt_authority_preserves_every_trusted_binding() -> (
         ("release_execution", "sha256:" + ("e" * 64)),
         ("request", "release-request:" + ("e" * 64)),
         ("workflow_run_id", 102),
-        ("run_attempt", 1),
         ("attempt", "sha256:" + ("e" * 64)),
         ("target", "e" * 40),
         ("producer", "substituted-producer"),
@@ -180,6 +175,21 @@ def test_current_attempt_authority_rejects_every_binding_substitution(
     payload[field] = replacement
 
     with pytest.raises(ValueError, match=rf"binding mismatch: {field}"):
+        admit(
+            mode=AdmissionMode.CURRENT_AUTHORITY,
+            payload=payload,
+            artifact_id=context.artifact_id,
+            artifact_digest=context.artifact_digest,
+            current=context,
+        )
+
+
+def test_live_current_authority_rejects_run_attempt_field() -> None:
+    payload = _current_payload()
+    context = _current_context(payload)
+    payload["run_attempt"] = 2
+
+    with pytest.raises(ValueError, match="unknown field: run_attempt"):
         admit(
             mode=AdmissionMode.CURRENT_AUTHORITY,
             payload=payload,
@@ -253,7 +263,6 @@ def _authorization() -> AuthorizationRecord:
         reviewer_summary_upload_digest="sha256:" + ("2" * 64),
         reviewer_summary_payload_digest="sha256:" + ("3" * 64),
         workflow_run_id=ATTEMPT.workflow_run_id,
-        run_attempt=ATTEMPT.run_attempt,
         approval_job_id=711,
         approval_job="approval",
         environment="workflow-delivery-v3-buddy-approval",
@@ -282,8 +291,6 @@ def _attempt_binding() -> ReleaseAttemptBinding:
             ("repository", "hcoona/three"),
             ("resolved-commit", TARGET),
         ),
-        history_snapshot_artifact_id=710,
-        history_snapshot_artifact_digest="sha256:" + ("5" * 64),
     )
 
 
@@ -328,7 +335,6 @@ def _capability_decision(
         producer="approval-finalizer",
         control=CONTROL,
         workflow_run_id=ATTEMPT.workflow_run_id,
-        run_attempt=ATTEMPT.run_attempt,
         result=result,
         diagnostics=()
         if result == "success"
@@ -350,7 +356,7 @@ def _receipt() -> Receipt:
         transport_digest="sha256:" + ("8" * 64),
         producer="build",
         workflow_run_id=ATTEMPT.workflow_run_id,
-        run_attempt=ATTEMPT.run_attempt,
+        run_attempt=None,
     )
     return Receipt(
         attempt=ATTEMPT,
@@ -373,7 +379,6 @@ def _receipt() -> Receipt:
         producer="publish-github-packages",
         control=CONTROL,
         workflow_run_id=ATTEMPT.workflow_run_id,
-        run_attempt=ATTEMPT.run_attempt,
     )
 
 
@@ -408,7 +413,6 @@ def _action_result(
         producer=receipt.producer,
         control=CONTROL,
         workflow_run_id=ATTEMPT.workflow_run_id,
-        run_attempt=ATTEMPT.run_attempt,
     )
 
 
@@ -423,7 +427,6 @@ def _group_bundle() -> CapabilityGroupResultBundle:
         producer="publish-github-packages",
         control=CONTROL,
         workflow_run_id=ATTEMPT.workflow_run_id,
-        run_attempt=ATTEMPT.run_attempt,
     )
 
 
@@ -524,13 +527,6 @@ def test_commit8_records_round_trip_through_closed_transport(record) -> None:
 @pytest.mark.parametrize(
     ("record", "field", "replacement", "message"),
     [
-        (
-            _attempt_binding(),
-            "history_snapshot_artifact_digest",
-            "not-a-digest",
-            "history_snapshot_artifact_digest",
-        ),
-        (_authorization(), "run_attempt", 3, "current Attempt"),
         pytest.param(
             _authorization(),
             "environment",
@@ -683,7 +679,13 @@ def test_blocked_capability_decision_is_non_authorizing_and_attempt_local() -> (
 
     assert blocked.authorizing is False
     with pytest.raises(ValueError, match="current Attempt"):
-        replace(blocked, run_attempt=ATTEMPT.run_attempt + 1)
+        replace(
+            blocked,
+            attempt=replace(
+                blocked.attempt,
+                workflow_run_id=blocked.attempt.workflow_run_id + 1,
+            ),
+        )
 
 
 def test_group_bundle_requires_exact_action_set_equality() -> None:
@@ -699,7 +701,6 @@ def test_group_bundle_requires_exact_action_set_equality() -> None:
             producer=result.producer,
             control=CONTROL,
             workflow_run_id=ATTEMPT.workflow_run_id,
-            run_attempt=ATTEMPT.run_attempt,
         )
 
 
@@ -724,7 +725,6 @@ def test_buddy_request_normalization_and_execution_derivation_are_strict() -> (
         target=TARGET,
         actor="reviewed-actor",
         workflow_run_id=101,
-        run_attempt=2,
     )
 
     assert derive_buddy_execution_identity(intent) == EXECUTION
@@ -744,7 +744,6 @@ def test_buddy_complete_keys_are_distinct_from_conservative_group(
             target=scenario.snapshot.target,
         ),
         workflow_run_id=scenario.binding.simulation.workflow_run_id,
-        run_attempt=scenario.binding.simulation.run_attempt,
     )
     projection = replace(
         scenario.snapshot.destination_projections[0],
@@ -783,7 +782,6 @@ def _live_noop_closure(scenario):
             target=scenario.snapshot.target,
         ),
         workflow_run_id=scenario.binding.simulation.workflow_run_id,
-        run_attempt=scenario.binding.simulation.run_attempt,
     )
     original = scenario.snapshot.destination_projections[0]
     coordinate = ExternalPackageCoordinate(
@@ -846,7 +844,6 @@ def _live_noop_closure(scenario):
         attempt=attempt,
         publication_snapshot_digest=publication.snapshot_digest,
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
     )
     return attempt, decision, publication, authorization
 
@@ -987,7 +984,6 @@ def test_buddy_execution_identity_document_and_concurrency_key_are_exact() -> (
         target=TARGET,
         actor="reviewed-actor",
         workflow_run_id=101,
-        run_attempt=2,
     )
     document = derive_buddy_execution_identity(intent).to_document()
     expected_document = {
@@ -1033,7 +1029,6 @@ def test_three_same_target_dispatches_share_one_caller_group_for_github_coalesci
             target=TARGET,
             actor="actor-one",
             workflow_run_id=201,
-            run_attempt=1,
         ),
         normalize_buddy_live_intent(
             repository="hcoona/three",
@@ -1041,7 +1036,6 @@ def test_three_same_target_dispatches_share_one_caller_group_for_github_coalesci
             target=TARGET,
             actor="actor-two",
             workflow_run_id=202,
-            run_attempt=2,
         ),
         normalize_buddy_live_intent(
             repository="hcoona/three",
@@ -1049,7 +1043,6 @@ def test_three_same_target_dispatches_share_one_caller_group_for_github_coalesci
             target=TARGET,
             actor="actor-three",
             workflow_run_id=203,
-            run_attempt=7,
         ),
     )
     expected_document = {
@@ -1070,7 +1063,6 @@ def test_three_same_target_dispatches_share_one_caller_group_for_github_coalesci
     for field in (
         "request_id",
         "workflow_run_id",
-        "run_attempt",
         "selected_ref",
         "actor",
     ):
@@ -1108,7 +1100,6 @@ def test_different_buddy_targets_derive_different_execution_concurrency_keys() -
             target=target,
             actor="reviewed-actor",
             workflow_run_id=301,
-            run_attempt=1,
         )
         for target in (TARGET, "b" * 40)
     )

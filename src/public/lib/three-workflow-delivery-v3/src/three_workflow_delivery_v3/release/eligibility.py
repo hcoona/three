@@ -235,7 +235,6 @@ class LiveEligibilityContext:
     purpose: str
     request_id: str
     workflow_run_id: int
-    run_attempt: int
     selected_ref: str
     target: str
     repository_model_digest: str
@@ -458,7 +457,6 @@ def _live_eligibility_document(
         "purpose": context.purpose,
         "request-id": context.request_id,
         "workflow-run-id": context.workflow_run_id,
-        "run-attempt": context.run_attempt,
         "selected-ref": context.selected_ref,
         "target": context.target,
         "repository-model-digest": context.repository_model_digest,
@@ -884,13 +882,9 @@ def _validate_live_context(  # noqa: C901
         raise ValueError(message)
     _nonempty_exact_string(context.request_id, field="request_id")
     _validate_selected_ref(context.selected_ref)
-    for field, value in (
-        ("workflow_run_id", context.workflow_run_id),
-        ("run_attempt", context.run_attempt),
-    ):
-        if type(value) is not int or value <= 0:
-            message = f"live eligibility {field} must be a positive integer"
-            raise ValueError(message)
+    if type(context.workflow_run_id) is not int or context.workflow_run_id <= 0:
+        message = "live eligibility workflow_run_id must be a positive integer"
+        raise ValueError(message)
     if (
         type(context.target) is not str
         or _SHA_PATTERN.fullmatch(context.target) is None
@@ -991,7 +985,6 @@ def _decision_context(value: JsonValue) -> LiveEligibilityContext:
                 "purpose",
                 "request-id",
                 "workflow-run-id",
-                "run-attempt",
                 "selected-ref",
                 "target",
                 "repository-model-digest",
@@ -1015,10 +1008,6 @@ def _decision_context(value: JsonValue) -> LiveEligibilityContext:
         workflow_run_id=_decision_integer(
             document["workflow-run-id"],
             field="context.workflow-run-id",
-        ),
-        run_attempt=_decision_integer(
-            document["run-attempt"],
-            field="context.run-attempt",
         ),
         selected_ref=_nonempty_exact_string(
             document["selected-ref"],
@@ -1309,7 +1298,6 @@ def admit_live_eligibility_decision(  # noqa: C901, PLR0912, PLR0913, PLR0915
         intent.purpose,
         intent.request_id,
         intent.workflow_run_id,
-        intent.run_attempt,
         intent.selected_ref,
         intent.target,
         repository_model.canonical_digest,
@@ -1322,7 +1310,6 @@ def admit_live_eligibility_decision(  # noqa: C901, PLR0912, PLR0913, PLR0915
         context.purpose,
         context.request_id,
         context.workflow_run_id,
-        context.run_attempt,
         context.selected_ref,
         context.target,
         context.repository_model_digest,

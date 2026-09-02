@@ -13,6 +13,7 @@ env:
 jobs:
   request:
     name: Normalize Buddy live request
+    if: github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -50,7 +51,7 @@ jobs:
             --output .wdv3/release-intent.json \
             --github-output "${GITHUB_OUTPUT}"
           digest="$(sha256sum .wdv3/release-intent.json | cut -d' ' -f1)"
-          artifact_name="wdv3-live-buddy-request-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          artifact_name="wdv3-live-buddy-request-r${GITHUB_RUN_ID}-${digest}.json"
           mv .wdv3/release-intent.json ".wdv3/${artifact_name}"
           # shellcheck disable=SC2129
           echo "intent-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
@@ -70,6 +71,7 @@ jobs:
 
   discover-node:
     name: Discover exact Node facts
+    if: github.run_attempt == 1
     needs: request
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -143,7 +145,7 @@ jobs:
         id: provider
         run: |
           digest="$(sha256sum .wdv3/node-provider-result.json | cut -d' ' -f1)"
-          artifact_name="wdv3-live-buddy-node-provider-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          artifact_name="wdv3-live-buddy-node-provider-r${GITHUB_RUN_ID}-${digest}.json"
           mv .wdv3/node-provider-result.json ".wdv3/${artifact_name}"
           echo "provider-digest=sha256:${digest}" >> "${GITHUB_OUTPUT}"
           echo "provider-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
@@ -161,6 +163,7 @@ jobs:
 
   compile-model:
     name: Compile admitted live Repository Model
+    if: github.run_attempt == 1
     needs: discover-node
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -225,7 +228,7 @@ jobs:
             --output .wdv3/repository-model.json \
             --github-output "${GITHUB_OUTPUT}"
           digest="$(sha256sum .wdv3/repository-model.json | cut -d' ' -f1)"
-          artifact_name="wdv3-live-buddy-repository-model-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          artifact_name="wdv3-live-buddy-repository-model-r${GITHUB_RUN_ID}-${digest}.json"
           mv .wdv3/repository-model.json ".wdv3/${artifact_name}"
           echo "repository-model-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
       - name: Upload admitted Repository Model
@@ -243,6 +246,7 @@ jobs:
   evaluate-live-eligibility:
     name: Evaluate live eligibility before Attempt
     # Governance remains blocked unless the protected attestation has live_enabled=true.
+    if: github.run_attempt == 1
     needs: compile-model
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -343,7 +347,7 @@ jobs:
             exit 2
           fi
           digest="$(sha256sum .wdv3/live-eligibility-decision.json | cut -d' ' -f1)"
-          artifact_name="wdv3-live-buddy-eligibility-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          artifact_name="wdv3-live-buddy-eligibility-r${GITHUB_RUN_ID}-${digest}.json"
           mv .wdv3/live-eligibility-decision.json ".wdv3/${artifact_name}"
           {
             echo "eligibility-status=${eligibility_status}"
@@ -383,7 +387,7 @@ jobs:
 
   run-live-attempt:
     name: Run same-revision Buddy live Attempt
-    if: needs.evaluate-live-eligibility.outputs.live-result == 'admitted'
+    if: github.run_attempt == 1 && needs.evaluate-live-eligibility.outputs.live-result == 'admitted'
     needs: evaluate-live-eligibility
     uses: ./.github/workflows/workflow-delivery-v3-live-attempt.yml
     permissions:

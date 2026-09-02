@@ -71,7 +71,6 @@ from three_workflow_delivery_v3.repository.node_provider import (
 REPO_ROOT = Path(__file__).resolve().parents[6]
 PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 TARGET = "e" * 40
-RUN_ATTEMPT = 3
 TRANSPORT_ID = 202
 BOOLEAN_ID_SURROGATE = True
 NPM_VERSION = "1.2.3-beta.42.ge123456"
@@ -681,7 +680,6 @@ def _live_context(
         purpose="live-release",
         request_id=snapshot.context.request_id,
         workflow_run_id=snapshot.context.workflow_run_id,
-        run_attempt=RUN_ATTEMPT,
         selected_ref="refs/heads/feature/ref-neutral",
         target=snapshot.context.target,
         repository_model_digest=snapshot.snapshot_digest,

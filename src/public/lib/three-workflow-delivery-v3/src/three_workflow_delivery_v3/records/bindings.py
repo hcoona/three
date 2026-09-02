@@ -43,7 +43,7 @@ class CurrentAuthorityContext:
     purpose: str
     request: str
     workflow_run_id: int
-    run_attempt: int
+    run_attempt: int | None
     attempt: str
     target: str
     producer: str
@@ -110,11 +110,14 @@ _CURRENT_PAYLOAD_SCHEMA: JsonSchema = (
     ("purpose", str),
     ("request", str),
     ("workflow_run_id", int),
-    ("run_attempt", int),
     ("attempt", str),
     ("target", str),
     ("producer", str),
     ("control", str),
+)
+_CURRENT_ATTEMPT_PAYLOAD_SCHEMA: JsonSchema = (
+    *_CURRENT_PAYLOAD_SCHEMA,
+    ("run_attempt", int),
 )
 _HISTORY_REQUIRED_SCHEMA: JsonSchema = (
     ("execution", str),
@@ -240,22 +243,30 @@ def _validate_verified_prior_attempts(
     return frozenset(verified_prior_attempts)
 
 
-def _admit_current(
+def _admit_current(  # noqa: C901
     payload: JsonValue,
     artifact_id: int,
     artifact_digest: str,
     context: CurrentAuthorityContext | None,
 ) -> Admission:
     document = _require_json_object(payload)
+    if "purpose" not in document:
+        message = "current-authority schema missing required field: purpose"
+        raise ValueError(message)
+    _validate_purpose(document["purpose"], mode="current-authority")
+    schema = (
+        _CURRENT_PAYLOAD_SCHEMA
+        if document["purpose"] == "live-release"
+        else _CURRENT_ATTEMPT_PAYLOAD_SCHEMA
+    )
     _validate_closed_schema(
         document,
         mode="current-authority",
-        required=_CURRENT_PAYLOAD_SCHEMA,
+        required=schema,
     )
     if context is None:
         message = "current-authority context is required"
         raise ValueError(message)
-    _validate_purpose(document["purpose"], mode="current-authority")
     _validate_purpose(context.purpose, mode="current-authority")
     _validate_commit_sha(
         document["target"],
@@ -277,16 +288,22 @@ def _admit_current(
         mode="current-authority",
         field="workflow_run_id",
     )
-    _validate_positive_integer(
-        document["run_attempt"],
-        mode="current-authority",
-        field="run_attempt",
-    )
-    _validate_positive_integer(
-        context.run_attempt,
-        mode="current-authority",
-        field="run_attempt",
-    )
+    if context.purpose == "live-release":
+        if context.run_attempt is not None:
+            message = "current-authority live context cannot bind run_attempt"
+            raise ValueError(message)
+    else:
+        _validate_positive_integer(
+            context.run_attempt,
+            mode="current-authority",
+            field="run_attempt",
+        )
+    if document["purpose"] != "live-release":
+        _validate_positive_integer(
+            document["run_attempt"],
+            mode="current-authority",
+            field="run_attempt",
+        )
     _validate_positive_integer(
         artifact_id,
         mode="current-authority",
@@ -312,7 +329,7 @@ def _admit_current(
         mode="current-authority",
         authority="payload_digest",
     )
-    for name, _ in _CURRENT_PAYLOAD_SCHEMA:
+    for name, _ in schema:
         if document[name] != getattr(context, name):
             message = f"current-authority binding mismatch: {name}"
             raise ValueError(message)
@@ -370,7 +387,7 @@ def _validate_history_lineage(
             raise ValueError(message)
 
 
-def _validate_history_primitives(  # noqa: PLR0913
+def _validate_history_primitives(  # noqa: PLR0913, PLR0917
     document: dict[str, JsonValue],
     artifact_id: int,
     context: ExecutionHistoryContext,
@@ -423,7 +440,7 @@ def _validate_history_primitives(  # noqa: PLR0913
     return _validate_verified_prior_attempts(verified_prior_attempts)
 
 
-def _admit_history(  # noqa: C901, PLR0912, PLR0913
+def _admit_history(  # noqa: C901, PLR0912, PLR0913, PLR0917
     payload: JsonValue,
     artifact_id: int,
     artifact_digest: str,

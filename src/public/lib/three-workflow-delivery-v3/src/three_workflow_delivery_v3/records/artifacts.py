@@ -49,7 +49,7 @@ class ArtifactTransportIdentity:
     transport_digest: str
     producer: str
     workflow_run_id: int
-    run_attempt: int
+    run_attempt: int | None
 
     def __post_init__(self) -> None:
         """Reject malformed or non-current transport primitives."""
@@ -62,19 +62,22 @@ class ArtifactTransportIdentity:
         _digest(self.transport_digest, field="transport_digest")
         _nonempty(self.producer, field="producer")
         _positive_integer(self.workflow_run_id, field="workflow_run_id")
-        _positive_integer(self.run_attempt, field="run_attempt")
+        if self.run_attempt is not None:
+            _positive_integer(self.run_attempt, field="run_attempt")
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical transport identity."""
-        return {
+        document: dict[str, JsonValue] = {
             "artifact-id": self.artifact_id,
             "artifact-name": self.artifact_name,
             "artifact-url": self.artifact_url,
             "transport-digest": self.transport_digest,
             "producer": self.producer,
             "workflow-run-id": self.workflow_run_id,
-            "run-attempt": self.run_attempt,
         }
+        if self.run_attempt is not None:
+            document["run-attempt"] = self.run_attempt
+        return document
 
     @property
     def identity_digest(self) -> str:

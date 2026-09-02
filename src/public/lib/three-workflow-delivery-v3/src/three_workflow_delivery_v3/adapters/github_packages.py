@@ -3959,7 +3959,6 @@ def _action_result(  # noqa: PLR0913
         producer=GITHUB_PACKAGES_PUBLISHER_PRODUCER,
         control=control,
         workflow_run_id=attempt.workflow_run_id,
-        run_attempt=attempt.run_attempt,
     )
 
 
@@ -4378,7 +4377,6 @@ def publish_github_packages_action(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     capability_decision,
                 ).control,
                 workflow_run_id=publication.attempt.workflow_run_id,
-                run_attempt=publication.attempt.run_attempt,
             )
             if defer_receipt_binding:
                 classification = classify_publish_result(

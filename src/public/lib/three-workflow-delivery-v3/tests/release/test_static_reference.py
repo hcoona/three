@@ -3781,7 +3781,6 @@ def test_cli_live_evidence_accepts_git_target_only(
         release_unit=live.FIRST_SLICE_RELEASE_UNIT,
         request_id="phase-5-live-request",
         workflow_run_id=501,
-        run_attempt=1,
         selected_ref="refs/heads/main",
         target=TARGET,
     )
@@ -3847,7 +3846,6 @@ def test_cli_live_evidence_accepts_git_target_only(
             "purpose": intent.purpose,
             "request-id": intent.request_id,
             "workflow-run-id": intent.workflow_run_id,
-            "run-attempt": intent.run_attempt,
             "selected-ref": intent.selected_ref,
             "target": intent.target,
             "repository-model-digest": repository_model.canonical_digest,

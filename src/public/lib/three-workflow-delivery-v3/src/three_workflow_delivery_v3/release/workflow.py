@@ -82,7 +82,7 @@ def form_release_adapter_context(  # noqa: PLR0913
         or model.context.purpose != purpose
         or model.context.workflow_run_id != subject.workflow_run_id
     )
-    if purpose != "live-release":
+    if isinstance(subject, SimulationIdentity):
         model_binding_mismatch = (
             model_binding_mismatch
             or model.context.run_attempt != subject.run_attempt

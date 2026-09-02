@@ -3263,3 +3263,27 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Governance remains `live_enabled: false`; no Live, deployment, publication,
   package, tag, workflow-dispatch, cleanup, or other external mutation
   occurred.
+
+## [2026-09-02] refactor | Contract normal-Live Attempt transport
+
+- Removed `github.run_attempt` from normal-Live Intent, Attempt identity,
+  eligibility, transport, Evidence, Authorization, Result, Receipt, bundle,
+  artifact names, and current-authority admission. Strict parsers reject the
+  superseded Live fields; Simulation and CI retain their attempt contracts.
+- Kept `--run-attempt` as validated platform input for attempt-specific GitHub
+  lookup, diagnostics, and the attempt-one invariant. Live domain records do
+  not serialize or compare it.
+- Removed Execution History Snapshot binding from current Attempt formation.
+  New records do not receive compatibility selectors; interim history
+  discovery fails closed until the next legacy-retirement phase.
+- Independent review found one blocking workflow gap: partial reruns could
+  reach attempt-free transport because jobs lacked independent attempt-one
+  admission. Independent adjudication retained the finding, all five caller
+  and thirteen reusable-workflow jobs now guard `github.run_attempt == 1`,
+  and closure review reported no findings.
+- The final staged repository gate passed 4,250 Workflow Delivery v3 tests,
+  actionlint, Ruff, formatting, static-reference authority preparation, and a
+  clean canonical index scan.
+- Protected Governance remains `live_enabled: false`; no Live, deployment,
+  publication, package, tag, workflow-dispatch, cleanup, or other external
+  mutation occurred.

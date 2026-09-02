@@ -73,14 +73,14 @@ def _transport_digest(path: Path) -> str:
     return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
 
 
-def _current_arguments(record: ReleaseIntent) -> list[str]:
+def _current_arguments(scenario) -> list[str]:
     return [
         "--workflow-run-id",
-        str(record.workflow_run_id),
+        str(scenario.intent.workflow_run_id),
         "--run-attempt",
-        str(record.run_attempt),
+        str(scenario.binding.simulation.run_attempt),
         "--target",
-        record.target,
+        scenario.intent.target,
     ]
 
 
@@ -104,15 +104,15 @@ def _uploaded_arguments(
 
 
 def _bindings(
-    intent: ReleaseIntent,
+    scenario,
     *,
     producer: str | None = None,
 ) -> ReleaseAdmissionBindings:
     return ReleaseAdmissionBindings(
         purpose="release-simulation",
-        workflow_run_id=intent.workflow_run_id,
-        run_attempt=intent.run_attempt,
-        target=intent.target,
+        workflow_run_id=scenario.intent.workflow_run_id,
+        run_attempt=scenario.binding.simulation.run_attempt,
+        target=scenario.intent.target,
         producer=producer,
     )
 
@@ -220,10 +220,7 @@ def test_every_transported_commit6_release_record_round_trips_closed_schema(
             canonical_bytes,
             expected_type=type(record),
             expected_digest=release_record_digest(record),
-            expected_bindings=_bindings(
-                scenario.intent,
-                producer=producer,
-            ),
+            expected_bindings=_bindings(scenario, producer=producer),
         )
         assert admitted == record
         assert type(admitted) is type(record)
@@ -235,10 +232,7 @@ def test_every_transported_commit6_release_record_round_trips_closed_schema(
                 canonicalize(unknown),
                 expected_type=type(record),
                 expected_digest=release_record_digest(record),
-                expected_bindings=_bindings(
-                    scenario.intent,
-                    producer=producer,
-                ),
+                expected_bindings=_bindings(scenario, producer=producer),
             )
 
     admitted_model = admit_repository_model_snapshot(
@@ -313,7 +307,7 @@ def test_simulation_outcome_rejects_hypothetical_action_binding_substitution(
             expected_digest=(
                 f"sha256:{hashlib.sha256(canonical_bytes).hexdigest()}"
             ),
-            expected_bindings=_bindings(scenario.intent),
+            expected_bindings=_bindings(scenario),
         )
 
 
@@ -332,16 +326,16 @@ def test_release_transport_rejects_canonical_binding_and_substitution_attacks(
             ).encode(),
             expected_type=ReleaseIntent,
             expected_digest=scenario.intent.intent_digest,
-            expected_bindings=_bindings(scenario.intent),
+            expected_bindings=_bindings(scenario),
         )
     with pytest.raises(ValueError, match="run_attempt"):
         admit_release_record(
-            intent_bytes,
-            expected_type=ReleaseIntent,
-            expected_digest=scenario.intent.intent_digest,
+            canonicalize(scenario.snapshot.to_document()),
+            expected_type=QualificationSnapshot,
+            expected_digest=scenario.snapshot.snapshot_digest,
             expected_bindings=replace(
-                _bindings(scenario.intent),
-                run_attempt=scenario.intent.run_attempt + 1,
+                _bindings(scenario),
+                run_attempt=scenario.binding.simulation.run_attempt + 1,
             ),
         )
     with pytest.raises(ValueError, match="purpose"):
@@ -350,8 +344,9 @@ def test_release_transport_rejects_canonical_binding_and_substitution_attacks(
             expected_type=QualificationSnapshot,
             expected_digest=scenario.snapshot.snapshot_digest,
             expected_bindings=replace(
-                _bindings(scenario.intent),
+                _bindings(scenario),
                 purpose="live-release",
+                run_attempt=None,
             ),
         )
     with pytest.raises(ValueError, match="producer"):
@@ -359,24 +354,21 @@ def test_release_transport_rejects_canonical_binding_and_substitution_attacks(
             canonicalize(scenario.evidence[0].to_document()),
             expected_type=QualificationEvidence,
             expected_digest=scenario.evidence[0].evidence_digest,
-            expected_bindings=_bindings(
-                scenario.intent,
-                producer="other-producer",
-            ),
+            expected_bindings=_bindings(scenario, producer="other-producer"),
         )
     with pytest.raises(ValueError, match="QualificationDecision"):
         admit_release_record(
             canonicalize(scenario.evidence[0].to_document()),
             expected_type=QualificationDecision,
             expected_digest=scenario.evidence[0].evidence_digest,
-            expected_bindings=_bindings(scenario.intent),
+            expected_bindings=_bindings(scenario),
         )
     with pytest.raises(ValueError, match="canonical digest mismatch"):
         admit_release_record(
             intent_bytes,
             expected_type=ReleaseIntent,
             expected_digest="sha256:" + ("0" * 64),
-            expected_bindings=_bindings(scenario.intent),
+            expected_bindings=_bindings(scenario),
         )
 
 
@@ -387,7 +379,7 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
 ) -> None:
     """Run the canonical CLI record chain through truthful incompleteness."""
     scenario = qualified_simulation
-    current = _current_arguments(scenario.intent)
+    current = _current_arguments(scenario)
     intent_path = tmp_path / "intent.json"
     model_path = _write(
         tmp_path / "repository-model.json",
@@ -690,7 +682,7 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
         first_outcome,
         expected_type=SimulationOutcome,
         expected_digest=(f"sha256:{hashlib.sha256(first_outcome).hexdigest()}"),
-        expected_bindings=_bindings(scenario.intent),
+        expected_bindings=_bindings(scenario),
     )
     assert isinstance(outcome, SimulationOutcome)
     assert outcome.terminal_result == "success"
@@ -699,13 +691,14 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
     assert b"Observation records: `1`" in first_summary
 
 
-def test_release_cli_request_id_is_rerun_stable_but_transport_is_attempt_bound(
+def test_release_cli_intent_is_stable_across_simulation_reruns(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     qualified_simulation,
 ) -> None:
-    """Keep request identity stable while rejecting a prior-attempt payload."""
+    """Keep Release Intent stable while platform attempt inputs change."""
     scenario = qualified_simulation
+    run_attempt = scenario.binding.simulation.run_attempt
     first_path = tmp_path / "attempt-3.json"
     rerun_path = tmp_path / "attempt-4.json"
     base = [
@@ -727,7 +720,7 @@ def test_release_cli_request_id_is_rerun_stable_but_transport_is_attempt_bound(
             [
                 *base,
                 "--run-attempt",
-                str(scenario.intent.run_attempt),
+                str(run_attempt),
                 "--output",
                 str(first_path),
             ]
@@ -739,7 +732,7 @@ def test_release_cli_request_id_is_rerun_stable_but_transport_is_attempt_bound(
             [
                 *base,
                 "--run-attempt",
-                str(scenario.intent.run_attempt + 1),
+                str(run_attempt + 1),
                 "--output",
                 str(rerun_path),
             ]
@@ -749,8 +742,9 @@ def test_release_cli_request_id_is_rerun_stable_but_transport_is_attempt_bound(
     first = json.loads(first_path.read_bytes())
     rerun = json.loads(rerun_path.read_bytes())
     assert first["request-id"] == rerun["request-id"]
-    assert first["run-attempt"] + 1 == rerun["run-attempt"]
-    assert first_path.read_bytes() != rerun_path.read_bytes()
+    assert "run-attempt" not in first
+    assert "run-attempt" not in rerun
+    assert first_path.read_bytes() == rerun_path.read_bytes()
 
     result = cli_module.main(
         [
@@ -759,7 +753,7 @@ def test_release_cli_request_id_is_rerun_stable_but_transport_is_attempt_bound(
             "--workflow-run-id",
             str(scenario.intent.workflow_run_id),
             "--run-attempt",
-            str(scenario.intent.run_attempt + 1),
+            str(run_attempt + 1),
             "--target",
             scenario.intent.target,
             *_uploaded_arguments(
@@ -771,8 +765,8 @@ def test_release_cli_request_id_is_rerun_stable_but_transport_is_attempt_bound(
         ]
     )
     captured = capsys.readouterr()
-    assert result == 1
-    assert "run_attempt" in captured.err
+    assert result == 0
+    assert captured.err == ""
 
 
 def test_simulation_finalizer_preserves_non_successful_qualification(

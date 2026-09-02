@@ -17,14 +17,20 @@ from three_workflow_delivery_v3.canonical import (
     ("document", "expected"),
     [
         (
-            '{"numbers":[333333333.33333329,1E30,4.50,2e-3,1e-27],'
-            '"literals":[null,true,false]}',
-            b'{"literals":[null,true,false],"numbers":'
-            b"[333333333.3333333,1e+30,4.5,0.002,1e-27]}",
+            (
+                '{"numbers":[333333333.33333329,1E30,4.50,2e-3,1e-27],'
+                '"literals":[null,true,false]}'
+            ),
+            (
+                b'{"literals":[null,true,false],"numbers":'
+                b"[333333333.3333333,1e+30,4.5,0.002,1e-27]}"
+            ),
         ),
         (
-            '{"\\u20ac":"Euro Sign","\\r":"Carriage Return",'
-            '"\\ufb33":"Hebrew Letter Dalet With Dagesh","1":"One"}',
+            (
+                '{"\\u20ac":"Euro Sign","\\r":"Carriage Return",'
+                '"\\ufb33":"Hebrew Letter Dalet With Dagesh","1":"One"}'
+            ),
             (
                 '{"\\r":"Carriage Return","1":"One","€":"Euro Sign",'
                 '"דּ":"Hebrew Letter Dalet With Dagesh"}'
@@ -186,8 +192,8 @@ from three_workflow_delivery_v3.canonical import (  # noqa: E402
 _BINDING_FIXTURE_DIRECTORY = Path(__file__).parent / "fixtures" / "bindings"
 _FIXTURE_GOLDEN_DIGESTS = {
     "current-authority": (
-        "sha256:6668e506afbfa6628a50dfca85ec6c8e6c8b07aa6e4c9640"
-        "592ea6844683ffa7"
+        "sha256:bfadf748e203e4d005d6fe29ea3b06ddccad3b22aea13b136"
+        "4af0b65dc6d3d16"
     ),
     "execution-history": (
         "sha256:37e50d514cb7985a31a5a9c06abe5c88c7cfb87050127503"

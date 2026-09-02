@@ -41,8 +41,23 @@ requests mechanism extraction and revalidation. Git and the append-only
   Provider/compiler contexts and Repository Model records omit and reject
   `github.run_attempt`, while simulation and CI retain their required
   attempt-bound contracts. Direct live consumers no longer use the Repository
-  Model as attempt authority; retained Release Intent and current-Attempt
-  records remain mutually checked until the next phase contracts them.
+  Model as attempt authority.
+- Its second dependency-ordered phase is complete: normal-Live Release Intent,
+  Attempt Identity, Live Eligibility, release transport, qualification
+  Evidence, Authorization, Result, Receipt, and current-context admission omit
+  and reject `github.run_attempt`. Simulation and CI remain attempt-bound;
+  normal-Live CLI input retains the platform attempt only for validation,
+  attempt-specific GitHub API lookup, diagnostics, and the attempt-one guard.
+- Normal-Live artifact basenames now omit run attempt. All five outer jobs and
+  all thirteen reusable-workflow jobs independently require
+  `github.run_attempt == 1`, including Approval, publisher, cancellation, and
+  `always()` finalizers.
+- The final staged repository gate passed 4,250 Workflow Delivery v3 tests,
+  actionlint, Ruff, formatting, canonical static-reference admission, and
+  authority preparation. Independent core and runtime reviews had no
+  findings. Workflow review found one missing all-job attempt-one invariant;
+  independent adjudication retained it, the guards were added, and closure
+  review reported no findings.
 - This next unit is data-model-only: migrate strict schemas and frozen/slotted
   Python records to current-Attempt authority, preserve simulation and CI
   run-attempt contracts, remove legacy normal-Live history/group/profile
@@ -56,12 +71,14 @@ requests mechanism extraction and revalidation. Git and the append-only
 - Retry-5 destination acceptance is complete historical evidence. Exact `.17` through `.20` versions and tags remain
   retained and must not be reused; detailed chronology stays in Git and the log.
 
-The immediate boundary is to contract Release Intent, current-Attempt
-identity, release transport, and current-context admission without introducing
-a universal record envelope or history fallback. Normal Git delivery of this
-disabled implementation is permitted. Live activation, operational external
-mutation, legacy-record retirement, and work assigned to later implementation
-units remain unauthorized in this phase.
+The immediate boundary is to retire the remaining legacy normal-Live history,
+Environment Profile, capability-group, and standalone Receipt transport
+surfaces within the record-model unit, then close record-model integration.
+Preserve the completed Provider/compiler and Attempt/transport contractions;
+do not introduce a universal record envelope, history fallback, compatibility
+parser, or default attempt. Normal Git delivery of this disabled implementation
+is permitted. Live activation, operational external mutation, and work
+assigned to later implementation units remain unauthorized.
 
 ## Hot Context
 
@@ -342,18 +359,20 @@ Do not infer policy from stale runtime behavior or archived designs.
 3. Preserve the completed Provider/compiler contextual run binding: normal
    Live omits and rejects `github.run_attempt`, while simulation and CI retain
    their existing required binding.
-4. Contract Release Intent, current-Attempt identity, release transport, and
-   current-context admission without introducing a universal record envelope
-   or history fallback.
+4. Preserve the completed Attempt/transport contraction: normal-Live Intent,
+   Attempt Identity, records, artifacts, and admission omit run attempt; all
+   authoritative jobs independently guard attempt one.
 5. Retire legacy normal-Live history, Environment Profile, capability-group,
    and standalone Receipt transport record surfaces only within the data-model
    boundary. Preserve concurrency/resource bindings and defer runtime
    publication/finalizer/workflow changes.
-6. Run complete affected tests, root HK, and hooks, then perform independent
+6. Close record-model integration without adding compatibility schemas,
+   fallback authority, or work owned by later implementation units.
+7. Run complete affected tests, root HK, and hooks, then perform independent
    multi-angle review and atomic TP/FP adjudication until no findings remain.
-7. Deliver the record-model unit through a separate protected PR and wait for
+8. Deliver the record-model unit through a separate protected PR and wait for
    delivery-specific human approval before merge.
-8. Continue later disabled contraction only in dependency order:
+9. Continue later disabled contraction only in dependency order:
    Governance/authorization, publication/finalization, workflows, and
    separately authorized cleanup.
 
@@ -413,8 +432,8 @@ applicable documentation and repository gates but keeps the same validate-before
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
 
 The replacement baseline and first disabled implementation unit are merged.
-The Provider/compiler phase of record-model contraction is complete on its own
-branch from exact reconciled `main`; Release Intent, current-Attempt identity,
-transport, and current-context admission are next. Later disabled units remain
+The Provider/compiler and Attempt/transport phases of record-model contraction
+are complete on their own branch from exact reconciled `main`. Legacy-record
+retirement and record-model integration are next. Later disabled units remain
 dependency-ordered. External-resource, cleanup, protected-merge, and Live
 boundaries still require their own explicit authorization.

@@ -105,7 +105,6 @@ _ARTIFACT_TRANSPORT_FIELDS = frozenset(
         "transport-digest",
         "producer",
         "workflow-run-id",
-        "run-attempt",
     }
 )
 _ARTIFACT_CONTENT_FIELDS = frozenset(
@@ -127,11 +126,28 @@ class ReleaseAdmissionBindings:
 
     purpose: str
     workflow_run_id: int
-    run_attempt: int
+    run_attempt: int | None
     target: str
     producer: str | None = None
     request_id: str | None = None
     execution: BuddyExecutionIdentity | None = None
+
+    def __post_init__(self) -> None:
+        """Reject caller bindings outside the purpose-selected field set."""
+        if self.purpose == "live-release":
+            if self.run_attempt is not None:
+                message = "live Release admission cannot bind run_attempt"
+                raise ValueError(message)
+            return
+        if self.purpose != "release-simulation":
+            message = "Release admission purpose is not in the closed set"
+            raise ValueError(message)
+        if type(self.run_attempt) is not int or self.run_attempt <= 0:
+            message = (
+                "simulation Release admission run_attempt must be a "
+                "positive non-Boolean integer"
+            )
+            raise ValueError(message)
 
 
 def _object(value: JsonValue, *, field: str) -> dict[str, JsonValue]:
@@ -332,7 +348,6 @@ def _release_intent(value: JsonValue) -> ReleaseIntent:
                 "request-id",
                 "actor",
                 "workflow-run-id",
-                "run-attempt",
                 "event-kind",
                 "selected-ref",
                 "target",
@@ -362,10 +377,6 @@ def _release_intent(value: JsonValue) -> ReleaseIntent:
         workflow_run_id=_integer(
             document["workflow-run-id"],
             field="intent.workflow-run-id",
-        ),
-        run_attempt=_integer(
-            document["run-attempt"],
-            field="intent.run-attempt",
         ),
         event_kind=_string(
             document["event-kind"],
@@ -467,7 +478,7 @@ def _release_attempt(value: JsonValue) -> ReleaseAttemptIdentity:
         value,
         field="ReleaseAttemptIdentity",
         schema=RELEASE_ATTEMPT_IDENTITY_SCHEMA,
-        fields=frozenset({"execution", "workflow-run-id", "run-attempt"}),
+        fields=frozenset({"execution", "workflow-run-id"}),
     )
     execution_document = _object(
         document["execution"],
@@ -495,10 +506,6 @@ def _release_attempt(value: JsonValue) -> ReleaseAttemptIdentity:
         workflow_run_id=_integer(
             document["workflow-run-id"],
             field="attempt.workflow-run-id",
-        ),
-        run_attempt=_integer(
-            document["run-attempt"],
-            field="attempt.run-attempt",
         ),
     )
 
@@ -978,12 +985,22 @@ def _qualification_snapshot(value: JsonValue) -> QualificationSnapshot:
     )
 
 
-def _transport(value: JsonValue) -> ArtifactTransportIdentity:
+def _transport(
+    value: JsonValue,
+    *,
+    purpose: str,
+) -> ArtifactTransportIdentity:
+    if purpose not in {"live-release", "release-simulation"}:
+        message = "Artifact transport purpose is not in the closed set"
+        raise ValueError(message)
+    fields = _ARTIFACT_TRANSPORT_FIELDS
+    if purpose == "release-simulation":
+        fields |= {"run-attempt"}
     document = _closed(
         value,
         field="ArtifactTransportIdentity",
         schema=None,
-        fields=_ARTIFACT_TRANSPORT_FIELDS,
+        fields=fields,
     )
     return ArtifactTransportIdentity(
         artifact_id=_integer(
@@ -1010,9 +1027,13 @@ def _transport(value: JsonValue) -> ArtifactTransportIdentity:
             document["workflow-run-id"],
             field="transport.workflow-run-id",
         ),
-        run_attempt=_integer(
-            document["run-attempt"],
-            field="transport.run-attempt",
+        run_attempt=(
+            None
+            if purpose == "live-release"
+            else _integer(
+                document["run-attempt"],
+                field="transport.run-attempt",
+            )
         ),
     )
 
@@ -1054,6 +1075,14 @@ def _content(value: JsonValue) -> ArtifactContentIdentity:
 
 
 def _release_artifact(value: JsonValue) -> ReleaseArtifact:
+    raw_document = _object(value, field="ReleaseArtifact")
+    if "purpose" not in raw_document:
+        message = "ReleaseArtifact missing field: purpose"
+        raise ValueError(message)
+    purpose = _string(raw_document["purpose"], field="artifact.purpose")
+    if purpose not in {"live-release", "release-simulation"}:
+        message = "Release Artifact purpose is not in the closed set"
+        raise ValueError(message)
     document = _closed(
         value,
         field="ReleaseArtifact",
@@ -1094,13 +1123,13 @@ def _release_artifact(value: JsonValue) -> ReleaseArtifact:
             field="artifact.repository-model-digest",
         ),
         target=_string(document["target"], field="artifact.target"),
-        purpose=_string(document["purpose"], field="artifact.purpose"),
+        purpose=purpose,
         output=_output(document["output"]),
         build_request_digest=_string(
             document["build-request-digest"],
             field="artifact.build-request-digest",
         ),
-        transport=_transport(document["transport"]),
+        transport=_transport(document["transport"], purpose=purpose),
         content=_content(document["content"]),
         entries=_strings(document["entries"], field="artifact.entries"),
         lifecycle_scripts=_pairs(
@@ -1124,33 +1153,38 @@ def _release_artifact(value: JsonValue) -> ReleaseArtifact:
 
 
 def _qualification_evidence(value: JsonValue) -> QualificationEvidence:
+    raw_document = _object(value, field="QualificationEvidence")
+    if "subject" not in raw_document:
+        message = "QualificationEvidence missing field: subject"
+        raise ValueError(message)
+    subject = _subject(raw_document["subject"])
+    fields = {
+        "evidence-id",
+        "subject",
+        "qualification-snapshot-digest",
+        "obligation",
+        "producer",
+        "workflow-run-id",
+        "raw-result",
+        "normalized-outcome",
+        "artifact-digests",
+        "result-facts",
+        "diagnostics",
+    }
+    if isinstance(subject, SimulationIdentity):
+        fields.add("run-attempt")
     document = _closed(
         value,
         field="QualificationEvidence",
         schema=QUALIFICATION_EVIDENCE_SCHEMA,
-        fields=frozenset(
-            {
-                "evidence-id",
-                "subject",
-                "qualification-snapshot-digest",
-                "obligation",
-                "producer",
-                "workflow-run-id",
-                "run-attempt",
-                "raw-result",
-                "normalized-outcome",
-                "artifact-digests",
-                "result-facts",
-                "diagnostics",
-            }
-        ),
+        fields=frozenset(fields),
     )
     return QualificationEvidence(
         evidence_id=_string(
             document["evidence-id"],
             field="evidence.evidence-id",
         ),
-        subject=_subject(document["subject"]),
+        subject=subject,
         qualification_snapshot_digest=_string(
             document["qualification-snapshot-digest"],
             field="evidence.qualification-snapshot-digest",
@@ -1161,9 +1195,13 @@ def _qualification_evidence(value: JsonValue) -> QualificationEvidence:
             document["workflow-run-id"],
             field="evidence.workflow-run-id",
         ),
-        run_attempt=_integer(
-            document["run-attempt"],
-            field="evidence.run-attempt",
+        run_attempt=(
+            _integer(
+                document["run-attempt"],
+                field="evidence.run-attempt",
+            )
+            if isinstance(subject, SimulationIdentity)
+            else None
         ),
         raw_result=_string(
             document["raw-result"],
@@ -1971,8 +2009,6 @@ def _release_attempt_binding(value: JsonValue) -> ReleaseAttemptBinding:
                 "live-eligibility-artifact-digest",
                 "live-eligibility-payload-digest",
                 "attestation-provenance",
-                "history-snapshot-artifact-id",
-                "history-snapshot-artifact-digest",
             }
         ),
     )
@@ -2007,14 +2043,6 @@ def _release_attempt_binding(value: JsonValue) -> ReleaseAttemptBinding:
             document["attestation-provenance"],
             field="attempt binding.attestation-provenance",
         ),
-        history_snapshot_artifact_id=_integer(
-            document["history-snapshot-artifact-id"],
-            field="attempt binding.history-snapshot-artifact-id",
-        ),
-        history_snapshot_artifact_digest=_string(
-            document["history-snapshot-artifact-digest"],
-            field="attempt binding.history-snapshot-artifact-digest",
-        ),
     )
 
 
@@ -2031,7 +2059,6 @@ def _authorization(value: JsonValue) -> AuthorizationRecord:
                 "reviewer-summary-upload-digest",
                 "reviewer-summary-payload-digest",
                 "workflow-run-id",
-                "run-attempt",
                 "approval-job-id",
                 "approval-job",
                 "environment",
@@ -2064,10 +2091,6 @@ def _authorization(value: JsonValue) -> AuthorizationRecord:
         workflow_run_id=_integer(
             document["workflow-run-id"],
             field="authorization.workflow-run-id",
-        ),
-        run_attempt=_integer(
-            document["run-attempt"],
-            field="authorization.run-attempt",
         ),
         approval_job_id=_integer(
             document["approval-job-id"],
@@ -2119,7 +2142,6 @@ def _capability_decision(value: JsonValue) -> CapabilityAdmissionDecision:
                 "producer",
                 "control",
                 "workflow-run-id",
-                "run-attempt",
                 "result",
                 "diagnostics",
             }
@@ -2203,10 +2225,6 @@ def _capability_decision(value: JsonValue) -> CapabilityAdmissionDecision:
             document["workflow-run-id"],
             field="capability admission.workflow-run-id",
         ),
-        run_attempt=_integer(
-            document["run-attempt"],
-            field="capability admission.run-attempt",
-        ),
         result=_string(document["result"], field="capability admission.result"),
         diagnostics=_strings(
             document["diagnostics"],
@@ -2239,7 +2257,6 @@ def _receipt(value: JsonValue) -> Receipt:
                 "producer",
                 "control",
                 "workflow-run-id",
-                "run-attempt",
             }
         ),
     )
@@ -2263,7 +2280,10 @@ def _receipt(value: JsonValue) -> Receipt:
             document["lock-group"],
             field="receipt.lock-group",
         ),
-        artifact_transport=_transport(document["artifact-transport"]),
+        artifact_transport=_transport(
+            document["artifact-transport"],
+            purpose="live-release",
+        ),
         artifact_content_sha256=_string(
             document["artifact-content-sha256"],
             field="receipt.artifact-content-sha256",
@@ -2294,10 +2314,6 @@ def _receipt(value: JsonValue) -> Receipt:
             document["workflow-run-id"],
             field="receipt.workflow-run-id",
         ),
-        run_attempt=_integer(
-            document["run-attempt"],
-            field="receipt.run-attempt",
-        ),
     )
 
 
@@ -2325,7 +2341,6 @@ def _action_result(value: JsonValue) -> ActionResult:
                 "producer",
                 "control",
                 "workflow-run-id",
-                "run-attempt",
             }
         ),
     )
@@ -2386,10 +2401,6 @@ def _action_result(value: JsonValue) -> ActionResult:
             document["workflow-run-id"],
             field="action result.workflow-run-id",
         ),
-        run_attempt=_integer(
-            document["run-attempt"],
-            field="action result.run-attempt",
-        ),
     )
 
 
@@ -2409,7 +2420,6 @@ def _group_bundle(value: JsonValue) -> CapabilityGroupResultBundle:
                 "producer",
                 "control",
                 "workflow-run-id",
-                "run-attempt",
             }
         ),
     )
@@ -2443,10 +2453,6 @@ def _group_bundle(value: JsonValue) -> CapabilityGroupResultBundle:
         workflow_run_id=_integer(
             document["workflow-run-id"],
             field="group result.workflow-run-id",
-        ),
-        run_attempt=_integer(
-            document["run-attempt"],
-            field="group result.run-attempt",
         ),
     )
 
@@ -2581,12 +2587,12 @@ def simulation_identity_from_document(
 
 def _record_bindings(  # noqa: C901, PLR0911, PLR0912
     record: ReleaseRecord,
-) -> tuple[str, int, int, str, str | None]:
+) -> tuple[str, int, int | None, str, str | None]:
     if isinstance(record, ReleaseIntent):
         return (
             record.purpose,
             record.workflow_run_id,
-            record.run_attempt,
+            None,
             record.target,
             None,
         )
@@ -2594,7 +2600,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             "live-release",
             record.current_workflow_run_id,
-            record.current_run_attempt,
+            None,
             record.execution.target,
             None,
         )
@@ -2603,7 +2609,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             "live-release",
             attempt.workflow_run_id,
-            attempt.run_attempt,
+            None,
             record.execution.target,
             None,
         )
@@ -2629,7 +2635,11 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             purpose,
             subject.workflow_run_id,
-            subject.run_attempt,
+            (
+                subject.run_attempt
+                if isinstance(subject, SimulationIdentity)
+                else None
+            ),
             record.target,
             None,
         )
@@ -2663,7 +2673,11 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             purpose,
             record.subject.workflow_run_id,
-            record.subject.run_attempt,
+            (
+                record.subject.run_attempt
+                if isinstance(record.subject, SimulationIdentity)
+                else None
+            ),
             record.obligation_dispositions[0].obligation.target,
             None,
         )
@@ -2671,7 +2685,11 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             record.purpose,
             record.subject.workflow_run_id,
-            record.subject.run_attempt,
+            (
+                record.subject.run_attempt
+                if isinstance(record.subject, SimulationIdentity)
+                else None
+            ),
             record.target,
             record.producer,
         )
@@ -2683,7 +2701,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             "live-release",
             subject.workflow_run_id,
-            subject.run_attempt,
+            None,
             subject.execution.target,
             record.artifact.transport.producer,
         )
@@ -2691,7 +2709,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             "live-release",
             record.attempt.workflow_run_id,
-            record.attempt.run_attempt,
+            None,
             record.attempt.execution.target,
             None,
         )
@@ -2699,7 +2717,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             "live-release",
             record.workflow_run_id,
-            record.run_attempt,
+            None,
             record.attempt.execution.target,
             record.producer,
         )
@@ -2707,7 +2725,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             "live-release",
             record.workflow_run_id,
-            record.run_attempt,
+            None,
             record.attempt.execution.target,
             record.producer,
         )
@@ -2715,7 +2733,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             "live-release",
             record.workflow_run_id,
-            record.run_attempt,
+            None,
             record.attempt.execution.target,
             record.producer,
         )
@@ -2723,7 +2741,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             "live-release",
             record.workflow_run_id,
-            record.run_attempt,
+            None,
             record.attempt.execution.target,
             record.producer,
         )
@@ -2731,7 +2749,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             "live-release",
             record.workflow_run_id,
-            record.run_attempt,
+            None,
             record.attempt.execution.target,
             record.producer,
         )
@@ -2739,7 +2757,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             "live-release",
             record.attempt.workflow_run_id,
-            record.attempt.run_attempt,
+            None,
             record.attempt.execution.target,
             None,
         )
@@ -2767,13 +2785,17 @@ def validate_release_admission_bindings(
     checks = (
         ("purpose", purpose, expected.purpose),
         ("workflow_run_id", workflow_run_id, expected.workflow_run_id),
-        ("run_attempt", run_attempt, expected.run_attempt),
         ("target", target, expected.target),
     )
     for field, actual, wanted in checks:
         if actual != wanted:
             message = f"Release record current binding mismatch: {field}"
             raise ValueError(message)
+    if not isinstance(record, ReleaseIntent) and (
+        run_attempt != expected.run_attempt
+    ):
+        message = "Release record current binding mismatch: run_attempt"
+        raise ValueError(message)
     if expected.producer is not None and producer != expected.producer:
         message = "Release record current binding mismatch: producer"
         raise ValueError(message)
