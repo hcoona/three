@@ -24,27 +24,25 @@ requests mechanism extraction and revalidation. Git and the append-only
   `33372040715` succeeded.
 - The user separately authorized disabled runtime contraction.
 - The first dependency-ordered implementation unit, the bounded
-  static-reference foundation, is implemented on branch
-  `workflow-delivery-v3-disabled-runtime-implementation` and delivered through
-  protected PR #644. It is not part of `main` until that PR is protected-merged
-  and reconciled.
+  static-reference foundation, was protected-squash-merged through PR #644 as
+  `14cfc212da56bed35d887c88f66c1edeb55b0d23`.
 - The unit implements exact `git-target`, `index`, and `worktree` acquisition;
   byte-preserving materialization; official npm, pnpm, and NuGet authority
   graphs; canonical bounded Results; HK, CI, and normal-Live integration; and
   the required Hexo and fixture migrations. Superseded handwritten ecosystem
   readers and broad consumer-policy surfaces are retired.
-- PR #644 remains the current delivery boundary. Inspect its current head,
-  checks, review threads, approval, and merge state rather than inferring them
-  from this page. On 2026-09-02, the user authorized only the reviewed
-  documentation checkpoint push, protected merge of PR #644, and exact
-  post-merge `main` reconciliation. PR review approval, Live, cleanup,
-  publication, Governance or Environment mutation, package or tag mutation,
-  and every other external action remain unauthorized.
-- Merge commit `3180f605` integrates `origin/main@4a5c5622` into the PR branch
-  without rewriting reviewed commits. The incoming change only updates the
-  pinned Microsoft APM tool from `0.28.0` to `0.29.0`; the earlier
-  scholarly-publication integration and bounded static-reference contracts
-  remain intact.
+- The merged tree exactly matches reviewed PR head `9ba5fa85`. Main CI run
+  `33663279604`, CodeQL run `33663279571`, and Dependency Graph runs
+  `33663283467` and `33663283519` succeeded on the merged commit.
+- The next disabled implementation branch is
+  `workflow-delivery-v3-record-model-contraction`, created from exact
+  reconciled `main@14cfc212`.
+- This next unit is data-model-only: migrate strict schemas and frozen/slotted
+  Python records to current-Attempt authority, preserve simulation and CI
+  run-attempt contracts, remove legacy normal-Live history/group/profile
+  bindings, and retain Provider/compiler fact-authority boundaries. It does
+  not implement the later Governance/authorization, publication/finalization,
+  workflow, activation, or cleanup units.
 - The runtime remains disabled through
   `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with
   `live_enabled: false`.
@@ -52,16 +50,11 @@ requests mechanism extraction and revalidation. Git and the append-only
 - Retry-5 destination acceptance is complete historical evidence. Exact `.17` through `.20` versions and tags remain
   retained and must not be reused; detailed chronology stays in Git and the log.
 
-The immediate boundary is to commit and push the reviewed integrated PR #644
-head, wait for its automatic checks and fresh review, and then perform the
-authorized protected merge. If `origin/main` advances again first, merge it
-without rewriting reviewed commits and repeat the integrated validation/review
-cycle. After merge, reconcile the exact result on `main`, reconfirm the
-disabled boundary and absence of unauthorized external action, and only then
-create or rebase the next disabled implementation branch for record-model
-contraction. The only authorized external actions are the documentation
-checkpoint push, the PR #644 protected merge, and exact post-merge `main`
-reconciliation.
+The immediate boundary is to implement the record-model contraction in
+dependency order, with bounded tests and the same independent
+review/adjudication protocol. Normal Git delivery of this disabled
+implementation is permitted. Live activation, operational external mutation,
+and work assigned to later implementation units remain unauthorized.
 
 ## Hot Context
 
@@ -297,20 +290,17 @@ Ambiguous dispatch response means read-only reconciliation, never blind redispat
 ## Explicit Authorization Boundary
 
 The standing disabled-runtime-contraction authorization has been exercised for
-the first dependency-ordered, PR-local static-reference unit in PR #644. That
-unit remains disabled and PR-local pending the documentation checkpoint
-commit/push, fresh automatic checks and Copilot review, and the authorized
-protected merge. Remaining disabled contraction may proceed only after exact
-`main` reconciliation and creation or rebasing of the next implementation
-branch.
+the merged static-reference unit and now covers local development and normal
+Git delivery of the next disabled record-model unit. It does not authorize a
+PR review approval or protected merge without the later delivery-specific
+human decision.
 
-Except for the authorized documentation checkpoint push, protected merge of
-PR #644, and exact post-merge `main` reconciliation, do not change
-package/repository access; create, alter, or delete an Environment or marker;
-refresh Governance; set `live_enabled: true`; submit a PR review approval;
-dispatch, rerun, approve, or cancel normal Live; create a deployment; publish;
-mutate packages or tags; perform cleanup or remediation; or change any other
-external resource without later explicit authorization.
+Do not change package/repository access; create, alter, or delete an
+Environment or marker; refresh Governance; set `live_enabled: true`; submit a
+PR review approval; dispatch, rerun, approve, or cancel normal Live; create a
+deployment; publish; mutate packages or tags; perform cleanup or remediation;
+or change any other operational external resource without later explicit
+authorization.
 
 Disabled implementation does not authorize obsolete-Environment cleanup.
 Cleanup does not authorize Governance refresh, activation, dispatch, approval,
@@ -339,33 +329,28 @@ Do not infer policy from stale runtime behavior or archived designs.
 
 1. Inspect current branch, status, identities, untracked paths, and complete
    diff before changing anything.
-2. Confirm current `origin/main` is an ancestor of the PR branch. If it has
-   advanced, merge it without rewriting reviewed commits, resolve only actual
-   conflicts, and restart integrated-head validation and review.
-3. Commit and push the reviewed documentation checkpoint, then wait for fresh
-   automatic checks and a fresh Copilot review. Repeat affected tests, full
-   repository gates, and integrated-head review only if `origin/main` advances
-   again or the integrated implementation changes.
-4. Keep `live_enabled=false`. Do not submit a PR review approval, dispatch,
-   activate, publish, mutate Governance or Environments, delete legacy
-   resources, or create tags.
-5. After the integrated head is pushed, green, and freshly reviewed, perform
-   the authorized protected merge of PR #644. Do not start the next
-   implementation unit while the static-reference foundation remains
-   PR-local.
-6. Fetch and reconcile the exact protected merge result on `main`; verify the
-   merged commit and checks, then reconfirm `live_enabled=false` and the absence
-   of unauthorized external action.
-7. Create or rebase the next disabled implementation branch from reconciled
-   `main`, then begin record-model contraction with bounded tests and the same
-   independent review/adjudication protocol.
-8. Continue the remaining disabled contraction in dependency order:
+2. Confirm the branch descends from exact reconciled `main@14cfc212`; if
+   `origin/main` advances before delivery, merge it without rewriting reviewed
+   commits and restart integrated-head validation and review.
+3. Contract Provider/compiler contextual run binding first: normal Live omits
+   and rejects `github.run_attempt`, while simulation and CI retain their
+   existing required binding.
+4. Contract Release Intent, current-Attempt identity, release transport, and
+   current-context admission without introducing a universal record envelope
+   or history fallback.
+5. Retire legacy normal-Live history, Environment Profile, capability-group,
+   and standalone Receipt transport record surfaces only within the data-model
+   boundary. Preserve concurrency/resource bindings and defer runtime
+   publication/finalizer/workflow changes.
+6. Run complete affected tests, root HK, and hooks, then perform independent
+   multi-angle review and atomic TP/FP adjudication until no findings remain.
+7. Deliver the record-model unit through a separate protected PR and wait for
+   delivery-specific human approval before merge.
+8. Continue later disabled contraction only in dependency order:
    Governance/authorization, publication/finalization, workflows, and
    separately authorized cleanup.
 
-Do not perform Live work or any external action other than the authorized
-documentation checkpoint push, protected merge of PR #644, and exact
-post-merge `main` reconciliation.
+Do not perform Live or operational external work.
 
 ## Validation and Review Protocol
 
@@ -420,9 +405,8 @@ applicable documentation and repository gates but keeps the same validate-before
 - Make commits dependency-ordered and human-reviewable.
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
 
-The replacement baseline is merged. The first disabled implementation unit is
-complete only on PR #644's branch. Remaining disabled implementation proceeds
-only after the now-granted human authorization is followed by protected merge,
-exact `main` reconciliation, and creation or rebasing of the next
-implementation branch. External-resource, cleanup, and Live boundaries still
-require separate explicit authorization.
+The replacement baseline and first disabled implementation unit are merged.
+The record-model contraction now proceeds on its own branch from exact
+reconciled `main`. Later disabled units remain dependency-ordered.
+External-resource, cleanup, protected-merge, and Live boundaries still require
+their own explicit authorization.
