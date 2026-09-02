@@ -14026,3 +14026,88 @@ merge, Governance, Environment, deployment, package, tag, or other external
 mutation occurred.
 
 <!-- END APPEND: 2026-09-02-wdv3-pr644-codeql-permission-closure -->
+
+<!-- BEGIN APPEND: 2026-09-02-wdv3-pr644-nuget-posix-path-closure -->
+
+## Workflow Delivery v3 PR #644 NuGet POSIX-path closure
+
+### Fresh review finding
+
+The fresh Copilot review on head `b9e4e6e5` suppressed one previously missed
+comment at `src/private/app/workflow-delivery-v3-nuget-authority/Program.cs`:
+the private NuGet authority rejected every `\` in `logicalPath`.
+
+Independent adjudication retained the finding as **TP, Medium, 99%
+confidence**:
+
+- repository logical paths are normalized POSIX paths, so `/` is the sole
+  separator and `\` is literal component data;
+- both NuGet families parse request-owned byte streams and never form a native
+  path from `logicalPath`;
+- POSIX acquisition/session tests already preserve such components;
+- native mapping already fails closed only where a component must be
+  represented on the current filesystem; and
+- the redundant C# rejection converted valid POSIX inputs into
+  `authority-execution-failed`.
+
+The finding affects `nuget-lock` and `nuget-packages-config`. The npm and pnpm
+authorities remain unchanged because they operate on already-contained native
+candidate paths.
+
+### Contract-bounded correction
+
+Commit `be6caac9`:
+
+- removes only `value.Contains('\\')` from the NuGet private protocol's
+  normalized logical-path check;
+- retains empty, absolute, empty-component, dot, and dot-dot rejection;
+- exercises the built .NET process for both NuGet families with
+  literal-backslash paths and exact family-specific facts; and
+- exercises both families through `StaticReferenceCandidate`, byte-stream
+  session materialization, the actual serialized
+  `subprocess.run(input=...)` request, the prepared DLL, response parsing,
+  exact implementation identities/facts, and no error.
+
+No filesystem API, custom path parser, official NuGet parser, or unrelated
+authority behavior changed.
+
+### Independent review iterations
+
+| Finding | Disposition | Correction |
+|---|---|---|
+| C# protocol and production boundary | **No findings** | None |
+| A Python adapter mutation could normalize `\` to `/` before `_run_process` and preserve identical NuGet facts | **TP, Medium, high confidence** | Added an exact request observation while forwarding to the real process |
+| The first observation occurred before serialization and could miss rewriting inside `_run_process` | **TP, non-blocking coverage, 95% confidence** | Replaced the earlier spy with observation of the actual serialized bytes supplied to `subprocess.run` |
+| Final three-file review | **No findings** | Closed |
+
+The final test trusts canonical JSON serialization and official NuGet parsing;
+it asserts only the contract-relevant unchanged wire `logicalPath` rather than
+duplicating serializer ordering/escaping or parser internals.
+
+### Validation
+
+| Gate | Result |
+|---|---|
+| .NET 10/MTP authority protocol | `2 passed` |
+| Focused model/native/source/session/NuGet matrix | `14 passed in 0.66s` |
+| Final exact Python-to-DLL wire cases | `2 passed in 0.40s` |
+| `dotnet format --verify-no-changes` and EditorConfig | Passed |
+| Ruff check and format | Passed |
+| Scoped Pyrefly for the changed Python test | `0 errors` |
+| Authority preparation | Passed |
+| Final affected-file HK | Passed |
+| Complete Workflow Delivery v3 pytest through HK | `4,248 passed in 438.52s` |
+| Canonical index static-reference scan | `clean` |
+
+The first affected-file HK attempt stopped before tests on one 124-column C#
+test-data string; the constant was split without semantic change and all later
+gates passed. An unscoped root Pyrefly invocation reported existing AzureAuth
+optional-module import errors outside this change; the scoped changed-file
+check passed with zero errors.
+
+The reviewed correction still requires a push and fresh automatic checks.
+`live_enabled=false` is unchanged, and no manual workflow rerun, approval,
+merge, Governance, Environment, deployment, package, tag, or other external
+mutation occurred.
+
+<!-- END APPEND: 2026-09-02-wdv3-pr644-nuget-posix-path-closure -->

@@ -3103,3 +3103,22 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Preserved `live_enabled: false`; no approval, merge, Live dispatch,
   Governance, Environment, deployment, package, tag, or other external
   mutation occurred.
+
+## [2026-09-02] query | Preserve POSIX NuGet logical paths
+
+- A fresh Copilot review found that the private NuGet byte-stream authority
+  rejected every backslash even though repository logical paths use `/` as the
+  sole separator and preserve `\` as POSIX component data.
+- Independent adjudication retained the finding. Commit `be6caac9` removes only
+  that redundant rejection; native path mapping remains responsible for
+  failing closed where a component cannot be represented on the current host.
+- Built-process and Python boundary tests cover both NuGet families. Review
+  iterations additionally bound the exact unchanged `logicalPath` in the
+  serialized request actually sent to the prepared DLL.
+- .NET 10/MTP tests, focused path/authority scenarios, formatting, scoped
+  Pyrefly, authority preparation, and the canonical scan passed. The final HK
+  gate reported 4,248 passing Workflow Delivery v3 tests, and final independent
+  review reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
+  dispatch, Governance, Environment, deployment, package, tag, or other
+  external mutation occurred.
