@@ -146,7 +146,6 @@ internal static class Program
     private static bool IsNormalizedLogicalPath(string value)
     {
         if (string.IsNullOrEmpty(value)
-            || value.Contains('\\')
             || value.StartsWith('/'))
         {
             return false;

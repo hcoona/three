@@ -2302,6 +2302,126 @@ def test_nuget_lock_protocol_uses_stream_logger_and_logical_path_behavior(
     assert "facts" not in response
 
 
+@pytest.mark.parametrize(
+    ("family", "logical_path", "input_mode", "content", "expected_facts"),
+    [
+        pytest.param(
+            "nuget-lock",
+            r"literal\component/packages.lock.json",
+            "strict-utf8-byte-stream",
+            _nuget_json_bytes(
+                {
+                    "version": 2,
+                    "dependencies": {
+                        "net8.0": {
+                            "Backslash.Lock": {
+                                "type": "Direct",
+                                "resolved": "4.5.6.0",
+                            }
+                        }
+                    },
+                }
+            ),
+            [
+                _nuget_lock_dependency_fact(
+                    target="net8.0",
+                    package_id="Backslash.Lock",
+                    dependency_type="Direct",
+                    requested_range=None,
+                    resolved_version="4.5.6",
+                    dependencies=[],
+                )
+            ],
+            id="nuget-lock",
+        ),
+        pytest.param(
+            "nuget-packages-config",
+            r"literal\component/packages.config",
+            "xml-byte-stream",
+            (
+                b"<packages>"
+                b'<package id="Backslash.Config" version="1.2.3.0" />'
+                b"</packages>"
+            ),
+            [
+                {
+                    "kind": "nuget-packages-config-entry",
+                    "id": "Backslash.Config",
+                    "version": "1.2.3",
+                }
+            ],
+            id="nuget-packages-config",
+        ),
+    ],
+)
+def test_nuget_authority_accepts_posix_backslash_logical_components(  # noqa: PLR0913, PLR0917
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    family: str,
+    logical_path: str,
+    input_mode: str,
+    content: bytes,
+    expected_facts: list[dict[str, Any]],
+) -> None:
+    """Preserve POSIX component data through the prepared NuGet authority."""
+    authority = importlib.import_module(
+        "three_workflow_delivery_v3.release.static_reference_authority"
+    )
+    session_module = importlib.import_module(
+        "three_workflow_delivery_v3.release.static_reference_session"
+    )
+    source_module = importlib.import_module(
+        "three_workflow_delivery_v3.release.static_reference_source"
+    )
+    real_subprocess_run = authority.subprocess.run
+    serialized_requests: list[bytes] = []
+
+    def run_process(
+        command: tuple[str, ...],
+        **kwargs: Any,
+    ) -> subprocess.CompletedProcess[bytes]:
+        serialized_request = kwargs.get("input")
+        assert isinstance(serialized_request, bytes)
+        serialized_requests.append(serialized_request)
+        return real_subprocess_run(command, **kwargs)
+
+    monkeypatch.setattr(authority.subprocess, "run", run_process)
+    candidate = source_module.StaticReferenceCandidate(
+        path=logical_path,
+        selection=source_module.StaticReferenceSelection(
+            family=family,
+            graph_id="nuget-lock-v1",
+            input_mode=input_mode,
+        ),
+        content=content,
+        source_object=f"test:{family}",
+    )
+
+    with session_module.StaticReferenceSession(parent=tmp_path) as session:
+        invocation = session.materialize(
+            candidate,
+            source_kind="index",
+            target=None,
+        )
+        assert invocation.candidate_path is None
+        outcome = authority.run_authority_graph(
+            _REPOSITORY_ROOT,
+            candidate,
+            invocation,
+            session,
+        )
+
+    assert outcome.graph_id == "nuget-lock-v1"
+    assert outcome.implementation_identities == tuple(
+        _NUGET_IMPLEMENTATION_IDENTITIES
+    )
+    assert [
+        json.loads(request)["logicalPath"] for request in serialized_requests
+    ] == [logical_path]
+    assert outcome.facts == tuple(expected_facts)
+    assert outcome.error_kind is None
+
+
 def test_nuget_packages_config_protocol_orders_with_package_identity_comparer() -> (  # noqa: E501
     None
 ):

@@ -14,7 +14,29 @@ public sealed class AuthorityProtocolTests
         "workflow-delivery/v3/static-reference-nuget-authority-response";
 
     [TestMethod]
-    public async Task PackagesConfigProtocolRoundTripsThroughBuiltProcess()
+    [DataRow(
+        "nuget-packages-config",
+        @"literal\component/packages.config",
+        "<packages><package id=\"Backslash.Config\" version=\"1.2.3.0\" /></packages>",
+        "nuget-packages-config-entry",
+        "Backslash.Config",
+        "1.2.3")]
+    [DataRow(
+        "nuget-lock",
+        @"literal\component/packages.lock.json",
+        "{\"version\":2,\"dependencies\":{\"net8.0\":"
+            + "{\"Backslash.Lock\":{\"type\":\"Direct\","
+            + "\"resolved\":\"4.5.6.0\"}}}}",
+        "nuget-lock-dependency",
+        "Backslash.Lock",
+        "4.5.6")]
+    public async Task LogicalBackslashPathsRoundTripThroughBuiltProcess(
+        string family,
+        string logicalPath,
+        string document,
+        string expectedKind,
+        string expectedId,
+        string expectedVersion)
     {
         string repositoryRoot = FindRepositoryRoot();
         var testOutput = new DirectoryInfo(AppContext.BaseDirectory);
@@ -55,18 +77,13 @@ public sealed class AuthorityProtocolTests
             framework.GetProperty("version").GetString());
 
         string content = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes(
-                """
-                <packages>
-                  <package id="Windows.Smoke" version="1.2.3.0" />
-                </packages>
-                """));
+            Encoding.UTF8.GetBytes(document));
         string request = JsonSerializer.Serialize(
             new
             {
                 contentBase64 = content,
-                family = "nuget-packages-config",
-                logicalPath = "packages.config",
+                family,
+                logicalPath,
                 schema = RequestSchema,
             });
         var startInfo = new ProcessStartInfo
@@ -112,10 +129,31 @@ public sealed class AuthorityProtocolTests
         Assert.AreEqual(1, facts.GetArrayLength());
         JsonElement fact = facts[0];
         Assert.AreEqual(
-            "nuget-packages-config-entry",
+            expectedKind,
             fact.GetProperty("kind").GetString());
-        Assert.AreEqual("Windows.Smoke", fact.GetProperty("id").GetString());
-        Assert.AreEqual("1.2.3", fact.GetProperty("version").GetString());
+        Assert.AreEqual(expectedId, fact.GetProperty("id").GetString());
+        if (family == "nuget-packages-config")
+        {
+            Assert.AreEqual(
+                expectedVersion,
+                fact.GetProperty("version").GetString());
+        }
+        else
+        {
+            Assert.AreEqual("net8.0", fact.GetProperty("target").GetString());
+            Assert.AreEqual(
+                "Direct",
+                fact.GetProperty("dependencyType").GetString());
+            Assert.AreEqual(
+                JsonValueKind.Null,
+                fact.GetProperty("requestedRange").ValueKind);
+            Assert.AreEqual(
+                expectedVersion,
+                fact.GetProperty("resolvedVersion").GetString());
+            Assert.AreEqual(
+                0,
+                fact.GetProperty("dependencies").GetArrayLength());
+        }
     }
 
     private static string FindRepositoryRoot()
