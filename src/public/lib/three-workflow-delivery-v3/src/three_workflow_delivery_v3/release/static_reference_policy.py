@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, cast
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
-    canonicalize,
 )
 from three_workflow_delivery_v3.release.static_reference_authority import (
     AuthorityExecutionError,
@@ -66,9 +65,6 @@ type AuthorityRunner = Callable[
 type SessionFactory = Callable[[], StaticReferenceSession]
 
 _LOGGER = logging.getLogger(__name__)
-_AUTHORITY_PREPARATION_STAMP = Path(
-    "artifacts/workflow-delivery-v3/static-reference/authority-preparation.json"
-)
 _AUTHORITY_DEPENDENCY_CLOSURES = (
     (
         "pnpm-lock",
@@ -717,11 +713,6 @@ def static_reference_authority_manifest() -> dict[str, JsonValue]:
             for kind, path, digest in _AUTHORITY_DEPENDENCY_CLOSURES
         ],
         "execution": {
-            "preparation-command": [
-                "mise",
-                "run",
-                "prepare:static-reference-authorities",
-            ],
             "node-command": [
                 "node",
                 "eng/scripts/workflow_delivery_v3_static_reference_node.mjs",
@@ -733,7 +724,6 @@ def static_reference_authority_manifest() -> dict[str, JsonValue]:
                     "nuget-authority/WorkflowDeliveryV3NuGetAuthority.dll"
                 ),
             ],
-            "preparation-stamp": _AUTHORITY_PREPARATION_STAMP.as_posix(),
             "timeout-seconds": 30,
         },
         "graph-contracts": _static_reference_graph_contracts(),
@@ -928,34 +918,7 @@ STATIC_REFERENCE_POLICY_DIGEST = canonical_sha256(
 
 
 class StaticReferenceAuthorityMismatchError(RuntimeError):
-    """The prepared authority closure does not match the current policy."""
-
-
-def static_reference_authority_preparation_document() -> dict[str, JsonValue]:
-    """Return the exact stamp bound to the current authority closure."""
-    return {
-        "schema": (
-            "workflow-delivery/v3/static-reference-authority-preparation"
-        ),
-        "policy-id": STATIC_REFERENCE_POLICY_ID,
-        "policy-digest": STATIC_REFERENCE_POLICY_DIGEST,
-        "dependency-closures": [
-            {
-                "kind": kind,
-                "path": path,
-                "sha256": digest,
-            }
-            for kind, path, digest in _AUTHORITY_DEPENDENCY_CLOSURES
-        ],
-        "runtime-closure": _mise_runtime_closure_document(),
-    }
-
-
-def static_reference_authority_preparation_stamp_path(
-    repository_root: Path,
-) -> Path:
-    """Return the exact repository-owned preparation stamp path."""
-    return repository_root / _AUTHORITY_PREPARATION_STAMP
+    """The checked-in authority closure does not match the current policy."""
 
 
 def _exact_mapping(value: object) -> dict[str, object]:
@@ -1036,24 +999,6 @@ def validate_static_reference_dependency_closures(
             message = "static-reference authority closure does not match"
             raise StaticReferenceAuthorityMismatchError(message)
     _validate_mise_runtime_closure(repository_root)
-
-
-def validate_static_reference_authority_preparation(
-    repository_root: Path,
-) -> None:
-    """Require current locks and the stamp written after preparation."""
-    validate_static_reference_dependency_closures(repository_root)
-    stamp_path = static_reference_authority_preparation_stamp_path(
-        repository_root
-    )
-    try:
-        stamp = stamp_path.read_bytes()
-    except OSError as error:
-        message = "static-reference authority preparation is unavailable"
-        raise StaticReferenceAuthorityMismatchError(message) from error
-    if stamp != canonicalize(static_reference_authority_preparation_document()):
-        message = "static-reference authority preparation does not match"
-        raise StaticReferenceAuthorityMismatchError(message)
 
 
 @dataclass(slots=True)
@@ -1205,7 +1150,7 @@ def _scan_inventory(
         materialized = _materialize_inventory(context)
         if state.error_kind is None and authority_runner is None:
             try:
-                validate_static_reference_authority_preparation(repository_root)
+                validate_static_reference_dependency_closures(repository_root)
             except StaticReferenceAuthorityMismatchError:
                 state.error_kind = "authority-mismatch"
 
@@ -1346,11 +1291,8 @@ __all__ = [
     "StaticReferenceAuthorityMismatchError",
     "scan_bounded_static_references",
     "static_reference_authority_manifest",
-    "static_reference_authority_preparation_document",
-    "static_reference_authority_preparation_stamp_path",
     "static_reference_policy_document",
     "validate_bounded_static_reference_result",
     "validate_live_static_reference_result",
-    "validate_static_reference_authority_preparation",
     "validate_static_reference_dependency_closures",
 ]

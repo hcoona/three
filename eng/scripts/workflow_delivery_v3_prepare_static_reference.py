@@ -6,10 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.release.static_reference_policy import (
-    static_reference_authority_preparation_document,
-    static_reference_authority_preparation_stamp_path,
     validate_static_reference_dependency_closures,
 )
 
@@ -39,23 +36,8 @@ def _run(*arguments: str) -> None:
     )
 
 
-def _write_preparation_stamp() -> None:
-    stamp_path = static_reference_authority_preparation_stamp_path(
-        _REPOSITORY_ROOT
-    )
-    stamp_path.parent.mkdir(parents=True, exist_ok=True)
-    with stamp_path.open("xb") as stream:
-        stream.write(
-            canonicalize(static_reference_authority_preparation_document())
-        )
-
-
 def main() -> int:
     """Prepare Node packages and the locked NuGet publish directory."""
-    stamp_path = static_reference_authority_preparation_stamp_path(
-        _REPOSITORY_ROOT
-    )
-    stamp_path.unlink(missing_ok=True)
     validate_static_reference_dependency_closures(_REPOSITORY_ROOT)
     _run("pnpm", "install", "--frozen-lockfile", "--ignore-scripts")
     _run("dotnet", "restore", str(_NUGET_PROJECT), "--locked-mode")
@@ -82,7 +64,6 @@ def main() -> int:
         message = "NuGet authority publish closure is incomplete"
         raise RuntimeError(message)
     validate_static_reference_dependency_closures(_REPOSITORY_ROOT)
-    _write_preparation_stamp()
     return 0
 
 

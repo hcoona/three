@@ -263,21 +263,6 @@ local python_linters = new Mapping<String, Step> {
 }
 
 local workflow_delivery_v3_validation = new Mapping<String, Step> {
-  local static_reference_authority_preparation_files =
-    List(
-      "Directory.Build.*",
-      "Directory.Packages.props",
-      "eng/scripts/workflow_delivery_v3_prepare_static_reference.py",
-      "global.json",
-      "mise.lock",
-      "mise.toml",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "src/private/app/workflow-delivery-v3-nuget-authority/**",
-      "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/static_reference_policy.py",
-    )
-
   local workflow_delivery_v3_files =
     List(
       ".gitattributes",
@@ -317,7 +302,6 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
 
   ["static-reference-authority-preparation"] {
     profiles = List("small")
-    glob = static_reference_authority_preparation_files
     check =
       "python eng/scripts/hk_exec.py --timeout-seconds 300 mise run prepare:static-reference-authorities"
   }

@@ -991,11 +991,6 @@ _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
         },
     ],
     "execution": {
-        "preparation-command": [
-            "mise",
-            "run",
-            "prepare:static-reference-authorities",
-        ],
         "node-command": [
             "node",
             "eng/scripts/workflow_delivery_v3_static_reference_node.mjs",
@@ -1007,10 +1002,6 @@ _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
                 "nuget-authority/WorkflowDeliveryV3NuGetAuthority.dll"
             ),
         ],
-        "preparation-stamp": (
-            "artifacts/workflow-delivery-v3/static-reference/"
-            "authority-preparation.json"
-        ),
         "timeout-seconds": 30,
     },
     "graphs": [
@@ -2442,18 +2433,18 @@ def test_policy_authority_manifest_and_digest_are_exact() -> None:
     )
     assert policy.STATIC_REFERENCE_POLICY_DIGEST == (
         "sha256:"
-        "c9647d381e07fd54dcf187cca242064eb00fe702201f0428689aa7a4c50f599d"
+        "c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d"
     )
     assert policy.canonical_sha256(document) == (
         "sha256:"
-        "c9647d381e07fd54dcf187cca242064eb00fe702201f0428689aa7a4c50f599d"
+        "c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d"
     )
 
 
-def test_authority_closure_validation_binds_exact_locks_and_preparation_stamp(
+def test_authority_closure_validation_binds_exact_locks_and_runtime(
     tmp_path: Path,
 ) -> None:
-    """Require current lock bytes and the exact post-preparation stamp."""
+    """Require the exact checked-in package and runtime closure."""
     policy = importlib.import_module(
         "three_workflow_delivery_v3.release.static_reference_policy"
     )
@@ -2474,14 +2465,6 @@ def test_authority_closure_validation_binds_exact_locks_and_preparation_stamp(
         shutil.copyfile(REPO_ROOT / relative_path, repository / relative_path)
 
     policy.validate_static_reference_dependency_closures(repository)
-    stamp_path = policy.static_reference_authority_preparation_stamp_path(
-        repository
-    )
-    stamp_path.parent.mkdir(parents=True)
-    stamp_path.write_bytes(
-        canonicalize(policy.static_reference_authority_preparation_document())
-    )
-    policy.validate_static_reference_authority_preparation(repository)
 
     pnpm_lock = repository / "pnpm-lock.yaml"
     original_lock = pnpm_lock.read_bytes()
@@ -2490,7 +2473,7 @@ def test_authority_closure_validation_binds_exact_locks_and_preparation_stamp(
         policy.StaticReferenceAuthorityMismatchError,
         match="closure does not match",
     ):
-        policy.validate_static_reference_authority_preparation(repository)
+        policy.validate_static_reference_dependency_closures(repository)
 
     pnpm_lock.write_bytes(original_lock)
     mise_config = repository / "mise.toml"
@@ -2506,7 +2489,7 @@ def test_authority_closure_validation_binds_exact_locks_and_preparation_stamp(
         policy.StaticReferenceAuthorityMismatchError,
         match="closure does not match",
     ):
-        policy.validate_static_reference_authority_preparation(repository)
+        policy.validate_static_reference_dependency_closures(repository)
 
     mise_config.write_bytes(original_mise_config)
     mise_lock = repository / "mise.lock"
@@ -2525,15 +2508,7 @@ def test_authority_closure_validation_binds_exact_locks_and_preparation_stamp(
         policy.StaticReferenceAuthorityMismatchError,
         match="closure does not match",
     ):
-        policy.validate_static_reference_authority_preparation(repository)
-
-    mise_lock.write_bytes(original_mise_lock)
-    stamp_path.write_bytes(b"{}\n")
-    with pytest.raises(
-        policy.StaticReferenceAuthorityMismatchError,
-        match="preparation does not match",
-    ):
-        policy.validate_static_reference_authority_preparation(repository)
+        policy.validate_static_reference_dependency_closures(repository)
 
 
 def test_authority_closure_paths_are_materialized_with_lf() -> None:
@@ -2565,29 +2540,20 @@ def test_authority_closure_paths_are_materialized_with_lf() -> None:
     ]
 
 
-def test_preparation_validates_locks_before_work_and_stamps_only_after_publish(
+def test_preparation_validates_locks_before_and_after_publish(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Bind prepared executables to locks validated before and after work."""
-    policy = importlib.import_module(
-        "three_workflow_delivery_v3.release.static_reference_policy"
-    )
     module = _load_prepare_static_reference_script()
     repository = tmp_path / "repository"
     repository.mkdir()
     project = repository / "authority.csproj"
     publish_directory = repository / "prepared"
-    stamp_path = policy.static_reference_authority_preparation_stamp_path(
-        repository
-    )
-    stamp_path.parent.mkdir(parents=True)
-    stamp_path.write_bytes(b"stale")
     events: list[str] = []
 
     def validate(root: Path) -> None:
         assert root == repository
-        assert not stamp_path.exists()
         events.append("validate")
 
     def run(*arguments: str) -> None:
@@ -2620,9 +2586,6 @@ def test_preparation_validates_locks_before_work_and_stamps_only_after_publish(
         "dotnet publish",
         "validate",
     ]
-    assert stamp_path.read_bytes() == canonicalize(
-        policy.static_reference_authority_preparation_document()
-    )
 
 
 def test_policy_traverses_candidates_and_graphs_in_deterministic_order(
@@ -2862,7 +2825,7 @@ def test_policy_materializes_every_candidate_before_any_graph_execution(
     monkeypatch.setattr(policy, "run_authority_graph", forbidden_graph)
     monkeypatch.setattr(
         policy,
-        "validate_static_reference_authority_preparation",
+        "validate_static_reference_dependency_closures",
         forbidden_closure,
     )
 
@@ -2959,7 +2922,7 @@ def test_policy_reports_authority_mismatch_only_after_materialization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Validate the prepared closure after source shaping and before graphs."""
+    """Validate checked-in closure after source shaping and before graphs."""
     policy = importlib.import_module(
         "three_workflow_delivery_v3.release.static_reference_policy"
     )
@@ -3019,7 +2982,7 @@ def test_policy_reports_authority_mismatch_only_after_materialization(
 
     monkeypatch.setattr(
         policy,
-        "validate_static_reference_authority_preparation",
+        "validate_static_reference_dependency_closures",
         mismatch,
     )
     monkeypatch.setattr(policy, "run_authority_graph", forbidden_graph)
@@ -3105,7 +3068,7 @@ def test_policy_stops_at_the_first_source_error_before_authority_execution(
         ),
         "policy-digest": (
             "sha256:"
-            "c9647d381e07fd54dcf187cca242064eb00fe702201f0428689aa7a4c50f599d"
+            "c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d"
         ),
         "implementation-identities": [],
         "findings": [],

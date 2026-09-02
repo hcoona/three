@@ -452,6 +452,10 @@ def test_root_hk_preserves_incremental_and_full_index_modes() -> None:
         < incremental_hk
         < manual_hk
     )
+    assert command.count("mise run prepare:static-reference-authorities") == 1
+    assert (
+        command.count("--skip-step static-reference-authority-preparation") == 2  # noqa: PLR2004
+    )
     assert 'if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]' in command
     assert '--from-ref "${BASE_SHA}" --to-ref "${HEAD_SHA}"' in command
     assert lane_result["if"] == "always()"
@@ -459,6 +463,10 @@ def test_root_hk_preserves_incremental_and_full_index_modes() -> None:
     assert steps.index(execute) < steps.index(lane_result) < steps.index(upload)
     assert '["v3-control-pytest"]' in hk
     assert '["hcoona-release-smoke-npm-static-reference"]' in hk
+    assert (
+        hk.count('depends = List("static-reference-authority-preparation")')
+        == 2  # noqa: PLR2004
+    )
     assert "--source-kind index" in hk
     assert "--source-kind worktree" not in hk
     assert "--consumer-policy" not in command

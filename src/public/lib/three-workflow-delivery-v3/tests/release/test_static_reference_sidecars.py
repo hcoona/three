@@ -1857,11 +1857,11 @@ _MISSING_NUGET_MODEL_VERSION = object()
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _require_current_authority_preparation() -> None:
+def _require_current_authority_closure() -> None:
     policy = importlib.import_module(
         "three_workflow_delivery_v3.release.static_reference_policy"
     )
-    policy.validate_static_reference_authority_preparation(_REPOSITORY_ROOT)
+    policy.validate_static_reference_dependency_closures(_REPOSITORY_ROOT)
 
 
 def _run_nuget_authority(

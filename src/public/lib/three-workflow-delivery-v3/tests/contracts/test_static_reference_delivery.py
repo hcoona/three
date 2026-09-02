@@ -62,6 +62,13 @@ def test_ci_workflow_has_no_worktree_static_reference_route() -> None:
 
     assert "mise exec -- hk --no-progress check" in execute_step
     assert "mise exec -- hk --no-progress check --all" in execute_step
+    assert (
+        execute_step.count("mise run prepare:static-reference-authorities") == 1
+    )
+    assert (
+        execute_step.count("--skip-step static-reference-authority-preparation")
+        == 2  # noqa: PLR2004
+    )
     assert "--source-kind worktree" not in execute_step
     assert "check:static-reference-worktree" not in execute_step
     assert "--consumer-policy" not in execute_step

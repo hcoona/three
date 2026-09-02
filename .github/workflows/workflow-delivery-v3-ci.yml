@@ -311,9 +311,11 @@ jobs:
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             uv run --python 3.13 python eng/scripts/workflow_delivery_v3_hk.py \
               --repository . --from-ref "${BASE_SHA}" --to-ref "${HEAD_SHA}" \
-              -- mise exec -- hk --no-progress check
+              -- mise exec -- hk --no-progress check \
+              --skip-step static-reference-authority-preparation
           else
-            mise exec -- hk --no-progress check --all
+            mise exec -- hk --no-progress check --all \
+              --skip-step static-reference-authority-preparation
           fi
       - name: Form root-hk lane result
         if: always()

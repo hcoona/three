@@ -1405,6 +1405,38 @@ def test_real_hk_plan_prepares_changed_authority_before_consumers(
     assert expected_dependency in _static_reference_hk_block()
 
 
+def test_real_hk_plan_prepares_authority_for_unrelated_root_hk_path(
+    tmp_path: Path,
+) -> None:
+    """Prepare the authority whenever the unconditional root scan runs."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    _write(repo, "docs/wiki/README.md", "documentation-only change\n")
+    head = _commit(repo, "unrelated root HK input")
+
+    preparation = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        PREPARATION_STEP_NAME,
+    )
+    control = _named_helper_step_plan(repo, base, head, STEP_NAME)
+    static_reference = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        STATIC_REFERENCE_STEP_NAME,
+    )
+
+    assert preparation["status"] == "included"
+    assert preparation["fileCount"] == 1
+    assert control["status"] == "skipped"
+    assert control["fileCount"] == 0
+    assert static_reference["status"] == "included"
+    assert static_reference["fileCount"] == 1
+    assert "glob =" not in _hk_step_block(PREPARATION_STEP_NAME)
+
+
 def test_static_reference_is_one_internal_root_hk_step_not_ci_obligation() -> (
     None
 ):

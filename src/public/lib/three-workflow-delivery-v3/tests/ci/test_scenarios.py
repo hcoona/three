@@ -784,6 +784,10 @@ def test_ci_scenario_slice_validation_selects_full_slice_without_synthetic_range
     assert 'if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]' in root_hk_run
     assert "workflow_delivery_v3_hk.py" in root_hk_run
     assert "else\n  mise exec -- hk --no-progress check --all" in root_hk_run
+    assert (
+        root_hk_run.count("--skip-step static-reference-authority-preparation")
+        == 2  # noqa: PLR2004
+    )
 
 
 def test_ci_scenario_project_test_failure_fails_shadow_check() -> None:
