@@ -3210,3 +3210,22 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
   dispatch, Governance, Environment, deployment, package, tag, or other
   external mutation occurred.
+
+## [2026-09-02] merge | Reconcile latest main after merge authorization
+
+- The user explicitly authorized protected merge and continuation for PR #644.
+  The pre-merge guard then found that `origin/main` had advanced from
+  `0252343e` to `4a5c5622` through #645, so direct merge remained blocked until
+  the reviewed branch incorporated the new base.
+- Merge commit `3180f605` integrates the Microsoft APM `0.29.0`
+  `mise.toml`/`mise.lock` update without rewriting the reviewed PR history and
+  without conflicts.
+- Integrated-head HK passed the mise authority and publication gates, all
+  4,250 Workflow Delivery v3 tests, and a clean canonical index scan. The
+  canonical worktree scan was also clean with policy digest
+  `sha256:c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d`.
+  Two independent integrated-head reviewers reported no findings.
+- Protected merge remains bounded to the reviewed and automatically green PR
+  head. `live_enabled: false` is unchanged; the authorization does not extend
+  to PR review approval, manual rerun, Live dispatch, Governance, Environment,
+  deployment, package, tag, cleanup, or other external mutation.

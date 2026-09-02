@@ -14417,3 +14417,57 @@ Governance, Environment, deployment, package, tag, or other external mutation
 occurred.
 
 <!-- END APPEND: 2026-09-02-pr644-preparation-authority-contraction -->
+
+<!-- BEGIN APPEND: 2026-09-02-pr644-latest-main-reconciliation -->
+
+## Workflow Delivery v3 PR #644 latest-main reconciliation
+
+### Authorization and base movement
+
+The user explicitly authorized protected merge and continuation for PR #644 on
+2026-09-02. The authorization is limited to merging the reviewed PR and
+reconciling its exact protected result on `main`; it does not authorize a PR
+review approval, normal Live, cleanup, publication, or another external
+mutation.
+
+The first protected-merge guard fetched `origin/main` and found that it had
+advanced from `0252343e079879eb6d7e80234dcacb6db052e617` to
+`4a5c5622274da7fc005f23676a3ee147aaf64a2b` after PR #645 updated
+`github:microsoft/apm` from `0.28.0` to `0.29.0` in `mise.toml` and
+`mise.lock`. The new main commit was not yet an ancestor of the reviewed PR
+head, so the authorized merge was correctly deferred.
+
+### Integrated head
+
+Merge commit `3180f605c5edeecff16d5954a8b76bac3d791c0e` incorporates
+`origin/main@4a5c5622` without rewriting the reviewed PR commits. Git's `ort`
+merge completed without conflicts; the integrated delta from the previously
+reviewed head contains only the incoming APM pin and checksums.
+
+### Validation and review
+
+| Gate | Result |
+|---|---|
+| Affected integrated-head HK | Passed |
+| Microsoft APM installation and mise authority | `0.29.0`; lock and workflow Node pins consistent |
+| Complete Workflow Delivery v3 pytest through HK | `4,250 passed in 439.79s` |
+| Scholarly publication plugin gates | Passed |
+| Canonical index static-reference scan | `clean`; policy digest unchanged |
+| Canonical worktree static-reference scan | `clean`; policy digest unchanged |
+| Main-integration code review | **No findings** |
+| Protected-merge readiness challenge | **No findings** |
+
+The policy digest remains
+`sha256:c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d`,
+and all pinned implementation identities remain unchanged. A local mise
+installation reordered pre-existing ShellCheck blocks in the working copy;
+that non-semantic tool side effect was restored exactly and is not part of the
+integrated commit.
+
+The integrated head still requires a documentation checkpoint commit, a normal
+push, fresh automatic checks, and a fresh Copilot review before the authorized
+protected merge. `live_enabled=false` remains unchanged, and no PR review
+approval, manual rerun, Live dispatch, Governance, Environment, deployment,
+package, tag, cleanup, or other external mutation occurred.
+
+<!-- END APPEND: 2026-09-02-pr644-latest-main-reconciliation -->
