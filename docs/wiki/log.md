@@ -3141,3 +3141,25 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
   dispatch, Governance, Environment, deployment, package, tag, or other
   external mutation occurred.
+
+## [2026-09-02] query | Isolate AzureAuth cleanup timing bounds
+
+- Fresh CI run `33588568251`, job `100118811307`, exposed one Windows .NET 10
+  process-test timeout; the other outcomes were 22 successful checks and two
+  expected skipped jobs. Main run `33577215032` independently exposed the same
+  one-second phase-bound defect in the adjacent cleanup test.
+- Independent adjudication classified production as a false positive and the
+  cleanup-test cluster as a true-positive timing defect. The one-second guards
+  incorrectly included real-process startup, timeout delivery, output
+  detection, or scheduler latency before cleanup began.
+- Commit `d8fd3a13` synchronizes all four tests using the existing fake cleanup
+  entry seam. A five-second liveness watchdog now covers reaching cleanup,
+  while the unchanged one-second post-entry guard continues to prove bounded
+  cleanup completion.
+- The process-runner class passed 40 tests, and the complete Platform test
+  project completed 1,604 tests: 1,602 passed and two expected platform skips.
+  Formatting, diff, and affected-file HK gates passed; two independent
+  reviewers reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
+  dispatch, Governance, Environment, deployment, package, tag, or other
+  external mutation occurred.

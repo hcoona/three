@@ -14175,3 +14175,76 @@ merge, Governance, Environment, deployment, package, tag, or other external
 mutation occurred.
 
 <!-- END APPEND: 2026-09-02-wdv3-pr644-acceptance-deadline-closure -->
+
+<!-- BEGIN APPEND: 2026-09-02-pr644-azureauth-cleanup-timing-closure -->
+
+## PR #644 AzureAuth cleanup-timing closure
+
+### Fresh automatic-check failure
+
+Continuous Integration run `33588568251`, Windows .NET 10 job
+`100118811307`, completed with one failure in
+`SystemProcessRunnerTests.RunAsyncKillFailurePreservesTimeoutAndBoundsCleanup`.
+The test's outer one-second `WaitAsync` threw `TimeoutException` after the test
+had run for approximately 1.95 seconds. The Platform project result was
+`1 failed, 1593 succeeded, 10 skipped`.
+
+All other active PR checks completed successfully: 22 checks passed and two
+expected jobs skipped.
+
+Main run `33577215032` independently failed
+`RunAsyncTimeoutRemainsPrimaryWhenCallerCancelsDuringCleanup` at its
+one-second `cleanup.WaitEntered.WaitAsync` watchdog. The AzureAuth production
+and test sources were identical on `origin/main` and the PR head before this
+correction.
+
+### Independent adjudication
+
+| Question | Disposition |
+|---|---|
+| Production cleanup defect | **FP, 98% confidence**. `KillAndWaitAsync` creates an independent cleanup cancellation source, catches the simulated kill and post-cancellation wait failures, and preserves the triggering timeout or caller-cancellation result. |
+| Test timing defect | **TP, CI-blocking, 99% confidence**. The one-second oracles included scheduling and phase-transition work before the cleanup interval they claimed to bound. |
+| Hosted-runner infrastructure | A contributing trigger, not an independently actionable defect. Timer and continuation latency exposed the invalid test boundary. |
+
+The existing `FailingProcessCleanupStrategy.WaitEntered` task is signaled after
+production creates the cleanup-specific cancellation source and enters the
+fake `WaitForExitAsync`. It is therefore the correct deterministic phase seam.
+
+### Contract-bounded cluster correction
+
+Commit `d8fd3a136aa48338fb61b0adb0386981ce3dfa42` corrects exactly the
+four tests using `FailingProcessCleanupStrategy`:
+
+| Test path | Correction |
+|---|---|
+| Caller cancellation | After canceling the operation, wait up to five seconds for cleanup entry, then retain the one-second exceptional-completion guard. |
+| Process timeout | Capture the run task, wait up to five seconds for cleanup entry, then retain the one-second `TimedOut` completion guard. |
+| Timeout followed by caller cancellation | Increase only the independently failed cleanup-entry watchdog from one to five seconds; retain the one-second post-entry guard. |
+| Output limit | Capture the run task, wait up to five seconds for cleanup entry, then retain the one-second `OutputTooLarge` completion guard. |
+
+The five-second interval is only a real-process and scheduler liveness
+watchdog. Once cleanup has entered, every test keeps the strict one-second
+completion bound around a configured 50 or 100 millisecond cleanup timeout.
+Every result, exception, attempt-count, and cancellation-observation assertion
+remains unchanged. The watchdog uses `TestContext.Current.CancellationToken`,
+not the intentionally canceled operation token. No production code, sleep,
+retry, global timeout, or broad tolerance changed.
+
+### Validation and review
+
+| Gate | Result |
+|---|---|
+| Complete `SystemProcessRunnerTests` class | `40 passed in 13.04s` |
+| Complete `Hcoona.AzureAuth.CredProvider.Platform.Tests` project | `1,604 total; 1,602 passed; 2 expected platform skips in 13.77s` |
+| `dotnet format` and verify-no-changes | Passed |
+| Diff check | Passed |
+| Affected-file HK gate | Passed; typos, EditorConfig, and canonical static-reference scan were clean |
+| Independent async-correctness review | **No findings** |
+| Independent cluster-scope challenge | **No findings** |
+
+The reviewed correction still requires a normal push and a fresh Windows
+.NET 10 automatic check. `live_enabled=false` is unchanged, and no manual
+workflow rerun, approval, merge, Governance, Environment, deployment, package,
+tag, or other external mutation occurred.
+
+<!-- END APPEND: 2026-09-02-pr644-azureauth-cleanup-timing-closure -->
