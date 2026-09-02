@@ -3229,3 +3229,17 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   head. `live_enabled: false` is unchanged; the authorization does not extend
   to PR review approval, manual rerun, Live dispatch, Governance, Environment,
   deployment, package, tag, cleanup, or other external mutation.
+
+## [2026-09-02] merge | Complete static-reference delivery
+
+- PR #644 was protected-squash-merged as
+  `14cfc212da56bed35d887c88f66c1edeb55b0d23`. Its tree is identical to reviewed
+  head `9ba5fa8511146f51312cb6987885982e7f45e82c`; the resulting commit retains the
+  required Copilot co-author trailer.
+- Main CI run `33663279604`, CodeQL run `33663279571`, and Dependency Graph
+  runs `33663283467` and `33663283519` all succeeded on the exact merge commit.
+  The protected PR branch was removed by repository policy.
+- Protected-main Governance still reports `live_enabled: false`, and no
+  post-merge Live, release, or workflow-dispatch activity occurred.
+- Created branch `workflow-delivery-v3-record-model-contraction` from exact
+  reconciled `main@14cfc212` for the next data-model-only disabled unit.

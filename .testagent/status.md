@@ -14471,3 +14471,55 @@ approval, manual rerun, Live dispatch, Governance, Environment, deployment,
 package, tag, cleanup, or other external mutation occurred.
 
 <!-- END APPEND: 2026-09-02-pr644-latest-main-reconciliation -->
+
+<!-- BEGIN APPEND: 2026-09-02-pr644-post-merge-reconciliation -->
+
+## Workflow Delivery v3 PR #644 protected merge completion
+
+### Exact merge result
+
+PR #644 was protected-squash-merged at `2026-09-02T17:47:46Z` as
+`14cfc212da56bed35d887c88f66c1edeb55b0d23`. The merge commit tree
+`7ea714f7dd40ab1343e69103be7a895a8b520da2` exactly equals the reviewed PR
+head tree. The commit message records the contract-bounded authority change,
+disabled runtime boundary, latest-main integration, and required
+`Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer.
+
+GitHub could not perform a rebase merge because the reviewed branch contained
+history-preserving main-integration merge commits, and repository policy
+disables merge commits. Squash was therefore the only repository-supported
+protected merge that did not rewrite the reviewed PR branch. No admin bypass
+or branch-deletion flag was used; repository policy removed the remote branch
+after merge.
+
+### Post-merge checks and state
+
+| Evidence | Result |
+|---|---|
+| Main CI run `33663279604` | **Success**; all 11 jobs succeeded |
+| CodeQL run `33663279571` | **Success**; five language analyses succeeded and the expected empty C# SARIF job skipped |
+| Dependency Graph run `33663283467` | **Success** |
+| Dependency Graph run `33663283519` | **Success** |
+| Exact `origin/main` | `14cfc212da56bed35d887c88f66c1edeb55b0d23` |
+| Reviewed and merged tree equality | Exact |
+| Protected Governance | `live_enabled=false` |
+| Post-merge Live/release/workflow-dispatch runs | None |
+
+### Next disabled unit
+
+Branch `workflow-delivery-v3-record-model-contraction` was created from exact
+reconciled `main@14cfc212`. The next unit is limited to strict record and
+schema contraction:
+
+- normal-Live current-Attempt authority uses Release Execution plus
+  `workflow_run_id`, never `github.run_attempt`;
+- simulation and CI retain their existing run-attempt contracts;
+- Provider-owned facts remain authoritative and the compiler validates rather
+  than recomputes them;
+- custom Actions-history, Environment Profile, capability-group, and related
+  legacy record bindings are retired within the data-model boundary; and
+- Governance/authorization, publication/finalization, workflow topology,
+  activation, cleanup, and operational external mutations remain later units
+  or separately authorized work.
+
+<!-- END APPEND: 2026-09-02-pr644-post-merge-reconciliation -->
