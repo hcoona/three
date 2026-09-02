@@ -14111,3 +14111,67 @@ merge, Governance, Environment, deployment, package, tag, or other external
 mutation occurred.
 
 <!-- END APPEND: 2026-09-02-wdv3-pr644-nuget-posix-path-closure -->
+
+<!-- BEGIN APPEND: 2026-09-02-wdv3-pr644-acceptance-deadline-closure -->
+
+## Workflow Delivery v3 PR #644 acceptance-deadline closure
+
+### Remote failure
+
+Validate run `33586542242`, job `100111770507`, completed with
+`1 failed, 4247 passed in 230.91s`. The sole failure was
+`test_absent_proof_free_created_remains_incomplete`: the second recorded
+transport timeout was `6.997` rather than the test's exact expected `7.0`.
+
+### Independent adjudication
+
+| Question | Disposition |
+|---|---|
+| Production deadline defect | **FP**. The adapter intentionally establishes one monotonic deadline and passes each boundary the remaining budget, so elapsed execution time may reduce the second timeout. |
+| Actionable test defect | **TP, Medium, 99% confidence**. The scenario used the real monotonic clock while asserting that both rounded boundary values were exactly `7.0`. |
+| Dedicated contract coverage | Unchanged tests strictly prove one deadline and decreasing controlled budgets of `6.0`, `5.0`, and `4.0`. |
+
+The production implementation is correct. The scenario required a
+deterministic clock; changing production, adding sleep or retry, or weakening
+the exact assertion with a tolerance would obscure the contract.
+
+### Contract-bounded correction
+
+Commit `00bbf20504e04ab97f64022aebb8fc829205df32` uses
+`pytest.MonkeyPatch.context()` to freeze
+`three_workflow_delivery_v3.adapters.github_packages.monotonic` at `100.0`
+only while the proof-free scenario executes `_run(...)`.
+
+The correction:
+
+- preserves the existing test signature, including a second test that invokes
+  this scenario directly;
+- preserves the exact two-call `7.0` transport assertion;
+- restores the adapter clock immediately after `_run(...)`; and
+- changes no production code or dedicated deadline-contract test.
+
+An initial fixture-parameter form passed the focused tests but scoped Pyrefly
+correctly identified the direct test invocation as missing that new argument.
+The final local context form removes that compatibility defect rather than
+changing the caller.
+
+### Validation and review
+
+| Gate | Result |
+|---|---|
+| Scenario, direct invocation, and two strict deadline tests | `4 passed in 0.66s` |
+| Ruff check and format check | Passed |
+| Scoped Pyrefly | `0 errors` |
+| Diff check | Passed |
+| Affected-file HK gate | Passed |
+| Complete Workflow Delivery v3 pytest through HK | `4,248 passed in 437.46s` |
+| Canonical index static-reference scan | `clean` |
+| Independent diff review | **No findings** |
+| Independent deadline-contract challenge | **No findings** |
+
+The reviewed correction still requires a push and fresh automatic checks.
+`live_enabled=false` is unchanged, and no manual workflow rerun, approval,
+merge, Governance, Environment, deployment, package, tag, or other external
+mutation occurred.
+
+<!-- END APPEND: 2026-09-02-wdv3-pr644-acceptance-deadline-closure -->

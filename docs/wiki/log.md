@@ -3122,3 +3122,22 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
   dispatch, Governance, Environment, deployment, package, tag, or other
   external mutation occurred.
+
+## [2026-09-02] query | Stabilize acceptance deadline scenario
+
+- Remote Validate run `33586542242`, job `100111770507`, exposed one
+  scheduler-dependent test failure: the second correct remaining timeout was
+  `6.997` while the scenario expected two exact `7.0` calls.
+- Independent adjudication classified production behavior as a false positive
+  and the real-clock-dependent scenario as a true-positive test defect.
+  Production continues to use one monotonic deadline with decreasing remaining
+  budgets, as proved by the unchanged dedicated deadline tests.
+- Commit `00bbf205` freezes the adapter clock only around that scenario's
+  execution, preserves its existing signature and exact structural assertion,
+  and adds no tolerance, sleep, retry, or production change.
+- Focused scenarios, Ruff, formatting, scoped Pyrefly, and the affected-file HK
+  gate passed. HK ran all 4,248 Workflow Delivery v3 tests and a clean
+  canonical index scan; two independent reviewers reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
+  dispatch, Governance, Environment, deployment, package, tag, or other
+  external mutation occurred.
