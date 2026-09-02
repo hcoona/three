@@ -136,6 +136,91 @@ description = "Validate and reproduce the locked scan restoration plugin deploym
 depends = ["scan-restoration-plugin-check"]
 run = "apm install --frozen"
 
+[tasks.scholarly-publication-plugin-source-check]
+description = "Validate canonical scholarly publication plugin source"
+shell = "pwsh -NoLogo -Command"
+run = "uv run --script src/private/lib/scholarly-publication/scripts/validate_package.py --scope canonical"
+
+[tasks.scholarly-publication-plugin-runtime-check]
+description = "Validate deployed scholarly publication runtime parity"
+depends = ["scholarly-publication-plugin-source-check"]
+shell = "pwsh -NoLogo -Command"
+run = "uv run --script src/private/lib/scholarly-publication/scripts/validate_package.py --scope runtime"
+
+[tasks.scholarly-publication-plugin-spec]
+description = "Validate scholarly publication skills with the Agent Skills reference library"
+depends = ["scholarly-publication-plugin-source-check"]
+shell = "pwsh -NoLogo -Command"
+run = '''
+$source = "git+https://github.com/agentskills/agentskills.git@69ef37e9424c0a7ea9dd2293b559e43ec8176379#subdirectory=skills-ref"
+$skills = @(
+  "src/private/lib/scholarly-publication/skills/scholarly-pdf-reconstruction",
+  "src/private/lib/scholarly-publication/skills/scholarly-print-assembly",
+  "src/private/lib/scholarly-publication/skills/scholarly-render-qa"
+)
+foreach ($skill in $skills) {
+  uvx --from $source skills-ref validate $skill
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+'''
+
+[tasks.scholarly-publication-plugin-test]
+description = "Run the scholarly publication plugin tests"
+depends = ["scholarly-publication-plugin-source-check"]
+shell = "pwsh -NoLogo -Command"
+run = '''
+uv run --script src/private/lib/scholarly-publication/tests/test_validate_package.py
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+uv run --script src/private/lib/scholarly-publication/tests/test_reconstruct_pdf.py
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+uv run --script src/private/lib/scholarly-publication/tests/test_assemble_print.py
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+uv run --script src/private/lib/scholarly-publication/tests/test_audit_publication.py
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+'''
+
+[tasks.scholarly-publication-plugin-lint]
+description = "Lint and type-check the scholarly publication plugin"
+depends = ["scholarly-publication-plugin-source-check"]
+shell = "pwsh -NoLogo -Command"
+run = '''
+uvx ruff==0.16.5 check src/private/lib/scholarly-publication
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+uvx ruff==0.16.5 format --check src/private/lib/scholarly-publication
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+uv run --isolated --no-project --with defusedxml==0.7.1 --with pymupdf==1.26.6 --with fonttools==4.60.1 --with html5lib==1.1 --with playwright==1.56.0 --with jsonschema==4.25.1 --with PyYAML==6.0.2 --with tinycss2==1.4.0 --with pyrefly==1.0.0 pyrefly check src/private/lib/scholarly-publication
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+'''
+
+[tasks.scholarly-publication-plugin-ci]
+description = "Run the scholarly publication CI validation suite"
+depends = [
+  "scholarly-publication-plugin-runtime-check",
+  "scholarly-publication-plugin-spec",
+  "scholarly-publication-plugin-test",
+  "scholarly-publication-plugin-lint",
+]
+
+[tasks.scholarly-publication-plugin-install]
+description = "Validate and deploy the scholarly publication Copilot CLI plugin"
+depends = ["scholarly-publication-plugin-source-check"]
+shell = "pwsh -NoLogo -Command"
+run = '''
+apm install
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+uv run --script src/private/lib/scholarly-publication/scripts/validate_package.py --scope runtime
+'''
+
+[tasks.scholarly-publication-plugin-install-frozen]
+description = "Validate and reproduce the locked scholarly publication plugin deployment"
+depends = ["scholarly-publication-plugin-source-check"]
+shell = "pwsh -NoLogo -Command"
+run = '''
+apm install --frozen
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+uv run --script src/private/lib/scholarly-publication/scripts/validate_package.py --scope runtime
+'''
+
 [tasks.translation-agent-plugin-check]
 description = "Validate the enterprise translation team Copilot CLI plugin"
 run = "python -B src/private/lib/enterprise-translation-team/scripts/validate_package.py"

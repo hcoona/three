@@ -1,0 +1,52 @@
+{
+  "skill_name": "scholarly-print-assembly",
+  "version": "0.1.0",
+  "evals": [
+    {
+      "id": "approved-bundle-retained-publication",
+      "prompt": "Run evals/files/make_assembly_fixture.py --output fixture --mode external. Use /scholarly-print-assembly to build fixture/assembly-spec.json into outputs/publication. Do not claim QA or release approval.",
+      "baseline_prompt": "Run evals/files/make_assembly_fixture.py --output fixture --mode external. Build fixture/assembly-spec.json into outputs/publication. Do not claim QA or release approval.",
+      "expected_output": "A schema-valid retained publication assembled from an external passing source package and approved translation bundle.",
+      "files": ["evals/files/make_assembly_fixture.py"],
+      "expected_files": ["publication/assembly-manifest.json", "publication/index.html"],
+      "assertions": [
+        "publication/assembly-manifest.json validates against assets/assembly-manifest.schema.json and has status assembled.",
+        "The manifest binds retained snapshots of the source package, approved translation bundle, and assembly specification, plus the selected approved fragment, local font, stylesheet, HTML, and CSS.",
+        "Standalone validation treats the retained input snapshots as opaque hash/length-bound lineage assets and does not replay their schemas or the recipe.",
+        "The deduplicated semantic asset declarations exactly cover the retained regular files, and every declared asset has the recorded hash and byte length.",
+        "The HTML is local and semantic, and neither the manifest nor the response claims independent QA, human review, or release approval."
+      ]
+    },
+    {
+      "id": "publication-profile-rejections",
+      "prompt": "Run evals/files/make_assembly_fixture.py --output fixture --mode policy. Use /scholarly-print-assembly to attempt builds from fixture/fragment-input/assembly-spec.json into outputs/fragment-publication and fixture/stylesheet-input/assembly-spec.json into outputs/css-publication. Report whether each input is admissible and keep the input fixtures unchanged.",
+      "baseline_prompt": "Run evals/files/make_assembly_fixture.py --output fixture --mode policy. Attempt builds from fixture/fragment-input/assembly-spec.json into outputs/fragment-publication and fixture/stylesheet-input/assembly-spec.json into outputs/css-publication. Report whether each input is admissible and keep the input fixtures unchanged.",
+      "expected_output": "Both builds are blocked by the closed publication profile without publishing an assembled tree.",
+      "files": ["evals/files/make_assembly_fixture.py"],
+      "expected_files": [],
+      "assertions": [
+        "The invalid-fragment build is rejected because an approved fragment contains markup outside the publication profile.",
+        "The invalid-CSS build is rejected because an untrusted stylesheet uses a property outside the publication profile.",
+        "Neither outputs/fragment-publication/assembly-manifest.json nor outputs/css-publication/assembly-manifest.json exists.",
+        "The fixture inputs remain unchanged and no rejected output is described as assembled, approved, or released."
+      ]
+    },
+    {
+      "id": "mixed-script-continued-figure",
+      "prompt": "Run evals/files/make_assembly_fixture.py --output fixture --mode figure. Use /scholarly-print-assembly to build fixture/assembly-spec.json into outputs/publication and render outputs/publication/index.html to outputs/publication/publication.pdf. Preserve the mixed-script markup and the two-part continued figure. Do not claim release approval.",
+      "baseline_prompt": "Run evals/files/make_assembly_fixture.py --output fixture --mode figure. Build fixture/assembly-spec.json into outputs/publication and render outputs/publication/index.html to outputs/publication/publication.pdf. Preserve the mixed-script markup and the two-part continued figure. Do not claim release approval.",
+      "expected_output": "A rendered Letter publication with mixed-script text, one logical figure, two ordered vector crops, and retained local resources.",
+      "files": ["evals/files/make_assembly_fixture.py"],
+      "expected_files": ["publication/assembly-manifest.json", "publication/index.html", "publication/publication.pdf"],
+      "assertions": [
+        "The assembly manifest validates against assets/assembly-manifest.schema.json, has status assembled, declares zh-Hans content, Letter geometry, and the music-notation profile.",
+        "The HTML preserves the English language span within Chinese prose and contains one captioned logical figure with two ordered crop SVGs.",
+        "The manifest figure parts retain the supplied page numbers and boxes and hash-bind the two copied source page SVGs used by the crops.",
+        "The declared local font, approved stylesheet, HTML, CSS, and rendered PDF belong to the manifest semantic asset closure with matching hashes and byte lengths.",
+        "Assembly validates font metadata and CSS bindings without claiming browser glyph selection; the rendered PDF and downstream QA own that observation.",
+        "The build and render use fresh destinations; rerunning either command against the committed path is rejected unchanged.",
+        "The output remains an assembly artifact and does not claim independent QA, human approval, or release eligibility."
+      ]
+    }
+  ]
+}

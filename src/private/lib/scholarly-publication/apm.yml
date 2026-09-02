@@ -1,0 +1,43 @@
+name: scholarly-publication
+version: 0.1.0
+description: Reconstruct authorized scholarly PDFs, assemble offline mixed-script print publications, and independently audit release artifacts.
+author: hcoona
+license: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+targets:
+  - copilot
+dependencies:
+  apm: []
+  mcp: []
+includes:
+  - skills/scholarly-pdf-reconstruction/SKILL.md
+  - skills/scholarly-pdf-reconstruction/assets/figure-map.schema.json
+  - skills/scholarly-pdf-reconstruction/assets/section-map.schema.json
+  - skills/scholarly-pdf-reconstruction/assets/source-blocks.schema.json
+  - skills/scholarly-pdf-reconstruction/assets/source-package.schema.json
+  - skills/scholarly-pdf-reconstruction/references/music-notation-source-profile.md
+  - skills/scholarly-pdf-reconstruction/references/source-package-contract.md
+  - skills/scholarly-pdf-reconstruction/scripts/reconstruct_pdf.py
+  - skills/scholarly-print-assembly/SKILL.md
+  - skills/scholarly-print-assembly/assets/assembly-manifest.schema.json
+  - skills/scholarly-print-assembly/assets/assembly-spec.schema.json
+  - skills/scholarly-print-assembly/assets/figure-map.schema.json
+  - skills/scholarly-print-assembly/assets/print-base.css
+  - skills/scholarly-print-assembly/assets/publication-profile.json
+  - skills/scholarly-print-assembly/assets/source-blocks.schema.json
+  - skills/scholarly-print-assembly/assets/source-package.schema.json
+  - skills/scholarly-print-assembly/assets/translation-bundle.schema.json
+  - skills/scholarly-print-assembly/references/assembly-contract.md
+  - skills/scholarly-print-assembly/references/mixed-script-print.md
+  - skills/scholarly-print-assembly/references/music-notation-markup.md
+  - skills/scholarly-print-assembly/scripts/assemble_print.py
+  - skills/scholarly-render-qa/SKILL.md
+  - skills/scholarly-render-qa/assets/assembly-manifest.schema.json
+  - skills/scholarly-render-qa/assets/publication-profile.json
+  - skills/scholarly-render-qa/assets/qa-evidence.schema.json
+  - skills/scholarly-render-qa/assets/release-manifest.schema.json
+  - skills/scholarly-render-qa/references/music-notation-qa-profile.md
+  - skills/scholarly-render-qa/references/qa-contract.md
+  - skills/scholarly-render-qa/scripts/audit_publication.py
+devDependencies:
+  apm: []
+scripts: {}

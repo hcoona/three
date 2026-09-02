@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hcoona.github.io/schemas/scholarly-publication/source-blocks-1.0.json",
+  "title": "Scholarly publication page source blocks",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "coordinate_space", "page_id", "blocks"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "coordinate_space": {
+      "const": "pdf-points-top-left"
+    },
+    "page_id": {
+      "type": "string",
+      "pattern": "^pdf-[0-9]{4,}$"
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "source_order", "bbox", "text"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^pdf-[0-9]{4,}-block-[0-9]{4,}$"
+          },
+          "source_order": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "bbox": {
+            "$ref": "#/$defs/bbox"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "bbox": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "skill_name": "scholarly-render-qa",
+  "version": "0.1.0",
+  "evals": [
+    {
+      "id": "clean-publication-release-evidence",
+      "prompt": "Run evals/files/make_qa_fixture.py --output fixture --mode clean. Use /scholarly-render-qa to audit fixture/publication into outputs/review as an independent outcome observer. Render twice, retain complete full-page rasters, do not modify the publication, and emit a release manifest only if all blocking checks pass.",
+      "baseline_prompt": "Run evals/files/make_qa_fixture.py --output fixture --mode clean. Independently audit fixture/publication into outputs/review. Render twice, retain complete full-page rasters, do not modify the publication, and emit a release manifest only if all blocking checks pass.",
+      "expected_output": "Passing schema-valid QA evidence and a thin mechanical release index for an unchanged publication, with role-aware offline routing, active print-page observation, bounded complete renders, and human review still required.",
+      "files": ["evals/files/make_qa_fixture.py"],
+      "expected_files": ["review/qa-evidence.json", "review/release-manifest.json"],
+      "assertions": [
+        "review/qa-evidence.json validates against assets/qa-evidence.schema.json, has mechanical_status pass, begins with the nine required blocking core checks exactly once in documented order, and contains no failed blocking check; any namespaced tail checks remain schema-valid.",
+        "The evidence binds the assembly manifest with path_base publication-root, exactly two independently observed render PDFs produced by bounded complete renders with path_base evidence-root, and one path_base evidence-root full-page raster for every page of each admitted canonical/render PDF.",
+        "review/release-manifest.json validates against assets/release-manifest.schema.json, remains a thin passing index, binds the assembly manifest from publication-root, and binds QA evidence from release-root.",
+        "The publication-tree before and after fingerprints match, publication.tree-unchanged passes, and human_review.status remains required with a nonempty scope."
+      ]
+    },
+    {
+      "id": "seeded-observable-failures",
+      "prompt": "Run evals/files/make_qa_fixture.py --output fixture --mode seeded. Use /scholarly-render-qa to audit fixture/publication into outputs/review as an independent outcome observer. Render twice, retain complete full-page rasters, do not repair the publication, and do not emit a release manifest for blocking findings.",
+      "baseline_prompt": "Run evals/files/make_qa_fixture.py --output fixture --mode seeded. Independently audit fixture/publication into outputs/review. Render twice, retain complete full-page rasters, do not repair the publication, and do not emit a release manifest for blocking findings.",
+      "expected_output": "Schema-valid completed failing QA evidence that records observable seeded PDF failures under bounded complete renders and role-aware outcome checks, keeps the publication unchanged, and blocks release while retaining required human review.",
+      "files": ["evals/files/make_qa_fixture.py"],
+      "expected_files": ["review/qa-evidence.json"],
+      "assertions": [
+        "review/qa-evidence.json validates against assets/qa-evidence.schema.json, has mechanical_status fail, begins with all nine ordered blocking core checks, and records failed physical-geometry, font, and unsafe-action/text observations for the seeded canonical PDF using the fixed uri action kind.",
+        "The evidence still binds exactly two independent render PDFs and complete canonical/render-1/render-2 raster sets from evidence-root, while the assembly manifest binding uses publication-root.",
+        "The publication-tree before and after fingerprints match, publication.tree-unchanged passes, and human_review.status remains required with a nonempty scope.",
+        "review/release-manifest.json is absent, and neither the artifacts nor response claims mechanical release eligibility or completed human review."
+      ]
+    }
+  ]
+}

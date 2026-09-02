@@ -1,0 +1,13 @@
+{
+  "name": "scholarly-publication",
+  "description": "Reconstruct authorized scholarly PDFs, assemble offline mixed-script print publications, and independently audit release artifacts.",
+  "version": "0.1.0",
+  "author": {
+    "name": "hcoona"
+  },
+  "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
+  "keywords": ["pdf", "scholarly-publishing", "print-layout", "quality-control"],
+  "category": "productivity",
+  "tags": ["agent-skills", "document-publishing", "publication-qa"],
+  "skills": "skills/"
+}
