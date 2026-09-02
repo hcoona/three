@@ -265,7 +265,7 @@ def _compiled_snapshot(tmp_path: Path) -> RepositoryModelSnapshot:
         request_id="release-request-42",
         purpose="live-release",
         workflow_run_id=WORKFLOW_RUN_ID,
-        run_attempt=RUN_ATTEMPT,
+        run_attempt=None,
         target=target,
         producer="compile-model",
         control=f"workflow-delivery-v3:{target}",
@@ -449,7 +449,7 @@ def _context(
         purpose="live-release",
         request_id=snapshot.context.request_id,
         workflow_run_id=snapshot.context.workflow_run_id,
-        run_attempt=snapshot.context.run_attempt,
+        run_attempt=RUN_ATTEMPT,
         selected_ref=selected_ref,
         target=snapshot.context.target,
         repository_model_digest=snapshot.snapshot_digest,
@@ -499,12 +499,6 @@ def _with_other_workflow_run(
     context: LiveEligibilityContext,
 ) -> LiveEligibilityContext:
     return replace(context, workflow_run_id=7102)
-
-
-def _with_other_attempt(
-    context: LiveEligibilityContext,
-) -> LiveEligibilityContext:
-    return replace(context, run_attempt=4)
 
 
 def _with_other_target(
@@ -1574,7 +1568,7 @@ def test_live_eligibility_passes_with_fresh_exact_target_inputs(
     assert decision.context.purpose == "live-release"
     assert decision.context.request_id == snapshot.context.request_id
     assert decision.context.workflow_run_id == snapshot.context.workflow_run_id
-    assert decision.context.run_attempt == snapshot.context.run_attempt
+    assert decision.context.run_attempt == RUN_ATTEMPT
     assert decision.context.target == TARGET
     assert decision.static_reference.source_kind == "git-target"
     assert decision.static_reference.target == TARGET
@@ -2160,12 +2154,12 @@ def test_static_reference_result_is_closed_and_deterministic(
         parse_bounded_static_reference_result(canonicalize(document))
 
 
-def test_eligibility_rejects_prior_attempt_repository_model(
+def test_eligibility_rejects_live_repository_model_with_run_attempt(
     monkeypatch: pytest.MonkeyPatch,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
-    """Reject a prior-attempt Snapshot before scanning or Governance."""
+    """Reject a retired Live Snapshot run-attempt before external reads."""
     current_snapshot = live_admitted_repository_model.snapshot
     prior_snapshot = replace(
         current_snapshot,
@@ -2176,7 +2170,7 @@ def test_eligibility_rejects_prior_attempt_repository_model(
 
     with pytest.raises(
         ValueError,
-        match="Repository Model is not exact and ready",
+        match="live compilation cannot bind run_attempt",
     ):
         _evaluate(
             monkeypatch,
@@ -2206,10 +2200,6 @@ def test_eligibility_rejects_prior_attempt_repository_model(
             "Repository Model binding mismatch",
         ),
         (
-            _with_other_attempt,
-            "Repository Model binding mismatch",
-        ),
-        (
             _with_other_target,
             "Repository Model binding mismatch",
         ),
@@ -2230,7 +2220,6 @@ def test_eligibility_rejects_prior_attempt_repository_model(
         "purpose",
         "request",
         "run",
-        "attempt",
         "target",
         "control",
         "catalog",

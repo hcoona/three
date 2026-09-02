@@ -76,13 +76,18 @@ def form_release_adapter_context(  # noqa: PLR0913
     subject = _subject(snapshot)
     purpose = _purpose(subject)
     model = repository_model.snapshot
-    if (
+    model_binding_mismatch = (
         repository_model.canonical_digest != snapshot.repository_model_digest
         or model.context.target != snapshot.target
         or model.context.purpose != purpose
         or model.context.workflow_run_id != subject.workflow_run_id
-        or model.context.run_attempt != subject.run_attempt
-    ):
+    )
+    if purpose != "live-release":
+        model_binding_mismatch = (
+            model_binding_mismatch
+            or model.context.run_attempt != subject.run_attempt
+        )
+    if model_binding_mismatch:
         message = "Release Adapter context model binding mismatch"
         raise ValueError(message)
     control_digest = canonical_sha256(

@@ -276,7 +276,7 @@ def live_admitted_repository_model(
         request_id=live_intent.request_id,
         purpose="live-release",
         workflow_run_id=RUN_ID,
-        run_attempt=RUN_ATTEMPT,
+        run_attempt=None,
         target=TARGET,
         producer="compile-live-model",
         control=f"workflow-delivery-v3:{TARGET}",
@@ -323,8 +323,10 @@ def live_attempt_binding(
             ("content-sha256", DIGEST_A),
             (
                 "path",
-                ".github/workflow-delivery/governance/"
-                "hcoona-release-smoke-npm.json",
+                (
+                    ".github/workflow-delivery/governance/"
+                    "hcoona-release-smoke-npm.json"
+                ),
             ),
             ("ref", "refs/heads/main"),
             ("repository", "hcoona/three"),
@@ -461,11 +463,9 @@ def qualified_simulation(
     monkeypatch.setattr(
         node_adapter,
         "qualify_npm_install_import",
-        lambda _tarball, _supplied, _runtime: (
-            node_adapter.InstallImportResult(
-                smoke_message="hcoona-release-smoke-npm",
-                witness_sha256=canonical_sha256(request.witness.to_document()),
-            )
+        lambda _tarball, _supplied, _runtime: node_adapter.InstallImportResult(
+            smoke_message="hcoona-release-smoke-npm",
+            witness_sha256=canonical_sha256(request.witness.to_document()),
         ),
     )
     transport = ArtifactTransportIdentity(

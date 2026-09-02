@@ -3243,3 +3243,23 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   post-merge Live, release, or workflow-dispatch activity occurred.
 - Created branch `workflow-delivery-v3-record-model-contraction` from exact
   reconciled `main@14cfc212` for the next data-model-only disabled unit.
+
+## [2026-09-02] refactor | Contract Provider/compiler contextual binding
+
+- Removed `github.run_attempt` from normal-Live Provider/compiler and
+  Repository Model records while retaining the required simulation and CI
+  binding.
+- Updated direct live consumers to stop treating the Repository Model
+  Snapshot as attempt authority. The still-retained Release Intent and
+  current-Attempt records remain directly consistent until their next
+  dependency-ordered contraction phase.
+- Canonical fixtures and dependent digests were regenerated. The complete
+  staged repository gate passed 4,254 Workflow Delivery v3 tests and a clean
+  index static-reference scan.
+- One independently confirmed planner-binding defect was fixed; a separate
+  proposal to remove live CLI attempt input in this phase was independently
+  rejected as out of scope. Fresh correctness and adversarial reviews reported
+  no findings.
+- Governance remains `live_enabled: false`; no Live, deployment, publication,
+  package, tag, workflow-dispatch, cleanup, or other external mutation
+  occurred.

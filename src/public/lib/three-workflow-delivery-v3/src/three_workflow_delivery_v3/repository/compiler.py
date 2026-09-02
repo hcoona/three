@@ -75,7 +75,7 @@ class CompilationContext:
     request_id: str
     purpose: str
     workflow_run_id: int
-    run_attempt: int
+    run_attempt: int | None
     target: str
     producer: str
     control: str
@@ -511,40 +511,55 @@ def _string_array(value: JsonValue, *, field: str) -> tuple[str, ...]:
 def _compilation_context_from_document(
     value: JsonValue,
 ) -> CompilationContext:
+    if type(value) is not dict:
+        message = "Repository Model Snapshot context must be an object"
+        raise TypeError(message)
+    raw_document = cast("dict[str, JsonValue]", value)
+    if "purpose" not in raw_document:
+        message = "Repository Model Snapshot context missing field: purpose"
+        raise ValueError(message)
+    purpose = _document_string(
+        raw_document["purpose"],
+        field="context.purpose",
+    )
+    if purpose not in _PURPOSES:
+        message = "compilation purpose is not in the closed set"
+        raise ValueError(message)
+    context_keys = {
+        "request-id",
+        "purpose",
+        "workflow-run-id",
+        "target",
+        "producer",
+        "control",
+        "catalog-digest",
+        "channel",
+        "release-unit",
+    }
+    if purpose != "live-release":
+        context_keys.add("run-attempt")
     document = _document(
         value,
         field="context",
-        keys=frozenset(
-            {
-                "request-id",
-                "purpose",
-                "workflow-run-id",
-                "run-attempt",
-                "target",
-                "producer",
-                "control",
-                "catalog-digest",
-                "channel",
-                "release-unit",
-            }
-        ),
+        keys=frozenset(context_keys),
     )
     return CompilationContext(
         request_id=_document_string(
             document["request-id"],
             field="context.request-id",
         ),
-        purpose=_document_string(
-            document["purpose"],
-            field="context.purpose",
-        ),
+        purpose=purpose,
         workflow_run_id=_document_integer(
             document["workflow-run-id"],
             field="context.workflow-run-id",
         ),
-        run_attempt=_document_integer(
-            document["run-attempt"],
-            field="context.run-attempt",
+        run_attempt=(
+            None
+            if purpose == "live-release"
+            else _document_integer(
+                document["run-attempt"],
+                field="context.run-attempt",
+            )
         ),
         target=_document_string(
             document["target"],
@@ -1431,11 +1446,10 @@ def _validate_reverse_index(
 
 
 def _context_document(context: CompilationContext) -> dict[str, JsonValue]:
-    return {
+    document: dict[str, JsonValue] = {
         "request-id": context.request_id,
         "purpose": context.purpose,
         "workflow-run-id": context.workflow_run_id,
-        "run-attempt": context.run_attempt,
         "target": context.target,
         "producer": context.producer,
         "control": context.control,
@@ -1443,6 +1457,9 @@ def _context_document(context: CompilationContext) -> dict[str, JsonValue]:
         "channel": context.channel,
         "release-unit": context.release_unit,
     }
+    if context.run_attempt is not None:
+        document["run-attempt"] = context.run_attempt
+    return document
 
 
 def _positive_integer(value: object, *, field: str) -> None:
@@ -1458,6 +1475,15 @@ def _nonempty_string(value: object, *, field: str) -> str:
     return value
 
 
+def _validate_context_run_attempt(context: CompilationContext) -> None:
+    if context.purpose == "live-release":
+        if context.run_attempt is not None:
+            message = "live compilation cannot bind run_attempt"
+            raise ValueError(message)
+        return
+    _positive_integer(context.run_attempt, field="run_attempt")
+
+
 def validate_compilation_context(context: CompilationContext) -> None:
     """Validate the canonical purpose-bound CompilationContext invariants."""
     if type(context) is not CompilationContext:
@@ -1469,7 +1495,7 @@ def validate_compilation_context(context: CompilationContext) -> None:
         message = "compilation purpose is not in the closed set"
         raise ValueError(message)
     _positive_integer(context.workflow_run_id, field="workflow_run_id")
-    _positive_integer(context.run_attempt, field="run_attempt")
+    _validate_context_run_attempt(context)
     if (
         type(context.target) is not str
         or _SHA_PATTERN.fullmatch(context.target) is None
@@ -1866,7 +1892,7 @@ def _git_target_file_bytes(
 ) -> bytes:
     try:
         return subprocess.run(  # noqa: S603
-            ("git", "show", f"{target}:{path}"),
+            ("git", "show", f"{target}:{path}"),  # noqa: S607
             cwd=repo_root,
             check=True,
             capture_output=True,
@@ -1879,7 +1905,7 @@ def _git_target_file_bytes(
 def _git_target_paths(repo_root: Path, target: str) -> frozenset[str]:
     try:
         result = subprocess.run(  # noqa: S603
-            ("git", "ls-tree", "-r", "--name-only", target),
+            ("git", "ls-tree", "-r", "--name-only", target),  # noqa: S607
             cwd=repo_root,
             check=True,
             capture_output=True,
@@ -2074,7 +2100,7 @@ def compile_repository_model(
     manifest: ProviderRequestManifest,
     bundles: Sequence[AdmittedNodeProviderFactBundle],
 ) -> RepositoryModelSnapshot:
-    """Compile one complete purpose/run-attempt-bound first-slice Snapshot."""
+    """Compile one complete purpose-bound first-slice Snapshot."""
     validate_compilation_context(context)
     _validate_manifest(context, manifest)
     request = manifest.requests[0]

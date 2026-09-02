@@ -35,6 +35,7 @@ REPO_ROOT = Path(__file__).resolve().parents[6]
 PROJECT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 REQUEST_DIGEST = "sha256:" + ("a" * 64)
 VERSION_HEIGHT = 42
+RUN_ATTEMPT = 3
 _NBGV_CI_VARIABLES = frozenset(
     {
         "APPVEYOR",
@@ -77,11 +78,11 @@ _CONTRACT_FIXTURE_DIRECTORY = (
 _CONTRACT_FIXTURE_DIGESTS = {
     "node-provider-result": (
         "sha256:"
-        "fe55544be8ed1c0666dec70195675ec88941b2dcae2ff44d79d1bb79873fe440"
+        "56a59d6a237494431e86943eb4dfbe6147de14dfc030b76b1eee0a6ca6ce1fc6"
     ),
     "node-provider-fact-bundle": (
         "sha256:"
-        "7f691ee4d1a47ed9442372a51ad2a84794f001136dc8935ac66d8ec135ef7745"
+        "dfa75fad5d415f00f843b2887628cdf74c83e2cbf494ca0b57257fc6dc54a090"
     ),
 }
 _PHASE1_PREPARATION_FETCH_COMMAND = (
@@ -419,7 +420,7 @@ def _create_local_clone_topology(
 def _read_detached_head(repo: Path) -> _DetachedHeadState:
     commit = _run_fixture_command(("git", "rev-parse", "HEAD"), repo).strip()
     symbolic = subprocess.run(
-        ("git", "symbolic-ref", "--quiet", "HEAD"),
+        ("git", "symbolic-ref", "--quiet", "HEAD"),  # noqa: S607
         cwd=repo,
         env=_noninteractive_environment(),
         check=False,
@@ -564,7 +565,7 @@ def _configure_local_only_environment(
 
 def _head() -> str:
     return subprocess.run(
-        ("git", "rev-parse", "HEAD"),
+        ("git", "rev-parse", "HEAD"),  # noqa: S607
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
@@ -572,12 +573,19 @@ def _head() -> str:
     ).stdout.strip()
 
 
-def _binding(target: str = "e" * 40) -> ProviderBinding:
+def _binding(
+    target: str = "e" * 40,
+    *,
+    purpose: str = "live-release",
+    run_attempt: int | None = None,
+) -> ProviderBinding:
+    if purpose != "live-release" and run_attempt is None:
+        run_attempt = RUN_ATTEMPT
     return ProviderBinding(
         request_id="release-request-42",
-        purpose="live-release",
+        purpose=purpose,
         workflow_run_id=7101,
-        run_attempt=3,
+        run_attempt=run_attempt,
         target=target,
         producer="discover-node",
         control=f"workflow-delivery-v3:{target}",
@@ -599,8 +607,19 @@ def _with_invalid_workflow_run_id(
 def _with_invalid_run_attempt(binding: ProviderBinding) -> ProviderBinding:
     return replace(
         binding,
+        purpose="release-simulation",
         run_attempt=_boolean_integer_fixture(value=True),
     )
+
+
+def _with_live_run_attempt(binding: ProviderBinding) -> ProviderBinding:
+    return replace(binding, run_attempt=2)
+
+
+def _with_missing_simulation_run_attempt(
+    binding: ProviderBinding,
+) -> ProviderBinding:
+    return replace(binding, purpose="release-simulation", run_attempt=None)
 
 
 def _with_invalid_target(binding: ProviderBinding) -> ProviderBinding:
@@ -818,6 +837,9 @@ def test_provider_compiles_pnpm_and_nbgv_facts_once_for_exact_target(
     )
 
     assert result.binding == binding
+    result_binding = result.to_document()["binding"]
+    assert isinstance(result_binding, dict)
+    assert "run-attempt" not in result_binding
     assert result.checkout.head == binding.target
     assert result.checkout.ancestry_complete
     assert result.checkout.tags_complete
@@ -861,6 +883,24 @@ def test_provider_compiles_pnpm_and_nbgv_facts_once_for_exact_target(
     ]
     assert runner.evaluation_root is not None
     assert not runner.evaluation_root.exists()
+
+
+def test_provider_preserves_simulation_run_attempt(
+    tmp_path: Path,
+) -> None:
+    """Retain the simulation pass binding in Provider facts."""
+    repo, _, runner, _ = _scenario(tmp_path)
+    result = provide_node_repository_facts(
+        repo,
+        PROJECT_PATH,
+        _binding(purpose="release-simulation"),
+        _materialization(),
+        runner=runner,
+    )
+    binding_document = result.to_document()["binding"]
+
+    assert isinstance(binding_document, dict)
+    assert binding_document["run-attempt"] == RUN_ATTEMPT
 
 
 def test_provider_invokes_installed_node_nbgv_api_without_cli_fallback(
@@ -1556,6 +1596,8 @@ def test_provider_rejects_invalid_project_selection_before_checkout(
         (_with_invalid_purpose, "closed purpose"),
         (_with_invalid_workflow_run_id, "positive non-Boolean"),
         (_with_invalid_run_attempt, "positive non-Boolean"),
+        (_with_live_run_attempt, "live Provider binding cannot bind"),
+        (_with_missing_simulation_run_attempt, "positive non-Boolean"),
         (_with_invalid_target, "full lowercase"),
         (_with_invalid_catalog_digest, "current static catalog"),
         (_with_invalid_request_digest, "prefixed lowercase"),
@@ -1563,7 +1605,9 @@ def test_provider_rejects_invalid_project_selection_before_checkout(
     ids=[
         "purpose",
         "run-id",
-        "attempt",
+        "invalid-attempt",
+        "live-attempt",
+        "missing-simulation-attempt",
         "target",
         "catalog",
         "request-digest",
@@ -2618,7 +2662,7 @@ def _evaluation_directory_probe(
     context: _EvaluationContext,
 ) -> _EvaluationDirectoryProbe:
     symbolic = subprocess.run(
-        ("git", "symbolic-ref", "--quiet", "HEAD"),
+        ("git", "symbolic-ref", "--quiet", "HEAD"),  # noqa: S607
         cwd=root,
         env=context.environment,
         check=False,
@@ -2657,7 +2701,7 @@ def _evaluation_directory_probe(
         )
     )
     ancestor = subprocess.run(  # noqa: S603
-        (
+        (  # noqa: S607
             "git",
             "merge-base",
             "--is-ancestor",

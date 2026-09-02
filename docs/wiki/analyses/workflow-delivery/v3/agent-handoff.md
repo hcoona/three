@@ -37,6 +37,12 @@ requests mechanism extraction and revalidation. Git and the append-only
 - The next disabled implementation branch is
   `workflow-delivery-v3-record-model-contraction`, created from exact
   reconciled `main@14cfc212`.
+- Its first dependency-ordered phase is complete: normal-Live
+  Provider/compiler contexts and Repository Model records omit and reject
+  `github.run_attempt`, while simulation and CI retain their required
+  attempt-bound contracts. Direct live consumers no longer use the Repository
+  Model as attempt authority; retained Release Intent and current-Attempt
+  records remain mutually checked until the next phase contracts them.
 - This next unit is data-model-only: migrate strict schemas and frozen/slotted
   Python records to current-Attempt authority, preserve simulation and CI
   run-attempt contracts, remove legacy normal-Live history/group/profile
@@ -50,11 +56,12 @@ requests mechanism extraction and revalidation. Git and the append-only
 - Retry-5 destination acceptance is complete historical evidence. Exact `.17` through `.20` versions and tags remain
   retained and must not be reused; detailed chronology stays in Git and the log.
 
-The immediate boundary is to implement the record-model contraction in
-dependency order, with bounded tests and the same independent
-review/adjudication protocol. Normal Git delivery of this disabled
-implementation is permitted. Live activation, operational external mutation,
-and work assigned to later implementation units remain unauthorized.
+The immediate boundary is to contract Release Intent, current-Attempt
+identity, release transport, and current-context admission without introducing
+a universal record envelope or history fallback. Normal Git delivery of this
+disabled implementation is permitted. Live activation, operational external
+mutation, legacy-record retirement, and work assigned to later implementation
+units remain unauthorized in this phase.
 
 ## Hot Context
 
@@ -332,9 +339,9 @@ Do not infer policy from stale runtime behavior or archived designs.
 2. Confirm the branch descends from exact reconciled `main@14cfc212`; if
    `origin/main` advances before delivery, merge it without rewriting reviewed
    commits and restart integrated-head validation and review.
-3. Contract Provider/compiler contextual run binding first: normal Live omits
-   and rejects `github.run_attempt`, while simulation and CI retain their
-   existing required binding.
+3. Preserve the completed Provider/compiler contextual run binding: normal
+   Live omits and rejects `github.run_attempt`, while simulation and CI retain
+   their existing required binding.
 4. Contract Release Intent, current-Attempt identity, release transport, and
    current-context admission without introducing a universal record envelope
    or history fallback.
@@ -406,7 +413,8 @@ applicable documentation and repository gates but keeps the same validate-before
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
 
 The replacement baseline and first disabled implementation unit are merged.
-The record-model contraction now proceeds on its own branch from exact
-reconciled `main`. Later disabled units remain dependency-ordered.
-External-resource, cleanup, protected-merge, and Live boundaries still require
-their own explicit authorization.
+The Provider/compiler phase of record-model contraction is complete on its own
+branch from exact reconciled `main`; Release Intent, current-Attempt identity,
+transport, and current-context admission are next. Later disabled units remain
+dependency-ordered. External-resource, cleanup, protected-merge, and Live
+boundaries still require their own explicit authorization.

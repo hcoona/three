@@ -135,14 +135,14 @@ def derive_simulation_binding(
             "namespace": "release-simulation",
             "request-id": intent.request_id,
             "workflow-run-id": context.workflow_run_id,
-            "run-attempt": context.run_attempt,
+            "run-attempt": intent.run_attempt,
         }
     )
     simulation = SimulationIdentity(
         namespace="release-simulation",
         request_id=intent.request_id,
         workflow_run_id=context.workflow_run_id,
-        run_attempt=context.run_attempt,
+        run_attempt=intent.run_attempt,
         identity=(
             f"release-simulation:{identity_digest.removeprefix('sha256:')}"
         ),
