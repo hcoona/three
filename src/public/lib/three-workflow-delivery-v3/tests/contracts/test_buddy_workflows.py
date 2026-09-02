@@ -316,22 +316,19 @@ def test_live_eligibility_block_is_uploaded_before_status_propagates() -> None:
     propagate = _step(job, "Propagate Live Eligibility status")
     command = _run(evaluate)
     propagation = _run(propagate)
-    domain_command_count = 2
+    domain_command_count = 1
 
     assert command.count("set +e") == domain_command_count
     assert command.count("set -e") == domain_command_count
-    assert "consumer_status=$?" in command
     assert "eligibility_status=$?" in command
-    assert '"${consumer_status}" != "0"' in command
-    assert '"${consumer_status}" != "1"' in command
     assert '"${eligibility_status}" != "0"' in command
     assert '"${eligibility_status}" != "1"' in command
-    assert '"${consumer_result}" != "clean"' in command
-    assert '"${consumer_result}" != "consumer"' in command
     assert '"${decision_result}" != "pass"' in command
     assert '"${decision_result}" != "blocked"' in command
-    assert 'echo "consumer-policy-status=${consumer_status}"' in command
     assert 'echo "eligibility-status=${eligibility_status}"' in command
+    assert "--consumer-policy" not in command
+    assert "consumer_status" not in command
+    assert "consumer_result" not in command
     assert command.index("eligibility_status=$?") < command.index(
         'echo "live-eligibility-artifact-name=${artifact_name}"'
     )
@@ -343,6 +340,28 @@ def test_live_eligibility_block_is_uploaded_before_status_propagates() -> None:
     assert "1) exit 1" in propagation
     assert job["outputs"]["live-result"] == (
         "${{ steps.eligibility.outputs.live-result }}"
+    )
+
+
+def test_live_eligibility_installs_only_the_static_authority_toolchain() -> (
+    None
+):
+    """Do not couple eligibility to unrelated repository tools."""
+    job = _document(CALLER)["jobs"]["evaluate-live-eligibility"]
+    toolchain = _step(job, "Install exact toolchain")
+    preparation = _step(job, "Prepare static-reference authorities")
+
+    assert toolchain["uses"] == MISE
+    assert toolchain["with"] == {
+        "experimental": True,
+        "install": True,
+        "install_args": "core:dotnet node pnpm",
+    }
+    assert preparation["env"] == {
+        "MISE_TASK_RUN_AUTO_INSTALL": "false",
+    }
+    assert _run(preparation) == (
+        "mise run prepare:static-reference-authorities"
     )
 
 

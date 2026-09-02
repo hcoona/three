@@ -2,6 +2,25 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+artifacts = [
+  "src/three_workflow_delivery_v3/release/__init__.py",
+  "src/three_workflow_delivery_v3/release/eligibility.py",
+  "src/three_workflow_delivery_v3/release/finalizer.py",
+  "src/three_workflow_delivery_v3/release/identity.py",
+  "src/three_workflow_delivery_v3/release/live.py",
+  "src/three_workflow_delivery_v3/release/planner.py",
+  "src/three_workflow_delivery_v3/release/qualification.py",
+  "src/three_workflow_delivery_v3/release/simulation.py",
+  "src/three_workflow_delivery_v3/release/static_reference_authority.py",
+  "src/three_workflow_delivery_v3/release/static_reference_model.py",
+  "src/three_workflow_delivery_v3/release/static_reference_policy.py",
+  "src/three_workflow_delivery_v3/release/static_reference_projection.py",
+  "src/three_workflow_delivery_v3/release/static_reference_session.py",
+  "src/three_workflow_delivery_v3/release/static_reference_source.py",
+  "src/three_workflow_delivery_v3/release/workflow.py",
+]
+
 [project]
 name = "three-workflow-delivery-v3"
 version = "0.1.0"
@@ -9,13 +28,7 @@ description = "Workflow Delivery v3 control primitives."
 requires-python = ">=3.13"
 authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
 license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
-dependencies = [
-  "PyYAML>=6.0.2",
-  "rfc8785>=0.1.4",
-  "tree-sitter==0.25.2",
-  "tree-sitter-javascript==0.25.0",
-  "tree-sitter-typescript==0.23.2",
-]
+dependencies = ["PyYAML>=6.0.2", "rfc8785>=0.1.4"]
 
 [dependency-groups]
 dev = ["pytest>=8.3.4"]

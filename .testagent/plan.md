@@ -7024,3 +7024,365 @@ preparation, activation, normal Live dispatch, approval, package/tag mutation,
 acceptance ref, retry, legacy, or Break-Glass authority.
 
 <!-- END APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-plan -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-foundation-plan -->
+
+# Workflow Delivery v3 Static-Reference Foundation Test Plan
+
+## Scope and strategy
+
+Use **Iterative RPI** in dependency order: model/acquisition, projection/policy,
+executable authorities, and repository integration.
+
+Test ownership is limited to:
+
+- **Create:**
+  `src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py`
+- **Create if process matrices require the split:**
+  `src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py`
+- **Append only:**
+  `src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+- **Append only:**
+  `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+
+No production, documentation, manifest, lock, Hexo, fixture-source, or VCS
+edit is permitted. If a parent-owned API, artifact, or migration is absent,
+add the exact behavior assertion and retain/classify expected RED; never skip,
+xfail, ignore, weaken, or substitute implementation inspection.
+
+## Shared test infrastructure
+
+`test_static_reference.py` may define:
+
+- a real temporary Git-repository builder with independently committed,
+  staged, and worktree bytes;
+- a CLI invocation helper that captures exact stdout/stderr/exit code and
+  whether Result/session allocation occurred;
+- recording `authority_runner` and `session_factory` seams with ordered calls,
+  configurable typed failures, and exact cleanup failure;
+- literal canonical Finding/Result builders whose expected values are not
+  derived from production.
+
+`test_static_reference_sidecars.py` may define:
+
+- a UTF-8 stdin/stdout JSON-protocol child-process helper;
+- prepared Node/NuGet commands that assert—not skip—missing prerequisites;
+- controlled snapshot/HOME builders with before/after bytes and digests;
+- complete response-document assertions, including ordering, diagnostics, and
+  absence of partial facts.
+
+## Phase 1 — Model, source, session, and invocation
+
+Create `tests/release/test_static_reference.py` and implement:
+
+1. `test_model_source_kinds_and_all_seven_error_kinds_are_exact_and_distinct`
+2. `test_model_applies_exact_path_and_utf8_ordering`
+3. `test_model_finding_and_result_parse_the_canonical_document`
+4. `test_model_finding_and_result_reject_invalid_shape`, parameterized for
+   missing/unknown/wrong-type/invalid-order/invalid-error-kind shapes.
+5. `test_source_uses_its_own_git_target_index_and_worktree_bytes`, with all
+   three states different.
+6. `test_source_admitted_candidate_failure_is_source_acquisition_failed`
+7. `test_session_closes_snapshot_and_records_materialization_evidence`
+8. `test_session_uses_only_the_controlled_environment`
+9. `test_session_removes_the_exact_root_after_success_or_failure`
+10. `test_invocation_rejects_invalid_arguments_before_result_or_root`,
+    parameterized for omitted/unknown kind and malformed target/root.
+11. `test_invocation_emits_one_canonical_result_with_exit_code`, covering
+    clean `0`, findings `1`, and operational error `2`.
+12. `test_invocation_does_not_convert_pre_result_admission_errors_into_results`
+
+Narrow command:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py -k "model or source or session or invocation"
+```
+
+Uncaught malformed target/root `ValueError` remains strict RED and is recorded
+as a parent production blocker.
+
+## Phase 2 — Projection, authority adapter, and policy precedence
+
+Append to `test_static_reference.py`:
+
+1. `test_projection_maps_normalized_facts_to_d_v_a_w_l_and_dependency_key_findings`
+2. `test_projection_orders_candidates_nodes_arrays_mappings_facts_and_findings`
+3. `test_projection_rejects_invalid_fact_shape_without_partial_findings`
+4. `test_authority_dispatches_each_graph_to_its_exact_protocol`
+5. `test_authority_rejects_missing_extra_or_malformed_response_fields_without_partial_facts`
+6. `test_authority_sanitizes_spawn_exit_signal_stderr_and_json_failures`
+7. `test_policy_authority_manifest_and_digest_are_exact`
+8. `test_policy_traverses_candidates_and_graphs_in_deterministic_order`
+9. `test_policy_stops_at_the_first_source_error_before_authority_execution`
+10. `test_policy_returns_only_the_first_typed_graph_error`
+11. `test_policy_cleanup_failed_overrides_success_source_or_graph_result_and_cleans_exact_roots`,
+    parameterized for cleanup after success, source error, and graph error.
+
+Narrow command:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py -k "projection or authority or policy"
+```
+
+Every test asserts exact ordering, the sole selected error, sanitization, no
+partial findings, and exact cleanup as applicable.
+
+## Phase 3 — npm and pnpm Node authority
+
+Create `tests/release/test_static_reference_sidecars.py`. Exercise only the
+private JSON protocol of
+`eng/scripts/workflow_delivery_v3_static_reference_node.mjs`.
+
+### npm groups
+
+1. `test_node_npm_protocol_reads_one_snapshot_content_without_mutation`
+2. `test_node_npm_protocol_orders_name_and_four_dependency_sections_exactly`
+3. `test_node_npm_protocol_projects_pinned_npa_alias_and_local_facts`,
+   parameterized for registry, one-level alias, file-relative, and
+   directory-relative results.
+4. `test_node_npm_protocol_uses_the_source_owned_base_for_relative_specs`
+5. `test_node_npm_protocol_rejects_selected_field_shape_without_partial_facts`
+6. `test_node_npm_protocol_ignores_unselected_fields_and_uncontrolled_home`
+
+### pnpm groups
+
+7. `test_node_pnpm_protocol_accepts_exact_v9_and_bound_bom_behavior`:
+   zero, one, and two leading BOMs emit equivalent facts; additional-BOM
+   behavior matches the exact pinned reader stack; wrong selected path or
+   generation fails closed.
+8. `test_node_pnpm_protocol_orders_catalog_importer_snapshot_and_preserves_equal_keys`
+9. `test_node_pnpm_protocol_projects_git_file_and_workspace_resolutions`,
+   covering typed Git, typed file-directory, named workspace, and ranged
+   workspace cases.
+10. `test_node_pnpm_protocol_rejects_environment_documents_without_partial_facts`
+11. `test_node_pnpm_protocol_does_not_resolve_registry_git_file_or_tar_references`
+
+Commands:
+
+```text
+mise run prepare:static-reference-authorities
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py -k "node_npm or node_pnpm"
+```
+
+Preparation failure that cannot be repaired without manifest edits is an
+environment/build blocker; strict tests remain.
+
+## Phase 4 — NuGet authority
+
+Append black-box protocol tests to `test_static_reference_sidecars.py`:
+
+1. `test_nuget_lock_protocol_projects_versions_and_documented_coercions`,
+   covering admitted model versions 1, 2, and 3 plus representative pinned
+   model coercions.
+2. `test_nuget_lock_protocol_orders_targets_dependencies_edges_and_selected_fields`
+3. `test_nuget_lock_protocol_uses_stream_logger_and_logical_path_behavior`
+4. `test_nuget_packages_config_protocol_orders_with_package_identity_comparer`
+5. `test_nuget_packages_config_protocol_rejects_duplicate_ids_without_partial_facts`
+6. `test_nuget_packages_config_protocol_enforces_the_non_tolerant_reader_contract`
+
+Use request-owned bytes and a repository logical path that does not exist as a
+host path to observe stream/logical-path behavior externally.
+
+Commands:
+
+```text
+mise run prepare:static-reference-authorities
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py -k "nuget"
+```
+
+## Phase 5 — Repository scenarios, exclusions, Live/HK boundary
+
+Append to `test_static_reference.py`:
+
+1. `test_hexo_file_reference_and_v9_lock_project_a_typed_directory_and_scan_cleanly`
+2. `test_excluded_surface_selects_no_graph_and_has_no_fallback`, parameterized
+   for workflow, composite action, Node import subpath, npm/uv/Yarn locks,
+   MSBuild project/central manifest, standalone Python manifest, shell,
+   PowerShell, and reserved `.github/workflows` pnpm basenames.
+3. `test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared`,
+   rejecting handwritten grammar/schema, competing authority, whole-file
+   exception, Tree-sitter/dataflow, fixed inventory authority, and consumer
+   claim.
+4. `test_cli_live_evidence_accepts_git_target_only`, covering accepted
+   git-target and rejected index/worktree Results.
+
+Append to `tests/test_hk_trigger.py`:
+
+5. `test_root_hk_reports_explicit_index_and_worktree_feedback`
+6. `test_root_hk_live_static_reference_uses_git_target_evidence_only`
+
+Append to `tests/adapters/test_commit10_acceptance_probes.py`:
+
+7. `test_npm_publish_fixture_source_is_non_candidate_and_materializes_only_package_manifest`
+8. `test_npm_publish_fixture_preserves_package_tarball_and_request_contracts`
+
+Narrow command:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py -k "hexo or excluded_surface or forbidden_static_reference or cli_live or root_hk or npm_publish_fixture"
+```
+
+Repository migration assertions remain strict RED until concurrent parent
+changes land.
+
+## Requirement mapping
+
+| Requirement | Planned evidence |
+|---|---|
+| R1 | Research docs-first record |
+| R2 | LLD-only literal oracles in every test group |
+| R3a | Phase 1 tests 5–6 and 10–12; Phase 5 tests 4–6 |
+| R3b | Phase 3 npm tests 1–6 |
+| R3c | Phase 3 pnpm tests 7–11 |
+| R3d | Phase 4 tests 1–6 |
+| R3e | Phase 1 tests 1–4 and 7–9; all Phase 2 tests |
+| R3f | Phase 5 test 1 |
+| R3g | Phase 5 tests 7–8 |
+| R3h | Phase 5 tests 2–6 |
+| R4 | Research base-extension record; no reinvocation |
+| R5 | Research analyzer/pairing record; no rerun |
+| R6 | Append-only Research/Plan/Status sections |
+| R7 | `.testagent/` plus the four allowed test paths only |
+| R8 | Diff/provenance check; no prototype content |
+| R9 | Strict expected-RED blocker entries; no skip markers |
+| R10 | Per-phase narrow commands and final package/workspace gates |
+| R11 | Gap-analysis, assertion-quality, and literal scenario map |
+| R12 | Read-only Git status/diff evidence; no deletion/restoration |
+
+## Final validation and quality gates
+
+Run from the exact worktree:
+
+```text
+mise run prepare:static-reference-authorities
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q src/public/lib/three-workflow-delivery-v3/tests
+python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests
+uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py
+uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference_sidecars.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py
+git --no-pager diff --check -- .testagent src/public/lib/three-workflow-delivery-v3/tests
+git --no-pager status --short
+```
+
+Then run `test-gap-analysis`, `assertion-quality`, and an explicit R3a–R3h
+scenario-to-test mapping. Close actionable findings with tests only and rerun
+affected narrow tests plus discovery/full tests/lint/diff after any correction.
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-foundation-plan -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-live-refresh-plan -->
+
+## Workflow Delivery v3 static-reference Live/HK/CLI closure plan
+
+This is a sequential continuation of the existing iterative RPI run.
+
+1. **Refresh current contracts**
+   - Re-read only `eligibility.py`, `cli.py`, root HK/mise static-reference
+     blocks, the two Workflow Delivery v3 workflows, and implicated tests.
+   - Preserve R1-R12 independently; do not reload extension or untested-source
+     guidance.
+2. **Implement Live behavior tests**
+   - Add exact scan-call, validation-order, canonical clean/findings/error
+     evidence, secondary-observable, and removed-route tests in
+     `tests/release/test_live_static_reference.py`.
+   - Replace the stale consumer-policy-coupled eligibility module with current
+     API/record-shape contracts.
+3. **Reconcile CLI/workflow/HK tests**
+   - Add parser omission/rejection tests.
+   - Add workflow omission/delegation tests.
+   - Replace the generated root-HK worktree expectation with exact
+     unconditional index evidence plus a separate mise worktree-task test.
+4. **Retire superseded test content**
+   - Update the four collection-blocking consumer-policy-era modules and
+     stale planner/workflow/Governance/fixture/sidecar expectations.
+   - Add no production compatibility surface and change no production,
+     documentation, manifest, lock, workflow, HK/mise, or migration file.
+5. **Validate and gate**
+   - Run focused nodes immediately, final collection, complete affected
+     package pytest, package build, Ruff check/format check, and owned-path
+     `git diff --check`.
+   - Run final pseudo-mutation and assertion-quality review, then map every
+     requirement to exact tests.
+
+All five phases are complete. Exact commands and observed results are appended
+to Status.
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-live-refresh-plan -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-over-contraction-correction-plan -->
+
+## Workflow Delivery v3 over-contracted test correction plan
+
+This is a bounded sequential continuation of the existing RPI pipeline. Prior
+language guidance and pairing research remain authoritative.
+
+### Requirement checklist and planned evidence
+
+- **E1** — restore/adapt the Eligibility baseline in
+  `tests/release/test_eligibility.py`; map canonical admission, nested closure,
+  malformed primitives, lineage/provenance, expiry, fresh reads, fixed source,
+  attestation validation, compiled-model, and fail-closed contracts to named
+  tests. Replace consumer payloads with exact-target bounded
+  `static-reference` evidence.
+- **H1** — restore/adapt unrelated tests in `tests/test_hk_trigger.py`;
+  preserve its four current static-reference tests and use the unconditional
+  explicit `--source-kind index` step plus separate manual mise worktree task.
+- **C1** — restore/adapt the 16 still-valid baseline scenario functions in
+  `tests/ci/test_scenarios.py`, preserving all four current scenario tests.
+- **A1** — restore the fifth commit-10 attestation function and adapt three
+  path-admission locality contracts; verify the bounded contraction audit
+  found no other silently shrunk modified tracked test module.
+- **R1** — preserve `test_static_reference_retirement.py`; do not recreate
+  `test_consumer_policy.py` or the deleted consumer-policy acceptance fixture.
+- **F1** — strengthen only the existing fixture oracle in
+  `tests/release/test_static_reference.py` for tracked non-selection and exact
+  temporary `package.json` materialization.
+- **S1** — retain all new static-reference, seven-error, CLI/workflow,
+  root-index, manual-worktree, sidecar, retirement, and matrix tests.
+- **V1** — run phase-local tests immediately, then one combined targeted run,
+  complete package suite, package build, Ruff check/format check, and
+  owned-path `git diff --check`.
+- **Q1** — record the exact count/retirement ledger and run the mandatory
+  pseudo-mutation, assertion-depth, and prompt-scenario gates against the
+  final files.
+
+### Sequential implementation phases
+
+1. **Eligibility restoration**
+   - Preserve the three current public-shape tests.
+   - Reconstruct/adapt every still-valid HEAD function through deliberate test
+     edits; omit only the three approved-exception/caller-route-only tests.
+   - Run file-local Ruff and pytest.
+2. **Root-HK and scenario restoration**
+   - Restore Git/ref, CODEOWNERS, governed-path, locality, fixture, legacy, and
+     other unrelated HK tests; retire only four broad-glob-only tests.
+   - Restore the complete non-consumer scenario baseline; adapt trigger
+     coverage to exact unconditional index routing and retire only the broad
+     consumer-reference exception test.
+   - Run file-local Ruff and pytest after each file.
+3. **Attestation and path-admission audit**
+   - Restore
+     `test_commit10_attestation_binds_disabled_normal_live_without_acceptance_evidence`.
+   - Preserve current bounded basename tests and adapt the nested
+     `.gitattributes`, recursive composite-action, and workflow-document
+     baseline contracts; retire only exhaustive broad-catalog parity.
+4. **Acceptance fixture oracle**
+   - Keep `package-manifest.json` tracked and unselected.
+   - Copy exact bytes to `tmp_path/package/package.json`, assert exact
+     candidate content and selector tuple, and assert no tracked/stored fixture
+     `package.json` exists.
+5. **Validation and quality gate**
+   - Recount functions and inspect final diffs for ownership/preservation.
+   - Run combined target tests, complete package harness, build, Ruff,
+     format-check, and diff-check commands.
+   - Invoke `test-gap-analysis` and `assertion-quality`; close actionable gaps
+     and rerun affected validation before final status/reporting.
+
+### Required count ledger fields
+
+For each corrected large module, Status must record HEAD function count,
+pre-correction function count, final function count, every intentionally
+omitted baseline name, and its removed-runtime rationale. Parameterized pytest
+case counts supplement but do not replace function counts.
+
+<!-- END APPEND: 2026-09-01-wdv3-over-contraction-correction-plan -->

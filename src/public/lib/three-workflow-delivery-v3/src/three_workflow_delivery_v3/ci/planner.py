@@ -13,6 +13,7 @@ from three_workflow_delivery_v3.canonical import (
 from three_workflow_delivery_v3.catalogs import QUALITY_DEFINITIONS
 from three_workflow_delivery_v3.ci.path_admission import (
     is_repository_only_path,
+    is_static_reference_control_path,
 )
 from three_workflow_delivery_v3.records.ci import (
     CI_LANE_IDS,
@@ -343,7 +344,6 @@ def _normalize_changed_paths(value: object) -> tuple[str, ...]:
             type(path) is not str
             or not path
             or path != path.strip()
-            or "\\" in path
             or path.startswith("/")
             or path.endswith("/")
             or ".." in path.split("/")
@@ -382,6 +382,8 @@ def _is_slice_affecting_path(  # noqa: PLR0911
     path: str,
     repository_model: RepositoryModelSnapshot,
 ) -> bool:
+    if is_static_reference_control_path(path):
+        return True
     project = repository_model.project_nodes[0]
     if path == project.path or path.startswith(f"{project.path}/"):
         return True

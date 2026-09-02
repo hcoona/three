@@ -15,6 +15,7 @@ from three_workflow_delivery_v3.canonical import (
 from three_workflow_delivery_v3.catalogs import QUALITY_DEFINITIONS
 from three_workflow_delivery_v3.ci.path_admission import (
     is_repository_only_path,
+    is_static_reference_control_path,
 )
 
 if TYPE_CHECKING:
@@ -1065,6 +1066,8 @@ def _validate_fixed_plan_obligations(
 
 
 def _is_first_slice_affecting_path(path: str) -> bool:
+    if is_static_reference_control_path(path):
+        return True
     if path == _FIRST_SLICE_PROJECT_PATH or path.startswith(
         f"{_FIRST_SLICE_PROJECT_PATH}/"
     ):

@@ -1,7 +1,8 @@
-"""Integration contracts for the root HK v3 control-test trigger."""
+"""Current root-HK and manual static-reference routing contracts."""
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import shutil
@@ -13,6 +14,121 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 import pytest
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[5]
+HK_CONFIG = REPO_ROOT / "hk.pkl"
+
+
+def _hk_step_block(step_name: str) -> str:
+    hk_config = HK_CONFIG.read_text(encoding="utf-8")
+    start = hk_config.index(f'["{step_name}"]')
+    end = hk_config.index("\n  }\n", start) + len("\n  }\n")
+    return hk_config[start:end]
+
+
+def _static_reference_hk_block() -> str:
+    return _hk_step_block("hcoona-release-smoke-npm-static-reference")
+
+
+def test_root_hk_unconditionally_invokes_static_reference_for_index() -> None:
+    """Bind the permanent root-HK step to one explicit index scan."""
+    static_step = _static_reference_hk_block()
+    expected_invocation = (
+        "python eng/scripts/hk_exec.py --timeout-seconds 300 "
+        "uv run --python 3.13 --package three-workflow-delivery-v3 "
+        "python eng/scripts/workflow_delivery_v3_static_reference.py "
+        "--repository-root . --source-kind index"
+    )
+
+    assert f'check =\n      "{expected_invocation}"' in static_step
+    assert (
+        static_step.count(
+            "eng/scripts/workflow_delivery_v3_static_reference.py"
+        )
+        == 1
+    )
+    assert static_step.count("--source-kind index") == 1
+    assert "worktree" not in static_step
+    assert "git-target" not in static_step
+    assert "--target" not in static_step
+    assert "when =" not in static_step
+
+
+def test_manual_worktree_static_reference_is_a_separate_mise_task() -> None:
+    """Keep manual worktree inspection out of permanent root HK."""
+    mise_config = (REPO_ROOT / "mise.toml").read_text(encoding="utf-8")
+    task_start = mise_config.index('[tasks."check:static-reference-worktree"]')
+    task_end = mise_config.index("\n\n", task_start)
+    task = mise_config[task_start:task_end]
+    static_step = _static_reference_hk_block()
+
+    assert 'description = "Check bounded static references' in task
+    assert 'depends = ["prepare:static-reference-authorities"]' in task
+    assert (
+        "workflow_delivery_v3_static_reference.py "
+        "--repository-root . --source-kind worktree"
+    ) in task
+    assert task.count("--source-kind worktree") == 1
+    assert "worktree" not in static_step
+
+
+def test_root_hk_static_reference_step_has_no_consumer_policy_route() -> None:
+    """Do not retain the superseded root-HK policy step or option."""
+    hk_config = HK_CONFIG.read_text(encoding="utf-8")
+    static_step = _static_reference_hk_block()
+
+    assert "hcoona-release-smoke-npm-consumer-policy" not in hk_config
+    assert "workflow_delivery_v3_consumer_policy.py" not in hk_config
+    assert "--consumer-policy" not in hk_config
+    assert "--consumer-policy" not in static_step
+
+
+def test_root_hk_live_static_reference_uses_git_target_evidence_only() -> None:
+    """Keep root-HK feedback out of Live's exact-target evidence boundary."""
+    static_step = _static_reference_hk_block()
+    buddy_workflow = (
+        REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
+    ).read_text(encoding="utf-8")
+    eligibility_path = (
+        REPO_ROOT / "src/public/lib/three-workflow-delivery-v3/src/"
+        "three_workflow_delivery_v3/release/eligibility.py"
+    )
+    syntax = ast.parse(eligibility_path.read_text(encoding="utf-8"))
+    evaluator = next(
+        node
+        for node in syntax.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "evaluate_live_eligibility"
+    )
+    scan_calls = tuple(
+        node
+        for node in ast.walk(evaluator)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "scan_bounded_static_references"
+    )
+
+    assert "git-target" not in static_step
+    assert "--target" not in static_step
+    assert "workflow_delivery_v3_static_reference.py" not in buddy_workflow
+    assert "three-workflow-delivery-v3 release evaluate-live-eligibility" in (
+        buddy_workflow
+    )
+    assert '--target "${GITHUB_SHA}"' in buddy_workflow
+    assert len(scan_calls) == 1
+    keywords = {
+        keyword.arg: keyword.value
+        for keyword in scan_calls[0].keywords
+        if keyword.arg is not None
+    }
+    assert ast.literal_eval(keywords["source_kind"]) == "git-target"
+    assert ast.unparse(keywords["target"]) == "context.target"
+
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 
 _COMMIT9_CONTRACT_SPEC = importlib.util.spec_from_file_location(
     "_commit9_codeowners_contract",
@@ -29,14 +145,35 @@ _governed_surface_inventory = (
     _COMMIT9_CONTRACT._governed_surface_inventory  # noqa: SLF001
 )
 
-if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-REPO_ROOT = Path(__file__).resolve().parents[5]
-HK_CONFIG = REPO_ROOT / "hk.pkl"
 HK_SUPPORT = REPO_ROOT / "src/private/lib/hk"
 HK_RANGE_HELPER = Path("eng/scripts/workflow_delivery_v3_hk.py")
 STEP_NAME = "v3-control-pytest"
+PREPARATION_STEP_NAME = "static-reference-authority-preparation"
+STATIC_REFERENCE_STEP_NAME = "hcoona-release-smoke-npm-static-reference"
+STATIC_REFERENCE_IMPLEMENTATION = Path(
+    "eng/scripts/workflow_delivery_v3_static_reference.py",
+)
+RETIRED_CONSUMER_POLICY_SURFACES = frozenset(
+    {
+        "eng/scripts/workflow_delivery_v3_consumer_policy.py",
+        (
+            "src/public/lib/three-workflow-delivery-v3/src/"
+            "three_workflow_delivery_v3/release/consumer_policy.py"
+        ),
+        (
+            "src/public/lib/three-workflow-delivery-v3/src/"
+            "three_workflow_delivery_v3/release/javascript_consumer.py"
+        ),
+        (
+            "src/public/lib/three-workflow-delivery-v3/tests/ci/"
+            "test_consumer_policy.py"
+        ),
+        (
+            "src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/"
+            "consumer-policy-acceptance.json"
+        ),
+    },
+)
 SCHOLARLY_STEP_NAME = "scholarly-publication-plugin-ci"
 SCHOLARLY_SKILL_ROOTS = (
     ".agents/skills/scholarly-pdf-reconstruction",
@@ -55,6 +192,7 @@ SCHOLARLY_SURFACE_PATHS = (
 )
 GOVERNED_PATHS = (
     ".gitattributes",
+    "Directory.Packages.props",
     "src/public/lib/three-workflow-delivery-v3/src/control.py",
     "src/public/app/example/workflow-delivery.release-unit.yml",
     "src/private/app/example/workflow-delivery.quality.yml",
@@ -76,8 +214,12 @@ GOVERNED_PATHS = (
     "hk.pkl",
     "src/private/lib/hk/AddedTriggerFixture.pkl",
     "eng/scripts/hk_exec.py",
+    "eng/scripts/workflow_delivery_v3_prepare_static_reference.py",
     "eng/scripts/workflow_delivery_v3_run_created_epoch.py",
+    STATIC_REFERENCE_IMPLEMENTATION.as_posix(),
+    "eng/scripts/workflow_delivery_v3_static_reference_node.mjs",
     HK_RANGE_HELPER.as_posix(),
+    "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs",
 )
 
 
@@ -185,21 +327,30 @@ def _hk_executable() -> str:
     executable = Path(install_root) / "hk"
     version = _run((str(executable), "--version"), cwd=REPO_ROOT)
     active_version = _run(
-        ("mise", "current", "hk"), cwd=REPO_ROOT
+        ("mise", "current", "hk"),
+        cwd=REPO_ROOT,
     ).stdout.strip()
     assert version.stdout.strip() == f"hk {active_version}"
     return str(executable)
 
 
-def _step_from_plan(result: subprocess.CompletedProcess[str]) -> HkStepJson:
+def _named_step_from_plan(
+    result: subprocess.CompletedProcess[str],
+    step_name: str,
+    required_profile: str = "small",
+) -> HkStepJson:
     plan: HkPlanJson = json.loads(result.stdout)
     assert plan["hook"] == "check"
     assert plan["runType"] == "check"
-    assert "small" in plan["profiles"]
+    assert required_profile in plan["profiles"]
     assert len(plan["steps"]) == 1
     step = plan["steps"][0]
-    assert step["name"] == STEP_NAME
+    assert step["name"] == step_name
     return step
+
+
+def _step_from_plan(result: subprocess.CompletedProcess[str]) -> HkStepJson:
+    return _named_step_from_plan(result, STEP_NAME)
 
 
 def _step_plan(repo: Path, *arguments: str) -> HkStepJson:
@@ -217,6 +368,28 @@ def _step_plan(repo: Path, *arguments: str) -> HkStepJson:
         cwd=repo,
     )
     return _step_from_plan(result)
+
+
+def _named_step_plan(
+    repo: Path,
+    step_name: str,
+    *arguments: str,
+    required_profile: str = "small",
+) -> HkStepJson:
+    result = _run(
+        (
+            _hk_executable(),
+            "--no-progress",
+            "check",
+            "--plan",
+            "--json",
+            "--step",
+            step_name,
+            *arguments,
+        ),
+        cwd=repo,
+    )
+    return _named_step_from_plan(result, step_name, required_profile)
 
 
 def _helper_changed_paths(
@@ -241,7 +414,14 @@ def _helper_changed_paths(
     return tuple(paths)
 
 
-def _helper_step_plan(repo: Path, base: str, head: str) -> HkStepJson:
+def _named_helper_step_plan(
+    repo: Path,
+    base: str,
+    head: str,
+    step_name: str,
+    *,
+    required_profile: str = "small",
+) -> HkStepJson:
     result = _run(
         (
             sys.executable,
@@ -259,11 +439,15 @@ def _helper_step_plan(repo: Path, base: str, head: str) -> HkStepJson:
             "--plan",
             "--json",
             "--step",
-            STEP_NAME,
+            step_name,
         ),
         cwd=repo,
     )
-    return _step_from_plan(result)
+    return _named_step_from_plan(result, step_name, required_profile)
+
+
+def _helper_step_plan(repo: Path, base: str, head: str) -> HkStepJson:
+    return _named_helper_step_plan(repo, base, head, STEP_NAME)
 
 
 def _apply_change(repo: Path, change: HistoryChange) -> None:
@@ -308,7 +492,12 @@ def _restore_execution_copies(
 
 
 def _commit9_surfaces() -> tuple[str, ...]:
-    return tuple(sorted(_governed_surface_inventory()))
+    return tuple(
+        sorted(
+            set(_governed_surface_inventory())
+            - RETIRED_CONSUMER_POLICY_SURFACES,
+        ),
+    )
 
 
 def _assert_commit9_inventory(surfaces: tuple[str, ...]) -> None:
@@ -316,12 +505,18 @@ def _assert_commit9_inventory(surfaces: tuple[str, ...]) -> None:
     for category in categories.values():
         assert category
     assert set(SYNTHETIC_FUTURE_SURFACES) <= set(surfaces)
+    assert set(surfaces).isdisjoint(RETIRED_CONSUMER_POLICY_SURFACES)
+    assert all(
+        path in SYNTHETIC_FUTURE_SURFACES or (REPO_ROOT / path).exists()
+        for path in surfaces
+    )
     assert {
         ".github/CODEOWNERS",
         ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json",
         "hk.pkl",
         "eng/scripts/hk_exec.py",
         "eng/scripts/workflow_delivery_v3_hk.py",
+        "eng/scripts/workflow_delivery_v3_static_reference.py",
         "pyproject.toml",
         "uv.lock",
     } <= set(surfaces)
@@ -334,7 +529,7 @@ def _assert_commit9_inventory(surfaces: tuple[str, ...]) -> None:
 
 def _modify_history_path(repo: Path, path: str) -> None:
     destination = repo / path
-    if path.endswith((".pkl",)):
+    if path.endswith(".pkl"):
         addition = b"\n// commit-9 governed modification\n"
     elif path.endswith(".py"):
         addition = b"\n# commit-9 governed modification\n"
@@ -412,6 +607,25 @@ def _name_status(
         head,
     ).stdout.splitlines()
     return tuple((status, path) for status, path in map(str.split, lines))
+
+
+def _run_helper_without_check(
+    repo: Path,
+    *arguments: str,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603
+        (
+            sys.executable,
+            str(repo / HK_RANGE_HELPER),
+            "--repository",
+            str(repo),
+            *arguments,
+        ),
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_real_hk_plan_triggers_for_governed_path(tmp_path: Path) -> None:
@@ -620,25 +834,6 @@ def test_real_hk_helper_treats_option_like_paths_as_files(
     assert paths == (option_like, governed)
     assert step["status"] == "included"
     assert step["fileCount"] == 1
-
-
-def _run_helper_without_check(
-    repo: Path,
-    *arguments: str,
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603
-        (
-            sys.executable,
-            str(repo / HK_RANGE_HELPER),
-            "--repository",
-            str(repo),
-            *arguments,
-        ),
-        cwd=repo,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
 
 
 def test_script_reports_exact_paths_for_normal_commit_range(
@@ -882,6 +1077,7 @@ def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
         (
             "uv",
             "run",
+            "--isolated",
             "--python",
             "3.13",
             "--package",
@@ -894,97 +1090,6 @@ def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
         cwd=REPO_ROOT,
     )
     assert sentinel in collection.stdout.splitlines()
-
-
-CONSUMER_STEP_NAME = "hcoona-release-smoke-npm-consumer-policy"
-CONSUMER_POLICY_IMPLEMENTATION = Path(
-    "eng/scripts/workflow_delivery_v3_consumer_policy.py",
-)
-CONSUMER_SURFACE_PATHS = (
-    ".gitattributes",
-    "src/public/app/consumer/package.json",
-    "src/public/app/consumer/pyproject.toml",
-    "src/public/app/consumer/consumer.csproj",
-    "src/public/app/consumer/pnpm-lock.yaml",
-    "src/public/app/consumer/bun.lock",
-    "src/public/app/consumer/.github/workflows/install.yml",
-    ".github/actions/consumer-install/action.yml",
-    "eng/bootstrap/setup-consumer.ps1",
-    "eng/bootstrap/install-consumer.cmd",
-    "postinstall-consumer.mjs",
-    "eng/bootstrap/postinstall-consumer.cjs",
-    "eng/bootstrap/postinstall-consumer.ts",
-    "src/public/app/consumer/.npmrc",
-)
-
-
-def _named_step_from_plan(
-    result: subprocess.CompletedProcess[str],
-    step_name: str,
-    required_profile: str = "small",
-) -> HkStepJson:
-    plan: HkPlanJson = json.loads(result.stdout)
-    assert plan["hook"] == "check"
-    assert plan["runType"] == "check"
-    assert required_profile in plan["profiles"]
-    assert len(plan["steps"]) == 1
-    step = plan["steps"][0]
-    assert step["name"] == step_name
-    return step
-
-
-def _named_step_plan(
-    repo: Path,
-    step_name: str,
-    *arguments: str,
-    required_profile: str = "small",
-) -> HkStepJson:
-    result = _run(
-        (
-            _hk_executable(),
-            "--no-progress",
-            "check",
-            "--plan",
-            "--json",
-            "--step",
-            step_name,
-            *arguments,
-        ),
-        cwd=repo,
-    )
-    return _named_step_from_plan(result, step_name, required_profile)
-
-
-def _named_helper_step_plan(
-    repo: Path,
-    base: str,
-    head: str,
-    step_name: str,
-    *,
-    required_profile: str = "small",
-) -> HkStepJson:
-    result = _run(
-        (
-            sys.executable,
-            str(repo / HK_RANGE_HELPER),
-            "--repository",
-            str(repo),
-            "--from-ref",
-            base,
-            "--to-ref",
-            head,
-            "--",
-            _hk_executable(),
-            "--no-progress",
-            "check",
-            "--plan",
-            "--json",
-            "--step",
-            step_name,
-        ),
-        cwd=repo,
-    )
-    return _named_step_from_plan(result, step_name, required_profile)
 
 
 def test_real_hk_plan_triggers_scholarly_suite_for_bounded_surfaces(
@@ -1118,210 +1223,61 @@ def test_real_hk_plan_skips_sibling_packages_for_scholarly_suite(
     assert step["fileCount"] == 0
 
 
-@pytest.mark.parametrize(
-    "path",
-    CONSUMER_SURFACE_PATHS,
-    ids=[
-        "git-attributes",
-        "node-dependency-manifest",
-        "python-dependency-manifest",
-        "dotnet-dependency-manifest",
-        "lockfile",
-        "bun-lock",
-        "workflow",
-        "composite-action",
-        "powershell-install-bootstrap-script",
-        "cmd-install-bootstrap-script",
-        "postinstall-mjs-root",
-        "postinstall-cjs-nested",
-        "postinstall-ts-nested",
-        "dependency-configuration",
-    ],
-)
-def test_real_hk_plan_triggers_consumer_policy_for_each_cataloged_surface(
-    tmp_path: Path,
-    path: str,
-) -> None:
-    """Select the permanent policy for each closed surface category."""
-    repo = tmp_path / "repo"
-    base = _initialize_repository(repo)
-    _write(repo, path, "cataloged surface\n")
-    head = _commit(repo, "cataloged dependency surface")
-
-    paths = _helper_changed_paths(repo, base, head)
-    step = _named_helper_step_plan(
-        repo,
-        base,
-        head,
-        CONSUMER_STEP_NAME,
-    )
-
-    assert paths == (path,)
-    assert step["status"] == "included"
-    assert step["fileCount"] == 1
-
-
 def test_gitattributes_selects_both_v3_internal_steps(
     tmp_path: Path,
 ) -> None:
-    """Select control tests and the policy gate for LF-policy changes."""
+    """Select control and the unconditional index scan for LF-policy changes."""
     repo = tmp_path / "repo"
     base = _initialize_repository(repo)
     path = ".gitattributes"
-    _write(repo, path, "consumer-policy text eol=lf\n")
-    head = _commit(repo, "consumer policy attributes")
+    _write(repo, path, "static-reference text eol=lf\n")
+    head = _commit(repo, "static-reference attributes")
 
     paths = _helper_changed_paths(repo, base, head)
     control = _named_helper_step_plan(repo, base, head, STEP_NAME)
-    consumer = _named_helper_step_plan(
+    static_reference = _named_helper_step_plan(
         repo,
         base,
         head,
-        CONSUMER_STEP_NAME,
+        STATIC_REFERENCE_STEP_NAME,
     )
 
     assert paths == (path,)
-    assert control["status"] == consumer["status"] == "included"
-    assert control["fileCount"] == consumer["fileCount"] == 1
-
-
-def test_composite_action_manifest_selects_only_consumer_policy(
-    tmp_path: Path,
-) -> None:
-    """Select the policy without broadening the v3 control inventory."""
-    repo = tmp_path / "repo"
-    base = _initialize_repository(repo)
-    path = ".github/actions/consumer-install/action.yaml"
-    _write(repo, path, "runs:\n  using: composite\n  steps: []\n")
-    head = _commit(repo, "local composite action")
-
-    paths = _helper_changed_paths(repo, base, head)
-    consumer = _named_helper_step_plan(
-        repo,
-        base,
-        head,
-        CONSUMER_STEP_NAME,
-    )
-    control = _named_helper_step_plan(repo, base, head, STEP_NAME)
-
-    assert paths == (path,)
-    assert consumer["status"] == "included"
-    assert consumer["fileCount"] == 1
-    assert control["status"] == "skipped"
-    assert control["fileCount"] == 0
-
-
-def test_dangling_catalog_symlink_selects_consumer_policy(
-    tmp_path: Path,
-) -> None:
-    """Include a changed dangling catalog path without following its target."""
-    repo = tmp_path / "repo"
-    base = _initialize_repository(repo)
-    path = "consumer/package.json"
-    destination = repo / path
-    destination.parent.mkdir(parents=True)
-    destination.symlink_to("missing-package.json")
-    head = _commit(repo, "dangling catalog surface")
-
-    paths = _helper_changed_paths(repo, base, head)
-    step = _named_helper_step_plan(
-        repo,
-        base,
-        head,
-        CONSUMER_STEP_NAME,
-    )
-
-    assert paths == (path,)
-    assert step["status"] == "included"
-    assert step["fileCount"] == 1
-
-
-@pytest.mark.parametrize(
-    "change",
-    [
-        HistoryChange("add", "tools/postinstall-smoke.js"),
-        HistoryChange("modify", "consumer/package.json"),
-        HistoryChange(
-            "delete",
-            "consumer/bun.lock",
-        ),
-        HistoryChange(
-            "rename",
-            "archive/dependencies.txt",
-            old_path="tools/postinstall-smoke.js",
-        ),
-        HistoryChange(
-            "rename",
-            "consumer/bun.lock",
-            old_path="archive/dependencies.lock",
-        ),
-    ],
-    ids=[
-        "postinstall-add",
-        "modify",
-        "bun-lock-delete",
-        "postinstall-rename-out",
-        "bun-lock-rename-in",
-    ],
-)
-def test_real_hk_plan_triggers_consumer_policy_for_git_history(
-    tmp_path: Path,
-    change: HistoryChange,
-) -> None:
-    """Retain add, modify, delete, and both rename sides in policy scope."""
-    repo = tmp_path / "repo"
-    baseline_paths = (
-        (change.old_path or change.path,)
-        if change.kind in {"modify", "delete", "rename"}
-        else ()
-    )
-    base = _initialize_repository(repo, baseline_paths=baseline_paths)
-    _apply_change(repo, change)
-    head = _commit(repo, f"consumer surface {change.kind}")
-
-    paths = _helper_changed_paths(repo, base, head)
-    step = _named_helper_step_plan(
-        repo,
-        base,
-        head,
-        CONSUMER_STEP_NAME,
-    )
-
-    if change.kind == "rename":
-        assert paths == (change.old_path, change.path)
-    else:
-        assert paths == (change.path,)
-    assert step["status"] == "included"
-    assert step["fileCount"] == 1
+    assert control["status"] == static_reference["status"] == "included"
+    assert control["fileCount"] == static_reference["fileCount"] == 1
+    assert "--source-kind index" in _static_reference_hk_block()
 
 
 def test_real_hk_plan_slice_validation_runs_both_internal_steps(
     tmp_path: Path,
 ) -> None:
-    """Make the manual full/slice signal include both internal checks."""
+    """Make the full-slice signal include control and the exact index scan."""
     repo = tmp_path / "repo"
     _initialize_repository(repo)
 
     control = _named_step_plan(repo, STEP_NAME, "--all")
-    consumer = _named_step_plan(repo, CONSUMER_STEP_NAME, "--all")
+    static_reference = _named_step_plan(
+        repo,
+        STATIC_REFERENCE_STEP_NAME,
+        "--all",
+    )
 
-    assert control["status"] == "included"
+    assert control["status"] == static_reference["status"] == "included"
     assert control["fileCount"] > 0
-    assert consumer["status"] == "included"
-    assert consumer["fileCount"] > 0
+    assert static_reference["fileCount"] == control["fileCount"]
+    assert "--source-kind index" in _static_reference_hk_block()
 
 
 def test_real_hk_plan_retains_complete_v3_control_trigger_inventory(
     tmp_path: Path,
 ) -> None:
-    """Retain every governed v3 path family while adding the policy."""
+    """Retain every governed v3 family beside the unconditional index scan."""
     repo = tmp_path / "repo"
     base = _initialize_repository(repo)
     governed_paths = (
         *GOVERNED_PATHS,
         "mise.toml",
         "mise.lock",
-        CONSUMER_POLICY_IMPLEMENTATION.as_posix(),
     )
     for path in governed_paths:
         if path == "hk.pkl":
@@ -1335,17 +1291,25 @@ def test_real_hk_plan_retains_complete_v3_control_trigger_inventory(
     head = _commit(repo, "complete v3 trigger inventory")
 
     paths = _helper_changed_paths(repo, base, head)
-    step = _named_helper_step_plan(repo, base, head, STEP_NAME)
+    control = _named_helper_step_plan(repo, base, head, STEP_NAME)
+    static_reference = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        STATIC_REFERENCE_STEP_NAME,
+    )
 
     assert set(paths) == set(governed_paths)
-    assert step["status"] == "included"
-    assert step["fileCount"] == len(governed_paths)
+    assert control["status"] == static_reference["status"] == "included"
+    assert control["fileCount"] == len(governed_paths)
+    assert static_reference["fileCount"] == len(governed_paths)
+    assert "--source-kind index" in _static_reference_hk_block()
 
 
 def test_real_hk_plan_policy_only_selects_v3_control_not_unrelated_product_source(  # noqa: E501
     tmp_path: Path,
 ) -> None:
-    """Keep policy/control inputs governed without broad product matching."""
+    """Keep control bounded while the explicit index scan remains universal."""
     policy_repo = tmp_path / "policy-repo"
     policy_base = _initialize_repository(policy_repo)
     policy_path = (
@@ -1360,11 +1324,11 @@ def test_real_hk_plan_policy_only_selects_v3_control_not_unrelated_product_sourc
         policy_head,
         STEP_NAME,
     )
-    policy_consumer = _named_helper_step_plan(
+    policy_static_reference = _named_helper_step_plan(
         policy_repo,
         policy_base,
         policy_head,
-        CONSUMER_STEP_NAME,
+        STATIC_REFERENCE_STEP_NAME,
     )
 
     product_repo = tmp_path / "product-repo"
@@ -1378,19 +1342,105 @@ def test_real_hk_plan_policy_only_selects_v3_control_not_unrelated_product_sourc
         product_head,
         STEP_NAME,
     )
+    product_static_reference = _named_helper_step_plan(
+        product_repo,
+        product_base,
+        product_head,
+        STATIC_REFERENCE_STEP_NAME,
+    )
 
     assert policy_control["status"] == "included"
     assert policy_control["fileCount"] == 1
-    assert policy_consumer["status"] == "skipped"
-    assert policy_consumer["fileCount"] == 0
     assert product_control["status"] == "skipped"
     assert product_control["fileCount"] == 0
+    assert policy_static_reference["status"] == "included"
+    assert policy_static_reference["fileCount"] == 1
+    assert product_static_reference["status"] == "included"
+    assert product_static_reference["fileCount"] == 1
+    assert "--source-kind index" in _static_reference_hk_block()
 
 
-def test_consumer_policy_is_one_internal_root_hk_step_not_ci_obligation() -> (
+@pytest.mark.parametrize(
+    "path",
+    [
+        "Directory.Packages.props",
+        "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs",
+        (
+            "src/public/lib/three-workflow-delivery-v3/src/"
+            "three_workflow_delivery_v3/release/static_reference_policy.py"
+        ),
+    ],
+    ids=["central-package-versions", "nuget-authority", "policy-digest"],
+)
+def test_real_hk_plan_prepares_changed_authority_before_consumers(
+    tmp_path: Path,
+    path: str,
+) -> None:
+    """Prepare once when a changed input can stale the authority closure."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    _write(repo, path, "changed authority input\n")
+    head = _commit(repo, "authority preparation input")
+
+    preparation = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        PREPARATION_STEP_NAME,
+    )
+    control = _named_helper_step_plan(repo, base, head, STEP_NAME)
+    static_reference = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        STATIC_REFERENCE_STEP_NAME,
+    )
+
+    assert preparation["status"] == "included"
+    assert preparation["fileCount"] == 1
+    assert control["status"] == "included"
+    assert static_reference["status"] == "included"
+    expected_dependency = f'depends = List("{PREPARATION_STEP_NAME}")'
+    assert expected_dependency in _hk_step_block(STEP_NAME)
+    assert expected_dependency in _static_reference_hk_block()
+
+
+def test_real_hk_plan_prepares_authority_for_unrelated_root_hk_path(
+    tmp_path: Path,
+) -> None:
+    """Prepare the authority whenever the unconditional root scan runs."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    _write(repo, "docs/wiki/README.md", "documentation-only change\n")
+    head = _commit(repo, "unrelated root HK input")
+
+    preparation = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        PREPARATION_STEP_NAME,
+    )
+    control = _named_helper_step_plan(repo, base, head, STEP_NAME)
+    static_reference = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        STATIC_REFERENCE_STEP_NAME,
+    )
+
+    assert preparation["status"] == "included"
+    assert preparation["fileCount"] == 1
+    assert control["status"] == "skipped"
+    assert control["fileCount"] == 0
+    assert static_reference["status"] == "included"
+    assert static_reference["fileCount"] == 1
+    assert "glob =" not in _hk_step_block(PREPARATION_STEP_NAME)
+
+
+def test_static_reference_is_one_internal_root_hk_step_not_ci_obligation() -> (
     None
 ):
-    """Keep the policy inside root HK rather than adding a fifth lane."""
+    """Keep the explicit index scan inside root HK, not in a fifth CI lane."""
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
     from three_workflow_delivery_v3.records.ci import (  # noqa: PLC0415
@@ -1401,20 +1451,22 @@ def test_consumer_policy_is_one_internal_root_hk_step_not_ci_obligation() -> (
     v3_start = hk_config.index("local workflow_delivery_v3_validation")
     v3_end = hk_config.index("local dotenv_linter", v3_start)
     v3_config = hk_config[v3_start:v3_end]
+    static_step = _static_reference_hk_block()
 
-    assert v3_config.count(f'["{CONSUMER_STEP_NAME}"]') == 1
+    assert v3_config.count(f'["{STATIC_REFERENCE_STEP_NAME}"]') == 1
     assert (
-        "python eng/scripts/workflow_delivery_v3_consumer_policy.py "
-        "--repository-root ."
-    ) in v3_config
-    assert "--timeout-seconds 720" in v3_config
+        "python eng/scripts/workflow_delivery_v3_static_reference.py "
+        "--repository-root . --source-kind index"
+    ) in static_step
+    assert "--timeout-seconds 300" in static_step
+    assert "worktree" not in static_step
     assert CI_LANE_IDS == (
         "root-hk",
         "project-build",
         "project-test",
         "npm-artifact-build",
     )
-    assert CONSUMER_STEP_NAME not in CI_LANE_IDS
+    assert STATIC_REFERENCE_STEP_NAME not in CI_LANE_IDS
 
 
 def test_testagent_markdown_exclusion_is_local_to_two_markdown_steps() -> None:
@@ -1436,7 +1488,7 @@ def test_testagent_markdown_exclusion_is_local_to_two_markdown_steps() -> None:
     )
     assert (
         'local markdown_append_only_artifact_exclude = List(".testagent/**")'
-    ) in (markdown_config)
+    ) in markdown_config
     assert (
         '["markdownlint-cli2"] {\n'
         '    profiles = List("small")\n'
@@ -1453,37 +1505,48 @@ def test_testagent_markdown_exclusion_is_local_to_two_markdown_steps() -> None:
 
 @pytest.mark.parametrize(
     "path",
-    [CONSUMER_POLICY_IMPLEMENTATION.as_posix(), "hk.pkl"],
-    ids=["implementation", "root-hk-configuration"],
+    [
+        STATIC_REFERENCE_IMPLEMENTATION.as_posix(),
+        "hk.pkl",
+        "Directory.Packages.props",
+        "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs",
+    ],
+    ids=[
+        "implementation",
+        "root-hk-configuration",
+        "central-package-versions",
+        "nuget-authority",
+    ],
 )
-def test_real_hk_plan_triggers_consumer_policy_for_policy_definition(
+def test_real_hk_plan_triggers_static_reference_for_definition_changes(
     tmp_path: Path,
     path: str,
 ) -> None:
-    """Select the policy when its implementation or registration changes."""
+    """Run the index scan when its implementation or registration changes."""
     repo = tmp_path / "repo"
     base = _initialize_repository(repo)
     if path == "hk.pkl":
         config = (repo / path).read_text(encoding="utf-8")
-        _write(repo, path, config + "\n// consumer policy definition\n")
+        _write(repo, path, config + "\n// static-reference definition\n")
     else:
-        _write(repo, path, "policy implementation\n")
-    head = _commit(repo, "consumer policy definition")
+        _write(repo, path, "static-reference implementation\n")
+    head = _commit(repo, "static-reference definition")
 
     paths = _helper_changed_paths(repo, base, head)
-    consumer = _named_helper_step_plan(
+    static_reference = _named_helper_step_plan(
         repo,
         base,
         head,
-        CONSUMER_STEP_NAME,
+        STATIC_REFERENCE_STEP_NAME,
     )
     control = _named_helper_step_plan(repo, base, head, STEP_NAME)
 
     assert paths == (path,)
-    assert consumer["status"] == "included"
-    assert consumer["fileCount"] == 1
+    assert static_reference["status"] == "included"
+    assert static_reference["fileCount"] == 1
     assert control["status"] == "included"
     assert control["fileCount"] == 1
+    assert "--source-kind index" in _static_reference_hk_block()
 
 
 def test_acceptance_fixture_gitignore_negations_are_exact_and_narrow() -> None:
@@ -1655,3 +1718,198 @@ def test_historical_status_identifier_and_typos_scope_are_exact() -> None:
     )
     assert typos_config.count(f"  '{status_path}',") == 1
     assert ".testagent/**" not in typos_config
+
+
+def test_hk_helper_propagates_exact_child_exit_code_and_changed_paths(
+    tmp_path: Path,
+) -> None:
+    """Propagate the child status after appending the exact Git path list."""
+    repo = tmp_path / "repo"
+    base_oid = _initialize_repository(repo)
+    changed_paths = ("alpha change.txt", "nested/zeta.py")
+    for path in changed_paths:
+        _write(repo, path, f"changed: {path}\n")
+    head_oid = _commit(repo, "child exit propagation")
+    distinctive_exit_code = 73
+    child_program = (
+        "import json, sys; "
+        "print(json.dumps(sys.argv[1:], separators=(',', ':'))); "
+        f"sys.exit({distinctive_exit_code})"
+    )
+
+    result = _run_helper_without_check(
+        repo,
+        "--from-ref",
+        base_oid,
+        "--to-ref",
+        head_oid,
+        "--",
+        sys.executable,
+        "-c",
+        child_program,
+    )
+
+    assert result.returncode == distinctive_exit_code
+    assert result.stderr == ""
+    assert tuple(json.loads(result.stdout)) == ("--", *changed_paths)
+
+
+def test_parse_name_status_preserves_posix_backslash_component() -> None:
+    """Treat backslash as a literal component character in Git paths."""
+    helper_spec = importlib.util.spec_from_file_location(
+        "_workflow_delivery_v3_hk_backslash_test",
+        REPO_ROOT / HK_RANGE_HELPER,
+    )
+    assert helper_spec is not None
+    assert helper_spec.loader is not None
+    helper_module = importlib.util.module_from_spec(helper_spec)
+    helper_spec.loader.exec_module(helper_module)
+
+    assert helper_module.parse_name_status(
+        b"M\0literal\\component/package.json\0"
+    ) == (r"literal\component/package.json",)
+
+
+@pytest.mark.parametrize(
+    ("name_status", "expected_message", "expected_cause_type"),
+    [
+        pytest.param(
+            b"M\0invalid-\xff.py\0",
+            "Git returned a non-UTF-8 changed path",
+            UnicodeDecodeError,
+            id="non-utf8",
+        ),
+    ],
+)
+def test_parse_name_status_rejects_unsafe_path_before_child_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    name_status: bytes,
+    expected_message: str,
+    expected_cause_type: type[BaseException] | None,
+) -> None:
+    """Reject unsafe Git bytes before invoking the requested child command."""
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    helper_spec = importlib.util.spec_from_file_location(
+        "_workflow_delivery_v3_hk_under_test",
+        REPO_ROOT / HK_RANGE_HELPER,
+    )
+    assert helper_spec is not None
+    assert helper_spec.loader is not None
+    helper_module = importlib.util.module_from_spec(helper_spec)
+    helper_spec.loader.exec_module(helper_module)
+
+    from_oid = "1" * 40
+    to_oid = "2" * 40
+    git_commands: list[tuple[str, ...]] = []
+
+    def fake_run(
+        command: Sequence[str],
+        **_kwargs: object,
+    ) -> SimpleNamespace:
+        arguments = tuple(command)
+        git_commands.append(arguments)
+        if arguments[:2] == ("git", "rev-parse"):
+            resolved_oid = (
+                from_oid if arguments[-1] == "base^{commit}" else to_oid
+            )
+            return SimpleNamespace(stdout=f"{resolved_oid}\n")
+        if arguments[:2] == ("git", "diff"):
+            return SimpleNamespace(stdout=name_status)
+        return SimpleNamespace(returncode=91)
+
+    monkeypatch.setattr(
+        helper_module,
+        "subprocess",
+        SimpleNamespace(run=fake_run),
+    )
+
+    with pytest.raises(helper_module.ChangedPathError) as error:
+        helper_module.main(
+            (
+                "--repository",
+                ".",
+                "--from-ref",
+                "base",
+                "--to-ref",
+                "head",
+                "--",
+                sys.executable,
+                "-c",
+                "raise SystemExit(91)",
+            ),
+        )
+
+    assert type(error.value) is helper_module.ChangedPathError
+    assert str(error.value) == expected_message
+    actual_cause_type = (
+        type(error.value.__cause__)
+        if error.value.__cause__ is not None
+        else None
+    )
+    assert actual_cause_type is expected_cause_type
+    assert tuple(git_commands) == (
+        (
+            "git",
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            "base^{commit}",
+        ),
+        (
+            "git",
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            "head^{commit}",
+        ),
+        (
+            "git",
+            "diff",
+            "--name-status",
+            "--find-renames",
+            "-z",
+            "--end-of-options",
+            from_oid,
+            to_oid,
+            "--",
+        ),
+    )
+
+
+def test_mise_bootstrap_preparation_chain_and_manual_worktree_are_exact() -> (
+    None
+):
+    """Pin authority preparation into bootstrap and the separate manual task."""
+    import tomllib  # noqa: PLC0415
+
+    mise_config = tomllib.loads(
+        (REPO_ROOT / "mise.toml").read_text(encoding="utf-8"),
+    )
+    tasks = mise_config["tasks"]
+    preparation_name = "prepare:static-reference-authorities"
+    bootstrap_dependencies = tuple(tasks["bootstrap"]["depends"])
+    node_bootstrap = tasks["bootstrap:node"]
+    preparation = tasks[preparation_name]
+    manual_worktree = tasks["check:static-reference-worktree"]
+
+    assert bootstrap_dependencies.count("bootstrap:node") == 1
+    assert tuple(node_bootstrap["depends"]) == (preparation_name,)
+    assert node_bootstrap["run"] == "pnpm -r rebuild --pending"
+    assert preparation["run"] == (
+        "uv run --isolated --frozen --python 3.13 "
+        "--package three-workflow-delivery-v3 python -B "
+        "eng/scripts/workflow_delivery_v3_prepare_static_reference.py"
+    )
+    assert tuple(manual_worktree["depends"]) == (preparation_name,)
+    assert manual_worktree["run"] == (
+        "uv run --python 3.13 --package three-workflow-delivery-v3 "
+        "python eng/scripts/workflow_delivery_v3_static_reference.py "
+        "--repository-root . --source-kind worktree"
+    )
+    assert manual_worktree["run"] != preparation["run"]
+
+    workspace = yaml.safe_load(
+        (REPO_ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8")
+    )
+    assert workspace["allowBuilds"]["msgpackr-extract"] is True

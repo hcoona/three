@@ -25,7 +25,8 @@ src/private/app/factorio-cycle-calculator/src/factorio_cycle_calculator/generate
 .vscode/mcp.json linguist-generated
 apm.lock.yaml linguist-generated
 
-# Preserve byte-stable Workflow Delivery v3 consumer-policy exceptions.
+# Preserve byte-stable Workflow Delivery v3 static-reference inputs.
+pnpm-lock.yaml text eol=lf
+src/private/app/workflow-delivery-v3-nuget-authority/packages.lock.json text eol=lf
 src/public/lib/hcoona-release-smoke-npm/package.json text eol=lf
-src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/consumer-policy-acceptance.json text eol=lf
-src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/package.json text eol=lf
+src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/package-manifest.json text eol=lf

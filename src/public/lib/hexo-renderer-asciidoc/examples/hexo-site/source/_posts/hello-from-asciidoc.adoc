@@ -15,7 +15,7 @@ tags:
 
 This demo blog exists to showcase how the renderer plugs AsciiDoc into Hexo 8.
 Every authored AsciiDoc source page and post in this example—including this
-one—is rendered by the linked local build from this repository branch. Hexo
+one—is rendered by the imported local build from this repository branch. Hexo
 generates index, archive, category, tag, and theme pages separately.
 
 == Why this renderer
@@ -34,7 +34,7 @@ This repository branch documents the upcoming 4.x beta migration. As of July 22,
 2026, npm publishes only stable v3 on the `latest` dist-tag; no v4 prerelease or
 `beta` dist-tag is available yet. Do not install the unqualified package to test
 the v4 behavior, because it resolves to v3. Until a v4 prerelease is published,
-use the clean-checkout build and local-link workflow in
+use the clean-checkout build and local `file:` workflow in
 <<_what_this_example_proves>>.
 
 . Once a v4 prerelease is published under the `beta` dist-tag, add it inside your
@@ -54,11 +54,12 @@ pnpm add hexo-renderer-asciidoc@beta
 
 == What this example proves
 
-This repository depends on `hexo-renderer-asciidoc` via a local `link:`
+This repository depends on `hexo-renderer-asciidoc` via a local `file:`
 dependency. From a clean clone, first follow the exact build/install/generate
-sequence in `examples/hexo-site/README.md`. After that, you can run `pnpm dev`
-inside `examples/hexo-site` and iterate on the renderer and the demo
-simultaneously.
+sequence in `examples/hexo-site/README.md`. After that, you can edit the demo
+content while `pnpm dev` runs inside `examples/hexo-site`. After changing the
+renderer, rebuild it, reinstall the example's local dependency, and restart
+Hexo.
 
 Open <http://localhost:4000> and inspect the generated HTML via the browser dev
 tools—you will see that recognized listing blocks are already pre-highlighted.
@@ -102,12 +103,13 @@ shapes for compatibility, but the public API cannot configure arbitrary
 highlighter options.
 
 Need different behavior? Fork the renderer and tweak `src/core/asciidoctor.ts`.
-To rebuild the linked parent package and then regenerate this example, stay at
-the repository root and run:
+To rebuild the parent package, refresh the example dependency, and regenerate
+the site, stay at the repository root and run:
 
 [source,bash]
 ----
 mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc run build
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --frozen-lockfile
 mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site run generate
 xdg-open src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/public/index.html
 ----

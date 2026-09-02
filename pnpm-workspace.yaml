@@ -8,6 +8,7 @@ packages:
 allowBuilds:
   esbuild: true
   hexo-util: true
+  msgpackr-extract: true
   sharp: true
   spawn-sync: true
 

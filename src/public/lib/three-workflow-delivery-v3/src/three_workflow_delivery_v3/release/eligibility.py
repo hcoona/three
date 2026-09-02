@@ -12,20 +12,21 @@ from typing import TYPE_CHECKING, Protocol
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
+    canonicalize,
     parse_canonical_json,
 )
 from three_workflow_delivery_v3.catalogs import catalog_digest
 from three_workflow_delivery_v3.records.release import ReleaseIntent
-from three_workflow_delivery_v3.release.consumer_policy import (
-    CONSUMER_POLICY_ID as _CONSUMER_POLICY_ID,
-)
-from three_workflow_delivery_v3.release.consumer_policy import (
-    ConsumerPolicyResult,
-    SurfaceDigest,
-    validate_consumer_policy_result,
-)
 from three_workflow_delivery_v3.release.identity import (
     BUDDY_LIVE_WORKFLOW_PATH,
+)
+from three_workflow_delivery_v3.release.static_reference_model import (
+    BoundedStaticReferenceResult,
+    parse_bounded_static_reference_result,
+)
+from three_workflow_delivery_v3.release.static_reference_policy import (
+    scan_bounded_static_references,
+    validate_live_static_reference_result,
 )
 from three_workflow_delivery_v3.repository.compiler import (
     AdmittedRepositoryModelSnapshot,
@@ -46,12 +47,11 @@ from three_workflow_delivery_v3.repository.descriptors import (
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
 
     from three_workflow_delivery_v3.repository.compiler import (
         RepositoryModelSnapshot,
     )
-
-CONSUMER_POLICY_ID = _CONSUMER_POLICY_ID
 
 ATTESTATION_SCHEMA = "workflow-delivery/v3/governance-attestation"
 LIVE_ELIGIBILITY_DECISION_SCHEMA = (
@@ -319,7 +319,7 @@ class LiveEligibilityDecision:
     """Immutable exact-target pre-Attempt live eligibility Decision."""
 
     context: LiveEligibilityContext
-    consumer_policy: ConsumerPolicyResult
+    static_reference: BoundedStaticReferenceResult
     governance: GovernanceObservation
     result: EligibilityResult
     diagnostics: tuple[str, ...]
@@ -328,7 +328,7 @@ class LiveEligibilityDecision:
         """Return the complete canonical Decision payload."""
         return _live_eligibility_document(
             context=self.context,
-            consumer_policy=self.consumer_policy,
+            static_reference=self.static_reference,
             governance=LiveEligibilityGovernanceBinding.from_observation(
                 self.governance
             ),
@@ -347,7 +347,7 @@ class AdmittedLiveEligibilityDecision:
     """Strict canonical current-attempt Live Eligibility transport."""
 
     context: LiveEligibilityContext
-    consumer_policy: ConsumerPolicyResult
+    static_reference: BoundedStaticReferenceResult
     governance: LiveEligibilityGovernanceBinding
     result: EligibilityResult
     diagnostics: tuple[str, ...]
@@ -358,7 +358,7 @@ class AdmittedLiveEligibilityDecision:
         """Reject an internally inconsistent admitted transport wrapper."""
         if (
             type(self.context) is not LiveEligibilityContext
-            or type(self.consumer_policy) is not ConsumerPolicyResult
+            or type(self.static_reference) is not BoundedStaticReferenceResult
             or type(self.governance) is not LiveEligibilityGovernanceBinding
             or type(self.result) is not EligibilityResult
             or type(self.diagnostics) is not tuple
@@ -380,7 +380,7 @@ class AdmittedLiveEligibilityDecision:
         """Return the exact admitted Decision document."""
         return _live_eligibility_document(
             context=self.context,
-            consumer_policy=self.consumer_policy,
+            static_reference=self.static_reference,
             governance=self.governance,
             result=self.result,
             diagnostics=self.diagnostics,
@@ -449,7 +449,7 @@ def _format_instant(value: datetime) -> str:
 def _live_eligibility_document(
     *,
     context: LiveEligibilityContext,
-    consumer_policy: ConsumerPolicyResult,
+    static_reference: BoundedStaticReferenceResult,
     governance: LiveEligibilityGovernanceBinding,
     result: EligibilityResult,
     diagnostics: tuple[str, ...],
@@ -467,27 +467,11 @@ def _live_eligibility_document(
         "release-policy-digest": context.release_policy_digest,
         "catalog-digest": context.catalog_digest,
     }
-    scanned_surfaces: list[JsonValue] = [
-        surface.to_document() for surface in consumer_policy.scanned_surfaces
-    ]
-    admitted_exceptions: list[JsonValue] = [
-        surface.to_document() for surface in consumer_policy.admitted_exceptions
-    ]
-    consumers: list[JsonValue] = list(consumer_policy.consumers)
-    consumer_policy_document: dict[str, JsonValue] = {
-        "policy-id": consumer_policy.policy_id,
-        "policy-digest": consumer_policy.policy_digest,
-        "result-digest": consumer_policy.result_digest,
-        "target": consumer_policy.target,
-        "scanned-surfaces": scanned_surfaces,
-        "admitted-exceptions": admitted_exceptions,
-        "consumers": consumers,
-    }
     diagnostic_documents: list[JsonValue] = list(diagnostics)
     return {
         "schema": LIVE_ELIGIBILITY_DECISION_SCHEMA,
         "context": context_document,
-        "consumer-policy": consumer_policy_document,
+        "static-reference": static_reference.to_document(),
         "governance": governance.to_document(),
         "result": result.value,
         "diagnostics": diagnostic_documents,
@@ -1000,34 +984,6 @@ def _decision_strings(
     )
 
 
-def _decision_surfaces(
-    value: JsonValue,
-    *,
-    field: str,
-) -> tuple[SurfaceDigest, ...]:
-    surfaces: list[SurfaceDigest] = []
-    for index, item in enumerate(_array(value, context=field)):
-        document = _object(item, context=f"{field}[{index}]")
-        _closed(
-            document,
-            required=frozenset({"path", "content-digest"}),
-            context=f"{field}[{index}]",
-        )
-        surfaces.append(
-            SurfaceDigest(
-                path=_nonempty_exact_string(
-                    document["path"],
-                    field=f"{field}[{index}].path",
-                ),
-                content_digest=_decision_digest(
-                    document["content-digest"],
-                    field=f"{field}[{index}].content-digest",
-                ),
-            )
-        )
-    return tuple(surfaces)
-
-
 def _decision_context(value: JsonValue) -> LiveEligibilityContext:
     document = _object(value, context="Live Eligibility Decision.context")
     _closed(
@@ -1097,62 +1053,15 @@ def _decision_context(value: JsonValue) -> LiveEligibilityContext:
     )
 
 
-def _decision_consumer_policy(value: JsonValue) -> ConsumerPolicyResult:
+def _decision_static_reference(
+    value: JsonValue,
+) -> BoundedStaticReferenceResult:
     document = _object(
         value,
-        context="Live Eligibility Decision.consumer-policy",
+        context="Live Eligibility Decision.static-reference",
     )
-    _closed(
-        document,
-        required=frozenset(
-            {
-                "policy-id",
-                "policy-digest",
-                "result-digest",
-                "target",
-                "scanned-surfaces",
-                "admitted-exceptions",
-                "consumers",
-            }
-        ),
-        context="Live Eligibility Decision.consumer-policy",
-    )
-    claimed_result_digest = _decision_digest(
-        document["result-digest"],
-        field="consumer-policy.result-digest",
-    )
-    result = ConsumerPolicyResult(
-        policy_id=_nonempty_exact_string(
-            document["policy-id"],
-            field="consumer-policy.policy-id",
-        ),
-        policy_digest=_decision_digest(
-            document["policy-digest"],
-            field="consumer-policy.policy-digest",
-        ),
-        target=_decision_sha(
-            document["target"],
-            field="consumer-policy.target",
-        ),
-        scanned_surfaces=_decision_surfaces(
-            document["scanned-surfaces"],
-            field="consumer-policy.scanned-surfaces",
-        ),
-        admitted_exceptions=_decision_surfaces(
-            document["admitted-exceptions"],
-            field="consumer-policy.admitted-exceptions",
-        ),
-        consumers=_decision_strings(
-            document["consumers"],
-            field="consumer-policy.consumers",
-        ),
-    )
-    validate_consumer_policy_result(result)
-    if claimed_result_digest != result.result_digest:
-        message = (
-            "Live Eligibility Decision consumer-policy result digest mismatch"
-        )
-        raise ValueError(message)
+    result = parse_bounded_static_reference_result(canonicalize(document))
+    validate_live_static_reference_result(result)
     return result
 
 
@@ -1344,7 +1253,7 @@ def admit_live_eligibility_decision(  # noqa: C901, PLR0912, PLR0913, PLR0915
             {
                 "schema",
                 "context",
-                "consumer-policy",
+                "static-reference",
                 "governance",
                 "result",
                 "diagnostics",
@@ -1360,7 +1269,7 @@ def admit_live_eligibility_decision(  # noqa: C901, PLR0912, PLR0913, PLR0915
         message = "Live Eligibility Decision canonical digest mismatch"
         raise ValueError(message)
     context = _decision_context(document["context"])
-    consumer_policy = _decision_consumer_policy(document["consumer-policy"])
+    static_reference = _decision_static_reference(document["static-reference"])
     governance = _decision_governance(document["governance"])
     result_value = _nonempty_exact_string(
         document["result"],
@@ -1435,12 +1344,15 @@ def admit_live_eligibility_decision(  # noqa: C901, PLR0912, PLR0913, PLR0915
             "Live Eligibility Decision exact-target Release policy mismatch"
         )
         raise ValueError(message)
-    if consumer_policy.target != context.target:
-        message = "Live Eligibility Decision consumer-policy target mismatch"
+    if (
+        static_reference.source_kind != "git-target"
+        or static_reference.target != context.target
+    ):
+        message = "Live Eligibility Decision static-reference target mismatch"
         raise ValueError(message)
     if (
         result is not EligibilityResult.PASS
-        or consumer_policy.consumers
+        or static_reference.result != "clean"
         or diagnostics
     ):
         message = "Live Eligibility Decision is not a closed passing decision"
@@ -1465,7 +1377,7 @@ def admit_live_eligibility_decision(  # noqa: C901, PLR0912, PLR0913, PLR0915
         raise ValueError(message)
     admitted = AdmittedLiveEligibilityDecision(
         context=context,
-        consumer_policy=consumer_policy,
+        static_reference=static_reference,
         governance=governance,
         result=result,
         diagnostics=diagnostics,
@@ -1481,27 +1393,31 @@ def admit_live_eligibility_decision(  # noqa: C901, PLR0912, PLR0913, PLR0915
 def evaluate_live_eligibility(  # noqa: PLR0913
     context: LiveEligibilityContext,
     snapshot: RepositoryModelSnapshot,
-    consumer_policy: ConsumerPolicyResult,
     policy: ReleasePolicy,
     client: GovernanceSourceClient,
     *,
+    repository_root: Path,
     now: datetime,
 ) -> LiveEligibilityDecision:
     """Evaluate current exact-target eligibility before Attempt creation."""
     _validate_source(policy.governance)
     _validate_live_context(context, snapshot, policy)
-    validate_consumer_policy_result(consumer_policy)
-    if consumer_policy.target != context.target:
-        message = "consumer-policy target does not match live eligibility"
-        raise ValueError(message)
+    static_reference = scan_bounded_static_references(
+        repository_root,
+        source_kind="git-target",
+        target=context.target,
+    )
+    validate_live_static_reference_result(static_reference)
     governance = observe_governance_source(
         policy.governance,
         client,
         now=now,
     )
     diagnostics: list[str] = []
-    if consumer_policy.consumers:
-        diagnostics.append("consumer-policy-found-consumers")
+    if static_reference.result == "findings":
+        diagnostics.append("static-reference-findings")
+    elif static_reference.result == "error":
+        diagnostics.append(f"static-reference-{static_reference.error_kind}")
     if not governance.attestation.live_enabled:
         diagnostics.append("governance-live-disabled")
     if now < governance.attestation.inspected_at:
@@ -1513,7 +1429,7 @@ def evaluate_live_eligibility(  # noqa: PLR0913
     )
     return LiveEligibilityDecision(
         context=context,
-        consumer_policy=consumer_policy,
+        static_reference=static_reference,
         governance=governance,
         result=result,
         diagnostics=tuple(diagnostics),

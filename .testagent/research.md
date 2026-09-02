@@ -6645,3 +6645,382 @@ The Environment-creation gate is complete. Protected preparation remains a
 separate authorization decision.
 
 <!-- END APPEND: 2026-08-31-wdv3-permanent-environment-provisioning-closure-research -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-foundation-research -->
+
+# Workflow Delivery v3 Static-Reference Foundation Test Research
+
+## Scope and authority
+
+- **Exact worktree:** `/home/shuaizhang/.copilot/session-state/24bd9638-ae1a-4852-8794-616ece84341e/files/disabled-runtime-implementation-worktree`
+- `docs/AGENTS.md` and
+  `docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md` were the first
+  repository files read.
+- The handoff identifies
+  `docs/wiki/analyses/workflow-delivery/v3/hcoona-release-smoke-npm-lld.md`.
+  Sections 6 and 18.2 of that merged first-slice LLD are the sole normative
+  static-reference contract used by this run. Current code supplies
+  implementation facts only.
+- The old untracked `/workspace/three-workspaces/design-workflows` prototypes
+  are non-authoritative. No prototype implementation or test is an input to
+  this plan and none may be copied wholesale.
+- Edit ownership is limited to `.testagent/` and test files. Production,
+  documentation, manifests, dependency locks, the Hexo migration, and npm
+  fixture migration/materialization sources belong to the concurrently
+  running parent implementation.
+
+## Required tool guidance
+
+`code-testing-extensions` was invoked exactly once. The skill was not
+registered, so only its directly located base guidance was read:
+`extensions/python.md`, `extensions/typescript.md` (Node/JavaScript), and
+`extensions/dotnet.md`. No example extension was loaded. The retained guidance
+is to use existing pytest layout and exact assertions, exercise the executable
+Node and .NET sidecars through their existing protocol rather than adding a
+test framework or manifest reference, and finish with narrow then
+workspace-level validation.
+
+`find-untested-sources` was invoked exactly once. Its polyglot analyzer was
+then executed once by the delegated researcher with `--include-tested` and the
+Python, JavaScript/TypeScript, and C# language filters against this exact
+worktree:
+
+```text
+python /workspace/three-workspaces/design-workflows/.agents/skills/find-untested-sources/scripts/find_untested_sources.py /home/shuaizhang/.copilot/session-state/24bd9638-ae1a-4852-8794-616ece84341e/files/disabled-runtime-implementation-worktree --include-tested --lang python --lang javascript --lang typescript --lang csharp
+```
+
+The deterministic pairing report was consumed during Research. The newly
+appeared `static_reference_*.py` files had no referring static-reference test;
+there was likewise no existing Node or C# sidecar contract test. No analyzer
+report was committed. The analyzer suggestion did not establish a canonical
+multi-runtime location, while neighboring pytest conventions establish
+`src/public/lib/three-workflow-delivery-v3/tests/release/` as the bounded
+location. Use
+`src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py`
+and, only if process scenarios become unwieldy,
+`test_static_reference_sidecars.py`. This is static declaration/reference
+pairing, not line or branch coverage, and must not be rerun in later phases.
+
+## Bounded implementation inventory
+
+| Layer | Current target | Test-facing contract |
+|---|---|---|
+| Invocation | `eng/scripts/workflow_delivery_v3_static_reference.py` | `_parser`, `main`; strict pre-Result argument admission; canonical Result and exit 0/1/2 |
+| npm/pnpm authority | `eng/scripts/workflow_delivery_v3_static_reference_node.mjs` | private stdin/stdout JSON protocol; pinned public npm and pnpm APIs |
+| NuGet authority | `src/private/app/workflow-delivery-v3-nuget-authority/Program.cs` | private stdin/stdout JSON protocol over NuGet 7.9 models |
+| Model | `release/static_reference_model.py` | source/error types, path/UTF-8 ordering, Finding/Result parse and validation |
+| Acquisition | `release/static_reference_source.py` | exact git-target, index, and worktree inventory and typed acquisition errors |
+| Session | `release/static_reference_session.py` | exact snapshot closure, controlled environment, materialization evidence, exact cleanup |
+| Authority adapter | `release/static_reference_authority.py` | graph dispatch, execution failure sanitization, exact sidecar response admission |
+| Projection | `release/static_reference_projection.py` | normalized facts to D/V/A/W/L and dependency-key findings |
+| Orchestration | `release/static_reference_policy.py` | authority manifest/digest, deterministic traversal, sole first error, cleanup override |
+| HK/CLI integration | `hk.pkl`, `cli.py`, `eligibility.py`, and existing tests | explicit index/worktree feedback and git-target-only Live evidence; production is read-only here |
+| Hexo repository scenario | tracked example `package.json` and `pnpm-lock.yaml` | exact `file:../..`, v9 importer/reference, typed file-directory snapshot, clean scan without exception |
+| npm fixture scenario | existing acceptance fixture and producer helper | non-candidate tracked source; temporary `package/package.json`; preserved package/tarball assertions |
+
+The files above appeared concurrently during Research. Their dependency order
+is model and executable authority leaves; source/session; projection and
+authority adapter; policy; invocation/repository scenarios.
+
+## Existing conventions and seams
+
+- Tests are module-level pytest scenarios with descriptive
+  `test_<behavior>` names, `tmp_path`, `monkeypatch`, parametrization with
+  readable IDs, exact byte/document assertions, and small subprocess helpers.
+- Exact Git tests create real temporary repositories; no network, registry,
+  port, or timing dependency is permitted.
+- Policy orchestration exposes `authority_runner` and `session_factory` seams,
+  so first-error and cleanup precedence can be proved without changing source.
+- The Node `.mjs` sidecar has no exports and no repository Node test framework.
+  Exercise its private JSON protocol as a child process from pytest.
+- The NuGet project is an executable without a Test SDK and has private/internal
+  implementation members. Exercise its private JSON protocol from pytest;
+  adding a project/package/solution reference is outside ownership.
+- Extend `tests/test_hk_trigger.py` only for root-HK contract behavior and
+  `tests/adapters/test_commit10_acceptance_probes.py` only for the existing npm
+  fixture materialization behavior. Do not overwrite either file.
+
+## Acceptance checklist
+
+- [ ] **R1:** Required docs were read first.
+- [ ] **R2:** Every static assertion traces to LLD sections 6/18.2, not stale
+      runtime or prototype behavior.
+- [ ] **R3a:** `git-target`, `index`, and `worktree` use their own bytes when
+      all differ; exact candidate failures after source admission become
+      `source-acquisition-failed`; omitted/unknown source kind and malformed
+      required parameters fail nonzero before Result/root allocation.
+- [ ] **R3b:** npm uses `PackageJson.load(snapshotDirectory)` once, `.content`,
+      exactly the top-level name/four dependency sections, pinned
+      `npm-package-arg` calls with source-owned base, exact section/key order,
+      one-level alias/local facts, selected-field shape rejection, no partial
+      facts, controlled HOME, and no normalize/prepare/fix.
+- [ ] **R3c:** pnpm workspace and exact v9 lock paths use the pinned public API
+      sequence, fixed options/arguments, catalog/importer/snapshot ordering,
+      distinct equal keys across sections, typed Git/file resolutions,
+      named/ranged workspace behavior, environment-document rejection,
+      zero/one/two BOM behavior, and no filesystem/registry/Git/tar resolver.
+- [ ] **R3d:** NuGet 7.9 lock versions 1/2/3 and documented coercions use the
+      exact stream/logger/logical-path overload, ordered targets/dependencies/
+      edges and selected fields; `packages.config` uses
+      `PackagesConfigReader(Stream,false)`, rejects duplicate IDs, and orders
+      with `PackageIdentity.Comparer`.
+- [ ] **R3e:** Candidates, graph nodes, arrays, mappings, facts, and findings
+      have bound deterministic order; all seven error kinds are distinct; the
+      first source error precedes graph execution, otherwise the first typed
+      graph error wins, and `cleanup-failed` overrides either while preserving
+      a sanitized diagnostic. Exact roots are cleaned after every terminal
+      path.
+- [ ] **R3f:** The tracked Hexo manifest has exact `file:../..`; its actual
+      isolated v9 lock has the matching importer/reference and typed directory
+      snapshot; the scan is clean without an example-path exception.
+- [ ] **R3g:** The npm publish fixture source has a non-candidate basename,
+      materializes only as temporary `package/package.json`, and retains exact
+      package/tarball/request assertions without a policy exception.
+- [ ] **R3h:** At least one representative for every excluded surface selects
+      no graph/no fallback: workflow/composite files, Node import subpaths,
+      npm/uv/Yarn locks, unevaluated MSBuild/central manifests, standalone
+      Python manifests, shell/PowerShell, and `.github/workflows` pnpm reserved
+      basenames. Tests also reject the presence of handwritten grammar/schema,
+      competing authority, whole-file exception, Tree-sitter/dataflow, fixed
+      inventory authority, or a consumer claim.
+- [ ] **R4:** Extension invocation/base-only evidence is retained above.
+- [ ] **R5:** Analyzer invocation/pairing evidence is retained above and is
+      not manually or mechanically repeated.
+- [ ] **R6:** Research, Plan, and Status append-only sections exist with
+      bounded inventory, checklist, phases, blockers, and command results.
+- [ ] **R7:** Diff contains only `.testagent/` and additive/extended tests from
+      this run.
+- [ ] **R8:** No prototype was copied.
+- [ ] **R9:** Absent production behavior remains a strict expected-RED
+      contract/blocker; no skip, xfail, ignore, or weakened assertion.
+- [ ] **R10:** Run the narrow test as source appears, then package/workspace
+      validation possible without manifest edits; classify concurrent,
+      pre-existing, and generated-test failures separately.
+- [ ] **R11:** Run `test-gap-analysis`, `assertion-quality`, and a literal
+      prompt-scenario mapping on the final tests; close actionable gaps
+      tests-only.
+- [ ] **R12:** No VCS mutation, test deletion/overwrite, or source
+      restoration/reconstruction.
+
+## Strategy and phases
+
+Use **Iterative RPI**. The bounded inventory crosses three runtime authorities,
+six Python mechanism files, and two repository scenarios, and section 18.2
+contains substantially more than ten independently falsifiable contracts.
+
+1. Core model/source/session and invocation admission.
+2. Synthetic projection/policy ordering, typed errors, first-error, and cleanup.
+3. npm and pnpm executable authority contracts.
+4. NuGet executable authority contracts.
+5. Hexo, npm fixture, excluded surfaces, HK/Live boundary, and closure.
+
+Each implementation phase must run the narrowest new-test selection
+immediately. Later phases may proceed with strict expected-RED blockers when a
+concurrently owned production/migration API is absent.
+
+## Commands
+
+Run from the exact worktree:
+
+```text
+mise run prepare:static-reference-authorities
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q src/public/lib/three-workflow-delivery-v3/tests
+python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests
+uv run --python 3.13 ruff check --force-exclude -- <changed-test-files>
+uv run --python 3.13 ruff format --check --force-exclude -- <changed-test-files>
+git --no-pager diff --check -- .testagent src/public/lib/three-workflow-delivery-v3/tests
+```
+
+The Node and NuGet child protocols, when prepared, are:
+
+```text
+node eng/scripts/workflow_delivery_v3_static_reference_node.mjs
+dotnet artifacts/workflow-delivery-v3/static-reference/nuget-authority/WorkflowDeliveryV3NuGetAuthority.dll
+```
+
+## Initial blockers and concurrent state
+
+- The npm acceptance fixture is currently still tracked at
+  `tests/fixtures/acceptance/npm-publish-request/package/package.json` with the
+  producer name, so R3g is expected RED until the parent-owned migration lands.
+- Malformed target/root values may currently surface uncaught `ValueError`
+  rather than a sanitized argparse-style pre-Result failure; retain a strict
+  test and report it as a production blocker.
+- `git-target`-only Live admission is implemented in `eligibility.py`, outside
+  the new mechanism-file list but inside R3a/R3h integration. Test the existing
+  public boundary without editing it.
+- Node and NuGet protocol tests require the already-declared preparation task;
+  if artifacts cannot be prepared without changing manifests, record that
+  environment/build blocker and preserve strict tests.
+- Concurrent parent edits include all production, manifests/locks, Hexo, and
+  fixture files. Re-read only a targeted API immediately before each phase and
+  never replace a parent change.
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-foundation-research -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-static-reference-live-refresh-research -->
+
+## Workflow Delivery v3 static-reference Live/HK/CLI production refresh
+
+This follow-up reused the existing foundation inventory and the already
+recorded language/analyzer guidance. `code-testing-extensions` and
+`find-untested-sources` were not invoked or executed again.
+
+### Bounded current-production findings
+
+- `release/eligibility.py::evaluate_live_eligibility` now takes
+  `repository_root` as a keyword-only input and invokes
+  `scan_bounded_static_references(repository_root,
+  source_kind="git-target", target=context.target)` itself.
+- The evaluator validates that Result before reading Governance. Clean,
+  findings, and each of the seven typed operational errors map to pass,
+  `static-reference-findings`, or `static-reference-<error-kind>`.
+- `LiveEligibilityDecision` and its admitted form own a
+  `BoundedStaticReferenceResult`; the canonical document key is exactly
+  `static-reference`.
+- `cli.py` has no `consumer_policy` symbol or `--consumer-policy` option.
+  The two Workflow Delivery v3 workflows pass no such option.
+- Root `hk.pkl` has one unconditional
+  `hcoona-release-smoke-npm-static-reference` command with
+  `--source-kind index`; it contains no worktree or git-target route.
+- `mise.toml` separately exposes
+  `check:static-reference-worktree`, depending on authority preparation and
+  explicitly using `--source-kind worktree`.
+- Four tracked test modules were still coupled to removed consumer-policy
+  imports/scripts and prevented collection. Their superseded content was
+  retired and replaced with current static-reference/Live contracts; no
+  production compatibility module or CLI shim was added.
+- Other stale expectations in HK, planner, workflow, Governance, fixture, and
+  sidecar tests were updated to current production. Test-local npm fixture
+  shape is treated as non-normative; production-manifest assertions explicitly
+  exclude the test fixture prefix.
+
+### Follow-up requirement checklist
+
+- [x] R1 Live owns one same-call exact-target scan internally.
+- [x] R2 Decision evidence embeds the canonical Result at
+      `static-reference`.
+- [x] R3 CLI/workflows omit and reject `--consumer-policy`.
+- [x] R4 root HK is unconditional and index-bound.
+- [x] R5 manual worktree scanning is isolated to the mise task.
+- [x] R6 superseded consumer-policy test content is retired without a
+      production compatibility route.
+- [x] R7 obsolete root-HK worktree assertions are replaced by separate root
+      index and manual mise worktree assertions.
+- [x] R8 clean/findings/all typed errors, exact binding, validation order,
+      canonical evidence, and secondary observables are asserted.
+- [x] R9 CLI rejection and workflow omission are asserted.
+- [x] R10 narrow, package-wide, Ruff, build, and owned-diff validation are
+      complete.
+- [x] R11 pseudo-mutation, assertion-depth, and prompt-scenario review are
+      complete on the final tests.
+- [x] R12 final evidence and exact test mapping are recorded in Status.
+
+<!-- END APPEND: 2026-09-01-wdv3-static-reference-live-refresh-research -->
+
+<!-- BEGIN APPEND: 2026-09-01-wdv3-over-contraction-correction-research -->
+
+## Workflow Delivery v3 over-contracted test correction research
+
+### Bounded authority and method
+
+- Reused the prior Python/pytest language guidance and source-to-test pairing
+  research; neither `code-testing-extensions` nor `find-untested-sources` was
+  rerun.
+- Compared each correction target with the read-only baseline via
+  `git show HEAD:<path>`. No source, manifest, lock, workflow, HK/mise,
+  documentation, migration, or VCS state was changed by this correction.
+- The bounded numerical audit of modified tracked package tests found only
+  four function-count contractions: Eligibility `49 -> 3`, root HK `32 -> 4`,
+  scenarios `17 -> 4`, and commit-10 attestation `5 -> 4`.
+  Path admission remained `4 -> 4` but all four functions had been replaced,
+  so it received a semantic baseline/current audit. Other modified tracked
+  test modules had no function-count contraction.
+- The deleted 74-function `tests/ci/test_consumer_policy.py` suite exclusively
+  tested the removed parser/runtime and remains retired. Its current
+  three-function replacement is
+  `tests/ci/test_static_reference_retirement.py`; the deleted
+  `tests/fixtures/release/consumer-policy-acceptance.json` remains absent.
+
+### Requirement checklist
+
+- **E1** — retain/adapt valid Eligibility baseline contracts, including
+  Governance validation, fresh reads, source/context rejection, lineage,
+  provenance, expiry boundaries, strict admission, and fail-closed behavior.
+- **H1** — retain/adapt unrelated root-HK, Git/ref, CODEOWNERS, governed-path,
+  root-mise, Markdown-locality, fixture, and legacy exception contracts.
+- **C1** — retain/adapt unrelated complete-slice, failure, empty-lane,
+  comparison, coexistence, and bootstrap scenario contracts.
+- **A1** — audit and restore commit-10 attestation and path-admission
+  contracts; audit every other modified tracked test for count contraction.
+- **R1** — keep the parser-only suite and tombstone fixture retired, preserve
+  the renamed static-reference retirement suite, and recreate no stale path.
+- **F1** — require tracked `package/package-manifest.json` to be
+  non-candidate/non-selected and temp-only `package/package.json` to be an
+  exact-byte npm-manifest candidate.
+- **S1** — preserve the Live same-run scan, embedded canonical Result, seven
+  typed errors, no-`--consumer-policy`, root-HK index, manual worktree,
+  sidecar, retirement, and generated-matrix tests.
+- **V1** — run all affected targets, the complete package test harness,
+  package build, Ruff check/format check, and owned-path diff check.
+- **Q1** — record baseline/pre/final counts and exact retirements, then run
+  `test-gap-analysis`, `assertion-quality`, and literal prompt-scenario review.
+
+### Baseline and pre-correction inventory
+
+| Test module | HEAD functions | Pre-correction functions | Research finding |
+|---|---:|---:|---|
+| `tests/release/test_eligibility.py` | 49 | 3 | Forty-six functions were removed despite production still owning almost all contracts. |
+| `tests/test_hk_trigger.py` | 32 | 4 | Git/ref, governed selection, locality, fixture, and legacy contracts were unrelated to parser retirement. |
+| `tests/ci/test_scenarios.py` | 17 | 4 | Complete-slice, failure, empty-lane, comparison, coexistence, and bootstrap scenarios remained valid. |
+| `tests/governance/test_commit10_attestation.py` | 5 | 4 | The disabled normal-Live binding test remained valid. |
+| `tests/ci/test_path_admission.py` | 4 | 4 | Count hid semantic replacement; three baseline locality/admission contracts remained adaptable. |
+
+### Exact baseline retirements justified by removed behavior
+
+Eligibility baseline tests whose only remaining subject was caller-supplied
+consumer-policy exception routing:
+
+- `test_live_admission_rejects_hash_consistent_exception_substitution`
+- `test_drifted_approved_exception_blocks_as_a_consumer`
+- `test_nonadmitted_approved_exception_must_be_a_consumer`
+
+Root-HK baseline tests whose only subject was the removed broad
+consumer-policy glob/step:
+
+- `test_real_hk_plan_triggers_consumer_policy_for_each_cataloged_surface`
+- `test_composite_action_manifest_selects_only_consumer_policy`
+- `test_dangling_catalog_symlink_selects_consumer_policy`
+- `test_real_hk_plan_triggers_consumer_policy_for_git_history`
+
+Scenario baseline test whose only subject was broad consumer scanning plus its
+exception inventory:
+
+- `test_ci_scenario_consumer_reference_blocks_except_acceptance_fixtures`
+
+Path-admission baseline test whose only subject was exhaustive parity with the
+deleted broad consumer-policy catalog:
+
+- `test_package_admission_has_exhaustive_consumer_policy_catalog_parity`
+
+Semantically retained consumer-named tests are to be renamed/adapted to the
+internally acquired exact-target bounded `static-reference` Result or the
+unconditional root-HK `--source-kind index` step rather than retired.
+
+### Fixture and preservation findings
+
+- `test_fixture_is_non_normative_and_production_manifest_is_exact` already
+  identified the renamed tracked source but did not prove exact temporary
+  materialization. Its oracle must compare bytes, exact selection
+  (`npm-manifest-v1`, `strict-utf8-file`), and absence of a tracked fixture
+  `package.json`.
+- Current modules to preserve include
+  `test_live_static_reference.py`, `test_static_reference.py`,
+  `test_static_reference_sidecars.py`,
+  `test_static_reference_retirement.py`, and
+  `test_static_reference_delivery.py`, together with current static-reference
+  tests in Eligibility, CLI, workflow, HK, scenario, planner, and Governance
+  modules.
+
+<!-- END APPEND: 2026-09-01-wdv3-over-contraction-correction-research -->

@@ -173,12 +173,6 @@ from three_workflow_delivery_v3.release import (
     validate_projection_observations,
 )
 from three_workflow_delivery_v3.platform.github import GitHubRestClient
-from three_workflow_delivery_v3.release.consumer_policy import (
-    CONSUMER_POLICY_ID,
-    ConsumerPolicyResult,
-    SurfaceDigest,
-    validate_consumer_policy_result,
-)
 from three_workflow_delivery_v3.release.eligibility import (
     LiveEligibilityContext,
     evaluate_live_eligibility,
@@ -3063,70 +3057,16 @@ def _release_compile_live_model_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def _consumer_policy_from_file(  # noqa: C901
-    path: str,
-) -> ConsumerPolicyResult:
-    try:
-        document = json.loads(Path(path).read_bytes())
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("Consumer policy result is unreadable") from error
-    if type(document) is not dict:
-        raise TypeError("Consumer policy result must be an object")
-    result_marker = document.pop("result", None)
-    if result_marker not in {None, "clean", "consumer"}:
-        raise ValueError("Consumer policy result marker is invalid")
-    if document.get("schema") != "workflow-delivery/v3/consumer-policy-result":
-        raise ValueError("Consumer policy result has the wrong schema")
-
-    def surfaces(name: str) -> tuple[SurfaceDigest, ...]:
-        value = document.get(name)
-        if type(value) is not list:
-            raise TypeError(f"Consumer policy {name} must be an array")
-        parsed: list[SurfaceDigest] = []
-        for item in value:
-            if (
-                type(item) is not dict
-                or type(item.get("path")) is not str
-                or type(item.get("content-digest")) is not str
-            ):
-                raise TypeError(f"Consumer policy {name} entry is malformed")
-            parsed.append(
-                SurfaceDigest(
-                    path=cast("str", item["path"]),
-                    content_digest=cast("str", item["content-digest"]),
-                )
-            )
-        return tuple(parsed)
-
-    consumers = document.get("consumers")
-    if type(consumers) is not list or any(
-        type(item) is not str for item in consumers
-    ):
-        raise TypeError("Consumer policy consumers must be strings")
-    result = ConsumerPolicyResult(
-        policy_id=cast("str", document.get("policy-id")),
-        policy_digest=cast("str", document.get("policy-digest")),
-        target=cast("str", document.get("target")),
-        scanned_surfaces=surfaces("scanned-surfaces"),
-        admitted_exceptions=surfaces("admitted-exceptions"),
-        consumers=tuple(cast("list[str]", consumers)),
-    )
-    if result.policy_id != CONSUMER_POLICY_ID:
-        raise ValueError("Consumer policy result is not the permanent policy")
-    validate_consumer_policy_result(result)
-    return result
-
-
 def _release_evaluate_live_eligibility_command(
     arguments: argparse.Namespace,
 ) -> int:
     intent = _load_live_intent(arguments)
     model = _load_live_model(arguments, intent)
+    repository_root = Path(arguments.repo_root).resolve()
     _descriptor, _quality, policy = load_first_slice_authoring(
-        Path(arguments.repo_root).resolve(),
+        repository_root,
         arguments.target,
     )
-    consumer_policy = _consumer_policy_from_file(arguments.consumer_policy)
     client = GitHubRestClient(
         repository=policy.governance.repository,
         token=arguments.github_token,
@@ -3147,9 +3087,9 @@ def _release_evaluate_live_eligibility_command(
     decision = evaluate_live_eligibility(
         context,
         model.snapshot,
-        consumer_policy,
         policy,
         client,
+        repository_root=repository_root,
         now=datetime.now(UTC),
     )
     _write_output(arguments.output, decision.to_document())
@@ -6119,7 +6059,6 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     evaluate_live = release_commands.add_parser("evaluate-live-eligibility")
     evaluate_live.add_argument("--repo-root", default=".")
     evaluate_live.add_argument("--github-token", required=True)
-    evaluate_live.add_argument("--consumer-policy", required=True)
     _add_current_release_arguments(evaluate_live)
     _add_uploaded_record_arguments(evaluate_live, name="intent")
     _add_uploaded_record_arguments(evaluate_live, name="repository_model")

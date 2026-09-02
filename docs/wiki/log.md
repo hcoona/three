@@ -3044,3 +3044,188 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   reviewers all reported no findings.
 - Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
   Environment, deployment, or other external state changed.
+
+## [2026-09-02] query | Deliver bounded static-reference implementation
+
+- Implemented the first disabled-contraction unit on
+  `workflow-delivery-v3-disabled-runtime-implementation` and delivered it
+  through protected PR #644. The unit is not part of `main` until required
+  human approval, protected merge, and exact reconciliation complete.
+- Added exact Git source acquisition, byte-preserving materialization, official
+  npm, pnpm, and NuGet authority graphs, canonical bounded Results, HK and CI
+  gates, normal-Live eligibility integration, and the required Hexo and fixture
+  migrations.
+- PR review retained one package-boundary finding: a recursive Hatch artifact
+  rule admitted an injected stale release module. The correction restricts
+  artifacts to the exact approved release modules and verifies exact wheel and
+  sdist membership from an isolated repository-shaped build.
+- Advanced the mandatory agent handoff from the completed design checkpoint to
+  the PR-local implementation checkpoint. The next agent must resolve any
+  branch conflict with current `main`, rerun affected and full validation, and
+  return the integrated head to review before waiting for human approval.
+- Preserved `live_enabled: false`; no approval, merge, Live dispatch,
+  Governance, Environment, deployment, package, tag, or other external
+  mutation occurred.
+
+## [2026-09-02] query | Integrate and revalidate static-reference delivery
+
+- Integrated `origin/main@0252343e` into the PR #644 branch through merge
+  commit `504f104b` without rewriting reviewed commits.
+- Resolved the three Workflow Delivery conflicts by retaining both the
+  incoming scholarly-publication admission and the bounded static-reference
+  gates while keeping the broad consumer-policy runtime retired.
+- Revalidated the 76-logical-path PR range. The complete Workflow Delivery v3
+  gate passed with 4,246 collected cases; Python 3.13 and 3.14 package-boundary
+  tests passed; and exact `git-target`, `index`, and `worktree` static-reference
+  scans were clean.
+- Independent package-boundary, integration, and handoff reviewers reported no
+  findings. The branch remains PR-local pending automatic checks, required
+  human approval, protected merge, and exact `main` reconciliation.
+- Preserved `live_enabled: false`; no approval, merge, Live dispatch,
+  Governance, Environment, deployment, package, tag, or other external
+  mutation occurred.
+
+## [2026-09-02] query | Close CodeQL permission-fixture alerts
+
+- The integrated-head CodeQL gate reported two high-severity annotations from
+  one test shim defaulting an `os.open` forwarding mode to world-writable
+  `0o777`.
+- Independent adjudication classified both annotations as production-security
+  false positives but protected-delivery true positives: production opens the
+  candidate read-only without creation, while the literal still violated the
+  repository's blocking code-scanning policy.
+- Commit `58432ac2` narrows only that unused default to owner-read/write
+  `0o600`. The permission-denial oracle and both forwarding branches remain
+  unchanged.
+- The focused three-case contract, Ruff/format checks, and file-scoped HK gate
+  passed; the latter ran all 4,246 Workflow Delivery v3 tests and a clean
+  canonical index scan. Independent post-fix review reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, Live dispatch,
+  Governance, Environment, deployment, package, tag, or other external
+  mutation occurred.
+
+## [2026-09-02] query | Preserve POSIX NuGet logical paths
+
+- A fresh Copilot review found that the private NuGet byte-stream authority
+  rejected every backslash even though repository logical paths use `/` as the
+  sole separator and preserve `\` as POSIX component data.
+- Independent adjudication retained the finding. Commit `be6caac9` removes only
+  that redundant rejection; native path mapping remains responsible for
+  failing closed where a component cannot be represented on the current host.
+- Built-process and Python boundary tests cover both NuGet families. Review
+  iterations additionally bound the exact unchanged `logicalPath` in the
+  serialized request actually sent to the prepared DLL.
+- .NET 10/MTP tests, focused path/authority scenarios, formatting, scoped
+  Pyrefly, authority preparation, and the canonical scan passed. The final HK
+  gate reported 4,248 passing Workflow Delivery v3 tests, and final independent
+  review reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
+  dispatch, Governance, Environment, deployment, package, tag, or other
+  external mutation occurred.
+
+## [2026-09-02] query | Stabilize acceptance deadline scenario
+
+- Remote Validate run `33586542242`, job `100111770507`, exposed one
+  scheduler-dependent test failure: the second correct remaining timeout was
+  `6.997` while the scenario expected two exact `7.0` calls.
+- Independent adjudication classified production behavior as a false positive
+  and the real-clock-dependent scenario as a true-positive test defect.
+  Production continues to use one monotonic deadline with decreasing remaining
+  budgets, as proved by the unchanged dedicated deadline tests.
+- Commit `00bbf205` freezes the adapter clock only around that scenario's
+  execution, preserves its existing signature and exact structural assertion,
+  and adds no tolerance, sleep, retry, or production change.
+- Focused scenarios, Ruff, formatting, scoped Pyrefly, and the affected-file HK
+  gate passed. HK ran all 4,248 Workflow Delivery v3 tests and a clean
+  canonical index scan; two independent reviewers reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
+  dispatch, Governance, Environment, deployment, package, tag, or other
+  external mutation occurred.
+
+## [2026-09-02] query | Isolate AzureAuth cleanup timing bounds
+
+- Fresh CI run `33588568251`, job `100118811307`, exposed one Windows .NET 10
+  process-test timeout; the other outcomes were 22 successful checks and two
+  expected skipped jobs. Main run `33577215032` independently exposed the same
+  one-second phase-bound defect in the adjacent cleanup test.
+- Independent adjudication classified production as a false positive and the
+  cleanup-test cluster as a true-positive timing defect. The one-second guards
+  incorrectly included real-process startup, timeout delivery, output
+  detection, or scheduler latency before cleanup began.
+- Commit `d8fd3a13` synchronizes all four tests using the existing fake cleanup
+  entry seam. A five-second liveness watchdog now covers reaching cleanup,
+  while the unchanged one-second post-entry guard continues to prove bounded
+  cleanup completion.
+- The process-runner class passed 40 tests, and the complete Platform test
+  project completed 1,604 tests: 1,602 passed and two expected platform skips.
+  Formatting, diff, and affected-file HK gates passed; two independent
+  reviewers reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
+  dispatch, Governance, Environment, deployment, package, tag, or other
+  external mutation occurred.
+
+## [2026-09-02] query | Require NuGet evidence in Live admission
+
+- Fresh Copilot review `5085603275` found that Live admission required the
+  three Node authority graphs but omitted the mandatory `nuget-lock-v1` graph.
+  A hash-consistent clean transport could therefore retain the complete Node
+  closure while deleting NuGet execution evidence.
+- Independent adjudication retained the finding as a high-confidence,
+  blocking true positive. A legitimate clean exact-target scan of this
+  repository necessarily selects the authority project's NuGet lock and emits
+  the three pinned NuGet implementation identities.
+- Commit `9c350fb4` adds only the NuGet graph to the explicit first-slice Live
+  closure, updates accepted Live fixtures, and adds the exact Node-only
+  transport rejection. General bounded Result validation, authority execution,
+  policy digest, and the already-correct LLD remain unchanged.
+- Focused admission, CLI, and Governance tests passed; production Pyrefly,
+  Ruff, formatting, diff, authority preparation, canonical scan, and the
+  complete Workflow Delivery v3 HK gate passed. The scoped suite contains
+  4,249 tests, and two independent reviewers reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
+  dispatch, Governance, Environment, deployment, package, tag, or other
+  external mutation occurred.
+
+## [2026-09-02] refactor | Contract preparation authority
+
+- Removed the ownerless static-reference preparation stamp. It recorded only
+  policy, lock, and runtime metadata and could not prove the identity of the
+  materialized Node or NuGet executable closure.
+- Retained the normative authority boundaries: checked-in lock and runtime
+  closure validation before and after locked preparation, official package
+  manager libraries and sidecars, actual loaded implementation identities, and
+  typed execution or mismatch failures.
+- Two independent reviews retained and closed two high-confidence HK findings.
+  Preparation is now an unconditional dependency for direct root-HK use, so a
+  docs-only path cannot filter it out. CI separately runs preparation once as
+  a global Node/NuGet tooling barrier, then passes
+  `--skip-step static-reference-authority-preparation` to both HK branches to
+  prevent duplicate work and avoid parallel root-Node-tool races.
+- Commit `8e980d78` changes the policy digest to
+  `sha256:c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d`.
+  Focused contracts, actionlint, HK configuration validation, a missing-artifact
+  barrier execution, canonical index and worktree scans, and the complete
+  affected HK gate passed. HK ran all 4,250 Workflow Delivery v3 tests, and two
+  final independent reviewers reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
+  dispatch, Governance, Environment, deployment, package, tag, or other
+  external mutation occurred.
+
+## [2026-09-02] merge | Reconcile latest main after merge authorization
+
+- The user explicitly authorized protected merge and continuation for PR #644.
+  The pre-merge guard then found that `origin/main` had advanced from
+  `0252343e` to `4a5c5622` through #645, so direct merge remained blocked until
+  the reviewed branch incorporated the new base.
+- Merge commit `3180f605` integrates the Microsoft APM `0.29.0`
+  `mise.toml`/`mise.lock` update without rewriting the reviewed PR history and
+  without conflicts.
+- Integrated-head HK passed the mise authority and publication gates, all
+  4,250 Workflow Delivery v3 tests, and a clean canonical index scan. The
+  canonical worktree scan was also clean with policy digest
+  `sha256:c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d`.
+  Two independent integrated-head reviewers reported no findings.
+- Protected merge remains bounded to the reviewed and automatically green PR
+  head. `live_enabled: false` is unchanged; the authorization does not extend
+  to PR review approval, manual rerun, Live dispatch, Governance, Environment,
+  deployment, package, tag, cleanup, or other external mutation.

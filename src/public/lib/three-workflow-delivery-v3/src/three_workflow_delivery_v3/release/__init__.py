@@ -1,17 +1,5 @@
 """Release-owned identity, planning, qualification, and eligibility APIs."""
 
-from three_workflow_delivery_v3.release.consumer_policy import (
-    APPROVED_CONSUMER_EXCEPTIONS,
-    CONSUMER_PACKAGE,
-    CONSUMER_POLICY_DIGEST,
-    CONSUMER_POLICY_ID,
-    DEPENDENCY_SURFACE_CATALOG,
-    ConsumerPolicyResult,
-    SurfaceDigest,
-    consumer_policy_document,
-    consumer_policy_parser_profile,
-    validate_consumer_policy_result,
-)
 from three_workflow_delivery_v3.release.eligibility import (
     LIVE_ELIGIBILITY_DECISION_SCHEMA,
     LIVE_ELIGIBILITY_PRODUCER,
@@ -93,6 +81,20 @@ from three_workflow_delivery_v3.release.simulation import (
     render_simulation_summary,
     simulation_observation_set_from_bytes,
 )
+from three_workflow_delivery_v3.release.static_reference_model import (
+    STATIC_REFERENCE_POLICY_ID,
+    STATIC_REFERENCE_RESULT_SCHEMA,
+    BoundedStaticReferenceResult,
+    StaticReferenceFinding,
+    parse_bounded_static_reference_result,
+)
+from three_workflow_delivery_v3.release.static_reference_policy import (
+    STATIC_REFERENCE_POLICY_DIGEST,
+    scan_bounded_static_references,
+    static_reference_authority_manifest,
+    static_reference_policy_document,
+    validate_bounded_static_reference_result,
+)
 from three_workflow_delivery_v3.release.workflow import (
     artifact_expectation,
     form_release_adapter_context,
@@ -112,14 +114,7 @@ __all__ = [  # noqa: RUF022
     "bind_reviewer_artifact",
     "artifact_expectation",
     "BUDDY_LIVE_WORKFLOW_PATH",
-    "APPROVED_CONSUMER_EXCEPTIONS",
-    "CONSUMER_PACKAGE",
-    "CONSUMER_POLICY_DIGEST",
-    "CONSUMER_POLICY_ID",
-    "ConsumerPolicyResult",
-    "consumer_policy_document",
-    "consumer_policy_parser_profile",
-    "DEPENDENCY_SURFACE_CATALOG",
+    "BoundedStaticReferenceResult",
     "derive_buddy_execution_identity",
     "derive_release_attempt_binding",
     "derive_simulation_binding",
@@ -169,6 +164,7 @@ __all__ = [  # noqa: RUF022
     "parse_governance_attestation",
     "plan_live_qualification",
     "plan_official_simulation_qualification",
+    "parse_bounded_static_reference_result",
     "PublicRevisionCheckout",
     "qualify_release_artifact_contents",
     "qualify_release_install_import",
@@ -181,9 +177,15 @@ __all__ = [  # noqa: RUF022
     "require_fresh_governance_identity",
     "runtime_request",
     "simulation_observation_set_from_bytes",
+    "scan_bounded_static_references",
     "SimulationObservationSet",
-    "SurfaceDigest",
-    "validate_consumer_policy_result",
+    "STATIC_REFERENCE_POLICY_DIGEST",
+    "STATIC_REFERENCE_POLICY_ID",
+    "STATIC_REFERENCE_RESULT_SCHEMA",
+    "static_reference_authority_manifest",
+    "StaticReferenceFinding",
+    "static_reference_policy_document",
+    "validate_bounded_static_reference_result",
     "validate_projection_observations",
     "WriterInventoryEntry",
 ]

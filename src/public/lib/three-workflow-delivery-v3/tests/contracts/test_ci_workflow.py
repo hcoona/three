@@ -397,7 +397,7 @@ def test_project_test_failure_is_carried_to_the_finalizer() -> None:
     assert "ci finalize" in final
 
 
-def test_root_hk_preserves_incremental_and_manual_consumer_gate_modes() -> None:
+def test_root_hk_preserves_incremental_and_full_index_modes() -> None:
     """Materialize admitted toolchain dependencies inside the HK boundary."""
     root = _document()["jobs"]["root-hk"]
     steps = _steps(root)
@@ -435,14 +435,9 @@ def test_root_hk_preserves_incremental_and_manual_consumer_gate_modes() -> None:
         < steps.index(execute)
     )
     assert execute["continue-on-error"] is True
-    assert (
-        command.count("--frozen-lockfile --ignore-scripts")
-        == FROZEN_INSTALL_COUNT
-    )
+    assert command.count("--frozen-lockfile --ignore-scripts") == 1
     verification = command.index("if toolchain[name] != os.environ[")
-    root_install = command.index(
-        "pnpm install --frozen-lockfile --ignore-scripts"
-    )
+    prepare = command.index("mise run prepare:static-reference-authorities")
     hexo_install = command.index(
         "pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site"
     )
@@ -452,10 +447,14 @@ def test_root_hk_preserves_incremental_and_manual_consumer_gate_modes() -> None:
         command.index('actual_node="$(node --version)"')
         < command.index('actual_pnpm="$(pnpm --version)"')
         < verification
-        < root_install
+        < prepare
         < hexo_install
         < incremental_hk
         < manual_hk
+    )
+    assert command.count("mise run prepare:static-reference-authorities") == 1
+    assert (
+        command.count("--skip-step static-reference-authority-preparation") == 2  # noqa: PLR2004
     )
     assert 'if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]' in command
     assert '--from-ref "${BASE_SHA}" --to-ref "${HEAD_SHA}"' in command
@@ -463,7 +462,14 @@ def test_root_hk_preserves_incremental_and_manual_consumer_gate_modes() -> None:
     assert upload["if"].startswith("always() &&")
     assert steps.index(execute) < steps.index(lane_result) < steps.index(upload)
     assert '["v3-control-pytest"]' in hk
-    assert '["hcoona-release-smoke-npm-consumer-policy"]' in hk
+    assert '["hcoona-release-smoke-npm-static-reference"]' in hk
+    assert (
+        hk.count('depends = List("static-reference-authority-preparation")')
+        == 2  # noqa: PLR2004
+    )
+    assert "--source-kind index" in hk
+    assert "--source-kind worktree" not in hk
+    assert "--consumer-policy" not in command
 
 
 def test_finalizer_detects_missing_lane_artifacts() -> None:

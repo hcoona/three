@@ -65,17 +65,6 @@
         "resolved": "7.9.0",
         "contentHash": "w2adPmgUafmW9ON1MzDjuHmViN0vtiPV48Dz3OE6px8BiGSqrnWHOjwFEPOEPAZx20J1c7bxp90Hxo9l4xGWtw=="
       },
-      "NuGet.Packaging": {
-        "type": "Transitive",
-        "resolved": "7.9.0",
-        "contentHash": "Q2jxuud5kJLV0rUzsC02iC5ts8QsQu9UVyMvF8lULY3TwHL/W/PrnQ9bQFvMR7jJkzF1uilRPI1o+7VOtc2XMg==",
-        "dependencies": {
-          "Newtonsoft.Json": "13.0.3",
-          "NuGet.Configuration": "7.9.0",
-          "NuGet.Versioning": "7.9.0",
-          "System.Security.Cryptography.Pkcs": "8.0.1"
-        }
-      },
       "NuGet.Versioning": {
         "type": "Transitive",
         "resolved": "7.9.0",
@@ -99,6 +88,18 @@
         "dependencies": {
           "Hcoona.AzureAuth.CredProvider.Contracts": "[1.0.0, )",
           "NuGet.Protocol": "[7.9.0, )"
+        }
+      },
+      "NuGet.Packaging": {
+        "type": "CentralTransitive",
+        "requested": "[7.9.0, )",
+        "resolved": "7.9.0",
+        "contentHash": "Q2jxuud5kJLV0rUzsC02iC5ts8QsQu9UVyMvF8lULY3TwHL/W/PrnQ9bQFvMR7jJkzF1uilRPI1o+7VOtc2XMg==",
+        "dependencies": {
+          "Newtonsoft.Json": "13.0.3",
+          "NuGet.Configuration": "7.9.0",
+          "NuGet.Versioning": "7.9.0",
+          "System.Security.Cryptography.Pkcs": "8.0.1"
         }
       },
       "NuGet.Protocol": {

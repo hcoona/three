@@ -19,13 +19,14 @@ This static page explains how the sample Hexo site consumes the renderer.
 == How it works
 
 . `package.json` points `hexo-renderer-asciidoc` to the parent package via a
-  local `link:` dependency.
+  local `file:` dependency.
 . From a clean checkout, first follow the exact build/install/generate sequence
-  in `examples/hexo-site/README.md` so the linked `dist/` files exist before
+  in `examples/hexo-site/README.md` so the generated `dist/` files exist before
   Hexo installs or generates the site.
-. Run `pnpm install` **inside `examples/hexo-site`** for later local-only
-  changes. The example intentionally stays out of the main pnpm workspace so it
-  can pin its own Hexo toolchain.
+. After rebuilding the parent renderer, run `pnpm install --frozen-lockfile`
+  **inside `examples/hexo-site`** before regenerating or restarting Hexo. The
+  example intentionally stays out of the main pnpm workspace so it can pin its
+  own Hexo toolchain.
 . Hexo discovers the renderer automatically, registers `.ad`, `.adoc`, and
   `.asciidoc` asynchronously, and awaits the renderer during normal async site
   generation.

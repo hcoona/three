@@ -562,6 +562,10 @@ public sealed class SystemProcessRunnerTests
             );
             cancellation.Cancel();
 
+            await cleanup.WaitEntered.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
+            );
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
                 await runTask.WaitAsync(
                     TimeSpan.FromSeconds(1),
@@ -588,20 +592,24 @@ public sealed class SystemProcessRunnerTests
         try
         {
             var helperNonce = ProcessTestApp.CreateHelperNonce();
-            ProcessResult result = await runner
-                .RunAsync(
-                    new ProcessStartSpec(
-                        ProcessTestApp.AppHostPath(),
-                        ProcessTestApp.CreateHelperArguments(
-                            helperNonce,
-                            "sleep"
-                        ),
-                        environment: ProcessTestApp.CreateHelperEnvironment(helperNonce),
-                        timeout: TimeSpan.FromMilliseconds(50)
-                    ),
-                    TestContext.Current.CancellationToken
-                )
-                .WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+            Task<ProcessResult> runTask = runner.RunAsync(
+                new ProcessStartSpec(
+                    ProcessTestApp.AppHostPath(),
+                    ProcessTestApp.CreateHelperArguments(helperNonce, "sleep"),
+                    environment: ProcessTestApp.CreateHelperEnvironment(helperNonce),
+                    timeout: TimeSpan.FromMilliseconds(50)
+                ),
+                TestContext.Current.CancellationToken
+            );
+
+            await cleanup.WaitEntered.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
+            );
+            ProcessResult result = await runTask.WaitAsync(
+                TimeSpan.FromSeconds(1),
+                TestContext.Current.CancellationToken
+            );
 
             Assert.Equal(ProcessExecutionStatus.TimedOut, result.Status);
             Assert.Equal(1, cleanup.KillAttempts);
@@ -637,7 +645,7 @@ public sealed class SystemProcessRunnerTests
             );
 
             await cleanup.WaitEntered.WaitAsync(
-                TimeSpan.FromSeconds(1),
+                TimeSpan.FromSeconds(5),
                 TestContext.Current.CancellationToken
             );
             cancellation.Cancel();
@@ -693,25 +701,32 @@ public sealed class SystemProcessRunnerTests
         try
         {
             var helperNonce = ProcessTestApp.CreateHelperNonce();
-            ProcessResult result = await runner
-                .RunAsync(
-                    new ProcessStartSpec(
-                        ProcessTestApp.AppHostPath(),
-                        ProcessTestApp.CreateHelperArguments(
-                            helperNonce,
-                            "stderr-then-sleep"
-                        ),
-                        environment: ProcessTestApp.CreateHelperEnvironment(helperNonce),
-                        timeout: TimeSpan.FromSeconds(30),
-                        outputCaptureOptions: new ProcessOutputCaptureOptions
-                        {
-                            StandardOutputByteLimit = 16,
-                            StandardErrorByteLimit = 1,
-                        }
+            Task<ProcessResult> runTask = runner.RunAsync(
+                new ProcessStartSpec(
+                    ProcessTestApp.AppHostPath(),
+                    ProcessTestApp.CreateHelperArguments(
+                        helperNonce,
+                        "stderr-then-sleep"
                     ),
-                    TestContext.Current.CancellationToken
-                )
-                .WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+                    environment: ProcessTestApp.CreateHelperEnvironment(helperNonce),
+                    timeout: TimeSpan.FromSeconds(30),
+                    outputCaptureOptions: new ProcessOutputCaptureOptions
+                    {
+                        StandardOutputByteLimit = 16,
+                        StandardErrorByteLimit = 1,
+                    }
+                ),
+                TestContext.Current.CancellationToken
+            );
+
+            await cleanup.WaitEntered.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
+            );
+            ProcessResult result = await runTask.WaitAsync(
+                TimeSpan.FromSeconds(1),
+                TestContext.Current.CancellationToken
+            );
 
             Assert.Equal(ProcessExecutionStatus.OutputTooLarge, result.Status);
             Assert.Equal("d", result.StandardError);

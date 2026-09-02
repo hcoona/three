@@ -1199,9 +1199,6 @@ def test_project_registers_only_the_bounded_cli() -> None:
     assert set(pyproject["project"]["dependencies"]) == {
         "PyYAML>=6.0.2",
         "rfc8785>=0.1.4",
-        "tree-sitter==0.25.2",
-        "tree-sitter-javascript==0.25.0",
-        "tree-sitter-typescript==0.23.2",
     }
 
 
@@ -3459,3 +3456,244 @@ def test_compile_live_model_execution_concurrency_key_changes_with_target(
     ] == list(targets)
     assert captured.out == ""
     assert captured.err == ""
+
+
+def _live_eligibility_cli_arguments() -> list[str]:
+    return [
+        "release",
+        "evaluate-live-eligibility",
+        "--github-token",
+        "test-token",
+        "--workflow-run-id",
+        "8101",
+        "--run-attempt",
+        "3",
+        "--target",
+        "e" * 40,
+        "--intent",
+        "intent.json",
+        "--intent-digest",
+        "sha256:" + ("1" * 64),
+        "--intent-artifact-id",
+        "101",
+        "--intent-artifact-digest",
+        "sha256:" + ("2" * 64),
+        "--repository-model",
+        "repository-model.json",
+        "--repository-model-digest",
+        "sha256:" + ("3" * 64),
+        "--repository-model-artifact-id",
+        "202",
+        "--repository-model-artifact-digest",
+        "sha256:" + ("4" * 64),
+        "--output",
+        "live-eligibility.json",
+    ]
+
+
+def test_live_eligibility_cli_omits_consumer_policy_input() -> None:
+    """Expose only evaluator-owned static-reference acquisition."""
+    arguments = cli_module._parser().parse_args(  # noqa: SLF001
+        _live_eligibility_cli_arguments()
+    )
+
+    assert (
+        arguments.handler
+        is cli_module._release_evaluate_live_eligibility_command  # noqa: SLF001
+    )
+    assert arguments.target == "e" * 40
+    assert arguments.repo_root == "."
+    assert not hasattr(arguments, "consumer_policy")
+
+
+def test_live_eligibility_cli_rejects_consumer_policy_option(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reject the removed caller-supplied consumer-policy route."""
+    with pytest.raises(SystemExit) as error:
+        cli_module._parser().parse_args(  # noqa: SLF001
+            [
+                *_live_eligibility_cli_arguments(),
+                "--consumer-policy",
+                "obsolete.json",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    assert error.value.code == ARGPARSE_ERROR
+    assert captured.out == ""
+    assert "unrecognized arguments: --consumer-policy obsolete.json" in (
+        captured.err
+    )
+
+
+def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Forward one resolved root and current lineage without policy input."""
+    target = "e" * 40
+    repository_argument = tmp_path / "alias" / ".." / "repository"
+    resolved_repository_root = repository_argument.resolve()
+    output_path = tmp_path / "live-eligibility.json"
+    github_output_path = tmp_path / "github-output.txt"
+    github_token = f"token-{target[:8]}"
+    arguments = Namespace(
+        repo_root=str(repository_argument),
+        github_token=github_token,
+        workflow_run_id=WORKFLOW_RUN_ID,
+        run_attempt=3,
+        target=target,
+        output=str(output_path),
+        github_output=str(github_output_path),
+    )
+    intent = SimpleNamespace(
+        request_id="release-request-live-root-forwarding",
+        selected_ref="refs/heads/release",
+    )
+    control = f"workflow-delivery-v3:{target}"
+    snapshot = SimpleNamespace(context=SimpleNamespace(control=control))
+    model_digest = "sha256:" + ("3" * 64)
+    model = SimpleNamespace(
+        canonical_digest=model_digest,
+        snapshot=snapshot,
+    )
+    policy = SimpleNamespace(
+        governance=SimpleNamespace(repository="owner/repository")
+    )
+    client = object()
+    policy_digest = "sha256:" + ("5" * 64)
+    static_catalog_digest = "sha256:" + ("6" * 64)
+    decision_digest = "sha256:" + ("7" * 64)
+    observed_at = datetime(2026, 9, 1, 10, 24, 3, tzinfo=UTC)
+    decision_document: dict[str, JsonValue] = {
+        "schema": "workflow-delivery/v3/live-eligibility-decision",
+        "result": "pass",
+        "diagnostics": [],
+    }
+    decision = SimpleNamespace(
+        result="pass",
+        decision_digest=decision_digest,
+        to_document=lambda: decision_document,
+    )
+    calls = SimpleNamespace(
+        intent=[],
+        model=[],
+        authoring=[],
+        client=[],
+        policy_digest=[],
+        catalog_digest=[],
+        timezone=[],
+        evaluation=[],
+        writes=[],
+        outputs=[],
+    )
+
+    def evaluate(  # noqa: PLR0913
+        context: object,
+        actual_snapshot: object,
+        actual_policy: object,
+        actual_client: object,
+        *,
+        repository_root: Path,
+        now: datetime,
+    ) -> object:
+        calls.evaluation.append(
+            (
+                context,
+                actual_snapshot,
+                actual_policy,
+                actual_client,
+                repository_root,
+                now,
+            )
+        )
+        return decision
+
+    patches = {
+        "_load_live_intent": lambda value: calls.intent.append(value) or intent,
+        "_load_live_model": lambda value, current_intent: (
+            calls.model.append((value, current_intent)) or model
+        ),
+        "load_first_slice_authoring": lambda root, requested_target: (
+            calls.authoring.append((root, requested_target))
+            or (object(), object(), policy)
+        ),
+        "GitHubRestClient": lambda *, repository, token: (
+            calls.client.append((repository, token)) or client
+        ),
+        "release_policy_digest": lambda value: (
+            calls.policy_digest.append(value) or policy_digest
+        ),
+        "catalog_digest": lambda: (
+            calls.catalog_digest.append(None) or static_catalog_digest
+        ),
+        "evaluate_live_eligibility": evaluate,
+        "_write_output": lambda path, document: calls.writes.append(
+            (path, document)
+        ),
+        "_record_outputs": (
+            lambda path, *, role, digest, extra: calls.outputs.append(
+                (path, role, digest, extra)
+            )
+        ),
+    }
+    for name, replacement in patches.items():
+        monkeypatch.setattr(cli_module, name, replacement)
+    monkeypatch.setattr(
+        cli_module,
+        "datetime",
+        SimpleNamespace(
+            now=lambda timezone: calls.timezone.append(timezone) or observed_at
+        ),
+    )
+
+    result = cli_module._release_evaluate_live_eligibility_command(  # noqa: SLF001
+        arguments
+    )
+
+    expected_context = cli_module.LiveEligibilityContext(
+        purpose="live-release",
+        request_id="release-request-live-root-forwarding",
+        workflow_run_id=WORKFLOW_RUN_ID,
+        run_attempt=3,
+        selected_ref="refs/heads/release",
+        target=target,
+        repository_model_digest=model_digest,
+        producer="evaluate-live-eligibility",
+        control=control,
+        release_policy_digest=policy_digest,
+        catalog_digest=static_catalog_digest,
+    )
+    assert result == 0
+    assert arguments.repo_root != "."
+    assert not hasattr(arguments, "consumer_policy")
+    assert calls.intent == [arguments]
+    assert calls.model == [(arguments, intent)]
+    assert calls.authoring == [(resolved_repository_root, target)]
+    assert calls.evaluation == [
+        (
+            expected_context,
+            snapshot,
+            policy,
+            client,
+            resolved_repository_root,
+            observed_at,
+        )
+    ]
+    assert calls.evaluation[0][4] is calls.authoring[0][0]
+    assert calls.client == [("owner/repository", github_token)]
+    assert calls.policy_digest == [policy]
+    assert calls.catalog_digest == [None]
+    assert calls.timezone == [UTC]
+    assert calls.writes == [(str(output_path), decision_document)]
+    assert calls.outputs == [
+        (
+            str(github_output_path),
+            "live-eligibility",
+            decision_digest,
+            (("live-result", "admitted"),),
+        )
+    ]
+    assert not output_path.exists()
+    assert not github_output_path.exists()

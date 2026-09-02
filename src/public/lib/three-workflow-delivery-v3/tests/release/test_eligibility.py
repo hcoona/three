@@ -1,12 +1,13 @@
-"""Scenarios for fixed-source Governance and live eligibility."""
+"""Current public-shape contracts for Live Eligibility."""
 
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import subprocess
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -19,41 +20,41 @@ from three_workflow_delivery_v3.canonical import (
     parse_canonical_json,
 )
 from three_workflow_delivery_v3.catalogs import catalog_digest
-from three_workflow_delivery_v3.release.consumer_policy import (
-    APPROVED_EXCEPTION_SURFACES,
-    CONSUMER_POLICY_DIGEST,
-)
+from three_workflow_delivery_v3.release import eligibility
 from three_workflow_delivery_v3.release.eligibility import (
-    CONSUMER_POLICY_ID,
-    LIVE_ELIGIBILITY_PRODUCER,
-    ConsumerPolicyResult,
+    AdmittedLiveEligibilityDecision,
     EligibilityResult,
     GovernanceBlob,
     LiveEligibilityAdmissionMode,
     LiveEligibilityContext,
     LiveEligibilityDecision,
-    SurfaceDigest,
     admit_live_eligibility_decision,
     evaluate_live_eligibility,
     observe_governance_source,
     parse_governance_attestation,
     release_policy_digest,
 )
+from three_workflow_delivery_v3.release.static_reference_model import (
+    STATIC_REFERENCE_ERROR_KINDS,
+    STATIC_REFERENCE_POLICY_ID,
+    BoundedStaticReferenceResult,
+    StaticReferenceFinding,
+    parse_bounded_static_reference_result,
+)
+from three_workflow_delivery_v3.release.static_reference_policy import (
+    STATIC_REFERENCE_POLICY_DIGEST,
+)
 from three_workflow_delivery_v3.repository.compiler import (
     CompilationContext,
-    CompiledBuild,
-    CompiledOutput,
-    CompiledQualitySelection,
-    CompiledReleaseUnit,
     FactBundleAdmissionContext,
     RepositoryModelSnapshot,
     admit_node_provider_fact_bundle,
-    compile_release_policy,
     compile_repository_model,
     first_slice_provider_manifest,
     provider_binding,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
+    FIRST_SLICE_PACKAGE,
     FIRST_SLICE_POLICY_PATH,
     FIRST_SLICE_RELEASE_UNIT,
     GOVERNANCE_PATH,
@@ -84,6 +85,58 @@ if TYPE_CHECKING:
     )
     from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
 
+
+def test_live_eligibility_api_owns_static_reference_input() -> None:
+    """Accept the repository root, not a caller-formed policy Result."""
+    parameters = inspect.signature(evaluate_live_eligibility).parameters
+
+    assert tuple(parameters) == (
+        "context",
+        "snapshot",
+        "policy",
+        "client",
+        "repository_root",
+        "now",
+    )
+    assert parameters["repository_root"].kind is (
+        inspect.Parameter.KEYWORD_ONLY
+    )
+    assert parameters["now"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert "consumer_policy" not in parameters
+
+
+def test_live_eligibility_decision_names_static_reference_evidence() -> None:
+    """Make the bounded Result a first-class immutable Decision field."""
+    assert tuple(field.name for field in fields(LiveEligibilityDecision)) == (
+        "context",
+        "static_reference",
+        "governance",
+        "result",
+        "diagnostics",
+    )
+    assert tuple(
+        field.name for field in fields(AdmittedLiveEligibilityDecision)
+    ) == (
+        "context",
+        "static_reference",
+        "governance",
+        "result",
+        "diagnostics",
+        "canonical_digest",
+        "canonical_bytes",
+    )
+
+
+def test_live_eligibility_runtime_has_no_consumer_policy_symbols() -> None:
+    """Do not retain a hidden compatibility shim in the evaluator module."""
+    module = inspect.getmodule(evaluate_live_eligibility)
+
+    assert module is not None
+    assert not hasattr(module, "ConsumerPolicyResult")
+    assert not hasattr(module, "CONSUMER_POLICY_ID")
+    assert not hasattr(module, "validate_consumer_policy_result")
+
+
 REPO_ROOT = Path(__file__).resolve().parents[6]
 PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "release"
@@ -91,18 +144,36 @@ TARGET = "e" * 40
 GOVERNANCE_COMMIT = "f" * 40
 GOVERNANCE_BLOB = "b" * 40
 NOW = datetime(2026, 8, 6, 12, 0, 0, tzinfo=UTC)
-SURFACE_PACKAGE = "src/public/lib/hcoona-release-smoke-npm/package.json"
-SURFACE_LOCK = "pnpm-lock.yaml"
 WORKFLOW_RUN_ID = 7101
 RUN_ATTEMPT = 3
 PREFIXED_SHA256_LENGTH = 71
 FRESH_SOURCE_CALL_COUNT = 3
+EXPECTED_STATIC_REFERENCE_ERROR_KINDS = (
+    "source-acquisition-failed",
+    "encoding-rejected",
+    "authority-rejected",
+    "authority-execution-failed",
+    "unsupported-projection",
+    "authority-mismatch",
+    "cleanup-failed",
+)
+LIVE_STATIC_REFERENCE_IMPLEMENTATIONS = (
+    "@npmcli/package-json@8.0.0",
+    "@pnpm/deps.path@1101.0.1",
+    "@pnpm/lockfile.fs@1100.2.5",
+    "@pnpm/lockfile.utils@1102.1.0",
+    "@pnpm/resolving.npm-resolver@1104.1.0",
+    "@pnpm/workspace.spec-parser@1100.0.1",
+    "@pnpm/workspace.workspace-manifest-reader@1100.1.8",
+    "NuGet.Packaging@7.9.0",
+    "NuGet.ProjectModel@7.9.0",
+    "dotnet-runtime@10.0.8",
+    "node@24.19.0",
+    "npm-package-arg@14.0.0",
+)
 
 type SnapshotMutation = Callable[
     [RepositoryModelSnapshot], RepositoryModelSnapshot
-]
-type ConsumerPolicyMutation = Callable[
-    [ConsumerPolicyResult], ConsumerPolicyResult
 ]
 type LiveContextMutation = Callable[
     [LiveEligibilityContext], LiveEligibilityContext
@@ -112,6 +183,7 @@ type CompilationContextMutation = Callable[
 ]
 type GovernanceSourceMutation = Callable[[GovernanceSource], GovernanceSource]
 type DecisionMutation = Callable[[dict[str, JsonValue]], None]
+type StaticReferenceDocumentMutation = Callable[[dict[str, JsonValue]], None]
 
 
 def _policy() -> ReleasePolicy:
@@ -187,113 +259,6 @@ def _target_authoring_repo(tmp_path: Path) -> tuple[Path, str]:
     return repo, _commit_all(repo)
 
 
-def _attestation_document(**updates: JsonValue) -> dict[str, JsonValue]:
-    document = parse_canonical_json(
-        (FIXTURES / "governance-disabled.json").read_bytes()
-    )
-    document.update(updates)
-    return document
-
-
-def _attestation_content(**updates: JsonValue) -> bytes:
-    return canonicalize(_attestation_document(**updates))
-
-
-def _snapshot(  # noqa: PLR0913
-    *,
-    purpose: str = "live-release",
-    request_id: str = "release-request-42",
-    workflow_run_id: int = WORKFLOW_RUN_ID,
-    run_attempt: int = RUN_ATTEMPT,
-    target: str = TARGET,
-    control: str | None = None,
-) -> RepositoryModelSnapshot:
-    context = CompilationContext(
-        request_id=request_id,
-        purpose=purpose,
-        workflow_run_id=workflow_run_id,
-        run_attempt=run_attempt,
-        target=target,
-        producer="compile-model",
-        control=control or f"workflow-delivery-v3:{target}",
-        catalog_digest=catalog_digest(),
-        channel="official" if purpose == "release-simulation" else None,
-        release_unit=(
-            "hcoona-release-smoke-npm"
-            if purpose == "release-simulation"
-            else None
-        ),
-    )
-    return RepositoryModelSnapshot(
-        context=context,
-        manifest_digest="sha256:" + ("1" * 64),
-        provider_result_digests=("sha256:" + ("2" * 64),),
-        project_nodes=(
-            ProjectNode(
-                project_id="@hcoona/hcoona-release-smoke-npm",
-                package_name="@hcoona/hcoona-release-smoke-npm",
-                path=PRODUCT_PATH,
-                manifest_path=f"{PRODUCT_PATH}/package.json",
-                private=False,
-                workspace_dependencies=(),
-            ),
-        ),
-        release_units=(
-            CompiledReleaseUnit(
-                release_unit=FIRST_SLICE_RELEASE_UNIT,
-                descriptor_path=(
-                    f"{PRODUCT_PATH}/workflow-delivery.release-unit.yml"
-                ),
-                builds=(
-                    CompiledBuild(
-                        build_id="npm-package",
-                        definition="node/npm-package-v1",
-                        project_id="@hcoona/hcoona-release-smoke-npm",
-                        entry_point=f"{PRODUCT_PATH}/package.json",
-                        outputs=(
-                            CompiledOutput(
-                                output_id="npm-tarball",
-                                role="primary-package",
-                                kind="npm-tarball",
-                            ),
-                        ),
-                        required_native_projections=("npmPackageVersion",),
-                    ),
-                ),
-            ),
-        ),
-        quality=(
-            CompiledQualitySelection(
-                path=f"{PRODUCT_PATH}/workflow-delivery.quality.yml",
-                ecosystem="node",
-                preset="node/hcoona-release-smoke-npm-v1",
-                required=("node/project-build-v1", "node/project-test-v1"),
-                advisory=(),
-            ),
-        ),
-        release_policy_path=FIRST_SLICE_POLICY_PATH,
-        release_policy=compile_release_policy(_policy()),
-        nbgv=NbgvFacts(
-            canonical_version="1.2.3",
-            sem_ver1="1.2.3-beta-0042-e123456",
-            sem_ver2="1.2.3-beta.42.ge123456",
-            version_height=42,
-            git_commit_id=target,
-            public_release=False,
-            npm_package_version="1.2.3-beta.42.ge123456",
-            node_api_result_digest="sha256:" + ("3" * 64),
-        ),
-        reverse_index=(
-            (
-                "@hcoona/hcoona-release-smoke-npm",
-                (f"{FIRST_SLICE_RELEASE_UNIT}/npm-package",),
-            ),
-        ),
-        unresolved=(),
-        ready=True,
-    )
-
-
 def _compiled_snapshot(tmp_path: Path) -> RepositoryModelSnapshot:
     repo, target = _target_authoring_repo(tmp_path)
     context = CompilationContext(
@@ -311,7 +276,7 @@ def _compiled_snapshot(tmp_path: Path) -> RepositoryModelSnapshot:
         provider_producer="discover-node",
     )
     manifest_content = subprocess.run(  # noqa: S603
-        ("git", "show", f"{target}:{PRODUCT_PATH}/package.json"),
+        ("git", "show", f"{target}:{PRODUCT_PATH}/package.json"),  # noqa: S607
         cwd=repo,
         check=True,
         capture_output=True,
@@ -323,14 +288,14 @@ def _compiled_snapshot(tmp_path: Path) -> RepositoryModelSnapshot:
                 "sha256:"
                 + hashlib.sha256(
                     subprocess.run(  # noqa: S603
-                        ("git", "show", f"{target}:{path}"),
+                        ("git", "show", f"{target}:{path}"),  # noqa: S607
                         cwd=repo,
                         check=True,
                         capture_output=True,
                     ).stdout
                 ).hexdigest()
             ),
-            project_ids=("@hcoona/hcoona-release-smoke-npm",),
+            project_ids=(FIRST_SLICE_PACKAGE,),
         )
         for path in (
             "package.json",
@@ -371,12 +336,10 @@ def _compiled_snapshot(tmp_path: Path) -> RepositoryModelSnapshot:
         ),
         project_nodes=(
             ProjectNode(
-                project_id="@hcoona/hcoona-release-smoke-npm",
-                package_name="@hcoona/hcoona-release-smoke-npm",
-                path="src/public/lib/hcoona-release-smoke-npm",
-                manifest_path=(
-                    "src/public/lib/hcoona-release-smoke-npm/package.json"
-                ),
+                project_id=FIRST_SLICE_PACKAGE,
+                package_name=FIRST_SLICE_PACKAGE,
+                path=PRODUCT_PATH,
+                manifest_path=f"{PRODUCT_PATH}/package.json",
                 private=False,
                 workspace_dependencies=(),
             ),
@@ -422,44 +385,72 @@ def _compiled_snapshot(tmp_path: Path) -> RepositoryModelSnapshot:
     return compile_repository_model(repo, context, manifest, [admitted])
 
 
-def _consumer_policy(
+def _attestation_document(**updates: JsonValue) -> dict[str, JsonValue]:
+    document = parse_canonical_json(
+        (FIXTURES / "governance-disabled.json").read_bytes()
+    )
+    document.update(updates)
+    return document
+
+
+def _attestation_content(**updates: JsonValue) -> bytes:
+    return canonicalize(_attestation_document(**updates))
+
+
+def _static_reference(
     *,
     target: str = TARGET,
-    consumers: tuple[str, ...] = (),
-    admitted_exceptions: tuple[SurfaceDigest, ...] | None = None,
-) -> ConsumerPolicyResult:
-    surfaces = tuple(
-        sorted(
-            (
-                *APPROVED_EXCEPTION_SURFACES,
-                SurfaceDigest(SURFACE_LOCK, "sha256:" + ("c" * 64)),
-            ),
-            key=lambda item: item.path,
-        )
-    )
-    exceptions = admitted_exceptions
-    if exceptions is None:
-        exceptions = APPROVED_EXCEPTION_SURFACES
-    return ConsumerPolicyResult(
-        policy_id=CONSUMER_POLICY_ID,
-        policy_digest=CONSUMER_POLICY_DIGEST,
+    findings: tuple[StaticReferenceFinding, ...] = (),
+    error_kind: str | None = None,
+    policy_digest: str = STATIC_REFERENCE_POLICY_DIGEST,
+    implementation_identities: tuple[str, ...] | None = None,
+) -> BoundedStaticReferenceResult:
+    return BoundedStaticReferenceResult(
+        source_kind="git-target",
         target=target,
-        scanned_surfaces=surfaces,
-        admitted_exceptions=exceptions,
-        consumers=consumers,
+        policy_id=STATIC_REFERENCE_POLICY_ID,
+        policy_digest=policy_digest,
+        implementation_identities=(
+            implementation_identities
+            if implementation_identities is not None
+            else (
+                LIVE_STATIC_REFERENCE_IMPLEMENTATIONS
+                if error_kind is None
+                else ()
+            )
+        ),
+        findings=findings,
+        error_kind=error_kind,
+    )
+
+
+def _finding(
+    *,
+    path: str = "src/public/app/consumer/package.json",
+    prohibited_form: str = "D",
+) -> StaticReferenceFinding:
+    return StaticReferenceFinding(
+        path=path,
+        family="npm-manifest",
+        context="dependencies",
+        prohibited_form=prohibited_form,
+        matched_identity=FIRST_SLICE_PACKAGE,
+        location=f"dependencies.{FIRST_SLICE_PACKAGE}",
     )
 
 
 def _context(
     snapshot: RepositoryModelSnapshot,
     policy: ReleasePolicy,
+    *,
+    selected_ref: str = "refs/heads/feature/workflow-delivery-v3",
 ) -> LiveEligibilityContext:
     return LiveEligibilityContext(
         purpose="live-release",
         request_id=snapshot.context.request_id,
         workflow_run_id=snapshot.context.workflow_run_id,
         run_attempt=snapshot.context.run_attempt,
-        selected_ref="refs/heads/feature/workflow-delivery-v3",
+        selected_ref=selected_ref,
         target=snapshot.context.target,
         repository_model_digest=snapshot.snapshot_digest,
         producer="evaluate-live-eligibility",
@@ -626,6 +617,7 @@ class RecordingGovernanceClient:
         self.blob_oid = GOVERNANCE_BLOB
         self.failure: str | None = None
         self.calls: list[tuple[str, ...]] = []
+        self.scan_calls: list[tuple[Path, str, str]] = []
 
     def is_ref_protected(self, repository: str, ref: str) -> bool:
         """Record and answer the fresh protection query."""
@@ -658,25 +650,43 @@ class RecordingGovernanceClient:
 
 
 def _evaluate(  # noqa: PLR0913
+    monkeypatch: pytest.MonkeyPatch,
     client: RecordingGovernanceClient,
     *,
-    snapshot: RepositoryModelSnapshot | None = None,
-    consumer_policy: ConsumerPolicyResult | None = None,
+    snapshot: RepositoryModelSnapshot,
+    policy: ReleasePolicy,
+    static_reference: BoundedStaticReferenceResult | None = None,
+    context: LiveEligibilityContext | None = None,
     context_mutation: LiveContextMutation | None = None,
-    policy: ReleasePolicy | None = None,
     now: datetime = NOW,
-):
-    selected_snapshot = snapshot or _snapshot()
-    selected_policy = policy or _policy()
-    context = _context(selected_snapshot, selected_policy)
+) -> LiveEligibilityDecision:
+    selected_context = context or _context(snapshot, policy)
     if context_mutation is not None:
-        context = context_mutation(context)
+        selected_context = context_mutation(selected_context)
+    selected_result = static_reference or _static_reference(
+        target=selected_context.target
+    )
+
+    def scan(
+        repository_root: Path,
+        *,
+        source_kind: str,
+        target: str,
+    ) -> BoundedStaticReferenceResult:
+        client.scan_calls.append((repository_root, source_kind, target))
+        return selected_result
+
+    monkeypatch.setattr(
+        eligibility,
+        "scan_bounded_static_references",
+        scan,
+    )
     return evaluate_live_eligibility(
-        context,
-        selected_snapshot,
-        consumer_policy or _consumer_policy(),
-        selected_policy,
+        selected_context,
+        snapshot,
+        policy,
         client,
+        repository_root=REPO_ROOT,
         now=now,
     )
 
@@ -699,7 +709,7 @@ def _transport_decision(
         repository_model_digest=(
             live_admitted_repository_model.canonical_digest
         ),
-        producer=LIVE_ELIGIBILITY_PRODUCER,
+        producer="evaluate-live-eligibility",
         control=model.context.control,
         release_policy_digest=release_policy_digest(policy),
         catalog_digest=catalog_digest(),
@@ -708,14 +718,15 @@ def _transport_decision(
     if issuer is not None:
         updates["issuer"] = issuer
     client = RecordingGovernanceClient(_attestation_content(**updates))
-    return evaluate_live_eligibility(
-        context,
-        model,
-        _consumer_policy(target=live_intent.target),
-        policy,
-        client,
-        now=NOW,
-    )
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        return _evaluate(
+            monkeypatch,
+            client,
+            snapshot=model,
+            policy=policy,
+            static_reference=_static_reference(target=live_intent.target),
+            context=context,
+        )
 
 
 def _set_decision_path(
@@ -733,21 +744,16 @@ def _set_decision_path(
     selected[path[-1]] = value
 
 
-def _consumer_decision_document(
-    result: ConsumerPolicyResult,
-) -> dict[str, JsonValue]:
-    document = result.to_document()
-    del document["schema"]
-    document["result-digest"] = result.result_digest
-    return document
-
-
-def _make_consumer_positive(
+def _make_static_reference_finding(
     document: dict[str, JsonValue],
 ) -> None:
-    document["consumer-policy"] = _consumer_decision_document(
-        _consumer_policy(consumers=(SURFACE_LOCK,))
-    )
+    context = _object_member(document, "context")
+    target = context["target"]
+    assert isinstance(target, str)
+    document["static-reference"] = _static_reference(
+        target=target,
+        findings=(_finding(),),
+    ).to_document()
 
 
 def _make_blocked_with_diagnostic(
@@ -767,7 +773,7 @@ def _admit_mutated_decision(  # noqa: PLR0913
         LiveEligibilityAdmissionMode.CURRENT_FRESHNESS
     ),
     now: datetime = NOW,
-):
+) -> AdmittedLiveEligibilityDecision:
     content = canonicalize(document)
     return admit_live_eligibility_decision(
         content,
@@ -806,14 +812,13 @@ def test_evaluator_output_round_trips_through_strict_live_admission(
     assert admitted.to_document() == decision.to_document()
     assert admitted.canonical_bytes == content
     assert admitted.decision_digest == decision.decision_digest
-    assert admitted.consumer_policy.result_digest == (
-        decision.consumer_policy.result_digest
+    assert admitted.static_reference.result_digest == (
+        decision.static_reference.result_digest
     )
+    assert admitted.static_reference.source_kind == "git-target"
+    assert admitted.static_reference.target == live_intent.target
     assert admitted.governance.provenance == (
-        (
-            "blob-oid",
-            GOVERNANCE_BLOB,
-        ),
+        ("blob-oid", GOVERNANCE_BLOB),
         (
             "content-sha256",
             decision.governance.content_sha256,
@@ -977,10 +982,10 @@ def test_admission_rejects_observation_at_original_expiry_in_every_mode(
             id="lineage",
         ),
         pytest.param(
-            ("consumer-policy", "policy-id"),
+            ("static-reference", "policy-id"),
             "other-policy",
-            "static first-slice policy",
-            id="consumer-policy",
+            "policy ID is not current",
+            id="static-reference-policy",
         ),
         pytest.param(
             ("governance", "repository"),
@@ -990,7 +995,7 @@ def test_admission_rejects_observation_at_original_expiry_in_every_mode(
         ),
     ],
 )
-def test_capability_replay_rejects_representative_semantic_substitutions(  # noqa: PLR0913
+def test_capability_replay_rejects_representative_semantic_substitutions(  # noqa: PLR0913, PLR0917
     path: tuple[str, ...],
     value: JsonValue,
     message: str,
@@ -1136,22 +1141,22 @@ def test_live_admission_rejects_each_current_lineage_mutation(
     ("path", "value", "message"),
     [
         pytest.param(
-            ("consumer-policy", "result-digest"),
-            "sha256:" + ("0" * 64),
-            "consumer-policy result digest mismatch",
-            id="consumer-result-digest",
+            ("static-reference", "target"),
+            "d" * 40,
+            "static-reference target mismatch",
+            id="static-reference-target",
         ),
         pytest.param(
-            ("consumer-policy", "policy-id"),
+            ("static-reference", "policy-id"),
             "other-policy",
-            "static first-slice policy",
-            id="consumer-policy-id",
+            "policy ID is not current",
+            id="static-reference-policy-id",
         ),
         pytest.param(
-            ("consumer-policy", "policy-digest"),
+            ("static-reference", "policy-digest"),
             "sha256:" + ("0" * 64),
-            "current canonical policy",
-            id="consumer-policy-digest",
+            "policy is not current",
+            id="static-reference-policy-digest",
         ),
         pytest.param(
             ("governance", "repository"),
@@ -1227,7 +1232,7 @@ def test_live_admission_rejects_each_current_lineage_mutation(
         ),
     ],
 )
-def test_live_admission_rejects_consumer_and_governance_mutations(  # noqa: PLR0913
+def test_live_admission_rejects_static_reference_and_governance_mutations(  # noqa: PLR0913, PLR0917
     path: tuple[str, ...],
     value: JsonValue,
     message: str,
@@ -1235,7 +1240,7 @@ def test_live_admission_rejects_consumer_and_governance_mutations(  # noqa: PLR0
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
-    """Reject reconstructed consumer and complete Governance substitutions."""
+    """Reject bounded static-reference and Governance substitutions."""
     document = _transport_decision(
         live_intent,
         live_admitted_repository_model,
@@ -1256,9 +1261,9 @@ def test_live_admission_rejects_consumer_and_governance_mutations(  # noqa: PLR0
     ("mutation", "message"),
     [
         pytest.param(
-            _make_consumer_positive,
+            _make_static_reference_finding,
             "not a closed passing decision",
-            id="passing-consumer",
+            id="passing-with-static-reference-finding",
         ),
         pytest.param(
             _make_blocked_with_diagnostic,
@@ -1267,14 +1272,14 @@ def test_live_admission_rejects_consumer_and_governance_mutations(  # noqa: PLR0
         ),
     ],
 )
-def test_live_admission_requires_a_diagnostic_free_consumer_free_pass(
+def test_live_admission_requires_a_diagnostic_free_static_reference_clean_pass(
     mutation: DecisionMutation,
     message: str,
     live_intent: ReleaseIntent,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
-    """Require pass, no diagnostics, and no reconstructed consumers together."""
+    """Require pass, no diagnostics, and clean exact-target evidence."""
     document = _transport_decision(
         live_intent,
         live_admitted_repository_model,
@@ -1296,20 +1301,16 @@ def test_live_admission_rejects_hash_consistent_wrong_policy_digest(
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
-    """Reject a valid but obsolete policy digest through every hash layer."""
+    """Reject an obsolete static-reference policy through every hash layer."""
     document = _transport_decision(
         live_intent,
         live_admitted_repository_model,
         policy,
     ).to_document()
-    document["consumer-policy"] = _consumer_decision_document(
-        replace(
-            _consumer_policy(target=live_intent.target),
-            policy_digest="sha256:" + ("0" * 64),
-        )
-    )
+    static_reference = _object_member(document, "static-reference")
+    static_reference["policy-digest"] = "sha256:" + ("0" * 64)
 
-    with pytest.raises(ValueError, match="current canonical policy"):
+    with pytest.raises(ValueError, match="policy is not current"):
         _admit_mutated_decision(
             document,
             live_intent=live_intent,
@@ -1318,40 +1319,52 @@ def test_live_admission_rejects_hash_consistent_wrong_policy_digest(
         )
 
 
-def test_live_admission_rejects_hash_consistent_exception_substitution(
+@pytest.mark.parametrize(
+    "implementation_identities",
+    [
+        pytest.param((), id="empty"),
+        pytest.param(
+            (
+                "NuGet.Packaging@7.9.0",
+                "NuGet.ProjectModel@7.9.0",
+                "dotnet-runtime@10.0.8",
+            ),
+            id="nuget-only",
+        ),
+        pytest.param(
+            (
+                "@npmcli/package-json@8.0.0",
+                "@pnpm/deps.path@1101.0.1",
+                "@pnpm/lockfile.fs@1100.2.5",
+                "@pnpm/lockfile.utils@1102.1.0",
+                "@pnpm/resolving.npm-resolver@1104.1.0",
+                "@pnpm/workspace.spec-parser@1100.0.1",
+                "@pnpm/workspace.workspace-manifest-reader@1100.1.8",
+                "node@24.19.0",
+                "npm-package-arg@14.0.0",
+            ),
+            id="node-only",
+        ),
+    ],
+)
+def test_live_admission_requires_mandatory_authority_implementations(
+    implementation_identities: tuple[str, ...],
     live_intent: ReleaseIntent,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
-    """Reject paired exception/surface substitution through every hash layer."""
-    result = _consumer_policy(target=live_intent.target)
-    selected = result.admitted_exceptions[0]
-    substituted = SurfaceDigest(
-        selected.path,
-        "sha256:" + ("0" * 64),
-    )
-    exceptions = tuple(
-        substituted if item.path == selected.path else item
-        for item in result.admitted_exceptions
-    )
-    surfaces = tuple(
-        substituted if item.path == selected.path else item
-        for item in result.scanned_surfaces
-    )
+    """Reject a hash-consistent pass without every mandatory Live graph."""
     document = _transport_decision(
         live_intent,
         live_admitted_repository_model,
         policy,
     ).to_document()
-    document["consumer-policy"] = _consumer_decision_document(
-        replace(
-            result,
-            admitted_exceptions=exceptions,
-            scanned_surfaces=surfaces,
-        )
+    static_reference = _object_member(document, "static-reference")
+    static_reference["implementation-identities"] = list(
+        implementation_identities
     )
 
-    with pytest.raises(ValueError, match="exact approved exception"):
+    with pytest.raises(ValueError, match="implementations are incomplete"):
         _admit_mutated_decision(
             document,
             live_intent=live_intent,
@@ -1376,10 +1389,10 @@ def test_live_admission_rejects_hash_consistent_exception_substitution(
             id="numeric-target",
         ),
         pytest.param(
-            ("consumer-policy", "consumers"),
-            "@hcoona/hcoona-release-smoke-npm",
+            ("static-reference", "findings"),
+            FIRST_SLICE_PACKAGE,
             "must be an array",
-            id="scalar-consumers",
+            id="scalar-findings",
         ),
         pytest.param(
             ("governance", "max-age-days"),
@@ -1401,7 +1414,7 @@ def test_live_admission_rejects_hash_consistent_exception_substitution(
         ),
     ],
 )
-def test_live_admission_rejects_malformed_primitives(  # noqa: PLR0913
+def test_live_admission_rejects_malformed_primitives(  # noqa: PLR0913, PLR0917
     path: tuple[str, ...],
     value: JsonValue,
     message: str,
@@ -1427,52 +1440,71 @@ def test_live_admission_rejects_malformed_primitives(  # noqa: PLR0913
 
 
 @pytest.mark.parametrize(
-    ("container", "member", "operation"),
+    ("container", "member", "operation", "message"),
     [
-        pytest.param((), "context", "missing", id="missing-top-level"),
-        pytest.param((), "unexpected", "unknown", id="unknown-top-level"),
+        pytest.param(
+            (),
+            "context",
+            "missing",
+            "missing required field",
+            id="missing-top-level",
+        ),
+        pytest.param(
+            (),
+            "unexpected",
+            "unknown",
+            "unknown field",
+            id="unknown-top-level",
+        ),
         pytest.param(
             ("context",),
             "request-id",
             "missing",
+            "missing required field",
             id="missing-context",
         ),
         pytest.param(
             ("context",),
             "unexpected",
             "unknown",
+            "unknown field",
             id="unknown-context",
         ),
         pytest.param(
-            ("consumer-policy",),
-            "result-digest",
+            ("static-reference",),
+            "policy-digest",
             "missing",
-            id="missing-consumer",
+            "Result fields are not exact",
+            id="missing-static-reference",
         ),
         pytest.param(
-            ("consumer-policy",),
+            ("static-reference",),
             "unexpected",
             "unknown",
-            id="unknown-consumer",
+            "Result fields are not exact",
+            id="unknown-static-reference",
         ),
         pytest.param(
             ("governance",),
             "attestation-content-digest",
             "missing",
+            "missing required field",
             id="missing-governance",
         ),
         pytest.param(
             ("governance",),
             "unexpected",
             "unknown",
+            "unknown field",
             id="unknown-governance",
         ),
     ],
 )
-def test_live_admission_closes_every_nested_schema(  # noqa: PLR0913
+def test_live_admission_closes_every_nested_schema(  # noqa: PLR0913, PLR0917
     container: tuple[str, ...],
     member: str,
     operation: str,
+    message: str,
     live_intent: ReleaseIntent,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
@@ -1487,15 +1519,15 @@ def test_live_admission_closes_every_nested_schema(  # noqa: PLR0913
     for name in container:
         child = selected[name]
         if not isinstance(child, dict):
-            message = f"{name} is not an object"
-            raise TypeError(message)
+            error = f"{name} is not an object"
+            raise TypeError(error)
         selected = child
     if operation == "missing":
         del selected[member]
     else:
         selected[member] = "unexpected"
 
-    with pytest.raises(ValueError, match=f"{operation} .*field"):
+    with pytest.raises(ValueError, match=message):
         _admit_mutated_decision(
             document,
             live_intent=live_intent,
@@ -1521,22 +1553,35 @@ def test_live_admission_rejects_minimal_pass_payload(
         )
 
 
-def test_live_eligibility_passes_with_fresh_exact_target_inputs() -> None:
+def test_live_eligibility_passes_with_fresh_exact_target_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
     """Pass only current exact-target inputs and a fresh enabled attestation."""
+    snapshot = live_admitted_repository_model.snapshot
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
-    decision = _evaluate(client)
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=snapshot,
+        policy=policy,
+    )
 
     assert decision.result is EligibilityResult.PASS
     assert decision.diagnostics == ()
     assert decision.context.purpose == "live-release"
-    assert decision.context.request_id == "release-request-42"
-    assert decision.context.workflow_run_id == WORKFLOW_RUN_ID
-    assert decision.context.run_attempt == RUN_ATTEMPT
+    assert decision.context.request_id == snapshot.context.request_id
+    assert decision.context.workflow_run_id == snapshot.context.workflow_run_id
+    assert decision.context.run_attempt == snapshot.context.run_attempt
     assert decision.context.target == TARGET
-    assert decision.consumer_policy.target == TARGET
+    assert decision.static_reference.source_kind == "git-target"
+    assert decision.static_reference.target == TARGET
+    assert decision.static_reference.result == "clean"
     assert decision.governance.attestation.live_enabled is True
     assert decision.decision_digest.startswith("sha256:")
+    assert client.scan_calls == [(REPO_ROOT, "git-target", TARGET)]
     assert client.calls == [
         ("protected", GOVERNANCE_REPOSITORY, GOVERNANCE_REF),
         ("resolve", GOVERNANCE_REPOSITORY, GOVERNANCE_REF),
@@ -1550,20 +1595,27 @@ def test_live_eligibility_passes_with_fresh_exact_target_inputs() -> None:
 
 
 def test_live_eligibility_accepts_an_actual_compiled_repository_model(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     """Bind the Decision to the compiler's complete first-slice Snapshot."""
     snapshot = _compiled_snapshot(tmp_path)
+    policy = _policy()
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
     decision = _evaluate(
+        monkeypatch,
         client,
         snapshot=snapshot,
-        consumer_policy=_consumer_policy(target=snapshot.context.target),
+        policy=policy,
     )
 
     assert decision.result is EligibilityResult.PASS
     assert decision.context.repository_model_digest == snapshot.snapshot_digest
+    assert decision.static_reference.target == snapshot.context.target
+    assert client.scan_calls == [
+        (REPO_ROOT, "git-target", snapshot.context.target)
+    ]
     assert snapshot.release_units[0].release_unit == (
         "hcoona-release-smoke-npm"
     )
@@ -1571,7 +1623,7 @@ def test_live_eligibility_accepts_an_actual_compiled_repository_model(
         "npm-tarball"
     )
     context = _object_member(decision.to_document(), "context")
-    assert context["repository-model-digest"] == (snapshot.snapshot_digest)
+    assert context["repository-model-digest"] == snapshot.snapshot_digest
 
 
 @pytest.mark.parametrize(
@@ -1583,33 +1635,31 @@ def test_live_eligibility_accepts_an_actual_compiled_repository_model(
     ids=["channel-set", "release-unit-set"],
 )
 def test_live_eligibility_rejects_live_snapshot_with_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
     context_mutation: CompilationContextMutation,
     field_name: str,
 ) -> None:
     """Reject live Repository Model contexts carrying simulation selection."""
-    base_snapshot = _snapshot()
+    base_snapshot = live_admitted_repository_model.snapshot
     snapshot = replace(
         base_snapshot,
         context=context_mutation(base_snapshot.context),
     )
-    policy = _policy()
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
-    with pytest.raises(
-        ValueError,
-        match="simulation selection",
-    ):
-        evaluate_live_eligibility(
-            _context(snapshot, policy),
-            snapshot,
-            _consumer_policy(),
-            policy,
+    with pytest.raises(ValueError, match="simulation selection"):
+        _evaluate(
+            monkeypatch,
             client,
-            now=NOW,
+            snapshot=snapshot,
+            policy=policy,
         )
 
     assert getattr(snapshot.context, field_name) is not None
     assert snapshot.context.purpose == "live-release"
+    assert client.scan_calls == []
     assert client.calls == []
 
 
@@ -1674,36 +1724,47 @@ def test_live_eligibility_rejects_live_snapshot_with_selection(
     ],
 )
 def test_eligibility_rejects_incomplete_or_substituted_repository_model_closure(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
     mutate: SnapshotMutation,
     message: str,
 ) -> None:
     """Reject self-consistent Snapshots without first-slice closure."""
-    snapshot = mutate(_snapshot())
-    policy = _policy()
+    snapshot = mutate(live_admitted_repository_model.snapshot)
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
     with pytest.raises(ValueError, match=message):
-        evaluate_live_eligibility(
-            _context(snapshot, policy),
-            snapshot,
-            _consumer_policy(),
-            policy,
+        _evaluate(
+            monkeypatch,
             client,
-            now=NOW,
+            snapshot=snapshot,
+            policy=policy,
         )
 
+    assert client.scan_calls == []
     assert client.calls == []
 
 
-def test_decision_binds_attestation_provenance_and_content_digest() -> None:
-    """Bind fixed source, commit, blob, canonical content, and observation."""
+def test_decision_binds_attestation_provenance_and_content_digest(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Bind source, static evidence, content, and current observation."""
+    snapshot = live_admitted_repository_model.snapshot
     content = _attestation_content(live_enabled=True)
     client = RecordingGovernanceClient(content)
 
-    decision = _evaluate(client)
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=snapshot,
+        policy=policy,
+    )
     document = decision.to_document()
     governance = _object_member(document, "governance")
-    consumer_policy = _object_member(document, "consumer-policy")
+    static_reference = _object_member(document, "static-reference")
     context = _object_member(document, "context")
 
     assert governance == {
@@ -1728,22 +1789,38 @@ def test_decision_binds_attestation_provenance_and_content_digest() -> None:
     )
     assert decision.governance.content_sha256.startswith("sha256:")
     assert len(decision.governance.content_sha256) == PREFIXED_SHA256_LENGTH
-    assert consumer_policy["result-digest"] == (
-        decision.consumer_policy.result_digest
-    )
+    assert static_reference == decision.static_reference.to_document()
+    assert static_reference["policy-digest"] == (STATIC_REFERENCE_POLICY_DIGEST)
+    assert static_reference["target"] == snapshot.context.target
+    assert decision.static_reference.result_digest.startswith("sha256:")
     assert context["repository-model-digest"] == (
         decision.context.repository_model_digest
     )
 
 
-def test_each_evaluation_performs_a_fresh_protected_ref_read() -> None:
+def test_each_evaluation_performs_a_fresh_protected_ref_read(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
     """Do not reuse an earlier enabled observation after source disablement."""
+    snapshot = live_admitted_repository_model.snapshot
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
-    first = _evaluate(client)
+    first = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=snapshot,
+        policy=policy,
+    )
     client.content = _attestation_content(live_enabled=False)
     client.blob_oid = "c" * 40
-    second = _evaluate(client)
+    second = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=snapshot,
+        policy=policy,
+    )
 
     assert first.result is EligibilityResult.PASS
     assert second.result is EligibilityResult.BLOCKED
@@ -1751,6 +1828,10 @@ def test_each_evaluation_performs_a_fresh_protected_ref_read() -> None:
     assert first.governance.content_sha256 != second.governance.content_sha256
     assert first.governance.blob_oid == GOVERNANCE_BLOB
     assert second.governance.blob_oid == "c" * 40
+    assert client.scan_calls == [
+        (REPO_ROOT, "git-target", TARGET),
+        (REPO_ROOT, "git-target", TARGET),
+    ]
     assert [call[0] for call in client.calls] == [
         "protected",
         "resolve",
@@ -1761,13 +1842,22 @@ def test_each_evaluation_performs_a_fresh_protected_ref_read() -> None:
     ]
 
 
-def test_disabled_attestation_blocks_before_attempt_creation() -> None:
+def test_disabled_attestation_blocks_before_attempt_creation(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
     """Return a blocking pre-Attempt Decision for live_enabled false."""
     client = RecordingGovernanceClient(
         (FIXTURES / "governance-disabled.json").read_bytes()
     )
 
-    decision = _evaluate(client)
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=live_admitted_repository_model.snapshot,
+        policy=policy,
+    )
     document = decision.to_document()
 
     assert decision.result is EligibilityResult.BLOCKED
@@ -1775,12 +1865,19 @@ def test_disabled_attestation_blocks_before_attempt_creation() -> None:
     assert document["result"] == "blocked"
     governance = _object_member(document, "governance")
     assert governance["live-enabled"] is False
+    assert document["static-reference"] == (
+        decision.static_reference.to_document()
+    )
     assert "attempt" not in document
     assert "release-execution" not in document
     assert "authorization" not in document
 
 
-def test_expired_attestation_blocks_before_attempt_creation() -> None:
+def test_expired_attestation_blocks_before_attempt_creation(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
     """Block a structurally valid attestation after its current expiry."""
     client = RecordingGovernanceClient(
         _attestation_content(
@@ -1790,12 +1887,18 @@ def test_expired_attestation_blocks_before_attempt_creation() -> None:
         )
     )
 
-    decision = _evaluate(client)
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=live_admitted_repository_model.snapshot,
+        policy=policy,
+    )
 
     assert decision.result is EligibilityResult.BLOCKED
     assert decision.diagnostics == ("governance-attestation-expired",)
     assert decision.governance.attestation.live_enabled is True
     assert decision.governance.attestation.expires_at < NOW
+    assert client.scan_calls == [(REPO_ROOT, "git-target", TARGET)]
 
 
 @pytest.mark.parametrize(
@@ -1814,7 +1917,10 @@ def test_expired_attestation_blocks_before_attempt_creation() -> None:
     ],
     ids=["future-inspection", "exact-expiry"],
 )
-def test_attestation_time_boundaries_block_live_eligibility(
+def test_attestation_time_boundaries_block_live_eligibility(  # noqa: PLR0913, PLR0917
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
     inspected_at: str,
     expires_at: str,
     diagnostic: str,
@@ -1828,246 +1934,259 @@ def test_attestation_time_boundaries_block_live_eligibility(
         )
     )
 
-    decision = _evaluate(client)
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=live_admitted_repository_model.snapshot,
+        policy=policy,
+    )
 
     assert decision.result is EligibilityResult.BLOCKED
     assert decision.diagnostics == (diagnostic,)
+    assert decision.static_reference.result == "clean"
 
 
-def test_consumer_positive_result_blocks_before_attempt_creation() -> None:
-    """Block any normal consumer reported by the target-bound policy."""
-    consumer_path = "src/public/app/consumer/package.json"
-    policy_result = _consumer_policy(consumers=(consumer_path,))
-    policy_result = replace(
-        policy_result,
-        scanned_surfaces=tuple(
-            sorted(
-                (
-                    *policy_result.scanned_surfaces,
-                    SurfaceDigest(
-                        consumer_path,
-                        "sha256:" + ("9" * 64),
-                    ),
-                ),
-                key=lambda item: item.path,
+@pytest.mark.parametrize(
+    ("static_reference", "diagnostic"),
+    [
+        pytest.param(
+            _static_reference(findings=(_finding(),)),
+            "static-reference-findings",
+            id="findings",
+        ),
+        *[
+            pytest.param(
+                _static_reference(error_kind=error_kind),
+                f"static-reference-{error_kind}",
+                id=error_kind,
             )
-        ),
-    )
+            for error_kind in EXPECTED_STATIC_REFERENCE_ERROR_KINDS
+        ],
+    ],
+)
+def test_static_reference_findings_and_errors_block_before_attempt_creation(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+    static_reference: BoundedStaticReferenceResult,
+    diagnostic: str,
+) -> None:
+    """Block every non-clean internally scanned static-reference Result."""
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
-    decision = _evaluate(client, consumer_policy=policy_result)
-
-    assert decision.result is EligibilityResult.BLOCKED
-    assert decision.diagnostics == ("consumer-policy-found-consumers",)
-    assert decision.consumer_policy.consumers == (consumer_path,)
-    consumer_policy = _object_member(
-        decision.to_document(),
-        "consumer-policy",
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=live_admitted_repository_model.snapshot,
+        policy=policy,
+        static_reference=static_reference,
     )
-    assert consumer_policy["consumers"] == [consumer_path]
+    document = decision.to_document()
+    evidence = _object_member(document, "static-reference")
+
+    assert STATIC_REFERENCE_ERROR_KINDS == (
+        EXPECTED_STATIC_REFERENCE_ERROR_KINDS
+    )
+    assert decision.result is EligibilityResult.BLOCKED
+    assert decision.diagnostics == (diagnostic,)
+    assert evidence == static_reference.to_document()
+    assert evidence["target"] == TARGET
+    assert document["diagnostics"] == [diagnostic]
+    assert document["result"] == "blocked"
     assert decision.governance.attestation.live_enabled is True
+    assert client.scan_calls == [(REPO_ROOT, "git-target", TARGET)]
+    assert len(client.calls) == FRESH_SOURCE_CALL_COUNT
 
 
-def test_drifted_approved_exception_blocks_as_a_consumer() -> None:
-    """Admit only exact exceptions and report a changed surface as consumer."""
-    original = _consumer_policy()
-    selected = original.admitted_exceptions[0]
-    drifted = SurfaceDigest(
-        selected.path,
-        "sha256:" + ("f" * 64),
-    )
-    policy_result = replace(
-        original,
-        scanned_surfaces=tuple(
-            drifted if item.path == selected.path else item
-            for item in original.scanned_surfaces
-        ),
-        admitted_exceptions=original.admitted_exceptions[1:],
-        consumers=(selected.path,),
-    )
-    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
-
-    decision = _evaluate(client, consumer_policy=policy_result)
-
-    assert decision.result is EligibilityResult.BLOCKED
-    assert decision.diagnostics == ("consumer-policy-found-consumers",)
-    assert decision.consumer_policy == policy_result
+def _replace_static_reference_target(
+    document: dict[str, JsonValue],
+) -> None:
+    static_reference = _object_member(document, "static-reference")
+    static_reference["target"] = "d" * 40
 
 
-def test_nonadmitted_approved_exception_must_be_a_consumer() -> None:
-    """Reject a result that silently drops one reviewed exception surface."""
-    original = _consumer_policy()
-    policy_result = replace(
-        original,
-        admitted_exceptions=original.admitted_exceptions[1:],
-    )
-    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
+def _replace_static_reference_policy_digest(
+    document: dict[str, JsonValue],
+) -> None:
+    static_reference = _object_member(document, "static-reference")
+    static_reference["policy-digest"] = "sha256:" + ("0" * 64)
 
-    with pytest.raises(
-        ValueError,
-        match="non-admitted approved exceptions must be consumers",
-    ):
-        _evaluate(client, consumer_policy=policy_result)
+
+def _replace_static_reference_with_index(
+    document: dict[str, JsonValue],
+) -> None:
+    static_reference = _object_member(document, "static-reference")
+    static_reference["source-kind"] = "index"
+    del static_reference["target"]
 
 
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
-        (
-            lambda result: replace(result, target="d" * 40),
-            "target does not match",
+        pytest.param(
+            _replace_static_reference_target,
+            "static-reference target mismatch",
+            id="target",
         ),
-        (
-            lambda result: replace(
-                result,
-                admitted_exceptions=(
-                    SurfaceDigest(
-                        SURFACE_PACKAGE,
-                        "sha256:" + ("f" * 64),
-                    ),
-                ),
-            ),
-            "exact approved exception",
+        pytest.param(
+            _replace_static_reference_policy_digest,
+            "policy is not current",
+            id="policy-digest",
         ),
-        (
-            lambda result: replace(
-                result,
-                admitted_exceptions=(
-                    SurfaceDigest(
-                        "src/public/app/unreviewed/package.json",
-                        "sha256:" + ("a" * 64),
-                    ),
-                ),
-            ),
-            "exact approved exception",
-        ),
-        (
-            lambda result: replace(
-                result,
-                scanned_surfaces=tuple(reversed(result.scanned_surfaces)),
-            ),
-            "sorted by path",
+        pytest.param(
+            _replace_static_reference_with_index,
+            "static-reference target mismatch",
+            id="source-kind",
         ),
     ],
-    ids=["target", "exception-digest", "exception-path", "surface-order"],
 )
-def test_consumer_policy_requires_exact_target_and_digest_bound_surfaces(
-    mutate: ConsumerPolicyMutation,
+def test_static_reference_requires_exact_target_and_digest_bound_evidence(
+    mutate: DecisionMutation,
     message: str,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
 ) -> None:
-    """Reject target mismatch and unreviewed or non-digest exceptions."""
-    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
-    policy_result = mutate(_consumer_policy())
+    """Reject wrong-source, wrong-target, and obsolete-policy evidence."""
+    decision = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    )
+    document = decision.to_document()
+    original_result_digest = decision.static_reference.result_digest
+    mutate(document)
 
     with pytest.raises(ValueError, match=message):
-        _evaluate(client, consumer_policy=policy_result)
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+        )
+
+    assert original_result_digest.startswith("sha256:")
+    assert len(original_result_digest) == PREFIXED_SHA256_LENGTH
+
+
+def _add_static_reference_unknown(
+    document: dict[str, JsonValue],
+) -> None:
+    document["unexpected"] = "value"
+
+
+def _shorten_static_reference_target(
+    document: dict[str, JsonValue],
+) -> None:
+    document["target"] = "e" * 39
+
+
+def _malform_static_reference_policy_digest(
+    document: dict[str, JsonValue],
+) -> None:
+    document["policy-digest"] = "0" * 64
+
+
+def _scalar_static_reference_findings(
+    document: dict[str, JsonValue],
+) -> None:
+    document["findings"] = FIRST_SLICE_PACKAGE
+
+
+def _duplicate_static_reference_findings(
+    document: dict[str, JsonValue],
+) -> None:
+    finding = _finding().to_document()
+    document["result"] = "findings"
+    document["findings"] = [finding, finding]
+
+
+def _drop_static_reference_error_kind(
+    document: dict[str, JsonValue],
+) -> None:
+    document["result"] = "error"
 
 
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
-        (
-            lambda result: replace(result, policy_id="target/policy"),
-            "ID is not the static",
+        pytest.param(
+            _add_static_reference_unknown,
+            "Result fields are not exact",
+            id="unknown-field",
         ),
-        (
-            lambda result: replace(result, policy_digest="d" * 64),
+        pytest.param(
+            _shorten_static_reference_target,
+            "full lowercase target",
+            id="target-shape",
+        ),
+        pytest.param(
+            _malform_static_reference_policy_digest,
             "digest must be SHA-256",
+            id="policy-digest-shape",
         ),
-        (
-            lambda result: replace(
-                result,
-                policy_digest="sha256:" + ("0" * 64),
-            ),
-            "current canonical policy",
+        pytest.param(
+            _scalar_static_reference_findings,
+            "must be an array",
+            id="scalar-findings",
         ),
-        (
-            lambda result: replace(result, target="e" * 39),
-            "target must be a full commit SHA",
+        pytest.param(
+            _duplicate_static_reference_findings,
+            "sorted and unique",
+            id="duplicate-findings",
         ),
-        (
-            lambda result: replace(result, scanned_surfaces=()),
-            "scanned_surfaces must be nonempty",
+        pytest.param(
+            _drop_static_reference_error_kind,
+            "Result fields are not exact",
+            id="error-without-kind",
         ),
-        (
-            lambda result: replace(
-                result,
-                scanned_surfaces=(
-                    result.scanned_surfaces[0],
-                    result.scanned_surfaces[0],
-                ),
-            ),
-            "duplicate path",
-        ),
-        (
-            lambda result: replace(
-                result,
-                consumers=(SURFACE_PACKAGE, SURFACE_LOCK),
-            ),
-            "consumers must be sorted",
-        ),
-        (
-            lambda result: replace(
-                result,
-                consumers=(SURFACE_PACKAGE, SURFACE_PACKAGE),
-            ),
-            "consumers contain duplicates",
-        ),
-        (
-            lambda result: replace(
-                result,
-                consumers=("src/public/lib/unscanned/package.json",),
-            ),
-            "was not in scanned surfaces",
-        ),
-    ],
-    ids=[
-        "policy-id",
-        "policy-digest",
-        "valid-wrong-policy-digest",
-        "target-shape",
-        "empty-surfaces",
-        "duplicate-surface",
-        "consumer-order",
-        "duplicate-consumer",
-        "unscanned-consumer",
     ],
 )
-def test_consumer_policy_input_is_closed_and_deterministic(
-    mutate: ConsumerPolicyMutation,
+def test_static_reference_result_is_closed_and_deterministic(
+    mutate: StaticReferenceDocumentMutation,
     message: str,
 ) -> None:
-    """Reject unbound, ambiguous, or nondeterministic scanner results."""
-    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
-    policy_result = mutate(_consumer_policy())
+    """Reject ambiguous or nondeterministic bounded scanner Results."""
+    result = _static_reference()
+    canonical_bytes = canonicalize(result.to_document())
+    parsed = parse_bounded_static_reference_result(canonical_bytes)
+    document = result.to_document()
+    mutate(document)
 
-    with pytest.raises(ValueError, match=message):
-        _evaluate(client, consumer_policy=policy_result)
+    assert parsed == result
+    assert parsed.to_document() == result.to_document()
+    assert parsed.result_digest == result.result_digest
+    with pytest.raises((TypeError, ValueError), match=message):
+        parse_bounded_static_reference_result(canonicalize(document))
 
-    assert client.calls == []
 
-
-def test_eligibility_rejects_prior_attempt_repository_model() -> None:
-    """Reject a prior-attempt Snapshot before reading Governance."""
-    current_snapshot = _snapshot(run_attempt=4)
-    prior_snapshot = _snapshot(run_attempt=3)
-    policy = _policy()
-    context = _context(current_snapshot, policy)
+def test_eligibility_rejects_prior_attempt_repository_model(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject a prior-attempt Snapshot before scanning or Governance."""
+    current_snapshot = live_admitted_repository_model.snapshot
+    prior_snapshot = replace(
+        current_snapshot,
+        context=replace(current_snapshot.context, run_attempt=2),
+    )
+    current_context = _context(current_snapshot, policy)
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
     with pytest.raises(
         ValueError,
         match="Repository Model is not exact and ready",
     ):
-        evaluate_live_eligibility(
-            context,
-            prior_snapshot,
-            _consumer_policy(),
-            policy,
+        _evaluate(
+            monkeypatch,
             client,
-            now=NOW,
+            snapshot=prior_snapshot,
+            policy=policy,
+            context=current_context,
         )
 
+    assert client.scan_calls == []
     assert client.calls == []
 
 
@@ -2119,18 +2238,25 @@ def test_eligibility_rejects_prior_attempt_repository_model() -> None:
     ],
 )
 def test_eligibility_rejects_wrong_current_binding(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
     context_mutation: LiveContextMutation,
     message: str,
 ) -> None:
-    """Reject each wrong current authority before the fresh source read."""
+    """Reject each wrong current authority before any fresh external read."""
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
     with pytest.raises(ValueError, match=message):
         _evaluate(
+            monkeypatch,
             client,
+            snapshot=live_admitted_repository_model.snapshot,
+            policy=policy,
             context_mutation=context_mutation,
         )
 
+    assert client.scan_calls == []
     assert client.calls == []
 
 
@@ -2146,11 +2272,13 @@ def test_eligibility_rejects_wrong_current_binding(
     ids=["repository", "ref", "path", "age-lower", "age-upper"],
 )
 def test_fixed_governance_source_rejects_repository_ref_path_or_age_change(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
     source_mutation: GovernanceSourceMutation,
 ) -> None:
-    """Reject any source variation before invoking the client."""
-    policy = _policy()
-    policy = replace(
+    """Reject any source variation before scanning or invoking the client."""
+    mutated_policy = replace(
         policy,
         governance=source_mutation(policy.governance),
     )
@@ -2160,8 +2288,14 @@ def test_fixed_governance_source_rejects_repository_ref_path_or_age_change(
         ValueError,
         match="Governance source is not the exact fixed contract",
     ):
-        _evaluate(client, policy=policy)
+        _evaluate(
+            monkeypatch,
+            client,
+            snapshot=live_admitted_repository_model.snapshot,
+            policy=mutated_policy,
+        )
 
+    assert client.scan_calls == []
     assert client.calls == []
 
 
@@ -2182,7 +2316,7 @@ def test_fixed_governance_source_rejects_repository_ref_path_or_age_change(
             "record is not canonical",
         ),
         (
-            (b'{"schema":"first","schema":"second","live_enabled":false}'),
+            b'{"schema":"first","schema":"second","live_enabled":false}',
             "duplicate JSON object member: 'schema'",
         ),
     ],
@@ -2363,15 +2497,25 @@ def test_attestation_expiry_requires_positive_lifetime(
     ],
 )
 def test_live_context_rejects_invalid_primitives_before_source_read(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
     context_mutation: LiveContextMutation,
     message: str,
 ) -> None:
-    """Reject malformed current authority before reading Governance."""
+    """Reject malformed current authority before scanning or Governance."""
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
     with pytest.raises((TypeError, ValueError), match=message):
-        _evaluate(client, context_mutation=context_mutation)
+        _evaluate(
+            monkeypatch,
+            client,
+            snapshot=live_admitted_repository_model.snapshot,
+            policy=policy,
+            context_mutation=context_mutation,
+        )
 
+    assert client.scan_calls == []
     assert client.calls == []
 
 
@@ -2381,6 +2525,9 @@ def test_live_context_rejects_invalid_primitives_before_source_read(
     ids=["unprotected", "protection-read", "missing-ref", "missing-blob"],
 )
 def test_missing_unreadable_or_unprotected_source_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
     failure: str,
 ) -> None:
     """Fail without a Decision when the fixed source cannot be freshly read."""
@@ -2391,8 +2538,14 @@ def test_missing_unreadable_or_unprotected_source_fails_closed(
         client.failure = failure
 
     with pytest.raises(ValueError, match=r"protected|unavailable"):
-        _evaluate(client)
+        _evaluate(
+            monkeypatch,
+            client,
+            snapshot=live_admitted_repository_model.snapshot,
+            policy=policy,
+        )
 
+    assert client.scan_calls == [(REPO_ROOT, "git-target", TARGET)]
     assert any(call[0] == "protected" for call in client.calls)
     assert not (
         failure in {"unprotected", "protection-read"}
@@ -2415,7 +2568,10 @@ def test_missing_unreadable_or_unprotected_source_fails_closed(
         "uppercase-blob",
     ],
 )
-def test_resolved_commit_blob_and_content_provenance_are_strict(
+def test_resolved_commit_blob_and_content_provenance_are_strict(  # noqa: PLR0913, PLR0917
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
     field: str,
     value: str,
     message: str,
@@ -2425,34 +2581,59 @@ def test_resolved_commit_blob_and_content_provenance_are_strict(
     setattr(client, field, value)
 
     with pytest.raises(ValueError, match=message):
-        _evaluate(client)
+        _evaluate(
+            monkeypatch,
+            client,
+            snapshot=live_admitted_repository_model.snapshot,
+            policy=policy,
+        )
+
+    assert client.scan_calls == [(REPO_ROOT, "git-target", TARGET)]
 
 
-def test_prior_facts_cannot_substitute_for_fresh_input() -> None:
+def test_prior_facts_cannot_substitute_for_fresh_input(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
     """Require the live evaluator's client even when prior facts exist."""
+    snapshot = live_admitted_repository_model.snapshot
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
-    prior = _evaluate(client)
+    prior = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=snapshot,
+        policy=policy,
+    )
     blocking_client = RecordingGovernanceClient(
         _attestation_content(live_enabled=True)
     )
     blocking_client.failure = "blob"
 
     with pytest.raises(ValueError, match="blob unavailable"):
-        _evaluate(blocking_client)
+        _evaluate(
+            monkeypatch,
+            blocking_client,
+            snapshot=snapshot,
+            policy=policy,
+        )
 
     assert prior.result is EligibilityResult.PASS
     assert prior.decision_digest.startswith("sha256:")
+    assert blocking_client.scan_calls == [(REPO_ROOT, "git-target", TARGET)]
     assert blocking_client.calls[-1][0] == "read"
     assert len(blocking_client.calls) == FRESH_SOURCE_CALL_COUNT
 
 
-def test_observation_rejects_non_utc_time_before_source_read() -> None:
+def test_observation_rejects_non_utc_time_before_source_read(
+    policy: ReleasePolicy,
+) -> None:
     """Require a trusted UTC observation instant."""
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
     with pytest.raises(ValueError, match="UTC-aware"):
         observe_governance_source(
-            _policy().governance,
+            policy.governance,
             client,
             now=datetime(2026, 8, 6, 12, 0, 0),  # noqa: DTZ001
         )
@@ -2532,7 +2713,7 @@ _PRESERVED_HUMAN_EVIDENCE_POSITIONS = (
 _FIXED_CANONICAL_VALUES = {
     "schema": "workflow-delivery/v3/governance-attestation",
     "release_policy": "hcoona-release-smoke-npm",
-    "package": "@hcoona/hcoona-release-smoke-npm",
+    "package": FIRST_SLICE_PACKAGE,
     "accepted_writers[0].role": "Admin",
 }
 _FIXED_CANONICAL_PATHS: dict[str, tuple[str | int, ...]] = {
@@ -2727,11 +2908,10 @@ def test_attestation_keeps_fixed_canonical_values_exact(
         assert accepted.to_document()[field] == canonical_value
     assert (
         accepted.to_document()["inspected_at"]
-        == (accepted_document["inspected_at"])
+        == accepted_document["inspected_at"]
     )
     assert (
-        accepted.to_document()["expires_at"]
-        == (accepted_document["expires_at"])
+        accepted.to_document()["expires_at"] == accepted_document["expires_at"]
     )
 
     if variation == "leading-space":
@@ -2758,3 +2938,341 @@ def test_attestation_keeps_fixed_canonical_values_exact(
 
     with pytest.raises(ValueError, match=message):
         parse_governance_attestation(canonicalize(rejected_document))
+
+
+@pytest.mark.parametrize(
+    "admission_mode",
+    [
+        pytest.param(
+            LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+            id="current-freshness",
+        ),
+        pytest.param(
+            LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+            id="capability-replay",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("result", "diagnostics"),
+    [
+        pytest.param("blocked", [], id="blocked-result-only"),
+        pytest.param(
+            "pass",
+            ["governance-live-disabled"],
+            id="diagnostic-only",
+        ),
+    ],
+)
+def test_live_admission_independently_enforces_result_and_diagnostics_guards(  # noqa: PLR0913, PLR0917
+    admission_mode: LiveEligibilityAdmissionMode,
+    result: str,
+    diagnostics: list[str],
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject each non-passing closure property without help from another."""
+    document = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    ).to_document()
+    document["result"] = result
+    document["diagnostics"] = diagnostics
+    static_reference = _object_member(document, "static-reference")
+
+    assert static_reference["result"] == "clean"
+    assert document["result"] == result
+    assert document["diagnostics"] == diagnostics
+    with pytest.raises(
+        ValueError,
+        match="not a closed passing decision",
+    ):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+            admission_mode=admission_mode,
+        )
+
+
+@pytest.mark.parametrize(
+    "admission_mode",
+    [
+        pytest.param(
+            LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+            id="current-freshness",
+        ),
+        pytest.param(
+            LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+            id="capability-replay",
+        ),
+    ],
+)
+def test_enabled_governance_exact_validity_boundaries_evaluate_and_admit(
+    admission_mode: LiveEligibilityAdmissionMode,
+    monkeypatch: pytest.MonkeyPatch,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Admit an enabled observation at inspection with a 90-day lifetime."""
+    inspected_at = NOW
+    expires_at = inspected_at + timedelta(days=90)
+    content = _attestation_content(
+        live_enabled=True,
+        inspected_at=inspected_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        expires_at=expires_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+    snapshot = live_admitted_repository_model.snapshot
+    context = _context(
+        snapshot,
+        policy,
+        selected_ref=live_intent.selected_ref,
+    )
+    client = RecordingGovernanceClient(content)
+
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=snapshot,
+        policy=policy,
+        context=context,
+        now=inspected_at,
+    )
+    document = decision.to_document()
+    static_reference = _object_member(document, "static-reference")
+    governance = _object_member(document, "governance")
+    canonical_bytes = canonicalize(document)
+    admitted = admit_live_eligibility_decision(
+        canonical_bytes,
+        intent=live_intent,
+        repository_model=live_admitted_repository_model,
+        policy=policy,
+        expected_digest=decision.decision_digest,
+        admission_mode=admission_mode,
+        now=inspected_at,
+    )
+
+    assert decision.result is EligibilityResult.PASS
+    assert decision.diagnostics == ()
+    assert static_reference["source-kind"] == "git-target"
+    assert static_reference["target"] == live_intent.target
+    assert static_reference["result"] == "clean"
+    assert governance == {
+        "repository": GOVERNANCE_REPOSITORY,
+        "ref": GOVERNANCE_REF,
+        "resolved-commit": GOVERNANCE_COMMIT,
+        "path": GOVERNANCE_PATH,
+        "blob-oid": GOVERNANCE_BLOB,
+        "content-sha256": decision.governance.content_sha256,
+        "observed-at": "2026-08-06T12:00:00Z",
+        "max-age-days": 90,
+        "live-enabled": True,
+        "issuer": "hcoona",
+        "inspected-at": "2026-08-06T12:00:00Z",
+        "expires-at": "2026-11-04T12:00:00Z",
+        "attestation-content-digest": (
+            decision.governance.attestation.content_digest
+        ),
+    }
+    assert decision.governance.observed_at == inspected_at
+    assert decision.governance.attestation.inspected_at == inspected_at
+    assert (
+        decision.governance.attestation.expires_at
+        - decision.governance.attestation.inspected_at
+        == timedelta(days=90)
+    )
+    assert admitted.to_document() == document
+    assert admitted.canonical_bytes == canonical_bytes
+    assert admitted.decision_digest == decision.decision_digest
+    assert admitted.result is EligibilityResult.PASS
+    assert admitted.diagnostics == ()
+    assert admitted.static_reference.result == "clean"
+    assert admitted.static_reference.target == live_intent.target
+    assert admitted.governance.live_enabled is True
+    assert admitted.governance.observed_at == admitted.governance.inspected_at
+    assert (
+        admitted.governance.expires_at - admitted.governance.inspected_at
+        == timedelta(days=90)
+    )
+    assert client.scan_calls == [(REPO_ROOT, "git-target", TARGET)]
+    assert client.calls == [
+        ("protected", GOVERNANCE_REPOSITORY, GOVERNANCE_REF),
+        ("resolve", GOVERNANCE_REPOSITORY, GOVERNANCE_REF),
+        (
+            "read",
+            GOVERNANCE_REPOSITORY,
+            GOVERNANCE_COMMIT,
+            GOVERNANCE_PATH,
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    "instant",
+    [
+        pytest.param(
+            datetime.fromisoformat("2026-08-06T12:00:00+01:00"),
+            id="positive-one-hour",
+        ),
+        pytest.param(
+            datetime.fromisoformat("2026-08-06T12:00:00-01:00"),
+            id="negative-one-hour",
+        ),
+    ],
+)
+def test_observation_rejects_nonzero_utc_offsets_before_source_read(
+    instant: datetime,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject aware non-UTC instants before invoking the source client."""
+    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
+
+    assert instant.tzinfo is not None
+    assert instant.utcoffset() in {
+        timedelta(hours=-1),
+        timedelta(hours=1),
+    }
+    with pytest.raises(ValueError, match="UTC-aware"):
+        observe_governance_source(
+            policy.governance,
+            client,
+            now=instant,
+        )
+
+    assert client.scan_calls == []
+    assert client.calls == []
+
+
+@pytest.mark.parametrize(
+    ("selected_ref", "message"),
+    [
+        pytest.param(
+            "refs/remotes/origin/main",
+            "unsupported namespace",
+            id="unsupported-namespace",
+        ),
+        pytest.param(
+            "refs/heads/",
+            "not a valid Git ref",
+            id="empty-suffix",
+        ),
+        pytest.param(
+            "refs/heads/topic/",
+            "not a valid Git ref",
+            id="trailing-slash",
+        ),
+        pytest.param(
+            "refs/tags/release.",
+            "not a valid Git ref",
+            id="trailing-dot",
+        ),
+        pytest.param(
+            "refs/heads/topic..branch",
+            "not a valid Git ref",
+            id="double-dot",
+        ),
+        pytest.param(
+            "refs/heads/topic@{1",
+            "not a valid Git ref",
+            id="reflog-sequence",
+        ),
+        pytest.param(
+            "refs/heads/topic branch",
+            "not a valid Git ref",
+            id="forbidden-space",
+        ),
+        pytest.param(
+            "refs/heads/topic~branch",
+            "not a valid Git ref",
+            id="forbidden-tilde",
+        ),
+        pytest.param(
+            "refs/heads/topic^branch",
+            "not a valid Git ref",
+            id="forbidden-caret",
+        ),
+        pytest.param(
+            "refs/heads/topic:branch",
+            "not a valid Git ref",
+            id="forbidden-colon",
+        ),
+        pytest.param(
+            "refs/heads/topic?branch",
+            "not a valid Git ref",
+            id="forbidden-question-mark",
+        ),
+        pytest.param(
+            "refs/heads/topic*branch",
+            "not a valid Git ref",
+            id="forbidden-asterisk",
+        ),
+        pytest.param(
+            "refs/heads/topic[branch",
+            "not a valid Git ref",
+            id="forbidden-open-bracket",
+        ),
+        pytest.param(
+            "refs/heads/topic\\branch",
+            "not a valid Git ref",
+            id="forbidden-backslash",
+        ),
+        pytest.param(
+            "refs/heads/topic/.hidden",
+            "not a valid Git ref",
+            id="hidden-component",
+        ),
+        pytest.param(
+            "refs/heads/topic.lock",
+            "not a valid Git ref",
+            id="lock-suffix",
+        ),
+        pytest.param(
+            "refs/heads/topic//branch",
+            "not a valid Git ref",
+            id="empty-component",
+        ),
+        pytest.param(
+            "refs/heads/topic\x00branch",
+            "not a valid Git ref",
+            id="nul-control",
+        ),
+        pytest.param(
+            "refs/heads/topic\x1fbranch",
+            "not a valid Git ref",
+            id="unit-separator-control",
+        ),
+        pytest.param(
+            "refs/heads/topic\x7fbranch",
+            "not a valid Git ref",
+            id="delete-control",
+        ),
+    ],
+)
+def test_selected_ref_grammar_rejects_invalid_refs_before_any_read(
+    selected_ref: str,
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject invalid supported-ref grammar before either external read."""
+    snapshot = live_admitted_repository_model.snapshot
+    context = _context(snapshot, policy, selected_ref=selected_ref)
+    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
+
+    with pytest.raises(ValueError, match=message):
+        _evaluate(
+            monkeypatch,
+            client,
+            snapshot=snapshot,
+            policy=policy,
+            context=context,
+        )
+
+    assert context.selected_ref == selected_ref
+    assert client.scan_calls == []
+    assert client.calls == []
