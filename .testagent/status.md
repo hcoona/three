@@ -14248,3 +14248,92 @@ workflow rerun, approval, merge, Governance, Environment, deployment, package,
 tag, or other external mutation occurred.
 
 <!-- END APPEND: 2026-09-02-pr644-azureauth-cleanup-timing-closure -->
+
+<!-- BEGIN APPEND: 2026-09-02-pr644-nuget-live-closure -->
+
+## Workflow Delivery v3 PR #644 NuGet Live-evidence closure
+
+### Fresh review finding
+
+Copilot review `5085603275` on head `161e7469` created thread
+`r3910742593` against
+`release/static_reference_policy.py::_LIVE_REQUIRED_GRAPH_IDS`. All automatic
+checks on that head had passed with 26 successes and one expected skip, but the
+review found that the explicit Live closure omitted `nuget-lock-v1`.
+
+The general bounded validator admitted the Node-only set as a union of complete
+graph closures, and the Live validator required exactly that same set. A
+transport could therefore remove:
+
+- `NuGet.Packaging@7.9.0`;
+- `NuGet.ProjectModel@7.9.0`; and
+- `dotnet-runtime@10.0.8`
+
+from an otherwise hash-consistent clean decision and still pass Live
+admission.
+
+### Independent adjudication
+
+The finding is **TP, High, 99% confidence**:
+
+- Live eligibility reruns the complete exact Git target rather than a
+  caller-selected candidate subset.
+- This repository contains the selected NuGet authority
+  `packages.lock.json`, which is also part of the mandatory authority
+  dependency closure.
+- Every selected candidate must complete its exact graph, and a successful
+  NuGet graph must emit all three pinned identities.
+- Existing real multi-candidate scan coverage proves that a legitimate clean
+  Result contains the NuGet identities alongside the Node identities.
+- A clean all-Node/no-NuGet Result is therefore impossible from the legitimate
+  scanner but was accepted by the transport admission boundary.
+
+NuGet is mandatory only for this exact first-slice Live repository closure.
+General index, worktree, other Git-target, and non-clean Result validation must
+continue to admit the graph closures they actually executed.
+
+### Contract-bounded correction
+
+Commit `9c350fb4a9a095afc5b24c00da2fc4dddc9c5a30`:
+
+- appends `nuget-lock-v1` to the explicit `_LIVE_REQUIRED_GRAPH_IDS` tuple;
+- adds the three canonically ordered NuGet identities to the accepted Live
+  fixtures in `test_eligibility.py` and
+  `governance/test_commit10_attestation.py`;
+- adds the NuGet graph closure to the Phase 2 CLI Live fixture; and
+- adds a `node-only` case to the real hash-consistent admission mutation test,
+  proving that the previously accepted attack shape is rejected.
+
+The correction does not derive Live requirements from every future graph,
+change `validate_bounded_static_reference_result`, modify an authority parser
+or execution path, or alter the static-reference policy document/digest. The
+LLD already specifies the four-node graph, exact dependency closure, and
+identity-binding requirement.
+
+### Validation and review
+
+| Gate | Result |
+|---|---|
+| Focused hash-consistent admission, accepted round trip, CLI Live source matrix, and protected-attestation path | `9 passed in 0.60s` |
+| Ruff check and format check | Passed |
+| Production-file Pyrefly | `0 errors` |
+| Diff check | Passed |
+| Affected-file HK gate | Passed |
+| Complete Workflow Delivery v3 pytest through HK | Passed |
+| Scoped Workflow Delivery v3 collection | `4,249 tests collected` |
+| Canonical index static-reference scan | `clean`; exact NuGet identities present |
+| Independent admission/diff review | **No findings** |
+| Independent Live/general-boundary challenge | **No findings** |
+
+A combined Pyrefly invocation over the large changed test files reported
+existing test-typing baseline errors outside the added lines; the changed
+production file passed with zero errors, and runtime, Ruff, and full HK gates
+passed.
+
+The reviewed correction still requires a normal push, a reply and resolution
+for thread `r3910742593`, fresh automatic checks, and a fresh Copilot review.
+`live_enabled=false` is unchanged, and no manual workflow rerun, approval,
+merge, Governance, Environment, deployment, package, tag, or other external
+mutation occurred.
+
+<!-- END APPEND: 2026-09-02-pr644-nuget-live-closure -->

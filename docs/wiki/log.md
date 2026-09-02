@@ -3163,3 +3163,25 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
   dispatch, Governance, Environment, deployment, package, tag, or other
   external mutation occurred.
+
+## [2026-09-02] query | Require NuGet evidence in Live admission
+
+- Fresh Copilot review `5085603275` found that Live admission required the
+  three Node authority graphs but omitted the mandatory `nuget-lock-v1` graph.
+  A hash-consistent clean transport could therefore retain the complete Node
+  closure while deleting NuGet execution evidence.
+- Independent adjudication retained the finding as a high-confidence,
+  blocking true positive. A legitimate clean exact-target scan of this
+  repository necessarily selects the authority project's NuGet lock and emits
+  the three pinned NuGet implementation identities.
+- Commit `9c350fb4` adds only the NuGet graph to the explicit first-slice Live
+  closure, updates accepted Live fixtures, and adds the exact Node-only
+  transport rejection. General bounded Result validation, authority execution,
+  policy digest, and the already-correct LLD remain unchanged.
+- Focused admission, CLI, and Governance tests passed; production Pyrefly,
+  Ruff, formatting, diff, authority preparation, canonical scan, and the
+  complete Workflow Delivery v3 HK gate passed. The scoped suite contains
+  4,249 tests, and two independent reviewers reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, manual rerun, Live
+  dispatch, Governance, Environment, deployment, package, tag, or other
+  external mutation occurred.
