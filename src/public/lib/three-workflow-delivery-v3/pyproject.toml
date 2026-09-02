@@ -3,7 +3,23 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-artifacts = ["src/three_workflow_delivery_v3/release/**"]
+artifacts = [
+  "src/three_workflow_delivery_v3/release/__init__.py",
+  "src/three_workflow_delivery_v3/release/eligibility.py",
+  "src/three_workflow_delivery_v3/release/finalizer.py",
+  "src/three_workflow_delivery_v3/release/identity.py",
+  "src/three_workflow_delivery_v3/release/live.py",
+  "src/three_workflow_delivery_v3/release/planner.py",
+  "src/three_workflow_delivery_v3/release/qualification.py",
+  "src/three_workflow_delivery_v3/release/simulation.py",
+  "src/three_workflow_delivery_v3/release/static_reference_authority.py",
+  "src/three_workflow_delivery_v3/release/static_reference_model.py",
+  "src/three_workflow_delivery_v3/release/static_reference_policy.py",
+  "src/three_workflow_delivery_v3/release/static_reference_projection.py",
+  "src/three_workflow_delivery_v3/release/static_reference_session.py",
+  "src/three_workflow_delivery_v3/release/static_reference_source.py",
+  "src/three_workflow_delivery_v3/release/workflow.py",
+]
 
 [project]
 name = "three-workflow-delivery-v3"
