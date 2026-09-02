@@ -63,7 +63,7 @@ dotenv-linter = "latest"
 fd = "latest"
 ripgrep = "latest"
 github-cli = "latest"
-"github:microsoft/apm" = "v0.28.0"
+"github:microsoft/apm" = "v0.29.0"
 "github:alibaba/open-code-review" = { version = "v1.11.0", bin = "ocr" }
 
 #
