@@ -313,24 +313,30 @@ def test_retry_2_npm_runner_uses_retry_coordinate_for_lost_response(
 def test_absent_proof_free_created_remains_incomplete(
     tmp_path: Path,
 ) -> None:
+    from three_workflow_delivery_v3.adapters import (  # noqa: PLC0415
+        github_packages as module,
+    )
+
     runner = ControlledRunner()
     tarball = tmp_path / "precompute"
     tarball.write_bytes(b"absent-create-readback")
     content = f"sha512:{hashlib.sha512(tarball.read_bytes()).hexdigest()}"
     tarball.unlink()
-    result, transport, actual_tarball = _run(
-        tmp_path,
-        scenario="absent-create-readback",
-        observations=[
-            _absent(),
-            _state(
-                "exact",
-                scenario="absent-create-readback",
-                content=content,
-            ),
-        ],
-        runner=runner,
-    )
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(module, "monotonic", lambda: 100.0)
+        result, transport, actual_tarball = _run(
+            tmp_path,
+            scenario="absent-create-readback",
+            observations=[
+                _absent(),
+                _state(
+                    "exact",
+                    scenario="absent-create-readback",
+                    content=content,
+                ),
+            ],
+            runner=runner,
+        )
 
     assert result.result == "created-without-request-proof"
     assert result.pre_state == "absent"
