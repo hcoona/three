@@ -3084,3 +3084,22 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Preserved `live_enabled: false`; no approval, merge, Live dispatch,
   Governance, Environment, deployment, package, tag, or other external
   mutation occurred.
+
+## [2026-09-02] query | Close CodeQL permission-fixture alerts
+
+- The integrated-head CodeQL gate reported two high-severity annotations from
+  one test shim defaulting an `os.open` forwarding mode to world-writable
+  `0o777`.
+- Independent adjudication classified both annotations as production-security
+  false positives but protected-delivery true positives: production opens the
+  candidate read-only without creation, while the literal still violated the
+  repository's blocking code-scanning policy.
+- Commit `58432ac2` narrows only that unused default to owner-read/write
+  `0o600`. The permission-denial oracle and both forwarding branches remain
+  unchanged.
+- The focused three-case contract, Ruff/format checks, and file-scoped HK gate
+  passed; the latter ran all 4,246 Workflow Delivery v3 tests and a clean
+  canonical index scan. Independent post-fix review reported no findings.
+- Preserved `live_enabled: false`; no approval, merge, Live dispatch,
+  Governance, Environment, deployment, package, tag, or other external
+  mutation occurred.

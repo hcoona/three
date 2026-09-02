@@ -13977,3 +13977,52 @@ Approval, Governance, Environment, deployment, package, tag, or other external
 mutation occurred.
 
 <!-- END APPEND: 2026-09-02-wdv3-pr644-review-integration-closure -->
+
+<!-- BEGIN APPEND: 2026-09-02-wdv3-pr644-codeql-permission-closure -->
+
+## Workflow Delivery v3 PR #644 CodeQL permission-fixture closure
+
+### Remote finding
+
+Integrated-head CodeQL check run `100094958008` reported two high-severity
+`Overly permissive file permissions` annotations at the two forwarding sinks
+of the `permission_open` test shim in
+`tests/release/test_static_reference.py`. Both annotations derived from the
+same `mode: int = 0o777` default.
+
+### Independent adjudication
+
+| Question | Disposition |
+|---|---|
+| Exploitable production/security defect | **FP**. Production uses read-only `os.open` flags without `O_CREAT` or `O_TMPFILE`; the selected candidate raises before either forwarding sink executes. |
+| Actionable protected-PR delivery finding | **TP**. The world-writable literal independently violates the blocking code-scanning policy. |
+| Number of root causes | One default value with two reported sinks. |
+
+Permission bits do not participate in the scenario oracle. The test requires
+typed candidate/parent permission failures and proves that authority and
+session execution do not occur after source acquisition fails.
+
+### Correction
+
+Commit `58432ac2` changes only the monkeypatched shim default from `0o777` to
+owner-read/write `0o600`. Explicit caller-supplied modes and both forwarding
+branches remain unchanged. No production code or CodeQL suppression changed.
+
+### Validation and review
+
+| Gate | Result |
+|---|---|
+| Complete parameterized permission-failure contract | `3 passed in 0.56s` |
+| Focused Ruff check and format check | Passed |
+| Diff check | Passed |
+| File-scoped HK gate | Passed |
+| Complete Workflow Delivery v3 pytest through HK | `4,246 passed in 437.85s` |
+| Canonical index static-reference scan | `clean` |
+| Independent post-fix review | **No findings** |
+
+The reviewed correction still requires a push and a fresh automatic CodeQL
+result. `live_enabled=false` is unchanged, and no workflow rerun, approval,
+merge, Governance, Environment, deployment, package, tag, or other external
+mutation occurred.
+
+<!-- END APPEND: 2026-09-02-wdv3-pr644-codeql-permission-closure -->
