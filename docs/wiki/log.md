@@ -3044,3 +3044,43 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   reviewers all reported no findings.
 - Preserved `live_enabled: false`; no workflow dispatch, Governance, package,
   Environment, deployment, or other external state changed.
+
+## [2026-09-02] query | Deliver bounded static-reference implementation
+
+- Implemented the first disabled-contraction unit on
+  `workflow-delivery-v3-disabled-runtime-implementation` and delivered it
+  through protected PR #644. The unit is not part of `main` until required
+  human approval, protected merge, and exact reconciliation complete.
+- Added exact Git source acquisition, byte-preserving materialization, official
+  npm, pnpm, and NuGet authority graphs, canonical bounded Results, HK and CI
+  gates, normal-Live eligibility integration, and the required Hexo and fixture
+  migrations.
+- PR review retained one package-boundary finding: a recursive Hatch artifact
+  rule admitted an injected stale release module. The correction restricts
+  artifacts to the exact approved release modules and verifies exact wheel and
+  sdist membership from an isolated repository-shaped build.
+- Advanced the mandatory agent handoff from the completed design checkpoint to
+  the PR-local implementation checkpoint. The next agent must resolve any
+  branch conflict with current `main`, rerun affected and full validation, and
+  return the integrated head to review before waiting for human approval.
+- Preserved `live_enabled: false`; no approval, merge, Live dispatch,
+  Governance, Environment, deployment, package, tag, or other external
+  mutation occurred.
+
+## [2026-09-02] query | Integrate and revalidate static-reference delivery
+
+- Integrated `origin/main@0252343e` into the PR #644 branch through merge
+  commit `504f104b` without rewriting reviewed commits.
+- Resolved the three Workflow Delivery conflicts by retaining both the
+  incoming scholarly-publication admission and the bounded static-reference
+  gates while keeping the broad consumer-policy runtime retired.
+- Revalidated the 76-logical-path PR range. The complete Workflow Delivery v3
+  gate passed with 4,246 collected cases; Python 3.13 and 3.14 package-boundary
+  tests passed; and exact `git-target`, `index`, and `worktree` static-reference
+  scans were clean.
+- Independent package-boundary, integration, and handoff reviewers reported no
+  findings. The branch remains PR-local pending automatic checks, required
+  human approval, protected merge, and exact `main` reconciliation.
+- Preserved `live_enabled: false`; no approval, merge, Live dispatch,
+  Governance, Environment, deployment, package, tag, or other external
+  mutation occurred.

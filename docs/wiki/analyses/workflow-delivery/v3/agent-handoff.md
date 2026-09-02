@@ -22,18 +22,25 @@ requests mechanism extraction and revalidation. Git and the append-only
   replacement LLD were merged through PR #637 as
   `e5379fea3d4cf1a63b8b29a9f06604e22b3ec058`; post-merge run
   `33372040715` succeeded.
-- The user separately authorized disabled runtime contraction. The active
-  branch is `workflow-delivery-v3-disabled-runtime-contraction`, based on that
-  merged design.
-- The first dependency-ordered implementation unit is the bounded
-  static-reference foundation. No implementation commit exists yet; the
-  untracked prototype contains superseded handwritten ecosystem readers and
-  must not be committed as-is.
-- This revision corrects the static-reference design from parser/library-only
-  authority to an exact Ecosystem Authority Graph that may compose
-  authoritative artifacts, official libraries or CLIs, and published
-  standards. Its thirteenth-round cross-layer, authority-boundary, exact-API,
-  and delivery reviews reported no findings.
+- The user separately authorized disabled runtime contraction.
+- The first dependency-ordered implementation unit, the bounded
+  static-reference foundation, is implemented on branch
+  `workflow-delivery-v3-disabled-runtime-implementation` and delivered through
+  protected PR #644. It is not part of `main` until that PR is protected-merged
+  and reconciled.
+- The unit implements exact `git-target`, `index`, and `worktree` acquisition;
+  byte-preserving materialization; official npm, pnpm, and NuGet authority
+  graphs; canonical bounded Results; HK, CI, and normal-Live integration; and
+  the required Hexo and fixture migrations. Superseded handwritten ecosystem
+  readers and broad consumer-policy surfaces are retired.
+- PR #644 remains the current delivery boundary. Inspect its current head,
+  checks, review threads, approval, and merge state rather than inferring them
+  from this page. Required human approval and protected merge/reconciliation
+  remain outstanding; the agent must not approve or merge the PR.
+- Merge commit `504f104b` integrates `origin/main@0252343e` into the PR branch
+  without rewriting reviewed commits. Its actual Workflow Delivery conflicts
+  retain both the incoming scholarly-publication admission and the bounded
+  static-reference/consumer-retirement contracts.
 - The runtime remains disabled through
   `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with
   `live_enabled: false`.
@@ -41,11 +48,15 @@ requests mechanism extraction and revalidation. Git and the append-only
 - Retry-5 destination acceptance is complete historical evidence. Exact `.17` through `.20` versions and tags remain
   retained and must not be reused; detailed chronology stays in Git and the log.
 
-The immediate boundary is final commit-hook validation and a docs-only local
-commit of the authority-graph correction; then deliver it through a protected
-PR, merge and reconcile the exact result on `main`, and create or rebase the
-disabled implementation branch before implementing the static-reference
-foundation. All Live activation and external action remain unauthorized.
+The immediate boundary is to validate and independently review the integrated
+PR #644 head, remediate only newly retained findings, push the reviewed
+corrections, and close resolved review threads. If `origin/main` advances
+again, merge it without rewriting reviewed commits and repeat the integrated
+validation/review cycle. Then wait for required human approval and protected
+merge. After a human merge, reconcile the exact result on `main`, reconfirm the
+disabled and no-mutation boundaries, and only then create or rebase the next
+disabled implementation branch for record-model contraction. All Live
+activation and external action remain unauthorized.
 
 ## Hot Context
 
@@ -84,14 +95,13 @@ foundation. All Live activation and external action remain unauthorized.
   locks, unevaluated MSBuild project/central manifests, standalone Python
   manifests, shell and PowerShell scripts, GitHub workflow/composite-action
   files, and Node import subpaths are outside this policy revision.
-- Before the root static gate is enabled, migrate the tracked Hexo example's
-  local dependency from `link:../..` to `file:../..` and regenerate its
-  isolated pnpm v9 lock. Both current files are selected; no example-path
-  exception is allowed.
-- Move the tracked npm publish request fixture content away from the
-  `package.json` basename and materialize it only in test-owned temporary
-  storage. The exact producer name is allowed in a tracked `package.json` only
-  at the producer path; the old fixture-path exception must be removed.
+- The tracked Hexo example uses `file:../..`; its isolated pnpm v9 lock carries
+  the matching typed file-directory reference. Both files remain selected,
+  with no example-path exception.
+- The npm publish-request fixture is tracked as non-candidate
+  `package-manifest.json` and materialized as `package/package.json` only in
+  test-owned temporary storage. The producer name occurs in tracked
+  `package.json` only at the producer path; no fixture-path exception remains.
 - Activation uses one protected Activation PR and a run-ID-returning API dispatch. There is no Preparation PR,
   repository-wide `main` freeze, activation SHA/tag, or blind redispatch.
 
@@ -281,14 +291,12 @@ Ambiguous dispatch response means read-only reconciliation, never blind redispat
 
 ## Explicit Authorization Boundary
 
-The current boundary conditionally authorizes the disabled runtime contraction,
-including the code, tests, schemas, descriptors, workflow definitions, and
-exact implementation dependencies required by the approved replacement
-design. That standing authorization may be exercised only after this
-authority-graph correction is merged through protection, its exact result is
-reconciled on `main`, and the implementation branch is created or rebased from
-that exact result. Changes remain local and disabled until separately reviewed
-and delivered.
+The standing disabled-runtime-contraction authorization has been exercised for
+the first dependency-ordered, PR-local static-reference unit in PR #644. That
+unit remains disabled and PR-local pending required human approval and
+protected merge. Remaining disabled contraction may proceed only after exact
+`main` reconciliation and creation or rebasing of the next implementation
+branch.
 
 Without later explicit authorization, do not change package/repository access;
 create, alter, or delete an Environment or marker; refresh Governance; set
@@ -323,35 +331,27 @@ Do not infer policy from stale runtime behavior or archived designs.
 
 1. Inspect current branch, status, identities, untracked paths, and complete
    diff before changing anything.
-2. Complete the Ecosystem Authority Graph correction across the normative
-   design, overview, log, and this handoff.
-3. Run formatting, Markdown lint, diff, and applicable HK documentation gates
-   using a Session-owned temporary root, then remove it by exact path.
-4. Obtain independent multi-angle design reviews, adjudicate every atomic
-   finding independently, fix true positives, and return the fixes until all
-   original reviewers report no findings.
-5. Create one human-reviewable design-correction commit containing only the
-   approved documentation paths.
-6. Deliver that documentation-only commit through a protected PR, merge it,
-   and reconcile the exact merged state on `main`. Then create or rebase a
-   disabled implementation branch from that merged design.
-7. Implement the bounded static-reference foundation in dependency order:
-   exact Git source acquisition and snapshot transport; exact authority
-   adapters; normalized policy projection; then semantic scenarios.
-8. Migrate the selected Hexo example manifest and isolated lock from
-   unsupported `link:../..` to the admitted typed `file:../..` projection.
-   Move the acceptance package manifest fixture to a non-candidate source and
-   materialize `package/package.json` only in test temporary storage. Remove
-   the superseded whole-file exception, handwritten readers, and parser-branch
-   tests rather than adapting them incrementally.
-9. Run targeted tests, root HK, and commit hooks with isolated temporary
-   storage and exact cleanup.
-10. Obtain independent multi-angle implementation reviews, adjudicate each
-    finding atomically, and iterate to no findings before creating the first
-    implementation commit.
-11. Continue the remaining disabled contraction in dependency order: record
-    model, Governance/authorization, publication/finalization, workflows, and
-    separately authorized cleanup.
+2. Confirm current `origin/main` is an ancestor of the PR branch. If it has
+   advanced, merge it without rewriting reviewed commits, resolve only actual
+   conflicts, and restart integrated-head validation and review.
+3. Run affected tests, full repository gates, and independent multi-angle
+   review/adjudication on the integrated head. Remediate only newly retained
+   findings, push the reviewed corrections, and close resolved review threads.
+4. Keep `live_enabled=false`. Do not approve, merge, dispatch, activate,
+   publish, mutate Governance or Environments, delete legacy resources, or
+   create tags.
+5. Wait for required human approval and protected merge. Do not start the next
+   implementation unit while the static-reference foundation remains
+   PR-local.
+6. After a human merge, fetch and reconcile the exact result on `main`; verify
+   the merged commit and checks, then reconfirm disabled Governance and
+   unchanged external state.
+7. Create or rebase the next disabled implementation branch from reconciled
+   `main`, then begin record-model contraction with bounded tests and the same
+   independent review/adjudication protocol.
+8. Continue the remaining disabled contraction in dependency order:
+   Governance/authorization, publication/finalization, workflows, and
+   separately authorized cleanup.
 
 Do not perform Live or external work.
 
@@ -408,8 +408,9 @@ applicable documentation and repository gates but keeps the same validate-before
 - Make commits dependency-ordered and human-reviewable.
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
 
-The replacement baseline is merged. Disabled implementation is conditionally
-authorized only after this authority-graph correction is protected-merged,
-reconciled on exact `main`, and used as the base of the implementation branch.
+The replacement baseline is merged. The first disabled implementation unit is
+complete only on PR #644's branch. Remaining disabled implementation proceeds
+only after required human approval, protected merge, exact `main`
+reconciliation, and creation or rebasing of the next implementation branch.
 External-resource, cleanup, and Live boundaries still require separate
 explicit authorization.
