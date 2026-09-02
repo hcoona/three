@@ -6210,7 +6210,7 @@ def test_worktree_permission_errors_are_typed_and_stop_before_authority(  # noqa
         def permission_open(
             path: object,
             flags: int,
-            mode: int = 0o777,
+            mode: int = 0o600,
             *,
             dir_fd: int | None = None,
         ) -> int:
