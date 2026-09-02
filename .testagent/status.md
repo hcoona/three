@@ -13902,3 +13902,78 @@ It performs no workflow dispatch, Approval, deployment, Governance or
 Environment mutation, package publication, or tag mutation.
 
 <!-- END APPEND: 2026-09-01-wdv3-python314-mise-boundary-closure -->
+
+<!-- BEGIN APPEND: 2026-09-02-wdv3-pr644-review-integration-closure -->
+
+## Workflow Delivery v3 PR #644 review and integration closure
+
+### Review findings and bounded corrections
+
+- Copilot thread `r3908132024` was partially true. The cited `__pycache__` and
+  `.pyc` example did not reproduce, but a test-injected untracked
+  `release/stale_reference_policy.py` entered both wheel and sdist under the
+  recursive Hatch artifact rule.
+- Commit `4f8b7152` replaces that recursive rule with the exact 15 approved
+  release modules. The package test now builds from a test-owned,
+  repository-shaped copy carrying the root `.gitignore`, injects the stale
+  module, exact-asserts wheel and normalized sdist release members, installs
+  the wheel in isolation, proves installed provenance, and invokes the CLI.
+- Copilot thread `r3908132068` was true. The mandatory v3 handoff incorrectly
+  described the static-reference implementation as absent. The handoff now
+  distinguishes the PR-local implementation from `main`, records completed
+  Hexo/fixture migration as a current invariant, and keeps required human
+  approval, protected merge, and exact reconciliation explicit.
+
+### Main integration
+
+- `origin/main` advanced to `0252343e079879eb6d7e80234dcacb6db052e617`
+  while the corrections were under review.
+- Merge commit `504f104b3e21f55cf32aec3c362f6980d067f293` integrates that
+  revision without rewriting reviewed commits.
+- Conflicts in `path_admission.py`, `test_path_admission.py`, and
+  `test_hk_trigger.py` retain scholarly-publication paths, package-bounded
+  admission, and medium-profile HK coverage together with static-reference
+  admission and gates. Retired broad consumer-policy runtime/constants/tests
+  remain absent; intentional negative assertions and retired-surface evidence
+  remain.
+- The automatically merged `hk.pkl`, `mise.toml`, and planner tests retain both
+  feature sets and the CI boundary where runner/setup tools are version-aligned
+  to `mise.lock` while `MISE_TASK_RUN_AUTO_INSTALL=false` prevents implicit
+  execution-phase provisioning.
+
+### Integrated validation
+
+| Gate | Result |
+|---|---|
+| Conflict-related admission, HK, and planner tests | `165 passed` |
+| Production exact-range helper, `origin/main..HEAD` | Passed for 76 logical paths; all 9 selected HK steps passed |
+| Complete Workflow Delivery v3 pytest through the HK gate | Passed |
+| Integrated pytest collection | `4,246 tests collected` |
+| Integrated AST inventory | `1,331 test functions` |
+| Isolated package test, Python 3.13 | `1 passed` |
+| Isolated package test, Python 3.14 | `1 passed` |
+| Handoff/log HK gate | Prettier, Markdownlint, typos, EditorConfig, and static-reference checks passed |
+| Canonical `git-target` scan at merge commit | `clean` |
+| Canonical `index` scan | `clean` |
+| Canonical `worktree` scan | `clean` |
+
+All three canonical scans reported policy digest
+`sha256:c9647d381e07fd54dcf187cca242064eb00fe702201f0428689aa7a4c50f599d`
+and the exact pinned npm, pnpm, NuGet, Node, and .NET implementation
+identities.
+
+### Independent review
+
+- Exact Hatch package boundary and package-test oracle: **No findings**.
+- `origin/main` semantic integration across admission, HK, mise, and planner
+  surfaces: **No findings**.
+- Mandatory handoff and append-only wiki chronology: **No findings**.
+
+No finding remains locally actionable. PR review-thread resolution and
+automatic checks still require the reviewed commits to be pushed. Required
+human approval, protected merge, and exact `main` reconciliation remain
+outstanding. `live_enabled=false` is unchanged, and no workflow dispatch,
+Approval, Governance, Environment, deployment, package, tag, or other external
+mutation occurred.
+
+<!-- END APPEND: 2026-09-02-wdv3-pr644-review-integration-closure -->
