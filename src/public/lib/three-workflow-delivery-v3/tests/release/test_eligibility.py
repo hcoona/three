@@ -165,6 +165,9 @@ LIVE_STATIC_REFERENCE_IMPLEMENTATIONS = (
     "@pnpm/resolving.npm-resolver@1104.1.0",
     "@pnpm/workspace.spec-parser@1100.0.1",
     "@pnpm/workspace.workspace-manifest-reader@1100.1.8",
+    "NuGet.Packaging@7.9.0",
+    "NuGet.ProjectModel@7.9.0",
+    "dotnet-runtime@10.0.8",
     "node@24.19.0",
     "npm-package-arg@14.0.0",
 )
@@ -1327,6 +1330,20 @@ def test_live_admission_rejects_hash_consistent_wrong_policy_digest(
                 "dotnet-runtime@10.0.8",
             ),
             id="nuget-only",
+        ),
+        pytest.param(
+            (
+                "@npmcli/package-json@8.0.0",
+                "@pnpm/deps.path@1101.0.1",
+                "@pnpm/lockfile.fs@1100.2.5",
+                "@pnpm/lockfile.utils@1102.1.0",
+                "@pnpm/resolving.npm-resolver@1104.1.0",
+                "@pnpm/workspace.spec-parser@1100.0.1",
+                "@pnpm/workspace.workspace-manifest-reader@1100.1.8",
+                "node@24.19.0",
+                "npm-package-arg@14.0.0",
+            ),
+            id="node-only",
         ),
     ],
 )

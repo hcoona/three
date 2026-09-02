@@ -961,6 +961,7 @@ _PHASE2_LIVE_IMPLEMENTATIONS = tuple(
             *_PHASE2_GRAPH_IMPLEMENTATIONS["npm-manifest-v1"],
             *_PHASE2_GRAPH_IMPLEMENTATIONS["pnpm-lock-v1"],
             *_PHASE2_GRAPH_IMPLEMENTATIONS["pnpm-workspace-v1"],
+            *_PHASE2_GRAPH_IMPLEMENTATIONS["nuget-lock-v1"],
         },
         key=utf8_sort_key,
     )

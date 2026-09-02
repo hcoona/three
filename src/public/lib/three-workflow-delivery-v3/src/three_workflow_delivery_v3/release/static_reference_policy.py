@@ -115,6 +115,7 @@ _LIVE_REQUIRED_GRAPH_IDS = (
     "npm-manifest-v1",
     "pnpm-lock-v1",
     "pnpm-workspace-v1",
+    "nuget-lock-v1",
 )
 _LIVE_REQUIRED_IMPLEMENTATION_IDENTITIES = frozenset(
     identity
