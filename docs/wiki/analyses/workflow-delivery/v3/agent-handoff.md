@@ -26,82 +26,61 @@ requests mechanism extraction and revalidation. Git and the append-only
 - The first dependency-ordered implementation unit, the bounded
   static-reference foundation, was protected-squash-merged through PR #644 as
   `14cfc212da56bed35d887c88f66c1edeb55b0d23`.
-- The unit implements exact `git-target`, `index`, and `worktree` acquisition;
-  byte-preserving materialization; official npm, pnpm, and NuGet authority
-  graphs; canonical bounded Results; HK, CI, and normal-Live integration; and
-  the required Hexo and fixture migrations. Superseded handwritten ecosystem
-  readers and broad consumer-policy surfaces are retired.
-- The merged tree exactly matches reviewed PR head `9ba5fa85`. Main CI run
-  `33663279604`, CodeQL run `33663279571`, and Dependency Graph runs
-  `33663283467` and `33663283519` succeeded on the merged commit.
-- The next disabled implementation branch is
-  `workflow-delivery-v3-record-model-contraction`, created from exact
-  reconciled `main@14cfc212`.
-- Its first dependency-ordered phase is complete: normal-Live
-  Provider/compiler contexts and Repository Model records omit and reject
-  `github.run_attempt`, while simulation and CI retain their required
-  attempt-bound contracts. Direct live consumers no longer use the Repository
-  Model as attempt authority.
-- Its second dependency-ordered phase is complete: normal-Live Release Intent,
-  Attempt Identity, Live Eligibility, release transport, qualification
-  Evidence, Authorization, Result, Receipt, and current-context admission omit
-  and reject `github.run_attempt`. Simulation and CI remain attempt-bound;
-  normal-Live CLI input retains the platform attempt only for validation,
-  attempt-specific GitHub API lookup, diagnostics, and the attempt-one guard.
-- Normal-Live artifact basenames now omit run attempt. All five outer jobs and
-  all thirteen reusable-workflow jobs independently require
-  `github.run_attempt == 1`, including Approval, publisher, cancellation, and
-  `always()` finalizers.
-- The final staged repository gate passed 4,250 Workflow Delivery v3 tests,
-  actionlint, Ruff, formatting, canonical static-reference admission, and
-  authority preparation. Independent core and runtime reviews had no
-  findings. Workflow review found one missing all-job attempt-one invariant;
-  independent adjudication retained it, the guards were added, and closure
-  review reported no findings.
-- The final dependency-ordered record-model phase is complete locally.
-  Actions-history discovery and transport, Environment Profile,
-  capability-group records and bundles, and standalone Receipt transport are
-  retired. Receipt is immutable evidence nested in `ActionResult`, and
-  successful Attempt Outcomes bind direct ActionResult lineage.
-- Current-authority admission now validates and agrees the payload and trusted
-  purposes before selecting the purpose-specific schema. Publication Snapshot
-  and transitional Capability Admission records each permit zero or one
-  action closure and fail closed on more than one.
-- Target-derived `control` values are consistent across the retained records.
-  Successful action-bearing outcomes require one capability-admission digest
-  and one ActionResult digest; successful no-op outcomes require neither.
-- The final affected suites passed 544 record-contraction tests and 53 Live
-  boundary tests. The complete staged repository gate passed 3,671 Workflow
-  Delivery v3 tests, actionlint, Ruff, formatting, Pyrefly, canonical
-  static-reference admission, and the staged diff check.
-- Independent runtime and platform/workflow reviews reported no findings.
-  Scope challenges were rejected where they would have added an undocumented
-  projection limit or duplicated existing purpose-ordering coverage. The
-  record reviewer finding was retained only for multi-action Capability
-  Admission; two independent adjudicators preserved the transitional
-  zero-action path. Fresh same-scope and adversarial closure reviewers both
-  reported no findings.
-- The record-model unit remains disabled and is under protected delivery in
-  PR #648. Review findings and automatic checks must be closed on the exact
-  current PR head; delivery-specific approval and protected merge remain
-  pending. Later Governance/authorization, final no-op topology, marker
-  admission and ordering, conclusion semantics, activation, and cleanup remain
-  outside this unit.
+- The second dependency-ordered implementation unit, record-model
+  contraction, was rebase-merged through PR #648 as
+  `20740ade74a0b25d8b2ca300e63e12c5c4f0879a`.
+- The merged tree
+  `2ecbb191a72deed7bd5900f7ee0f3175f353a28b` exactly matches the reviewed
+  PR-head tree. Post-merge Continuous Integration run `33717307779` and
+  CodeQL run `33717307744` succeeded.
+- The record-model unit retired Actions-history authority, Environment
+  Profile, capability-group records, and standalone Receipt transport. It
+  preserved current-Attempt authority, Simulation and CI attempt bindings,
+  direct successful `ActionResult` lineage, and zero-or-one Publication
+  Snapshot cardinality.
+- After that merge, the user explicitly continued into the next disabled
+  Governance/authorization unit. Work is isolated on branch
+  `workflow-delivery-v3-governance-authority` from exact
+  `main@20740ade74a0b25d8b2ca300e63e12c5c4f0879a`.
+- Requirements and design confirmation are complete enough to implement. The
+  replacement parser requires only
+  `workflow-delivery/v3/normal-live-governance-attestation-v1`; superseded
+  selected-ref parsers therefore reject the protected document before
+  Execution lookup, Attempt creation, or any Environment job.
+- The disabled protected document will migrate to that replacement schema
+  while retaining `live_enabled: false`. Its closed disabled state records
+  unsatisfied activation gates instead of inventing native, retention, or
+  destination-race evidence. The enabled state is valid only with the complete
+  native Approval Environment, repository-retention, destination-primitive,
+  and conditional non-overwrite evidence required by the LLD.
+- Eligibility, Approval, publisher, and exact-satisfied freshness use isolated
+  complete Git state. Eligibility binds `eligibility-main-sha`, Git object
+  format, exact regular-blob OID, canonical content digest, and admitted
+  semantics. Later checks require descendant lineage and no protected-path
+  touch through full-history path traversal; byte equality alone is
+  insufficient.
+- A zero-action exact-satisfied Snapshot takes no Environment, Approval Bundle,
+  Publication Authorization, publisher, marker, Result, or Receipt. An
+  action-bearing Snapshot persists one complete Approval Bundle before the
+  Environment wait; the Approval job then emits the sole complete Publication
+  Authorization. There is no post-approval Capability Admission authority.
+- No current GitHub Packages primitive is admitted for conditional
+  non-overwriting version-and-tag creation. Absent destination state remains
+  unsupported and activation-blocking; standard `npm publish --tag` must not
+  be installed as an admitted normal-Live primitive.
 - The runtime remains disabled through
   `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with
   `live_enabled: false`.
-- No normal Live dispatch, Approval deployment, or package mutation has occurred.
-- Retry-5 destination acceptance is complete historical evidence. Exact `.17` through `.20` versions and tags remain
-  retained and must not be reused; detailed chronology stays in Git and the log.
+- No normal Live dispatch, Approval deployment, Governance refresh, package
+  mutation, Environment mutation, cleanup, push, PR, or merge is authorized by
+  this local implementation continuation.
 
-PR #648 is the active record-model delivery boundary. Do not create another
-delivery PR or reopen the completed contractions. The immediate work is to
-adjudicate and resolve every review finding, validate the exact resulting PR
-head, wait for fresh automatic checks and review, and obtain delivery-specific
-human approval before protected merge. Do not introduce a universal record
-envelope, history fallback, compatibility parser, or default attempt, or start
-a later implementation unit. Live activation, operational external mutation,
-and work assigned to later implementation units remain unauthorized.
+The active boundary is local implementation, validation, commit-hook closure,
+and independent review for the Governance/authorization unit. Stop before
+push, PR creation, protected merge, obsolete-Environment cleanup, Governance
+refresh, destination acceptance, activation, dispatch, approval, publication,
+or any other external mutation unless the user separately authorizes that
+boundary.
 
 ## Hot Context
 
@@ -125,13 +104,15 @@ and work assigned to later implementation units remain unauthorized.
 - Capability groups and standalone Receipt transport are retired. A successful
   `ActionResult` owns its Receipt evidence directly, and Attempt Outcome binds
   the ActionResult digest directly.
-- Publication Snapshot admits at most one materialized action. Transitional
-  Capability Admission admits zero or one action closure; zero remains
-  non-authorizing until the later no-op Governance/authorization redesign.
-- Activation remains blocked on later runtime work: durable mutation-marker
-  admission, Governance completion before marker creation, pre-marker failure
-  Result formation, direct durable-marker evidence, exact success formation,
-  and faithful cancelled, failed, and dependency-skipped conclusion semantics.
+- Publication Snapshot admits at most one materialized action. The current
+  Governance unit replaces transitional Capability Admission with one
+  pre-wait Approval Bundle and one complete Publication Authorization.
+- Exact-satisfied performs a fresh read-only Governance continuity proof and
+  creates no authorization-shaped record.
+- Activation remains blocked on an admitted conditional destination primitive,
+  durable mutation-marker admission and ordering, pre-marker failure Result
+  formation, direct durable-marker evidence, exact success formation, and
+  faithful cancelled, failed, and dependency-skipped conclusion semantics.
 - Retry is a new dispatch and full rebuild. GitHub rerun is unsupported.
 - Each retained static-reference selector binds one exact Ecosystem Authority
   Graph. Authoritative manifest or lockfile state, stable official libraries or
@@ -346,11 +327,14 @@ Ambiguous dispatch response means read-only reconciliation, never blind redispat
 
 ## Explicit Authorization Boundary
 
-The standing disabled-runtime-contraction authorization has been exercised for
-the merged static-reference unit and now covers local development and normal
-Git delivery of the next disabled record-model unit. It does not authorize a
-PR review approval or protected merge without the later delivery-specific
-human decision.
+The user's continuation after PR #648 merge authorizes local requirements
+confirmation, design resolution, implementation, tests, hooks, dependency-
+ordered commits, and independent review for the disabled
+Governance/authorization unit.
+
+It does not authorize push, PR creation, PR review approval, protected merge,
+or work assigned to the later publication/finalizer unit. Those boundaries
+require separate human decisions.
 
 Do not change package/repository access; create, alter, or delete an
 Environment or marker; refresh Governance; set `live_enabled: true`; submit a
@@ -386,28 +370,27 @@ Do not infer policy from stale runtime behavior or archived designs.
 
 1. Inspect current branch, status, identities, untracked paths, and complete
    diff before changing anything.
-2. Confirm local and remote branch heads match PR #648 and that the PR branch
-   still descends from exact reconciled `main@14cfc212`.
-3. Treat the completed Provider/compiler, Attempt/transport, and legacy-record
-   contractions as one closed record-model unit. Preserve its current-Attempt
-   authority, Simulation/CI bindings, direct ActionResult lineage, and
-   zero-or-one action cardinalities.
-4. For PR #648, independently adjudicate every review finding, apply only
-   retained corrections, and rerun applicable local validation before pushing
-   a changed head.
-5. Wait for all required checks and fresh review to close on the exact PR head.
-   If `origin/main` advances before merge, integrate it without rewriting
-   reviewed commits and restart integrated-head validation and review.
-6. Obtain delivery-specific human approval before protected merge. Do not
-   approve the review, bypass protection, rerun workflows manually, or merge
-   early.
-7. After separate explicit authorization, continue later disabled contraction
-   only in dependency order, beginning with Governance/authorization and final
-   no-op topology, then marker-aware publication/finalization and workflows,
-   activation, and separately authorized cleanup.
-8. Treat the deferred marker, success, failure, cancellation, and
-   dependency-skipped semantics as activation blockers; do not infer their
-   resolution from the current disabled runtime.
+2. Preserve the merged static-reference and record-model contractions as
+   closed dependencies.
+3. Migrate the strict Governance parser and disabled protected document to the
+   replacement schema, with an explicit selected-ref compatibility fence and
+   no fabricated activation evidence.
+4. Implement isolated eligibility and continuity proof for unrelated-main
+   advance, path-touch anti-rollback, exact blob/content identity, expiry,
+   writer/publisher, native-evidence, retention, primitive, and enablement
+   checks.
+5. Add the complete pre-wait Approval Bundle and sole Publication
+   Authorization records and transport. Remove Capability Admission authority.
+6. Integrate exact-satisfied as a fresh no-op Governance proof with no
+   Environment or Authorization. Fail closed on absent destination state while
+   no primitive is admitted.
+7. Make only the CLI, workflow, and publisher changes directly required by
+   those authority contracts. Leave marker, Result, final Outcome, activation,
+   cleanup, and unrelated topology to their dependency-ordered units.
+8. Run focused and affected tests, root HK, hooks, and independent multi-angle
+   review. Adjudicate every finding until closure.
+9. Stop before push or PR creation and request the next delivery-specific
+   authorization.
 
 Do not perform Live or operational external work.
 
@@ -464,11 +447,10 @@ applicable documentation and repository gates but keeps the same validate-before
 - Make commits dependency-ordered and human-reviewable.
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
 
-The replacement baseline and first disabled implementation unit are merged.
-The complete record-model contraction is locally closed on its own branch from
-exact reconciled `main`; PR #648 is its active delivery boundary. Review
-closure, delivery-specific approval, and protected merge remain pending. Later
-disabled units remain dependency-ordered, beginning with
-Governance/authorization and the final no-op topology. External-resource,
-cleanup, protected-merge, and Live boundaries still require their own explicit
-authorization.
+The replacement baseline, static-reference foundation, and record-model
+contraction are merged. The active local unit is Governance/authorization and
+the exact-satisfied no-op authority boundary on
+`workflow-delivery-v3-governance-authority` from exact merged `main`.
+Publication marker/Result/finalizer work remains the next dependency-ordered
+unit. Push, PR, protected merge, external-resource, cleanup, activation, and
+Live boundaries still require their own explicit authorization.

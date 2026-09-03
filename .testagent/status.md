@@ -14840,3 +14840,46 @@ rerun, Live dispatch, Governance, Environment, publication, package, tag,
 cleanup, or later-unit work occurred.
 
 <!-- END APPEND: 2026-09-03-pr648-initial-delivery-review -->
+
+<!-- BEGIN APPEND: 2026-09-03-wdv3-governance-authority-start -->
+
+## Workflow Delivery v3 Governance authority start
+
+### Append integrity
+
+| Append-only file | Pre-append bytes | Pre-append SHA-256 |
+|---|---:|---|
+| `.testagent/status.md` | 884,702 | `107462978bda9b855a8c4dee276a18a0974be9876e6334ba0cbd9bf57f3e0782` |
+| `docs/wiki/log.md` | 191,648 | `7cecb9bae1d0c599ff7dc2e89520dbebf2b7af26141b3c9e7687300642c489fa` |
+
+### Closed dependency
+
+- PR #648 was rebase-merged as
+  `20740ade74a0b25d8b2ca300e63e12c5c4f0879a`.
+- The merged tree
+  `2ecbb191a72deed7bd5900f7ee0f3175f353a28b` exactly matches the reviewed
+  PR-head tree.
+- Post-merge Continuous Integration run `33717307779` and CodeQL run
+  `33717307744` succeeded.
+
+### Authorized local unit
+
+- The user's continuation after merge authorizes local implementation of the
+  next disabled Governance/authorization unit only.
+- Branch `workflow-delivery-v3-governance-authority` starts from exact
+  `main@20740ade74a0b25d8b2ca300e63e12c5c4f0879a`.
+- Requirements and design research confirmed the replacement Governance
+  schema fence, isolated Git lineage/path proof, pre-wait Approval Bundle,
+  sole Publication Authorization, exact-satisfied no-authorization path, and
+  removal of transitional Capability Admission.
+- The disabled replacement Governance state will record unsatisfied activation
+  gates instead of fabricated native, retention, or destination-race evidence.
+  `live_enabled` remains false.
+- No destination primitive is currently admitted. Absent destination state
+  remains unsupported rather than forming an executable action.
+
+Marker, Result, final Outcome, activation, cleanup, external-state refresh,
+push, PR creation, protected merge, dispatch, approval, and publication remain
+outside this authorization.
+
+<!-- END APPEND: 2026-09-03-wdv3-governance-authority-start -->
