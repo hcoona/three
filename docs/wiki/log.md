@@ -3314,3 +3314,26 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   Protected Governance remains `live_enabled: false`; no Live, approval,
   publication, package, Governance, Environment, tag, cleanup, push, PR, or
   other external mutation occurred.
+
+## [2026-09-03] review | Correct PR #648 delivery handoff
+
+- Pushed `workflow-delivery-v3-record-model-contraction` at initial head
+  `78a2a54ef9d02f8af405ad4635280dcc0cf4f21d` and opened PR #648 against
+  unchanged `main@14cfc212`.
+- All initial Continuous Integration, Workflow Delivery v3 CI, CodeQL, root
+  HK, language, and cross-platform artifact checks passed.
+- Copilot review found one stale current-state statement: the normative
+  handoff still described branch push and PR creation as future work.
+  Independent adjudication classified the finding true positive with 99%
+  confidence.
+- Updated the mutable handoff to identify PR #648 as the active delivery
+  boundary, prevent duplicate delivery, and distinguish pending review,
+  delivery-specific approval, and protected merge. Existing append-only
+  no-push/no-PR chronology remains unchanged.
+- A local adversarial closure review found that the next-unit instruction could
+  imply automatic authorization after merge. Independent adjudication retained
+  the finding, and the handoff now requires separate explicit authorization
+  before any later dependency-ordered contraction.
+- The corrected PR head requires fresh checks and review. No approval, merge,
+  manual rerun, Live, Governance, Environment, publication, package, tag,
+  cleanup, or later-unit work occurred.
