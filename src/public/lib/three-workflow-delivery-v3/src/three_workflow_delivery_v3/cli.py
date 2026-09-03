@@ -112,18 +112,13 @@ from three_workflow_delivery_v3.records.release import (
     ActionResult,
     AttemptOutcome,
     AuthorizationRecord,
-    BuddyExecutionIdentity,
     CapabilityAdmissionDecision,
-    CapabilityGroupResultBundle,
-    ExecutionHistoryAdmissionSnapshot,
     HypotheticalAction,
     ProjectionObservation,
     PublicationSnapshot,
     QualificationDecision,
     QualificationEvidence,
     QualificationSnapshot,
-    Receipt,
-    ReceiptTransportReference,
     ReleaseArtifact,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
@@ -135,6 +130,7 @@ from three_workflow_delivery_v3.records.release import (
 )
 from three_workflow_delivery_v3.records.release_transport import (
     ReleaseAdmissionBindings,
+    release_record_from_document,
 )
 from three_workflow_delivery_v3.release import (
     AdmittedLiveEligibilityDecision,
@@ -145,7 +141,6 @@ from three_workflow_delivery_v3.release import (
     derive_buddy_execution_identity,
     derive_release_attempt_binding,
     derive_simulation_binding,
-    discover_execution_history,
     execute_project_test,
     execute_release_build,
     finalize_attempt_outcome,
@@ -2002,8 +1997,6 @@ def _release_bindings(
     *,
     producer: str | None = None,
     purpose: str = "release-simulation",
-    request_id: str | None = None,
-    execution: BuddyExecutionIdentity | None = None,
 ) -> ReleaseAdmissionBindings:
     platform_run_attempt = _platform_run_attempt(arguments)
     return ReleaseAdmissionBindings(
@@ -2014,8 +2007,6 @@ def _release_bindings(
         ),
         target=arguments.target,
         producer=producer,
-        request_id=request_id,
-        execution=execution,
     )
 
 
@@ -2088,8 +2079,6 @@ def _load_release_record(  # noqa: PLR0913
         | AuthorizationRecord
         | CapabilityAdmissionDecision
         | ActionResult
-        | Receipt
-        | CapabilityGroupResultBundle
         | AttemptOutcome
         | SimulationOutcome
     ],
@@ -2111,8 +2100,6 @@ def _load_release_record(  # noqa: PLR0913
     | AuthorizationRecord
     | CapabilityAdmissionDecision
     | ActionResult
-    | Receipt
-    | CapabilityGroupResultBundle
     | AttemptOutcome
     | SimulationOutcome
 ):
@@ -3140,55 +3127,6 @@ def _release_evaluate_live_eligibility_command(
     return 0 if decision.result == "pass" else 1
 
 
-def _release_discover_history_command(arguments: argparse.Namespace) -> int:
-    intent = _load_live_intent(arguments)
-    execution = derive_buddy_execution_identity(intent)
-    client = GitHubRestClient(
-        repository=arguments.repository,
-        token=arguments.github_token,
-        workflow_path=arguments.workflow_path,
-    )
-    snapshot = discover_execution_history(
-        client=client,
-        execution=execution,
-        request_id=intent.request_id,
-        current_workflow_run_id=arguments.workflow_run_id,
-        current_run_attempt=arguments.run_attempt,
-    )
-    _write_output(arguments.output, snapshot.to_document())
-    _record_outputs(
-        arguments.github_output,
-        role="history-snapshot",
-        digest=snapshot.snapshot_digest,
-    )
-    return 0
-
-
-def _history_snapshot_from_file(
-    arguments: argparse.Namespace,
-    intent: ReleaseIntent,
-) -> ExecutionHistoryAdmissionSnapshot:
-    content = _verify_uploaded_payload(
-        arguments.history_snapshot,
-        artifact_id=arguments.history_snapshot_artifact_id,
-        artifact_digest=arguments.history_snapshot_artifact_digest,
-    )
-    admitted = admit_release_record(
-        content,
-        expected_type=ExecutionHistoryAdmissionSnapshot,
-        expected_digest=arguments.history_snapshot_digest,
-        expected_bindings=_release_bindings(
-            arguments,
-            purpose="live-release",
-            request_id=intent.request_id,
-            execution=derive_buddy_execution_identity(intent),
-        ),
-    )
-    if type(admitted) is not ExecutionHistoryAdmissionSnapshot:
-        raise TypeError("History Snapshot admission returned the wrong type")
-    return admitted
-
-
 def _admitted_live_eligibility_decision(
     arguments: argparse.Namespace,
     intent: ReleaseIntent,
@@ -3248,18 +3186,6 @@ def _release_bind_live_attempt_command(arguments: argparse.Namespace) -> int:
         role="attempt-binding",
         digest=binding.binding_digest,
         extra=(("workflow-run-id", binding.attempt.workflow_run_id),),
-    )
-    return 0
-
-
-def _release_admit_history_command(arguments: argparse.Namespace) -> int:
-    intent = _load_live_intent(arguments)
-    snapshot = _history_snapshot_from_file(arguments, intent)
-    _write_output(arguments.output, snapshot.to_document())
-    _record_outputs(
-        arguments.github_output,
-        role="history-snapshot",
-        digest=snapshot.snapshot_digest,
     )
     return 0
 
@@ -3811,8 +3737,6 @@ def _release_publish_github_packages_command(
     if not isinstance(result, DeferredPublicationExecutionResult):
         message = "GitHub Packages publisher returned a bound result"
         raise TypeError(message)
-    if result.receipt is not None:
-        _write_output(arguments.receipt_output, result.receipt.to_document())
     state: dict[str, JsonValue] = {
         "schema": "workflow-delivery/v3/deferred-publication-result",
         "action-id": publication.materialized_actions[0].action_id,
@@ -3821,8 +3745,8 @@ def _release_publish_github_packages_command(
         "outcome": result.classification.outcome,
         "mutation-disposition": result.classification.mutation_disposition,
         "response-identity-digest": result.response_identity_digest,
-        "receipt-digest": (
-            None if result.receipt is None else result.receipt.receipt_digest
+        "receipt": (
+            None if result.receipt is None else result.receipt.to_document()
         ),
         "diagnostic-reference": result.diagnostic_reference,
         "control": capability.control,
@@ -3832,12 +3756,6 @@ def _release_publish_github_packages_command(
         arguments.github_output,
         role="publication-execution",
         digest=canonical_sha256(state),
-        extra=(
-            (
-                "receipt-digest",
-                "" if result.receipt is None else result.receipt.receipt_digest,
-            ),
-        ),
     )
     return 0 if result.classification.outcome == "success" else 1
 
@@ -4032,6 +3950,7 @@ def _release_form_github_packages_result_command(
     publication = _load_publication_snapshot(arguments)
     action = publication.materialized_actions[0]
     marker_present = arguments.mutation_marker_artifact_id is not None
+    expected_control = f"workflow-delivery-v3:{arguments.target}"
     state_value: dict[str, JsonValue] | None = None
     if arguments.execution_state is not None:
         try:
@@ -4059,13 +3978,14 @@ def _release_form_github_packages_result_command(
             "possibly-mutated",
         }
         or type(state_value.get("control")) is not str
+        or state_value.get("control") != expected_control
         or (
             state_value.get("response-identity-digest") is not None
             and type(state_value.get("response-identity-digest")) is not str
         )
         or (
-            state_value.get("receipt-digest") is not None
-            and type(state_value.get("receipt-digest")) is not str
+            state_value.get("receipt") is not None
+            and type(state_value.get("receipt")) is not dict
         )
         or (
             marker_present
@@ -4106,116 +4026,50 @@ def _release_form_github_packages_result_command(
                 "possibly-mutated" if marker_present else "no-side-effect"
             ),
             "response-identity-digest": None,
-            "receipt-digest": None,
+            "receipt": None,
             "diagnostic-reference": (
                 "terminal-state-missing-or-malformed-after-start"
                 if marker_present
                 else "preflight-failed-before-mutation-start"
             ),
-            "control": f"workflow-delivery-v3:{arguments.target}",
+            "control": expected_control,
         }
     elif arguments.publish_step_outcome == "success" and (
         state_value.get("outcome") != "success"
     ):
         raise ValueError("Deferred publication step outcome mismatch")
-    receipt = None
-    if arguments.receipt is not None:
-        receipt = cast(
-            "Receipt",
-            _load_release_record(
-                arguments.receipt,
-                record_type=Receipt,
-                expected_digest=arguments.receipt_digest,
-                artifact_id=arguments.receipt_artifact_id,
-                artifact_digest=arguments.receipt_artifact_digest,
-                bindings=_release_bindings(
-                    arguments,
-                    producer="publish-github-packages",
-                    purpose="live-release",
-                ),
-            ),
-        )
-    state_receipt_digest = cast("str | None", state_value["receipt-digest"])
-    if receipt is None and state_receipt_digest is not None and marker_present:
-        state_value = {
-            **state_value,
-            "outcome": "incomplete",
-            "mutation-disposition": "possibly-mutated",
-            "response-identity-digest": None,
-            "receipt-digest": None,
-            "diagnostic-reference": "receipt-persistence-failed-after-start",
-        }
-        state_receipt_digest = None
-    if (receipt is None) != (state_receipt_digest is None) or (
-        receipt is not None
-        and (
-            receipt.receipt_digest != state_receipt_digest
-            or receipt.action_id != action.action_id
-        )
-    ):
-        raise ValueError("Deferred publication Receipt binding mismatch")
-    result = ActionResult(
-        attempt=publication.attempt,
-        publication_snapshot_digest=publication.snapshot_digest,
-        action_id=action.action_id,
-        action_digest=action.action_digest,
-        lock_group=action.lock_group,
-        outcome=cast("str", state_value["outcome"]),
-        mutation_disposition=cast(
-            "str",
-            state_value["mutation-disposition"],
+    result_document: dict[str, JsonValue] = {
+        "schema": "workflow-delivery/v3/action-result",
+        "attempt": publication.attempt.to_document(),
+        "publication-snapshot-digest": publication.snapshot_digest,
+        "action-id": action.action_id,
+        "action-digest": action.action_digest,
+        "lock-group": action.lock_group,
+        "outcome": state_value["outcome"],
+        "mutation-disposition": state_value["mutation-disposition"],
+        "response-identity-digest": state_value["response-identity-digest"],
+        "receipt": state_value["receipt"],
+        "diagnostic-reference": state_value["diagnostic-reference"],
+        "producer": "publish-github-packages",
+        "control": state_value["control"],
+        "workflow-run-id": publication.attempt.workflow_run_id,
+    }
+    result = cast(
+        "ActionResult",
+        release_record_from_document(
+            result_document,
+            expected_type=ActionResult,
         ),
-        response_identity_digest=cast(
-            "str | None",
-            state_value["response-identity-digest"],
-        ),
-        receipt_artifact_id=(
-            None if receipt is None else arguments.receipt_artifact_id
-        ),
-        receipt_artifact_name=(
-            None
-            if receipt is None
-            else Path(_string(arguments.receipt, context="receipt")).name
-        ),
-        receipt_artifact_digest=(
-            None if receipt is None else arguments.receipt_artifact_digest
-        ),
-        receipt_payload_digest=(
-            None if receipt is None else receipt.receipt_digest
-        ),
-        receipt_digest=(None if receipt is None else receipt.receipt_digest),
-        diagnostic_reference=cast(
-            "str | None",
-            state_value["diagnostic-reference"],
-        ),
-        producer="publish-github-packages",
-        control=cast("str", state_value["control"]),
-        workflow_run_id=publication.attempt.workflow_run_id,
-    )
-    bundle = CapabilityGroupResultBundle(
-        attempt=publication.attempt,
-        publication_snapshot_digest=publication.snapshot_digest,
-        capability_group=action.capability_group,
-        planned_action_ids=(action.action_id,),
-        action_results=(result,),
-        completion_state=(
-            "complete" if result.outcome == "success" else result.outcome
-        ),
-        producer="publish-github-packages",
-        control=result.control,
-        workflow_run_id=publication.attempt.workflow_run_id,
     )
     _write_output(arguments.result_output, result.to_document())
-    _write_output(arguments.bundle_output, bundle.to_document())
     _record_outputs(
         arguments.github_output,
-        role="capability-group-bundle",
-        digest=bundle.bundle_digest,
+        role="action-result",
+        digest=result.result_digest,
         extra=(
-            ("action-result-digest", result.result_digest),
             (
                 "receipt-digest",
-                "" if receipt is None else receipt.receipt_digest,
+                "" if result.receipt is None else result.receipt.receipt_digest,
             ),
         ),
     )
@@ -4252,18 +4106,11 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
         artifact_digest=arguments.capability_decision_artifact_digest,
     )
     _validate_optional_uploaded_record_transport(
-        "capability_group_bundle",
-        path=arguments.capability_group_bundle,
-        record_digest=arguments.capability_group_bundle_digest,
-        artifact_id=arguments.capability_group_bundle_artifact_id,
-        artifact_digest=arguments.capability_group_bundle_artifact_digest,
-    )
-    _validate_optional_uploaded_record_transport(
-        "receipt",
-        path=arguments.receipt,
-        record_digest=arguments.receipt_digest,
-        artifact_id=arguments.receipt_artifact_id,
-        artifact_digest=arguments.receipt_artifact_digest,
+        "action_result",
+        path=arguments.action_result,
+        record_digest=arguments.action_result_digest,
+        artifact_id=arguments.action_result_artifact_id,
+        artifact_digest=arguments.action_result_artifact_digest,
     )
     binding = _load_attempt_binding(arguments)
     snapshot = _load_live_qualification_snapshot(arguments)
@@ -4368,33 +4215,16 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
     capability_decision = None
     if arguments.capability_decision is not None:
         capability_decision = _load_capability_decision(arguments)
-    group_bundle = None
-    if arguments.capability_group_bundle is not None:
-        group_bundle = cast(
-            "CapabilityGroupResultBundle",
+    action_result = None
+    if arguments.action_result is not None:
+        action_result = cast(
+            "ActionResult",
             _load_release_record(
-                arguments.capability_group_bundle,
-                record_type=CapabilityGroupResultBundle,
-                expected_digest=arguments.capability_group_bundle_digest,
-                artifact_id=arguments.capability_group_bundle_artifact_id,
-                artifact_digest=arguments.capability_group_bundle_artifact_digest,
-                bindings=_release_bindings(
-                    arguments,
-                    producer="publish-github-packages",
-                    purpose="live-release",
-                ),
-            ),
-        )
-    receipt = None
-    if arguments.receipt is not None:
-        receipt = cast(
-            "Receipt",
-            _load_release_record(
-                arguments.receipt,
-                record_type=Receipt,
-                expected_digest=arguments.receipt_digest,
-                artifact_id=arguments.receipt_artifact_id,
-                artifact_digest=arguments.receipt_artifact_digest,
+                arguments.action_result,
+                record_type=ActionResult,
+                expected_digest=arguments.action_result_digest,
+                artifact_id=arguments.action_result_artifact_id,
+                artifact_digest=arguments.action_result_artifact_digest,
                 bindings=_release_bindings(
                     arguments,
                     producer="publish-github-packages",
@@ -4410,24 +4240,8 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
         capability_decisions=()
         if capability_decision is None
         else (capability_decision,),
-        group_bundles=() if group_bundle is None else (group_bundle,),
-        receipts=() if receipt is None else (receipt,),
+        action_results=() if action_result is None else (action_result,),
         observations=() if observation is None else (observation,),
-        receipt_transport_references=()
-        if receipt is None
-        else (
-            ReceiptTransportReference(
-                action_id=receipt.action_id,
-                artifact_id=arguments.receipt_artifact_id,
-                artifact_name=Path(
-                    _string(arguments.receipt, context="receipt")
-                ).name,
-                upload_digest=_normalized_digest(
-                    arguments.receipt_artifact_digest
-                ),
-                payload_digest=receipt.receipt_digest,
-            ),
-        ),
         publication_preparation_interrupted=(
             arguments.publication_preparation_interrupted
         ),
@@ -6127,34 +5941,6 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         handler=_release_admit_live_eligibility_command
     )
 
-    discover_history = release_commands.add_parser("discover-execution-history")
-    discover_history.add_argument("--repository", required=True)
-    discover_history.add_argument("--workflow-path", required=True)
-    discover_history.add_argument("--github-token", required=True)
-    _add_current_release_arguments(discover_history)
-    _add_uploaded_record_arguments(discover_history, name="intent")
-    discover_history.add_argument("--output", required=True)
-    discover_history.add_argument("--github-output")
-    discover_history.set_defaults(handler=_release_discover_history_command)
-
-    admit_history = release_commands.add_parser("admit-history")
-    _add_current_release_arguments(admit_history)
-    _add_uploaded_record_arguments(admit_history, name="intent")
-    admit_history.add_argument("--history-snapshot", required=True)
-    admit_history.add_argument("--history-snapshot-digest", required=True)
-    admit_history.add_argument(
-        "--history-snapshot-artifact-id",
-        required=True,
-        type=int,
-    )
-    admit_history.add_argument(
-        "--history-snapshot-artifact-digest",
-        required=True,
-    )
-    admit_history.add_argument("--output", required=True)
-    admit_history.add_argument("--github-output")
-    admit_history.set_defaults(handler=_release_admit_history_command)
-
     bind_attempt = release_commands.add_parser("bind-live-attempt")
     bind_attempt.add_argument("--repo-root", default=".")
     _add_current_release_arguments(bind_attempt)
@@ -6318,7 +6104,6 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         name="mutation_marker",
     )
     publish_github.add_argument("--temp-root", required=True)
-    publish_github.add_argument("--receipt-output", required=True)
     publish_github.add_argument("--execution-state-output", required=True)
     publish_github.add_argument("--github-output")
     publish_github.set_defaults(
@@ -6373,11 +6158,6 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         form_github_result,
         name="publication_snapshot",
     )
-    _add_uploaded_record_arguments(
-        form_github_result,
-        name="receipt",
-        required=False,
-    )
     form_github_result.add_argument("--execution-state")
     form_github_result.add_argument("--mutation-marker")
     form_github_result.add_argument(
@@ -6386,7 +6166,6 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     form_github_result.add_argument("--publish-step-outcome", required=True)
     form_github_result.add_argument("--result-output", required=True)
-    form_github_result.add_argument("--bundle-output", required=True)
     form_github_result.add_argument("--github-output")
     form_github_result.set_defaults(
         handler=_release_form_github_packages_result_command
@@ -6436,12 +6215,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     _add_uploaded_record_arguments(
         finalize_live,
-        name="capability_group_bundle",
-        required=False,
-    )
-    _add_uploaded_record_arguments(
-        finalize_live,
-        name="receipt",
+        name="action_result",
         required=False,
     )
     finalize_live.add_argument(

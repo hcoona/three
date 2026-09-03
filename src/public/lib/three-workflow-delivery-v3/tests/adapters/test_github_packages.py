@@ -29,7 +29,7 @@ from three_workflow_delivery_v3.records.release import (
 TARGET = "a" * 40
 TOKEN = "test-token-must-never-be-recorded"  # noqa: S105
 VERSION = "1.2.3-beta.42.ge123456"
-CONTROL = "control:" + ("c" * 64)
+CONTROL = f"workflow-delivery-v3:{TARGET}"
 SNAPSHOT_DIGEST = "sha256:" + ("1" * 64)
 ACTION_DIGEST = "sha256:" + ("2" * 64)
 RESPONSE_DIGEST = "sha256:" + ("3" * 64)
@@ -135,6 +135,87 @@ def _adapter():
             pytrace=False,
         )
         raise AssertionError from error
+
+
+@pytest.mark.parametrize(
+    ("authorization_control", "capability_control"),
+    [
+        (
+            "workflow-delivery-v3:" + ("0" * 40),
+            f"workflow-delivery-v3:{TARGET}",
+        ),
+        (
+            f"workflow-delivery-v3:{TARGET}",
+            "workflow-delivery-v3:" + ("0" * 40),
+        ),
+        (
+            "workflow-delivery-v3:" + ("0" * 40),
+            "workflow-delivery-v3:" + ("0" * 40),
+        ),
+    ],
+)
+def test_publisher_rejects_substituted_control_before_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    authorization_control: str,
+    capability_control: str,
+) -> None:
+    adapter = _adapter()
+
+    class Record:
+        def __init__(self, **values: object) -> None:
+            self.__dict__.update(values)
+
+    for name in (
+        "PublicationSnapshot",
+        "AuthorizationRecord",
+        "CapabilityAdmissionDecision",
+        "PublicationAction",
+        "QualificationSnapshot",
+        "QualificationDecision",
+        "ReleaseArtifact",
+        "ArtifactExpectation",
+    ):
+        monkeypatch.setattr(adapter, name, Record)
+    monkeypatch.setattr(
+        adapter,
+        "_validate_artifact_expectation",
+        lambda _expectation: None,
+    )
+
+    attempt = Record(execution=Record(target=TARGET))
+    action = Record(
+        action_id="publish-github-packages",
+        action_digest=ACTION_DIGEST,
+        artifact_digest="sha256:" + ("4" * 64),
+        mutable_resource_keys=("resource:key",),
+        lock_group="resource:lock",
+    )
+    publication = Record(
+        attempt=attempt,
+        snapshot_digest=SNAPSHOT_DIGEST,
+        materialized_actions=(action,),
+    )
+    authorization = Record(
+        attempt=attempt,
+        control=authorization_control,
+        publication_snapshot_digest=SNAPSHOT_DIGEST,
+    )
+    capability = Record(
+        attempt=attempt,
+        control=capability_control,
+    )
+
+    with pytest.raises(ValueError, match="precondition binding mismatch"):
+        adapter._validate_publish_preconditions(  # noqa: SLF001
+            publication_snapshot=publication,
+            authorization=authorization,
+            capability_decision=capability,
+            action=action,
+            qualification_snapshot=Record(),
+            qualification_decision=Record(),
+            artifact=Record(),
+            expectation=Record(),
+        )
 
 
 def _attempt() -> ReleaseAttemptIdentity:

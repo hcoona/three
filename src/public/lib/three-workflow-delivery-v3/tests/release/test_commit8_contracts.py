@@ -6,13 +6,14 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError, fields, replace
 
 import pytest
+from three_workflow_delivery_v3 import platform as platform_api
 from three_workflow_delivery_v3.canonical import JsonValue, canonical_sha256
+from three_workflow_delivery_v3.platform import github as github_platform
 from three_workflow_delivery_v3.records import release as release_records
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactTransportIdentity,
 )
 from three_workflow_delivery_v3.records.bindings import (
-    AdmissionMode,
     CurrentAuthorityContext,
     admit,
 )
@@ -22,13 +23,14 @@ from three_workflow_delivery_v3.records.release import (
     AuthorizationRecord,
     BuddyExecutionIdentity,
     CapabilityAdmissionDecision,
-    CapabilityGroupResultBundle,
     ExternalPackageCoordinate,
     PublicationObservationReference,
     PublicationSnapshot,
     Receipt,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
+    ReleaseRecord,
+    SimulationBinding,
     publication_capability_requirements,
     publication_lock_group,
     publication_mutable_resource_key_basis,
@@ -45,7 +47,7 @@ from three_workflow_delivery_v3.release.live import finalize_attempt_outcome
 
 TARGET = "a" * 40
 ARTIFACT_DIGEST = "sha256:" + ("b" * 64)
-CONTROL = "control:" + ("c" * 64)
+CONTROL = f"workflow-delivery-v3:{TARGET}"
 COMPLETE_RESOURCE_KEY_COUNT = 2
 EXECUTION = BuddyExecutionIdentity(
     channel="buddy",
@@ -58,15 +60,36 @@ ATTEMPT = ReleaseAttemptIdentity(
 )
 
 COMMIT8_RECORD_TYPES = (
-    "HistoricalExecutionRecord",
-    "ExecutionHistoryAdmissionSnapshot",
     "ReleaseAttemptBinding",
     "AuthorizationRecord",
     "CapabilityAdmissionDecision",
     "ActionResult",
-    "CapabilityGroupResultBundle",
     "Receipt",
     "AttemptOutcome",
+)
+
+RETIRED_RECORD_TYPES = (
+    "HistoricalExecutionRecord",
+    "ExecutionHistoryAdmissionSnapshot",
+    "ReceiptTransportReference",
+    "CapabilityGroupResultBundle",
+)
+
+RETIRED_PLATFORM_HISTORY_TYPES = (
+    "GitHubActionsHistoryClient",
+    "GitHubArtifact",
+    "GitHubArtifactArchiveShapeError",
+    "GitHubArtifactDownload",
+    "GitHubJob",
+    "GitHubJobStep",
+    "GitHubPage",
+    "GitHubRun",
+    "GitHubRunAttemptFact",
+    "admit_artifact_download",
+    "iter_all_artifacts",
+    "iter_all_attempt_jobs",
+    "iter_all_jobs",
+    "iter_all_runs",
 )
 
 
@@ -112,6 +135,24 @@ def test_commit8_record_contract_api_is_available() -> None:
     assert missing == (), f"missing commit-8 record contracts: {missing}"
 
 
+def test_execution_history_platform_api_is_retired() -> None:
+    assert platform_api.__all__ == []
+    assert all(
+        not hasattr(platform_api, name) and not hasattr(github_platform, name)
+        for name in RETIRED_PLATFORM_HISTORY_TYPES
+    )
+
+
+def test_retired_record_contracts_are_not_available() -> None:
+    present = tuple(
+        name for name in RETIRED_RECORD_TYPES if hasattr(release_records, name)
+    )
+
+    assert present == (), (
+        f"retired record contracts remain available: {present}"
+    )
+
+
 def test_attempt_identity_is_exact_frozen_and_workflow_run_bound() -> None:
     assert tuple(field.name for field in fields(ATTEMPT)) == (
         "execution",
@@ -134,24 +175,18 @@ def test_exact_current_attempt_authority_preserves_every_trusted_binding() -> (
     context = _current_context(payload)
 
     admitted = admit(
-        mode=AdmissionMode.CURRENT_AUTHORITY,
         payload=payload,
         artifact_id=context.artifact_id,
         artifact_digest=context.artifact_digest,
         current=context,
     )
 
-    assert admitted.mode is AdmissionMode.CURRENT_AUTHORITY
-    assert admitted.history_only is False
     assert admitted.release_execution == context.release_execution
     assert admitted.purpose == "live-release"
     assert admitted.target == TARGET
     assert admitted.control_identity == CONTROL
     assert admitted.artifact_digest == ARTIFACT_DIGEST
     assert admitted.payload_digest == canonical_sha256(payload)
-    assert admitted.platform_run is None
-    assert admitted.platform_job is None
-    assert admitted.diagnostic_claims == ()
 
 
 @pytest.mark.parametrize(
@@ -176,7 +211,6 @@ def test_current_attempt_authority_rejects_every_binding_substitution(
 
     with pytest.raises(ValueError, match=rf"binding mismatch: {field}"):
         admit(
-            mode=AdmissionMode.CURRENT_AUTHORITY,
             payload=payload,
             artifact_id=context.artifact_id,
             artifact_digest=context.artifact_digest,
@@ -191,7 +225,6 @@ def test_live_current_authority_rejects_run_attempt_field() -> None:
 
     with pytest.raises(ValueError, match="unknown field: run_attempt"):
         admit(
-            mode=AdmissionMode.CURRENT_AUTHORITY,
             payload=payload,
             artifact_id=context.artifact_id,
             artifact_digest=context.artifact_digest,
@@ -205,7 +238,6 @@ def test_current_attempt_authority_rejects_transport_substitution() -> None:
 
     with pytest.raises(ValueError, match="artifact_id"):
         admit(
-            mode=AdmissionMode.CURRENT_AUTHORITY,
             payload=payload,
             artifact_id=context.artifact_id + 1,
             artifact_digest=context.artifact_digest,
@@ -213,7 +245,6 @@ def test_current_attempt_authority_rejects_transport_substitution() -> None:
         )
     with pytest.raises(ValueError, match="artifact_digest"):
         admit(
-            mode=AdmissionMode.CURRENT_AUTHORITY,
             payload=payload,
             artifact_id=context.artifact_id,
             artifact_digest="sha256:" + ("f" * 64),
@@ -232,7 +263,6 @@ def test_current_attempt_authority_rejects_payload_digest_substitution() -> (
 
     with pytest.raises(ValueError, match="payload integrity mismatch"):
         admit(
-            mode=AdmissionMode.CURRENT_AUTHORITY,
             payload=payload,
             artifact_id=context.artifact_id,
             artifact_digest=context.artifact_digest,
@@ -247,7 +277,6 @@ def test_payload_cannot_select_or_weaken_current_authority() -> None:
 
     with pytest.raises(ValueError, match="unknown field: admission_mode"):
         admit(
-            mode=AdmissionMode.CURRENT_AUTHORITY,
             payload=payload,
             artifact_id=context.artifact_id,
             artifact_digest=context.artifact_digest,
@@ -316,9 +345,6 @@ def _capability_decision(
             ),
         ),
         lock_groups=(("action:publish", "destination-package:lock"),),
-        capability_group_manifest=(
-            ("group:github-packages", ("action:publish",)),
-        ),
         live_eligibility_artifact_id=712,
         live_eligibility_artifact_digest="sha256:" + ("6" * 64),
         governance_provenance=(
@@ -400,31 +426,9 @@ def _action_result(
         response_identity_digest=(
             receipt.response_identity_digest if with_receipt else None
         ),
-        receipt_artifact_id=730 if with_receipt else None,
-        receipt_artifact_name="receipt.json" if with_receipt else None,
-        receipt_artifact_digest=(
-            "sha256:" + ("d" * 64) if with_receipt else None
-        ),
-        receipt_payload_digest=(
-            receipt.receipt_digest if with_receipt else None
-        ),
-        receipt_digest=receipt.receipt_digest if with_receipt else None,
+        receipt=receipt if with_receipt else None,
         diagnostic_reference=None if with_receipt else "lost-receipt",
         producer=receipt.producer,
-        control=CONTROL,
-        workflow_run_id=ATTEMPT.workflow_run_id,
-    )
-
-
-def _group_bundle() -> CapabilityGroupResultBundle:
-    return CapabilityGroupResultBundle(
-        attempt=ATTEMPT,
-        publication_snapshot_digest="sha256:" + ("1" * 64),
-        capability_group="group:github-packages",
-        planned_action_ids=("action:publish",),
-        action_results=(_action_result(),),
-        completion_state="complete",
-        producer="publish-github-packages",
         control=CONTROL,
         workflow_run_id=ATTEMPT.workflow_run_id,
     )
@@ -437,8 +441,7 @@ def _attempt_outcome() -> AttemptOutcome:
         publication_snapshot_digest="sha256:" + ("1" * 64),
         authorization_digest=_authorization().authorization_digest,
         capability_admission_digests=(_capability_decision().decision_digest,),
-        capability_group_bundle_digests=("sha256:" + ("e" * 64),),
-        receipt_digests=(_receipt().receipt_digest,),
+        action_result_digests=(_action_result().result_digest,),
         terminal_phase="finalized",
         result="success",
         uncertainty=False,
@@ -454,8 +457,7 @@ def _qualification_outcome() -> AttemptOutcome:
         publication_snapshot_digest=None,
         authorization_digest=None,
         capability_admission_digests=(),
-        capability_group_bundle_digests=(),
-        receipt_digests=(),
+        action_result_digests=(),
         terminal_phase="qualification",
         result="incomplete",
         uncertainty=True,
@@ -471,8 +473,7 @@ def _publication_preparation_outcome() -> AttemptOutcome:
         publication_snapshot_digest=None,
         authorization_digest=None,
         capability_admission_digests=(),
-        capability_group_bundle_digests=(),
-        receipt_digests=(),
+        action_result_digests=(),
         terminal_phase="publication-preparation",
         result="incomplete",
         uncertainty=True,
@@ -488,8 +489,7 @@ def _observation_outcome() -> AttemptOutcome:
         publication_snapshot_digest=None,
         authorization_digest=None,
         capability_admission_digests=(),
-        capability_group_bundle_digests=(),
-        receipt_digests=(),
+        action_result_digests=(),
         terminal_phase="observation",
         result="failure",
         uncertainty=False,
@@ -505,9 +505,7 @@ def _observation_outcome() -> AttemptOutcome:
         _attempt_binding(),
         _authorization(),
         _capability_decision(),
-        _receipt(),
         _action_result(),
-        _group_bundle(),
         _attempt_outcome(),
         _qualification_outcome(),
         _publication_preparation_outcome(),
@@ -522,6 +520,72 @@ def test_commit8_records_round_trip_through_closed_transport(record) -> None:
 
     assert admitted == record
     assert admitted.to_document() == record.to_document()
+
+
+def test_receipt_is_not_a_top_level_transport_record() -> None:
+    with pytest.raises(ValueError, match="unsupported transported Release"):
+        release_record_from_document(
+            _receipt().to_document(),
+            expected_type=Receipt,  # type: ignore[arg-type]
+        )
+
+
+def test_persisted_release_records_require_target_derived_control(
+    qualified_simulation,
+) -> None:
+    wrong_control = f"workflow-delivery-v3:{'0' * 40}"
+    failed_result = _action_result(
+        outcome="failed",
+        mutation_disposition="no-side-effect",
+        with_receipt=False,
+    )
+
+    with pytest.raises(ValueError, match="control target binding mismatch"):
+        replace(qualified_simulation.binding, control=wrong_control)
+    with pytest.raises(ValueError, match="control target binding mismatch"):
+        replace(_authorization(), control=wrong_control)
+    with pytest.raises(ValueError, match="control target binding mismatch"):
+        replace(_capability_decision(), control=wrong_control)
+    with pytest.raises(ValueError, match="control target binding mismatch"):
+        replace(_receipt(), control=wrong_control)
+    with pytest.raises(ValueError, match="control target binding mismatch"):
+        replace(failed_result, control=wrong_control)
+
+    def assert_transport_rejected(
+        record: ReleaseRecord,
+        expected_type: type[ReleaseRecord],
+    ) -> None:
+        document = record.to_document()
+        document["control"] = wrong_control
+        with pytest.raises(
+            ValueError,
+            match="control target binding mismatch",
+        ):
+            release_record_from_document(
+                document,
+                expected_type=expected_type,
+            )
+
+    assert_transport_rejected(
+        qualified_simulation.binding,
+        SimulationBinding,
+    )
+    assert_transport_rejected(_authorization(), AuthorizationRecord)
+    assert_transport_rejected(
+        _capability_decision(),
+        CapabilityAdmissionDecision,
+    )
+    assert_transport_rejected(failed_result, ActionResult)
+
+    action_result_document = _action_result().to_document()
+    receipt_document = action_result_document["receipt"]
+    assert isinstance(receipt_document, dict)
+    receipt_document["control"] = wrong_control
+    with pytest.raises(ValueError, match="control target binding mismatch"):
+        release_record_from_document(
+            action_result_document,
+            expected_type=ActionResult,
+        )
 
 
 @pytest.mark.parametrize(
@@ -562,15 +626,9 @@ def test_commit8_records_round_trip_through_closed_transport(record) -> None:
         ),
         (
             _action_result(),
-            "receipt_digest",
+            "receipt",
             None,
-            "Receipt reference",
-        ),
-        (
-            _group_bundle(),
-            "planned_action_ids",
-            ("action:other",),
-            "action set is not exact",
+            "embedded Receipt",
         ),
         (
             _attempt_outcome(),
@@ -579,8 +637,14 @@ def test_commit8_records_round_trip_through_closed_transport(record) -> None:
             "Successful Attempt Outcome",
         ),
         (
+            _attempt_outcome(),
+            "action_result_digests",
+            (),
+            "one direct Action Result lineage",
+        ),
+        (
             _qualification_outcome(),
-            "receipt_digests",
+            "action_result_digests",
             ("sha256:" + ("e" * 64),),
             "qualification-only",
         ),
@@ -620,17 +684,10 @@ def test_commit8_records_round_trip_through_closed_transport(record) -> None:
         ),
         pytest.param(
             _publication_preparation_outcome(),
-            "capability_group_bundle_digests",
+            "action_result_digests",
             ("sha256:" + ("f" * 64),),
             r"(?i)publication[- ]preparation",
-            id="capability-group-bundle-digests",
-        ),
-        pytest.param(
-            _publication_preparation_outcome(),
-            "receipt_digests",
-            ("sha256:" + ("f" * 64),),
-            r"(?i)publication[- ]preparation",
-            id="receipt-digests",
+            id="action-result-digests",
         ),
         pytest.param(
             _publication_preparation_outcome(),
@@ -665,6 +722,169 @@ def test_commit8_records_reject_independent_binding_substitutions(
         replace(record, **{field: replacement})
 
 
+def test_action_result_rejects_substituted_parent_receipt_binding() -> None:
+    substituted_digest = "sha256:" + ("e" * 64)
+
+    with pytest.raises(ValueError, match="embedded Receipt binding mismatch"):
+        replace(
+            _action_result(),
+            response_identity_digest=substituted_digest,
+        )
+
+    document = _action_result().to_document()
+    document["response-identity-digest"] = substituted_digest
+    with pytest.raises(ValueError, match="embedded Receipt binding mismatch"):
+        release_record_from_document(
+            document,
+            expected_type=ActionResult,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "document_field", "values"),
+    [
+        (
+            "capability_admission_digests",
+            "capability-admission-digests",
+            (),
+        ),
+        (
+            "capability_admission_digests",
+            "capability-admission-digests",
+            (
+                "sha256:" + ("e" * 64),
+                "sha256:" + ("f" * 64),
+            ),
+        ),
+        ("action_result_digests", "action-result-digests", ()),
+        (
+            "action_result_digests",
+            "action-result-digests",
+            (
+                "sha256:" + ("e" * 64),
+                "sha256:" + ("f" * 64),
+            ),
+        ),
+    ],
+)
+def test_successful_outcome_requires_exact_direct_lineage(
+    field: str,
+    document_field: str,
+    values: tuple[str, ...],
+) -> None:
+    def replace_outcome() -> AttemptOutcome:
+        if field == "capability_admission_digests":
+            return replace(
+                _attempt_outcome(),
+                capability_admission_digests=values,
+            )
+        return replace(
+            _attempt_outcome(),
+            action_result_digests=values,
+        )
+
+    with pytest.raises(ValueError, match="lineage"):
+        replace_outcome()
+
+    document = _attempt_outcome().to_document()
+    transport_values = document[document_field]
+    assert isinstance(transport_values, list)
+    transport_values.clear()
+    transport_values.extend(values)
+    with pytest.raises(ValueError, match="lineage"):
+        release_record_from_document(
+            document,
+            expected_type=AttemptOutcome,
+        )
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        pytest.param(
+            replace(_attempt_outcome(), result="failure"),
+            id="failure",
+        ),
+        pytest.param(
+            replace(
+                _attempt_outcome(),
+                result="incomplete-possibly-mutated",
+                uncertainty=True,
+                possibly_mutated=True,
+                next_action="reobserve-and-replay",
+            ),
+            id="incomplete-possibly-mutated",
+        ),
+    ],
+)
+def test_non_successful_outcome_rejects_multiple_direct_results(
+    outcome: AttemptOutcome,
+) -> None:
+    result_digests = (
+        "sha256:" + ("e" * 64),
+        "sha256:" + ("f" * 64),
+    )
+
+    with pytest.raises(ValueError, match="at most one direct Action Result"):
+        replace(outcome, action_result_digests=result_digests)
+
+    document = outcome.to_document()
+    transport_values = document["action-result-digests"]
+    assert isinstance(transport_values, list)
+    transport_values.clear()
+    transport_values.extend(result_digests)
+    with pytest.raises(ValueError, match="at most one direct Action Result"):
+        release_record_from_document(
+            document,
+            expected_type=AttemptOutcome,
+        )
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        pytest.param(
+            replace(_attempt_outcome(), result="failure"),
+            id="failure",
+        ),
+        pytest.param(
+            replace(
+                _attempt_outcome(),
+                result="incomplete-possibly-mutated",
+                uncertainty=True,
+                possibly_mutated=True,
+                next_action="reobserve-and-replay",
+            ),
+            id="incomplete-possibly-mutated",
+        ),
+    ],
+)
+def test_non_successful_outcome_rejects_multiple_capability_admissions(
+    outcome: AttemptOutcome,
+) -> None:
+    capability_digests = (
+        "sha256:" + ("e" * 64),
+        "sha256:" + ("f" * 64),
+    )
+
+    with pytest.raises(ValueError, match="at most one Capability Admission"):
+        replace(
+            outcome,
+            capability_admission_digests=capability_digests,
+        )
+
+    document = outcome.to_document()
+    transport_values = document["capability-admission-digests"]
+    assert isinstance(transport_values, list)
+    transport_values.clear()
+    transport_values.extend(capability_digests)
+    with pytest.raises(ValueError, match="at most one Capability Admission"):
+        release_record_from_document(
+            document,
+            expected_type=AttemptOutcome,
+        )
+
+
 def test_diagnostic_review_cannot_authorize() -> None:
     with pytest.raises(ValueError, match="Only successful approval"):
         replace(_authorization(), result="denied")
@@ -688,19 +908,99 @@ def test_blocked_capability_decision_is_non_authorizing_and_attempt_local() -> (
         )
 
 
-def test_group_bundle_requires_exact_action_set_equality() -> None:
-    result = _action_result()
-    with pytest.raises(ValueError, match="action set is not exact"):
-        CapabilityGroupResultBundle(
-            attempt=ATTEMPT,
-            publication_snapshot_digest=result.publication_snapshot_digest,
-            capability_group="group:github-packages",
-            planned_action_ids=("action:extra", "action:publish"),
-            action_results=(result,),
-            completion_state="complete",
-            producer=result.producer,
-            control=CONTROL,
-            workflow_run_id=ATTEMPT.workflow_run_id,
+@pytest.mark.parametrize("result", ["success", "blocked"])
+def test_capability_decision_allows_transitional_zero_action_closure(
+    result: str,
+) -> None:
+    decision = _capability_decision(result=result)
+    zero_action = replace(
+        decision,
+        action_digests=(),
+        artifact_digests=(),
+        resource_key_sets=(),
+        lock_groups=(),
+    )
+
+    assert zero_action.authorizing is False
+    assert (
+        release_record_from_document(
+            zero_action.to_document(),
+            expected_type=CapabilityAdmissionDecision,
+        )
+        == zero_action
+    )
+
+
+@pytest.mark.parametrize("result", ["success", "blocked"])
+def test_capability_decision_rejects_multiple_action_closures(
+    result: str,
+) -> None:
+    decision = _capability_decision(result=result)
+
+    with pytest.raises(
+        ValueError,
+        match="permits at most one action closure",
+    ):
+        replace(
+            decision,
+            action_digests=(
+                decision.action_digests[0],
+                "sha256:" + ("8" * 64),
+            ),
+            artifact_digests=(
+                decision.artifact_digests[0],
+                "sha256:" + ("9" * 64),
+            ),
+            resource_key_sets=(
+                *decision.resource_key_sets,
+                ("action:publish-second", ("resource:second",)),
+            ),
+            lock_groups=(
+                *decision.lock_groups,
+                ("action:publish-second", "destination-package:second"),
+            ),
+        )
+
+
+@pytest.mark.parametrize("result", ["success", "blocked"])
+def test_capability_decision_transport_rejects_multiple_action_closures(
+    result: str,
+) -> None:
+    decision = _capability_decision(result=result)
+    document = decision.to_document()
+    document["action-digests"] = [
+        decision.action_digests[0],
+        "sha256:" + ("8" * 64),
+    ]
+    document["artifact-digests"] = [
+        decision.artifact_digests[0],
+        "sha256:" + ("9" * 64),
+    ]
+    document["resource-key-sets"] = [
+        [
+            action_id,
+            list(resource_keys),
+        ]
+        for action_id, resource_keys in (
+            *decision.resource_key_sets,
+            ("action:publish-second", ("resource:second",)),
+        )
+    ]
+    document["lock-groups"] = [
+        list(lock_group)
+        for lock_group in (
+            *decision.lock_groups,
+            ("action:publish-second", "destination-package:second"),
+        )
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match="permits at most one action closure",
+    ):
+        release_record_from_document(
+            document,
+            expected_type=CapabilityAdmissionDecision,
         )
 
 
@@ -712,7 +1012,7 @@ def test_lost_receipt_after_possible_mutation_can_never_be_success() -> None:
     )
 
     assert incomplete.outcome == "incomplete"
-    with pytest.raises(ValueError, match="durable Receipt"):
+    with pytest.raises(ValueError, match="embedded Receipt"):
         replace(incomplete, outcome="success")
 
 
@@ -843,6 +1143,7 @@ def _live_noop_closure(scenario):
         _authorization(),
         attempt=attempt,
         publication_snapshot_digest=publication.snapshot_digest,
+        control=f"workflow-delivery-v3:{attempt.execution.target}",
         workflow_run_id=attempt.workflow_run_id,
     )
     return attempt, decision, publication, authorization
@@ -861,23 +1162,20 @@ def test_exact_preobserved_noop_requires_authorization_and_zero_capability(
         publication_snapshot=publication,
         authorization=authorization,
         capability_decisions=(),
-        group_bundles=(),
-        receipts=(),
+        action_results=(),
     )
 
     assert outcome.result == "success"
     assert outcome.terminal_phase == "finalized-no-op"
     assert outcome.capability_admission_digests == ()
-    assert outcome.capability_group_bundle_digests == ()
-    assert outcome.receipt_digests == ()
+    assert outcome.action_result_digests == ()
     unknown = finalize_attempt_outcome(
         attempt=attempt,
         qualification_decision=decision,
         publication_snapshot=publication,
         authorization=None,
         capability_decisions=(),
-        group_bundles=(),
-        receipts=(),
+        action_results=(),
     )
 
     assert unknown.result == "unknown-replayable-approval-contract"
@@ -926,8 +1224,7 @@ def test_platform_termination_maps_by_capability_phase(
         publication_snapshot=publication,
         authorization=authorization,
         capability_decisions=(),
-        group_bundles=(),
-        receipts=(),
+        action_results=(),
         platform_terminated=True,
         capability_may_have_started=capability_started,
     )
@@ -944,8 +1241,7 @@ def test_platform_termination_maps_by_capability_phase(
         ("uncertainty", True),
         ("possibly_mutated", True),
         ("next_action", "reobserve-and-replay"),
-        ("capability_group_bundle_digests", ("sha256:" + ("7" * 64),)),
-        ("receipt_digests", ("sha256:" + ("8" * 64),)),
+        ("action_result_digests", ("sha256:" + ("7" * 64),)),
     ],
 )
 def test_replayable_no_side_effect_outcome_requires_exact_safe_state(
@@ -962,8 +1258,7 @@ def test_replayable_no_side_effect_outcome_requires_exact_safe_state(
         publication_snapshot=publication,
         authorization=authorization,
         capability_decisions=(),
-        group_bundles=(),
-        receipts=(),
+        action_results=(),
         platform_terminated=True,
         capability_may_have_started=False,
     )

@@ -916,10 +916,18 @@ def test_compile_simulation_model_consumes_uploaded_provider_without_rerun(
     "arguments",
     [
         ["release", "publish"],
+        ["release", "discover-execution-history"],
+        ["release", "admit-history"],
         ["repository", "plan"],
         ["npm", "observe"],
     ],
-    ids=["publish", "repository-plan", "observation"],
+    ids=[
+        "publish",
+        "discover-execution-history",
+        "admit-history",
+        "repository-plan",
+        "observation",
+    ],
 )
 def test_cli_rejects_unapproved_commands(arguments: list[str]) -> None:
     """Expose no publication or unapproved release command."""
@@ -972,10 +980,6 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
             ),
         ),
         (
-            "admit-history",
-            ("--intent", "--output", "--github-output"),
-        ),
-        (
             "materialize-publication",
             (
                 "--selected-ref",
@@ -1019,13 +1023,16 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
             (
                 "--capability-decision",
                 "--mutation-marker-artifact-id",
-                "--receipt-output",
                 "--execution-state-output",
             ),
         ),
         (
             "form-github-packages-result",
-            ("--execution-state", "--receipt-artifact-id", "--result-output"),
+            (
+                "--execution-state",
+                "--mutation-marker-artifact-id",
+                "--result-output",
+            ),
         ),
         (
             "finalize-live",
@@ -1035,6 +1042,7 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
                 "--build-evidence",
                 "--release-artifact",
                 "--observation",
+                "--action-result",
                 "--publication-preparation-interrupted",
                 "--outcome-output",
                 "--summary-output",
@@ -1100,6 +1108,8 @@ def test_cli_commit8_finalizer_exposes_platform_and_status_evidence_contract(
         "--github-output",
     ):
         assert option in help_text
+    assert "--capability-group-bundle" not in help_text
+    assert "--receipt " not in help_text
 
 
 def test_authorization_formatter_runs_isolated_without_indexes_or_cache(
@@ -2389,7 +2399,6 @@ def test_capability_cli_persists_expiry_decision_before_returning_one(  # noqa: 
         artifact_digests=(),
         resource_key_sets=(),
         lock_groups=(),
-        capability_group_manifest=(),
         live_eligibility_artifact_id=701,
         live_eligibility_artifact_digest="sha256:" + ("6" * 64),
         governance_provenance=(initial_eligibility.governance.provenance),
@@ -2512,14 +2521,13 @@ def test_publish_cli_persists_governance_terminal_state_before_nonzero(
         *,
         role: str,
         digest: str,
-        extra: object,
+        extra: object = (),
     ) -> None:
         events.append(("record", (role, digest, extra)))
 
     monkeypatch.setattr(cli_module, "_write_output", write_output)
     monkeypatch.setattr(cli_module, "_record_outputs", record_outputs)
     state_path = tmp_path / "execution-state.json"
-    receipt_path = tmp_path / "receipt.json"
 
     arguments = cast(
         "argparse.Namespace",
@@ -2535,7 +2543,6 @@ def test_publish_cli_persists_governance_terminal_state_before_nonzero(
             tarball=str(tmp_path / "package.tgz"),
             github_token="token",  # noqa: S106
             temp_root=str(tmp_path),
-            receipt_output=str(receipt_path),
             execution_state_output=str(state_path),
             github_output=str(tmp_path / "github-output"),
         ),
@@ -2552,7 +2559,7 @@ def test_publish_cli_persists_governance_terminal_state_before_nonzero(
         "outcome": "failed",
         "mutation-disposition": "no-side-effect",
         "response-identity-digest": None,
-        "receipt-digest": None,
+        "receipt": None,
         "diagnostic-reference": (
             PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER
         ),
@@ -2562,7 +2569,6 @@ def test_publish_cli_persists_governance_terminal_state_before_nonzero(
 
     assert status == 1
     assert persisted_state == expected_state
-    assert not receipt_path.exists()
     assert events == [
         ("write", expected_state),
         (
@@ -2570,7 +2576,7 @@ def test_publish_cli_persists_governance_terminal_state_before_nonzero(
             (
                 "publication-execution",
                 canonical_sha256(expected_state),
-                (("receipt-digest", ""),),
+                (),
             ),
         ),
     ]
@@ -2589,6 +2595,77 @@ def test_publish_cli_persists_governance_terminal_state_before_nonzero(
     with pytest.raises(ValueError, match="generic post-marker failure"):
         cli_module._release_publish_github_packages_command(arguments)  # noqa: SLF001
     assert not generic_state_path.exists()
+
+
+def test_result_cli_fails_closed_on_substituted_control(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Discard a terminal state whose control is not target-derived."""
+    target = "b" * 40
+    expected_control = f"workflow-delivery-v3:{target}"
+    attempt = ReleaseAttemptIdentity(
+        execution=BuddyExecutionIdentity(
+            channel="buddy",
+            release_unit="hcoona-release-smoke-npm",
+            target=target,
+        ),
+        workflow_run_id=812,
+    )
+    action = SimpleNamespace(
+        action_id="publish-github-packages",
+        action_digest="sha256:" + ("a" * 64),
+        lock_group="npm:@hcoona/hcoona-release-smoke-npm",
+    )
+    publication = SimpleNamespace(
+        attempt=attempt,
+        snapshot_digest="sha256:" + ("1" * 64),
+        materialized_actions=(action,),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_publication_snapshot",
+        lambda _arguments: publication,
+    )
+    state_path = tmp_path / "execution-state.json"
+    state_path.write_bytes(
+        canonicalize(
+            {
+                "schema": "workflow-delivery/v3/deferred-publication-result",
+                "action-id": action.action_id,
+                "action-digest": action.action_digest,
+                "lock-group": action.lock_group,
+                "outcome": "failed",
+                "mutation-disposition": "no-side-effect",
+                "response-identity-digest": None,
+                "receipt": None,
+                "diagnostic-reference": "substituted-state",
+                "control": f"workflow-delivery-v3:{'c' * 40}",
+            }
+        )
+    )
+    result_path = tmp_path / "action-result.json"
+    status = cli_module._release_form_github_packages_result_command(  # noqa: SLF001
+        cast(
+            "argparse.Namespace",
+            SimpleNamespace(
+                execution_state=str(state_path),
+                mutation_marker_artifact_id=None,
+                publish_step_outcome="failure",
+                target=target,
+                result_output=str(result_path),
+                github_output=str(tmp_path / "github-output"),
+            ),
+        )
+    )
+
+    result = json.loads(result_path.read_bytes())
+    assert status == 1
+    assert result["control"] == expected_control
+    assert (
+        result["diagnostic-reference"]
+        == "preflight-failed-before-mutation-start"
+    )
 
 
 def test_acceptance_cli_persists_validated_request_proof(

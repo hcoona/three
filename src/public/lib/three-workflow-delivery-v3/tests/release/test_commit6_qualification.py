@@ -20,12 +20,17 @@ from three_workflow_delivery_v3.records.release import (
     OfficialExecutionIdentity,
     OfficialProductIdentity,
     PublicationAction,
+    PublicationSnapshot,
     ReleaseArtifact,
     ReleaseAttemptIdentity,
     release_artifact_transport_name,
 )
+from three_workflow_delivery_v3.records.release_transport import (
+    release_record_from_document,
+)
 from three_workflow_delivery_v3.release.finalizer import (
     _admit_synthetic_projection_observation,
+    desired_projection_state_digest,
     finalize_qualification,
     finalize_simulation,
     materialize_hypothetical_actions,
@@ -438,7 +443,7 @@ def test_synthetic_observation_helper_is_not_public_release_api() -> None:
     assert "admit_synthetic_projection_observation" not in release_api.__all__
 
 
-def _live_publication_action(scenario) -> PublicationAction:
+def _live_publication_snapshot(scenario) -> PublicationSnapshot:
     attempt = ReleaseAttemptIdentity(
         execution=OfficialExecutionIdentity(
             OfficialProductIdentity(
@@ -517,13 +522,16 @@ def _live_publication_action(scenario) -> PublicationAction:
         live_artifact,
         classification="absent",
     )
-    publication = materialize_publication_snapshot(
+    return materialize_publication_snapshot(
         live_snapshot,
         live_decision,
         (live_absent,),
         (live_artifact,),
     )
-    return publication.materialized_actions[0]
+
+
+def _live_publication_action(scenario) -> PublicationAction:
+    return _live_publication_snapshot(scenario).materialized_actions[0]
 
 
 def test_publication_snapshot_guards_success_observation_and_artifacts(
@@ -546,11 +554,140 @@ def test_publication_snapshot_guards_success_observation_and_artifacts(
     assert action.mutable_resource_keys
     assert action.lock_projection
     assert action.lock_group
-    assert action.capability_group
     assert action.capability_requirements == (
         "npmjs/trusted-publishing-oidc-v1",
     )
     assert action.receipt_contract == "npm/package-publication-receipt-v1"
+
+
+def test_publication_snapshot_rejects_more_than_one_action(
+    qualified_simulation,
+) -> None:
+    publication = _live_publication_snapshot(qualified_simulation)
+    action = publication.materialized_actions[0]
+
+    with pytest.raises(ValueError, match="at most one action"):
+        replace(publication, materialized_actions=(action, action))
+
+    document = publication.to_document()
+    actions = document["materialized-actions"]
+    assert isinstance(actions, list)
+    actions.append(action.to_document())
+    with pytest.raises(ValueError, match="at most one action"):
+        release_record_from_document(
+            document,
+            expected_type=PublicationSnapshot,
+        )
+
+
+def test_publication_materializer_rejects_more_than_one_action(
+    qualified_simulation,
+) -> None:
+    scenario = qualified_simulation
+    publication = _live_publication_snapshot(scenario)
+    first_action = publication.materialized_actions[0]
+    first_projection = first_action.projection
+    first_potential_action = next(
+        action
+        for action in scenario.snapshot.potential_actions
+        if action.contract_id == first_projection.potential_action_id
+    )
+    second_projection = replace(
+        first_projection,
+        projection_id=f"{first_projection.projection_id}:second",
+        potential_action_id=f"{first_projection.potential_action_id}:second",
+    )
+    second_potential_action = replace(
+        first_potential_action,
+        contract_id=second_projection.potential_action_id,
+        projection_id=second_projection.projection_id,
+    )
+    snapshot = replace(
+        scenario.snapshot,
+        subject=publication.attempt,
+        destination_projections=(first_projection, second_projection),
+        potential_actions=(first_potential_action, second_potential_action),
+    )
+    source_artifact = first_action.artifact
+    transport = replace(
+        source_artifact.transport,
+        artifact_name=release_artifact_transport_name(
+            repository=source_artifact.repository,
+            purpose="live-release",
+            output=source_artifact.output,
+            qualification_snapshot_digest=snapshot.snapshot_digest,
+            workflow_run_id=publication.attempt.workflow_run_id,
+            run_attempt=None,
+            producer=source_artifact.transport.producer,
+        ),
+    )
+    provenance = source_artifact.provenance_document()
+    provenance["qualification-snapshot-digest"] = snapshot.snapshot_digest
+    provenance["transport"] = transport.to_document()
+    artifact = replace(
+        source_artifact,
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+        transport=transport,
+        provenance_digest=canonical_sha256(provenance),
+    )
+    decision = replace(
+        scenario.decision,
+        subject=publication.attempt,
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+        admitted_artifact_digests=(artifact.artifact_digest,),
+    )
+    first_observation = _admit_synthetic_projection_observation(
+        snapshot,
+        decision,
+        artifact,
+        classification="absent",
+    )
+    desired_state_digest = desired_projection_state_digest(
+        snapshot,
+        second_projection.projection_id,
+        artifact,
+    )
+    observation_url = (
+        f"synthetic://workflow-delivery-v3/{second_projection.projection_id}"
+    )
+    request_facts = replace(
+        first_observation.request_facts,
+        projection_digest=second_projection.projection_digest,
+        desired_state_digest=desired_state_digest,
+        url=observation_url,
+    )
+    response_facts = replace(
+        first_observation.response_facts,
+        requested_url=observation_url,
+        final_url=observation_url,
+    )
+    request_digest = request_facts.request_digest
+    response_digest = canonical_sha256(
+        {
+            "schema": "workflow-delivery/v3/observation-response",
+            "request-digest": request_digest,
+            "facts": response_facts.to_document(),
+            "value": first_observation.value.to_document(),
+        }
+    )
+    second_observation = replace(
+        first_observation,
+        projection=second_projection,
+        desired_state_digest=desired_state_digest,
+        observation_contract_id=second_projection.observation_contract_id,
+        request_facts=request_facts,
+        request_digest=request_digest,
+        response_facts=response_facts,
+        response_digest=response_digest,
+    )
+
+    with pytest.raises(ValueError, match="at most one action"):
+        materialize_publication_snapshot(
+            snapshot,
+            decision,
+            (first_observation, second_observation),
+            (artifact,),
+        )
 
 
 @pytest.mark.parametrize(
@@ -609,13 +746,6 @@ def test_publication_snapshot_guards_success_observation_and_artifacts(
         (
             "lock-group",
             lambda action: replace(action, lock_group=f"{action.lock_group}:x"),
-        ),
-        (
-            "capability-group",
-            lambda action: replace(
-                action,
-                capability_group=f"{action.capability_group}:x",
-            ),
         ),
         (
             "capability-requirements",

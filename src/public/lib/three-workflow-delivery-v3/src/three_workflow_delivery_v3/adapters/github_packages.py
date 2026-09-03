@@ -1105,7 +1105,6 @@ class PublicationExecutionResult:
     command: PublishCommandResult
     observation: ProjectionObservation | None
     action_result: ActionResult
-    receipt: Receipt | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -3763,6 +3762,7 @@ def _validate_publish_preconditions(  # noqa: PLR0913
         message = "publication precondition record has the wrong type"
         raise TypeError(message)
     attempt = publication_snapshot.attempt
+    expected_control = f"workflow-delivery-v3:{attempt.execution.target}"
     _validate_artifact_expectation(expectation)
     actions = publication_snapshot.materialized_actions
     expected_action_digests = tuple(
@@ -3782,26 +3782,13 @@ def _validate_publish_preconditions(  # noqa: PLR0913
             (candidate.action_id, candidate.lock_group) for candidate in actions
         )
     )
-    expected_group_manifest = tuple(
-        sorted(
-            (
-                group,
-                tuple(
-                    sorted(
-                        candidate.action_id
-                        for candidate in actions
-                        if candidate.capability_group == group
-                    )
-                ),
-            )
-            for group in {candidate.capability_group for candidate in actions}
-        )
-    )
     if (
         authorization.attempt != attempt
+        or authorization.control != expected_control
         or authorization.publication_snapshot_digest
         != publication_snapshot.snapshot_digest
         or capability_decision.attempt != attempt
+        or capability_decision.control != expected_control
         or capability_decision.publication_snapshot_digest
         != publication_snapshot.snapshot_digest
         or capability_decision.authorization_digest
@@ -3812,8 +3799,6 @@ def _validate_publish_preconditions(  # noqa: PLR0913
         or capability_decision.artifact_digests != expected_artifact_digests
         or capability_decision.resource_key_sets != expected_resource_key_sets
         or capability_decision.lock_groups != expected_lock_groups
-        or capability_decision.capability_group_manifest
-        != expected_group_manifest
         or action.projection.destination_id != GITHUB_PACKAGES_DESTINATION_ID
         or action.operation != GITHUB_PACKAGES_OPERATION
         or qualification_snapshot.subject != attempt
@@ -3930,8 +3915,6 @@ def _action_result(  # noqa: PLR0913
     action: PublicationAction,
     classification: PublishClassification,
     response_identity_digest: str | None,
-    receipt_artifact_id: int | None,
-    receipt_artifact_digest: str | None,
     receipt: Receipt | None,
     diagnostic_reference: str | None,
     control: str,
@@ -3946,15 +3929,7 @@ def _action_result(  # noqa: PLR0913
         outcome=classification.outcome,
         mutation_disposition=classification.mutation_disposition,
         response_identity_digest=response_identity_digest,
-        receipt_artifact_id=receipt_artifact_id,
-        receipt_artifact_name=(
-            None if receipt_artifact_id is None else "receipt.json"
-        ),
-        receipt_artifact_digest=receipt_artifact_digest,
-        receipt_payload_digest=(
-            None if receipt is None else receipt.receipt_digest
-        ),
-        receipt_digest=None if receipt is None else receipt.receipt_digest,
+        receipt=receipt,
         diagnostic_reference=diagnostic_reference,
         producer=GITHUB_PACKAGES_PUBLISHER_PRODUCER,
         control=control,
@@ -4148,7 +4123,6 @@ def publish_github_packages_action(  # noqa: C901, PLR0912, PLR0913, PLR0915
     governance_observed_at: datetime | Callable[[], datetime] | object = (
         _MISSING
     ),
-    receipt_persister: Callable[[Receipt], tuple[int, str]] | object = _MISSING,
     defer_receipt_binding: bool = False,
     checkout_root: Path | None = None,
 ) -> (
@@ -4342,8 +4316,6 @@ def publish_github_packages_action(  # noqa: C901, PLR0912, PLR0913, PLR0915
         )
         response_identity = _response_identity(command, observation)
         receipt: Receipt | None = None
-        receipt_artifact_id: int | None = None
-        receipt_artifact_digest: str | None = None
         if observation.value.classification == "exact-satisfied":
             admitted_artifact = cast("ReleaseArtifact", artifact)
             receipt = Receipt(
@@ -4392,53 +4364,6 @@ def publish_github_packages_action(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     diagnostic_reference=None,
                     receipt=receipt,
                 )
-            if receipt_persister is _MISSING or receipt_persister is None:
-                message = "Receipt persister is required"
-                raise ValueError(message)
-            try:
-                receipt_artifact_id, receipt_artifact_digest = cast(
-                    "Callable[[Receipt], tuple[int, str]]",
-                    receipt_persister,
-                )(receipt)
-                _positive_exact_int(
-                    receipt_artifact_id,
-                    field="receipt_artifact_id",
-                )
-                if (
-                    type(receipt_artifact_digest) is not str
-                    or re.fullmatch(
-                        r"sha256:[0-9a-f]{64}",
-                        receipt_artifact_digest,
-                    )
-                    is None
-                ):
-                    message = "receipt artifact digest is malformed"
-                    raise ValueError(message)  # noqa: TRY301
-            except Exception:  # noqa: BLE001
-                classification = PublishClassification(
-                    "incomplete",
-                    "possibly-mutated",
-                    None,
-                )
-                return PublicationExecutionResult(
-                    command=command,
-                    observation=observation,
-                    action_result=_action_result(
-                        publication_snapshot=publication,
-                        action=publication_action,
-                        classification=classification,
-                        response_identity_digest=None,
-                        receipt_artifact_id=None,
-                        receipt_artifact_digest=None,
-                        receipt=None,
-                        diagnostic_reference="receipt-persistence-failed",
-                        control=cast(
-                            "CapabilityAdmissionDecision",
-                            capability_decision,
-                        ).control,
-                    ),
-                    receipt=None,
-                )
         classification = classify_publish_result(
             command_outcome="created",
             post_observation=observation.value.classification,
@@ -4467,8 +4392,6 @@ def publish_github_packages_action(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 response_identity_digest=(
                     response_identity if receipt is not None else None
                 ),
-                receipt_artifact_id=receipt_artifact_id,
-                receipt_artifact_digest=receipt_artifact_digest,
                 receipt=receipt,
                 diagnostic_reference=(
                     None if receipt is not None else "post-publish-not-exact"
@@ -4478,7 +4401,6 @@ def publish_github_packages_action(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     capability_decision,
                 ).control,
             ),
-            receipt=receipt,
         )
 
     command_outcome = command.outcome
@@ -4512,8 +4434,6 @@ def publish_github_packages_action(  # noqa: C901, PLR0912, PLR0913, PLR0915
             action=publication_action,
             classification=classification,
             response_identity_digest=None,
-            receipt_artifact_id=None,
-            receipt_artifact_digest=None,
             receipt=None,
             diagnostic_reference=command.outcome,
             control=cast(
@@ -4521,7 +4441,6 @@ def publish_github_packages_action(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 capability_decision,
             ).control,
         ),
-        receipt=None,
     )
 
 

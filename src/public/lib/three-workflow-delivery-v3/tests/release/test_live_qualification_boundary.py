@@ -1648,8 +1648,7 @@ _OPTIONAL_TRANSPORT_GROUPS = (
     "publication_snapshot",
     "authorization",
     "capability_decision",
-    "capability_group_bundle",
-    "receipt",
+    "action_result",
 )
 _OPTIONAL_TRANSPORT_MEMBERS = (
     "path",
@@ -1850,10 +1849,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
     from three_workflow_delivery_v3.records.release import (  # noqa: PLC0415
         ActionResult,
         CapabilityAdmissionDecision,
-        CapabilityGroupResultBundle,
         Receipt,
-        ReceiptTransportReference,
-        publication_capability_group,
         publication_lock_group,
         publication_mutable_resource_keys,
     )
@@ -1868,7 +1864,6 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
     artifact_digest = "sha256:" + ("4" * 64)
     action_digest = "sha256:" + ("5" * 64)
     action_id = projection.potential_action_id
-    capability_group = publication_capability_group(projection)
     mutable_resource_keys = publication_mutable_resource_keys(
         projection,
         attempt,
@@ -1922,7 +1917,6 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         artifact_digests=(artifact_digest,),
         resource_key_sets=((action_id, mutable_resource_keys),),
         lock_groups=((action_id, lock_group),),
-        capability_group_manifest=((capability_group, (action_id,)),),
         live_eligibility_artifact_id=(
             live_attempt_binding.live_eligibility_artifact_id
         ),
@@ -1999,12 +1993,6 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         tmp_path / "forwarded-capability-admission-decision.json",
         canonicalize(capability_decision.to_document()),
     )
-    receipt_path = _write(
-        tmp_path / "forwarded-publication-receipt.json",
-        canonicalize(receipt.to_document()),
-    )
-    receipt_artifact_id = 919
-    receipt_upload_digest = _transport_digest(receipt_path)
     action_result = ActionResult(
         attempt=attempt,
         publication_snapshot_digest=publication.snapshot_digest,
@@ -2014,37 +2002,15 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         outcome="success",
         mutation_disposition="created",
         response_identity_digest=receipt.response_identity_digest,
-        receipt_artifact_id=receipt_artifact_id,
-        receipt_artifact_name=receipt_path.name,
-        receipt_artifact_digest=receipt_upload_digest,
-        receipt_payload_digest=receipt.receipt_digest,
-        receipt_digest=receipt.receipt_digest,
+        receipt=receipt,
         diagnostic_reference=None,
         producer="publish-github-packages",
         control=control,
         workflow_run_id=attempt.workflow_run_id,
     )
-    group_bundle = CapabilityGroupResultBundle(
-        attempt=attempt,
-        publication_snapshot_digest=publication.snapshot_digest,
-        capability_group=capability_group,
-        planned_action_ids=(action_id,),
-        action_results=(action_result,),
-        completion_state="complete",
-        producer="publish-github-packages",
-        control=control,
-        workflow_run_id=attempt.workflow_run_id,
-    )
-    group_bundle_path = _write(
-        tmp_path / "forwarded-capability-group-result-bundle.json",
-        canonicalize(group_bundle.to_document()),
-    )
-    expected_receipt_transport = ReceiptTransportReference(
-        action_id=receipt.action_id,
-        artifact_id=receipt_artifact_id,
-        artifact_name=receipt_path.name,
-        upload_digest=receipt_upload_digest,
-        payload_digest=receipt.receipt_digest,
+    action_result_path = _write(
+        tmp_path / "forwarded-action-result.json",
+        canonicalize(action_result.to_document()),
     )
     expected_outcome = AttemptOutcome(
         attempt=attempt,
@@ -2052,8 +2018,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         publication_snapshot_digest=publication.snapshot_digest,
         authorization_digest=authorization.authorization_digest,
         capability_admission_digests=(capability_decision.decision_digest,),
-        capability_group_bundle_digests=(group_bundle.bundle_digest,),
-        receipt_digests=(receipt.receipt_digest,),
+        action_result_digests=(action_result.result_digest,),
         terminal_phase="finalized",
         result="success",
         uncertainty=False,
@@ -2069,12 +2034,8 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         publication_snapshot: PublicationSnapshot | None,
         authorization: AuthorizationRecord | None,
         capability_decisions: tuple[CapabilityAdmissionDecision, ...],
-        group_bundles: tuple[CapabilityGroupResultBundle, ...],
-        receipts: tuple[Receipt, ...],
+        action_results: tuple[ActionResult, ...],
         observations: tuple[ProjectionObservation, ...] = (),
-        receipt_transport_references: tuple[
-            ReceiptTransportReference, ...
-        ] = (),
         publication_preparation_interrupted: bool = False,
         platform_terminated: bool = False,
         capability_may_have_started: bool = False,
@@ -2086,10 +2047,8 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
                 "publication_snapshot": publication_snapshot,
                 "authorization": authorization,
                 "capability_decisions": capability_decisions,
-                "group_bundles": group_bundles,
-                "receipts": receipts,
+                "action_results": action_results,
                 "observations": observations,
-                "receipt_transport_references": (receipt_transport_references),
                 "publication_preparation_interrupted": (
                     publication_preparation_interrupted
                 ),
@@ -2154,16 +2113,10 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
                 920,
             ),
             *_uploaded_arguments(
-                "capability_group_bundle",
-                group_bundle_path,
-                group_bundle.bundle_digest,
+                "action_result",
+                action_result_path,
+                action_result.result_digest,
                 921,
-            ),
-            *_uploaded_arguments(
-                "receipt",
-                receipt_path,
-                receipt.receipt_digest,
-                receipt_artifact_id,
             ),
             platform_flag,
             "--outcome-output",
@@ -2192,26 +2145,14 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
     assert loaded_capability_decisions == (capability_decision,)
     assert type(loaded_capability_decisions[0]) is CapabilityAdmissionDecision
     assert loaded_capability_decisions[0] is not capability_decision
-    loaded_group_bundles = captured["group_bundles"]
-    assert isinstance(loaded_group_bundles, tuple)
-    assert loaded_group_bundles == (group_bundle,)
-    assert type(loaded_group_bundles[0]) is CapabilityGroupResultBundle
-    assert loaded_group_bundles[0] is not group_bundle
-    loaded_receipts = captured["receipts"]
-    assert isinstance(loaded_receipts, tuple)
-    assert loaded_receipts == (receipt,)
-    assert type(loaded_receipts[0]) is Receipt
-    assert loaded_receipts[0] is not receipt
+    loaded_action_results = captured["action_results"]
+    assert isinstance(loaded_action_results, tuple)
+    assert loaded_action_results == (action_result,)
+    assert type(loaded_action_results[0]) is ActionResult
+    assert loaded_action_results[0] is not action_result
+    assert loaded_action_results[0].receipt == receipt
+    assert loaded_action_results[0].receipt is not receipt
     assert captured["observations"] == ()
-
-    loaded_receipt_transports = captured["receipt_transport_references"]
-    assert isinstance(loaded_receipt_transports, tuple)
-    assert loaded_receipt_transports == (expected_receipt_transport,)
-    assert type(loaded_receipt_transports[0]) is ReceiptTransportReference
-    assert loaded_receipt_transports[0].artifact_id == receipt_artifact_id
-    assert loaded_receipt_transports[0].artifact_name == receipt_path.name
-    assert loaded_receipt_transports[0].upload_digest == receipt_upload_digest
-    assert loaded_receipt_transports[0].payload_digest == receipt.receipt_digest
     assert (
         captured["publication_preparation_interrupted"],
         captured["platform_terminated"],

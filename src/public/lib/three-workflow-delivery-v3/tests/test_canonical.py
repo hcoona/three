@@ -195,14 +195,9 @@ _FIXTURE_GOLDEN_DIGESTS = {
         "sha256:bfadf748e203e4d005d6fe29ea3b06ddccad3b22aea13b136"
         "4af0b65dc6d3d16"
     ),
-    "execution-history": (
-        "sha256:37e50d514cb7985a31a5a9c06abe5c88c7cfb87050127503"
-        "8b3277e51ecc6e82"
-    ),
 }
 _TRANSPORT_DIGESTS = {
     "current-authority": "sha256:" + ("a" * 64),
-    "execution-history": "sha256:" + ("b" * 64),
 }
 
 

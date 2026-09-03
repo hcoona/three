@@ -3287,3 +3287,30 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Protected Governance remains `live_enabled: false`; no Live, deployment,
   publication, package, tag, workflow-dispatch, cleanup, or other external
   mutation occurred.
+
+## [2026-09-03] refactor | Close Workflow Delivery v3 record-model contraction
+
+- Retired Actions-history authority and transport, Environment Profile,
+  capability-group records and bundles, and standalone Receipt transport.
+  Successful ActionResult now owns Receipt evidence, and Attempt Outcome binds
+  direct ActionResult lineage.
+- Closed current-authority purpose ordering, exact target-derived control,
+  successful action/no-op lineage, Publication Snapshot zero-or-one action
+  cardinality, and transitional Capability Admission zero-or-one closure
+  cardinality.
+- Independent adjudication retained only the multi-action part of the original
+  Capability Admission finding. Exact-one was rejected because the deferred
+  expiry/no-op CLI path still transports zero-action non-authorizing Decisions.
+- The complete affected suites passed 544 record-contraction tests and 53 Live
+  boundary tests. Ruff, Pyrefly, actionlint, staged diff checking, canonical
+  static-reference admission, and the complete staged HK gate passed; HK ran
+  3,671 Workflow Delivery v3 tests.
+- Runtime and platform/workflow reviews reported no findings. Purpose-test and
+  projection-count challenges were independently rejected as false positives;
+  fresh record-contract and adversarial closure reviews reported no findings.
+- Marker admission and ordering, pre-marker Result formation, durable marker
+  evidence, exact success formation, conclusion semantics, and final no-op
+  Governance/authorization topology remain activation-blocking later units.
+  Protected Governance remains `live_enabled: false`; no Live, approval,
+  publication, package, Governance, Environment, tag, cleanup, push, PR, or
+  other external mutation occurred.

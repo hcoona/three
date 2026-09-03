@@ -7386,3 +7386,53 @@ omitted baseline name, and its removed-runtime rationale. Parameterized pytest
 case counts supplement but do not replace function counts.
 
 <!-- END APPEND: 2026-09-01-wdv3-over-contraction-correction-plan -->
+
+## 2026-09-03 Workflow Delivery v3 Record-Contraction Regression Plan
+
+### Edit boundary
+
+Modify only:
+
+1. `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py`;
+2. `src/public/lib/three-workflow-delivery-v3/tests/test_admission.py`;
+3. `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit6_qualification.py`;
+4. `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`;
+5. the current appended sections in `.testagent/research.md` and
+   `.testagent/plan.md`.
+
+Do not change other production code, workflow behavior, runtime marker
+semantics, Governance sequencing, or deferred finalization policy.
+
+### Implementation phases
+
+1. Preserve the symmetric mixed-purpose regression and add direct exact
+   context-type plus trusted-purpose validation tests.
+2. Preserve direct constructor and transport action-cardinality coverage.
+3. Build a valid two-projection Live qualification input with two admitted
+   absent observations and call the real publication materializer.
+4. Require the record-owner message
+   `Publication Snapshot permits at most one action`.
+5. Permit zero or one action closure in each transitional Capability Admission
+   Decision and reject only multi-action closures. Do not alter the deferred
+   no-op CLI/runtime path.
+6. Preserve zero closures through direct construction and release transport
+   for both `success` and `blocked`, require them to remain non-authorizing,
+   reject two closures for both results, and retain the one-action blocked
+   positive case.
+7. Run the bounded regression nodes, then include the files in the
+   complete affected validation and staged HK gate.
+
+### Requirement traceability
+
+| Requirement | Test evidence |
+|---|---|
+| Trusted purpose selects schema only after payload/context agreement | `test_current_authority_rejects_mixed_purpose_before_schema_access` |
+| Current context is an exact runtime type | `test_current_authority_rejects_context_subclass` |
+| Trusted context purpose is closed | `test_current_authority_validates_trusted_context_purpose` |
+| Constructor and transport reject multiple actions | `test_publication_snapshot_rejects_more_than_one_action` |
+| Real materialization fails closed on multiple actions | `test_publication_materializer_rejects_more_than_one_action` |
+| Transitional zero-action Capability Admission remains non-authorizing | `test_capability_decision_allows_transitional_zero_action_closure` |
+| Capability Admission rejects multiple action closures | `test_capability_decision_rejects_multiple_action_closures`; `test_capability_decision_transport_rejects_multiple_action_closures` |
+| One-action blocked Capability Admission remains valid but non-authorizing | `test_blocked_capability_decision_is_non_authorizing_and_attempt_local` |
+
+<!-- END APPEND: 2026-09-03-wdv3-record-contraction-regression-plan -->
