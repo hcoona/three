@@ -39,15 +39,18 @@ requests mechanism extraction and revalidation. Git and the append-only
   direct successful `ActionResult` lineage, and zero-or-one Publication
   Snapshot cardinality.
 - After that merge, the user explicitly continued into the next disabled
-  Governance/authorization unit. Work is isolated on branch
+  Governance/authorization unit. The local unit is complete on branch
   `workflow-delivery-v3-governance-authority` from exact
-  `main@20740ade74a0b25d8b2ca300e63e12c5c4f0879a`.
-- Requirements and design confirmation are complete enough to implement. The
-  replacement parser requires only
+  `main@20740ade74a0b25d8b2ca300e63e12c5c4f0879a` in dependency order:
+    - `7d8e00cbbcb1536bdbae6a9f31d9a9179c6f6f7b` adds the isolated complete-
+      history Governance Git reader and package coverage; and
+    - `4a51aac3b9b3f81e04146ae14984335d02297c33` contracts Governance,
+      authorization, CLI, workflow, publisher, and replacement tests.
+- The replacement parser now requires only
   `workflow-delivery/v3/normal-live-governance-attestation-v1`; superseded
   selected-ref parsers therefore reject the protected document before
   Execution lookup, Attempt creation, or any Environment job.
-- The disabled protected document will migrate to that replacement schema
+- The disabled protected document has migrated to that replacement schema
   while retaining `live_enabled: false`. Its closed disabled state records
   unsatisfied activation gates instead of inventing native, retention, or
   destination-race evidence. The enabled state is valid only with the complete
@@ -68,6 +71,16 @@ requests mechanism extraction and revalidation. Git and the append-only
   non-overwriting version-and-tag creation. Absent destination state remains
   unsupported and activation-blocking; standard `npm publish --tag` must not
   be installed as an admitted normal-Live primitive.
+- Local primitive admission is code-owned and empty. Governance cannot declare
+  implementation capability, and a forged persisted passing eligibility
+  decision is rejected.
+- Final root HK, package construction and membership, type, lint, workflow,
+  and complete v3 tests passed after review fixes. Independent Governance,
+  records, publisher/CLI, and workflow-topology rereviews report no remaining
+  finding.
+- Native activation-evidence authoring, exact Publication Authorization
+  digest lineage in ActionResult/Receipt, and durable Result versus platform-
+  termination precedence remain explicit later-unit work.
 - The runtime remains disabled through
   `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with
   `live_enabled: false`.
@@ -75,8 +88,8 @@ requests mechanism extraction and revalidation. Git and the append-only
   mutation, Environment mutation, cleanup, push, PR, or merge is authorized by
   this local implementation continuation.
 
-The active boundary is local implementation, validation, commit-hook closure,
-and independent review for the Governance/authorization unit. Stop before
+The authorized local Governance/authorization boundary is complete. The two
+implementation commits and closure-document changes remain local. Stop before
 push, PR creation, protected merge, obsolete-Environment cleanup, Governance
 refresh, destination acceptance, activation, dispatch, approval, publication,
 or any other external mutation unless the user separately authorizes that
@@ -368,29 +381,22 @@ Do not infer policy from stale runtime behavior or archived designs.
 
 ## Next Executable Workflow
 
-1. Inspect current branch, status, identities, untracked paths, and complete
-   diff before changing anything.
-2. Preserve the merged static-reference and record-model contractions as
-   closed dependencies.
-3. Migrate the strict Governance parser and disabled protected document to the
-   replacement schema, with an explicit selected-ref compatibility fence and
-   no fabricated activation evidence.
-4. Implement isolated eligibility and continuity proof for unrelated-main
-   advance, path-touch anti-rollback, exact blob/content identity, expiry,
-   writer/publisher, native-evidence, retention, primitive, and enablement
-   checks.
-5. Add the complete pre-wait Approval Bundle and sole Publication
-   Authorization records and transport. Remove Capability Admission authority.
-6. Integrate exact-satisfied as a fresh no-op Governance proof with no
-   Environment or Authorization. Fail closed on absent destination state while
-   no primitive is admitted.
-7. Make only the CLI, workflow, and publisher changes directly required by
-   those authority contracts. Leave marker, Result, final Outcome, activation,
-   cleanup, and unrelated topology to their dependency-ordered units.
-8. Run focused and affected tests, root HK, hooks, and independent multi-angle
-   review. Adjudicate every finding until closure.
-9. Stop before push or PR creation and request the next delivery-specific
-   authorization.
+1. Inspect the exact local branch and commits before any continuation. Do not
+   infer delivery from this page.
+2. Preserve
+   `7d8e00cbbcb1536bdbae6a9f31d9a9179c6f6f7b` and
+   `4a51aac3b9b3f81e04146ae14984335d02297c33` as the reviewed dependency-
+   ordered implementation.
+3. Stop. Push and PR creation are the next delivery boundary and require
+   separate explicit authorization.
+4. After any later protected implementation merge, separately authorize the
+   marker/Result/final-Outcome unit. It must close exact Publication
+   Authorization digest lineage and durable Result versus platform-
+   termination precedence.
+5. Keep native activation-evidence authoring, obsolete-Environment cleanup,
+   destination-primitive acceptance, Governance refresh, activation, dispatch,
+   approval, and publication behind their own later authorization and proof
+   gates.
 
 Do not perform Live or operational external work.
 
@@ -448,9 +454,10 @@ applicable documentation and repository gates but keeps the same validate-before
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
 
 The replacement baseline, static-reference foundation, and record-model
-contraction are merged. The active local unit is Governance/authorization and
-the exact-satisfied no-op authority boundary on
-`workflow-delivery-v3-governance-authority` from exact merged `main`.
-Publication marker/Result/finalizer work remains the next dependency-ordered
-unit. Push, PR, protected merge, external-resource, cleanup, activation, and
-Live boundaries still require their own explicit authorization.
+contraction are merged. The Governance/authorization and exact-satisfied local
+unit is validated, independently rereviewed, and committed on
+`workflow-delivery-v3-governance-authority`, but is not pushed, proposed, or
+merged. Publication marker/Result/final-Outcome work remains the next
+dependency-ordered implementation unit after a separate delivery decision.
+Push, PR, protected merge, external-resource, cleanup, activation, and Live
+boundaries still require their own explicit authorization.

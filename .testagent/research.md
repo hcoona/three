@@ -7095,3 +7095,322 @@ unconditional root-HK `--source-kind index` step rather than retired.
   closures at construction and transport admission.
 
 <!-- END APPEND: 2026-09-03-wdv3-record-contraction-regression-research -->
+
+<!-- BEGIN APPEND: 2026-09-03-wdv3-governance-authority-targeted-test-research -->
+
+# Workflow Delivery v3 Governance/Authorization Targeted Test Research
+
+## Research identity and boundary
+
+- **Dated:** 2026-09-03.
+- **Exact worktree:**
+  `/home/shuaizhang/.copilot/session-state/24bd9638-ae1a-4852-8794-616ece84341e/files/governance-authority-worktree`.
+- **Requested base and merge base:**
+  `20740ade74a0b25d8b2ca300e63e12c5c4f0879a`.
+- **Current branch / HEAD:**
+  `workflow-delivery-v3-governance-authority` /
+  `68fdeb65d28dddec2a84cb80900f457eddf617fc`, one local commit ahead
+  of `origin/main`.
+- The complete status was inspected before this append. The target files were
+  already intentional concurrent state:
+  `test_eligibility.py` and `test_commit8_contracts.py` were modified, and
+  `test_governance_git.py` was untracked. They must be extended in place,
+  never restored or replaced.
+- `docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md` was read first.
+  Only the current v3 requirements, Governance Integration MLD, Release
+  Delivery MLD, and first-slice LLD were used as normative context. In
+  particular, the LLD requires the replacement schema, isolated complete Git
+  reads, exact blob/content identity, unrelated-main acceptance, path-touch
+  rejection, enabled fresh authorization, and an actionless exact-satisfied
+  proof.
+- The parent-reported `code-testing-extensions` invocation was unavailable in
+  this runtime. Python conventions below therefore come only from the bounded
+  package files and existing tests, as requested.
+- **Append-only evidence:** immediately before this section,
+  `.testagent/research.md` had 7,097 lines, 415,977 bytes, and SHA-256
+  `acaea95a09a4143bf9fa1f2ab7cabdb88d53ca2058e763fc8356b9fb25e996e0`.
+
+## Project overview
+
+- **Package:** `src/public/lib/three-workflow-delivery-v3`
+- **Language:** Python `>=3.13`
+- **Build backend:** Hatchling
+- **Workspace/package manager:** root uv workspace and `uv.lock`
+- **Test framework:** pytest `>=8.3.4`
+- **Lint/format:** root-pinned Ruff `0.16.5`
+- Root pytest configuration uses `--import-mode=importlib` and includes
+  `src/public/lib/three-workflow-delivery-v3/tests` in `testpaths`.
+- There is one package test tree rather than a separate test project:
+  `src/public/lib/three-workflow-delivery-v3/tests`.
+
+## Static source-to-test pairing
+
+The `find-untested-sources` polyglot analyzer was invoked and executed once,
+against only the package root, with `--lang python --include-tested`. Its JSON
+reported 44 source files, 47 test files, 43 statically paired sources, one
+unpaired source, and no orphan tests. Every direct production target below was
+paired. This is identifier/import-based static pairing, not line or branch
+coverage; shared record names also caused harmless over-pairing.
+
+| Semantic source | Primary requested test pair | Bounded supporting pair |
+|---|---|---|
+| `src/three_workflow_delivery_v3/release/governance_git.py` | `tests/release/test_governance_git.py` | `tests/release/test_eligibility.py` consumes `GovernanceGitRead` |
+| `src/three_workflow_delivery_v3/release/eligibility.py` | `tests/release/test_eligibility.py` | none needed |
+| `src/three_workflow_delivery_v3/records/release.py` | `tests/release/test_commit8_contracts.py` | none needed |
+| `src/three_workflow_delivery_v3/records/release_transport.py` | `tests/release/test_commit8_contracts.py` | none needed |
+
+## Bounded inventory and dependency graph
+
+### Requested test targets
+
+| Test file | Existing shape | Classification for this request |
+|---|---:|---|
+| `tests/release/test_governance_git.py` | 9 test functions, 11 helpers | Substantial local-Git coverage; ambient-environment and deterministic ref-race gaps, plus one existing scenario to strengthen |
+| `tests/release/test_eligibility.py` | 59 test functions, 52 helpers | Substantial parser/admission coverage; exact retired schema and positive SHA-256 higher-layer gaps |
+| `tests/release/test_commit8_contracts.py` | 40 test functions, 18 helpers | Substantial constructor/transport coverage; disabled-Governance and SHA-256 positive gaps, plus one direct-only substitution test to strengthen |
+
+No coverage percentage is claimed because no coverage report was supplied.
+
+### Production dependencies needed for these requirements
+
+| Layer | File / symbols | Why it is in bounds |
+|---|---|---|
+| Leaf integration | `release/governance_git.py`: `GovernanceGitRead`, `GovernanceGitReadError`, `IsolatedGovernanceGitReader.read` | Fresh bare-repository read, sanitized child environment, advertisement/fetch identity comparison, exact tree entry |
+| Fixed values | `repository/descriptors.py`: `GOVERNANCE_REPOSITORY`, `GOVERNANCE_REF`, `GOVERNANCE_PATH`, `GovernanceSource` | Exact protected source used by Git and Eligibility tests |
+| Mid-layer | `release/eligibility.py`: `parse_governance_attestation`, `evaluate_live_eligibility`, `admit_live_eligibility_decision`, `GovernanceObservation` | Replacement schema and SHA-1/SHA-256 Governance read/admission |
+| Record layer | `records/release.py`: `ReleaseAttemptBinding`, `PublicationAuthorization`, `ExactSatisfiedGovernanceProof`, `PublicationSnapshot` | Independent object-format/current-main length checks, enabled flag, and actionless proof invariant |
+| Transport layer | `records/release_transport.py`: `release_record_from_document` | Closed serialized admission for both replacement authority records |
+| Test data support | `canonical.py` and the already imported `release/live.py` builders | Canonical document/digest creation and existing Approval Bundle fixture construction only |
+
+Leaf-first order is the real local Git reader, then Eligibility through its
+recording client, then immutable records and their transport parser. No other
+source, workflow, CLI, adapter, or test module is needed.
+
+## Existing conventions and exact reuse points
+
+- Tests are module-level scenario tests with descriptive `test_<behavior>`
+  names, exact exception messages, `tmp_path`, `monkeypatch`,
+  `dataclasses.replace`, `deepcopy`, and parameter IDs.
+- Git integration tests use actual temporary repositories and `file://` bare
+  remotes through `_git_executable`, `_run`, `_output`,
+  `_initialize_repository`, `_write_governance`, `_commit`,
+  `_create_remote_repository`, `_push_main`, `_reader`, and `_read`.
+- Preserve all existing Governance Git tests. The most relevant are:
+  `test_isolated_read_accepts_unrelated_main_advance`,
+  `test_isolated_read_rejects_protected_path_edit_or_revert`,
+  `test_isolated_read_rejects_delete_restore_round_trip`,
+  `test_isolated_read_rejects_rename_round_trip`,
+  `test_isolated_read_rejects_merged_side_branch_touch`,
+  `test_isolated_read_rejects_non_descendant_force_update`,
+  `test_isolated_read_rejects_shallow_history`,
+  `test_isolated_read_rejects_missing_git_object`, and
+  `test_isolated_read_rejects_missing_or_non_blob_path`.
+- Eligibility should reuse `_attestation_document`, `_attestation_content`,
+  `RecordingGovernanceClient`, `_evaluate`, `_transport_decision`,
+  `_admit_mutated_decision`, and `_object_member`; shared fixtures are
+  `live_intent`, `live_admitted_repository_model`, and `policy`.
+- Relevant existing Eligibility tests are
+  `test_evaluator_output_round_trips_through_strict_live_admission`,
+  `test_live_eligibility_passes_with_fresh_exact_target_inputs`,
+  `test_decision_binds_attestation_provenance_and_content_digest`,
+  `test_git_object_format_sha_and_blob_provenance_are_strict`, and
+  `test_attestation_keeps_fixed_canonical_values_exact`.
+- Record/transport tests should reuse `_governance_provenance`,
+  `_live_closure`, `_approval_bundle`, `_publication_authorization`,
+  `_exact_satisfied_proof`, `_transport_records`, and the
+  `qualified_simulation` fixture.
+- Relevant existing contract tests are
+  `test_commit8_records_round_trip_through_closed_transport`,
+  `test_new_authority_transport_rejects_unknown_fields`,
+  `test_new_authority_transport_rejects_wrong_schema`,
+  `test_new_authority_transport_rejects_wrong_field_type`,
+  `test_publication_authorization_rejects_governance_substitution`, and
+  `test_exact_satisfied_proof_rejects_action_or_control_substitution`.
+
+## Accepted requirement checklist and current evidence
+
+1. [ ] **Hostile ambient Git environment.** No target test currently mentions
+   `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
+   `GIT_CONFIG_*`, `os.environ`, or `monkeypatch`; this is a new test. Create
+   the real local remote and capture its expected main SHA/blob OID before
+   applying ambient values with `monkeypatch` to `os.environ`. A hostile
+   `protocol.file.allow=never` injected through `GIT_CONFIG_COUNT`,
+   `GIT_CONFIG_KEY_0`, and `GIT_CONFIG_VALUE_0`, together with hostile object
+   directory variables, makes inheritance observable. Assert the returned
+   main SHA, object format, blob OID, and content equal the intended remote's
+   exact values. Do not inspect command strings or private environment
+   dictionaries.
+2. [ ] **Advertisement/fetch race.** Production already compares advertised
+   identity with the fetched local ref and raises
+   `Governance main ref changed during isolated read`, but no test reaches
+   that branch. Add one small test-only reader subclass whose deterministic
+   callback runs immediately after the inherited advertisement method
+   returns. Prepare a second local commit in advance; the callback only pushes
+   it. Assert the exact controlled error, with no sleep, polling, thread, or
+   production seam.
+3. [ ] **Exact retired schema.** Existing
+   `test_attestation_keeps_fixed_canonical_values_exact` rejects whitespace
+   and case variants, so generic wrong-schema behavior is covered, but the
+   exact retired `workflow-delivery/v3/governance-attestation` value is absent.
+   Add a focused case that first parses a fully valid
+   `_attestation_document()`, copies it, changes only `schema` to that literal,
+   and requires `wrong schema`. Do not introduce a retired-schema alias,
+   fixture, or accepted compatibility path.
+4. [ ] **Minimal positive SHA-256 propagation.** Low-level SHA-256 Git behavior
+   is already covered by
+   `test_isolated_read_accepts_unrelated_main_advance[sha256]`; do not
+   duplicate it. The higher layers currently use only SHA-1 positive
+   fixtures. In Eligibility, configure `RecordingGovernanceClient` with
+   `object_format == "sha256"` and 64-lowercase-hex `main_sha`/`blob_oid`,
+   evaluate a valid enabled document, strictly admit the resulting Decision,
+   and assert the exact preserved provenance. In contract tests, reuse
+   `_transport_records(qualified_simulation)`, replace the nested Attempt
+   binding/provenance coherently, and round-trip valid SHA-256 forms through
+   `release_record_from_document`. Exercise both `PublicationAuthorization`
+   and `ExactSatisfiedGovernanceProof`, because each class owns a distinct
+   current-main length check.
+5. [ ] **Disabled replacement authority.** No existing test sets either
+   replacement record's live-enabled field to false. Parameterize both
+   records. For `PublicationAuthorization`, direct
+   `replace(..., approval_governance_live_enabled=False)` and serialized
+   `approval-governance-live-enabled: false` must each raise controlled
+   `ValueError` matching `Governance is not enabled`. For
+   `ExactSatisfiedGovernanceProof`, direct
+   `replace(..., governance_live_enabled=False)` and serialized
+   `governance-live-enabled: false` must each raise controlled `ValueError`
+   matching `requires Live enabled`.
+6. [ ] **Action substitution at transport.** Existing
+   `test_exact_satisfied_proof_rejects_action_or_control_substitution`
+   already covers direct `dataclasses.replace` with the action-bearing
+   Approval Bundle Snapshot. Strengthen that test rather than adding a
+   duplicate: copy `proof.to_document()`, substitute the action-bearing
+   `publication-snapshot` document, and require
+   `release_record_from_document(...,
+   expected_type=ExactSatisfiedGovernanceProof)` to reject the actionless
+   invariant.
+7. [ ] **Actual tree-entry state.** Existing parameter IDs `missing-path`,
+   `tree-path`, and `executable-blob` already exercise reader rejection in
+   `test_isolated_read_rejects_missing_or_non_blob_path`; strengthen this
+   test. Before calling the reader, query the authoring repository with
+   `git ls-tree --full-tree HEAD -- <Governance path>` and assert respectively
+   empty output, `040000 tree`, and `100755 blob`, including the exact path.
+   This proves fixture state rather than trusting `governance_kind`.
+
+Static inspection found the corresponding production behavior already
+present: ambient variables are not copied into the reader environment; the
+advertisement/fetch mismatch branch exists; only the replacement attestation
+schema is accepted; Eligibility and both records recognize 64-character
+SHA-256 object IDs; both records reject disabled Governance; and the
+exact-satisfied constructor rejects action-bearing Snapshots. These are test
+gaps/strengthenings, not evidence for a production change. No tests were run
+during this research append, so no green result is claimed.
+
+## Likely phased grouping
+
+1. **Leaf Git integration:** add the ambient-environment and deterministic
+   race tests, then strengthen the existing missing/tree/executable scenario.
+2. **Eligibility:** add the exact retired-schema regression and one positive
+   SHA-256 evaluator-plus-admission scenario using the recording client.
+3. **Records and transport:** add coherent positive SHA-256 round trips,
+   parameterized direct/serialized disabled-Governance rejection, and the
+   transport half of the existing action-substitution test.
+4. **Closure:** run scoped tests and discovery first, then package discovery,
+   Ruff, bytecode compilation outside the worktree, package build, and diff
+   checks.
+
+## Exact commands
+
+Run from the exact worktree root.
+
+### Build
+
+```bash
+uv build --package three-workflow-delivery-v3
+```
+
+### Scoped test command for fix cycles
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 \
+  pytest -p no:cacheprovider -q \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+```
+
+### Scoped and harness-equivalent discovery
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 \
+  pytest -p no:cacheprovider --collect-only -q \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 \
+  pytest -p no:cacheprovider --collect-only -q
+```
+
+The second command has no positional test target, runs at repository root, and
+therefore mirrors generic pytest discovery through root `testpaths`.
+
+### Affected package suite
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python eng/scripts/hk_exec.py --timeout-seconds 720 \
+  uv run --python 3.13 --package three-workflow-delivery-v3 \
+  pytest -p no:cacheprovider -q \
+  src/public/lib/three-workflow-delivery-v3/tests
+```
+
+### Ruff
+
+```bash
+uv run --python 3.13 ruff check --force-exclude -- \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+
+uv run --python 3.13 ruff format --check --force-exclude -- \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+```
+
+### Compile without worktree bytecode
+
+```bash
+PYTHONPYCACHEPREFIX=/tmp/wdv3-governance-authority-pycache \
+  uv run --python 3.13 python -m compileall -q \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+```
+
+### Diff checks
+
+```bash
+git --no-pager diff --check
+git status --short --untracked-files=all -- \
+  .testagent/research.md \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+```
+
+## Explicit exclusions
+
+- Do not redesign `ExactSatisfiedGovernanceProof` around
+  `ReleaseAttemptBinding`.
+- Do not add CLI canaries, production callbacks, workflow changes, or other
+  production edits.
+- Do not add local-file graft, alternates, or replacement-ref defense tests.
+  Requirement 1 covers only hostile ambient
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES`.
+- Do not add sleeps, network remotes, external mutations, publication,
+  obsolete tests, aliases for the retired schema, or implementation-string
+  locking.
+- Preserve all intentional in-progress Governance/authorization changes and
+  stop after the bounded Research -> Plan handoff.
+
+<!-- END APPEND: 2026-09-03-wdv3-governance-authority-targeted-test-research -->

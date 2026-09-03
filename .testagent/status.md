@@ -14883,3 +14883,186 @@ push, PR creation, protected merge, dispatch, approval, and publication remain
 outside this authorization.
 
 <!-- END APPEND: 2026-09-03-wdv3-governance-authority-start -->
+
+<!-- BEGIN APPEND: 2026-09-03-wdv3-governance-authority-targeted-test-closure -->
+
+## Workflow Delivery v3 Governance authority targeted test closure
+
+### Scope and append integrity
+
+- Exact worktree:
+  `/home/shuaizhang/.copilot/session-state/24bd9638-ae1a-4852-8794-616ece84341e/files/governance-authority-worktree`.
+- The worktree is based on
+  `20740ade74a0b25d8b2ca300e63e12c5c4f0879a`. Workflow Delivery v3 was
+  the only normative line, and this was a bounded test-only request.
+- The exact pre-append `.testagent/status.md` prefix was 886,562 bytes with
+  SHA-256
+  `d4366783ddfaee33c145d863f992375ffcf781605f0ef60d81a39fa0862ffd39`.
+- RPI artifacts were appended earlier under markers
+  `2026-09-03-wdv3-governance-authority-targeted-test-research` and
+  `2026-09-03-wdv3-governance-authority-targeted-test-plan`.
+
+### Test implementation
+
+- Changed test files were `test_governance_git.py`, `test_eligibility.py`,
+  and `test_commit8_contracts.py`.
+- Seven new test functions produce 10 pytest cases. Two existing tests were
+  strengthened: the three-case missing/tree/executable test and the
+  exact-satisfied action/control-substitution test.
+
+The accepted checklist maps exactly as follows:
+
+1. `test_isolated_read_ignores_hostile_ambient_git_environment` monkeypatches
+   `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` to
+   regular-file poison paths, and sets `GIT_CONFIG_COUNT`,
+   `GIT_CONFIG_KEY_0`, and `GIT_CONFIG_VALUE_0` to deny the file protocol. It
+   asserts the exact main SHA, `sha1` object format, blob OID, and bytes.
+2. `test_isolated_read_rejects_advertisement_fetch_race` uses
+   `_PushAfterAdvertisementReader` to push a prepared commit after
+   advertisement. It asserts the exact
+   `Governance main ref changed during isolated read` failure, the differing
+   SHAs, and the final remote ref, without sleeps.
+3. `test_attestation_rejects_retired_governance_attestation_schema` first
+   validates the current document, changes only its schema to the exact retired
+   literal, and asserts the wrong-schema `ValueError`.
+4. Eligibility
+   `test_sha256_governance_provenance_round_trips_through_strict_live_admission`
+   and the `PublicationAuthorization` and
+   `ExactSatisfiedGovernanceProof` parameter cases of
+   `test_new_authority_records_round_trip_sha256_governance_provenance` assert
+   exact 64-character IDs, the `sha256` format, digest and provenance, and
+   closed transport.
+5. The `PublicationAuthorization` and
+   `ExactSatisfiedGovernanceProof` parameter cases in
+   `test_new_authority_records_reject_disabled_governance` use direct
+   replacement, while their cases in
+   `test_new_authority_transport_rejects_disabled_governance` use serialized
+   documents. Both paths assert anchored, controlled `ValueError` failures.
+6. Existing
+   `test_exact_satisfied_proof_rejects_action_or_control_substitution` now
+   asserts that the substituted Snapshot is action-bearing and rejects it
+   through
+   `release_record_from_document(..., expected_type=ExactSatisfiedGovernanceProof)`
+   with `actionless exact`.
+7. Existing `test_isolated_read_rejects_missing_or_non_blob_path` now asserts
+   the `git ls-tree` state as empty, `040000 tree`, or `100755 blob`, plus the
+   exact path, before reader rejection.
+
+### Final results
+
+| Validation | Result |
+|---|---|
+| Governance Git file-local tests | 15 passed |
+| Eligibility file-local tests | 270 passed |
+| Contracts file-local tests | 97 passed |
+| Required final combined command over the three files | 382 passed in 7.33s, exit 0 |
+| Final full package suite after all edits | 3,588 passed, 0 failed/skipped in 447.21s, exit 0 |
+| Full-suite baseline delta | 3,578 baseline; exact +10 |
+| `uv build --package three-workflow-delivery-v3` | Success; wheel and sdist produced |
+| Ruff check | Success |
+| Ruff format check | 3 files already formatted |
+| `compileall` for all three changed test files | Success |
+| Complete `git diff --check` | Success |
+
+### Mandatory quality closure
+
+- The final pseudo-mutation review found no remaining in-checklist survived
+  mutation or no-coverage zone. It initially found that an empty-directory
+  ambient object poison could allow object-only inheritance to survive; the
+  test was strengthened to regular-file poison and revalidated.
+- Assertion-depth review covered all 9 changed or new test functions and 14
+  concrete parameter cases. It found zero assertion-free, trivial-only, or
+  tautological-only tests. Positive round trips have independent exact field
+  and content assertions, and authority operations have appropriate secondary
+  observables.
+- Prompt-scenario mapping covers all 7 accepted items exactly.
+- No measurable coverage target was requested, and no optional expansion was
+  performed. The `code-testing-extensions` and `test-analysis-extensions`
+  skill loaders were unavailable, so existing bounded pytest conventions were
+  used; this did not block validation.
+- No item was blocked. This bounded test-generation request made no production,
+  workflow, publication, network, or external mutation; performed no rejected
+  or non-requirement work; and created no commit.
+
+<!-- END APPEND: 2026-09-03-wdv3-governance-authority-targeted-test-closure -->
+
+<!-- BEGIN APPEND: 2026-09-03-wdv3-governance-authority-final-closure -->
+
+## Workflow Delivery v3 Governance authority final closure
+
+### Append integrity and local identity
+
+- Before this append, `.testagent/status.md` was 891,792 bytes with SHA-256
+  `a8fc056eb073d37248311e866a9b4964f2d4b1b63dbd4e2f011335da8f2c1b5b`.
+- Its original 886,562-byte prefix still had SHA-256
+  `d4366783ddfaee33c145d863f992375ffcf781605f0ef60d81a39fa0862ffd39`.
+- Exact base:
+  `20740ade74a0b25d8b2ca300e63e12c5c4f0879a`.
+- Local dependency-ordered implementation commits:
+  - `7d8e00cbbcb1536bdbae6a9f31d9a9179c6f6f7b` adds and packages the isolated
+    complete-history Governance Git reader; and
+  - `4a51aac3b9b3f81e04146ae14984335d02297c33` contracts the replacement
+    Governance, authority records, CLI, workflow, publisher, and tests.
+
+### Final implementation evidence
+
+- Protected Governance uses only
+  `workflow-delivery/v3/normal-live-governance-attestation-v1`, remains
+  `live_enabled: false`, and records exactly the three unsatisfied activation
+  blockers.
+- Governance identity is read from isolated complete Git history and binds the
+  eligibility main SHA, object format, exact regular blob, canonical bytes,
+  descendant lineage, and no later protected-path touch.
+- Local destination-primitive admission is code-owned and empty. Enabled
+  Governance and forged persisted passing decisions cannot claim an
+  unimplemented primitive.
+- Transitional Capability Admission authority is removed. An action-bearing
+  path uses one pre-wait Approval Bundle and one post-wait Publication
+  Authorization; exact-satisfied uses a fresh read-only Governance proof with
+  no Environment or authorization-shaped record.
+- The active publisher has no standard npm mutation body and fails closed
+  before mutation-capable work. Workflows contain no `packages: write`;
+  observer access has the required caller and callee `packages: read` ceiling.
+
+### Review finding closure
+
+- Governance G1, publisher/CLI C1, and workflow W1 are closed; their original
+  scopes report no remaining finding.
+- Records R1, R2, R3, and R6 are closed. R2 was closed because pure inert
+  record shape is not runtime capability admission and no active path can
+  convert an unsupported directly constructed action into authority or
+  mutation.
+- A rereview found mixed-precision RFC 3339 timestamps could bypass R3 because
+  authority windows used lexical comparison. Independent adjudication
+  classified it true positive at 99% confidence. Exact whole-second and
+  arbitrary fractional ordering now preserves the half-open windows for both
+  Publication Authorization and Exact-satisfied Governance proof.
+- Direct-constructor and strict-transport tests reject terminal-before-
+  observation and terminal-after-expiry mixed-precision cases and accept both
+  valid mixed-precision orderings. The affected contract file passed 125 tests
+  after the fix; its original reviewer then closed R3 with no remaining
+  finding.
+- G2 native activation-evidence authoring, R4 exact Publication Authorization
+  digest lineage in ActionResult/Receipt, and R5 durable Result versus
+  platform-termination precedence are explicitly deferred to their owning
+  later units.
+
+### Final validation
+
+| Validation | Observed result |
+|---|---|
+| Root `mise exec -- hk check --unstaged --check` after all fixes | Success |
+| Complete Workflow Delivery v3 pytest inside final HK | 3,645 passed in 427.79s |
+| Changed-file Ruff and Ruff format gates | Success |
+| Package Pyrefly | 0 errors |
+| Workflow actionlint inside final HK | Success |
+| Final wheel and sdist construction from committed implementation | Success |
+| Wheel/sdist membership | `governance_git.py` present; deleted `authorization_formatter.py` absent |
+| Final `git diff --check` | Success |
+| Independent rereview | Four scopes, zero remaining findings |
+
+No push, PR, protected merge, Live dispatch, approval, deployment, Governance
+refresh, Environment mutation, package or tag mutation, cleanup, or other
+external mutation occurred.
+
+<!-- END APPEND: 2026-09-03-wdv3-governance-authority-final-closure -->

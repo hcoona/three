@@ -7436,3 +7436,529 @@ semantics, Governance sequencing, or deferred finalization policy.
 | One-action blocked Capability Admission remains valid but non-authorizing | `test_blocked_capability_decision_is_non_authorizing_and_attempt_local` |
 
 <!-- END APPEND: 2026-09-03-wdv3-record-contraction-regression-plan -->
+
+<!-- BEGIN APPEND: 2026-09-03-wdv3-governance-authority-targeted-test-plan -->
+
+# Test Implementation Plan: Workflow Delivery v3 Governance Authority
+
+## Overview
+
+This is a targeted, test-only plan based exclusively on the appended
+2026-09-03 Governance/Authorization research. All three target modules already
+have substantial coverage, so implementation adds only the seven accepted
+scenarios and strengthens the two named reuse points. Work proceeds
+leaf-first: isolated local Git behavior, Eligibility evaluation/admission,
+then authority records and closed transport.
+
+Workflow Delivery v3 is the only normative design. Implementation code changes
+are limited to:
+
+1. `src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py`;
+2. `src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py`;
+3. `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`.
+
+The later append-only `.testagent/status.md` evidence is not an implementation
+change. Each phase is sequential, is owned by one implementer, and must finish
+its narrow test run before the next phase begins. Preserve the intentional
+pre-existing edits in all three files.
+
+## Commands
+
+- **Build:** `uv build --package three-workflow-delivery-v3`
+- **Combined test:** `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+- **Lint:** `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+- **Format check:** `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+
+## Phase Summary
+
+| Phase | Focus | Test files | Estimated test impact |
+|---|---|---:|---:|
+| 1 | Real local Git isolation and tree-state proof | 1 | 2 new cases, 3 strengthened parameter cases |
+| 2 | Eligibility schema boundary and SHA-256 propagation | 1 | 2 new cases |
+| 3 | Authority records and closed transport | 1 | 6 new parameter cases, 1 existing case strengthened |
+| 4 | Combined validation and three mandatory quality gates | 3 | No new tests |
+| 5 | Append-only implementation evidence | 0 | No new tests |
+
+---
+
+## Phase 1: Isolated Governance Git Reader
+
+### Overview
+
+Cover the leaf integration boundary first with real temporary repositories and
+local `file://` bare remotes. Put the positive hostile-environment scenario
+before the strict race and malformed-tree scenarios. Do not inspect private
+command construction or environment dictionaries.
+
+### File to Test
+
+#### `test_governance_git.py`
+
+- **Source:** `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/governance_git.py`
+- **Test file:** `src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py`
+- **Test module:** `test_governance_git`
+- **Production behavior:** `IsolatedGovernanceGitReader.read`,
+  `GovernanceGitRead`, and `GovernanceGitReadError`
+- **Reuse:** `_git_executable`, `_run`, `_output`,
+  `_initialize_repository`, `_write_governance`, `_commit`,
+  `_create_remote_repository`, `_push_main`, `_reader`, and `_read`
+
+### Scenarios
+
+1. **Checklist 1 — add
+   `test_isolated_read_ignores_hostile_ambient_git_environment`.**
+   - Use `tmp_path` and `monkeypatch`.
+   - Create the ordinary authoring repository, exact Governance content, one
+     main commit, and a local bare remote through the existing helpers.
+   - Before changing `os.environ`, capture:
+     - `expected_main_sha` from `git rev-parse HEAD`;
+     - `expected_blob_oid` from
+       `git rev-parse HEAD:<exact Governance path>`;
+     - the exact bytes passed to `_write_governance`.
+   - Create empty hostile object directories under `tmp_path`, then set these
+     exact ambient entries:
+     `GIT_OBJECT_DIRECTORY=<hostile directory>`,
+     `GIT_ALTERNATE_OBJECT_DIRECTORIES=<hostile alternate directory>`,
+     `GIT_CONFIG_COUNT=1`,
+     `GIT_CONFIG_KEY_0=protocol.file.allow`, and
+     `GIT_CONFIG_VALUE_0=never`.
+   - Call the public reader normally. If ambient configuration leaks, the
+     local `file://` operation is denied; the test must not inspect how the
+     child environment was built.
+   - Assert all four independent outputs:
+     `result.main_sha == expected_main_sha`,
+     `result.object_format == "sha1"`,
+     `result.blob_oid == expected_blob_oid`, and
+     `result.content == expected_content`.
+
+2. **Checklist 2 — add
+   `test_isolated_read_rejects_advertisement_fetch_race`.**
+   - Add one test-only helper class named
+     `_PushAfterAdvertisementReader`. It subclasses
+     `IsolatedGovernanceGitReader`, calls the inherited advertisement method,
+     invokes one supplied callback immediately after that method returns, and
+     then returns the inherited advertisement result unchanged.
+   - Push a first commit to the local bare main ref. Prepare a second local
+     commit completely before the read, but leave the remote on the first
+     commit.
+   - Supply a callback that performs only `_push_main` of the prepared second
+     commit. The advertisement therefore observes commit one and the inherited
+     fetch observes commit two deterministically.
+   - Require
+     `pytest.raises(GovernanceGitReadError, match=r"^Governance main ref changed during isolated read$")`.
+   - Do not add a production seam, sleep, poll, thread, network remote, or
+     external push.
+
+3. **Checklist 7 — strengthen the existing
+   `test_isolated_read_rejects_missing_or_non_blob_path`.**
+   - Do not add a duplicate test. Extend its existing parameter data with the
+     expected tree-entry state and query the authoring repository immediately
+     before `_read` using
+     `git ls-tree --full-tree HEAD -- <exact Governance path>`.
+   - For parameter ID `missing-path`, assert the complete output is `""`.
+   - For `tree-path`, split the one output line at the tab and assert its
+     metadata starts with exactly `040000 tree ` and its path equals the exact
+     Governance path.
+   - For `executable-blob`, assert the metadata starts with exactly
+     `100755 blob ` and its path equals the exact Governance path.
+   - Keep each case's existing `GovernanceGitReadError` assertion unchanged
+     after these fixture-state assertions. These additions prove the authored
+     state rather than trusting `governance_kind`.
+
+### Immediate Narrow Validation
+
+Run from the exact worktree root before Phase 2:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 \
+  --package three-workflow-delivery-v3 \
+  pytest -p no:cacheprovider -q \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  -k "hostile_ambient_git_environment or advertisement_fetch_race or missing_or_non_blob_path"
+```
+
+### Success Criteria
+
+- [ ] Both new scenario tests pass against real local repositories.
+- [ ] All three existing malformed-tree parameter cases still reject.
+- [ ] No Git process reaches a network or external repository.
+- [ ] Only `test_governance_git.py` was edited in this phase.
+
+---
+
+## Phase 2: Eligibility Schema and SHA-256 Propagation
+
+### Overview
+
+Exercise a complete positive evaluator-to-admission path first, then add one
+strict negative at the replacement-schema authority boundary. Do not duplicate
+the existing low-level SHA-256 Git test.
+
+### File to Test
+
+#### `test_eligibility.py`
+
+- **Source:** `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/eligibility.py`
+- **Test file:** `src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py`
+- **Test module:** `test_eligibility`
+- **Production behavior:** `parse_governance_attestation`,
+  `evaluate_live_eligibility`, `admit_live_eligibility_decision`, and
+  `GovernanceObservation`
+- **Reuse:** `_attestation_document`, `_attestation_content`,
+  `RecordingGovernanceClient`, `_evaluate`, `_transport_decision`,
+  `_admit_mutated_decision`, `_object_member`, `live_intent`,
+  `live_admitted_repository_model`, and `policy`
+
+### Scenarios
+
+1. **Checklist 4, Eligibility half — add
+   `test_sha256_governance_provenance_round_trips_through_strict_live_admission`.**
+   - Build a valid enabled attestation with `_attestation_document` and exact
+     bytes with `_attestation_content`.
+   - Configure `RecordingGovernanceClient` to return a
+     `GovernanceGitRead` with `object_format="sha256"`,
+     `main_sha="a" * 64`, `blob_oid="b" * 64`, and those exact bytes.
+   - Use `_evaluate` with `live_intent`,
+     `live_admitted_repository_model`, and `policy`; serialize through
+     `_transport_decision`; then call strict admission using the existing
+     round-trip pattern from
+     `test_evaluator_output_round_trips_through_strict_live_admission`.
+   - On both the evaluator Decision and strictly admitted result, assert the
+     nested provenance has exactly object format `sha256`, main SHA
+     `"a" * 64`, and blob OID `"b" * 64`. Also assert the recorded content
+     digest equals the digest derived from the exact attestation bytes, and
+     that the admitted document equals the evaluator's transported document.
+   - This is the only new higher-layer SHA-256 Eligibility positive.
+
+2. **Checklist 3 — add
+   `test_attestation_rejects_retired_governance_attestation_schema`.**
+   - Create a fully valid `_attestation_document()` and parse its
+     `_attestation_content` successfully first.
+   - Deep-copy that same document, changing only `schema` to the exact retired
+     literal `workflow-delivery/v3/governance-attestation`.
+   - Parse the mutated content and require
+     `pytest.raises(ValueError, match=r"wrong schema")`.
+   - Do not create a retired-schema fixture, alias, compatibility branch, or
+     second mutation.
+
+### Immediate Narrow Validation
+
+Run from the exact worktree root before Phase 3:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 \
+  --package three-workflow-delivery-v3 \
+  pytest -p no:cacheprovider -q \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  -k "sha256_governance_provenance_round_trips_through_strict_live_admission or attestation_rejects_retired_governance_attestation_schema"
+```
+
+### Success Criteria
+
+- [ ] The SHA-256 path evaluates, serializes, and strictly admits.
+- [ ] SHA-256 object format, 64-character IDs, and content digest survive
+  exactly rather than merely avoiding an exception.
+- [ ] The one-field retired-schema mutation raises the controlled
+  `ValueError`.
+- [ ] Only `test_eligibility.py` was edited in this phase.
+
+---
+
+## Phase 3: Replacement Authority Records and Closed Transport
+
+### Overview
+
+Start with valid SHA-256 round trips for both replacement authority record
+types. Then test strict disabled-authority and actionless-proof boundaries
+through both direct construction and closed transport.
+
+### File to Test
+
+#### `test_commit8_contracts.py`
+
+- **Sources:**
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py`
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release_transport.py`
+- **Test file:** `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+- **Test module:** `test_commit8_contracts`
+- **Production behavior:** `ReleaseAttemptBinding`,
+  `PublicationAuthorization`, `ExactSatisfiedGovernanceProof`,
+  `PublicationSnapshot`, and `release_record_from_document`
+- **Reuse:** `_governance_provenance`, `_live_closure`,
+  `_approval_bundle`, `_publication_authorization`,
+  `_exact_satisfied_proof`, `_transport_records`, and
+  `qualified_simulation`
+
+### Scenarios
+
+1. **Checklist 4, record/transport half — add the parameterized
+   `test_new_authority_records_round_trip_sha256_governance_provenance`.**
+   - Use `_transport_records(qualified_simulation)` as the valid baseline.
+     If needed to avoid duplicated coherent replacements, add one local helper
+     named `_sha256_authority_records`.
+   - Use exact values `object_format="sha256"`,
+     `main_sha="a" * 64`, and `blob_oid="b" * 64`.
+   - Replace the nested `ReleaseAttemptBinding`, Governance provenance, and
+     each owning record's current-main value coherently; do not change record
+     design or move proof ownership into `ReleaseAttemptBinding`.
+   - Parameter IDs must be `publication-authorization` and
+     `exact-satisfied-governance-proof`.
+   - For each record, call
+     `release_record_from_document(record.to_document(),
+     expected_type=type(record))`.
+   - Assert `parsed == record`, then independently assert the parsed object
+     format is exactly `sha256`, the current-main value is exactly
+     `"a" * 64`, and the blob provenance is exactly `"b" * 64`.
+     Construction and parsing must therefore exercise the distinct
+     current-main length check owned by each class.
+
+2. **Checklist 5, direct construction — add the parameterized
+   `test_new_authority_records_reject_disabled_governance`.**
+   - Build valid records with `_publication_authorization` and
+     `_exact_satisfied_proof`.
+   - Parameter ID `publication-authorization`: call
+     `replace(record, approval_governance_live_enabled=False)` and require
+     `pytest.raises(ValueError, match=r"Governance is not enabled")`.
+   - Parameter ID `exact-satisfied-governance-proof`: call
+     `replace(record, governance_live_enabled=False)` and require
+     `pytest.raises(ValueError, match=r"requires Live enabled")`.
+   - Change no other field, so each failure belongs only to the enabled
+     authority boundary.
+
+3. **Checklist 5, closed transport — add the parameterized
+   `test_new_authority_transport_rejects_disabled_governance`.**
+   - Deep-copy each valid record document.
+   - Parameter ID `publication-authorization`: set only
+     `approval-governance-live-enabled` to `False`, parse with
+     `expected_type=PublicationAuthorization`, and require
+     `pytest.raises(ValueError, match=r"Governance is not enabled")`.
+   - Parameter ID `exact-satisfied-governance-proof`: set only
+     `governance-live-enabled` to `False`, parse with
+     `expected_type=ExactSatisfiedGovernanceProof`, and require
+     `pytest.raises(ValueError, match=r"requires Live enabled")`.
+
+4. **Checklist 6 — strengthen the existing
+   `test_exact_satisfied_proof_rejects_action_or_control_substitution`.**
+   - Preserve its direct `dataclasses.replace` action and control
+     substitutions.
+   - In the action-bearing branch, deep-copy `proof.to_document()`, replace
+     only `publication-snapshot` with the same action-bearing Approval Bundle
+     Snapshot's document, and call
+     `release_record_from_document(...,
+     expected_type=ExactSatisfiedGovernanceProof)`.
+   - Require `ValueError` with the same exact actionless-invariant regex used
+     by the existing direct assertion; it must match `r"actionless"` at
+     minimum and must not be weakened when reused for transport.
+   - Do not add a second action-substitution test.
+
+### Immediate Narrow Validation
+
+Run from the exact worktree root before Phase 4:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 \
+  --package three-workflow-delivery-v3 \
+  pytest -p no:cacheprovider -q \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py \
+  -k "new_authority_records_round_trip_sha256_governance_provenance or new_authority_records_reject_disabled_governance or new_authority_transport_rejects_disabled_governance or exact_satisfied_proof_rejects_action_or_control_substitution"
+```
+
+### Success Criteria
+
+- [ ] Both authority record classes complete valid SHA-256 closed round trips.
+- [ ] Both direct false-enabled mutations and both serialized false-enabled
+  mutations raise their record-owned controlled errors.
+- [ ] The existing action-substitution test now covers direct and transport
+  admission without losing its control-substitution branch.
+- [ ] Only `test_commit8_contracts.py` was edited in this phase.
+
+---
+
+## Phase 4: Combined Validation and Mandatory Quality Gates
+
+### Overview
+
+Make no new implementation edits unless a bounded test or quality gate finds a
+defect. After any correction, rerun that file's narrow command and then every
+command in this phase.
+
+### Validation Commands
+
+Run scoped collection, the final combined test, harness-equivalent collection,
+the affected package suite, and the package build:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 \
+  --package three-workflow-delivery-v3 \
+  pytest -p no:cacheprovider --collect-only -q \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 \
+  --package three-workflow-delivery-v3 \
+  pytest -p no:cacheprovider -q \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 \
+  pytest -p no:cacheprovider --collect-only -q
+
+PYTHONDONTWRITEBYTECODE=1 python eng/scripts/hk_exec.py \
+  --timeout-seconds 720 \
+  uv run --python 3.13 --package three-workflow-delivery-v3 \
+  pytest -p no:cacheprovider -q \
+  src/public/lib/three-workflow-delivery-v3/tests
+
+uv build --package three-workflow-delivery-v3
+```
+
+Run Ruff, its format check, Python compilation with bytecode outside the
+worktree, and the required diff check:
+
+```bash
+uv run --python 3.13 ruff check --force-exclude -- \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+
+uv run --python 3.13 ruff format --check --force-exclude -- \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+
+PYTHONPYCACHEPREFIX=/tmp/wdv3-governance-authority-pycache \
+  uv run --python 3.13 python -m compileall -q \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+
+git --no-pager diff --check
+```
+
+Inspect status without restoring or overwriting concurrent work:
+
+```bash
+git status --short --untracked-files=all
+git --no-pager diff -- \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_governance_git.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+```
+
+### Mandatory Post-Implementation Pseudo-Mutation Gate
+
+Do not edit production to perform this gate. Record, for every hypothetical
+mutant below, the exact test node that would fail and the assertion that kills
+it:
+
+| Checklist | Hypothetical mutant | Required killing test |
+|---:|---|---|
+| 1 | Child Git inherits ambient object/config variables | `test_isolated_read_ignores_hostile_ambient_git_environment` fails on the read or one of its four exact result assertions |
+| 2 | Advertisement/fetched-ref equality check is removed or inverted | `test_isolated_read_rejects_advertisement_fetch_race` fails because the exact error is not raised |
+| 3 | Retired attestation schema is accepted | `test_attestation_rejects_retired_governance_attestation_schema` fails because `wrong schema` is not raised |
+| 4 | SHA-256 format/IDs are truncated, relabeled, dropped, or rejected at either higher layer | `test_sha256_governance_provenance_round_trips_through_strict_live_admission` or the matching parameter of `test_new_authority_records_round_trip_sha256_governance_provenance` fails an exact provenance or equality assertion |
+| 5 | Either replacement record permits disabled Governance directly or through transport | The matching parameter of `test_new_authority_records_reject_disabled_governance` or `test_new_authority_transport_rejects_disabled_governance` fails to raise its exact controlled error |
+| 6 | Closed transport accepts an action-bearing Exact-Satisfied proof | The transport assertion in `test_exact_satisfied_proof_rejects_action_or_control_substitution` fails |
+| 7 | A malformed fixture no longer authors the promised mode/kind/path | The matching pre-read assertion in `test_isolated_read_rejects_missing_or_non_blob_path` fails before reader behavior is credited |
+
+All seven rows must be credible. Close any surviving mutant with a stronger
+assertion in the same bounded test file, then rerun all validation.
+
+### Mandatory Assertion-Depth Gate
+
+Run an assertion-quality/depth review limited to the three target modules.
+Reject tests that only assert truthiness, non-`None`, or absence of an
+exception. The review must confirm:
+
+- the ambient positive checks main SHA, object format, blob OID, and bytes;
+- both SHA-256 positives check round-trip equality and nested exact
+  provenance;
+- each negative changes only its named authority/schema field and checks both
+  exception type and message regex;
+- each malformed-tree case proves mode, object kind, and exact path before
+  reader rejection; and
+- the action transport assertion reaches the same invariant as direct
+  construction.
+
+Record and close every actionable finding. If the available analysis skills
+are used, invoke `test-gap-analysis` only for the pseudo-mutation review and
+`assertion-quality` only for assertion depth; neither may broaden the files or
+requirements.
+
+### Exact Prompt-Scenario Mapping Gate
+
+The final implementation and Status evidence must reproduce this one-to-one
+map with observed passing node IDs:
+
+| Accepted item | Exact planned test evidence |
+|---:|---|
+| 1 | `test_isolated_read_ignores_hostile_ambient_git_environment` |
+| 2 | `test_isolated_read_rejects_advertisement_fetch_race` |
+| 3 | `test_attestation_rejects_retired_governance_attestation_schema` |
+| 4 | `test_sha256_governance_provenance_round_trips_through_strict_live_admission`; `test_new_authority_records_round_trip_sha256_governance_provenance[publication-authorization]`; `test_new_authority_records_round_trip_sha256_governance_provenance[exact-satisfied-governance-proof]` |
+| 5 | `test_new_authority_records_reject_disabled_governance[publication-authorization]`; `test_new_authority_records_reject_disabled_governance[exact-satisfied-governance-proof]`; `test_new_authority_transport_rejects_disabled_governance[publication-authorization]`; `test_new_authority_transport_rejects_disabled_governance[exact-satisfied-governance-proof]` |
+| 6 | strengthened `test_exact_satisfied_proof_rejects_action_or_control_substitution` |
+| 7 | strengthened `test_isolated_read_rejects_missing_or_non_blob_path[missing-path]`; `[tree-path]`; `[executable-blob]` |
+
+No accepted item may be represented only by a helper, collection result, or
+pre-existing unrelated test.
+
+### Success Criteria
+
+- [ ] Scoped collection and final combined pytest succeed.
+- [ ] Harness-equivalent collection, affected package pytest, and build
+  succeed.
+- [ ] Ruff check, Ruff format check, Python compile, and
+  `git --no-pager diff --check` succeed.
+- [ ] Pseudo-mutation, assertion-depth, and exact seven-item mapping gates
+  close with no finding.
+- [ ] The implementation diff contains no source, workflow, CLI, or unrelated
+  test edit.
+
+---
+
+## Phase 5: Append-Only Status Evidence
+
+### Overview
+
+After Phase 4 is green, read the current tail of `.testagent/status.md` and
+append, never rewrite or truncate, one section delimited exactly as:
+
+```text
+<!-- BEGIN APPEND: 2026-09-03-wdv3-governance-authority-targeted-test-status -->
+...
+<!-- END APPEND: 2026-09-03-wdv3-governance-authority-targeted-test-status -->
+```
+
+The append must record the three edited test files, exact added/strengthened
+node IDs, every command and observed result, the seven-row pseudo-mutation
+ledger, assertion-depth findings and closure, the exact prompt-scenario map,
+and a scope audit that distinguishes preserved pre-existing work from this
+implementation. Do not claim a command passed unless it was run. After the
+append, rerun `git --no-pager diff --check`.
+
+### Success Criteria
+
+- [ ] The prior Status chronology is byte-for-byte preserved.
+- [ ] The new marker occurs once and is the final dated Status section.
+- [ ] Evidence names all seven accepted checklist items and their passing
+  test nodes.
+- [ ] No file other than the three target tests and append-only test-agent
+  planning/status evidence was changed by this work.
+
+## Preserved Rejections and Non-Requirements
+
+- No production or workflow changes.
+- No `ReleaseAttemptBinding` redesign and no movement of
+  `ExactSatisfiedGovernanceProof` authority into that binding.
+- No speculative CLI tests.
+- No graft, local replacement-ref, local-file alternate, or other redundant
+  defense tests; the ambient case covers only the requested hostile
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES` input.
+- No network remote, external mutation, publication, sleep, poll, or thread.
+- No obsolete test, retired-schema alias, compatibility path, implementation
+  string lock, deletion, or replacement of existing coverage.
+
+<!-- END APPEND: 2026-09-03-wdv3-governance-authority-targeted-test-plan -->

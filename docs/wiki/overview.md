@@ -96,11 +96,14 @@ Its detailed chronology belongs in Git and the append-only log.
 
 ## Current Disabled and External State
 
-The merged runtime is superseded by the replacement design but remains disabled
-through
+The merged runtime is superseded by the replacement design but remains
+disabled through
 `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with
 `live_enabled: false`.
 
+- Local branch `workflow-delivery-v3-governance-authority` contains the
+  validated and independently rereviewed disabled replacement implementation
+  in commits `7d8e00cb` and `4a51aac3`. It is not pushed, proposed, or merged.
 - Approval Environment `workflow-delivery-v3-buddy-approval`, ID
   `20895030723`, has rule `64124473`, sole reviewer
   `hcoona` / `712433`, self-review permitted, zero wait, no secrets, no
@@ -110,31 +113,25 @@ through
   `20895037877`, has no reviewer/protection rule, zero wait, no secrets, no
   branch/tag restriction, administrator bypass disabled, its legacy marker,
   and zero deployments.
-- The legacy Environment is inert in the replacement design but must remain
-  until replacement implementation no longer treats it as runtime input or
-  authority and separate cleanup is authorized.
+- The local replacement implementation no longer treats the legacy
+  Environment as runtime input or authority. The external resource must remain
+  until retained refs are proven safe and cleanup is separately authorized.
 - Package access is unchanged. No normal Live dispatch, Approval deployment,
   package publication, tag change, or package mutation has occurred.
 
 ## Delivery Boundary
 
-The user-approved replacement requirements, HLD, glossary, all five MLDs,
-migration policy, and first-slice LLD form one coherent design package. Its
-delivery uses combined validation, independent multi-angle review and atomic
-TP/FP adjudication, human-reviewable commits, a protected design PR, and
-post-merge reconciliation. Git and pull-request state must be inspected rather
-than inferred from this page.
+The replacement design, static-reference foundation, and record-model
+contraction are merged. The disabled Governance/authorization implementation
+is complete only on its local branch. Push and PR creation require a separate
+delivery decision.
 
-After design merge, runtime contraction is a separately authorized disabled
-implementation. Later gates separately authorize validated implementation
-merge, obsolete-Environment cleanup, destination-primitive acceptance, fresh
-native and Governance evidence including repository retention of at least 45
-days, one small Activation PR, readback, one API dispatch returning a run ID,
-and exact run readback. There is no Preparation PR, `main` freeze, activation
+Later gates separately authorize marker/Result/final-Outcome implementation,
+obsolete-Environment cleanup, destination-primitive acceptance, fresh native
+and Governance evidence including repository retention of at least 45 days,
+one small Activation PR, readback, one API dispatch returning a run ID, and
+exact run readback. There is no Preparation PR, `main` freeze, activation
 SHA/tag, or blind redispatch after an ambiguous response.
-
-No workflow, Python, schema, test, descriptor, release policy, Governance JSON,
-dependency, package access, or external resource changed in this design phase.
 
 ## Historical Record Rule
 

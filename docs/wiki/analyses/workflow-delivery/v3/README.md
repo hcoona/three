@@ -6,12 +6,16 @@ Workflow Delivery v3 is active and is the only normative Workflow Delivery desig
 
 The user-approved replacement normal-Live baseline is merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
-Disabled runtime contraction is separately authorized and in progress; Git and
-pull-request state must be inspected rather than inferred from this page.
+The static-reference and record-model contractions are merged. The disabled
+Governance/authorization contraction is validated, independently rereviewed,
+and committed locally as `7d8e00cb` and `4a51aac3`; it is not pushed, proposed,
+or merged. Git and pull-request state must be inspected rather than inferred
+from this page.
 
-No normal Live workflow, Governance enablement, package access, deployment,
-package mutation, or other external resource has changed. The runtime remains
-disabled through `live_enabled: false`.
+No merged normal-Live runtime, Governance enablement, package access,
+deployment, package mutation, or other external resource has changed. The
+local replacement document and the merged runtime remain disabled through
+`live_enabled: false`.
 
 Normal Live is also activation-blocked by a destination capability gap:
 standard `npm publish --tag` can overwrite a conflicting tag introduced after
@@ -133,19 +137,16 @@ chronology is not current architecture.
 
 ## Delivery Boundary
 
-Design delivery consists of:
+The local Governance/authorization implementation boundary is complete. Its
+two dependency-ordered implementation commits passed root HK, complete
+affected validation, package construction, and independent rereview with no
+remaining finding.
 
-1. validate the complete coherent design set;
-2. complete independent multi-angle review and one-finding-at-a-time TP/FP
-   adjudication;
-3. fix and rereview until every reviewer reports zero findings;
-4. create human-reviewable design commits and deliver a protected design PR;
-   and
-5. reconcile the merged design, then stop.
-
-Runtime implementation, Environment cleanup, Governance refresh, activation,
-dispatch, approval, and package mutation remain separate authorization
-boundaries.
+Push and PR creation are the next delivery boundary and require separate
+explicit authorization. Marker/Result/final-Outcome implementation,
+Environment cleanup, destination-primitive acceptance, Governance refresh,
+activation, dispatch, approval, and package mutation remain separate later
+authorization boundaries.
 
 ## Historical Source Rule
 

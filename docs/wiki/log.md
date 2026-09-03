@@ -3360,3 +3360,31 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   remains unsupported. Marker, Result, final Outcome, activation, cleanup,
   external-state refresh, push, PR, protected merge, dispatch, approval, and
   publication remain outside the current authorization.
+
+## [2026-09-03] refactor | Close local Governance authority contraction
+
+- Added the isolated complete-history Governance Git reader in local commit
+  `7d8e00cbbcb1536bdbae6a9f31d9a9179c6f6f7b`, including SHA-1/SHA-256,
+  anti-rollback, path-touch, ref-race, malformed-tree, and hostile ambient
+  environment coverage.
+- Contracted replacement Governance, Live Eligibility, Approval Bundle,
+  Publication Authorization, exact-satisfied proof, CLI, workflow, and
+  fail-closed publisher authority in local commit
+  `4a51aac3b9b3f81e04146ae14984335d02297c33`. Protected Governance remains
+  disabled, local destination-primitive admission remains empty, and no
+  `packages: write` permission or npm mutation body is reachable.
+- Final root HK passed after all review fixes, including 3,645 Workflow
+  Delivery v3 tests, changed-file format and lint gates, and actionlint.
+  Pyrefly reported zero errors. Final wheel and sdist construction included
+  `governance_git.py` and excluded the deleted `authorization_formatter.py`.
+- Four independent rereview scopes reported no remaining finding. A
+  mixed-precision timestamp-window bypass found during records rereview was
+  independently adjudicated true positive, fixed with exact arbitrary-
+  precision ordering, covered through direct and strict-transport scenarios,
+  and closed by the original rereviewer.
+- Native activation-evidence authoring, exact Publication Authorization digest
+  lineage in ActionResult/Receipt, and durable Result versus platform-
+  termination precedence remain dependency-ordered later-unit work.
+- The commits remain local. No push, PR, protected merge, Live dispatch,
+  approval, deployment, Governance refresh, Environment mutation, package or
+  tag mutation, cleanup, or other external mutation occurred.
