@@ -393,7 +393,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-      packages: write
+      packages: read
     concurrency:
       group: wdv3-execution-${{ needs.evaluate-live-eligibility.outputs.execution-concurrency-key }}
       cancel-in-progress: false

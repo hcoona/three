@@ -12,7 +12,6 @@ from three_workflow_delivery_v3.records.release import (
     ObservationResponseFacts,
     ObservationValue,
     ProjectionObservation,
-    PublicationAction,
     PublicationObservationReference,
     PublicationSnapshot,
     QualificationDecision,
@@ -23,16 +22,14 @@ from three_workflow_delivery_v3.records.release import (
     SimulationBinding,
     SimulationIdentity,
     SimulationOutcome,
-    publication_action_inputs,
-    publication_expected_result,
-    publication_lock_group,
-    publication_lock_projection,
-    publication_mutable_resource_keys,
-    publication_receipt_contract,
 )
 from three_workflow_delivery_v3.release.qualification import (
     admit_evidence_for_snapshot,
 )
+
+
+class UnsupportedPublicationPrimitiveError(RuntimeError):
+    """Normal Live cannot materialize an unimplemented destination primitive."""
 
 
 def _subject(
@@ -563,43 +560,6 @@ def materialize_hypothetical_actions(
     return tuple(actions)
 
 
-def _materialize_publication_action(
-    *,
-    projection_id: str,
-    snapshot: QualificationSnapshot,
-    artifact: ReleaseArtifact,
-) -> PublicationAction:
-    projection = next(
-        projection
-        for projection in snapshot.destination_projections
-        if projection.projection_id == projection_id
-    )
-    potential = next(
-        action
-        for action in snapshot.potential_actions
-        if action.contract_id == projection.potential_action_id
-    )
-    return PublicationAction(
-        action_id=potential.contract_id,
-        projection=projection,
-        operation=projection.operation,
-        artifact=artifact,
-        artifact_digest=artifact.artifact_digest,
-        artifact_output=artifact.output,
-        prerequisites=potential.prerequisites,
-        action_inputs=publication_action_inputs(projection, artifact),
-        mutable_resource_keys=publication_mutable_resource_keys(
-            projection,
-            artifact,
-        ),
-        lock_projection=publication_lock_projection(projection),
-        lock_group=publication_lock_group(projection),
-        capability_requirements=potential.capability_requirements,
-        expected_result=publication_expected_result(projection),
-        receipt_contract=publication_receipt_contract(projection),
-    )
-
-
 def materialize_publication_snapshot(
     snapshot: QualificationSnapshot,
     decision: QualificationDecision,
@@ -636,18 +596,12 @@ def materialize_publication_snapshot(
         for observation in admitted_observations
         if observation.value.classification == "absent"
     }
-    artifact_by_output = {
-        artifact.output.output_id: artifact for artifact in admitted_artifacts
-    }
-    actions = tuple(
-        _materialize_publication_action(
-            projection_id=projection.projection_id,
-            snapshot=snapshot,
-            artifact=artifact_by_output[projection.output.output_id],
+    if absent_projection_ids:
+        message = (
+            "Normal Live destination primitive is not implemented; "
+            "publication remains activation-blocked"
         )
-        for projection in snapshot.destination_projections
-        if projection.projection_id in absent_projection_ids
-    )
+        raise UnsupportedPublicationPrimitiveError(message)
     return PublicationSnapshot(
         attempt=snapshot.subject,
         qualification_snapshot_digest=snapshot.snapshot_digest,
@@ -671,7 +625,7 @@ def materialize_publication_snapshot(
             )
             for observation in admitted_observations
         ),
-        materialized_actions=actions,
+        materialized_actions=(),
     )
 
 

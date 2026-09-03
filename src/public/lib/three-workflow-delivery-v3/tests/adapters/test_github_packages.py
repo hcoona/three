@@ -4,21 +4,15 @@ from __future__ import annotations
 
 # ruff: noqa: D103, PLR2004
 import importlib
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
-from three_workflow_delivery_v3.canonical import canonical_sha256
-from three_workflow_delivery_v3.records.artifacts import (
-    ArtifactTransportIdentity,
-)
 from three_workflow_delivery_v3.records.release import (
     ArtifactVariantIdentity,
     BuddyExecutionIdentity,
     DestinationProjection,
     ExternalPackageCoordinate,
-    Receipt,
     ReleaseAttemptIdentity,
     ReleaseBuildIdentity,
     ReleaseOutputIdentity,
@@ -29,30 +23,8 @@ from three_workflow_delivery_v3.records.release import (
 TARGET = "a" * 40
 TOKEN = "test-token-must-never-be-recorded"  # noqa: S105
 VERSION = "1.2.3-beta.42.ge123456"
-CONTROL = f"workflow-delivery-v3:{TARGET}"
-SNAPSHOT_DIGEST = "sha256:" + ("1" * 64)
-ACTION_DIGEST = "sha256:" + ("2" * 64)
 RESPONSE_DIGEST = "sha256:" + ("3" * 64)
-PRIVATE_CONFIG_MODE = 0o600
 COMPLETE_KEY_COUNT = 2
-
-EXPECTED_ADAPTER_API = (
-    "GitHubPackagesHttpResponse",
-    "GitHubPackagesTransport",
-    "PublishCommandResult",
-    "PublishRunner",
-    "classify_github_packages_probe",
-    "classify_publish_result",
-    "github_api_headers",
-    "github_package_versions_url",
-    "npm_exact_metadata_url",
-    "observe_github_packages_projection",
-    "publish_github_packages_action",
-    "redact_diagnostic",
-    "redirect_headers",
-    "validate_observation_bounds",
-    "validate_receipt_response_bindings",
-)
 
 
 class RecordingTransport:
@@ -137,87 +109,6 @@ def _adapter():
         raise AssertionError from error
 
 
-@pytest.mark.parametrize(
-    ("authorization_control", "capability_control"),
-    [
-        (
-            "workflow-delivery-v3:" + ("0" * 40),
-            f"workflow-delivery-v3:{TARGET}",
-        ),
-        (
-            f"workflow-delivery-v3:{TARGET}",
-            "workflow-delivery-v3:" + ("0" * 40),
-        ),
-        (
-            "workflow-delivery-v3:" + ("0" * 40),
-            "workflow-delivery-v3:" + ("0" * 40),
-        ),
-    ],
-)
-def test_publisher_rejects_substituted_control_before_mutation(
-    monkeypatch: pytest.MonkeyPatch,
-    authorization_control: str,
-    capability_control: str,
-) -> None:
-    adapter = _adapter()
-
-    class Record:
-        def __init__(self, **values: object) -> None:
-            self.__dict__.update(values)
-
-    for name in (
-        "PublicationSnapshot",
-        "AuthorizationRecord",
-        "CapabilityAdmissionDecision",
-        "PublicationAction",
-        "QualificationSnapshot",
-        "QualificationDecision",
-        "ReleaseArtifact",
-        "ArtifactExpectation",
-    ):
-        monkeypatch.setattr(adapter, name, Record)
-    monkeypatch.setattr(
-        adapter,
-        "_validate_artifact_expectation",
-        lambda _expectation: None,
-    )
-
-    attempt = Record(execution=Record(target=TARGET))
-    action = Record(
-        action_id="publish-github-packages",
-        action_digest=ACTION_DIGEST,
-        artifact_digest="sha256:" + ("4" * 64),
-        mutable_resource_keys=("resource:key",),
-        lock_group="resource:lock",
-    )
-    publication = Record(
-        attempt=attempt,
-        snapshot_digest=SNAPSHOT_DIGEST,
-        materialized_actions=(action,),
-    )
-    authorization = Record(
-        attempt=attempt,
-        control=authorization_control,
-        publication_snapshot_digest=SNAPSHOT_DIGEST,
-    )
-    capability = Record(
-        attempt=attempt,
-        control=capability_control,
-    )
-
-    with pytest.raises(ValueError, match="precondition binding mismatch"):
-        adapter._validate_publish_preconditions(  # noqa: SLF001
-            publication_snapshot=publication,
-            authorization=authorization,
-            capability_decision=capability,
-            action=action,
-            qualification_snapshot=Record(),
-            qualification_decision=Record(),
-            artifact=Record(),
-            expectation=Record(),
-        )
-
-
 def _attempt() -> ReleaseAttemptIdentity:
     return ReleaseAttemptIdentity(
         execution=BuddyExecutionIdentity(
@@ -269,54 +160,10 @@ def _projection(
         registry="https://npm.pkg.github.com",
         coordinate=coordinate,
         output=output,
-        operation="npm-publish-create-only",
+        operation="conditional-create-npm-version-and-target-tag",
         observation_contract_id="npm/github-packages-observation-v1",
         potential_action_id="publish-github-packages",
     )
-
-
-def _receipt(*, creation_result: str = "created") -> Receipt:
-    attempt = _attempt()
-    coordinate = _coordinate()
-    projection = _projection()
-    return Receipt(
-        attempt=attempt,
-        publication_snapshot_digest=SNAPSHOT_DIGEST,
-        action_id="action:publish-github-packages",
-        action_digest=ACTION_DIGEST,
-        coordinate=coordinate,
-        mutable_resource_keys=publication_mutable_resource_keys(
-            projection, attempt
-        ),
-        lock_group=publication_lock_group(projection),
-        artifact_transport=ArtifactTransportIdentity(
-            artifact_id=720,
-            artifact_name="release.tgz",
-            artifact_url="https://example.test/artifacts/720",
-            transport_digest="sha256:" + ("4" * 64),
-            producer="build",
-            workflow_run_id=attempt.workflow_run_id,
-            run_attempt=None,
-        ),
-        artifact_content_sha256="sha256:" + ("5" * 64),
-        artifact_content_sha512="sha512:" + ("6" * 128),
-        witness_digest="sha256:" + ("7" * 64),
-        creation_result=creation_result,
-        tag_mapping=(("buddy-sha-" + TARGET, VERSION),),
-        response_identity_digest=RESPONSE_DIGEST,
-        producer="publish-github-packages",
-        control=CONTROL,
-        workflow_run_id=attempt.workflow_run_id,
-    )
-
-
-def test_github_packages_adapter_contract_api_is_available() -> None:
-    adapter = _adapter()
-    missing = tuple(
-        name for name in EXPECTED_ADAPTER_API if not hasattr(adapter, name)
-    )
-
-    assert missing == (), f"missing GitHub Packages Adapter API: {missing}"
 
 
 def test_github_packages_requests_exact_escaped_endpoints_headers_and_pages() -> (  # noqa: E501
@@ -791,207 +638,137 @@ def test_package_version_owner_rejects_noncanonical_api_routes(
     assert _adapter()._rest_owner(document) == "ambiguous"  # noqa: SLF001
 
 
-def test_publish_rejects_removed_standalone_mutation_before_config_or_runner(
-    tmp_path,
+def test_replacement_adapter_contract_api_is_available() -> None:
+    adapter = _adapter()
+    expected_api = (
+        "GITHUB_PACKAGES_OPERATION",
+        "GitHubPackagesHttpResponse",
+        "GitHubPackagesTransport",
+        "UnsupportedPublicationPrimitiveError",
+        "classify_github_packages_probe",
+        "github_api_headers",
+        "github_package_versions_url",
+        "npm_exact_metadata_url",
+        "observe_github_packages_projection",
+        "preflight_github_packages_action",
+        "publish_github_packages_action",
+        "redact_diagnostic",
+        "redirect_headers",
+        "validate_observation_bounds",
+    )
+    missing = tuple(name for name in expected_api if not hasattr(adapter, name))
+
+    assert missing == (), f"missing replacement adapter API: {missing}"
+    assert not hasattr(adapter, "AuthorizationRecord")
+    assert not hasattr(adapter, "CapabilityAdmissionDecision")
+
+
+def test_normal_live_and_acceptance_operations_remain_distinct() -> None:
+    adapter = _adapter()
+    scenario = adapter.FixedCoordinateAcceptanceProbeResult(
+        scenario="absent-create-readback",
+        package_coordinate=adapter.ACCEPTANCE_COORDINATES[
+            "absent-create-readback"
+        ],
+        tag="wdv3-acceptance-1",
+        pre_state="absent",
+        post_state="exact",
+        result="created",
+        mutation_classification="complete",
+        action_executed=True,
+        mutation_started=True,
+        response_identity_digest=RESPONSE_DIGEST,
+        content_sha512="sha512:" + ("6" * 128),
+        diagnostics=(),
+    )
+    acceptance_document = adapter.FixedAcceptanceSuiteResult(
+        suite="absent-create-readback",
+        scenarios=(scenario,),
+    ).to_document()
+
+    assert (
+        adapter.GITHUB_PACKAGES_OPERATION
+        == "conditional-create-npm-version-and-target-tag"
+    )
+    assert acceptance_document["scenarios"][0]["action"] == {
+        "operation": "npm-publish-create-only",
+        "executed": True,
+        "mutation-started": True,
+    }
+    assert (
+        acceptance_document["scenarios"][0]["action"]["operation"]
+        != adapter.GITHUB_PACKAGES_OPERATION
+    )
+
+
+def test_publish_fails_before_every_mutation_capable_seam(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     adapter = _adapter()
     runner = RecordingPublishRunner(exit_code=0, stdout="created")
+    transport = RecordingTransport({})
+    forbidden_calls: list[str] = []
+    unavailable = object()
+    tarball = tmp_path / "must-not-be-read.tgz"
+    temp_root = tmp_path / "must-not-be-created"
 
-    with pytest.raises(ValueError, match="standalone"):
+    def reject_forbidden_call(*_args: object, **_kwargs: object) -> None:
+        forbidden_calls.append("called")
+        message = "mutation-capable publisher seam must not run"
+        raise AssertionError(message)
+
+    for helper in (
+        "_admit_mutation_marker",
+        "_npm_configuration_digest",
+        "_runner_result",
+        "_validate_local_tarball_preconditions",
+        "_validate_publish_preconditions",
+        "_write_private_npm_config",
+        "observe_github_packages_projection",
+        "preflight_github_packages_action",
+    ):
+        monkeypatch.setattr(adapter, helper, reject_forbidden_call)
+
+    with pytest.raises(
+        adapter.UnsupportedPublicationPrimitiveError,
+    ) as raised:
         adapter.publish_github_packages_action(
-            tarball=tmp_path / "qualified.tgz",
+            tarball=tarball,
             target=TARGET,
             token=TOKEN,
             runner=runner,
-            temp_root=tmp_path,
+            temp_root=temp_root,
+            transport=transport,
+            publication_snapshot=unavailable,
+            authorization=unavailable,
+            action=unavailable,
+            qualification_snapshot=unavailable,
+            qualification_decision=unavailable,
+            artifact=unavailable,
+            expectation=unavailable,
+            preflight=unavailable,
+            mutation_marker=unavailable,
+            governance_source=unavailable,
+            governance_client=unavailable,
+            governance_observed_at=unavailable,
         )
 
+    assert str(raised.value) == (
+        "The conditional GitHub Packages version-and-tag primitive is not "
+        "implemented; normal Live remains activation-blocked"
+    )
+    assert forbidden_calls == []
     assert runner.calls == []
     assert runner.config_path is None
+    assert transport.requests == []
+    assert not tarball.exists()
+    assert not temp_root.exists()
 
 
-def test_publish_rejects_incomplete_authority_before_runner_failure(
-    tmp_path,
-) -> None:
-    adapter = _adapter()
-    runner = RecordingPublishRunner(exception=RuntimeError("runner failed"))
-
-    with pytest.raises(ValueError, match="standalone"):
-        adapter.publish_github_packages_action(
-            tarball=tmp_path / "qualified.tgz",
-            target=TARGET,
-            token=TOKEN,
-            runner=runner,
-            temp_root=tmp_path,
-        )
-
-    assert runner.calls == []
-    assert runner.config_path is None
-
-
-def test_removed_standalone_publish_never_uses_forbidden_operations(
-    tmp_path,
-) -> None:
-    adapter = _adapter()
-    runner = RecordingPublishRunner(exit_code=0, stdout="created")
-    with pytest.raises(ValueError, match="standalone"):
-        adapter.publish_github_packages_action(
-            tarball=tmp_path / "qualified.tgz",
-            target=TARGET,
-            token=TOKEN,
-            runner=runner,
-            temp_root=tmp_path,
-        )
-    command = " ".join(runner.argv).lower()
-
-    assert command == ""
-    assert all(
-        forbidden not in command
-        for forbidden in (
-            "--force",
-            " unpublish ",
-            " delete ",
-            " restore ",
-            "dist-tag",
-            "oidc",
-            "pat",
-        )
-    )
-
-
-def test_publish_created_conflict_and_lost_response_are_distinct() -> None:
-    adapter = _adapter()
-    created_receipt = _receipt()
-    created = adapter.classify_publish_result(
-        command_outcome="created",
-        post_observation="exact-satisfied",
-        receipt=created_receipt,
-    )
-    conflict = adapter.classify_publish_result(
-        command_outcome="create-conflict",
-        post_observation="absent",
-        receipt=None,
-    )
-    lost = adapter.classify_publish_result(
-        command_outcome="lost-response",
-        post_observation="unknown",
-        receipt=None,
-    )
-    generic_nonzero = adapter.classify_publish_result(
-        command_outcome="failed",
-        post_observation="absent",
-        receipt=None,
-    )
-
-    assert (created.outcome, created.mutation_disposition) == (
-        "success",
-        "created",
-    )
-    assert created.receipt_digest == created_receipt.receipt_digest
-    assert (conflict.outcome, conflict.mutation_disposition) == (
-        "failed",
-        "no-side-effect",
-    )
-    assert conflict.receipt_digest is None
-    assert (lost.outcome, lost.mutation_disposition) == (
-        "incomplete",
-        "possibly-mutated",
-    )
-    assert lost.receipt_digest is None
-    assert (
-        generic_nonzero.outcome,
-        generic_nonzero.mutation_disposition,
-    ) == ("incomplete", "possibly-mutated")
-
-
-def test_publish_identical_and_differing_races_fail_closed() -> None:
-    adapter = _adapter()
-    identical = adapter.classify_publish_result(
-        command_outcome="create-conflict",
-        post_observation="exact-satisfied",
-        receipt=None,
-    )
-    differing = adapter.classify_publish_result(
-        command_outcome="create-conflict",
-        post_observation="conflicting",
-        receipt=None,
-    )
-
-    assert (identical.outcome, identical.mutation_disposition) == (
-        "failed",
-        "no-side-effect",
-    )
-    assert identical.receipt_digest is None
-    assert (differing.outcome, differing.mutation_disposition) == (
-        "failed",
-        "no-side-effect",
-    )
-    assert differing.receipt_digest is None
-
-
-def test_publish_rejects_receipt_and_response_substitution() -> None:
-    adapter = _adapter()
-    receipt = _receipt()
-    expected_response = receipt.response_identity_digest
-
-    with pytest.raises(ValueError, match="target tag mapping"):
-        replace(receipt, tag_mapping=(("buddy-sha-" + ("b" * 40), VERSION),))
-    assert "run-attempt" not in receipt.to_document()
-    substitutions = (
-        replace(receipt, action_digest="sha256:" + ("8" * 64)),
-        replace(
-            receipt,
-            publication_snapshot_digest="sha256:" + ("8" * 64),
-        ),
-        replace(
-            receipt,
-            artifact_content_sha512="sha512:" + ("8" * 128),
-        ),
-        replace(
-            receipt,
-            coordinate=_coordinate(version="1.2.3-beta.43.ge123456"),
-            tag_mapping=(
-                (
-                    "buddy-sha-" + TARGET,
-                    "1.2.3-beta.43.ge123456",
-                ),
-            ),
-        ),
-        replace(
-            receipt,
-            response_identity_digest=canonical_sha256(
-                {"response": "substituted"}
-            ),
-        ),
-    )
-
-    for substituted in substitutions:
-        with pytest.raises(ValueError, match="Receipt binding"):
-            adapter.validate_receipt_response_bindings(
-                receipt=substituted,
-                expected_receipt=receipt,
-                expected_response_identity_digest=expected_response,
-            )
-
-    with pytest.raises(ValueError, match="response identity"):
-        adapter.validate_receipt_response_bindings(
-            receipt=receipt,
-            expected_receipt=receipt,
-            expected_response_identity_digest=canonical_sha256(
-                {"response": "expected"}
-            ),
-        )
-    assert (
-        adapter.validate_receipt_response_bindings(
-            receipt=receipt,
-            expected_receipt=receipt,
-            expected_response_identity_digest=expected_response,
-        )
-        is None
-    )
-
-
-def test_complete_keys_remain_distinct_while_grouping_is_conservative() -> None:
+def test_conditional_action_keys_remain_exact_and_conservatively_grouped() -> (
+    None
+):
     attempt = _attempt()
     first = _projection()
     second = _projection(
@@ -1002,30 +779,9 @@ def test_complete_keys_remain_distinct_while_grouping_is_conservative() -> None:
     first_keys = publication_mutable_resource_keys(first, attempt)
     second_keys = publication_mutable_resource_keys(second, attempt)
 
+    assert first.operation == "conditional-create-npm-version-and-target-tag"
     assert len(first_keys) == len(second_keys) == COMPLETE_KEY_COUNT
     assert first_keys != second_keys
     assert first_keys[0] != second_keys[0]
     assert first_keys[1] == second_keys[1]
     assert publication_lock_group(first) == publication_lock_group(second)
-
-
-def test_publish_preconditions_block_runner_and_network(tmp_path) -> None:
-    adapter = _adapter()
-    runner = RecordingPublishRunner(exit_code=0, stdout="created")
-    transport = RecordingTransport({})
-
-    with pytest.raises(ValueError, match="standalone"):
-        adapter.publish_github_packages_action(
-            tarball=tmp_path / "qualified.tgz",
-            target=TARGET,
-            token=TOKEN,
-            runner=runner,
-            transport=transport,
-            authorization=None,
-            capability_decision=None,
-            action=None,
-            temp_root=tmp_path,
-        )
-
-    assert runner.calls == []
-    assert transport.requests == []

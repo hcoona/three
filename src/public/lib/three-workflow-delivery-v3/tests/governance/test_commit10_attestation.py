@@ -15,10 +15,10 @@ from three_workflow_delivery_v3.canonical import (
 from three_workflow_delivery_v3.release import eligibility
 from three_workflow_delivery_v3.release.eligibility import (
     EligibilityResult,
-    GovernanceBlob,
     LiveEligibilityContext,
     parse_governance_attestation,
 )
+from three_workflow_delivery_v3.release.governance_git import GovernanceGitRead
 from three_workflow_delivery_v3.release.static_reference_model import (
     STATIC_REFERENCE_POLICY_ID,
     BoundedStaticReferenceResult,
@@ -74,18 +74,29 @@ class _RecordingGovernanceClient:
         self.calls.append(("protected", repository, ref))
         return True
 
-    def resolve_ref(self, repository: str, ref: str) -> str:
-        self.calls.append(("resolve", repository, ref))
-        return "a" * 40
-
-    def read_blob(
+    def read_source(
         self,
         repository: str,
-        commit: str,
+        ref: str,
         path: str,
-    ) -> GovernanceBlob:
-        self.calls.append(("read", repository, commit, path))
-        return GovernanceBlob(blob_oid="b" * 40, content=self.content)
+        *,
+        eligibility_main_sha: str | None = None,
+    ) -> GovernanceGitRead:
+        self.calls.append(
+            (
+                "read",
+                repository,
+                ref,
+                path,
+                eligibility_main_sha or "",
+            )
+        )
+        return GovernanceGitRead(
+            main_sha="a" * 40,
+            object_format="sha1",
+            blob_oid="b" * 40,
+            content=self.content,
+        )
 
 
 def test_actual_protected_attestation_is_canonical_disabled_and_exactly_bound() -> (
@@ -98,6 +109,9 @@ def test_actual_protected_attestation_is_canonical_disabled_and_exactly_bound() 
 
     assert canonicalize(document) == content
     assert attestation.to_document() == document
+    assert document["schema"] == (
+        "workflow-delivery/v3/normal-live-governance-attestation-v1"
+    )
     assert attestation.release_policy == "hcoona-release-smoke-npm"
     assert attestation.package == FIRST_SLICE_PACKAGE
     assert attestation.live_enabled is False
@@ -114,12 +128,13 @@ def test_actual_attestation_accepts_only_hcoona_admin_and_exact_access() -> (
 ):
     attestation = parse_governance_attestation(_content())
     inventory = attestation.access_inventory
+    principal = attestation.package_principal
 
     assert attestation.issuer == "hcoona"
+    assert attestation.accepted_publisher == "hcoona"
     assert tuple(
         (writer.login, writer.role) for writer in attestation.accepted_writers
     ) == (("hcoona", "Admin"),)
-    assert inventory is not None
     assert tuple(
         (grant.subject, grant.access) for grant in inventory.repository
     ) == (("hcoona", "admin"),)
@@ -129,6 +144,12 @@ def test_actual_attestation_accepts_only_hcoona_admin_and_exact_access() -> (
     assert tuple(
         (grant.subject, grant.access) for grant in inventory.manage_actions
     ) == (("hcoona", "allowed"),)
+    assert principal.repository == "hcoona/three"
+    assert principal.intended_coordinate == FIRST_SLICE_PACKAGE
+    assert principal.known_wider_reach == (
+        "@hcoona/hexo-renderer-asciidoc",
+        "disposable-smoke-packages",
+    )
 
 
 def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
@@ -191,9 +212,9 @@ def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
     assert decision.static_reference is static_reference
     assert tuple(call[0] for call in client.calls) == (
         "protected",
-        "resolve",
         "read",
     )
+    assert client.calls[-1][-1] == ""
     assert (
         "needs.evaluate-live-eligibility.outputs.live-result == 'admitted'"
         in caller
@@ -220,5 +241,18 @@ def test_commit10_attestation_binds_disabled_normal_live_without_acceptance_evid
     document = parse_canonical_json(_content())
 
     assert document["live_enabled"] is False
+    assert document["activation"] == {
+        "blockers": [
+            "destination-primitive-unproven",
+            "fresh-native-evidence-required",
+            "repository-retention-readback-required",
+        ],
+        "state": "blocked",
+    }
     assert document["release_policy"] == "hcoona-release-smoke-npm"
     assert "governance-acceptance-evidence" not in document
+    activation = document["activation"]
+    assert isinstance(activation, dict)
+    assert "approval_environment" not in activation
+    assert "artifact_retention" not in activation
+    assert "destination_primitive" not in activation

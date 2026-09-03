@@ -14,6 +14,7 @@ from three_workflow_delivery_v3.catalogs import (
     QUALITY_DEFINITIONS,
 )
 from three_workflow_delivery_v3.records.release import (
+    CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION,
     ArtifactVariantIdentity,
     DestinationProjection,
     ExternalPackageCoordinate,
@@ -346,7 +347,11 @@ def _plan_qualification(
         registry=destination.registry,
         coordinate=coordinate,
         output=output,
-        operation="npm-publish-create-only",
+        operation=(
+            CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION
+            if live
+            else "npm-publish-create-only"
+        ),
         observation_contract_id=(
             "npm/github-packages-observation-v1"
             if live

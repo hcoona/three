@@ -76,9 +76,15 @@ PUBLICATION_OBSERVATION_REFERENCE_SCHEMA = (
 )
 PUBLICATION_SNAPSHOT_SCHEMA = "workflow-delivery/v3/publication-snapshot"
 RELEASE_ATTEMPT_BINDING_SCHEMA = "workflow-delivery/v3/release-attempt-binding"
-AUTHORIZATION_RECORD_SCHEMA = "workflow-delivery/v3/authorization-record"
-CAPABILITY_ADMISSION_DECISION_SCHEMA = (
-    "workflow-delivery/v3/capability-admission-decision"
+REVIEWER_SUMMARY_ARTIFACT_SCHEMA = (
+    "workflow-delivery/v3/reviewer-summary-artifact"
+)
+APPROVAL_BUNDLE_SCHEMA = "workflow-delivery/v3/approval-bundle"
+PUBLICATION_AUTHORIZATION_SCHEMA = (
+    "workflow-delivery/v3/publication-authorization"
+)
+EXACT_SATISFIED_GOVERNANCE_PROOF_SCHEMA = (
+    "workflow-delivery/v3/exact-satisfied-governance-proof"
 )
 ACTION_RESULT_SCHEMA = "workflow-delivery/v3/action-result"
 RECEIPT_SCHEMA = "workflow-delivery/v3/receipt"
@@ -89,6 +95,9 @@ NPMJS_OBSERVER_PRODUCER = "observe-npmjs"
 HYPOTHETICAL_ACTIONS_REPORT_PRODUCER = "materialize-hypothetical-actions"
 PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER = (
     "governance-recheck-failed-before-runner"
+)
+CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION = (
+    "conditional-create-npm-version-and-target-tag"
 )
 
 OFFICIAL_SIMULATION_WORKFLOW_PATH = (
@@ -125,19 +134,10 @@ _GOVERNANCE_PROVENANCE_FIELDS = frozenset(
         "repository",
         "ref",
         "path",
-        "resolved-commit",
+        "eligibility-main-sha",
+        "git-object-format",
         "blob-oid",
-        "content-sha256",
-    }
-)
-_CAPABILITY_BLOCK_DIAGNOSTICS = frozenset(
-    {
-        "governance-attestation-expired",
-        "governance-attestation-not-yet-valid",
-        "governance-binding-changed",
-        "governance-content-changed",
-        "governance-live-disabled",
-        "governance-provenance-changed",
+        "canonical-content-digest",
     }
 )
 
@@ -220,6 +220,18 @@ def _timestamp(value: object, *, field: str) -> str:
         message = f"{field} must be an RFC 3339 UTC timestamp"
         raise ValueError(message)
     return accepted
+
+
+def _compare_timestamps(left: str, right: str) -> int:
+    """Compare validated timestamps without truncating fractional precision."""
+    left_second, _, left_fraction = left[:-1].partition(".")
+    right_second, _, right_fraction = right[:-1].partition(".")
+    if left_second != right_second:
+        return -1 if left_second < right_second else 1
+    width = max(len(left_fraction), len(right_fraction))
+    left_fraction = left_fraction.ljust(width, "0")
+    right_fraction = right_fraction.ljust(width, "0")
+    return (left_fraction > right_fraction) - (left_fraction < right_fraction)
 
 
 def _boolean(value: object, *, field: str) -> bool:
@@ -1730,6 +1742,9 @@ class QualificationDecision:
             tuple,
             field="decision.obligation_dispositions",
         )
+        if not self.obligation_dispositions:
+            message = "Qualification Decision requires at least one disposition"
+            raise ValueError(message)
         if any(
             type(disposition) is not ObligationDisposition
             for disposition in self.obligation_dispositions
@@ -1749,6 +1764,15 @@ class QualificationDecision:
             _QUALIFICATION_RESULTS,
             field="decision.terminal_result",
         )
+        if self.terminal_result == "success" and any(
+            disposition.outcome != "satisfied"
+            for disposition in self.obligation_dispositions
+        ):
+            message = (
+                "Successful Qualification Decision requires every "
+                "disposition to be satisfied"
+            )
+            raise ValueError(message)
         _string(self.failure_class, field="decision.failure_class")
         _string(self.next_action, field="decision.next_action")
 
@@ -2271,7 +2295,14 @@ def publication_mutable_resource_keys(
         DestinationProjection,
         field="publication mutable keys.projection",
     )
-    if projection.operation != "npm-publish-create-only":
+    supported = (
+        projection.coordinate.channel == "official"
+        and projection.operation == "npm-publish-create-only"
+    ) or (
+        projection.coordinate.channel == "buddy"
+        and projection.operation == CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION
+    )
+    if not supported:
         message = "Publication Action operation is unsupported in commit 6"
         raise ValueError(message)
     coordinate_digest = canonical_sha256(projection.coordinate.to_document())
@@ -2346,9 +2377,9 @@ def publication_capability_requirements(
         projection.coordinate.channel == "buddy"
         and projection.destination_id == "npm/github-packages-hcoona-three-v1"
         and projection.registry == "https://npm.pkg.github.com"
-        and projection.operation == "npm-publish-create-only"
+        and projection.operation == CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION
     ):
-        return ("github/packages-write-v1",)
+        return ("github/packages-conditional-version-and-tag-v1",)
     message = "Publication Action capability is unsupported in commit 6"
     raise ValueError(message)
 
@@ -2372,6 +2403,8 @@ def publication_expected_result(projection: DestinationProjection) -> str:
     )
     if projection.operation == "npm-publish-create-only":
         return "created-or-exact"
+    if projection.operation == CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION:
+        return "created-version-and-target-tag-or-exact"
     message = "Publication Action expected result is unsupported in commit 6"
     raise ValueError(message)
 
@@ -2385,6 +2418,8 @@ def publication_receipt_contract(projection: DestinationProjection) -> str:
     )
     if projection.operation == "npm-publish-create-only":
         return "npm/package-publication-receipt-v1"
+    if projection.operation == CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION:
+        return "npm/conditional-version-and-target-tag-receipt-v1"
     message = "Publication Action Receipt is unsupported in commit 6"
     raise ValueError(message)
 
@@ -2789,15 +2824,7 @@ class ReleaseAttemptBinding:
             self.attestation_provenance,
             field="attempt binding.attestation_provenance",
         )
-        required = {
-            "repository",
-            "ref",
-            "path",
-            "resolved-commit",
-            "blob-oid",
-            "content-sha256",
-        }
-        if {name for name, _ in provenance} != required:
+        if {name for name, _ in provenance} != _GOVERNANCE_PROVENANCE_FIELDS:
             message = "Attempt binding attestation provenance is incomplete"
             raise ValueError(message)
 
@@ -2827,93 +2854,317 @@ class ReleaseAttemptBinding:
 
 
 @dataclass(frozen=True, slots=True)
-class AuthorizationRecord:
-    """Successful current approval bound to immutable reviewer inputs."""
+class ReviewerSummaryArtifact:
+    """Immutable reviewer-summary payload and Actions transport identity."""
 
     attempt: ReleaseAttemptIdentity
-    publication_snapshot_digest: str
-    reviewer_summary_artifact_id: int
-    reviewer_summary_upload_digest: str
-    reviewer_summary_payload_digest: str
-    workflow_run_id: int
-    approval_job_id: int
-    approval_job: str
+    transport: ArtifactTransportIdentity
+    snapshot_payload_digest: str
+    summary_payload_digest: str
+
+    def __post_init__(self) -> None:
+        """Reject substituted payload or normal-Live transport identity."""
+        _exact(
+            self.attempt,
+            ReleaseAttemptIdentity,
+            field="reviewer summary.attempt",
+        )
+        _exact(
+            self.transport,
+            ArtifactTransportIdentity,
+            field="reviewer summary.transport",
+        )
+        _digest(
+            self.snapshot_payload_digest,
+            field="reviewer summary.snapshot_payload_digest",
+        )
+        _digest(
+            self.summary_payload_digest,
+            field="reviewer summary.summary_payload_digest",
+        )
+        if (
+            self.transport.workflow_run_id != self.attempt.workflow_run_id
+            or self.transport.run_attempt is not None
+            or self.transport.producer != "materialize-publication"
+        ):
+            message = "Reviewer summary transport is not exact"
+            raise ValueError(message)
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the canonical reviewer-summary artifact identity."""
+        return {
+            "schema": REVIEWER_SUMMARY_ARTIFACT_SCHEMA,
+            "attempt": self.attempt.to_document(),
+            "transport": self.transport.to_document(),
+            "snapshot-payload-digest": self.snapshot_payload_digest,
+            "summary-payload-digest": self.summary_payload_digest,
+        }
+
+    @property
+    def artifact_digest(self) -> str:
+        """Return the canonical reviewer-summary artifact digest."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalBundle:
+    """Complete immutable one-action closure persisted before approval."""
+
+    attempt_binding: ReleaseAttemptBinding
+    selected_ref: str
+    qualification_decision: QualificationDecision
+    publication_snapshot: PublicationSnapshot
+    reviewer_summary: ReviewerSummaryArtifact
     environment: str
-    channel: str
+    approval_job: str
+    producer: str
+    control: str
+
+    def __post_init__(self) -> None:
+        """Reject incomplete, substituted, or approval-bearing Bundles."""
+        _exact(
+            self.attempt_binding,
+            ReleaseAttemptBinding,
+            field="approval bundle.attempt_binding",
+        )
+        selected_ref = _string(
+            self.selected_ref,
+            field="approval bundle.selected_ref",
+        )
+        if not selected_ref.startswith(_SELECTED_REF_PREFIXES):
+            message = "Approval Bundle selected ref is not a branch or tag"
+            raise ValueError(message)
+        _exact(
+            self.qualification_decision,
+            QualificationDecision,
+            field="approval bundle.qualification_decision",
+        )
+        _exact(
+            self.publication_snapshot,
+            PublicationSnapshot,
+            field="approval bundle.publication_snapshot",
+        )
+        _exact(
+            self.reviewer_summary,
+            ReviewerSummaryArtifact,
+            field="approval bundle.reviewer_summary",
+        )
+        attempt = self.attempt_binding.attempt
+        decision = self.qualification_decision
+        snapshot = self.publication_snapshot
+        if (
+            decision.subject != attempt
+            or snapshot.attempt != attempt
+            or snapshot.qualification_snapshot_digest
+            != decision.qualification_snapshot_digest
+            or snapshot.qualification_decision_digest
+            != canonical_sha256(decision.to_document())
+            or decision.terminal_result != "success"
+            or decision.admitted_artifact_digests != snapshot.artifact_digests
+        ):
+            message = "Approval Bundle qualification closure mismatch"
+            raise ValueError(message)
+        if (
+            len(snapshot.materialized_actions) != 1
+            or self.reviewer_summary.attempt != attempt
+            or self.reviewer_summary.snapshot_payload_digest
+            != snapshot.snapshot_digest
+            or self.reviewer_summary.transport.workflow_run_id
+            != attempt.workflow_run_id
+        ):
+            message = "Approval Bundle action or reviewer closure mismatch"
+            raise ValueError(message)
+        _string(self.environment, field="approval bundle.environment")
+        _string(self.approval_job, field="approval bundle.approval_job")
+        _string(self.producer, field="approval bundle.producer")
+        if (
+            self.environment != "workflow-delivery-v3-buddy-approval"
+            or self.approval_job != "approve-publication"
+            or self.producer != "materialize-publication"
+        ):
+            message = "Approval Bundle approval boundary is not exact"
+            raise ValueError(message)
+        _target_control(
+            self.control,
+            target=attempt.execution.target,
+            field="Approval Bundle control",
+        )
+
+    @property
+    def attempt(self) -> ReleaseAttemptIdentity:
+        """Return the exact current Attempt."""
+        return self.attempt_binding.attempt
+
+    @property
+    def action(self) -> PublicationAction:
+        """Return the sole exact Publication Action."""
+        return self.publication_snapshot.materialized_actions[0]
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the canonical pre-wait Approval Bundle."""
+        return {
+            "schema": APPROVAL_BUNDLE_SCHEMA,
+            "attempt-binding": self.attempt_binding.to_document(),
+            "selected-ref": self.selected_ref,
+            "qualification-decision": (
+                self.qualification_decision.to_document()
+            ),
+            "publication-snapshot": self.publication_snapshot.to_document(),
+            "reviewer-summary": self.reviewer_summary.to_document(),
+            "environment": self.environment,
+            "approval-job": self.approval_job,
+            "producer": self.producer,
+            "control": self.control,
+        }
+
+    @property
+    def bundle_digest(self) -> str:
+        """Return the canonical Approval Bundle digest."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
+class PublicationAuthorization:
+    """Sole complete post-wait authorization for one publication action."""
+
+    approval_bundle: ApprovalBundle
+    approval_governance_provenance: tuple[tuple[str, str], ...]
+    approval_governance_current_main_sha: str
+    approval_governance_observed_at: str
+    approval_governance_expires_at: str
+    approval_governance_live_enabled: bool
+    environment: str
+    approval_job: str
     completed_at: str
     producer: str
     control: str
     result: str = "success"
 
     def __post_init__(self) -> None:
-        """Accept successful current approval as the only authorization."""
+        """Accept only complete fresh successful Approval output."""
         _exact(
-            self.attempt, ReleaseAttemptIdentity, field="authorization.attempt"
+            self.approval_bundle,
+            ApprovalBundle,
+            field="publication authorization.approval_bundle",
         )
-        _digest(
-            self.publication_snapshot_digest,
-            field="authorization.publication_snapshot_digest",
+        provenance = _pairs(
+            self.approval_governance_provenance,
+            field="publication authorization.approval_governance_provenance",
         )
-        _positive(
-            self.reviewer_summary_artifact_id,
-            field="authorization.reviewer_summary_artifact_id",
-        )
-        _digest(
-            self.reviewer_summary_upload_digest,
-            field="authorization.reviewer_summary_upload_digest",
-        )
-        _digest(
-            self.reviewer_summary_payload_digest,
-            field="authorization.reviewer_summary_payload_digest",
-        )
-        if self.workflow_run_id != self.attempt.workflow_run_id:
-            message = "Authorization current Attempt binding mismatch"
-            raise ValueError(message)
-        _positive(self.workflow_run_id, field="authorization.workflow_run_id")
-        _positive(self.approval_job_id, field="authorization.approval_job_id")
-        _string(self.approval_job, field="authorization.approval_job")
-        _string(self.environment, field="authorization.environment")
         if (
-            self.approval_job != "approval"
-            or self.environment != "workflow-delivery-v3-buddy-approval"
-            or self.producer != "approval"
+            {name for name, _ in provenance} != _GOVERNANCE_PROVENANCE_FIELDS
+            or provenance
+            != self.approval_bundle.attempt_binding.attestation_provenance
+        ):
+            message = "Publication Authorization Governance proof mismatch"
+            raise ValueError(message)
+        object_format = dict(provenance)["git-object-format"]
+        expected_length = {"sha1": 40, "sha256": 64}.get(object_format)
+        current_main_sha = _string(
+            self.approval_governance_current_main_sha,
+            field=(
+                "publication authorization.approval_governance_current_main_sha"
+            ),
+        )
+        if (
+            expected_length is None
+            or len(current_main_sha) != expected_length
+            or any(
+                character not in "0123456789abcdef"
+                for character in current_main_sha
+            )
+        ):
+            message = "Publication Authorization current main SHA is malformed"
+            raise ValueError(message)
+        governance_observed_at = _timestamp(
+            self.approval_governance_observed_at,
+            field=("publication authorization.approval_governance_observed_at"),
+        )
+        governance_expires_at = _timestamp(
+            self.approval_governance_expires_at,
+            field=("publication authorization.approval_governance_expires_at"),
+        )
+        if self.approval_governance_live_enabled is not True:
+            message = "Publication Authorization Governance is not enabled"
+            raise ValueError(message)
+        _string(
+            self.environment,
+            field="publication authorization.environment",
+        )
+        _string(
+            self.approval_job,
+            field="publication authorization.approval_job",
+        )
+        completed_at = _timestamp(
+            self.completed_at,
+            field="publication authorization.completed_at",
+        )
+        if not (
+            _compare_timestamps(governance_observed_at, completed_at) <= 0
+            and _compare_timestamps(completed_at, governance_expires_at) < 0
         ):
             message = (
-                "Authorization approval producer/job/Environment is not exact"
+                "Publication Authorization requires "
+                "approval_governance_observed_at <= completed_at < "
+                "approval_governance_expires_at"
             )
             raise ValueError(message)
-        if self.channel != "buddy":
-            message = "First-slice Authorization channel must be buddy"
+        _string(self.producer, field="publication authorization.producer")
+        bundle = self.approval_bundle
+        if (
+            self.environment != bundle.environment
+            or self.approval_job != bundle.approval_job
+            or self.producer != "approve-publication"
+            or self.result != "success"
+        ):
+            message = "Publication Authorization approval identity mismatch"
             raise ValueError(message)
-        _timestamp(self.completed_at, field="authorization.completed_at")
-        _string(self.producer, field="authorization.producer")
         _target_control(
             self.control,
-            target=self.attempt.execution.target,
-            field="Authorization control",
+            target=bundle.attempt.execution.target,
+            field="Publication Authorization control",
         )
-        if self.result != "success":
-            message = "Only successful approval can authorize"
+        if self.control != bundle.control:
+            message = "Publication Authorization Bundle control mismatch"
             raise ValueError(message)
 
+    @property
+    def attempt(self) -> ReleaseAttemptIdentity:
+        """Return the exact authorized Attempt."""
+        return self.approval_bundle.attempt
+
+    @property
+    def action(self) -> PublicationAction:
+        """Return the sole authorized Publication Action."""
+        return self.approval_bundle.action
+
+    @property
+    def authorizing(self) -> bool:
+        """Return whether the closed record authorizes publication."""
+        return self.result == "success"
+
     def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical successful Authorization Record."""
+        """Return the canonical Publication Authorization."""
         return {
-            "schema": AUTHORIZATION_RECORD_SCHEMA,
-            "attempt": self.attempt.to_document(),
-            "publication-snapshot-digest": self.publication_snapshot_digest,
-            "reviewer-summary-artifact-id": self.reviewer_summary_artifact_id,
-            "reviewer-summary-upload-digest": (
-                self.reviewer_summary_upload_digest
+            "schema": PUBLICATION_AUTHORIZATION_SCHEMA,
+            "approval-bundle": self.approval_bundle.to_document(),
+            "approval-governance-provenance": _json_pairs(
+                self.approval_governance_provenance
             ),
-            "reviewer-summary-payload-digest": (
-                self.reviewer_summary_payload_digest
+            "approval-governance-current-main-sha": (
+                self.approval_governance_current_main_sha
             ),
-            "workflow-run-id": self.workflow_run_id,
-            "approval-job-id": self.approval_job_id,
-            "approval-job": self.approval_job,
+            "approval-governance-observed-at": (
+                self.approval_governance_observed_at
+            ),
+            "approval-governance-expires-at": (
+                self.approval_governance_expires_at
+            ),
+            "approval-governance-live-enabled": (
+                self.approval_governance_live_enabled
+            ),
             "environment": self.environment,
-            "channel": self.channel,
+            "approval-job": self.approval_job,
             "completed-at": self.completed_at,
             "producer": self.producer,
             "control": self.control,
@@ -2922,217 +3173,141 @@ class AuthorizationRecord:
 
     @property
     def authorization_digest(self) -> str:
-        """Return the canonical Authorization digest."""
+        """Return the canonical Publication Authorization digest."""
         return canonical_sha256(self.to_document())
 
 
 @dataclass(frozen=True, slots=True)
-class CapabilityAdmissionDecision:
-    """Credential-free exact publication capability admission Decision."""
+class ExactSatisfiedGovernanceProof:
+    """Fresh Governance continuity proof for an actionless publication."""
 
     attempt: ReleaseAttemptIdentity
-    authorization_digest: str
-    publication_snapshot_digest: str
-    reviewer_summary_artifact_id: int
-    reviewer_summary_upload_digest: str
-    reviewer_summary_payload_digest: str
-    action_digests: tuple[str, ...]
-    artifact_digests: tuple[str, ...]
-    resource_key_sets: tuple[tuple[str, tuple[str, ...]], ...]
-    lock_groups: tuple[tuple[str, str], ...]
-    live_eligibility_artifact_id: int
-    live_eligibility_artifact_digest: str
+    publication_snapshot: PublicationSnapshot
     governance_provenance: tuple[tuple[str, str], ...]
-    governance_content_sha256: str
+    governance_current_main_sha: str
     governance_expires_at: str
     governance_live_enabled: bool
+    governance_observed_at: str
+    proved_at: str
     producer: str
     control: str
-    workflow_run_id: int
-    result: str
-    diagnostics: tuple[str, ...]
 
-    def __post_init__(self) -> None:  # noqa: C901, PLR0912, PLR0915
-        """Authorize only exact success; blocked freshness is permanent."""
+    def __post_init__(self) -> None:
+        """Reject proof that could authorize an action or stale authority."""
         _exact(
             self.attempt,
             ReleaseAttemptIdentity,
-            field="capability admission.attempt",
+            field="exact-satisfied proof.attempt",
         )
-        _digest(
-            self.authorization_digest,
-            field="capability admission.authorization_digest",
-        )
-        _digest(
-            self.publication_snapshot_digest,
-            field="capability admission.publication_snapshot_digest",
-        )
-        _positive(
-            self.reviewer_summary_artifact_id,
-            field="capability admission.reviewer_summary_artifact_id",
-        )
-        _digest(
-            self.reviewer_summary_upload_digest,
-            field="capability admission.reviewer_summary_upload_digest",
-        )
-        _digest(
-            self.reviewer_summary_payload_digest,
-            field="capability admission.reviewer_summary_payload_digest",
-        )
-        for index, digest in enumerate(
-            _string_tuple(
-                self.action_digests,
-                field="capability admission.action_digests",
-                sorted_values=True,
-            )
-        ):
-            _digest(
-                digest, field=f"capability admission.action_digests[{index}]"
-            )
-        for index, digest in enumerate(
-            _string_tuple(
-                self.artifact_digests,
-                field="capability admission.artifact_digests",
-                sorted_values=True,
-            )
-        ):
-            _digest(
-                digest,
-                field=f"capability admission.artifact_digests[{index}]",
-            )
-        resource_sets = _nested_string_pairs(
-            self.resource_key_sets,
-            field="capability admission.resource_key_sets",
-        )
-        _pairs(self.lock_groups, field="capability admission.lock_groups")
-        action_ids = {action_id for action_id, _ in resource_sets}
-        if {action_id for action_id, _ in self.lock_groups} != action_ids:
-            message = "Capability admission action/key manifest mismatch"
-            raise ValueError(message)
-        if len(self.action_digests) != len(action_ids) or len(
-            self.artifact_digests
-        ) != len(action_ids):
-            message = "Capability admission action/lock manifest mismatch"
-            raise ValueError(message)
-        if len(action_ids) > 1:
-            message = "Capability admission permits at most one action closure"
-            raise ValueError(message)
-        _positive(
-            self.live_eligibility_artifact_id,
-            field="capability admission.live_eligibility_artifact_id",
-        )
-        _digest(
-            self.live_eligibility_artifact_digest,
-            field="capability admission.live_eligibility_artifact_digest",
-        )
-        _pairs(
-            self.governance_provenance,
-            field="capability admission.governance_provenance",
-        )
-        if {
-            name for name, _ in self.governance_provenance
-        } != _GOVERNANCE_PROVENANCE_FIELDS:
-            message = "Capability admission Governance provenance is incomplete"
-            raise ValueError(message)
-        _digest(
-            self.governance_content_sha256,
-            field="capability admission.governance_content_sha256",
+        _exact(
+            self.publication_snapshot,
+            PublicationSnapshot,
+            field="exact-satisfied proof.publication_snapshot",
         )
         if (
-            dict(self.governance_provenance)["content-sha256"]
-            != self.governance_content_sha256
+            self.publication_snapshot.attempt != self.attempt
+            or self.publication_snapshot.materialized_actions
+            or any(
+                reference.classification != "exact-satisfied"
+                for reference in (
+                    self.publication_snapshot.observation_references
+                )
+            )
         ):
-            message = "Capability admission Governance content mismatch"
+            message = (
+                "Exact-satisfied Governance proof requires an actionless "
+                "exact Publication Snapshot"
+            )
             raise ValueError(message)
-        _timestamp(
+        provenance = _pairs(
+            self.governance_provenance,
+            field="exact-satisfied proof.governance_provenance",
+        )
+        if {name for name, _ in provenance} != _GOVERNANCE_PROVENANCE_FIELDS:
+            message = "Exact-satisfied Governance proof is incomplete"
+            raise ValueError(message)
+        object_format = dict(provenance)["git-object-format"]
+        expected_length = {"sha1": 40, "sha256": 64}.get(object_format)
+        current_main_sha = _string(
+            self.governance_current_main_sha,
+            field="exact-satisfied proof.governance_current_main_sha",
+        )
+        if (
+            expected_length is None
+            or len(current_main_sha) != expected_length
+            or any(
+                character not in "0123456789abcdef"
+                for character in current_main_sha
+            )
+        ):
+            message = "Exact-satisfied current main SHA is malformed"
+            raise ValueError(message)
+        governance_expires_at = _timestamp(
             self.governance_expires_at,
-            field="capability admission.governance_expires_at",
+            field="exact-satisfied proof.governance_expires_at",
         )
         _boolean(
             self.governance_live_enabled,
-            field="capability admission.governance_live_enabled",
+            field="exact-satisfied proof.governance_live_enabled",
         )
-        _string(self.producer, field="capability admission.producer")
-        _target_control(
-            self.control,
-            target=self.attempt.execution.target,
-            field="Capability admission control",
+        if not self.governance_live_enabled:
+            message = "Exact-satisfied Governance proof requires Live enabled"
+            raise ValueError(message)
+        governance_observed_at = _timestamp(
+            self.governance_observed_at,
+            field="exact-satisfied proof.governance_observed_at",
         )
-        if self.producer != "approval-finalizer":
-            message = "Capability admission producer is not exact"
-            raise ValueError(message)
-        if self.workflow_run_id != self.attempt.workflow_run_id:
-            message = "Capability admission current Attempt binding mismatch"
-            raise ValueError(message)
-        _string_tuple(
-            self.diagnostics,
-            field="capability admission.diagnostics",
-            unique=False,
+        proved_at = _timestamp(
+            self.proved_at,
+            field="exact-satisfied proof.proved_at",
         )
-        if set(self.diagnostics) - _CAPABILITY_BLOCK_DIAGNOSTICS:
-            message = "Capability admission diagnostic is not typed"
-            raise ValueError(message)
-        if self.result not in {"success", "blocked"}:
-            message = "Capability admission result has an invalid closed value"
-            raise ValueError(message)
-        if self.result == "success" and (
-            not self.governance_live_enabled or self.diagnostics
+        if not (
+            _compare_timestamps(governance_observed_at, proved_at) <= 0
+            and _compare_timestamps(proved_at, governance_expires_at) < 0
         ):
-            message = "Capability admission success requires fresh Governance"
+            message = (
+                "Exact-satisfied Governance proof requires "
+                "governance_observed_at <= proved_at < governance_expires_at"
+            )
             raise ValueError(message)
-        if self.result == "blocked" and not self.diagnostics:
-            message = "Blocked Capability admission requires diagnostics"
+        if self.producer != "prove-exact-satisfied":
+            message = "Exact-satisfied Governance proof producer is invalid"
             raise ValueError(message)
-
-    @property
-    def authorizing(self) -> bool:
-        """Return whether this exact Decision may schedule capability."""
-        return (
-            self.result == "success"
-            and bool(self.action_digests)
-            and bool(self.artifact_digests)
-            and bool(self.resource_key_sets)
-            and bool(self.lock_groups)
+        expected_control = (
+            f"workflow-delivery-v3:{self.attempt.execution.target}"
         )
+        if self.control != expected_control:
+            message = "Exact-satisfied Governance proof control mismatch"
+            raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical Capability Admission Decision."""
-        return {
-            "schema": CAPABILITY_ADMISSION_DECISION_SCHEMA,
-            "attempt": self.attempt.to_document(),
-            "authorization-digest": self.authorization_digest,
-            "publication-snapshot-digest": (self.publication_snapshot_digest),
-            "reviewer-summary-artifact-id": (self.reviewer_summary_artifact_id),
-            "reviewer-summary-upload-digest": (
-                self.reviewer_summary_upload_digest
-            ),
-            "reviewer-summary-payload-digest": (
-                self.reviewer_summary_payload_digest
-            ),
-            "action-digests": _json_strings(self.action_digests),
-            "artifact-digests": _json_strings(self.artifact_digests),
-            "resource-key-sets": _json_nested_string_pairs(
-                self.resource_key_sets
-            ),
-            "lock-groups": _json_pairs(self.lock_groups),
-            "live-eligibility-artifact-id": (self.live_eligibility_artifact_id),
-            "live-eligibility-artifact-digest": (
-                self.live_eligibility_artifact_digest
-            ),
-            "governance-provenance": _json_pairs(self.governance_provenance),
-            "governance-content-sha256": self.governance_content_sha256,
-            "governance-expires-at": self.governance_expires_at,
-            "governance-live-enabled": self.governance_live_enabled,
-            "producer": self.producer,
-            "control": self.control,
-            "workflow-run-id": self.workflow_run_id,
-            "result": self.result,
-            "diagnostics": _json_strings(self.diagnostics),
-        }
+        """Return the complete canonical proof document."""
+        return cast(
+            "dict[str, JsonValue]",
+            {
+                "schema": EXACT_SATISFIED_GOVERNANCE_PROOF_SCHEMA,
+                "attempt": self.attempt.to_document(),
+                "publication-snapshot": (
+                    self.publication_snapshot.to_document()
+                ),
+                "governance-provenance": _json_pairs(
+                    self.governance_provenance
+                ),
+                "governance-current-main-sha": (
+                    self.governance_current_main_sha
+                ),
+                "governance-expires-at": self.governance_expires_at,
+                "governance-live-enabled": self.governance_live_enabled,
+                "governance-observed-at": self.governance_observed_at,
+                "proved-at": self.proved_at,
+                "producer": self.producer,
+                "control": self.control,
+            },
+        )
 
     @property
-    def decision_digest(self) -> str:
-        """Return the canonical Capability Admission Decision digest."""
+    def proof_digest(self) -> str:
+        """Return the canonical exact-satisfied proof digest."""
         return canonical_sha256(self.to_document())
 
 
@@ -3388,14 +3563,8 @@ class ActionResult:
 
 
 def _validate_attempt_outcome_lineage_cardinality(
-    capability_admission_digests: tuple[str, ...],
     action_result_digests: tuple[str, ...],
 ) -> None:
-    if len(capability_admission_digests) > 1:
-        message = (
-            "Attempt Outcome permits at most one Capability Admission lineage"
-        )
-        raise ValueError(message)
     if len(action_result_digests) > 1:
         message = (
             "Attempt Outcome permits at most one direct Action Result lineage"
@@ -3408,31 +3577,34 @@ def _validate_successful_attempt_outcome(outcome: AttemptOutcome) -> None:
         return
     if (
         outcome.publication_snapshot_digest is None
-        or outcome.authorization_digest is None
         or outcome.uncertainty
         or outcome.possibly_mutated
     ):
-        message = "Successful Attempt Outcome requires exact authorization"
+        message = "Successful Attempt Outcome requires exact publication"
         raise ValueError(message)
     if outcome.terminal_phase == "finalized":
         if (
-            len(outcome.capability_admission_digests) != 1
+            outcome.exact_satisfied_governance_proof_digest is not None
+            or outcome.approval_bundle_digest is None
+            or outcome.publication_authorization_digest is None
             or len(outcome.action_result_digests) != 1
         ):
             message = (
-                "Successful finalized Attempt Outcome requires one "
-                "direct Action Result lineage"
+                "Successful finalized Attempt Outcome requires complete "
+                "Approval, Authorization, and Action Result lineage"
             )
             raise ValueError(message)
         return
     if outcome.terminal_phase == "finalized-no-op":
         if (
-            outcome.capability_admission_digests
+            outcome.exact_satisfied_governance_proof_digest is None
+            or outcome.approval_bundle_digest is not None
+            or outcome.publication_authorization_digest is not None
             or outcome.action_result_digests
         ):
             message = (
-                "Successful no-op Attempt Outcome cannot bind "
-                "publication results"
+                "Successful no-op Attempt Outcome requires the fresh "
+                "Governance proof and no mutation authority"
             )
             raise ValueError(message)
         return
@@ -3447,17 +3619,18 @@ class AttemptOutcome:
     attempt: ReleaseAttemptIdentity
     qualification_decision_digest: str
     publication_snapshot_digest: str | None
-    authorization_digest: str | None
-    capability_admission_digests: tuple[str, ...]
+    approval_bundle_digest: str | None
+    publication_authorization_digest: str | None
     action_result_digests: tuple[str, ...]
     terminal_phase: str
     result: str
     uncertainty: bool
     possibly_mutated: bool
     next_action: str
+    exact_satisfied_governance_proof_digest: str | None = None
     observation_digests: tuple[str, ...] = ()
 
-    def __post_init__(self) -> None:  # noqa: C901, PLR0912
+    def __post_init__(self) -> None:  # noqa: C901, PLR0912, PLR0915
         """Reject false completion and ambiguous replay classifications."""
         _exact(
             self.attempt,
@@ -3473,18 +3646,19 @@ class AttemptOutcome:
             field="attempt outcome.publication_snapshot_digest",
         )
         _optional_digest(
-            self.authorization_digest,
-            field="attempt outcome.authorization_digest",
+            self.exact_satisfied_governance_proof_digest,
+            field=("attempt outcome.exact_satisfied_governance_proof_digest"),
+        )
+        _optional_digest(
+            self.approval_bundle_digest,
+            field="attempt outcome.approval_bundle_digest",
+        )
+        _optional_digest(
+            self.publication_authorization_digest,
+            field="attempt outcome.publication_authorization_digest",
         )
         for field, values in (
-            (
-                "capability_admission_digests",
-                self.capability_admission_digests,
-            ),
-            (
-                "action_result_digests",
-                self.action_result_digests,
-            ),
+            ("action_result_digests", self.action_result_digests),
         ):
             for index, digest in enumerate(
                 _string_tuple(
@@ -3495,7 +3669,6 @@ class AttemptOutcome:
             ):
                 _digest(digest, field=f"attempt outcome.{field}[{index}]")
         _validate_attempt_outcome_lineage_cardinality(
-            self.capability_admission_digests,
             self.action_result_digests,
         )
         _string(self.terminal_phase, field="attempt outcome.terminal_phase")
@@ -3503,7 +3676,6 @@ class AttemptOutcome:
             "success",
             "failure",
             "incomplete",
-            "unknown-replayable-approval-contract",
             "replayable-no-side-effect",
             "incomplete-possibly-mutated",
         }:
@@ -3527,13 +3699,21 @@ class AttemptOutcome:
                 field=f"attempt outcome.observation_digests[{index}]",
             )
         _validate_successful_attempt_outcome(self)
+        if self.exact_satisfied_governance_proof_digest is not None and (
+            self.result != "success" or self.terminal_phase != "finalized-no-op"
+        ):
+            message = (
+                "Exact-satisfied Governance proof is only valid for "
+                "successful no-op finalization"
+            )
+            raise ValueError(message)
         if self.result == "incomplete-possibly-mutated" and (
             not self.uncertainty or not self.possibly_mutated
         ):
             message = "Possibly-mutated outcome must preserve uncertainty"
             raise ValueError(message)
         if self.result == "replayable-no-side-effect" and (
-            self.terminal_phase != "pre-capability-termination"
+            self.terminal_phase != "pre-authorization-termination"
             or self.uncertainty
             or self.possibly_mutated
             or self.next_action != "replay"
@@ -3543,8 +3723,9 @@ class AttemptOutcome:
             raise ValueError(message)
         if self.publication_snapshot_digest is None:
             has_later_records = bool(
-                self.authorization_digest is not None
-                or self.capability_admission_digests
+                self.exact_satisfied_governance_proof_digest is not None
+                or self.approval_bundle_digest is not None
+                or self.publication_authorization_digest is not None
                 or self.action_result_digests
             )
             if self.terminal_phase == "qualification":
@@ -3609,9 +3790,6 @@ class AttemptOutcome:
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical Attempt Outcome."""
-        capability_admission_digests = _json_strings(
-            self.capability_admission_digests
-        )
         action_result_digests = _json_strings(self.action_result_digests)
         document: dict[str, JsonValue] = {
             "schema": ATTEMPT_OUTCOME_SCHEMA,
@@ -3621,8 +3799,13 @@ class AttemptOutcome:
             ),
             "observation-digests": _json_strings(self.observation_digests),
             "publication-snapshot-digest": self.publication_snapshot_digest,
-            "authorization-digest": self.authorization_digest,
-            "capability-admission-digests": capability_admission_digests,
+            "exact-satisfied-governance-proof-digest": (
+                self.exact_satisfied_governance_proof_digest
+            ),
+            "approval-bundle-digest": self.approval_bundle_digest,
+            "publication-authorization-digest": (
+                self.publication_authorization_digest
+            ),
             "action-result-digests": action_result_digests,
             "terminal-phase": self.terminal_phase,
             "result": self.result,
@@ -3743,8 +3926,10 @@ type ReleaseRecord = (
     | HypotheticalAction
     | PublicationAction
     | PublicationSnapshot
-    | AuthorizationRecord
-    | CapabilityAdmissionDecision
+    | ReviewerSummaryArtifact
+    | ApprovalBundle
+    | PublicationAuthorization
+    | ExactSatisfiedGovernanceProof
     | ActionResult
     | AttemptOutcome
     | SimulationOutcome
@@ -3807,12 +3992,12 @@ __all__ = [
     "NPMJS_OBSERVER_PRODUCER",
     "OFFICIAL_SIMULATION_WORKFLOW_PATH",
     "ActionResult",
+    "ApprovalBundle",
     "ArtifactVariantIdentity",
     "AttemptOutcome",
-    "AuthorizationRecord",
     "BuddyExecutionIdentity",
-    "CapabilityAdmissionDecision",
     "DestinationProjection",
+    "ExactSatisfiedGovernanceProof",
     "ExternalPackageCoordinate",
     "HypotheticalAction",
     "ObligationDisposition",
@@ -3822,6 +4007,7 @@ __all__ = [
     "PotentialActionContract",
     "ProjectionObservation",
     "PublicationAction",
+    "PublicationAuthorization",
     "PublicationObservationReference",
     "PublicationSnapshot",
     "QualificationDecision",
@@ -3836,6 +4022,7 @@ __all__ = [
     "ReleaseIntent",
     "ReleaseObligation",
     "ReleaseOutputIdentity",
+    "ReviewerSummaryArtifact",
     "SimulationBinding",
     "SimulationIdentity",
     "SimulationOutcome",

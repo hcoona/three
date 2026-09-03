@@ -17,20 +17,31 @@ from three_workflow_delivery_v3.records.artifacts import (
     ArtifactTransportIdentity,
 )
 from three_workflow_delivery_v3.records.release import (
+    CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION,
+    BuddyExecutionIdentity,
     OfficialExecutionIdentity,
     OfficialProductIdentity,
     PublicationAction,
+    PublicationObservationReference,
     PublicationSnapshot,
     ReleaseArtifact,
     ReleaseAttemptIdentity,
+    publication_action_inputs,
+    publication_capability_requirements,
+    publication_expected_result,
+    publication_lock_group,
+    publication_lock_projection,
+    publication_mutable_resource_key_basis,
+    publication_mutable_resource_keys,
+    publication_receipt_contract,
     release_artifact_transport_name,
 )
 from three_workflow_delivery_v3.records.release_transport import (
     release_record_from_document,
 )
 from three_workflow_delivery_v3.release.finalizer import (
+    UnsupportedPublicationPrimitiveError,
     _admit_synthetic_projection_observation,
-    desired_projection_state_digest,
     finalize_qualification,
     finalize_simulation,
     materialize_hypothetical_actions,
@@ -443,19 +454,49 @@ def test_synthetic_observation_helper_is_not_public_release_api() -> None:
     assert "admit_synthetic_projection_observation" not in release_api.__all__
 
 
-def _live_publication_snapshot(scenario) -> PublicationSnapshot:
+def _live_publication_context(scenario):
     attempt = ReleaseAttemptIdentity(
-        execution=OfficialExecutionIdentity(
-            OfficialProductIdentity(
-                "official",
-                scenario.snapshot.release_unit,
-                scenario.snapshot.nbgv.canonical_version,
-            ),
-            scenario.snapshot.target,
+        execution=BuddyExecutionIdentity(
+            channel="buddy",
+            release_unit=scenario.snapshot.release_unit,
+            target=scenario.snapshot.target,
         ),
         workflow_run_id=scenario.binding.simulation.workflow_run_id,
     )
-    live_snapshot = replace(scenario.snapshot, subject=attempt)
+    source_projection = scenario.snapshot.destination_projections[0]
+    coordinate = replace(
+        source_projection.coordinate,
+        channel="buddy",
+        destination_id="npm/github-packages-hcoona-three-v1",
+    )
+    projection = replace(
+        source_projection,
+        projection_id="projection:npm:github-packages",
+        destination_id=coordinate.destination_id,
+        registry="https://npm.pkg.github.com",
+        coordinate=coordinate,
+        operation=CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION,
+        observation_contract_id="npm/github-packages-observation-v1",
+        potential_action_id="publish-github-packages",
+    )
+    source_potential_action = scenario.snapshot.potential_actions[0]
+    potential_action = replace(
+        source_potential_action,
+        contract_id=projection.potential_action_id,
+        projection_id=projection.projection_id,
+        operation=projection.operation,
+        capability_requirements=publication_capability_requirements(projection),
+        mutable_resource_key_basis=publication_mutable_resource_key_basis(
+            projection
+        ),
+    )
+    live_snapshot = replace(
+        scenario.snapshot,
+        subject=attempt,
+        channel="buddy",
+        destination_projections=(projection,),
+        potential_actions=(potential_action,),
+    )
     live_transport = replace(
         scenario.artifact.transport,
         artifact_name=release_artifact_transport_name(
@@ -516,22 +557,82 @@ def _live_publication_snapshot(scenario) -> PublicationSnapshot:
         qualification_snapshot_digest=live_snapshot.snapshot_digest,
         admitted_artifact_digests=(live_artifact.artifact_digest,),
     )
-    live_absent = _admit_synthetic_projection_observation(
+    return live_snapshot, live_decision, live_artifact
+
+
+def _publication_action(snapshot, artifact) -> PublicationAction:
+    projection = snapshot.destination_projections[0]
+    return PublicationAction(
+        action_id=projection.potential_action_id,
+        projection=projection,
+        operation=projection.operation,
+        artifact=artifact,
+        artifact_digest=artifact.artifact_digest,
+        artifact_output=artifact.output,
+        prerequisites=(),
+        action_inputs=publication_action_inputs(projection, artifact),
+        mutable_resource_keys=publication_mutable_resource_keys(
+            projection,
+            artifact,
+        ),
+        lock_projection=publication_lock_projection(projection),
+        lock_group=publication_lock_group(projection),
+        capability_requirements=publication_capability_requirements(projection),
+        expected_result=publication_expected_result(projection),
+        receipt_contract=publication_receipt_contract(projection),
+    )
+
+
+def _live_publication_snapshot(scenario) -> PublicationSnapshot:
+    live_snapshot, live_decision, live_artifact = _live_publication_context(
+        scenario
+    )
+    live_exact = _admit_synthetic_projection_observation(
         live_snapshot,
         live_decision,
         live_artifact,
-        classification="absent",
+        classification="exact-satisfied",
+        owner="hcoona",
     )
     return materialize_publication_snapshot(
         live_snapshot,
         live_decision,
-        (live_absent,),
+        (live_exact,),
         (live_artifact,),
     )
 
 
 def _live_publication_action(scenario) -> PublicationAction:
-    return _live_publication_snapshot(scenario).materialized_actions[0]
+    snapshot, _, artifact = _live_publication_context(scenario)
+    return _publication_action(snapshot, artifact)
+
+
+def _live_action_publication_snapshot(scenario) -> PublicationSnapshot:
+    snapshot, decision, artifact = _live_publication_context(scenario)
+    observation = _admit_synthetic_projection_observation(
+        snapshot,
+        decision,
+        artifact,
+        classification="absent",
+    )
+    action = _publication_action(snapshot, artifact)
+    return PublicationSnapshot(
+        attempt=snapshot.subject,
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+        qualification_decision_digest=decision.decision_digest,
+        qualification_result=decision.terminal_result,
+        projection_ids=(action.projection.projection_id,),
+        artifact_digests=(artifact.artifact_digest,),
+        artifact_output_ids=(artifact.output.output_id,),
+        observation_references=(
+            PublicationObservationReference(
+                projection_id=action.projection.projection_id,
+                observation_digest=observation.observation_digest,
+                classification=observation.value.classification,
+            ),
+        ),
+        materialized_actions=(action,),
+    )
 
 
 def test_publication_snapshot_guards_success_observation_and_artifacts(
@@ -546,26 +647,79 @@ def test_publication_snapshot_guards_success_observation_and_artifacts(
             (scenario.artifact,),
         )
 
-    action = _live_publication_action(scenario)
-    assert action.projection == scenario.snapshot.destination_projections[0]
-    assert action.operation == action.projection.operation
+    publication = _live_publication_snapshot(scenario)
+    assert isinstance(publication.attempt.execution, BuddyExecutionIdentity)
+    assert publication.materialized_actions == ()
+    assert tuple(
+        reference.classification
+        for reference in publication.observation_references
+    ) == ("exact-satisfied",)
+    assert (
+        release_record_from_document(
+            publication.to_document(),
+            expected_type=PublicationSnapshot,
+        )
+        == publication
+    )
+
+
+def test_publication_action_uses_current_normal_live_bindings(
+    qualified_simulation,
+) -> None:
+    scenario = qualified_simulation
+    snapshot, decision, artifact = _live_publication_context(scenario)
+    action = _publication_action(snapshot, artifact)
+    assert action.action_id == "publish-github-packages"
+    assert decision.admitted_artifact_digests == (action.artifact_digest,)
+    assert action.artifact.subject == snapshot.subject
+    assert action.artifact.purpose == "live-release"
+    assert (
+        action.operation
+        == action.projection.operation
+        == "conditional-create-npm-version-and-target-tag"
+    )
     assert action.artifact_digest == action.artifact.artifact_digest
     assert action.artifact_output == action.artifact.output
-    assert action.mutable_resource_keys
-    assert action.lock_projection
-    assert action.lock_group
-    assert action.capability_requirements == (
-        "npmjs/trusted-publishing-oidc-v1",
+    assert action.prerequisites == ()
+    assert action.action_inputs == publication_action_inputs(
+        action.projection,
+        action.artifact,
     )
-    assert action.receipt_contract == "npm/package-publication-receipt-v1"
+    action_inputs = dict(action.action_inputs)
+    assert action_inputs["operation"] == action.operation
+    assert action_inputs["artifact-digest"] == action.artifact_digest
+    assert action.mutable_resource_keys == publication_mutable_resource_keys(
+        action.projection,
+        action.artifact,
+    )
+    assert len(action.mutable_resource_keys) == 2
+    assert action.mutable_resource_keys[0].startswith(
+        "external-package-coordinate:"
+    )
+    assert action.mutable_resource_keys[1].startswith("npm-dist-tag:")
+    assert action.lock_projection == publication_lock_projection(
+        action.projection
+    )
+    assert action.lock_group == publication_lock_group(action.projection)
+    assert action.lock_group == action.lock_projection
+    assert action.lock_group.startswith("destination-package:")
+    assert action.capability_requirements == (
+        "github/packages-conditional-version-and-tag-v1",
+    )
+    assert action.expected_result == "created-version-and-target-tag-or-exact"
+    assert (
+        action.receipt_contract
+        == "npm/conditional-version-and-target-tag-receipt-v1"
+    )
 
 
 def test_publication_snapshot_rejects_more_than_one_action(
     qualified_simulation,
 ) -> None:
-    publication = _live_publication_snapshot(qualified_simulation)
+    publication = _live_action_publication_snapshot(qualified_simulation)
     action = publication.materialized_actions[0]
 
+    assert publication.materialized_actions == (action,)
     with pytest.raises(ValueError, match="at most one action"):
         replace(publication, materialized_actions=(action, action))
 
@@ -580,112 +734,44 @@ def test_publication_snapshot_rejects_more_than_one_action(
         )
 
 
-def test_publication_materializer_rejects_more_than_one_action(
+def test_absent_publication_requires_action_but_materializer_is_blocked(
     qualified_simulation,
 ) -> None:
     scenario = qualified_simulation
-    publication = _live_publication_snapshot(scenario)
-    first_action = publication.materialized_actions[0]
-    first_projection = first_action.projection
-    first_potential_action = next(
-        action
-        for action in scenario.snapshot.potential_actions
-        if action.contract_id == first_projection.potential_action_id
-    )
-    second_projection = replace(
-        first_projection,
-        projection_id=f"{first_projection.projection_id}:second",
-        potential_action_id=f"{first_projection.potential_action_id}:second",
-    )
-    second_potential_action = replace(
-        first_potential_action,
-        contract_id=second_projection.potential_action_id,
-        projection_id=second_projection.projection_id,
-    )
-    snapshot = replace(
-        scenario.snapshot,
-        subject=publication.attempt,
-        destination_projections=(first_projection, second_projection),
-        potential_actions=(first_potential_action, second_potential_action),
-    )
-    source_artifact = first_action.artifact
-    transport = replace(
-        source_artifact.transport,
-        artifact_name=release_artifact_transport_name(
-            repository=source_artifact.repository,
-            purpose="live-release",
-            output=source_artifact.output,
-            qualification_snapshot_digest=snapshot.snapshot_digest,
-            workflow_run_id=publication.attempt.workflow_run_id,
-            run_attempt=None,
-            producer=source_artifact.transport.producer,
-        ),
-    )
-    provenance = source_artifact.provenance_document()
-    provenance["qualification-snapshot-digest"] = snapshot.snapshot_digest
-    provenance["transport"] = transport.to_document()
-    artifact = replace(
-        source_artifact,
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-        transport=transport,
-        provenance_digest=canonical_sha256(provenance),
-    )
-    decision = replace(
-        scenario.decision,
-        subject=publication.attempt,
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-        admitted_artifact_digests=(artifact.artifact_digest,),
-    )
-    first_observation = _admit_synthetic_projection_observation(
+    publication = _live_action_publication_snapshot(scenario)
+    with pytest.raises(
+        ValueError,
+        match="actions must exactly cover absent projections",
+    ):
+        replace(publication, materialized_actions=())
+
+    document = publication.to_document()
+    document["materialized-actions"] = []
+    with pytest.raises(
+        ValueError,
+        match="actions must exactly cover absent projections",
+    ):
+        release_record_from_document(
+            document,
+            expected_type=PublicationSnapshot,
+        )
+
+    snapshot, decision, artifact = _live_publication_context(scenario)
+    observation = _admit_synthetic_projection_observation(
         snapshot,
         decision,
         artifact,
         classification="absent",
     )
-    desired_state_digest = desired_projection_state_digest(
-        snapshot,
-        second_projection.projection_id,
-        artifact,
-    )
-    observation_url = (
-        f"synthetic://workflow-delivery-v3/{second_projection.projection_id}"
-    )
-    request_facts = replace(
-        first_observation.request_facts,
-        projection_digest=second_projection.projection_digest,
-        desired_state_digest=desired_state_digest,
-        url=observation_url,
-    )
-    response_facts = replace(
-        first_observation.response_facts,
-        requested_url=observation_url,
-        final_url=observation_url,
-    )
-    request_digest = request_facts.request_digest
-    response_digest = canonical_sha256(
-        {
-            "schema": "workflow-delivery/v3/observation-response",
-            "request-digest": request_digest,
-            "facts": response_facts.to_document(),
-            "value": first_observation.value.to_document(),
-        }
-    )
-    second_observation = replace(
-        first_observation,
-        projection=second_projection,
-        desired_state_digest=desired_state_digest,
-        observation_contract_id=second_projection.observation_contract_id,
-        request_facts=request_facts,
-        request_digest=request_digest,
-        response_facts=response_facts,
-        response_digest=response_digest,
-    )
 
-    with pytest.raises(ValueError, match="at most one action"):
+    with pytest.raises(
+        UnsupportedPublicationPrimitiveError,
+        match="destination primitive is not implemented",
+    ):
         materialize_publication_snapshot(
             snapshot,
             decision,
-            (first_observation, second_observation),
+            (observation,),
             (artifact,),
         )
 
@@ -804,4 +890,99 @@ def test_failed_decision_cannot_materialize_hypothetical_actions(
             failed,
             (observation,),
             (scenario.artifact,),
+        )
+
+
+def test_qualification_decision_constructor_rejects_empty_dispositions(
+    qualified_simulation,
+) -> None:
+    decision = qualified_simulation.decision
+    assert decision.terminal_result == "success"
+    assert len(decision.obligation_dispositions) == 4
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Qualification Decision requires at least one disposition$",
+    ):
+        replace(decision, obligation_dispositions=())
+
+
+def test_qualification_decision_transport_rejects_empty_dispositions(
+    qualified_simulation,
+) -> None:
+    decision = qualified_simulation.decision
+    assert decision.terminal_result == "success"
+    document = decision.to_document()
+    dispositions = document["obligation-dispositions"]
+    assert isinstance(dispositions, list)
+    assert len(dispositions) == 4
+    document["obligation-dispositions"] = []
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Qualification Decision requires at least one disposition$",
+    ):
+        release_record_from_document(
+            document,
+            expected_type=type(decision),
+        )
+
+
+@pytest.mark.parametrize("disposition_index", [0, 1, 2, 3])
+@pytest.mark.parametrize("outcome", ["failed", "incomplete"])
+def test_success_decision_constructor_rejects_unsatisfied_disposition(
+    qualified_simulation,
+    disposition_index: int,
+    outcome: str,
+) -> None:
+    decision = qualified_simulation.decision
+    assert decision.terminal_result == "success"
+    assert all(
+        disposition.outcome == "satisfied"
+        for disposition in decision.obligation_dispositions
+    )
+    dispositions = tuple(
+        replace(disposition, outcome=outcome)
+        if index == disposition_index
+        else disposition
+        for index, disposition in enumerate(decision.obligation_dispositions)
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"^Successful Qualification Decision requires every "
+            r"disposition to be satisfied$"
+        ),
+    ):
+        replace(decision, obligation_dispositions=dispositions)
+
+
+@pytest.mark.parametrize("disposition_index", [0, 1, 2, 3])
+@pytest.mark.parametrize("outcome", ["failed", "incomplete"])
+def test_success_decision_transport_rejects_unsatisfied_disposition(
+    qualified_simulation,
+    disposition_index: int,
+    outcome: str,
+) -> None:
+    decision = qualified_simulation.decision
+    assert decision.terminal_result == "success"
+    document = decision.to_document()
+    dispositions = document["obligation-dispositions"]
+    assert isinstance(dispositions, list)
+    substituted_disposition = dispositions[disposition_index]
+    assert isinstance(substituted_disposition, dict)
+    assert substituted_disposition["outcome"] == "satisfied"
+    substituted_disposition["outcome"] = outcome
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"^Successful Qualification Decision requires every "
+            r"disposition to be satisfied$"
+        ),
+    ):
+        release_record_from_document(
+            document,
+            expected_type=type(decision),
         )

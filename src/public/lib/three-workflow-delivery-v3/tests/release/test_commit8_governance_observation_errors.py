@@ -13,10 +13,13 @@ from three_workflow_delivery_v3.canonical import JsonValue, canonicalize
 from three_workflow_delivery_v3.platform.github import GitHubRestError
 from three_workflow_delivery_v3.release import eligibility
 from three_workflow_delivery_v3.release.eligibility import (
-    GovernanceBlob,
     GovernanceFreshnessRejectionError,
     GovernanceRejectionError,
     require_fresh_governance_identity,
+)
+from three_workflow_delivery_v3.release.governance_git import (
+    GovernanceGitRead,
+    GovernanceGitReadError,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     GOVERNANCE_MAX_AGE_DAYS,
@@ -40,19 +43,100 @@ def _source() -> GovernanceSource:
     )
 
 
+def _ready_activation() -> dict[str, JsonValue]:
+    return {
+        "state": "ready",
+        "approval_environment": {
+            "name": "workflow-delivery-v3-buddy-approval",
+            "environment_id": 20895030723,
+            "required_reviewers": [{"login": "hcoona", "id": 712433}],
+            "prevent_self_review": False,
+            "can_admins_bypass": False,
+            "wait_timer_minutes": 0,
+            "deployment_policy": "all",
+            "secret_count": 0,
+            "variables": [
+                {
+                    "name": "WDV3_APPROVAL_ENVIRONMENT_MARKER",
+                    "value": "workflow-delivery-v3-buddy-approval/v1",
+                    "scope": "environment",
+                }
+            ],
+            "same_name_repository_variable_absent": True,
+            "same_name_organization_variable": "not-applicable-user-owner",
+            "evidence": [
+                {
+                    "endpoint": (
+                        "GET /repos/hcoona/three/environments/"
+                        "workflow-delivery-v3-buddy-approval"
+                    ),
+                    "captured_at": "2026-07-01T00:00:00Z",
+                    "response_digest": "sha256:" + ("1" * 64),
+                }
+            ],
+        },
+        "artifact_retention": {
+            "endpoint": (
+                "GET /repos/hcoona/three/actions/permissions/"
+                "artifact-and-log-retention"
+            ),
+            "captured_at": "2026-07-01T00:00:00Z",
+            "days": 45,
+            "response_digest": "sha256:" + ("2" * 64),
+        },
+        "destination_primitive": {
+            "primitive_id": "github-packages-conditional-create-v1",
+            "operation": ("conditional-create-npm-version-and-target-tag"),
+            "captured_at": "2026-07-01T00:00:00Z",
+            "race_inputs": [
+                ["coordinate", "@hcoona/hcoona-release-smoke-npm"],
+                ["target-tag", "buddy-sha-" + ("a" * 40)],
+                ["version", "1.2.3"],
+            ],
+            "race_results": [
+                ["conflicting-tag-preserved", "pass"],
+                ["target-version-remained-absent", "pass"],
+            ],
+            "evidence_digest": "sha256:" + ("3" * 64),
+        },
+    }
+
+
+def _blocked_activation() -> dict[str, JsonValue]:
+    return {
+        "state": "blocked",
+        "blockers": [
+            "destination-primitive-unproven",
+            "fresh-native-evidence-required",
+            "repository-retention-readback-required",
+        ],
+    }
+
+
 def _document(**updates: JsonValue) -> dict[str, JsonValue]:
     document: dict[str, JsonValue] = {
-        "schema": "workflow-delivery/v3/governance-attestation",
+        "schema": (
+            "workflow-delivery/v3/normal-live-governance-attestation-v1"
+        ),
         "release_policy": "hcoona-release-smoke-npm",
         "package": "@hcoona/hcoona-release-smoke-npm",
         "issuer": "hcoona",
         "inspected_at": "2026-08-01T00:00:00Z",
         "expires_at": "2026-10-01T00:00:00Z",
         "accepted_writers": [{"login": "hcoona", "role": "Admin"}],
+        "accepted_publisher": "hcoona",
         "access_inventory": {
             "repository": [{"subject": "hcoona", "access": "admin"}],
             "package": [{"subject": "hcoona", "access": "write"}],
             "manage_actions": [{"subject": "hcoona", "access": "allowed"}],
+        },
+        "package_principal": {
+            "repository": "hcoona/three",
+            "intended_coordinate": "@hcoona/hcoona-release-smoke-npm",
+            "known_wider_reach": [
+                "@hcoona/hexo-renderer-asciidoc",
+                "disposable-smoke-packages",
+            ],
         },
         "limitations": [
             "GitHub Packages does not expose a complete grants API.",
@@ -61,9 +145,12 @@ def _document(**updates: JsonValue) -> dict[str, JsonValue]:
                 "latency."
             ),
         ],
+        "activation": _ready_activation(),
         "live_enabled": True,
     }
     document.update(updates)
+    if updates.get("live_enabled") is False and "activation" not in updates:
+        document["activation"] = _blocked_activation()
     return document
 
 
@@ -77,11 +164,13 @@ class ObservationClient:
     def __init__(self, content: bytes) -> None:
         self.content = content
         self.protected: object = True
-        self.commit: object = COMMIT
+        self.main_sha: object = COMMIT
+        self.object_format: object = "sha1"
         self.blob_oid: object = BLOB
-        self.blob_value: object | None = None
+        self.read_value: object | None = None
         self.failure: tuple[str, Exception] | None = None
         self.calls: list[str] = []
+        self.eligibility_main_shas: list[str | None] = []
 
     def _raise_at(self, stage: str) -> None:
         if self.failure is not None and self.failure[0] == stage:
@@ -93,24 +182,23 @@ class ObservationClient:
         self._raise_at("protected")
         return cast("bool", self.protected)
 
-    def resolve_ref(self, repository: str, ref: str) -> str:
-        del repository, ref
-        self.calls.append("resolve")
-        self._raise_at("resolve")
-        return cast("str", self.commit)
-
-    def read_blob(
+    def read_source(
         self,
         repository: str,
-        commit: str,
+        ref: str,
         path: str,
-    ) -> GovernanceBlob:
-        del repository, commit, path
-        self.calls.append("blob")
-        self._raise_at("blob")
-        if self.blob_value is not None:
-            return cast("GovernanceBlob", self.blob_value)
-        return GovernanceBlob(
+        *,
+        eligibility_main_sha: str | None = None,
+    ) -> GovernanceGitRead:
+        del repository, ref, path
+        self.calls.append("read")
+        self.eligibility_main_shas.append(eligibility_main_sha)
+        self._raise_at("read")
+        if self.read_value is not None:
+            return cast("GovernanceGitRead", self.read_value)
+        return GovernanceGitRead(
+            main_sha=cast("str", self.main_sha),
+            object_format=cast("str", self.object_format),
             blob_oid=cast("str", self.blob_oid),
             content=self.content,
         )
@@ -149,7 +237,8 @@ def test_governance_freshness_rejection_derives_from_definitive_base() -> None:
 
 def _provenance(
     *,
-    commit: str = COMMIT,
+    eligibility_main_sha: str = COMMIT,
+    object_format: str = "sha1",
     blob: str = BLOB,
     content: bytes,
 ) -> tuple[tuple[str, str], ...]:
@@ -159,10 +248,11 @@ def _provenance(
                 ("repository", GOVERNANCE_REPOSITORY),
                 ("ref", GOVERNANCE_REF),
                 ("path", GOVERNANCE_PATH),
-                ("resolved-commit", commit),
+                ("eligibility-main-sha", eligibility_main_sha),
+                ("git-object-format", object_format),
                 ("blob-oid", blob),
                 (
-                    "content-sha256",
+                    "canonical-content-digest",
                     f"sha256:{hashlib.sha256(content).hexdigest()}",
                 ),
             )
@@ -200,7 +290,7 @@ def test_fetched_invalid_canonical_or_schema_content_is_definitive_rejection(
     raised = _capture_observation_error(client)
 
     _assert_definitive_rejection(raised.value)
-    assert client.calls == ["protected", "resolve", "blob"]
+    assert client.calls == ["protected", "read"]
 
 
 @pytest.mark.parametrize(
@@ -238,7 +328,7 @@ def test_fetched_invalid_governance_semantics_are_definitive_rejection(
     raised = _capture_observation_error(client)
 
     _assert_definitive_rejection(raised.value)
-    assert client.calls == ["protected", "resolve", "blob"]
+    assert client.calls == ["protected", "read"]
 
 
 def test_fetched_content_digest_inconsistency_is_definitive_rejection(
@@ -258,7 +348,7 @@ def test_fetched_content_digest_inconsistency_is_definitive_rejection(
 
     _assert_definitive_rejection(raised.value)
     assert "content digest mismatch" in str(raised.value)
-    assert client.calls == ["protected", "resolve", "blob"]
+    assert client.calls == ["protected", "read"]
 
 
 @pytest.mark.parametrize(
@@ -280,10 +370,12 @@ def test_disabled_expired_and_changed_governance_remain_freshness_rejections(
         expected_expiry = "2026-08-13T22:59:59Z"
     else:
         content = _content()
-        expected_provenance = _provenance(commit="c" * 40, content=content)
+        expected_provenance = _provenance(content=content)
         expected_enabled = True
         expected_expiry = "2026-10-01T00:00:00Z"
     client = ObservationClient(content)
+    if case == "changed":
+        client.blob_oid = "c" * 40
 
     with pytest.raises(GovernanceFreshnessRejectionError) as raised:
         require_fresh_governance_identity(
@@ -291,7 +383,7 @@ def test_disabled_expired_and_changed_governance_remain_freshness_rejections(
             client,
             now=NOW,
             expected_provenance=expected_provenance,
-            expected_content_sha256=(
+            expected_canonical_content_digest=(
                 f"sha256:{hashlib.sha256(content).hexdigest()}"
             ),
             expected_expires_at=expected_expiry,
@@ -300,7 +392,31 @@ def test_disabled_expired_and_changed_governance_remain_freshness_rejections(
 
     assert type(raised.value) is GovernanceFreshnessRejectionError
     assert str(raised.value) == "Governance freshness comparison failed"
-    assert client.calls == ["protected", "resolve", "blob"]
+    assert client.calls == ["protected", "read"]
+    assert client.eligibility_main_shas == [COMMIT]
+
+
+def test_unrelated_main_advance_preserves_fresh_governance_identity() -> None:
+    content = _content()
+    client = ObservationClient(content)
+    client.main_sha = "c" * 40
+
+    observation = require_fresh_governance_identity(
+        _source(),
+        client,
+        now=NOW,
+        expected_provenance=_provenance(content=content),
+        expected_canonical_content_digest=(
+            f"sha256:{hashlib.sha256(content).hexdigest()}"
+        ),
+        expected_expires_at="2026-10-01T00:00:00Z",
+        expected_live_enabled=True,
+    )
+
+    assert observation.eligibility_main_sha == COMMIT
+    assert observation.current_main_sha == "c" * 40
+    assert observation.blob_oid == BLOB
+    assert client.eligibility_main_shas == [COMMIT]
 
 
 @pytest.mark.parametrize("case", ["source", "time"])
@@ -335,13 +451,19 @@ def test_local_source_and_time_configuration_errors_are_not_governance_rejection
             ValueError,
             id="nonboolean-protection",
         ),
-        pytest.param("commit", 17, TypeError, id="nonstring-commit"),
-        pytest.param("blob_oid", 17, TypeError, id="nonstring-blob"),
+        pytest.param("main_sha", 17, ValueError, id="nonstring-main-sha"),
+        pytest.param("blob_oid", 17, ValueError, id="nonstring-blob"),
         pytest.param(
-            "blob_value",
+            "object_format",
+            "sha512",
+            ValueError,
+            id="unsupported-object-format",
+        ),
+        pytest.param(
+            "read_value",
             {"sha": BLOB, "content": _content()},
-            AttributeError,
-            id="non-blob-api-identity",
+            TypeError,
+            id="non-git-read-api-identity",
         ),
     ],
 )
@@ -373,16 +495,16 @@ def test_malformed_remote_identities_are_not_governance_rejections(
             GitHubRestError("HTTP 503"),
             id="http-5xx",
         ),
-        pytest.param("resolve", OSError("network lost"), id="network"),
+        pytest.param("read", OSError("network lost"), id="unexpected-network"),
         pytest.param(
-            "blob",
+            "read",
             GitHubRestError("malformed base64"),
-            id="protocol-base64",
+            id="unexpected-rest-error",
         ),
         pytest.param(
-            "blob",
-            GitHubRestError("malformed JSON"),
-            id="api-json",
+            "read",
+            ValueError("malformed protocol result"),
+            id="unexpected-value-error",
         ),
     ],
 )
@@ -398,3 +520,25 @@ def test_transport_failures_are_not_governance_rejections(
     _assert_not_definitive_rejection(raised.value)
     assert raised.value is failure
     assert client.calls[-1] == stage
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "Governance Git fetch failed",
+        "Governance Git history is shallow",
+        "Governance protected path changed after eligibility",
+    ],
+)
+def test_governance_git_failures_are_definitive_rejections(
+    failure: str,
+) -> None:
+    client = ObservationClient(_content())
+    client.failure = ("read", GovernanceGitReadError(failure))
+
+    raised = _capture_observation_error(client)
+
+    _assert_definitive_rejection(raised.value)
+    assert str(raised.value) == failure
+    assert isinstance(raised.value.__cause__, GovernanceGitReadError)
+    assert client.calls == ["protected", "read"]

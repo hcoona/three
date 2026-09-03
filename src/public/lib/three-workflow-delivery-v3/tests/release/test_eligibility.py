@@ -17,14 +17,12 @@ from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
     canonicalize,
-    parse_canonical_json,
 )
 from three_workflow_delivery_v3.catalogs import catalog_digest
 from three_workflow_delivery_v3.release import eligibility
 from three_workflow_delivery_v3.release.eligibility import (
     AdmittedLiveEligibilityDecision,
     EligibilityResult,
-    GovernanceBlob,
     LiveEligibilityAdmissionMode,
     LiveEligibilityContext,
     LiveEligibilityDecision,
@@ -33,6 +31,10 @@ from three_workflow_delivery_v3.release.eligibility import (
     observe_governance_source,
     parse_governance_attestation,
     release_policy_digest,
+)
+from three_workflow_delivery_v3.release.governance_git import (
+    GovernanceGitRead,
+    GovernanceGitReadError,
 )
 from three_workflow_delivery_v3.release.static_reference_model import (
     STATIC_REFERENCE_ERROR_KINDS,
@@ -139,14 +141,15 @@ def test_live_eligibility_runtime_has_no_consumer_policy_symbols() -> None:
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
-FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "release"
 TARGET = "e" * 40
 GOVERNANCE_COMMIT = "f" * 40
 GOVERNANCE_BLOB = "b" * 40
 NOW = datetime(2026, 8, 6, 12, 0, 0, tzinfo=UTC)
 WORKFLOW_RUN_ID = 7101
 PREFIXED_SHA256_LENGTH = 71
-FRESH_SOURCE_CALL_COUNT = 3
+FRESH_SOURCE_CALL_COUNT = 2
+MINIMUM_RETENTION_DAYS = 45
+TEST_DESTINATION_PRIMITIVE_ID = "test/conditional-version-and-tag-v1"
 EXPECTED_STATIC_REFERENCE_ERROR_KINDS = (
     "source-acquisition-failed",
     "encoding-rejected",
@@ -384,16 +387,140 @@ def _compiled_snapshot(tmp_path: Path) -> RepositoryModelSnapshot:
     return compile_repository_model(repo, context, manifest, [admitted])
 
 
+def _blocked_activation() -> dict[str, JsonValue]:
+    return {
+        "state": "blocked",
+        "blockers": [
+            "destination-primitive-unproven",
+            "fresh-native-evidence-required",
+            "repository-retention-readback-required",
+        ],
+    }
+
+
+def _ready_activation(
+    *,
+    primitive_id: str = TEST_DESTINATION_PRIMITIVE_ID,
+) -> dict[str, JsonValue]:
+    captured_at = "2026-01-01T00:00:00Z"
+    return {
+        "state": "ready",
+        "approval_environment": {
+            "name": "workflow-delivery-v3-buddy-approval",
+            "environment_id": 20895030723,
+            "required_reviewers": [{"login": "hcoona", "id": 712433}],
+            "prevent_self_review": False,
+            "can_admins_bypass": False,
+            "wait_timer_minutes": 0,
+            "deployment_policy": "all",
+            "secret_count": 0,
+            "variables": [
+                {
+                    "name": "WDV3_APPROVAL_ENVIRONMENT_MARKER",
+                    "value": "workflow-delivery-v3-buddy-approval/v1",
+                    "scope": "environment",
+                }
+            ],
+            "same_name_repository_variable_absent": True,
+            "same_name_organization_variable": "not-applicable-user-owner",
+            "evidence": [
+                {
+                    "endpoint": (
+                        "GET /repos/hcoona/three/environments/"
+                        "workflow-delivery-v3-buddy-approval"
+                    ),
+                    "captured_at": captured_at,
+                    "response_digest": "sha256:" + ("1" * 64),
+                }
+            ],
+        },
+        "artifact_retention": {
+            "endpoint": (
+                "GET /repos/hcoona/three/actions/permissions/"
+                "artifact-and-log-retention"
+            ),
+            "captured_at": captured_at,
+            "days": MINIMUM_RETENTION_DAYS,
+            "response_digest": "sha256:" + ("2" * 64),
+        },
+        "destination_primitive": {
+            "primitive_id": primitive_id,
+            "operation": ("conditional-create-npm-version-and-target-tag"),
+            "captured_at": captured_at,
+            "race_inputs": [
+                ["coordinate", FIRST_SLICE_PACKAGE],
+                ["target-tag", "buddy-sha-" + TARGET],
+                ["version", "1.2.3"],
+            ],
+            "race_results": [
+                ["conflicting-tag-preserved", "pass"],
+                ["target-version-remained-absent", "pass"],
+            ],
+            "evidence_digest": "sha256:" + ("3" * 64),
+        },
+    }
+
+
 def _attestation_document(**updates: JsonValue) -> dict[str, JsonValue]:
-    document = parse_canonical_json(
-        (FIXTURES / "governance-disabled.json").read_bytes()
-    )
+    document: dict[str, JsonValue] = {
+        "schema": (
+            "workflow-delivery/v3/normal-live-governance-attestation-v1"
+        ),
+        "release_policy": "hcoona-release-smoke-npm",
+        "package": FIRST_SLICE_PACKAGE,
+        "issuer": "hcoona",
+        "inspected_at": "2026-08-01T00:00:00Z",
+        "expires_at": "2026-10-01T00:00:00Z",
+        "accepted_writers": [{"login": "hcoona", "role": "Admin"}],
+        "accepted_publisher": "hcoona",
+        "access_inventory": {
+            "repository": [{"subject": "hcoona", "access": "admin"}],
+            "package": [{"subject": "hcoona", "access": "write"}],
+            "manage_actions": [{"subject": "hcoona", "access": "allowed"}],
+        },
+        "package_principal": {
+            "repository": GOVERNANCE_REPOSITORY,
+            "intended_coordinate": FIRST_SLICE_PACKAGE,
+            "known_wider_reach": [
+                "@hcoona/hexo-renderer-asciidoc",
+                "disposable-smoke-packages",
+            ],
+        },
+        "limitations": [
+            (
+                "GitHub Packages does not expose a complete universal "
+                "package-grants inventory."
+            ),
+            (
+                "Protected-source disablement has bounded review and merge "
+                "latency."
+            ),
+        ],
+        "activation": _blocked_activation(),
+        "live_enabled": False,
+    }
     document.update(updates)
+    if updates.get("live_enabled") is True and "activation" not in updates:
+        document["activation"] = _ready_activation()
+    elif updates.get("live_enabled") is False and "activation" not in updates:
+        document["activation"] = _blocked_activation()
     return document
 
 
 def _attestation_content(**updates: JsonValue) -> bytes:
     return canonicalize(_attestation_document(**updates))
+
+
+def _admit_test_destination_primitive(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    primitive_id: str = TEST_DESTINATION_PRIMITIVE_ID,
+) -> None:
+    monkeypatch.setattr(
+        eligibility,
+        "_ADMITTED_DESTINATION_PRIMITIVE_IDS",
+        frozenset({primitive_id}),
+    )
 
 
 def _static_reference(
@@ -599,7 +726,8 @@ class RecordingGovernanceClient:
         """Initialize one protected ref and fixed-path blob."""
         self.content = content
         self.protected = True
-        self.commit = GOVERNANCE_COMMIT
+        self.main_sha = GOVERNANCE_COMMIT
+        self.object_format = "sha1"
         self.blob_oid = GOVERNANCE_BLOB
         self.failure: str | None = None
         self.calls: list[tuple[str, ...]] = []
@@ -613,26 +741,33 @@ class RecordingGovernanceClient:
             raise ValueError(message)
         return self.protected
 
-    def resolve_ref(self, repository: str, ref: str) -> str:
-        """Record and answer the fresh ref resolution."""
-        self.calls.append(("resolve", repository, ref))
-        if self.failure == "resolve":
-            message = "ref unavailable"
-            raise ValueError(message)
-        return self.commit
-
-    def read_blob(
+    def read_source(
         self,
         repository: str,
-        commit: str,
+        ref: str,
         path: str,
-    ) -> GovernanceBlob:
-        """Record and answer the exact commit/path blob read."""
-        self.calls.append(("read", repository, commit, path))
-        if self.failure == "blob":
-            message = "blob unavailable"
-            raise ValueError(message)
-        return GovernanceBlob(blob_oid=self.blob_oid, content=self.content)
+        *,
+        eligibility_main_sha: str | None = None,
+    ) -> GovernanceGitRead:
+        """Record and answer one isolated Governance Git read."""
+        self.calls.append(
+            (
+                "read",
+                repository,
+                ref,
+                path,
+                eligibility_main_sha or "",
+            )
+        )
+        if self.failure == "read":
+            message = "Governance Git source unavailable"
+            raise GovernanceGitReadError(message)
+        return GovernanceGitRead(
+            main_sha=self.main_sha,
+            object_format=self.object_format,
+            blob_oid=self.blob_oid,
+            content=self.content,
+        )
 
 
 def _evaluate(  # noqa: PLR0913
@@ -645,6 +780,7 @@ def _evaluate(  # noqa: PLR0913
     context: LiveEligibilityContext | None = None,
     context_mutation: LiveContextMutation | None = None,
     now: datetime = NOW,
+    admitted_primitive_id: str | None = None,
 ) -> LiveEligibilityDecision:
     selected_context = context or _context(snapshot, policy)
     if context_mutation is not None:
@@ -662,6 +798,11 @@ def _evaluate(  # noqa: PLR0913
         client.scan_calls.append((repository_root, source_kind, target))
         return selected_result
 
+    if admitted_primitive_id is not None:
+        _admit_test_destination_primitive(
+            monkeypatch,
+            primitive_id=admitted_primitive_id,
+        )
     monkeypatch.setattr(
         eligibility,
         "scan_bounded_static_references",
@@ -711,6 +852,7 @@ def _transport_decision(
             policy=policy,
             static_reference=_static_reference(target=live_intent.target),
             context=context,
+            admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
         )
 
 
@@ -772,11 +914,13 @@ def _admit_mutated_decision(  # noqa: PLR0913
 
 
 def test_evaluator_output_round_trips_through_strict_live_admission(
+    monkeypatch: pytest.MonkeyPatch,
     live_intent: ReleaseIntent,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
     """Admit the evaluator's complete canonical current-attempt output."""
+    _admit_test_destination_primitive(monkeypatch)
     decision = _transport_decision(
         live_intent,
         live_admitted_repository_model,
@@ -802,16 +946,23 @@ def test_evaluator_output_round_trips_through_strict_live_admission(
     )
     assert admitted.static_reference.source_kind == "git-target"
     assert admitted.static_reference.target == live_intent.target
+    activation = admitted.governance.attestation.activation
+    assert isinstance(activation, eligibility.EnabledGovernanceActivation)
+    assert (
+        activation.destination_primitive.primitive_id
+        == TEST_DESTINATION_PRIMITIVE_ID
+    )
     assert admitted.governance.provenance == (
         ("blob-oid", GOVERNANCE_BLOB),
         (
-            "content-sha256",
-            decision.governance.content_sha256,
+            "canonical-content-digest",
+            decision.governance.canonical_content_digest,
         ),
+        ("eligibility-main-sha", GOVERNANCE_COMMIT),
+        ("git-object-format", "sha1"),
         ("path", GOVERNANCE_PATH),
         ("ref", GOVERNANCE_REF),
         ("repository", GOVERNANCE_REPOSITORY),
-        ("resolved-commit", GOVERNANCE_COMMIT),
     )
 
 
@@ -819,36 +970,36 @@ def test_evaluator_output_round_trips_through_strict_live_admission(
     "admission_mode",
     [
         LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
-        LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+        LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
     ],
 )
-def test_whitespace_bearing_issuer_round_trips_through_admission(
+def test_nonexact_issuer_is_rejected_in_every_admission_mode(
     admission_mode: LiveEligibilityAdmissionMode,
     live_intent: ReleaseIntent,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
-    """Preserve valid nonblank human issuer evidence in every mode."""
-    issuer = "  reviewed issuer  "
-    decision = _transport_decision(
+    """Require the sole accepted operator in every lifecycle mode."""
+    issuer = "other-issuer"
+    document = _transport_decision(
         live_intent,
         live_admitted_repository_model,
         policy,
-        issuer=issuer,
+    ).to_document()
+    _set_decision_path(
+        document,
+        ("governance", "admitted-attestation", "issuer"),
+        issuer,
     )
 
-    admitted = admit_live_eligibility_decision(
-        canonicalize(decision.to_document()),
-        intent=live_intent,
-        repository_model=live_admitted_repository_model,
-        policy=policy,
-        expected_digest=decision.decision_digest,
-        admission_mode=admission_mode,
-        now=NOW,
-    )
-
-    assert admitted.to_document() == decision.to_document()
-    assert admitted.governance.issuer == issuer
+    with pytest.raises(ValueError, match="issuer is not hcoona"):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+            admission_mode=admission_mode,
+        )
 
 
 @pytest.mark.parametrize(
@@ -889,12 +1040,14 @@ def test_pre_attempt_admission_rejects_at_and_after_current_expiry(
         )
 
 
-def test_capability_replay_accepts_originally_valid_decision_after_expiry(
+def test_authorization_replay_accepts_originally_valid_decision_after_expiry(
+    monkeypatch: pytest.MonkeyPatch,
     live_intent: ReleaseIntent,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
-    """Replay expired immutable authority so capability can reobserve it."""
+    """Replay expired immutable authority so authorization can reobserve it."""
+    _admit_test_destination_primitive(monkeypatch)
     decision = _transport_decision(
         live_intent,
         live_admitted_repository_model,
@@ -908,15 +1061,15 @@ def test_capability_replay_accepts_originally_valid_decision_after_expiry(
         repository_model=live_admitted_repository_model,
         policy=policy,
         expected_digest=decision.decision_digest,
-        admission_mode=LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+        admission_mode=LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
         now=admitted_at,
     )
 
     assert admitted.to_document() == decision.to_document()
     assert (
-        admitted.governance.inspected_at
+        admitted.governance.attestation.inspected_at
         <= admitted.governance.observed_at
-        < admitted.governance.expires_at
+        < admitted.governance.attestation.expires_at
         < admitted_at
     )
 
@@ -925,7 +1078,7 @@ def test_capability_replay_accepts_originally_valid_decision_after_expiry(
     "admission_mode",
     [
         LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
-        LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+        LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
     ],
 )
 def test_admission_rejects_observation_at_original_expiry_in_every_mode(
@@ -980,7 +1133,7 @@ def test_admission_rejects_observation_at_original_expiry_in_every_mode(
         ),
     ],
 )
-def test_capability_replay_rejects_representative_semantic_substitutions(  # noqa: PLR0913, PLR0917
+def test_authorization_replay_rejects_semantic_substitutions(  # noqa: PLR0913, PLR0917
     path: tuple[str, ...],
     value: JsonValue,
     message: str,
@@ -995,6 +1148,11 @@ def test_capability_replay_rejects_representative_semantic_substitutions(  # noq
         policy,
     ).to_document()
     _set_decision_path(document, path, value)
+    if path[:2] == ("governance", "admitted-attestation"):
+        governance = _object_member(document, "governance")
+        attestation = governance["admitted-attestation"]
+        assert isinstance(attestation, dict)
+        governance["canonical-content-digest"] = canonical_sha256(attestation)
 
     with pytest.raises((TypeError, ValueError), match=message):
         _admit_mutated_decision(
@@ -1002,7 +1160,7 @@ def test_capability_replay_rejects_representative_semantic_substitutions(  # noq
             live_intent=live_intent,
             live_admitted_repository_model=live_admitted_repository_model,
             policy=policy,
-            admission_mode=LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+            admission_mode=LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
             now=datetime(2026, 10, 1, 0, 0, 1, tzinfo=UTC),
         )
 
@@ -1011,7 +1169,7 @@ def test_capability_replay_rejects_representative_semantic_substitutions(  # noq
     "admission_mode",
     [
         LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
-        LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+        LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
     ],
 )
 def test_artifact_cannot_select_live_eligibility_admission_mode(
@@ -1026,7 +1184,7 @@ def test_artifact_cannot_select_live_eligibility_admission_mode(
         live_admitted_repository_model,
         policy,
     ).to_document()
-    document["admission-mode"] = "capability-replay"
+    document["admission-mode"] = "authorization-replay"
 
     with pytest.raises(ValueError, match="unknown field: admission-mode"):
         _admit_mutated_decision(
@@ -1163,10 +1321,16 @@ def test_live_admission_rejects_each_current_lineage_mutation(
             id="governance-max-age",
         ),
         pytest.param(
-            ("governance", "resolved-commit"),
+            ("governance", "eligibility-main-sha"),
             "f" * 39,
-            "full commit SHA",
-            id="governance-commit",
+            "eligibility main SHA is malformed",
+            id="governance-eligibility-main",
+        ),
+        pytest.param(
+            ("governance", "git-object-format"),
+            "sha512",
+            "eligibility main SHA is malformed",
+            id="governance-object-format",
         ),
         pytest.param(
             ("governance", "blob-oid"),
@@ -1175,25 +1339,19 @@ def test_live_admission_rejects_each_current_lineage_mutation(
             id="governance-blob",
         ),
         pytest.param(
-            ("governance", "content-sha256"),
+            ("governance", "canonical-content-digest"),
             "sha256:" + ("9" * 64),
             "attestation identity mismatch",
             id="governance-content-identity",
         ),
         pytest.param(
-            ("governance", "attestation-content-digest"),
-            "sha256:" + ("8" * 64),
-            "attestation identity mismatch",
-            id="governance-attestation-identity",
-        ),
-        pytest.param(
-            ("governance", "live-enabled"),
-            False,
+            ("governance", "admitted-attestation"),
+            _attestation_document(live_enabled=False),
             "not fresh and enabled",
             id="governance-disabled",
         ),
         pytest.param(
-            ("governance", "inspected-at"),
+            ("governance", "admitted-attestation", "inspected_at"),
             "2026-08-07T00:00:00Z",
             "not fresh and enabled",
             id="governance-not-yet-valid",
@@ -1205,7 +1363,7 @@ def test_live_admission_rejects_each_current_lineage_mutation(
             id="governance-future-observation",
         ),
         pytest.param(
-            ("governance", "expires-at"),
+            ("governance", "admitted-attestation", "expires_at"),
             "2026-08-06T12:00:00Z",
             "not fresh and enabled",
             id="governance-expired",
@@ -1227,6 +1385,11 @@ def test_live_admission_rejects_static_reference_and_governance_mutations(  # no
         policy,
     ).to_document()
     _set_decision_path(document, path, value)
+    if path[:2] == ("governance", "admitted-attestation"):
+        governance = _object_member(document, "governance")
+        attestation = governance["admitted-attestation"]
+        assert isinstance(attestation, dict)
+        governance["canonical-content-digest"] = canonical_sha256(attestation)
 
     with pytest.raises((TypeError, ValueError), match=message):
         _admit_mutated_decision(
@@ -1381,7 +1544,7 @@ def test_live_admission_requires_mandatory_authority_implementations(
             id="string-max-age",
         ),
         pytest.param(
-            ("governance", "live-enabled"),
+            ("governance", "admitted-attestation", "live_enabled"),
             "true",
             "must be Boolean",
             id="string-live-enabled",
@@ -1466,7 +1629,7 @@ def test_live_admission_rejects_malformed_primitives(  # noqa: PLR0913, PLR0917
         ),
         pytest.param(
             ("governance",),
-            "attestation-content-digest",
+            "canonical-content-digest",
             "missing",
             "missing required field",
             id="missing-governance",
@@ -1477,6 +1640,20 @@ def test_live_admission_rejects_malformed_primitives(  # noqa: PLR0913, PLR0917
             "unknown",
             "unknown field",
             id="unknown-governance",
+        ),
+        pytest.param(
+            ("governance", "admitted-attestation"),
+            "accepted_publisher",
+            "missing",
+            "missing required field",
+            id="missing-admitted-attestation",
+        ),
+        pytest.param(
+            ("governance", "admitted-attestation"),
+            "unexpected",
+            "unknown",
+            "unknown field",
+            id="unknown-admitted-attestation",
         ),
     ],
 )
@@ -1533,6 +1710,139 @@ def test_live_admission_rejects_minimal_pass_payload(
         )
 
 
+def test_live_eligibility_blocks_enabled_governance_without_local_primitive(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Keep ready Governance blocked while production admits no primitive."""
+    snapshot = live_admitted_repository_model.snapshot
+    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
+
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=snapshot,
+        policy=policy,
+    )
+    governance = _object_member(decision.to_document(), "governance")
+    attestation = governance["admitted-attestation"]
+    assert isinstance(attestation, dict)
+    activation = _object_member(attestation, "activation")
+    primitive = _object_member(activation, "destination_primitive")
+
+    assert decision.result is EligibilityResult.BLOCKED
+    assert decision.diagnostics == ("destination-primitive-unproven",)
+    assert primitive["primitive_id"] == TEST_DESTINATION_PRIMITIVE_ID
+    assert decision.governance.attestation.live_enabled is True
+
+
+def test_live_admission_rejects_forged_pass_without_local_primitive(
+    monkeypatch: pytest.MonkeyPatch,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject persisted pass bytes that bypass the evaluator's blocker."""
+    snapshot = live_admitted_repository_model.snapshot
+    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=snapshot,
+        policy=policy,
+        context=_context(
+            snapshot,
+            policy,
+            selected_ref=live_intent.selected_ref,
+        ),
+    )
+    document = decision.to_document()
+    document["result"] = "pass"
+    document["diagnostics"] = []
+    canonical_bytes = canonicalize(document)
+
+    assert decision.result is EligibilityResult.BLOCKED
+    assert decision.diagnostics == ("destination-primitive-unproven",)
+    with pytest.raises(
+        ValueError,
+        match="destination primitive is not implemented",
+    ):
+        admit_live_eligibility_decision(
+            canonical_bytes,
+            intent=live_intent,
+            repository_model=live_admitted_repository_model,
+            policy=policy,
+            expected_digest=canonical_sha256(document),
+            admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+            now=NOW,
+        )
+
+
+@pytest.mark.parametrize(
+    "primitive_id",
+    [
+        pytest.param("standard-npm-publish", id="standard-npm-publish"),
+        pytest.param(
+            "arbitrary-destination-primitive-v1",
+            id="arbitrary-primitive",
+        ),
+    ],
+)
+def test_other_primitive_ids_cannot_pass_when_test_primitive_is_admitted(
+    primitive_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Require the ready attestation to name the exact admitted primitive."""
+    _admit_test_destination_primitive(monkeypatch)
+    snapshot = live_admitted_repository_model.snapshot
+    client = RecordingGovernanceClient(
+        _attestation_content(
+            live_enabled=True,
+            activation=_ready_activation(primitive_id=primitive_id),
+        )
+    )
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=snapshot,
+        policy=policy,
+        context=_context(
+            snapshot,
+            policy,
+            selected_ref=live_intent.selected_ref,
+        ),
+    )
+    document = decision.to_document()
+    governance = _object_member(document, "governance")
+    attestation = governance["admitted-attestation"]
+    assert isinstance(attestation, dict)
+    activation = _object_member(attestation, "activation")
+    primitive = _object_member(activation, "destination_primitive")
+    document["result"] = "pass"
+    document["diagnostics"] = []
+
+    assert primitive["primitive_id"] == primitive_id
+    assert decision.result is EligibilityResult.BLOCKED
+    assert decision.diagnostics == ("destination-primitive-unproven",)
+    with pytest.raises(
+        ValueError,
+        match="destination primitive is not implemented",
+    ):
+        admit_live_eligibility_decision(
+            canonicalize(document),
+            intent=live_intent,
+            repository_model=live_admitted_repository_model,
+            policy=policy,
+            expected_digest=canonical_sha256(document),
+            admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+            now=NOW,
+        )
+
+
 def test_live_eligibility_passes_with_fresh_exact_target_inputs(
     monkeypatch: pytest.MonkeyPatch,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
@@ -1547,6 +1857,7 @@ def test_live_eligibility_passes_with_fresh_exact_target_inputs(
         client,
         snapshot=snapshot,
         policy=policy,
+        admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
 
     assert decision.result is EligibilityResult.PASS
@@ -1563,12 +1874,12 @@ def test_live_eligibility_passes_with_fresh_exact_target_inputs(
     assert client.scan_calls == [(REPO_ROOT, "git-target", TARGET)]
     assert client.calls == [
         ("protected", GOVERNANCE_REPOSITORY, GOVERNANCE_REF),
-        ("resolve", GOVERNANCE_REPOSITORY, GOVERNANCE_REF),
         (
             "read",
             GOVERNANCE_REPOSITORY,
-            GOVERNANCE_COMMIT,
+            GOVERNANCE_REF,
             GOVERNANCE_PATH,
+            "",
         ),
     ]
 
@@ -1587,6 +1898,7 @@ def test_live_eligibility_accepts_an_actual_compiled_repository_model(
         client,
         snapshot=snapshot,
         policy=policy,
+        admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
 
     assert decision.result is EligibilityResult.PASS
@@ -1740,6 +2052,7 @@ def test_decision_binds_attestation_provenance_and_content_digest(
         client,
         snapshot=snapshot,
         policy=policy,
+        admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
     document = decision.to_document()
     governance = _object_member(document, "governance")
@@ -1749,25 +2062,27 @@ def test_decision_binds_attestation_provenance_and_content_digest(
     assert governance == {
         "repository": GOVERNANCE_REPOSITORY,
         "ref": GOVERNANCE_REF,
-        "resolved-commit": GOVERNANCE_COMMIT,
+        "eligibility-main-sha": GOVERNANCE_COMMIT,
         "path": GOVERNANCE_PATH,
+        "git-object-format": "sha1",
         "blob-oid": GOVERNANCE_BLOB,
-        "content-sha256": decision.governance.content_sha256,
+        "canonical-content-digest": (
+            decision.governance.canonical_content_digest
+        ),
         "observed-at": "2026-08-06T12:00:00Z",
         "max-age-days": 90,
-        "live-enabled": True,
-        "issuer": "hcoona",
-        "inspected-at": "2026-08-01T00:00:00Z",
-        "expires-at": "2026-10-01T00:00:00Z",
-        "attestation-content-digest": (
-            decision.governance.attestation.content_digest
-        ),
+        "admitted-attestation": (decision.governance.attestation.to_document()),
     }
-    assert decision.governance.content_sha256 == (
+    assert decision.governance.canonical_content_digest == (
         decision.governance.attestation.content_digest
     )
-    assert decision.governance.content_sha256.startswith("sha256:")
-    assert len(decision.governance.content_sha256) == PREFIXED_SHA256_LENGTH
+    assert decision.governance.canonical_content_digest.startswith("sha256:")
+    assert (
+        len(decision.governance.canonical_content_digest)
+        == PREFIXED_SHA256_LENGTH
+    )
+    assert decision.governance.current_main_sha == GOVERNANCE_COMMIT
+    assert decision.governance.object_format == "sha1"
     assert static_reference == decision.static_reference.to_document()
     assert static_reference["policy-digest"] == (STATIC_REFERENCE_POLICY_DIGEST)
     assert static_reference["target"] == snapshot.context.target
@@ -1791,6 +2106,7 @@ def test_each_evaluation_performs_a_fresh_protected_ref_read(
         client,
         snapshot=snapshot,
         policy=policy,
+        admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
     client.content = _attestation_content(live_enabled=False)
     client.blob_oid = "c" * 40
@@ -1804,7 +2120,10 @@ def test_each_evaluation_performs_a_fresh_protected_ref_read(
     assert first.result is EligibilityResult.PASS
     assert second.result is EligibilityResult.BLOCKED
     assert second.diagnostics == ("governance-live-disabled",)
-    assert first.governance.content_sha256 != second.governance.content_sha256
+    assert (
+        first.governance.canonical_content_digest
+        != second.governance.canonical_content_digest
+    )
     assert first.governance.blob_oid == GOVERNANCE_BLOB
     assert second.governance.blob_oid == "c" * 40
     assert client.scan_calls == [
@@ -1813,10 +2132,8 @@ def test_each_evaluation_performs_a_fresh_protected_ref_read(
     ]
     assert [call[0] for call in client.calls] == [
         "protected",
-        "resolve",
         "read",
         "protected",
-        "resolve",
         "read",
     ]
 
@@ -1827,9 +2144,7 @@ def test_disabled_attestation_blocks_before_attempt_creation(
     policy: ReleasePolicy,
 ) -> None:
     """Return a blocking pre-Attempt Decision for live_enabled false."""
-    client = RecordingGovernanceClient(
-        (FIXTURES / "governance-disabled.json").read_bytes()
-    )
+    client = RecordingGovernanceClient(_attestation_content())
 
     decision = _evaluate(
         monkeypatch,
@@ -1843,7 +2158,10 @@ def test_disabled_attestation_blocks_before_attempt_creation(
     assert decision.diagnostics == ("governance-live-disabled",)
     assert document["result"] == "blocked"
     governance = _object_member(document, "governance")
-    assert governance["live-enabled"] is False
+    admitted_attestation = governance["admitted-attestation"]
+    assert isinstance(admitted_attestation, dict)
+    assert admitted_attestation["live_enabled"] is False
+    assert admitted_attestation["activation"] == _blocked_activation()
     assert document["static-reference"] == (
         decision.static_reference.to_document()
     )
@@ -1871,6 +2189,7 @@ def test_expired_attestation_blocks_before_attempt_creation(
         client,
         snapshot=live_admitted_repository_model.snapshot,
         policy=policy,
+        admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
 
     assert decision.result is EligibilityResult.BLOCKED
@@ -1918,6 +2237,7 @@ def test_attestation_time_boundaries_block_live_eligibility(  # noqa: PLR0913, P
         client,
         snapshot=live_admitted_repository_model.snapshot,
         policy=policy,
+        admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
 
     assert decision.result is EligibilityResult.BLOCKED
@@ -1959,6 +2279,7 @@ def test_static_reference_findings_and_errors_block_before_attempt_creation(
         snapshot=live_admitted_repository_model.snapshot,
         policy=policy,
         static_reference=static_reference,
+        admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
     document = decision.to_document()
     evidence = _object_member(document, "static-reference")
@@ -2343,40 +2664,67 @@ def test_attestation_requires_accepted_writer_inventory(
         parse_governance_attestation(content)
 
 
-def test_attestation_accepts_human_access_evidence_digest_alternative() -> None:
-    """Accept evidence identity instead of a structured access inventory."""
+def test_attestation_rejects_access_evidence_digest_substitute() -> None:
+    """Require the exact structured access inventory, not a digest shim."""
     document = _attestation_document(live_enabled=True)
     del document["access_inventory"]
     document["access_evidence_digest"] = "sha256:" + ("7" * 64)
 
-    attestation = parse_governance_attestation(canonicalize(document))
+    with pytest.raises(
+        ValueError,
+        match="missing required field: access_inventory",
+    ):
+        parse_governance_attestation(canonicalize(document))
 
-    assert attestation.access_inventory is None
-    assert attestation.access_evidence_digest == "sha256:" + ("7" * 64)
-    assert attestation.live_enabled is True
-    assert attestation.content_digest.startswith("sha256:")
+    assert "access_inventory" not in document
+    assert document["access_evidence_digest"].startswith("sha256:")
 
 
 @pytest.mark.parametrize(
-    "configuration",
-    ["neither", "both", "malformed-digest", "empty-inventory"],
+    ("configuration", "message"),
+    [
+        pytest.param(
+            "missing",
+            "missing required field: access_inventory",
+            id="missing",
+        ),
+        pytest.param(
+            "digest-alternative",
+            "unknown field: access_evidence_digest",
+            id="digest-alternative",
+        ),
+        pytest.param(
+            "empty-inventory",
+            "access_inventory.package access inventory must be nonempty",
+            id="empty-inventory",
+        ),
+        pytest.param(
+            "broader-inventory",
+            "access inventory is not the exact accepted set",
+            id="broader-inventory",
+        ),
+    ],
 )
-def test_attestation_requires_exactly_one_access_inventory_or_evidence_digest(
+def test_attestation_requires_exact_access_inventory(
     configuration: str,
+    message: str,
 ) -> None:
-    """Require one complete human-inspection evidence representation."""
+    """Reject absent, substituted, empty, or broader access authority."""
     document = _attestation_document()
-    if configuration in {"neither", "malformed-digest"}:
+    if configuration == "missing":
         del document["access_inventory"]
-    if configuration == "both":
+    elif configuration == "digest-alternative":
         document["access_evidence_digest"] = "sha256:" + ("7" * 64)
-    elif configuration == "malformed-digest":
-        document["access_evidence_digest"] = "7" * 64
     elif configuration == "empty-inventory":
         access_inventory = _object_member(document, "access_inventory")
         access_inventory["package"] = []
+    else:
+        access_inventory = _object_member(document, "access_inventory")
+        package = access_inventory["package"]
+        assert isinstance(package, list)
+        package.append({"subject": "other", "access": "read"})
 
-    with pytest.raises(ValueError, match=r"access|SHA-256"):
+    with pytest.raises(ValueError, match=message):
         parse_governance_attestation(canonicalize(document))
 
 
@@ -2493,8 +2841,8 @@ def test_live_context_rejects_invalid_primitives_before_source_read(
 
 @pytest.mark.parametrize(
     "failure",
-    ["unprotected", "protection-read", "resolve", "blob"],
-    ids=["unprotected", "protection-read", "missing-ref", "missing-blob"],
+    ["unprotected", "protection-read", "read"],
+    ids=["unprotected", "protection-read", "git-read"],
 )
 def test_missing_unreadable_or_unprotected_source_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
@@ -2521,26 +2869,26 @@ def test_missing_unreadable_or_unprotected_source_fails_closed(
     assert any(call[0] == "protected" for call in client.calls)
     assert not (
         failure in {"unprotected", "protection-read"}
-        and any(call[0] == "resolve" for call in client.calls)
+        and any(call[0] == "read" for call in client.calls)
     )
 
 
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
-        ("commit", "f" * 39, "full commit SHA"),
-        ("commit", "F" * 40, "full commit SHA"),
+        ("main_sha", "f" * 39, "main SHA is malformed"),
+        ("main_sha", "F" * 40, "main SHA is malformed"),
         ("blob_oid", "b" * 39, "blob OID is malformed"),
         ("blob_oid", "B" * 40, "blob OID is malformed"),
     ],
     ids=[
-        "short-commit",
-        "uppercase-commit",
+        "short-main-sha",
+        "uppercase-main-sha",
         "short-blob",
         "uppercase-blob",
     ],
 )
-def test_resolved_commit_blob_and_content_provenance_are_strict(  # noqa: PLR0913, PLR0917
+def test_git_object_format_sha_and_blob_provenance_are_strict(  # noqa: PLR0913, PLR0917
     monkeypatch: pytest.MonkeyPatch,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
@@ -2548,7 +2896,7 @@ def test_resolved_commit_blob_and_content_provenance_are_strict(  # noqa: PLR091
     value: str,
     message: str,
 ) -> None:
-    """Reject malformed resolved provenance before eligibility."""
+    """Reject malformed isolated-Git provenance before eligibility."""
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
     setattr(client, field, value)
 
@@ -2576,13 +2924,14 @@ def test_prior_facts_cannot_substitute_for_fresh_input(
         client,
         snapshot=snapshot,
         policy=policy,
+        admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
     blocking_client = RecordingGovernanceClient(
         _attestation_content(live_enabled=True)
     )
-    blocking_client.failure = "blob"
+    blocking_client.failure = "read"
 
-    with pytest.raises(ValueError, match="blob unavailable"):
+    with pytest.raises(ValueError, match="Git source unavailable"):
         _evaluate(
             monkeypatch,
             blocking_client,
@@ -2664,26 +3013,11 @@ _HUMAN_EVIDENCE_MESSAGES = {
         )
         for position in _HUMAN_EVIDENCE_PATHS
     },
-    "limitations[0]": "limitations must be a nonempty string",
-    "access_evidence_digest": (
-        "access_evidence_digest must be a nonempty string"
-    ),
+    "limitations[0]": r"limitations\[0\] must be a nonempty string",
 }
-_PRESERVED_HUMAN_EVIDENCE_POSITIONS = (
-    "issuer",
-    "accepted_writers[0].login",
-    "access_inventory.repository[0].subject",
-    "access_inventory.repository[0].access",
-    "access_inventory.package[0].subject",
-    "access_inventory.package[0].access",
-    "access_inventory.manage_actions[0].subject",
-    "access_inventory.manage_actions[0].access",
-    "limitations[0]",
-    "access_evidence_digest",
-    "accepted_writers[0].role",
-)
+_PRESERVED_HUMAN_EVIDENCE_POSITIONS = ("limitations[0]",)
 _FIXED_CANONICAL_VALUES = {
-    "schema": "workflow-delivery/v3/governance-attestation",
+    "schema": ("workflow-delivery/v3/normal-live-governance-attestation-v1"),
     "release_policy": "hcoona-release-smoke-npm",
     "package": FIRST_SLICE_PACKAGE,
     "accepted_writers[0].role": "Admin",
@@ -2723,21 +3057,17 @@ def _attestation_document_with_human_evidence(
     value: str,
 ) -> dict[str, JsonValue]:
     document = _attestation_document()
-    if position == "access_evidence_digest":
-        del document["access_inventory"]
-        document["access_evidence_digest"] = value
-    else:
-        _replace_attestation_member(
-            document,
-            _HUMAN_EVIDENCE_PATHS[position],
-            value,
-        )
+    _replace_attestation_member(
+        document,
+        _HUMAN_EVIDENCE_PATHS[position],
+        value,
+    )
     return document
 
 
 @pytest.mark.parametrize(
     "position",
-    [*_HUMAN_EVIDENCE_PATHS, "access_evidence_digest"],
+    _HUMAN_EVIDENCE_PATHS,
     ids=[
         "issuer",
         "writer-login",
@@ -2749,7 +3079,6 @@ def _attestation_document_with_human_evidence(
         "manage-actions-subject",
         "manage-actions-access",
         "limitation",
-        "digest-alternative",
     ],
 )
 @pytest.mark.parametrize(
@@ -2808,51 +3137,19 @@ def test_attestation_rejects_unknown_access_inventory_value_member(
 @pytest.mark.parametrize(
     "position",
     _PRESERVED_HUMAN_EVIDENCE_POSITIONS,
-    ids=[
-        "issuer",
-        "writer-login",
-        "repository-subject",
-        "repository-access",
-        "package-subject",
-        "package-access",
-        "manage-actions-subject",
-        "manage-actions-access",
-        "limitation",
-        "digest-alternative",
-        "writer-role",
-    ],
+    ids=["limitation"],
 )
 def test_attestation_preserves_exact_human_evidence_strings(
     position: str,
 ) -> None:
-    """Validate open strings without trimming or otherwise normalizing them."""
-    if position == "access_evidence_digest":
-        value = "sha256:" + ("7" * 64)
-    elif position == "accepted_writers[0].role":
-        value = "Admin"
-    else:
-        value = " \tAudited human evidence\u00a0 \n"
+    """Preserve an exact nonblank open limitation without normalization."""
+    value = "Audited human\tevidence\u00a0value"
     document = _attestation_document_with_human_evidence(position, value)
 
     attestation = parse_governance_attestation(canonicalize(document))
 
-    if position == "issuer":
-        assert attestation.issuer == value
-    elif position == "accepted_writers[0].login":
-        assert attestation.accepted_writers[0].login == value
-    elif position == "accepted_writers[0].role":
-        assert attestation.accepted_writers[0].role == value
-    elif position == "limitations[0]":
-        assert attestation.limitations[0] == value
-    elif position == "access_evidence_digest":
-        assert attestation.access_evidence_digest == value
-        assert attestation.access_inventory is None
-    else:
-        inventory = attestation.access_inventory
-        assert inventory is not None
-        category = position.split(".")[1].removesuffix("[0]")
-        member = position.rsplit(".", maxsplit=1)[1]
-        assert getattr(getattr(inventory, category)[0], member) == value
+    assert position == "limitations[0]"
+    assert attestation.limitations[0] == value
     assert attestation.to_document() == document
     assert attestation.live_enabled is False
 
@@ -2899,7 +3196,7 @@ def test_attestation_keeps_fixed_canonical_values_exact(
         rejected_value,
     )
     message = (
-        "role is not accepted"
+        "accepted_writers must contain only hcoona as Admin"
         if field == "accepted_writers[0].role"
         else (
             "wrong schema"
@@ -2920,8 +3217,8 @@ def test_attestation_keeps_fixed_canonical_values_exact(
             id="current-freshness",
         ),
         pytest.param(
-            LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
-            id="capability-replay",
+            LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
+            id="authorization-replay",
         ),
     ],
 )
@@ -2978,8 +3275,8 @@ def test_live_admission_independently_enforces_result_and_diagnostics_guards(  #
             id="current-freshness",
         ),
         pytest.param(
-            LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
-            id="capability-replay",
+            LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
+            id="authorization-replay",
         ),
     ],
 )
@@ -2991,6 +3288,7 @@ def test_enabled_governance_exact_validity_boundaries_evaluate_and_admit(
     policy: ReleasePolicy,
 ) -> None:
     """Admit an enabled observation at inspection with a 90-day lifetime."""
+    _admit_test_destination_primitive(monkeypatch)
     inspected_at = NOW
     expires_at = inspected_at + timedelta(days=90)
     content = _attestation_content(
@@ -3036,19 +3334,16 @@ def test_enabled_governance_exact_validity_boundaries_evaluate_and_admit(
     assert governance == {
         "repository": GOVERNANCE_REPOSITORY,
         "ref": GOVERNANCE_REF,
-        "resolved-commit": GOVERNANCE_COMMIT,
+        "eligibility-main-sha": GOVERNANCE_COMMIT,
         "path": GOVERNANCE_PATH,
+        "git-object-format": "sha1",
         "blob-oid": GOVERNANCE_BLOB,
-        "content-sha256": decision.governance.content_sha256,
+        "canonical-content-digest": (
+            decision.governance.canonical_content_digest
+        ),
         "observed-at": "2026-08-06T12:00:00Z",
         "max-age-days": 90,
-        "live-enabled": True,
-        "issuer": "hcoona",
-        "inspected-at": "2026-08-06T12:00:00Z",
-        "expires-at": "2026-11-04T12:00:00Z",
-        "attestation-content-digest": (
-            decision.governance.attestation.content_digest
-        ),
+        "admitted-attestation": (decision.governance.attestation.to_document()),
     }
     assert decision.governance.observed_at == inspected_at
     assert decision.governance.attestation.inspected_at == inspected_at
@@ -3064,21 +3359,25 @@ def test_enabled_governance_exact_validity_boundaries_evaluate_and_admit(
     assert admitted.diagnostics == ()
     assert admitted.static_reference.result == "clean"
     assert admitted.static_reference.target == live_intent.target
-    assert admitted.governance.live_enabled is True
-    assert admitted.governance.observed_at == admitted.governance.inspected_at
+    assert admitted.governance.attestation.live_enabled is True
     assert (
-        admitted.governance.expires_at - admitted.governance.inspected_at
+        admitted.governance.observed_at
+        == admitted.governance.attestation.inspected_at
+    )
+    assert (
+        admitted.governance.attestation.expires_at
+        - admitted.governance.attestation.inspected_at
         == timedelta(days=90)
     )
     assert client.scan_calls == [(REPO_ROOT, "git-target", TARGET)]
     assert client.calls == [
         ("protected", GOVERNANCE_REPOSITORY, GOVERNANCE_REF),
-        ("resolve", GOVERNANCE_REPOSITORY, GOVERNANCE_REF),
         (
             "read",
             GOVERNANCE_REPOSITORY,
-            GOVERNANCE_COMMIT,
+            GOVERNANCE_REF,
             GOVERNANCE_PATH,
+            "",
         ),
     ]
 
@@ -3248,3 +3547,279 @@ def test_selected_ref_grammar_rejects_invalid_refs_before_any_read(
     assert context.selected_ref == selected_ref
     assert client.scan_calls == []
     assert client.calls == []
+
+
+def test_disabled_attestation_requires_exact_blocked_activation() -> None:
+    """Admit only the closed disabled activation-gate representation."""
+    document = _attestation_document()
+
+    attestation = parse_governance_attestation(canonicalize(document))
+
+    assert attestation.live_enabled is False
+    assert attestation.activation.to_document() == _blocked_activation()
+    assert attestation.accepted_publisher == "hcoona"
+    assert attestation.package_principal.repository == GOVERNANCE_REPOSITORY
+    assert attestation.to_document() == document
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        pytest.param(
+            "enabled-with-blocked-activation",
+            "activation state and live_enabled disagree",
+            id="enabled-with-blocked-activation",
+        ),
+        pytest.param(
+            "disabled-with-ready-activation",
+            "activation state and live_enabled disagree",
+            id="disabled-with-ready-activation",
+        ),
+        pytest.param(
+            "incomplete-disabled-blockers",
+            "blockers are not the exact disabled gates",
+            id="incomplete-disabled-blockers",
+        ),
+        pytest.param(
+            "disabled-with-native-evidence",
+            "activation unknown field: artifact_retention",
+            id="disabled-with-native-evidence",
+        ),
+    ],
+)
+def test_attestation_rejects_invalid_disabled_activation(
+    case: str,
+    message: str,
+) -> None:
+    """Reject disabled state that fabricates or omits activation facts."""
+    document = _attestation_document()
+    if case == "enabled-with-blocked-activation":
+        document["live_enabled"] = True
+    elif case == "disabled-with-ready-activation":
+        document["activation"] = _ready_activation()
+    else:
+        activation = _object_member(document, "activation")
+        if case == "incomplete-disabled-blockers":
+            blockers = activation["blockers"]
+            assert isinstance(blockers, list)
+            activation["blockers"] = blockers[:-1]
+        else:
+            activation["artifact_retention"] = _object_member(
+                _ready_activation(),
+                "artifact_retention",
+            )
+
+    with pytest.raises(ValueError, match=message):
+        parse_governance_attestation(canonicalize(document))
+
+
+def test_enabled_attestation_admits_complete_ready_activation() -> None:
+    """Admit enabled state only with complete native and race evidence."""
+    document = _attestation_document(live_enabled=True)
+
+    attestation = parse_governance_attestation(canonicalize(document))
+    activation = attestation.activation.to_document()
+    approval = _object_member(activation, "approval_environment")
+    retention = _object_member(activation, "artifact_retention")
+    primitive = _object_member(activation, "destination_primitive")
+
+    assert attestation.live_enabled is True
+    assert activation["state"] == "ready"
+    assert approval["required_reviewers"] == [{"login": "hcoona", "id": 712433}]
+    assert approval["prevent_self_review"] is False
+    assert approval["can_admins_bypass"] is False
+    assert approval["variables"] == [
+        {
+            "name": "WDV3_APPROVAL_ENVIRONMENT_MARKER",
+            "value": "workflow-delivery-v3-buddy-approval/v1",
+            "scope": "environment",
+        }
+    ]
+    assert retention["days"] == MINIMUM_RETENTION_DAYS
+    assert primitive["operation"] == (
+        "conditional-create-npm-version-and-target-tag"
+    )
+    assert attestation.to_document() == document
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        pytest.param(
+            "missing-approval",
+            "missing required field: approval_environment",
+            id="missing-approval",
+        ),
+        pytest.param(
+            "self-review-disabled",
+            "Approval Environment attestation is not the exact contract",
+            id="self-review-disabled",
+        ),
+        pytest.param(
+            "retention-too-short",
+            "does not prove at least 45 days",
+            id="retention-too-short",
+        ),
+        pytest.param(
+            "race-failed",
+            "lacks passing conditional race evidence",
+            id="race-failed",
+        ),
+        pytest.param(
+            "evidence-after-inspection",
+            "evidence was captured after inspection",
+            id="evidence-after-inspection",
+        ),
+    ],
+)
+def test_enabled_attestation_rejects_incomplete_or_invalid_evidence(
+    case: str,
+    message: str,
+) -> None:
+    """Reject missing, contradictory, or insufficient enablement evidence."""
+    document = _attestation_document(live_enabled=True)
+    activation = _object_member(document, "activation")
+    if case == "missing-approval":
+        del activation["approval_environment"]
+    elif case == "self-review-disabled":
+        approval = _object_member(activation, "approval_environment")
+        approval["prevent_self_review"] = True
+    elif case == "retention-too-short":
+        retention = _object_member(activation, "artifact_retention")
+        retention["days"] = 44
+    elif case == "race-failed":
+        primitive = _object_member(activation, "destination_primitive")
+        race_results = primitive["race_results"]
+        assert isinstance(race_results, list)
+        first_result = race_results[0]
+        assert isinstance(first_result, list)
+        first_result[1] = "fail"
+    else:
+        retention = _object_member(activation, "artifact_retention")
+        retention["captured_at"] = "2026-08-02T00:00:00Z"
+
+    with pytest.raises(ValueError, match=message):
+        parse_governance_attestation(canonicalize(document))
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        pytest.param(
+            ("accepted_publisher",),
+            "other-publisher",
+            "publisher is not hcoona",
+            id="publisher",
+        ),
+        pytest.param(
+            ("package_principal", "repository"),
+            "other/repository",
+            "package_principal is not the exact accepted blast radius",
+            id="principal-repository",
+        ),
+        pytest.param(
+            ("package_principal", "intended_coordinate"),
+            "@hcoona/other",
+            "package_principal is not the exact accepted blast radius",
+            id="principal-coordinate",
+        ),
+    ],
+)
+def test_attestation_rejects_publisher_or_package_principal_substitution(
+    path: tuple[str, ...],
+    value: JsonValue,
+    message: str,
+) -> None:
+    """Reject authority outside the accepted publisher and token principal."""
+    document = _attestation_document()
+    _set_decision_path(document, path, value)
+
+    with pytest.raises(ValueError, match=message):
+        parse_governance_attestation(canonicalize(document))
+
+
+def test_sha256_governance_provenance_round_trips_through_strict_live_admission(
+    monkeypatch: pytest.MonkeyPatch,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Preserve SHA-256 Governance identity through strict admission."""
+    _admit_test_destination_primitive(monkeypatch)
+    snapshot = live_admitted_repository_model.snapshot
+    attestation_document = _attestation_document(live_enabled=True)
+    attestation_content = _attestation_content(live_enabled=True)
+    main_sha = "a" * 64
+    blob_oid = "b" * 64
+    content_digest = f"sha256:{hashlib.sha256(attestation_content).hexdigest()}"
+    client = RecordingGovernanceClient(attestation_content)
+    client.object_format = "sha256"
+    client.main_sha = main_sha
+    client.blob_oid = blob_oid
+
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=snapshot,
+        policy=policy,
+        context=_context(
+            snapshot,
+            policy,
+            selected_ref=live_intent.selected_ref,
+        ),
+    )
+    transported_document = decision.to_document()
+    transported_content = canonicalize(transported_document)
+    governance = _object_member(transported_document, "governance")
+
+    admitted = admit_live_eligibility_decision(
+        transported_content,
+        intent=live_intent,
+        repository_model=live_admitted_repository_model,
+        policy=policy,
+        expected_digest=decision.decision_digest,
+        admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+        now=NOW,
+    )
+
+    assert decision.result is EligibilityResult.PASS
+    assert decision.diagnostics == ()
+    assert decision.governance.current_main_sha == main_sha
+    assert decision.governance.attestation.to_document() == (
+        attestation_document
+    )
+    assert (
+        governance["git-object-format"],
+        governance["eligibility-main-sha"],
+        governance["blob-oid"],
+        governance["canonical-content-digest"],
+    ) == ("sha256", main_sha, blob_oid, content_digest)
+    assert admitted.governance.provenance == (
+        ("blob-oid", blob_oid),
+        ("canonical-content-digest", content_digest),
+        ("eligibility-main-sha", main_sha),
+        ("git-object-format", "sha256"),
+        ("path", GOVERNANCE_PATH),
+        ("ref", GOVERNANCE_REF),
+        ("repository", GOVERNANCE_REPOSITORY),
+    )
+    assert admitted.governance.attestation.to_document() == (
+        attestation_document
+    )
+    assert admitted.to_document() == transported_document
+    assert admitted.canonical_bytes == transported_content
+
+
+def test_attestation_rejects_retired_governance_attestation_schema() -> None:
+    """Reject the retired schema after proving the current fixture is valid."""
+    current_document = _attestation_document()
+
+    current_attestation = parse_governance_attestation(_attestation_content())
+
+    assert current_attestation.to_document() == current_document
+
+    retired_document = json.loads(json.dumps(current_document))
+    retired_document["schema"] = "workflow-delivery/v3/governance-attestation"
+
+    with pytest.raises(ValueError, match=r"wrong schema"):
+        parse_governance_attestation(canonicalize(retired_document))

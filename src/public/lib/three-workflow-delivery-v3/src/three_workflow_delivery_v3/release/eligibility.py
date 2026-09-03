@@ -17,6 +17,10 @@ from three_workflow_delivery_v3.canonical import (
 )
 from three_workflow_delivery_v3.catalogs import catalog_digest
 from three_workflow_delivery_v3.records.release import ReleaseIntent
+from three_workflow_delivery_v3.release.governance_git import (
+    GovernanceGitRead,
+    GovernanceGitReadError,
+)
 from three_workflow_delivery_v3.release.identity import (
     BUDDY_LIVE_WORKFLOW_PATH,
 )
@@ -52,15 +56,40 @@ if TYPE_CHECKING:
     from three_workflow_delivery_v3.repository.compiler import (
         RepositoryModelSnapshot,
     )
-
-ATTESTATION_SCHEMA = "workflow-delivery/v3/governance-attestation"
+ATTESTATION_SCHEMA = (
+    "workflow-delivery/v3/normal-live-governance-attestation-v1"
+)
 LIVE_ELIGIBILITY_DECISION_SCHEMA = (
     "workflow-delivery/v3/live-eligibility-decision"
 )
 LIVE_ELIGIBILITY_PRODUCER = "evaluate-live-eligibility"
 _RELEASE_POLICY_BINDING = FIRST_SLICE_RELEASE_UNIT
-_WRITER_ROLES = frozenset({"Write", "Maintain", "Admin"})
 _ACCESS_CATEGORIES = ("repository", "package", "manage_actions")
+_ACCEPTED_OPERATOR = "hcoona"
+_APPROVAL_ENVIRONMENT = "workflow-delivery-v3-buddy-approval"
+_APPROVAL_JOB = "approve-publication"
+_APPROVAL_SENTINEL_NAME = "WDV3_APPROVAL_ENVIRONMENT_MARKER"
+_APPROVAL_SENTINEL_VALUE = "workflow-delivery-v3-buddy-approval/v1"
+_ARTIFACT_RETENTION_ENDPOINT = (
+    "GET /repos/hcoona/three/actions/permissions/artifact-and-log-retention"
+)
+_DESTINATION_PRIMITIVE_OPERATION = (
+    "conditional-create-npm-version-and-target-tag"
+)
+_DESTINATION_PRIMITIVE_UNPROVEN = "destination-primitive-unproven"
+_ADMITTED_DESTINATION_PRIMITIVE_IDS: frozenset[str] = frozenset()
+_DISABLED_ACTIVATION_BLOCKERS = (
+    _DESTINATION_PRIMITIVE_UNPROVEN,
+    "fresh-native-evidence-required",
+    "repository-retention-readback-required",
+)
+_KNOWN_WIDER_PACKAGE_REACH = (
+    "@hcoona/hexo-renderer-asciidoc",
+    "disposable-smoke-packages",
+)
+_GIT_OBJECT_ID_LENGTHS = {"sha1": 40, "sha256": 64}
+_MIN_ARTIFACT_RETENTION_DAYS = 45
+_PAIR_SIZE = 2
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 _OBJECT_ID_PATTERN = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
@@ -81,7 +110,7 @@ class LiveEligibilityAdmissionMode(StrEnum):
     """Freshness branch fixed by the trusted lifecycle caller."""
 
     CURRENT_FRESHNESS = "current-freshness"
-    CAPABILITY_REPLAY = "capability-replay"
+    AUTHORIZATION_REPLAY = "authorization-replay"
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +161,190 @@ class AccessInventory:
 
 
 @dataclass(frozen=True, slots=True)
+class PackagePrincipalAttestation:
+    """Repository-principal package reach accepted for this slice."""
+
+    repository: str
+    intended_coordinate: str
+    known_wider_reach: tuple[str, ...]
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the exact package-principal statement."""
+        known_wider_reach: list[JsonValue] = list(self.known_wider_reach)
+        return {
+            "repository": self.repository,
+            "intended_coordinate": self.intended_coordinate,
+            "known_wider_reach": known_wider_reach,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class NativeEvidence:
+    """One authenticated native readback identity."""
+
+    endpoint: str
+    captured_at: datetime
+    response_digest: str
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the normalized readback identity."""
+        return {
+            "endpoint": self.endpoint,
+            "captured_at": _format_instant(self.captured_at),
+            "response_digest": self.response_digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalEnvironmentReviewer:
+    """One required native Environment reviewer."""
+
+    login: str
+    reviewer_id: int
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the normalized reviewer identity."""
+        return {"login": self.login, "id": self.reviewer_id}
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalEnvironmentVariable:
+    """One normalized Environment-scoped variable."""
+
+    name: str
+    value: str
+    scope: str
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the normalized variable identity."""
+        return {
+            "name": self.name,
+            "value": self.value,
+            "scope": self.scope,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalEnvironmentAttestation:
+    """Normalized native Approval Environment facts."""
+
+    name: str
+    environment_id: int
+    required_reviewers: tuple[ApprovalEnvironmentReviewer, ...]
+    prevent_self_review: bool
+    can_admins_bypass: bool
+    wait_timer_minutes: int
+    deployment_policy: str
+    secret_count: int
+    variables: tuple[ApprovalEnvironmentVariable, ...]
+    same_name_repository_variable_absent: bool
+    same_name_organization_variable: str
+    evidence: tuple[NativeEvidence, ...]
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the normalized Approval Environment facts."""
+        return {
+            "name": self.name,
+            "environment_id": self.environment_id,
+            "required_reviewers": [
+                reviewer.to_document() for reviewer in self.required_reviewers
+            ],
+            "prevent_self_review": self.prevent_self_review,
+            "can_admins_bypass": self.can_admins_bypass,
+            "wait_timer_minutes": self.wait_timer_minutes,
+            "deployment_policy": self.deployment_policy,
+            "secret_count": self.secret_count,
+            "variables": [
+                variable.to_document() for variable in self.variables
+            ],
+            "same_name_repository_variable_absent": (
+                self.same_name_repository_variable_absent
+            ),
+            "same_name_organization_variable": (
+                self.same_name_organization_variable
+            ),
+            "evidence": [item.to_document() for item in self.evidence],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactRetentionAttestation:
+    """Authenticated repository artifact-retention readback."""
+
+    endpoint: str
+    captured_at: datetime
+    days: int
+    response_digest: str
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the normalized retention evidence."""
+        return {
+            "endpoint": self.endpoint,
+            "captured_at": _format_instant(self.captured_at),
+            "days": self.days,
+            "response_digest": self.response_digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DestinationPrimitiveAttestation:
+    """Admitted conditional destination primitive and race proof."""
+
+    primitive_id: str
+    operation: str
+    captured_at: datetime
+    race_inputs: tuple[tuple[str, str], ...]
+    race_results: tuple[tuple[str, str], ...]
+    evidence_digest: str
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the normalized primitive and race evidence."""
+        return {
+            "primitive_id": self.primitive_id,
+            "operation": self.operation,
+            "captured_at": _format_instant(self.captured_at),
+            "race_inputs": [list(item) for item in self.race_inputs],
+            "race_results": [list(item) for item in self.race_results],
+            "evidence_digest": self.evidence_digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DisabledGovernanceActivation:
+    """Explicit unsatisfied activation gates for disabled implementation."""
+
+    blockers: tuple[str, ...]
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed disabled activation state."""
+        blockers: list[JsonValue] = list(self.blockers)
+        return {"state": "blocked", "blockers": blockers}
+
+
+@dataclass(frozen=True, slots=True)
+class EnabledGovernanceActivation:
+    """Complete evidence required before normal Live may be enabled."""
+
+    approval_environment: ApprovalEnvironmentAttestation
+    artifact_retention: ArtifactRetentionAttestation
+    destination_primitive: DestinationPrimitiveAttestation
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed activation-ready evidence."""
+        return {
+            "state": "ready",
+            "approval_environment": self.approval_environment.to_document(),
+            "artifact_retention": self.artifact_retention.to_document(),
+            "destination_primitive": self.destination_primitive.to_document(),
+        }
+
+
+GovernanceActivation = (
+    DisabledGovernanceActivation | EnabledGovernanceActivation
+)
+
+
+@dataclass(frozen=True, slots=True)
 class GovernanceAttestation:
     """Strict non-executable protected-source human attestation."""
 
@@ -141,9 +354,11 @@ class GovernanceAttestation:
     inspected_at: datetime
     expires_at: datetime
     accepted_writers: tuple[WriterInventoryEntry, ...]
-    access_inventory: AccessInventory | None
-    access_evidence_digest: str | None
+    accepted_publisher: str
+    access_inventory: AccessInventory
+    package_principal: PackagePrincipalAttestation
     limitations: tuple[str, ...]
+    activation: GovernanceActivation
     live_enabled: bool
 
     def to_document(self) -> dict[str, JsonValue]:
@@ -164,13 +379,13 @@ class GovernanceAttestation:
             "inspected_at": _format_instant(self.inspected_at),
             "expires_at": _format_instant(self.expires_at),
             "accepted_writers": accepted_writers,
+            "accepted_publisher": self.accepted_publisher,
+            "access_inventory": self.access_inventory.to_document(),
+            "package_principal": self.package_principal.to_document(),
             "limitations": limitations,
+            "activation": self.activation.to_document(),
             "live_enabled": self.live_enabled,
         }
-        if self.access_inventory is not None:
-            document["access_inventory"] = self.access_inventory.to_document()
-        if self.access_evidence_digest is not None:
-            document["access_evidence_digest"] = self.access_evidence_digest
         return document
 
     @property
@@ -179,12 +394,15 @@ class GovernanceAttestation:
         return canonical_sha256(self.to_document())
 
 
-@dataclass(frozen=True, slots=True)
-class GovernanceBlob:
-    """One contents-read-compatible fixed-path blob response."""
-
-    blob_oid: str
-    content: bytes
+def _destination_primitive_is_admitted(
+    attestation: GovernanceAttestation,
+) -> bool:
+    activation = attestation.activation
+    return (
+        isinstance(activation, EnabledGovernanceActivation)
+        and activation.destination_primitive.primitive_id
+        in _ADMITTED_DESTINATION_PRIMITIVE_IDS
+    )
 
 
 class GovernanceSourceClient(Protocol):
@@ -194,17 +412,15 @@ class GovernanceSourceClient(Protocol):
         """Return whether the exact fully qualified ref is protected."""
         ...
 
-    def resolve_ref(self, repository: str, ref: str) -> str:
-        """Resolve the exact ref to one full commit SHA."""
-        ...
-
-    def read_blob(
+    def read_source(
         self,
         repository: str,
-        commit: str,
+        ref: str,
         path: str,
-    ) -> GovernanceBlob:
-        """Read the exact path at the already resolved commit."""
+        *,
+        eligibility_main_sha: str | None = None,
+    ) -> GovernanceGitRead:
+        """Read the exact path and optionally prove eligibility continuity."""
         ...
 
 
@@ -221,9 +437,11 @@ class GovernanceObservation:
     """Fresh source provenance and validated canonical attestation."""
 
     source: GovernanceSource
-    resolved_commit: str
+    eligibility_main_sha: str
+    current_main_sha: str
+    object_format: str
     blob_oid: str
-    content_sha256: str
+    canonical_content_digest: str
     observed_at: datetime
     attestation: GovernanceAttestation
 
@@ -249,15 +467,12 @@ class LiveEligibilityGovernanceBinding:
     """Complete Governance projection in the eligibility Decision."""
 
     source: GovernanceSource
-    resolved_commit: str
+    eligibility_main_sha: str
+    object_format: str
     blob_oid: str
-    content_sha256: str
+    canonical_content_digest: str
     observed_at: datetime
-    live_enabled: bool
-    issuer: str
-    inspected_at: datetime
-    expires_at: datetime
-    attestation_content_digest: str
+    attestation: GovernanceAttestation
 
     @classmethod
     def from_observation(
@@ -267,15 +482,12 @@ class LiveEligibilityGovernanceBinding:
         """Project the exact evaluator observation into transport fields."""
         return cls(
             source=observation.source,
-            resolved_commit=observation.resolved_commit,
+            eligibility_main_sha=observation.eligibility_main_sha,
+            object_format=observation.object_format,
             blob_oid=observation.blob_oid,
-            content_sha256=observation.content_sha256,
+            canonical_content_digest=(observation.canonical_content_digest),
             observed_at=observation.observed_at,
-            live_enabled=observation.attestation.live_enabled,
-            issuer=observation.attestation.issuer,
-            inspected_at=observation.attestation.inspected_at,
-            expires_at=observation.attestation.expires_at,
-            attestation_content_digest=(observation.attestation.content_digest),
+            attestation=observation.attestation,
         )
 
     def to_document(self) -> dict[str, JsonValue]:
@@ -283,17 +495,14 @@ class LiveEligibilityGovernanceBinding:
         return {
             "repository": self.source.repository,
             "ref": self.source.ref,
-            "resolved-commit": self.resolved_commit,
+            "eligibility-main-sha": self.eligibility_main_sha,
             "path": self.source.path,
+            "git-object-format": self.object_format,
             "blob-oid": self.blob_oid,
-            "content-sha256": self.content_sha256,
+            "canonical-content-digest": self.canonical_content_digest,
             "observed-at": _format_instant(self.observed_at),
             "max-age-days": self.source.max_age_days,
-            "live-enabled": self.live_enabled,
-            "issuer": self.issuer,
-            "inspected-at": _format_instant(self.inspected_at),
-            "expires-at": _format_instant(self.expires_at),
-            "attestation-content-digest": (self.attestation_content_digest),
+            "admitted-attestation": self.attestation.to_document(),
         }
 
     @property
@@ -305,9 +514,13 @@ class LiveEligibilityGovernanceBinding:
                     ("repository", self.source.repository),
                     ("ref", self.source.ref),
                     ("path", self.source.path),
-                    ("resolved-commit", self.resolved_commit),
+                    ("eligibility-main-sha", self.eligibility_main_sha),
+                    ("git-object-format", self.object_format),
                     ("blob-oid", self.blob_oid),
-                    ("content-sha256", self.content_sha256),
+                    (
+                        "canonical-content-digest",
+                        self.canonical_content_digest,
+                    ),
                 )
             )
         )
@@ -500,17 +713,12 @@ def _writer_inventory(value: JsonValue) -> tuple[WriterInventoryEntry, ...]:
                 context=f"accepted_writers[{index}].role",
             ),
         )
-        if writer.role not in _WRITER_ROLES:
-            message = f"accepted_writers[{index}].role is not accepted"
-            raise ValueError(message)
         writers.append(writer)
-    if not writers:
-        message = "accepted_writers must be nonempty"
+    result = tuple(writers)
+    if result != (WriterInventoryEntry(_ACCEPTED_OPERATOR, "Admin"),):
+        message = "accepted_writers must contain only hcoona as Admin"
         raise ValueError(message)
-    if len({writer.login for writer in writers}) != len(writers):
-        message = "accepted_writers contains duplicate logins"
-        raise ValueError(message)
-    return tuple(writers)
+    return result
 
 
 def _grants(value: JsonValue, *, category: str) -> tuple[AccessGrant, ...]:
@@ -550,7 +758,7 @@ def _access_inventory(value: JsonValue) -> AccessInventory:
         required=frozenset(_ACCESS_CATEGORIES),
         context="access_inventory",
     )
-    return AccessInventory(
+    inventory = AccessInventory(
         repository=_grants(
             document["repository"],
             category="access_inventory.repository",
@@ -564,6 +772,483 @@ def _access_inventory(value: JsonValue) -> AccessInventory:
             category="access_inventory.manage_actions",
         ),
     )
+    expected = AccessInventory(
+        repository=(AccessGrant(subject=_ACCEPTED_OPERATOR, access="admin"),),
+        package=(AccessGrant(subject=_ACCEPTED_OPERATOR, access="write"),),
+        manage_actions=(
+            AccessGrant(subject=_ACCEPTED_OPERATOR, access="allowed"),
+        ),
+    )
+    if inventory != expected:
+        message = "Governance access inventory is not the exact accepted set"
+        raise ValueError(message)
+    return inventory
+
+
+def _exact_string(value: JsonValue, *, context: str) -> str:
+    text = _string(value, context=context)
+    if text != text.strip():
+        message = f"{context} must be an exact string"
+        raise ValueError(message)
+    return text
+
+
+def _boolean(value: JsonValue, *, context: str) -> bool:
+    if type(value) is not bool:
+        message = f"{context} must be Boolean"
+        raise TypeError(message)
+    return value
+
+
+def _nonnegative_integer(value: JsonValue, *, context: str) -> int:
+    if type(value) is not int or value < 0:
+        message = f"{context} must be a nonnegative integer"
+        raise TypeError(message)
+    return value
+
+
+def _positive_integer(value: JsonValue, *, context: str) -> int:
+    result = _nonnegative_integer(value, context=context)
+    if result == 0:
+        message = f"{context} must be a positive integer"
+        raise ValueError(message)
+    return result
+
+
+def _sha256(value: JsonValue, *, context: str) -> str:
+    digest = _exact_string(value, context=context)
+    if _DIGEST_PATTERN.fullmatch(digest) is None:
+        message = f"{context} must be a prefixed SHA-256"
+        raise ValueError(message)
+    return digest
+
+
+def _strings(
+    value: JsonValue,
+    *,
+    context: str,
+    nonempty: bool = True,
+) -> tuple[str, ...]:
+    result = tuple(
+        _exact_string(item, context=f"{context}[{index}]")
+        for index, item in enumerate(_array(value, context=context))
+    )
+    if nonempty and not result:
+        message = f"{context} must be nonempty"
+        raise ValueError(message)
+    if len(set(result)) != len(result):
+        message = f"{context} contains duplicates"
+        raise ValueError(message)
+    if result != tuple(sorted(result)):
+        message = f"{context} must be sorted"
+        raise ValueError(message)
+    return result
+
+
+def _string_pairs(
+    value: JsonValue,
+    *,
+    context: str,
+) -> tuple[tuple[str, str], ...]:
+    result: list[tuple[str, str]] = []
+    for index, item in enumerate(_array(value, context=context)):
+        values = _array(item, context=f"{context}[{index}]")
+        if len(values) != _PAIR_SIZE:
+            message = f"{context}[{index}] must contain two strings"
+            raise ValueError(message)
+        result.append(
+            (
+                _exact_string(
+                    values[0],
+                    context=f"{context}[{index}][0]",
+                ),
+                _exact_string(
+                    values[1],
+                    context=f"{context}[{index}][1]",
+                ),
+            )
+        )
+    pairs = tuple(result)
+    if not pairs:
+        message = f"{context} must be nonempty"
+        raise ValueError(message)
+    if len({name for name, _ in pairs}) != len(pairs):
+        message = f"{context} contains duplicate names"
+        raise ValueError(message)
+    if pairs != tuple(sorted(pairs)):
+        message = f"{context} must be sorted"
+        raise ValueError(message)
+    return pairs
+
+
+def _package_principal(value: JsonValue) -> PackagePrincipalAttestation:
+    document = _object(value, context="package_principal")
+    _closed(
+        document,
+        required=frozenset(
+            {"repository", "intended_coordinate", "known_wider_reach"}
+        ),
+        context="package_principal",
+    )
+    result = PackagePrincipalAttestation(
+        repository=_exact_string(
+            document["repository"],
+            context="package_principal.repository",
+        ),
+        intended_coordinate=_exact_string(
+            document["intended_coordinate"],
+            context="package_principal.intended_coordinate",
+        ),
+        known_wider_reach=_strings(
+            document["known_wider_reach"],
+            context="package_principal.known_wider_reach",
+        ),
+    )
+    if (
+        result.repository != GOVERNANCE_REPOSITORY
+        or result.intended_coordinate != FIRST_SLICE_PACKAGE
+        or result.known_wider_reach != _KNOWN_WIDER_PACKAGE_REACH
+    ):
+        message = "package_principal is not the exact accepted blast radius"
+        raise ValueError(message)
+    return result
+
+
+def _native_evidence(value: JsonValue) -> tuple[NativeEvidence, ...]:
+    evidence: list[NativeEvidence] = []
+    for index, item in enumerate(
+        _array(value, context="approval_environment.evidence")
+    ):
+        document = _object(
+            item,
+            context=f"approval_environment.evidence[{index}]",
+        )
+        _closed(
+            document,
+            required=frozenset({"endpoint", "captured_at", "response_digest"}),
+            context=f"approval_environment.evidence[{index}]",
+        )
+        evidence.append(
+            NativeEvidence(
+                endpoint=_exact_string(
+                    document["endpoint"],
+                    context=f"approval_environment.evidence[{index}].endpoint",
+                ),
+                captured_at=_parse_instant(
+                    document["captured_at"],
+                    context=(
+                        f"approval_environment.evidence[{index}].captured_at"
+                    ),
+                ),
+                response_digest=_sha256(
+                    document["response_digest"],
+                    context=(
+                        "approval_environment."
+                        f"evidence[{index}].response_digest"
+                    ),
+                ),
+            )
+        )
+    result = tuple(evidence)
+    if not result:
+        message = "approval_environment.evidence must be nonempty"
+        raise ValueError(message)
+    endpoints = tuple(item.endpoint for item in result)
+    if len(set(endpoints)) != len(endpoints):
+        message = "approval_environment.evidence repeats an endpoint"
+        raise ValueError(message)
+    if endpoints != tuple(sorted(endpoints)):
+        message = "approval_environment.evidence must be sorted by endpoint"
+        raise ValueError(message)
+    return result
+
+
+def _approval_environment(value: JsonValue) -> ApprovalEnvironmentAttestation:
+    document = _object(value, context="activation.approval_environment")
+    _closed(
+        document,
+        required=frozenset(
+            {
+                "name",
+                "environment_id",
+                "required_reviewers",
+                "prevent_self_review",
+                "can_admins_bypass",
+                "wait_timer_minutes",
+                "deployment_policy",
+                "secret_count",
+                "variables",
+                "same_name_repository_variable_absent",
+                "same_name_organization_variable",
+                "evidence",
+            }
+        ),
+        context="activation.approval_environment",
+    )
+    reviewer_values = _array(
+        document["required_reviewers"],
+        context="approval_environment.required_reviewers",
+    )
+    reviewers: list[ApprovalEnvironmentReviewer] = []
+    for index, item in enumerate(reviewer_values):
+        reviewer = _object(
+            item,
+            context=f"approval_environment.required_reviewers[{index}]",
+        )
+        _closed(
+            reviewer,
+            required=frozenset({"login", "id"}),
+            context=f"approval_environment.required_reviewers[{index}]",
+        )
+        reviewers.append(
+            ApprovalEnvironmentReviewer(
+                login=_exact_string(
+                    reviewer["login"],
+                    context=(
+                        "approval_environment."
+                        f"required_reviewers[{index}].login"
+                    ),
+                ),
+                reviewer_id=_positive_integer(
+                    reviewer["id"],
+                    context=(
+                        f"approval_environment.required_reviewers[{index}].id"
+                    ),
+                ),
+            )
+        )
+    variable_values = _array(
+        document["variables"],
+        context="approval_environment.variables",
+    )
+    variables: list[ApprovalEnvironmentVariable] = []
+    for index, item in enumerate(variable_values):
+        variable = _object(
+            item,
+            context=f"approval_environment.variables[{index}]",
+        )
+        _closed(
+            variable,
+            required=frozenset({"name", "value", "scope"}),
+            context=f"approval_environment.variables[{index}]",
+        )
+        variables.append(
+            ApprovalEnvironmentVariable(
+                name=_exact_string(
+                    variable["name"],
+                    context=f"approval_environment.variables[{index}].name",
+                ),
+                value=_exact_string(
+                    variable["value"],
+                    context=f"approval_environment.variables[{index}].value",
+                ),
+                scope=_exact_string(
+                    variable["scope"],
+                    context=f"approval_environment.variables[{index}].scope",
+                ),
+            )
+        )
+    result = ApprovalEnvironmentAttestation(
+        name=_exact_string(
+            document["name"],
+            context="approval_environment.name",
+        ),
+        environment_id=_positive_integer(
+            document["environment_id"],
+            context="approval_environment.environment_id",
+        ),
+        required_reviewers=tuple(reviewers),
+        prevent_self_review=_boolean(
+            document["prevent_self_review"],
+            context="approval_environment.prevent_self_review",
+        ),
+        can_admins_bypass=_boolean(
+            document["can_admins_bypass"],
+            context="approval_environment.can_admins_bypass",
+        ),
+        wait_timer_minutes=_nonnegative_integer(
+            document["wait_timer_minutes"],
+            context="approval_environment.wait_timer_minutes",
+        ),
+        deployment_policy=_exact_string(
+            document["deployment_policy"],
+            context="approval_environment.deployment_policy",
+        ),
+        secret_count=_nonnegative_integer(
+            document["secret_count"],
+            context="approval_environment.secret_count",
+        ),
+        variables=tuple(variables),
+        same_name_repository_variable_absent=_boolean(
+            document["same_name_repository_variable_absent"],
+            context=(
+                "approval_environment.same_name_repository_variable_absent"
+            ),
+        ),
+        same_name_organization_variable=_exact_string(
+            document["same_name_organization_variable"],
+            context="approval_environment.same_name_organization_variable",
+        ),
+        evidence=_native_evidence(document["evidence"]),
+    )
+    if (
+        result.name != _APPROVAL_ENVIRONMENT
+        or result.required_reviewers
+        != (ApprovalEnvironmentReviewer(_ACCEPTED_OPERATOR, 712433),)
+        or result.prevent_self_review
+        or result.can_admins_bypass
+        or result.wait_timer_minutes != 0
+        or result.deployment_policy != "all"
+        or result.secret_count != 0
+        or result.variables
+        != (
+            ApprovalEnvironmentVariable(
+                name=_APPROVAL_SENTINEL_NAME,
+                value=_APPROVAL_SENTINEL_VALUE,
+                scope="environment",
+            ),
+        )
+        or not result.same_name_repository_variable_absent
+        or result.same_name_organization_variable != "not-applicable-user-owner"
+    ):
+        message = "Approval Environment attestation is not the exact contract"
+        raise ValueError(message)
+    return result
+
+
+def _artifact_retention(value: JsonValue) -> ArtifactRetentionAttestation:
+    document = _object(value, context="activation.artifact_retention")
+    _closed(
+        document,
+        required=frozenset(
+            {"endpoint", "captured_at", "days", "response_digest"}
+        ),
+        context="activation.artifact_retention",
+    )
+    result = ArtifactRetentionAttestation(
+        endpoint=_exact_string(
+            document["endpoint"],
+            context="artifact_retention.endpoint",
+        ),
+        captured_at=_parse_instant(
+            document["captured_at"],
+            context="artifact_retention.captured_at",
+        ),
+        days=_positive_integer(
+            document["days"],
+            context="artifact_retention.days",
+        ),
+        response_digest=_sha256(
+            document["response_digest"],
+            context="artifact_retention.response_digest",
+        ),
+    )
+    if (
+        result.endpoint != _ARTIFACT_RETENTION_ENDPOINT
+        or result.days < _MIN_ARTIFACT_RETENTION_DAYS
+    ):
+        message = "artifact_retention does not prove at least 45 days"
+        raise ValueError(message)
+    return result
+
+
+def _destination_primitive(
+    value: JsonValue,
+) -> DestinationPrimitiveAttestation:
+    document = _object(value, context="activation.destination_primitive")
+    _closed(
+        document,
+        required=frozenset(
+            {
+                "primitive_id",
+                "operation",
+                "captured_at",
+                "race_inputs",
+                "race_results",
+                "evidence_digest",
+            }
+        ),
+        context="activation.destination_primitive",
+    )
+    result = DestinationPrimitiveAttestation(
+        primitive_id=_exact_string(
+            document["primitive_id"],
+            context="destination_primitive.primitive_id",
+        ),
+        operation=_exact_string(
+            document["operation"],
+            context="destination_primitive.operation",
+        ),
+        captured_at=_parse_instant(
+            document["captured_at"],
+            context="destination_primitive.captured_at",
+        ),
+        race_inputs=_string_pairs(
+            document["race_inputs"],
+            context="destination_primitive.race_inputs",
+        ),
+        race_results=_string_pairs(
+            document["race_results"],
+            context="destination_primitive.race_results",
+        ),
+        evidence_digest=_sha256(
+            document["evidence_digest"],
+            context="destination_primitive.evidence_digest",
+        ),
+    )
+    if result.operation != _DESTINATION_PRIMITIVE_OPERATION or any(
+        value != "pass" for _, value in result.race_results
+    ):
+        message = (
+            "destination_primitive lacks passing conditional race evidence"
+        )
+        raise ValueError(message)
+    return result
+
+
+def _activation(value: JsonValue) -> GovernanceActivation:
+    document = _object(value, context="activation")
+    state = _exact_string(document.get("state"), context="activation.state")
+    if state == "blocked":
+        _closed(
+            document,
+            required=frozenset({"state", "blockers"}),
+            context="activation",
+        )
+        blockers = _strings(
+            document["blockers"],
+            context="activation.blockers",
+        )
+        if blockers != _DISABLED_ACTIVATION_BLOCKERS:
+            message = "activation blockers are not the exact disabled gates"
+            raise ValueError(message)
+        return DisabledGovernanceActivation(blockers=blockers)
+    if state == "ready":
+        _closed(
+            document,
+            required=frozenset(
+                {
+                    "state",
+                    "approval_environment",
+                    "artifact_retention",
+                    "destination_primitive",
+                }
+            ),
+            context="activation",
+        )
+        return EnabledGovernanceActivation(
+            approval_environment=_approval_environment(
+                document["approval_environment"]
+            ),
+            artifact_retention=_artifact_retention(
+                document["artifact_retention"]
+            ),
+            destination_primitive=_destination_primitive(
+                document["destination_primitive"]
+            ),
+        )
+    message = "activation.state is invalid"
+    raise ValueError(message)
 
 
 def parse_governance_attestation(
@@ -580,15 +1265,17 @@ def parse_governance_attestation(
             "inspected_at",
             "expires_at",
             "accepted_writers",
+            "accepted_publisher",
+            "access_inventory",
+            "package_principal",
             "limitations",
+            "activation",
             "live_enabled",
         }
     )
-    optional = frozenset({"access_inventory", "access_evidence_digest"})
     _closed(
         document,
         required=required,
-        optional=optional,
         context="Governance attestation",
     )
     if document["schema"] != ATTESTATION_SCHEMA:
@@ -605,10 +1292,21 @@ def parse_governance_attestation(
     ):
         message = "Governance attestation policy/package binding mismatch"
         raise ValueError(message)
-    live_enabled = document["live_enabled"]
-    if not isinstance(live_enabled, bool):
-        message = "Governance attestation live_enabled must be Boolean"
-        raise TypeError(message)
+    issuer = _exact_string(document["issuer"], context="issuer")
+    if issuer != _ACCEPTED_OPERATOR:
+        message = "Governance attestation issuer is not hcoona"
+        raise ValueError(message)
+    accepted_publisher = _exact_string(
+        document["accepted_publisher"],
+        context="accepted_publisher",
+    )
+    if accepted_publisher != _ACCEPTED_OPERATOR:
+        message = "Governance attestation publisher is not hcoona"
+        raise ValueError(message)
+    live_enabled = _boolean(
+        document["live_enabled"],
+        context="Governance attestation live_enabled",
+    )
     inspected_at = _parse_instant(
         document["inspected_at"],
         context="inspected_at",
@@ -623,53 +1321,41 @@ def parse_governance_attestation(
     ):
         message = "Governance attestation expiry must be within 90 days"
         raise ValueError(message)
-    has_inventory = "access_inventory" in document
-    has_evidence = "access_evidence_digest" in document
-    if has_inventory == has_evidence:
-        message = (
-            "Governance attestation requires exactly one access inventory "
-            "or evidence digest"
-        )
-        raise ValueError(message)
-    access_inventory = (
-        _access_inventory(document["access_inventory"])
-        if has_inventory
-        else None
-    )
-    evidence_digest = (
-        _string(
-            document["access_evidence_digest"],
-            context="access_evidence_digest",
-        )
-        if has_evidence
-        else None
-    )
-    if (
-        evidence_digest is not None
-        and _DIGEST_PATTERN.fullmatch(evidence_digest) is None
+    activation = _activation(document["activation"])
+    if live_enabled != isinstance(
+        activation,
+        EnabledGovernanceActivation,
     ):
-        message = "access_evidence_digest must be a prefixed SHA-256"
+        message = "Governance activation state and live_enabled disagree"
         raise ValueError(message)
-    limitations = tuple(
-        _string(item, context="limitations")
-        for item in _array(document["limitations"], context="limitations")
+    if isinstance(activation, EnabledGovernanceActivation):
+        evidence_times = (
+            *(
+                item.captured_at
+                for item in activation.approval_environment.evidence
+            ),
+            activation.artifact_retention.captured_at,
+            activation.destination_primitive.captured_at,
+        )
+        if any(captured_at > inspected_at for captured_at in evidence_times):
+            message = "Governance evidence was captured after inspection"
+            raise ValueError(message)
+    limitations = _strings(
+        document["limitations"],
+        context="limitations",
     )
-    if not limitations:
-        message = "Governance attestation limitations must be nonempty"
-        raise ValueError(message)
-    if len(set(limitations)) != len(limitations):
-        message = "Governance attestation limitations contain duplicates"
-        raise ValueError(message)
     attestation = GovernanceAttestation(
         release_policy=release_policy,
         package=package,
-        issuer=_string(document["issuer"], context="issuer"),
+        issuer=issuer,
         inspected_at=inspected_at,
         expires_at=expires_at,
         accepted_writers=_writer_inventory(document["accepted_writers"]),
-        access_inventory=access_inventory,
-        access_evidence_digest=evidence_digest,
+        accepted_publisher=accepted_publisher,
+        access_inventory=_access_inventory(document["access_inventory"]),
+        package_principal=_package_principal(document["package_principal"]),
         limitations=limitations,
+        activation=activation,
         live_enabled=live_enabled,
     )
     if attestation.to_document() != document:
@@ -697,13 +1383,31 @@ def _utc_now(now: datetime) -> datetime:
     return now.astimezone(UTC)
 
 
-def observe_governance_source(
+def _git_object_id(
+    value: str,
+    *,
+    object_format: str,
+    context: str,
+) -> str:
+    expected_length = _GIT_OBJECT_ID_LENGTHS.get(object_format)
+    if (
+        expected_length is None
+        or type(value) is not str
+        or len(value) != expected_length
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        message = f"{context} is malformed"
+        raise ValueError(message)
+    return value
+
+
+def _read_governance_source(
     source: GovernanceSource,
     client: GovernanceSourceClient,
     *,
     now: datetime,
+    eligibility_main_sha: str | None,
 ) -> GovernanceObservation:
-    """Freshly resolve and read the exact protected Governance source."""
     _validate_source(source)
     observed_at = _utc_now(now)
     protected = client.is_ref_protected(source.repository, source.ref)
@@ -713,33 +1417,66 @@ def observe_governance_source(
     if not protected:
         message = "Governance ref is not protected"
         raise GovernanceRejectionError(message)
-    resolved_commit = client.resolve_ref(source.repository, source.ref)
-    if _SHA_PATTERN.fullmatch(resolved_commit) is None:
-        message = "Governance ref did not resolve to a full commit SHA"
-        raise ValueError(message)
-    blob = client.read_blob(
-        source.repository,
-        resolved_commit,
-        source.path,
-    )
-    if _OBJECT_ID_PATTERN.fullmatch(blob.blob_oid) is None:
-        message = "Governance blob OID is malformed"
-        raise ValueError(message)
     try:
-        attestation = parse_governance_attestation(blob.content)
+        read = client.read_source(
+            source.repository,
+            source.ref,
+            source.path,
+            eligibility_main_sha=eligibility_main_sha,
+        )
+    except GovernanceGitReadError as error:
+        raise GovernanceRejectionError(str(error)) from error
+    if type(read) is not GovernanceGitRead:
+        message = "Governance Git read response is malformed"
+        raise TypeError(message)
+    main_sha = _git_object_id(
+        read.main_sha,
+        object_format=read.object_format,
+        context="Governance main SHA",
+    )
+    blob_oid = _git_object_id(
+        read.blob_oid,
+        object_format=read.object_format,
+        context="Governance blob OID",
+    )
+    lineage_sha = eligibility_main_sha or main_sha
+    _git_object_id(
+        lineage_sha,
+        object_format=read.object_format,
+        context="Governance eligibility main SHA",
+    )
+    try:
+        attestation = parse_governance_attestation(read.content)
     except (TypeError, ValueError, UnicodeError) as error:
         raise GovernanceRejectionError(str(error)) from error
-    content_sha256 = f"sha256:{hashlib.sha256(blob.content).hexdigest()}"
-    if content_sha256 != attestation.content_digest:
+    content_digest = f"sha256:{hashlib.sha256(read.content).hexdigest()}"
+    if content_digest != attestation.content_digest:
         message = "Governance canonical content digest mismatch"
         raise GovernanceRejectionError(message)
     return GovernanceObservation(
         source=source,
-        resolved_commit=resolved_commit,
-        blob_oid=blob.blob_oid,
-        content_sha256=content_sha256,
+        eligibility_main_sha=lineage_sha,
+        current_main_sha=main_sha,
+        object_format=read.object_format,
+        blob_oid=blob_oid,
+        canonical_content_digest=content_digest,
         observed_at=observed_at,
         attestation=attestation,
+    )
+
+
+def observe_governance_source(
+    source: GovernanceSource,
+    client: GovernanceSourceClient,
+    *,
+    now: datetime,
+) -> GovernanceObservation:
+    """Freshly resolve and read the exact protected Governance source."""
+    return _read_governance_source(
+        source,
+        client,
+        now=now,
+        eligibility_main_sha=None,
     )
 
 
@@ -756,12 +1493,39 @@ def governance_observation_provenance(
                 ("repository", observation.source.repository),
                 ("ref", observation.source.ref),
                 ("path", observation.source.path),
-                ("resolved-commit", observation.resolved_commit),
+                (
+                    "eligibility-main-sha",
+                    observation.eligibility_main_sha,
+                ),
+                ("git-object-format", observation.object_format),
                 ("blob-oid", observation.blob_oid),
-                ("content-sha256", observation.content_sha256),
+                (
+                    "canonical-content-digest",
+                    observation.canonical_content_digest,
+                ),
             )
         )
     )
+
+
+def _provenance_value(
+    provenance: tuple[tuple[str, str], ...],
+    *,
+    field: str,
+) -> str:
+    if (
+        type(provenance) is not tuple
+        or provenance != tuple(sorted(provenance))
+        or len(dict(provenance)) != len(provenance)
+    ):
+        message = "Governance provenance is malformed"
+        raise ValueError(message)
+    values = dict(provenance)
+    value = values.get(field)
+    if type(value) is not str or not value:
+        message = f"Governance provenance is missing {field}"
+        raise ValueError(message)
+    return value
 
 
 def require_fresh_governance_identity(  # noqa: PLR0913
@@ -770,16 +1534,26 @@ def require_fresh_governance_identity(  # noqa: PLR0913
     *,
     now: datetime,
     expected_provenance: tuple[tuple[str, str], ...],
-    expected_content_sha256: str,
+    expected_canonical_content_digest: str,
     expected_expires_at: str,
     expected_live_enabled: bool,
 ) -> GovernanceObservation:
     """Require current fixed-source Governance identity and validity."""
-    observation = observe_governance_source(source, client, now=now)
+    eligibility_main_sha = _provenance_value(
+        expected_provenance,
+        field="eligibility-main-sha",
+    )
+    observation = _read_governance_source(
+        source,
+        client,
+        now=now,
+        eligibility_main_sha=eligibility_main_sha,
+    )
     provenance = governance_observation_provenance(observation)
     if (
         provenance != expected_provenance
-        or observation.content_sha256 != expected_content_sha256
+        or observation.canonical_content_digest
+        != expected_canonical_content_digest
         or _format_instant(observation.attestation.expires_at)
         != expected_expires_at
         or observation.attestation.live_enabled is not expected_live_enabled
@@ -1059,35 +1833,38 @@ def _validate_governance_binding(
         message = "Live Eligibility Decision Governance binding type mismatch"
         raise TypeError(message)
     _validate_source(binding.source)
-    if _SHA_PATTERN.fullmatch(binding.resolved_commit) is None:
-        message = "Live Eligibility Decision Governance commit is malformed"
-        raise ValueError(message)
-    if _OBJECT_ID_PATTERN.fullmatch(binding.blob_oid) is None:
-        message = "Live Eligibility Decision Governance blob OID is malformed"
-        raise ValueError(message)
-    for field, value in (
-        ("content-sha256", binding.content_sha256),
-        ("attestation-content-digest", binding.attestation_content_digest),
+    _git_object_id(
+        binding.eligibility_main_sha,
+        object_format=binding.object_format,
+        context="Live Eligibility Decision Governance eligibility main SHA",
+    )
+    _git_object_id(
+        binding.blob_oid,
+        object_format=binding.object_format,
+        context="Live Eligibility Decision Governance blob OID",
+    )
+    if (
+        type(binding.canonical_content_digest) is not str
+        or _DIGEST_PATTERN.fullmatch(binding.canonical_content_digest) is None
     ):
-        if type(value) is not str or _DIGEST_PATTERN.fullmatch(value) is None:
-            message = (
-                f"Live Eligibility Decision Governance {field} is malformed"
-            )
-            raise ValueError(message)
-    if binding.content_sha256 != binding.attestation_content_digest:
+        message = (
+            "Live Eligibility Decision Governance canonical content digest "
+            "is malformed"
+        )
+        raise ValueError(message)
+    if type(binding.attestation) is not GovernanceAttestation:
+        message = (
+            "Live Eligibility Decision Governance attestation type mismatch"
+        )
+        raise TypeError(message)
+    if binding.canonical_content_digest != binding.attestation.content_digest:
         message = (
             "Live Eligibility Decision Governance attestation identity mismatch"
         )
         raise ValueError(message)
-    if type(binding.live_enabled) is not bool:
-        message = (
-            "Live Eligibility Decision Governance live-enabled must be Boolean"
-        )
-        raise TypeError(message)
-    _string(binding.issuer, context="governance.issuer")
     observed_at = _utc_now(binding.observed_at)
-    inspected_at = _utc_now(binding.inspected_at)
-    expires_at = _utc_now(binding.expires_at)
+    inspected_at = _utc_now(binding.attestation.inspected_at)
+    expires_at = _utc_now(binding.attestation.expires_at)
     lifetime = expires_at - inspected_at
     if lifetime <= timedelta(0) or lifetime > timedelta(
         days=binding.source.max_age_days
@@ -1121,17 +1898,14 @@ def _decision_governance(
             {
                 "repository",
                 "ref",
-                "resolved-commit",
+                "eligibility-main-sha",
                 "path",
+                "git-object-format",
                 "blob-oid",
-                "content-sha256",
+                "canonical-content-digest",
                 "observed-at",
                 "max-age-days",
-                "live-enabled",
-                "issuer",
-                "inspected-at",
-                "expires-at",
-                "attestation-content-digest",
+                "admitted-attestation",
             }
         ),
         context="Live Eligibility Decision.governance",
@@ -1155,41 +1929,36 @@ def _decision_governance(
                 field="governance.max-age-days",
             ),
         ),
-        resolved_commit=_decision_sha(
-            document["resolved-commit"],
-            field="governance.resolved-commit",
+        eligibility_main_sha=_nonempty_exact_string(
+            document["eligibility-main-sha"],
+            field="governance.eligibility-main-sha",
+        ),
+        object_format=_nonempty_exact_string(
+            document["git-object-format"],
+            field="governance.git-object-format",
         ),
         blob_oid=_nonempty_exact_string(
             document["blob-oid"],
             field="governance.blob-oid",
         ),
-        content_sha256=_decision_digest(
-            document["content-sha256"],
-            field="governance.content-sha256",
+        canonical_content_digest=_decision_digest(
+            document["canonical-content-digest"],
+            field="governance.canonical-content-digest",
         ),
         observed_at=_parse_instant(
             document["observed-at"],
             context="governance.observed-at",
         ),
-        live_enabled=_decision_boolean(
-            document["live-enabled"],
-            field="governance.live-enabled",
-        ),
-        issuer=_string(
-            document["issuer"],
-            context="governance.issuer",
-        ),
-        inspected_at=_parse_instant(
-            document["inspected-at"],
-            context="governance.inspected-at",
-        ),
-        expires_at=_parse_instant(
-            document["expires-at"],
-            context="governance.expires-at",
-        ),
-        attestation_content_digest=_decision_digest(
-            document["attestation-content-digest"],
-            field="governance.attestation-content-digest",
+        attestation=parse_governance_attestation(
+            canonicalize(
+                _object(
+                    document["admitted-attestation"],
+                    context=(
+                        "Live Eligibility Decision.governance."
+                        "admitted-attestation"
+                    ),
+                )
+            )
         ),
     )
     _validate_governance_binding(binding)
@@ -1343,21 +2112,29 @@ def admit_live_eligibility_decision(  # noqa: C901, PLR0912, PLR0913, PLR0915
         message = "Live Eligibility Decision is not a closed passing decision"
         raise ValueError(message)
     original_observation_valid = (
-        governance.inspected_at
+        governance.attestation.inspected_at
         <= governance.observed_at
-        < governance.expires_at
+        < governance.attestation.expires_at
     )
     requires_current_freshness = (
         admission_mode is LiveEligibilityAdmissionMode.CURRENT_FRESHNESS
     )
     if (
-        not governance.live_enabled
+        not governance.attestation.live_enabled
         or not original_observation_valid
         or governance.observed_at > admitted_at
-        or (requires_current_freshness and governance.expires_at <= admitted_at)
+        or (
+            requires_current_freshness
+            and governance.attestation.expires_at <= admitted_at
+        )
     ):
         message = (
             "Live Eligibility Decision Governance is not fresh and enabled"
+        )
+        raise ValueError(message)
+    if not _destination_primitive_is_admitted(governance.attestation):
+        message = (
+            "Live Eligibility Decision destination primitive is not implemented"
         )
         raise ValueError(message)
     admitted = AdmittedLiveEligibilityDecision(
@@ -1405,6 +2182,8 @@ def evaluate_live_eligibility(  # noqa: PLR0913
         diagnostics.append(f"static-reference-{static_reference.error_kind}")
     if not governance.attestation.live_enabled:
         diagnostics.append("governance-live-disabled")
+    elif not _destination_primitive_is_admitted(governance.attestation):
+        diagnostics.append(_DESTINATION_PRIMITIVE_UNPROVEN)
     if now < governance.attestation.inspected_at:
         diagnostics.append("governance-attestation-not-yet-valid")
     if now >= governance.attestation.expires_at:

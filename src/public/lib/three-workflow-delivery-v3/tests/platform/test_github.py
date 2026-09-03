@@ -1,4 +1,4 @@
-"""Focused tests for the concrete GitHub Governance REST client."""
+"""Focused tests for GitHub protection and Governance authority clients."""
 
 # ruff: noqa: D103
 
@@ -7,15 +7,19 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from functools import partial
 from http.client import HTTPMessage
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from three_workflow_delivery_v3.platform.github import (
+    GitHubGovernanceClient,
     GitHubRestClient,
     GitHubRestError,
     _NoRedirect,
 )
+from three_workflow_delivery_v3.release.governance_git import GovernanceGitRead
 
 TOKEN = "real-token-sent-to-fake-transport"  # noqa: S105
 DEFAULT_TIMEOUT = 20
@@ -185,152 +189,131 @@ def test_ref_protection_malformed_success_response_is_unknown(
 
 
 @pytest.mark.parametrize(
-    ("payload", "message"),
+    "eligibility_main_sha",
     [
-        pytest.param(
-            b"{", "GitHub REST returned malformed JSON", id="api-json"
-        ),
-        pytest.param(
-            json.dumps(
-                {
-                    "sha": "b" * 40,
-                    "encoding": "base64",
-                    "content": "***",
-                }
-            ).encode(),
-            "Governance content base64 is malformed",
-            id="base64",
-        ),
-        pytest.param(
-            json.dumps(
-                {
-                    "sha": "b" * 40,
-                    "encoding": "hex",
-                    "content": "00",
-                }
-            ).encode(),
-            "Governance content response is malformed",
-            id="protocol",
-        ),
+        pytest.param(None, id="initial-observation"),
+        pytest.param("a" * 40, id="continuity-proof"),
     ],
 )
-def test_governance_content_transport_failures_remain_rest_errors(
-    payload: bytes,
-    message: str,
+def test_governance_client_delegates_source_to_isolated_git_authority(
+    eligibility_main_sha: str | None,
 ) -> None:
-    def opener(request, timeout: int) -> bytes:
-        del request, timeout
-        return payload
+    expected = GovernanceGitRead(
+        main_sha="c" * 40,
+        object_format="sha1",
+        blob_oid="b" * 40,
+        content=b'{"schema":"replacement-governance"}',
+    )
+    rest_calls: list[tuple[str, str]] = []
+    git_calls: list[dict[str, object]] = []
 
-    client = GitHubRestClient(
+    def is_ref_protected(repository: str, ref: str) -> bool:
+        rest_calls.append((repository, ref))
+        return True
+
+    def read(**arguments: object) -> GovernanceGitRead:
+        git_calls.append(arguments)
+        return expected
+
+    client = GitHubGovernanceClient(
         repository="hcoona/three",
         token=TOKEN,
-        opener=opener,
+        rest_client=SimpleNamespace(is_ref_protected=is_ref_protected),
+        git_reader=SimpleNamespace(read=read),
     )
 
-    with pytest.raises(GitHubRestError) as raised:
-        client.read_blob(
-            "hcoona/three",
-            "a" * 40,
+    path = ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json"
+    actual = client.read_source(
+        repository="hcoona/three",
+        ref="refs/heads/main",
+        path=path,
+        eligibility_main_sha=eligibility_main_sha,
+    )
+
+    assert actual is expected
+    assert (actual.main_sha, actual.blob_oid, actual.content) == (
+        "c" * 40,
+        "b" * 40,
+        b'{"schema":"replacement-governance"}',
+    )
+    assert git_calls == [
+        {
+            "repository": "hcoona/three",
+            "ref": "refs/heads/main",
+            "path": path,
+            "eligibility_main_sha": eligibility_main_sha,
+        }
+    ]
+    assert rest_calls == []
+
+
+def test_governance_client_keeps_branch_protection_on_rest() -> None:
+    rest_calls: list[tuple[str, str]] = []
+    git_calls: list[dict[str, object]] = []
+
+    def is_ref_protected(repository: str, ref: str) -> bool:
+        rest_calls.append((repository, ref))
+        return False
+
+    def read(**arguments: object) -> GovernanceGitRead:
+        git_calls.append(arguments)
+        raise AssertionError
+
+    client = GitHubGovernanceClient(
+        repository="hcoona/three",
+        token=TOKEN,
+        rest_client=SimpleNamespace(is_ref_protected=is_ref_protected),
+        git_reader=SimpleNamespace(read=read),
+    )
+
+    protected = client.is_ref_protected(
+        "hcoona/three",
+        "refs/heads/main",
+    )
+
+    assert protected is False
+    assert rest_calls == [("hcoona/three", "refs/heads/main")]
+    assert git_calls == []
+
+
+@pytest.mark.parametrize("operation", ["protection", "source"])
+def test_governance_client_rejects_repository_mismatch_before_delegation(
+    operation: str,
+) -> None:
+    calls: list[object] = []
+
+    def is_ref_protected(repository: str, ref: str) -> bool:
+        calls.append((repository, ref))
+        return True
+
+    def read(**arguments: object) -> GovernanceGitRead:
+        calls.append(arguments)
+        raise AssertionError
+
+    client = GitHubGovernanceClient(
+        repository="hcoona/three",
+        token=TOKEN,
+        rest_client=SimpleNamespace(is_ref_protected=is_ref_protected),
+        git_reader=SimpleNamespace(read=read),
+    )
+
+    invoke = (
+        partial(
+            client.is_ref_protected,
+            "other/repository",
+            "refs/heads/main",
+        )
+        if operation == "protection"
+        else partial(
+            client.read_source,
+            "other/repository",
+            "refs/heads/main",
             ".github/workflow-delivery/governance/"
             "hcoona-release-smoke-npm.json",
         )
-
-    assert str(raised.value) == message
-    assert type(raised.value).__name__ != "GovernanceRejectionError"
-
-
-@pytest.mark.parametrize(
-    "line_separator",
-    [
-        pytest.param("\r", id="cr"),
-        pytest.param("\n", id="lf"),
-        pytest.param("\r\n", id="crlf"),
-    ],
-)
-def test_read_blob_accepts_cr_lf_wrapped_base64(
-    line_separator: str,
-) -> None:
-    expected_content = b"policy\nbytes\x00"
-    encoded_content = "cG9saWN5CmJ5dGVzAA=="
-    wrapped_content = line_separator.join(
-        (encoded_content[:5], encoded_content[5:13], encoded_content[13:])
     )
-    blob_oid = "b" * 40
-    commit = "a" * 40
-    path = ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json"
-    seen: list[str] = []
+    with pytest.raises(GitHubRestError, match="repository mismatch"):
+        invoke()
 
-    def opener(request, timeout: int) -> bytes:
-        assert timeout == DEFAULT_TIMEOUT
-        seen.append(request.full_url)
-        return json.dumps(
-            {
-                "sha": blob_oid,
-                "encoding": "base64",
-                "content": wrapped_content,
-            }
-        ).encode()
-
-    client = GitHubRestClient(
-        repository="hcoona/three",
-        token=TOKEN,
-        opener=opener,
-    )
-
-    blob = client.read_blob("hcoona/three", commit, path)
-
-    assert (blob.blob_oid, blob.content) == (blob_oid, expected_content)
-    assert seen == [
-        f"https://api.github.com/repos/hcoona/three/contents/{path}?ref={commit}"
-    ]
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        pytest.param("cG9saW*5CmJ5dGVzAA==", id="invalid-alphabet"),
-        pytest.param(
-            "cG9s\r\naW*5CmJ5dGVzAA==",
-            id="wrapped-invalid-alphabet",
-        ),
-        pytest.param("cG9s aWN5CmJ5dGVzAA==", id="space"),
-        pytest.param("cG9s\taWN5CmJ5dGVzAA==", id="tab"),
-        pytest.param("Zg=", id="missing-padding"),
-        pytest.param("Z\r\ng=", id="wrapped-missing-padding"),
-        pytest.param("Zg===", id="excess-padding"),
-        pytest.param("Zg==\r\n=", id="wrapped-excess-padding"),
-    ],
-)
-def test_read_blob_rejects_non_cr_lf_or_malformed_base64(
-    content: str,
-) -> None:
-    commit = "a" * 40
-    path = ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json"
-    seen: list[str] = []
-
-    def opener(request, timeout: int) -> bytes:
-        assert timeout == DEFAULT_TIMEOUT
-        seen.append(request.full_url)
-        return json.dumps(
-            {
-                "sha": "b" * 40,
-                "encoding": "base64",
-                "content": content,
-            }
-        ).encode()
-
-    client = GitHubRestClient(
-        repository="hcoona/three",
-        token=TOKEN,
-        opener=opener,
-    )
-
-    with pytest.raises(GitHubRestError) as raised:
-        client.read_blob("hcoona/three", commit, path)
-
-    assert str(raised.value) == "Governance content base64 is malformed"
-    assert raised.value.status_code is None
-    assert seen == [
-        f"https://api.github.com/repos/hcoona/three/contents/{path}?ref={commit}"
-    ]
+    assert calls == []
+    assert calls == []
