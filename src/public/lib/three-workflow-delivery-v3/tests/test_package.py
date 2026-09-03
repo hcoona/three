@@ -21,6 +21,7 @@ APPROVED_RELEASE_MODULES = (
     "__init__.py",
     "eligibility.py",
     "finalizer.py",
+    "governance_git.py",
     "identity.py",
     "live.py",
     "planner.py",

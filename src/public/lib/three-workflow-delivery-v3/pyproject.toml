@@ -7,6 +7,7 @@ artifacts = [
   "src/three_workflow_delivery_v3/release/__init__.py",
   "src/three_workflow_delivery_v3/release/eligibility.py",
   "src/three_workflow_delivery_v3/release/finalizer.py",
+  "src/three_workflow_delivery_v3/release/governance_git.py",
   "src/three_workflow_delivery_v3/release/identity.py",
   "src/three_workflow_delivery_v3/release/live.py",
   "src/three_workflow_delivery_v3/release/planner.py",
