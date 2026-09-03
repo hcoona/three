@@ -3337,3 +3337,26 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - The corrected PR head requires fresh checks and review. No approval, merge,
   manual rerun, Live, Governance, Environment, publication, package, tag,
   cleanup, or later-unit work occurred.
+
+## [2026-09-03] query | Start Governance authority contraction
+
+- PR #648 was rebase-merged as
+  `20740ade74a0b25d8b2ca300e63e12c5c4f0879a`; its merged tree exactly
+  matches the reviewed PR-head tree. Post-merge Continuous Integration run
+  `33717307779` and CodeQL run `33717307744` succeeded.
+- The user's continuation authorized the next local disabled
+  Governance/authorization unit. Branch
+  `workflow-delivery-v3-governance-authority` starts from that exact merged
+  `main`.
+- Requirements and design confirmation selected the strict replacement
+  Governance schema fence, isolated complete-history Git proof,
+  `eligibility-main-sha` path-touch anti-rollback, pre-wait Approval Bundle,
+  sole Publication Authorization, and exact-satisfied no-authorization path.
+- The protected Governance document will migrate to the replacement schema
+  while remaining disabled. Its disabled state will declare unsatisfied
+  activation gates rather than inventing native, retention, or
+  destination-race evidence.
+- No current destination primitive is admitted; absent destination state
+  remains unsupported. Marker, Result, final Outcome, activation, cleanup,
+  external-state refresh, push, PR, protected merge, dispatch, approval, and
+  publication remain outside the current authorization.
