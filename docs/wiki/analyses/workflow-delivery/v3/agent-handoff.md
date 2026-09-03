@@ -58,12 +58,33 @@ requests mechanism extraction and revalidation. Git and the append-only
   findings. Workflow review found one missing all-job attempt-one invariant;
   independent adjudication retained it, the guards were added, and closure
   review reported no findings.
-- This next unit is data-model-only: migrate strict schemas and frozen/slotted
-  Python records to current-Attempt authority, preserve simulation and CI
-  run-attempt contracts, remove legacy normal-Live history/group/profile
-  bindings, and retain Provider/compiler fact-authority boundaries. It does
-  not implement the later Governance/authorization, publication/finalization,
-  workflow, activation, or cleanup units.
+- The final dependency-ordered record-model phase is complete locally.
+  Actions-history discovery and transport, Environment Profile,
+  capability-group records and bundles, and standalone Receipt transport are
+  retired. Receipt is immutable evidence nested in `ActionResult`, and
+  successful Attempt Outcomes bind direct ActionResult lineage.
+- Current-authority admission now validates and agrees the payload and trusted
+  purposes before selecting the purpose-specific schema. Publication Snapshot
+  and transitional Capability Admission records each permit zero or one
+  action closure and fail closed on more than one.
+- Target-derived `control` values are consistent across the retained records.
+  Successful action-bearing outcomes require one capability-admission digest
+  and one ActionResult digest; successful no-op outcomes require neither.
+- The final affected suites passed 544 record-contraction tests and 53 Live
+  boundary tests. The complete staged repository gate passed 3,671 Workflow
+  Delivery v3 tests, actionlint, Ruff, formatting, Pyrefly, canonical
+  static-reference admission, and the staged diff check.
+- Independent runtime and platform/workflow reviews reported no findings.
+  Scope challenges were rejected where they would have added an undocumented
+  projection limit or duplicated existing purpose-ordering coverage. The
+  record reviewer finding was retained only for multi-action Capability
+  Admission; two independent adjudicators preserved the transitional
+  zero-action path. Fresh same-scope and adversarial closure reviewers both
+  reported no findings.
+- The record-model unit remains disabled and is not yet delivered. Later
+  Governance/authorization, final no-op topology, marker admission and
+  ordering, conclusion semantics, activation, and cleanup remain outside this
+  unit.
 - The runtime remains disabled through
   `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with
   `live_enabled: false`.
@@ -71,14 +92,13 @@ requests mechanism extraction and revalidation. Git and the append-only
 - Retry-5 destination acceptance is complete historical evidence. Exact `.17` through `.20` versions and tags remain
   retained and must not be reused; detailed chronology stays in Git and the log.
 
-The immediate boundary is to retire the remaining legacy normal-Live history,
-Environment Profile, capability-group, and standalone Receipt transport
-surfaces within the record-model unit, then close record-model integration.
-Preserve the completed Provider/compiler and Attempt/transport contractions;
-do not introduce a universal record envelope, history fallback, compatibility
-parser, or default attempt. Normal Git delivery of this disabled implementation
-is permitted. Live activation, operational external mutation, and work
-assigned to later implementation units remain unauthorized.
+The record-model unit is locally complete. The immediate boundary is its final
+human-reviewable local commit and, only when requested, normal Git delivery
+through a separate protected PR. Do not reopen the completed contractions,
+introduce a universal record envelope, history fallback, compatibility parser,
+or default attempt, or start a later implementation unit. Live activation,
+operational external mutation, and work assigned to later implementation units
+remain unauthorized.
 
 ## Hot Context
 
@@ -99,6 +119,16 @@ assigned to later implementation units remain unauthorized.
 - Normal-Live authority is current-Attempt only. Native Actions history is diagnostic.
 - Every authoritative normal-Live job guards attempt 1; normal-Live records omit run attempt. Simulation keeps its
   existing run-attempt identity.
+- Capability groups and standalone Receipt transport are retired. A successful
+  `ActionResult` owns its Receipt evidence directly, and Attempt Outcome binds
+  the ActionResult digest directly.
+- Publication Snapshot admits at most one materialized action. Transitional
+  Capability Admission admits zero or one action closure; zero remains
+  non-authorizing until the later no-op Governance/authorization redesign.
+- Activation remains blocked on later runtime work: durable mutation-marker
+  admission, Governance completion before marker creation, pre-marker failure
+  Result formation, direct durable-marker evidence, exact success formation,
+  and faithful cancelled, failed, and dependency-skipped conclusion semantics.
 - Retry is a new dispatch and full rebuild. GitHub rerun is unsupported.
 - Each retained static-reference selector binds one exact Ecosystem Authority
   Graph. Authoritative manifest or lockfile state, stable official libraries or
@@ -356,25 +386,21 @@ Do not infer policy from stale runtime behavior or archived designs.
 2. Confirm the branch descends from exact reconciled `main@14cfc212`; if
    `origin/main` advances before delivery, merge it without rewriting reviewed
    commits and restart integrated-head validation and review.
-3. Preserve the completed Provider/compiler contextual run binding: normal
-   Live omits and rejects `github.run_attempt`, while simulation and CI retain
-   their existing required binding.
-4. Preserve the completed Attempt/transport contraction: normal-Live Intent,
-   Attempt Identity, records, artifacts, and admission omit run attempt; all
-   authoritative jobs independently guard attempt one.
-5. Retire legacy normal-Live history, Environment Profile, capability-group,
-   and standalone Receipt transport record surfaces only within the data-model
-   boundary. Preserve concurrency/resource bindings and defer runtime
-   publication/finalizer/workflow changes.
-6. Close record-model integration without adding compatibility schemas,
-   fallback authority, or work owned by later implementation units.
-7. Run complete affected tests, root HK, and hooks, then perform independent
-   multi-angle review and atomic TP/FP adjudication until no findings remain.
-8. Deliver the record-model unit through a separate protected PR and wait for
+3. Treat the completed Provider/compiler, Attempt/transport, and legacy-record
+   contractions as one closed record-model unit. Preserve its current-Attempt
+   authority, Simulation/CI bindings, direct ActionResult lineage, and
+   zero-or-one action cardinalities.
+4. Before delivery, rerun complete affected tests, root HK, hooks, and
+   independent multi-angle review against the exact integrated head.
+5. Deliver the record-model unit through a separate protected PR and wait for
    delivery-specific human approval before merge.
-9. Continue later disabled contraction only in dependency order:
-   Governance/authorization, publication/finalization, workflows, and
-   separately authorized cleanup.
+6. Continue later disabled contraction only in dependency order, beginning
+   with Governance/authorization and final no-op topology, then marker-aware
+   publication/finalization and workflows, activation, and separately
+   authorized cleanup.
+7. Treat the deferred marker, success, failure, cancellation, and
+   dependency-skipped semantics as activation blockers; do not infer their
+   resolution from the current disabled runtime.
 
 Do not perform Live or operational external work.
 
@@ -432,8 +458,8 @@ applicable documentation and repository gates but keeps the same validate-before
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
 
 The replacement baseline and first disabled implementation unit are merged.
-The Provider/compiler and Attempt/transport phases of record-model contraction
-are complete on their own branch from exact reconciled `main`. Legacy-record
-retirement and record-model integration are next. Later disabled units remain
-dependency-ordered. External-resource, cleanup, protected-merge, and Live
+The complete record-model contraction is locally closed on its own branch from
+exact reconciled `main`; normal Git delivery remains pending. Later disabled
+units remain dependency-ordered, beginning with Governance/authorization and
+the final no-op topology. External-resource, cleanup, protected-merge, and Live
 boundaries still require their own explicit authorization.

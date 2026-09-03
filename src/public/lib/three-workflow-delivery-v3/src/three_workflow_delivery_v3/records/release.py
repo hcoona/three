@@ -75,12 +75,6 @@ PUBLICATION_OBSERVATION_REFERENCE_SCHEMA = (
     "workflow-delivery/v3/publication-observation-reference"
 )
 PUBLICATION_SNAPSHOT_SCHEMA = "workflow-delivery/v3/publication-snapshot"
-HISTORICAL_EXECUTION_RECORD_SCHEMA = (
-    "workflow-delivery/v3/historical-execution-record"
-)
-EXECUTION_HISTORY_ADMISSION_SNAPSHOT_SCHEMA = (
-    "workflow-delivery/v3/execution-history-admission-snapshot"
-)
 RELEASE_ATTEMPT_BINDING_SCHEMA = "workflow-delivery/v3/release-attempt-binding"
 AUTHORIZATION_RECORD_SCHEMA = "workflow-delivery/v3/authorization-record"
 CAPABILITY_ADMISSION_DECISION_SCHEMA = (
@@ -88,9 +82,6 @@ CAPABILITY_ADMISSION_DECISION_SCHEMA = (
 )
 ACTION_RESULT_SCHEMA = "workflow-delivery/v3/action-result"
 RECEIPT_SCHEMA = "workflow-delivery/v3/receipt"
-CAPABILITY_GROUP_RESULT_BUNDLE_SCHEMA = (
-    "workflow-delivery/v3/capability-group-result-bundle"
-)
 ATTEMPT_OUTCOME_SCHEMA = "workflow-delivery/v3/attempt-outcome"
 SIMULATION_OUTCOME_SCHEMA = "workflow-delivery/v3/simulation-outcome"
 NPMJS_OBSERVATION_CONTRACT_ID = "npm/npmjs-public-observation-v1"
@@ -196,6 +187,14 @@ def _sha(value: object, *, field: str) -> str:
     accepted = _string(value, field=field)
     if _SHA_PATTERN.fullmatch(accepted) is None:
         message = f"{field} must be 40 lowercase hexadecimal characters"
+        raise ValueError(message)
+    return accepted
+
+
+def _target_control(value: object, *, target: str, field: str) -> str:
+    accepted = _string(value, field=field)
+    if accepted != f"workflow-delivery-v3:{target}":
+        message = f"{field} target binding mismatch"
         raise ValueError(message)
     return accepted
 
@@ -647,7 +646,11 @@ class SimulationBinding:
         _sha(self.target, field="simulation binding.target")
         _choice(self.channel, _CHANNELS, field="simulation binding.channel")
         _string(self.release_unit, field="simulation binding.release_unit")
-        _string(self.control, field="simulation binding.control")
+        _target_control(
+            self.control,
+            target=self.target,
+            field="Simulation Binding control",
+        )
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical Simulation Binding."""
@@ -2323,16 +2326,6 @@ def publication_lock_group(projection: DestinationProjection) -> str:
     return publication_lock_projection(projection)
 
 
-def publication_capability_group(projection: DestinationProjection) -> str:
-    """Return the exact supported capability group identity."""
-    _exact(
-        projection,
-        DestinationProjection,
-        field="publication capability group.projection",
-    )
-    return f"capability-group:{projection.destination_id}:package-publication"
-
-
 def publication_capability_requirements(
     projection: DestinationProjection,
 ) -> tuple[str, ...]:
@@ -2411,12 +2404,11 @@ class PublicationAction:
     mutable_resource_keys: tuple[str, ...]
     lock_projection: str
     lock_group: str
-    capability_group: str
     capability_requirements: tuple[str, ...]
     expected_result: str
     receipt_contract: str
 
-    def __post_init__(self) -> None:  # noqa: C901, PLR0912, PLR0915
+    def __post_init__(self) -> None:  # noqa: C901, PLR0915
         """Reject incomplete or substituted live action bindings."""
         _string(self.action_id, field="publication action.action_id")
         _exact(
@@ -2453,10 +2445,6 @@ class PublicationAction:
             field="publication action.lock_projection",
         )
         _string(self.lock_group, field="publication action.lock_group")
-        _string(
-            self.capability_group,
-            field="publication action.capability_group",
-        )
         _string_tuple(
             self.capability_requirements,
             field="publication action.capability_requirements",
@@ -2505,11 +2493,6 @@ class PublicationAction:
         if self.lock_group != publication_lock_group(self.projection):
             message = "Publication Action lock group is not exact"
             raise ValueError(message)
-        if self.capability_group != publication_capability_group(
-            self.projection
-        ):
-            message = "Publication Action capability group is not exact"
-            raise ValueError(message)
         if self.capability_requirements != publication_capability_requirements(
             self.projection
         ):
@@ -2543,7 +2526,6 @@ class PublicationAction:
                 "mutable-resource-keys": list(self.mutable_resource_keys),
                 "lock-projection": self.lock_projection,
                 "lock-group": self.lock_group,
-                "capability-group": self.capability_group,
                 "capability-requirements": list(self.capability_requirements),
                 "expected-result": self.expected_result,
                 "receipt-contract": self.receipt_contract,
@@ -2590,6 +2572,18 @@ class PublicationObservationReference:
         }
 
 
+def _validate_materialized_actions(
+    actions: tuple[PublicationAction, ...],
+) -> None:
+    _exact(actions, tuple, field="publication.materialized_actions")
+    if any(type(action) is not PublicationAction for action in actions):
+        message = "Publication Snapshot action has the wrong type"
+        raise TypeError(message)
+    if len(actions) > 1:
+        message = "Publication Snapshot permits at most one action"
+        raise ValueError(message)
+
+
 @dataclass(frozen=True, slots=True)
 class PublicationSnapshot:
     """Second sealed live Snapshot after qualification and observation."""
@@ -2604,7 +2598,7 @@ class PublicationSnapshot:
     observation_references: tuple[PublicationObservationReference, ...]
     materialized_actions: tuple[PublicationAction, ...]
 
-    def __post_init__(self) -> None:  # noqa: C901, PLR0912
+    def __post_init__(self) -> None:  # noqa: C901
         """Reject placeholder, incomplete, or simulation second Snapshots."""
         _exact(
             self.attempt, ReleaseAttemptIdentity, field="publication.attempt"
@@ -2666,17 +2660,7 @@ class PublicationSnapshot:
         if not artifact_digests or len(artifact_digests) != len(output_ids):
             message = "Publication Snapshot requires complete artifacts"
             raise ValueError(message)
-        _exact(
-            self.materialized_actions,
-            tuple,
-            field="publication.materialized_actions",
-        )
-        if any(
-            type(action) is not PublicationAction
-            for action in self.materialized_actions
-        ):
-            message = "Publication Snapshot action has the wrong type"
-            raise TypeError(message)
+        _validate_materialized_actions(self.materialized_actions)
         action_projection_ids = tuple(
             action.projection.projection_id
             for action in self.materialized_actions
@@ -2745,211 +2729,6 @@ class PublicationSnapshot:
     @property
     def snapshot_digest(self) -> str:
         """Return the canonical Publication Snapshot digest."""
-        return canonical_sha256(self.to_document())
-
-
-@dataclass(frozen=True, slots=True)
-class HistoricalExecutionRecord:
-    """One history-only record with platform facts kept separate."""
-
-    execution: BuddyExecutionIdentity
-    artifact_id: int
-    artifact_digest: str
-    payload_digest: str
-    source_workflow_run_id: int
-    source_workflow_run_node_id: str
-    source_head_sha: str
-    artifact_metadata: tuple[tuple[str, str], ...]
-    run_metadata: tuple[tuple[str, str], ...]
-    queried_run_attempt: int
-    queried_job_id: int | None
-    queried_job_conclusion: str | None
-    queried_phase: str | None
-    diagnostic_claims: tuple[tuple[str, str], ...]
-    history_only: bool = True
-
-    def __post_init__(self) -> None:
-        """Reject unsupported historical provenance claims."""
-        _exact(
-            self.execution,
-            BuddyExecutionIdentity,
-            field="history.execution",
-        )
-        _positive(self.artifact_id, field="history.artifact_id")
-        _digest(self.artifact_digest, field="history.artifact_digest")
-        _digest(self.payload_digest, field="history.payload_digest")
-        _positive(
-            self.source_workflow_run_id,
-            field="history.source_workflow_run_id",
-        )
-        _string(
-            self.source_workflow_run_node_id,
-            field="history.source_workflow_run_node_id",
-        )
-        if self.source_head_sha != self.execution.target:
-            message = "Historical record source head does not match Execution"
-            raise ValueError(message)
-        _sha(self.source_head_sha, field="history.source_head_sha")
-        _pairs(self.artifact_metadata, field="history.artifact_metadata")
-        _pairs(self.run_metadata, field="history.run_metadata")
-        _positive(
-            self.queried_run_attempt,
-            field="history.queried_run_attempt",
-        )
-        job_parts = (
-            self.queried_job_id,
-            self.queried_job_conclusion,
-            self.queried_phase,
-        )
-        if any(part is None for part in job_parts) and any(
-            part is not None for part in job_parts
-        ):
-            message = "Historical record optional job facts are incomplete"
-            raise ValueError(message)
-        if self.queried_job_id is not None:
-            _positive(self.queried_job_id, field="history.queried_job_id")
-            _string(
-                self.queried_job_conclusion,
-                field="history.queried_job_conclusion",
-            )
-            _string(self.queried_phase, field="history.queried_phase")
-        _pairs(self.diagnostic_claims, field="history.diagnostic_claims")
-        if self.history_only is not True:
-            message = "Historical records must be history-only"
-            raise ValueError(message)
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical history-only record."""
-        return {
-            "schema": HISTORICAL_EXECUTION_RECORD_SCHEMA,
-            "authority": "execution-history",
-            "history-only": self.history_only,
-            "execution": self.execution.to_document(),
-            "artifact-id": self.artifact_id,
-            "artifact-digest": self.artifact_digest,
-            "payload-digest": self.payload_digest,
-            "source-workflow-run-id": self.source_workflow_run_id,
-            "source-workflow-run-node-id": self.source_workflow_run_node_id,
-            "source-head-sha": self.source_head_sha,
-            "artifact-metadata": _json_pairs(self.artifact_metadata),
-            "run-metadata": _json_pairs(self.run_metadata),
-            "queried-run-attempt": self.queried_run_attempt,
-            "queried-job-id": self.queried_job_id,
-            "queried-job-conclusion": self.queried_job_conclusion,
-            "queried-phase": self.queried_phase,
-            "diagnostic-claims": _json_pairs(self.diagnostic_claims),
-        }
-
-    @property
-    def record_digest(self) -> str:
-        """Return the canonical historical record digest."""
-        return canonical_sha256(self.to_document())
-
-
-@dataclass(frozen=True, slots=True)
-class ExecutionHistoryAdmissionSnapshot:
-    """Exhaustive caller-selected pre-Attempt history admission."""
-
-    request_id: str
-    current_workflow_run_id: int
-    current_run_attempt: int
-    execution: BuddyExecutionIdentity
-    query_basis: tuple[str, ...]
-    pagination_basis: tuple[str, ...]
-    records: tuple[HistoricalExecutionRecord, ...]
-    history_only: bool = True
-
-    def __post_init__(self) -> None:
-        """Reject incomplete, duplicate, or nondeterministic query results."""
-        request_id = _string(
-            self.request_id, field="history snapshot.request_id"
-        )
-        if _REQUEST_ID_PATTERN.fullmatch(request_id) is None:
-            message = "History Snapshot request ID is not canonical"
-            raise ValueError(message)
-        _positive(
-            self.current_workflow_run_id,
-            field="history snapshot.current_workflow_run_id",
-        )
-        _positive(
-            self.current_run_attempt,
-            field="history snapshot.current_run_attempt",
-        )
-        _exact(
-            self.execution,
-            BuddyExecutionIdentity,
-            field="history snapshot.execution",
-        )
-        query_basis = _string_tuple(
-            self.query_basis,
-            field="history snapshot.query_basis",
-            sorted_values=True,
-        )
-        pagination_basis = _string_tuple(
-            self.pagination_basis,
-            field="history snapshot.pagination_basis",
-            sorted_values=True,
-        )
-        if not query_basis or not pagination_basis:
-            message = "History Snapshot query and pagination must be exhaustive"
-            raise ValueError(message)
-        _exact(self.records, tuple, field="history snapshot.records")
-        if any(
-            type(record) is not HistoricalExecutionRecord
-            for record in self.records
-        ):
-            message = "History Snapshot record has the wrong runtime type"
-            raise TypeError(message)
-        expected = tuple(
-            sorted(
-                self.records,
-                key=lambda record: (
-                    record.source_workflow_run_id,
-                    record.queried_run_attempt,
-                    record.artifact_id,
-                    record.record_digest,
-                ),
-            )
-        )
-        if self.records != expected:
-            message = (
-                "History Snapshot records must be deterministically sorted"
-            )
-            raise ValueError(message)
-        if len({record.artifact_id for record in self.records}) != len(
-            self.records
-        ) or len({record.record_digest for record in self.records}) != len(
-            self.records
-        ):
-            message = "History Snapshot contains duplicate records"
-            raise ValueError(message)
-        if any(record.execution != self.execution for record in self.records):
-            message = "History Snapshot contains a cross-Execution record"
-            raise ValueError(message)
-        if self.history_only is not True:
-            message = "History Snapshot authority must be history-only"
-            raise ValueError(message)
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical execution-history admission Snapshot."""
-        records: list[JsonValue] = []
-        records.extend(record.to_document() for record in self.records)
-        return {
-            "schema": EXECUTION_HISTORY_ADMISSION_SNAPSHOT_SCHEMA,
-            "authority": "execution-history",
-            "history-only": self.history_only,
-            "request-id": self.request_id,
-            "current-workflow-run-id": self.current_workflow_run_id,
-            "current-run-attempt": self.current_run_attempt,
-            "execution": self.execution.to_document(),
-            "query-basis": _json_strings(self.query_basis),
-            "pagination-basis": _json_strings(self.pagination_basis),
-            "records": records,
-        }
-
-    @property
-    def snapshot_digest(self) -> str:
-        """Return the canonical history admission Snapshot digest."""
         return canonical_sha256(self.to_document())
 
 
@@ -3108,7 +2887,11 @@ class AuthorizationRecord:
             raise ValueError(message)
         _timestamp(self.completed_at, field="authorization.completed_at")
         _string(self.producer, field="authorization.producer")
-        _string(self.control, field="authorization.control")
+        _target_control(
+            self.control,
+            target=self.attempt.execution.target,
+            field="Authorization control",
+        )
         if self.result != "success":
             message = "Only successful approval can authorize"
             raise ValueError(message)
@@ -3145,7 +2928,7 @@ class AuthorizationRecord:
 
 @dataclass(frozen=True, slots=True)
 class CapabilityAdmissionDecision:
-    """Credential-free exact capability-group admission Decision."""
+    """Credential-free exact publication capability admission Decision."""
 
     attempt: ReleaseAttemptIdentity
     authorization_digest: str
@@ -3157,7 +2940,6 @@ class CapabilityAdmissionDecision:
     artifact_digests: tuple[str, ...]
     resource_key_sets: tuple[tuple[str, tuple[str, ...]], ...]
     lock_groups: tuple[tuple[str, str], ...]
-    capability_group_manifest: tuple[tuple[str, tuple[str, ...]], ...]
     live_eligibility_artifact_id: int
     live_eligibility_artifact_digest: str
     governance_provenance: tuple[tuple[str, str], ...]
@@ -3170,7 +2952,7 @@ class CapabilityAdmissionDecision:
     result: str
     diagnostics: tuple[str, ...]
 
-    def __post_init__(self) -> None:  # noqa: C901, PLR0915
+    def __post_init__(self) -> None:  # noqa: C901, PLR0912, PLR0915
         """Authorize only exact success; blocked freshness is permanent."""
         _exact(
             self.attempt,
@@ -3223,22 +3005,17 @@ class CapabilityAdmissionDecision:
             field="capability admission.resource_key_sets",
         )
         _pairs(self.lock_groups, field="capability admission.lock_groups")
-        manifests = _nested_string_pairs(
-            self.capability_group_manifest,
-            field="capability admission.capability_group_manifest",
-        )
-        action_ids = {
-            action_id for _, action_ids in manifests for action_id in action_ids
-        }
-        if {action_id for action_id, _ in resource_sets} != action_ids:
+        action_ids = {action_id for action_id, _ in resource_sets}
+        if {action_id for action_id, _ in self.lock_groups} != action_ids:
             message = "Capability admission action/key manifest mismatch"
             raise ValueError(message)
-        if (
-            {action_id for action_id, _ in self.lock_groups} != action_ids
-            or len(self.action_digests) != len(action_ids)
-            or len(self.artifact_digests) != len(action_ids)
-        ):
+        if len(self.action_digests) != len(action_ids) or len(
+            self.artifact_digests
+        ) != len(action_ids):
             message = "Capability admission action/lock manifest mismatch"
+            raise ValueError(message)
+        if len(action_ids) > 1:
+            message = "Capability admission permits at most one action closure"
             raise ValueError(message)
         _positive(
             self.live_eligibility_artifact_id,
@@ -3276,7 +3053,11 @@ class CapabilityAdmissionDecision:
             field="capability admission.governance_live_enabled",
         )
         _string(self.producer, field="capability admission.producer")
-        _string(self.control, field="capability admission.control")
+        _target_control(
+            self.control,
+            target=self.attempt.execution.target,
+            field="Capability admission control",
+        )
         if self.producer != "approval-finalizer":
             message = "Capability admission producer is not exact"
             raise ValueError(message)
@@ -3312,7 +3093,6 @@ class CapabilityAdmissionDecision:
             and bool(self.artifact_digests)
             and bool(self.resource_key_sets)
             and bool(self.lock_groups)
-            and bool(self.capability_group_manifest)
         )
 
     def to_document(self) -> dict[str, JsonValue]:
@@ -3335,9 +3115,6 @@ class CapabilityAdmissionDecision:
                 self.resource_key_sets
             ),
             "lock-groups": _json_pairs(self.lock_groups),
-            "capability-group-manifest": _json_nested_string_pairs(
-                self.capability_group_manifest
-            ),
             "live-eligibility-artifact-id": (self.live_eligibility_artifact_id),
             "live-eligibility-artifact-digest": (
                 self.live_eligibility_artifact_digest
@@ -3440,7 +3217,11 @@ class Receipt:
             field="receipt.response_identity_digest",
         )
         _string(self.producer, field="receipt.producer")
-        _string(self.control, field="receipt.control")
+        _target_control(
+            self.control,
+            target=self.attempt.execution.target,
+            field="Receipt control",
+        )
         if self.producer != "publish-github-packages":
             message = "Receipt producer is not exact"
             raise ValueError(message)
@@ -3482,30 +3263,8 @@ class Receipt:
 
 
 @dataclass(frozen=True, slots=True)
-class ReceiptTransportReference:
-    """Actual admitted Actions transport identity for one Receipt payload."""
-
-    action_id: str
-    artifact_id: int
-    artifact_name: str
-    upload_digest: str
-    payload_digest: str
-
-    def __post_init__(self) -> None:
-        """Reject incomplete or substituted Receipt transport identity."""
-        _string(self.action_id, field="receipt transport.action_id")
-        _positive(self.artifact_id, field="receipt transport.artifact_id")
-        _string(self.artifact_name, field="receipt transport.artifact_name")
-        if "/" in self.artifact_name or "\\" in self.artifact_name:
-            message = "Receipt transport artifact name must be a basename"
-            raise ValueError(message)
-        _digest(self.upload_digest, field="receipt transport.upload_digest")
-        _digest(self.payload_digest, field="receipt transport.payload_digest")
-
-
-@dataclass(frozen=True, slots=True)
 class ActionResult:
-    """One exact action result with explicit mutation uncertainty."""
+    """One exact action result with an embedded successful Receipt."""
 
     attempt: ReleaseAttemptIdentity
     publication_snapshot_digest: str
@@ -3515,11 +3274,7 @@ class ActionResult:
     outcome: str
     mutation_disposition: str
     response_identity_digest: str | None
-    receipt_artifact_id: int | None
-    receipt_artifact_name: str | None
-    receipt_artifact_digest: str | None
-    receipt_payload_digest: str | None
-    receipt_digest: str | None
+    receipt: Receipt | None
     diagnostic_reference: str | None
     producer: str
     control: str
@@ -3552,52 +3307,34 @@ class ActionResult:
             self.response_identity_digest,
             field="action result.response_identity_digest",
         )
-        receipt_digest = _optional_digest(
-            self.receipt_digest,
-            field="action result.receipt_digest",
-        )
-        receipt_artifact_digest = _optional_digest(
-            self.receipt_artifact_digest,
-            field="action result.receipt_artifact_digest",
-        )
-        receipt_payload_digest = _optional_digest(
-            self.receipt_payload_digest,
-            field="action result.receipt_payload_digest",
-        )
-        if self.receipt_artifact_name is not None:
-            _string(
-                self.receipt_artifact_name,
-                field="action result.receipt_artifact_name",
-            )
-            if "/" in self.receipt_artifact_name or (
-                "\\" in self.receipt_artifact_name
+        if self.receipt is not None:
+            _exact(self.receipt, Receipt, field="action result.receipt")
+            if (
+                self.receipt.attempt != self.attempt
+                or self.receipt.publication_snapshot_digest
+                != self.publication_snapshot_digest
+                or self.receipt.action_id != self.action_id
+                or self.receipt.action_digest != self.action_digest
+                or self.receipt.lock_group != self.lock_group
+                or self.receipt.response_identity_digest != response_digest
+                or self.receipt.control != self.control
+                or self.receipt.workflow_run_id != self.workflow_run_id
             ):
-                message = "Action Result Receipt name must be a basename"
+                message = "Action Result embedded Receipt binding mismatch"
                 raise ValueError(message)
-        if self.receipt_artifact_id is not None:
-            _positive(
-                self.receipt_artifact_id,
-                field="action result.receipt_artifact_id",
-            )
-        receipt_reference_parts = (
-            self.receipt_artifact_id,
-            self.receipt_artifact_name,
-            receipt_artifact_digest,
-            receipt_payload_digest,
-            receipt_digest,
-        )
-        if any(item is None for item in receipt_reference_parts) and any(
-            item is not None for item in receipt_reference_parts
-        ):
-            message = "Action Result Receipt reference is incomplete"
-            raise ValueError(message)
         if self.outcome == "success" and (
             response_digest is None
-            or receipt_digest is None
+            or self.receipt is None
             or self.mutation_disposition
             not in {"created", "exact-race-accepted"}
         ):
-            message = "Action Result success requires a durable Receipt"
+            message = "Action Result success requires an embedded Receipt"
+            raise ValueError(message)
+        if self.receipt is not None and (
+            self.outcome != "success"
+            or self.receipt.creation_result != self.mutation_disposition
+        ):
+            message = "Only successful Action Results may contain a Receipt"
             raise ValueError(message)
         if (
             self.mutation_disposition == "possibly-mutated"
@@ -3611,7 +3348,11 @@ class ActionResult:
                 field="action result.diagnostic_reference",
             )
         _string(self.producer, field="action result.producer")
-        _string(self.control, field="action result.control")
+        _target_control(
+            self.control,
+            target=self.attempt.execution.target,
+            field="Action Result control",
+        )
         if self.producer != "publish-github-packages":
             message = "Action Result producer is not exact"
             raise ValueError(message)
@@ -3631,11 +3372,9 @@ class ActionResult:
             "outcome": self.outcome,
             "mutation-disposition": self.mutation_disposition,
             "response-identity-digest": self.response_identity_digest,
-            "receipt-artifact-id": self.receipt_artifact_id,
-            "receipt-artifact-name": self.receipt_artifact_name,
-            "receipt-artifact-digest": self.receipt_artifact_digest,
-            "receipt-payload-digest": self.receipt_payload_digest,
-            "receipt-digest": self.receipt_digest,
+            "receipt": (
+                None if self.receipt is None else self.receipt.to_document()
+            ),
             "diagnostic-reference": self.diagnostic_reference,
             "producer": self.producer,
             "control": self.control,
@@ -3648,100 +3387,57 @@ class ActionResult:
         return canonical_sha256(self.to_document())
 
 
-@dataclass(frozen=True, slots=True)
-class CapabilityGroupResultBundle:
-    """Exactly one result bundle for one active capability group."""
+def _validate_attempt_outcome_lineage_cardinality(
+    capability_admission_digests: tuple[str, ...],
+    action_result_digests: tuple[str, ...],
+) -> None:
+    if len(capability_admission_digests) > 1:
+        message = (
+            "Attempt Outcome permits at most one Capability Admission lineage"
+        )
+        raise ValueError(message)
+    if len(action_result_digests) > 1:
+        message = (
+            "Attempt Outcome permits at most one direct Action Result lineage"
+        )
+        raise ValueError(message)
 
-    attempt: ReleaseAttemptIdentity
-    publication_snapshot_digest: str
-    capability_group: str
-    planned_action_ids: tuple[str, ...]
-    action_results: tuple[ActionResult, ...]
-    completion_state: str
-    producer: str
-    control: str
-    workflow_run_id: int
 
-    def __post_init__(self) -> None:
-        """Require exact action-set equality and current-attempt closure."""
-        _exact(
-            self.attempt,
-            ReleaseAttemptIdentity,
-            field="group result.attempt",
-        )
-        _digest(
-            self.publication_snapshot_digest,
-            field="group result.publication_snapshot_digest",
-        )
-        _string(self.capability_group, field="group result.capability_group")
-        planned = _string_tuple(
-            self.planned_action_ids,
-            field="group result.planned_action_ids",
-            sorted_values=True,
-        )
-        if not planned:
-            message = "Active capability group must contain actions"
-            raise ValueError(message)
-        _exact(self.action_results, tuple, field="group result.action_results")
-        if any(
-            type(result) is not ActionResult for result in self.action_results
+def _validate_successful_attempt_outcome(outcome: AttemptOutcome) -> None:
+    if outcome.result != "success":
+        return
+    if (
+        outcome.publication_snapshot_digest is None
+        or outcome.authorization_digest is None
+        or outcome.uncertainty
+        or outcome.possibly_mutated
+    ):
+        message = "Successful Attempt Outcome requires exact authorization"
+        raise ValueError(message)
+    if outcome.terminal_phase == "finalized":
+        if (
+            len(outcome.capability_admission_digests) != 1
+            or len(outcome.action_result_digests) != 1
         ):
-            message = "Capability group action result has the wrong type"
-            raise TypeError(message)
-        actual = tuple(
-            sorted(result.action_id for result in self.action_results)
-        )
-        if actual != planned:
-            message = "Capability group action set is not exact"
+            message = (
+                "Successful finalized Attempt Outcome requires one "
+                "direct Action Result lineage"
+            )
             raise ValueError(message)
-        if any(
-            result.attempt != self.attempt
-            or result.publication_snapshot_digest
-            != self.publication_snapshot_digest
-            for result in self.action_results
+        return
+    if outcome.terminal_phase == "finalized-no-op":
+        if (
+            outcome.capability_admission_digests
+            or outcome.action_result_digests
         ):
-            message = "Capability group contains a cross-Attempt result"
+            message = (
+                "Successful no-op Attempt Outcome cannot bind "
+                "publication results"
+            )
             raise ValueError(message)
-        if self.completion_state not in {"complete", "failed", "incomplete"}:
-            message = "Capability group completion state is invalid"
-            raise ValueError(message)
-        if self.completion_state == "complete" and any(
-            result.outcome != "success" for result in self.action_results
-        ):
-            message = "Complete capability group contains non-success result"
-            raise ValueError(message)
-        _string(self.producer, field="group result.producer")
-        _string(self.control, field="group result.control")
-        if self.producer != "publish-github-packages":
-            message = "Capability group producer is not exact"
-            raise ValueError(message)
-        if self.workflow_run_id != self.attempt.workflow_run_id:
-            message = "Capability group current Attempt binding mismatch"
-            raise ValueError(message)
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical capability-group result bundle."""
-        action_results: list[JsonValue] = []
-        action_results.extend(
-            result.to_document() for result in self.action_results
-        )
-        return {
-            "schema": CAPABILITY_GROUP_RESULT_BUNDLE_SCHEMA,
-            "attempt": self.attempt.to_document(),
-            "publication-snapshot-digest": (self.publication_snapshot_digest),
-            "capability-group": self.capability_group,
-            "planned-action-ids": _json_strings(self.planned_action_ids),
-            "action-results": action_results,
-            "completion-state": self.completion_state,
-            "producer": self.producer,
-            "control": self.control,
-            "workflow-run-id": self.workflow_run_id,
-        }
-
-    @property
-    def bundle_digest(self) -> str:
-        """Return the canonical capability-group bundle digest."""
-        return canonical_sha256(self.to_document())
+        return
+    message = "Successful Attempt Outcome terminal phase is invalid"
+    raise ValueError(message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -3753,8 +3449,7 @@ class AttemptOutcome:
     publication_snapshot_digest: str | None
     authorization_digest: str | None
     capability_admission_digests: tuple[str, ...]
-    capability_group_bundle_digests: tuple[str, ...]
-    receipt_digests: tuple[str, ...]
+    action_result_digests: tuple[str, ...]
     terminal_phase: str
     result: str
     uncertainty: bool
@@ -3787,10 +3482,9 @@ class AttemptOutcome:
                 self.capability_admission_digests,
             ),
             (
-                "capability_group_bundle_digests",
-                self.capability_group_bundle_digests,
+                "action_result_digests",
+                self.action_result_digests,
             ),
-            ("receipt_digests", self.receipt_digests),
         ):
             for index, digest in enumerate(
                 _string_tuple(
@@ -3800,6 +3494,10 @@ class AttemptOutcome:
                 )
             ):
                 _digest(digest, field=f"attempt outcome.{field}[{index}]")
+        _validate_attempt_outcome_lineage_cardinality(
+            self.capability_admission_digests,
+            self.action_result_digests,
+        )
         _string(self.terminal_phase, field="attempt outcome.terminal_phase")
         if self.result not in {
             "success",
@@ -3828,14 +3526,7 @@ class AttemptOutcome:
                 digest,
                 field=f"attempt outcome.observation_digests[{index}]",
             )
-        if self.result == "success" and (
-            self.publication_snapshot_digest is None
-            or self.authorization_digest is None
-            or self.uncertainty
-            or self.possibly_mutated
-        ):
-            message = "Successful Attempt Outcome requires exact authorization"
-            raise ValueError(message)
+        _validate_successful_attempt_outcome(self)
         if self.result == "incomplete-possibly-mutated" and (
             not self.uncertainty or not self.possibly_mutated
         ):
@@ -3846,8 +3537,7 @@ class AttemptOutcome:
             or self.uncertainty
             or self.possibly_mutated
             or self.next_action != "replay"
-            or self.capability_group_bundle_digests
-            or self.receipt_digests
+            or self.action_result_digests
         ):
             message = "Replayable no-side-effect outcome is not exact"
             raise ValueError(message)
@@ -3855,8 +3545,7 @@ class AttemptOutcome:
             has_later_records = bool(
                 self.authorization_digest is not None
                 or self.capability_admission_digests
-                or self.capability_group_bundle_digests
-                or self.receipt_digests
+                or self.action_result_digests
             )
             if self.terminal_phase == "qualification":
                 expected_next_action = {
@@ -3923,10 +3612,7 @@ class AttemptOutcome:
         capability_admission_digests = _json_strings(
             self.capability_admission_digests
         )
-        capability_group_bundle_digests = _json_strings(
-            self.capability_group_bundle_digests
-        )
-        receipt_digests = _json_strings(self.receipt_digests)
+        action_result_digests = _json_strings(self.action_result_digests)
         document: dict[str, JsonValue] = {
             "schema": ATTEMPT_OUTCOME_SCHEMA,
             "attempt": self.attempt.to_document(),
@@ -3937,10 +3623,7 @@ class AttemptOutcome:
             "publication-snapshot-digest": self.publication_snapshot_digest,
             "authorization-digest": self.authorization_digest,
             "capability-admission-digests": capability_admission_digests,
-            "capability-group-bundle-digests": (
-                capability_group_bundle_digests
-            ),
-            "receipt-digests": receipt_digests,
+            "action-result-digests": action_result_digests,
             "terminal-phase": self.terminal_phase,
             "result": self.result,
             "uncertainty": self.uncertainty,
@@ -4050,8 +3733,6 @@ class SimulationOutcome:
 
 type ReleaseRecord = (
     ReleaseIntent
-    | HistoricalExecutionRecord
-    | ExecutionHistoryAdmissionSnapshot
     | ReleaseAttemptBinding
     | SimulationBinding
     | QualificationSnapshot
@@ -4065,8 +3746,6 @@ type ReleaseRecord = (
     | AuthorizationRecord
     | CapabilityAdmissionDecision
     | ActionResult
-    | Receipt
-    | CapabilityGroupResultBundle
     | AttemptOutcome
     | SimulationOutcome
 )
@@ -4133,11 +3812,8 @@ __all__ = [
     "AuthorizationRecord",
     "BuddyExecutionIdentity",
     "CapabilityAdmissionDecision",
-    "CapabilityGroupResultBundle",
     "DestinationProjection",
-    "ExecutionHistoryAdmissionSnapshot",
     "ExternalPackageCoordinate",
-    "HistoricalExecutionRecord",
     "HypotheticalAction",
     "ObligationDisposition",
     "ObservationValue",
@@ -4152,7 +3828,6 @@ __all__ = [
     "QualificationEvidence",
     "QualificationSnapshot",
     "Receipt",
-    "ReceiptTransportReference",
     "ReleaseArtifact",
     "ReleaseAttemptBinding",
     "ReleaseAttemptIdentity",

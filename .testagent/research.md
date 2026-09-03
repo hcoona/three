@@ -7024,3 +7024,74 @@ unconditional root-HK `--source-kind index` step rather than retired.
   modules.
 
 <!-- END APPEND: 2026-09-01-wdv3-over-contraction-correction-research -->
+
+## 2026-09-03 Workflow Delivery v3 Record-Contraction Regression Audit
+
+### Scope and authority
+
+- Worktree:
+  `/home/shuaizhang/.copilot/session-state/24bd9638-ae1a-4852-8794-616ece84341e/files/disabled-runtime-implementation-worktree`.
+- Normative boundary:
+  `docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md`.
+- The audit is limited to two record-owner fixes: trusted-purpose-first
+  current-authority admission and zero-or-one Publication Snapshot actions.
+- Those two production fixes already existed in the staged tree. Fresh review
+  later identified one directly coupled record-model gap in the transitional
+  Capability Admission Decision cardinality.
+- Runtime marker admission, Governance-before-marker sequencing, conclusion
+  semantics, and workflow redesign remain deferred.
+
+### Target inventory and conventions
+
+- `tests/test_admission.py` owns current-authority constructor and ordering
+  regressions.
+- `tests/release/test_commit6_qualification.py` owns real qualification and
+  publication materialization scenarios.
+- `tests/release/test_commit8_contracts.py` already owns direct constructor and
+  release-transport cardinality coverage and now owns Capability Admission
+  closure cardinality.
+- `records/release.py` owns the zero-or-one Capability Admission closure while
+  the deferred no-op runtime still transports zero-action Decisions.
+- Tests use exact exception messages, immutable-record substitution through
+  `dataclasses.replace`, canonical digests, and the real finalizer path.
+
+### Findings and closure
+
+- Existing
+  `test_current_authority_rejects_mixed_purpose_before_schema_access` proves
+  that a malformed Simulation-shaped payload cannot select its schema against
+  trusted Live context.
+- Existing
+  `test_publication_snapshot_rejects_more_than_one_action` proves direct
+  constructor and transport rejection.
+- Added exact-context subclass rejection so an `isinstance` regression cannot
+  weaken the caller-authoritative context contract.
+- Added direct trusted-context purpose validation coverage.
+- Added a valid two-projection, two-observation Live scenario that reaches the
+  real `materialize_publication_snapshot()` path and fails only when the
+  `PublicationSnapshot` zero-or-one action invariant rejects two actions.
+- Independent review and adjudication retained one additional in-scope gap:
+  after capability-group retirement, `CapabilityAdmissionDecision` still
+  admitted aligned multi-action closures. Validation then proved that an
+  exact-one rule would break the still-retained zero-action no-op CLI path,
+  whose removal belongs to the deferred Governance/authorization unit. Two
+  independent re-adjudicators therefore retained only the multi-action
+  subclaim. The record now permits zero or one action closure while retaining
+  the transitional plural wire fields. Constructor and transport regressions
+  preserve zero-action `success` and `blocked` as non-authorizing, preserve
+  one-action behavior, and reject two closures for both results.
+
+### Acceptance checklist
+
+- [x] Payload/context purpose mismatch precedes purpose-specific schema access.
+- [x] Trusted context must be the exact `CurrentAuthorityContext` runtime type.
+- [x] Trusted `current.purpose` is validated before binding and schema use.
+- [x] Direct Publication Snapshot construction rejects more than one action.
+- [x] Release transport admission rejects more than one action.
+- [x] The real publication materializer fails closed when two absent
+  projections would produce two actions.
+- [x] Capability Admission accepts zero or one action closure, preserves
+  transitional zero-action Decisions as non-authorizing, and rejects multiple
+  closures at construction and transport admission.
+
+<!-- END APPEND: 2026-09-03-wdv3-record-contraction-regression-research -->

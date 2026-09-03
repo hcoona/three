@@ -205,7 +205,6 @@ def _assert_existing_raw_uploads_keep_physical_names(
         "Upload mutation may-have-started marker",
     }
     expected = {
-        "Upload Execution History Admission Snapshot",
         "Upload Release Attempt binding",
         "Upload Qualification Snapshot",
         "Upload Adapter context",
@@ -219,8 +218,7 @@ def _assert_existing_raw_uploads_keep_physical_names(
         "Upload Observation Record set",
         "Upload Publication Snapshot",
         "Upload Capability Admission Decision",
-        "Upload exact Receipt",
-        "Upload Capability Group Result Bundle",
+        "Upload Action Result",
         "Upload final Attempt Outcome",
         "Upload final Attempt summary",
     }
@@ -434,10 +432,7 @@ def test_buddy_permission_ceiling_and_effective_permissions_are_exact() -> None:
         "packages": "write",
     }
     assert callee["permissions"] == {"contents": "read"}
-    assert callee_jobs["admit"]["permissions"] == {
-        "contents": "read",
-        "actions": "read",
-    }
+    assert callee_jobs["admit"]["permissions"] == {"contents": "read"}
     assert callee_jobs["observe-github-packages"]["permissions"] == {
         "contents": "read",
         "packages": "read",
@@ -458,8 +453,7 @@ def test_buddy_permission_ceiling_and_effective_permissions_are_exact() -> None:
             f"{name} must declare its effective least-privilege permissions"
         )
         permissions = job["permissions"]
-        if name != "admit":
-            assert permissions.get("actions") != "read"
+        assert permissions.get("actions") != "read"
         if name != "observe-github-packages":
             assert permissions.get("packages") != "read"
         if name != "publish-github-packages":
@@ -837,15 +831,10 @@ def test_normal_live_environment_marker_success_gates_downstream_steps() -> (
         "Publish create-only package action",
     )
     retention_conditions = {
-        "Upload exact Receipt": (
+        "Form Action Result": publisher_always_gate,
+        "Upload Action Result": (
             f"{publisher_always_gate} && "
-            "steps.publish.outputs.receipt-artifact-name != ''"
-        ),
-        "Form Capability Group Result Bundle": publisher_always_gate,
-        "Upload Capability Group Result Bundle": (
-            f"{publisher_always_gate} && "
-            "steps.form-bundle.outputs."
-            "capability-group-bundle-artifact-name != ''"
+            "steps.form-result.outputs.action-result-artifact-name != ''"
         ),
     }
     expected_names = {
@@ -912,12 +901,12 @@ def test_normal_live_capability_marker_failure_propagates(
         _run(propagate),
         {
             "steps.capability-environment-marker.outcome": marker_outcome,
-            "steps.form-bundle.outcome": "success",
+            "steps.form-result.outcome": "success",
             "steps.mark-mutation.outcome": "success",
             "steps.preflight.outcome": "success",
             "steps.publish.outcome": "success",
             "steps.upload-mutation-marker.outcome": "success",
-            "steps.upload.outcome": "success",
+            "steps.upload-result.outcome": "success",
         },
     )
 
@@ -1476,12 +1465,6 @@ def test_reviewer_archive_is_decompressed_with_transport_and_payload_bindings() 
     names = _run(_step(materializer, "Materialize exact publication basenames"))
     bind = _run(bind_step)
     admit = _run(_step(finalizer, "Admit exact capability closure"))
-    history = _run(
-        _step(
-            document["jobs"]["admit"],
-            "Discover exhaustive retained execution history",
-        )
-    )
 
     upload_settings = reviewer_upload["with"]
     assert reviewer_upload["uses"] == UPLOAD
@@ -1627,12 +1610,6 @@ def test_reviewer_archive_is_decompressed_with_transport_and_payload_bindings() 
         '"${{ needs.materialize-publication.outputs.reviewer-artifact-digest }}"'
         in admit
     )
-    assert re.findall(
-        r"\bthree-workflow-delivery-v3 release ([a-z0-9-]+)",
-        history,
-    ) == ["discover-execution-history"]
-    assert "--output .wdv3/execution-history-admission.json" in history
-
     for step in _artifact_steps(document, DOWNLOAD):
         assert "artifact-ids" in step["with"]
         assert "name" not in step["with"]
@@ -1810,7 +1787,7 @@ def test_mutation_marker_raw_upload_and_consumers_use_run_basename() -> None:
         "Upload mutation may-have-started marker",
     )
     publish = _run(_step(publisher, "Publish create-only package action"))
-    bundle = _run(_step(publisher, "Form Capability Group Result Bundle"))
+    result = _run(_step(publisher, "Form Action Result"))
 
     marker_name = (
         "wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}"
@@ -1863,14 +1840,14 @@ def test_mutation_marker_raw_upload_and_consumers_use_run_basename() -> None:
             )
         )
     )
-    for consumer in (publish, bundle):
+    for consumer in (publish, result):
         assert marker_path in consumer
         assert ".wdv3/mutation-may-have-started.json" not in consumer
     assert f'--mutation-marker "{marker_path}"' in publish
-    assert f'--mutation-marker "{marker_path}"' in bundle
+    assert f'--mutation-marker "{marker_path}"' in result
     assert (
         "--mutation-marker-artifact-id "
-        '"${{ steps.upload-mutation-marker.outputs.artifact-id }}"' in bundle
+        '"${{ steps.upload-mutation-marker.outputs.artifact-id }}"' in result
     )
     assert (
         '--mutation-marker-artifact-id "${{ steps.upload-mutation-marker.outputs.'
@@ -2007,7 +1984,7 @@ def test_commit8_platform_termination_facts_are_derived_for_finalization() -> (
     assert "GITHUB_TOKEN" not in command
     assert "publish_result=" in command
     assert "capability_marker_id=" in command
-    assert "capability_bundle_id=" in command
+    assert "action_result_id=" in command
     assert 'publish_result}" == "failure"' in command
     assert "--platform-terminated" in command
     assert "--capability-may-have-started" in command
@@ -2132,34 +2109,30 @@ def test_release_finalizer_propagates_failure_after_retention() -> None:
     assert "exit 1" in command
 
 
-def test_commit8_receipt_is_uploaded_before_bundle_uses_real_transport() -> (
-    None
-):
+def test_commit8_receipt_is_embedded_in_the_direct_action_result() -> None:
     publisher = _document(CALLEE)["jobs"]["publish-github-packages"]
     steps = _steps(publisher)
     publish = _run(_step(publisher, "Publish create-only package action"))
-    receipt = _step(publisher, "Upload exact Receipt")
-    bundle = _run(_step(publisher, "Form Capability Group Result Bundle"))
+    form = _step(publisher, "Form Action Result")
+    upload = _step(publisher, "Upload Action Result")
+    command = _run(form)
 
-    assert "--receipt-artifact-id" not in publish
-    assert steps.index(receipt) < steps.index(
-        _step(publisher, "Form Capability Group Result Bundle")
-    )
-    assert "steps.upload-receipt.outputs.artifact-id" in bundle
-    assert "steps.upload-receipt.outputs.artifact-digest" in bundle
-    assert '"1"' not in bundle
+    assert "--receipt-output" not in publish
+    assert "Upload exact Receipt" not in {step["name"] for step in steps}
+    assert steps.index(form) < steps.index(upload)
+    assert "--result-output .wdv3/action-result.json" in command
+    assert "--bundle-output" not in command
+    assert "--receipt" not in command
 
 
-def test_commit8_failed_capability_forms_and_uploads_exactly_one_bundle() -> (
-    None
-):
+def test_commit8_failed_capability_forms_one_direct_action_result() -> None:
     publisher = _document(CALLEE)["jobs"]["publish-github-packages"]
     publish = _step(publisher, "Publish create-only package action")
-    form = _step(publisher, "Form Capability Group Result Bundle")
+    form = _step(publisher, "Form Action Result")
     uploads = [
         step
         for step in _steps(publisher)
-        if step.get("name") == "Upload Capability Group Result Bundle"
+        if step.get("name") == "Upload Action Result"
     ]
 
     assert publish["continue-on-error"] is True
@@ -2171,7 +2144,7 @@ def test_commit8_failed_capability_forms_and_uploads_exactly_one_bundle() -> (
     assert uploads[0]["if"] == (
         "always() && "
         "steps.capability-environment-marker.outcome == 'success' && "
-        "steps.form-bundle.outputs.capability-group-bundle-artifact-name != ''"
+        "steps.form-result.outputs.action-result-artifact-name != ''"
     )
     assert "steps.publish.outcome" in _run(form)
     assert "form_status=$?" in _run(form)
@@ -2325,11 +2298,10 @@ def test_commit8_dag_order_retention_and_error_propagation_are_exact() -> None:
                 assert step["with"]["if-no-files-found"] == "error"
 
     publisher_steps = _steps(jobs["publish-github-packages"])
-    assert [step["name"] for step in publisher_steps[-5:]] == [
+    assert [step["name"] for step in publisher_steps[-4:]] == [
         "Publish create-only package action",
-        "Upload exact Receipt",
-        "Form Capability Group Result Bundle",
-        "Upload Capability Group Result Bundle",
+        "Form Action Result",
+        "Upload Action Result",
         "Propagate publication status",
     ]
 
@@ -2358,7 +2330,7 @@ def test_commit8_status_evidence_is_named_and_transport_bound() -> None:
     )
 
 
-def test_user_item9_actions_permission_is_history_admission_only() -> None:
+def test_live_attempt_requires_no_actions_read_permission() -> None:
     jobs = _document(CALLEE)["jobs"]
     actions_read_jobs = {
         name
@@ -2366,7 +2338,7 @@ def test_user_item9_actions_permission_is_history_admission_only() -> None:
         if job.get("permissions", {}).get("actions") == "read"
     }
 
-    assert actions_read_jobs == {"admit"}
+    assert actions_read_jobs == set()
     assert jobs["release-finalizer"]["permissions"] == {"contents": "read"}
 
 
@@ -2382,10 +2354,10 @@ def test_user_item9_finalizer_derives_conservative_phase_from_retained_outputs()
 
     assert "jobs_url=" not in command
     assert "capability_marker_id=" in command
-    assert "capability_bundle_id=" in command
+    assert "action_result_id=" in command
     assert 'publish_result}" == "cancelled"' in command
     assert 'publish_result}" == "failure"' in command
-    assert '-z "${capability_bundle_id}"' in command
+    assert '-z "${action_result_id}"' in command
     assert 'if [[ -n "${capability_marker_id}" ]]' in command
 
 
@@ -2397,7 +2369,7 @@ def test_release_finalizer_platform_fact_mapping_executes_workflow_shell(
         _phase2_finalizer_facts(
             **(
                 _PHASE2_POST_SNAPSHOT_OVERRIDES
-                | _PHASE2_RESULT_BUNDLE_OVERRIDES
+                | _PHASE2_ACTION_RESULT_OVERRIDES
                 | {
                     "needs.publish-github-packages.outputs.mutation-marker-artifact-id": "734",
                     "needs.publish-github-packages.result": "failure",
@@ -2545,30 +2517,28 @@ def test_user_item11_publisher_preflight_and_start_marker_are_separate() -> (
     assert 'exit "${status}"' in command
 
 
-def test_user_item12_failed_publication_uploads_nonempty_bundle_before_propagation() -> (
-    None
-):
+def test_failed_publication_uploads_action_result_before_propagation() -> None:
     publisher = _document(CALLEE)["jobs"]["publish-github-packages"]
     steps = _steps(publisher)
-    form = _step(publisher, "Form Capability Group Result Bundle")
-    upload = _step(publisher, "Upload Capability Group Result Bundle")
+    form = _step(publisher, "Form Action Result")
+    upload = _step(publisher, "Upload Action Result")
     propagate = _step(publisher, "Propagate publication status")
     form_command = _run(form)
 
     assert steps.index(form) < steps.index(upload) < steps.index(propagate)
     assert "set +e" in form_command
     assert "form_status=$?" in form_command
-    assert "capability-group-bundle-digest" in form_command
+    assert "action-result.json" in form_command
     assert upload["if"] == (
         "always() && "
         "steps.capability-environment-marker.outcome == 'success' && "
-        "steps.form-bundle.outputs.capability-group-bundle-artifact-name != ''"
+        "steps.form-result.outputs.action-result-artifact-name != ''"
     )
     assert upload["with"]["path"].endswith(
-        "${{ steps.form-bundle.outputs.capability-group-bundle-artifact-name }}"
+        "${{ steps.form-result.outputs.action-result-artifact-name }}"
     )
     assert upload["with"]["path"] != ".wdv3"
-    assert "steps.upload.outcome" in _run(propagate)
+    assert "steps.upload-result.outcome" in _run(propagate)
 
 
 def test_user_item13_finalizer_always_retains_outcome_summary_with_exact_contract() -> (
@@ -2613,9 +2583,7 @@ def test_user_item13_finalizer_always_retains_outcome_summary_with_exact_contrac
     }
 
 
-def test_history_discovery_uses_caller_path_through_reusable_live_attempt_topology() -> (
-    None
-):
+def test_live_attempt_topology_has_no_history_query_surface() -> None:
     caller = _document(CALLER)
     callee = _document(CALLEE)
     caller_document = cast("dict[object, Any]", caller)
@@ -2647,22 +2615,11 @@ def test_history_discovery_uses_caller_path_through_reusable_live_attempt_topolo
     )
     assert set(callee_jobs) == EXPECTED_JOBS
 
-    command = _run(
-        _step(
-            callee_jobs["admit"],
-            "Discover exhaustive retained execution history",
-        )
-    )
-    assert re.findall(
-        r"\bthree-workflow-delivery-v3 release ([a-z0-9-]+)",
-        command,
-    ) == ["discover-execution-history"]
-    assert re.findall(r'--workflow-path "([^"]+)"', command) == [
-        ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
-    ]
-    assert (
-        ".github/workflows/workflow-delivery-v3-live-attempt.yml" not in command
-    )
+    raw = CALLEE.read_text(encoding="utf-8")
+    assert "discover-execution-history" not in raw
+    assert "admit-history" not in raw
+    assert "execution-history" not in raw
+    assert callee_jobs["admit"]["permissions"] == {"contents": "read"}
 
 
 _PHASE2_FINALIZER_EXPRESSION = re.compile(r"\$\{\{\s*(?P<fact>.*?)\s*\}\}")
@@ -2700,15 +2657,11 @@ def _phase2_finalizer_facts(**overrides: str) -> dict[str, str]:
         "needs.observe-github-packages.outputs.observation-set-artifact-name": "",
         "needs.observe-github-packages.outputs.observation-set-digest": "",
         "needs.observe-github-packages.result": "failure",
-        "needs.publish-github-packages.outputs.capability-group-bundle-artifact-digest": "",
-        "needs.publish-github-packages.outputs.capability-group-bundle-artifact-id": "",
-        "needs.publish-github-packages.outputs.capability-group-bundle-artifact-name": "",
-        "needs.publish-github-packages.outputs.capability-group-bundle-digest": "",
+        "needs.publish-github-packages.outputs.action-result-artifact-digest": "",
+        "needs.publish-github-packages.outputs.action-result-artifact-id": "",
+        "needs.publish-github-packages.outputs.action-result-artifact-name": "",
+        "needs.publish-github-packages.outputs.action-result-digest": "",
         "needs.publish-github-packages.outputs.mutation-marker-artifact-id": "",
-        "needs.publish-github-packages.outputs.receipt-artifact-digest": "",
-        "needs.publish-github-packages.outputs.receipt-artifact-id": "",
-        "needs.publish-github-packages.outputs.receipt-artifact-name": "",
-        "needs.publish-github-packages.outputs.receipt-digest": "",
         "needs.publish-github-packages.result": "skipped",
         "needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-digest": upload_digest,
         "needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-id": "104",
@@ -2954,10 +2907,9 @@ def test_publication_preparation_classifier_executes_workflow_shell(
     assert {
         "--authorization",
         "--capability-decision",
-        "--capability-group-bundle",
+        "--action-result",
         "--capability-may-have-started",
         "--publication-snapshot",
-        "--receipt",
     }.isdisjoint(argv)
 
 
@@ -3036,11 +2988,10 @@ def test_successful_observation_cancellation_retains_exact_job_diagnostics(
     assert {
         "--authorization",
         "--capability-decision",
-        "--capability-group-bundle",
+        "--action-result",
         "--capability-may-have-started",
         "--platform-terminated",
         "--publication-snapshot",
-        "--receipt",
     }.isdisjoint(argv)
 
     expected_diagnostics = (
@@ -3151,12 +3102,12 @@ _PHASE2_POST_SNAPSHOT_OVERRIDES = {
     "needs.approval-finalizer.outputs.capability-decision-digest": "sha256:"
     + ("3" * 64),
 }
-_PHASE2_RESULT_BUNDLE_OVERRIDES = {
-    "needs.publish-github-packages.outputs.capability-group-bundle-artifact-digest": "sha256:"
+_PHASE2_ACTION_RESULT_OVERRIDES = {
+    "needs.publish-github-packages.outputs.action-result-artifact-digest": "sha256:"
     + ("4" * 64),
-    "needs.publish-github-packages.outputs.capability-group-bundle-artifact-id": "735",
-    "needs.publish-github-packages.outputs.capability-group-bundle-artifact-name": "capability-result-bundle.json",
-    "needs.publish-github-packages.outputs.capability-group-bundle-digest": "sha256:"
+    "needs.publish-github-packages.outputs.action-result-artifact-id": "735",
+    "needs.publish-github-packages.outputs.action-result-artifact-name": "action-result.json",
+    "needs.publish-github-packages.outputs.action-result-digest": "sha256:"
     + ("5" * 64),
 }
 
@@ -3244,18 +3195,7 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
                 "needs.observe-github-packages.result": "skipped",
                 "needs.materialize-publication.result": "skipped",
                 "needs.publish-github-packages.result": "cancelled",
-                "needs.publish-github-packages.outputs.capability-group-bundle-artifact-id": "result-bundle-735",
-                "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
-            },
-            None,
-            ("downstream lineage",),
-        ),
-        (
-            {
-                "needs.observe-github-packages.result": "skipped",
-                "needs.materialize-publication.result": "skipped",
-                "needs.publish-github-packages.result": "cancelled",
-                "needs.publish-github-packages.outputs.receipt-artifact-id": "receipt-736",
+                "needs.publish-github-packages.outputs.action-result-artifact-id": "action-result-735",
                 "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
             },
             None,
@@ -3276,7 +3216,7 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
         ),
         (
             _PHASE2_POST_SNAPSHOT_OVERRIDES
-            | _PHASE2_RESULT_BUNDLE_OVERRIDES
+            | _PHASE2_ACTION_RESULT_OVERRIDES
             | {
                 "needs.publish-github-packages.outputs.mutation-marker-artifact-id": "734",
                 "needs.publish-github-packages.result": "success",
@@ -3286,7 +3226,7 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
         ),
         (
             _PHASE2_POST_SNAPSHOT_OVERRIDES
-            | _PHASE2_RESULT_BUNDLE_OVERRIDES
+            | _PHASE2_ACTION_RESULT_OVERRIDES
             | {"needs.publish-github-packages.result": "failure"},
             (),
             (),
@@ -3330,13 +3270,12 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
         "cancelled-with-authorization",
         "cancelled-with-capability-admission",
         "cancelled-with-mutation-marker",
-        "cancelled-with-result-bundle",
-        "cancelled-with-receipt",
+        "cancelled-with-action-result",
         "post-snapshot-cancelled",
         "post-snapshot-skipped",
         "post-snapshot-success-with-mutation-marker",
-        "post-snapshot-failure-with-result-bundle",
-        "post-snapshot-failure-without-result-bundle",
+        "post-snapshot-failure-with-action-result",
+        "post-snapshot-failure-without-action-result",
         "post-snapshot-failure-with-mutation-marker",
         "post-snapshot-cancelled-with-mutation-marker",
     ],
@@ -3372,10 +3311,9 @@ def test_publisher_result_truth_table_executes_workflow_shell(
         assert {
             "--authorization",
             "--capability-decision",
-            "--capability-group-bundle",
+            "--action-result",
             "--capability-may-have-started",
             "--publication-snapshot",
-            "--receipt",
         }.isdisjoint(argv)
         return
 
@@ -3388,12 +3326,11 @@ def test_publisher_result_truth_table_executes_workflow_shell(
     for flag, value in expected_snapshot_arguments.items():
         assert argv.count(flag) == 1
         assert argv[argv.index(flag) + 1] == value
-    bundle_id = overrides.get(
-        "needs.publish-github-packages.outputs."
-        "capability-group-bundle-artifact-id",
+    action_result_id = overrides.get(
+        "needs.publish-github-packages.outputs.action-result-artifact-id",
         "",
     )
-    assert ("--capability-group-bundle" in argv) is bool(bundle_id)
+    assert ("--action-result" in argv) is bool(action_result_id)
 
 
 def _phase3_render_workflow_run(
@@ -4221,22 +4158,13 @@ def test_durable_snapshot_reviewer_failure_omits_preparation_diagnostics(
             id="capability-admission-decision",
         ),
         pytest.param(
-            "Download capability result bundle by artifact ID",
+            "Download Action Result by artifact ID",
             DOWNLOAD,
             (
                 "always() && needs.publish-github-packages.outputs."
-                "capability-group-bundle-artifact-id != ''"
+                "action-result-artifact-id != ''"
             ),
-            id="capability-result-bundle",
-        ),
-        pytest.param(
-            "Download Receipt by artifact ID",
-            DOWNLOAD,
-            (
-                "always() && needs.publish-github-packages.outputs."
-                "receipt-artifact-id != ''"
-            ),
-            id="receipt",
+            id="action-result",
         ),
     ],
 )
@@ -4556,24 +4484,10 @@ def test_cancelled_unsuccessful_qualification_retains_qualification_record_argv(
         ),
         pytest.param(
             "true",
-            _PHASE2_RESULT_BUNDLE_OVERRIDES,
-            "--capability-group-bundle",
+            _PHASE2_ACTION_RESULT_OVERRIDES,
+            "--action-result",
             None,
-            id="with-result-bundle",
-        ),
-        pytest.param(
-            "true",
-            {
-                "needs.publish-github-packages.outputs.receipt-artifact-digest": "sha256:"
-                + ("6" * 64),
-                "needs.publish-github-packages.outputs.receipt-artifact-id": "736",
-                "needs.publish-github-packages.outputs.receipt-artifact-name": "receipt.json",
-                "needs.publish-github-packages.outputs.receipt-digest": "sha256:"
-                + ("7" * 64),
-            },
-            "--receipt",
-            None,
-            id="with-receipt",
+            id="with-action-result",
         ),
     ],
 )
@@ -4816,7 +4730,7 @@ def test_buddy_target_sha_binding_chain_is_exact(tmp_path: Path) -> None:
             str(step.get("run", "")),
         )
     ]
-    assert target_arguments == [_CALLEE_TARGET_SHA] * 20
+    assert target_arguments == [_CALLEE_TARGET_SHA] * 19
 
     assert (
         callee_jobs["release-finalizer"]["if"]
@@ -4830,9 +4744,7 @@ def test_buddy_target_sha_binding_chain_is_exact(tmp_path: Path) -> None:
     )
 
 
-def test_live_eligibility_admission_receives_current_intent_and_model_before_history() -> (
-    None
-):
+def test_live_eligibility_admission_precedes_current_attempt_binding() -> None:
     """Transport current lineage into every eligibility admission call."""
     jobs = _document(CALLEE)["jobs"]
     admit_job = jobs["admit"]
@@ -4853,10 +4765,7 @@ def test_live_eligibility_admission_receives_current_intent_and_model_before_his
         admit_job,
         "Admit downloaded Live Eligibility Decision",
     )
-    history = _step(
-        admit_job,
-        "Discover exhaustive retained execution history",
-    )
+    binding = _step(admit_job, "Bind current live Attempt")
     command = _run(admission)
 
     assert (
@@ -4864,7 +4773,7 @@ def test_live_eligibility_admission_receives_current_intent_and_model_before_his
         < admit_steps.index(model_download)
         < admit_steps.index(decision_download)
         < admit_steps.index(admission)
-        < admit_steps.index(history)
+        < admit_steps.index(binding)
     )
     for option, value in (
         ("intent", ".wdv3/input/${{ inputs.intent-artifact-name }}"),

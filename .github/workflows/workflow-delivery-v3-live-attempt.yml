@@ -59,23 +59,18 @@ env:
 
 jobs:
   admit:
-    name: Admit live Attempt and retained history
+    name: Admit live Attempt
     if: github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
-      actions: read
     outputs:
       identity-admitted: ${{ steps.identity.outputs.identity-admitted }}
       attempt-artifact-id: ${{ steps.upload-attempt.outputs.artifact-id }}
       attempt-artifact-digest: ${{ steps.upload-attempt.outputs.artifact-digest }}
       attempt-artifact-name: ${{ steps.attempt-name.outputs.attempt-name }}
       attempt-digest: ${{ steps.bind.outputs.attempt-binding-digest }}
-      history-artifact-id: ${{ steps.upload-history.outputs.artifact-id }}
-      history-artifact-digest: ${{ steps.upload-history.outputs.artifact-digest }}
-      history-artifact-name: ${{ steps.history-name.outputs.history-name }}
-      history-digest: ${{ steps.discover.outputs.history-snapshot-digest }}
       request-id: ${{ inputs.request-id }}
       target-sha: ${{ inputs.target-sha }}
     steps:
@@ -147,43 +142,6 @@ jobs:
             --live-eligibility-payload-digest "${{ inputs.live-eligibility-digest }}" \
             --output .wdv3/admitted-live-eligibility-decision.json \
             --github-output "${GITHUB_OUTPUT}"
-      - name: Discover exhaustive retained execution history
-        id: discover
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
-            three-workflow-delivery-v3 release discover-execution-history \
-            --repository "${GITHUB_REPOSITORY}" \
-            --workflow-path ".github/workflows/workflow-delivery-v3-buddy-smoke.yml" \
-            --github-token "${GITHUB_TOKEN}" \
-            --workflow-run-id "${GITHUB_RUN_ID}" \
-            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
-            --target "${{ inputs.target-sha }}" \
-            --intent ".wdv3/input/${{ inputs.intent-artifact-name }}" \
-            --intent-digest "${{ inputs.intent-digest }}" \
-            --intent-artifact-id "${{ inputs.intent-artifact-id }}" \
-            --intent-artifact-digest "${{ inputs.intent-artifact-digest }}" \
-            --output .wdv3/execution-history-admission.json \
-            --github-output "${GITHUB_OUTPUT}"
-      - name: Materialize exact history basename
-        id: history-name
-        run: |
-          history_digest="${{ steps.discover.outputs.history-snapshot-digest }}"
-          history_name="wdv3-live-buddy-history-admission-r${GITHUB_RUN_ID}-${history_digest#sha256:}.json"
-          mv .wdv3/execution-history-admission.json ".wdv3/${history_name}"
-          echo "history-name=${history_name}" >> "${GITHUB_OUTPUT}"
-      - name: Upload Execution History Admission Snapshot
-        id: upload-history
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ${{ steps.history-name.outputs.history-name }}
-          path: .wdv3/${{ steps.history-name.outputs.history-name }}
-          if-no-files-found: error
-          retention-days: 45
-          overwrite: false
-          archive: false
-          include-hidden-files: true
       - name: Bind current live Attempt
         id: bind
         run: |
@@ -1637,14 +1595,10 @@ jobs:
       group: wdv3-resource-${{ needs.approval-finalizer.outputs.resource-concurrency-key }}
       cancel-in-progress: false
     outputs:
-      capability-group-bundle-artifact-id: ${{ steps.upload.outputs.artifact-id }}
-      capability-group-bundle-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
-      capability-group-bundle-artifact-name: ${{ steps.form-bundle.outputs.capability-group-bundle-artifact-name }}
-      capability-group-bundle-digest: ${{ steps.form-bundle.outputs.capability-group-bundle-digest }}
-      receipt-artifact-id: ${{ steps.upload-receipt.outputs.artifact-id }}
-      receipt-artifact-digest: ${{ steps.upload-receipt.outputs.artifact-digest }}
-      receipt-artifact-name: ${{ steps.publish.outputs.receipt-artifact-name }}
-      receipt-digest: ${{ steps.publish.outputs.receipt-digest }}
+      action-result-artifact-id: ${{ steps.upload-result.outputs.artifact-id }}
+      action-result-artifact-digest: ${{ steps.upload-result.outputs.artifact-digest }}
+      action-result-artifact-name: ${{ steps.form-result.outputs.action-result-artifact-name }}
+      action-result-digest: ${{ steps.form-result.outputs.action-result-digest }}
       mutation-marker-artifact-id: ${{ steps.upload-mutation-marker.outputs.artifact-id }}
       mutation-marker-artifact-digest: ${{ steps.upload-mutation-marker.outputs.artifact-digest }}
     steps:
@@ -1807,39 +1761,16 @@ jobs:
             --mutation-marker-artifact-id "${{ steps.upload-mutation-marker.outputs.artifact-id }}" \
             --mutation-marker-artifact-digest "${{ steps.upload-mutation-marker.outputs.artifact-digest }}" \
             --temp-root "${RUNNER_TEMP}/wdv3" \
-            --receipt-output .wdv3/receipt.json \
             --execution-state-output .wdv3/publication-execution.json \
             --github-output "${GITHUB_OUTPUT}"
           status=$?
           set -e
           echo "publish-cli-status=${status}" >> "${GITHUB_OUTPUT}"
-          if [[ -f .wdv3/receipt.json ]]; then
-            receipt_digest="$(sha256sum .wdv3/receipt.json | cut -d' ' -f1)"
-            receipt_name="wdv3-live-buddy-receipt-r${GITHUB_RUN_ID}-${receipt_digest}.json"
-            mv .wdv3/receipt.json ".wdv3/${receipt_name}"
-            echo "receipt-artifact-name=${receipt_name}" >> "${GITHUB_OUTPUT}"
-          fi
           exit "${status}"
-      - name: Upload exact Receipt
-        id: upload-receipt
-        if: >-
-          always() &&
-          steps.capability-environment-marker.outcome == 'success' &&
-          steps.publish.outputs.receipt-artifact-name != ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ${{ steps.publish.outputs.receipt-artifact-name }}
-          path: .wdv3/${{ steps.publish.outputs.receipt-artifact-name }}
-          if-no-files-found: error
-          retention-days: 45
-          overwrite: false
-          archive: false
-          include-hidden-files: true
-      - name: Form Capability Group Result Bundle
-        id: form-bundle
+      - name: Form Action Result
+        id: form-result
         if: always() && steps.capability-environment-marker.outcome == 'success'
         run: |
-          receipt_args=()
           terminal_args=()
           if [[ -f .wdv3/publication-execution.json ]]; then
             terminal_args+=(--execution-state .wdv3/publication-execution.json)
@@ -1848,14 +1779,6 @@ jobs:
             terminal_args+=(
               --mutation-marker ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}"
               --mutation-marker-artifact-id "${{ steps.upload-mutation-marker.outputs.artifact-id }}"
-            )
-          fi
-          if [[ -n "${{ steps.upload-receipt.outputs.artifact-id }}" ]]; then
-            receipt_args+=(
-              --receipt ".wdv3/${{ steps.publish.outputs.receipt-artifact-name }}"
-              --receipt-digest "${{ steps.publish.outputs.receipt-digest }}"
-              --receipt-artifact-id "${{ steps.upload-receipt.outputs.artifact-id }}"
-              --receipt-artifact-digest "${{ steps.upload-receipt.outputs.artifact-digest }}"
             )
           fi
           set +e
@@ -1870,28 +1793,25 @@ jobs:
             --publication-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-digest }}" \
             --publish-step-outcome "${{ steps.publish.outcome }}" \
             "${terminal_args[@]}" \
-            "${receipt_args[@]}" \
             --result-output .wdv3/action-result.json \
-            --bundle-output .wdv3/capability-group-bundle.json \
             --github-output "${GITHUB_OUTPUT}"
           form_status=$?
           set -e
-          bundle_digest="$(sha256sum .wdv3/capability-group-bundle.json | cut -d' ' -f1)"
-          bundle_name="wdv3-live-buddy-capability-bundle-r${GITHUB_RUN_ID}-${bundle_digest}.json"
-          mv .wdv3/capability-group-bundle.json ".wdv3/${bundle_name}"
-          echo "capability-group-bundle-artifact-name=${bundle_name}" >> "${GITHUB_OUTPUT}"
-          echo "capability-group-bundle-digest=sha256:${bundle_digest}" >> "${GITHUB_OUTPUT}"
+          result_digest="$(sha256sum .wdv3/action-result.json | cut -d' ' -f1)"
+          result_name="wdv3-live-buddy-action-result-r${GITHUB_RUN_ID}-${result_digest}.json"
+          mv .wdv3/action-result.json ".wdv3/${result_name}"
+          echo "action-result-artifact-name=${result_name}" >> "${GITHUB_OUTPUT}"
           exit "${form_status}"
-      - name: Upload Capability Group Result Bundle
-        id: upload
+      - name: Upload Action Result
+        id: upload-result
         if: >-
           always() &&
           steps.capability-environment-marker.outcome == 'success' &&
-          steps.form-bundle.outputs.capability-group-bundle-artifact-name != ''
+          steps.form-result.outputs.action-result-artifact-name != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ${{ steps.form-bundle.outputs.capability-group-bundle-artifact-name }}
-          path: .wdv3/${{ steps.form-bundle.outputs.capability-group-bundle-artifact-name }}
+          name: ${{ steps.form-result.outputs.action-result-artifact-name }}
+          path: .wdv3/${{ steps.form-result.outputs.action-result-artifact-name }}
           if-no-files-found: error
           retention-days: 45
           overwrite: false
@@ -1900,7 +1820,7 @@ jobs:
       - name: Propagate publication status
         if: always()
         run: |
-          if [[ "${{ steps.capability-environment-marker.outcome }}" != "success" || "${{ steps.preflight.outcome }}" == "failure" || "${{ steps.mark-mutation.outcome }}" == "failure" || "${{ steps.upload-mutation-marker.outcome }}" == "failure" || "${{ steps.publish.outcome }}" == "failure" || "${{ steps.form-bundle.outcome }}" == "failure" || "${{ steps.upload.outcome }}" == "failure" ]]; then
+          if [[ "${{ steps.capability-environment-marker.outcome }}" != "success" || "${{ steps.preflight.outcome }}" == "failure" || "${{ steps.mark-mutation.outcome }}" == "failure" || "${{ steps.upload-mutation-marker.outcome }}" == "failure" || "${{ steps.publish.outcome }}" == "failure" || "${{ steps.form-result.outcome }}" == "failure" || "${{ steps.upload-result.outcome }}" == "failure" ]]; then
             exit 1
           fi
 
@@ -2051,19 +1971,11 @@ jobs:
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Download capability result bundle by artifact ID
-        if: always() && needs.publish-github-packages.outputs.capability-group-bundle-artifact-id != ''
+      - name: Download Action Result by artifact ID
+        if: always() && needs.publish-github-packages.outputs.action-result-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.publish-github-packages.outputs.capability-group-bundle-artifact-id }}
-          path: .wdv3/input
-          skip-decompress: true
-          digest-mismatch: error
-      - name: Download Receipt by artifact ID
-        if: always() && needs.publish-github-packages.outputs.receipt-artifact-id != ''
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          artifact-ids: ${{ needs.publish-github-packages.outputs.receipt-artifact-id }}
+          artifact-ids: ${{ needs.publish-github-packages.outputs.action-result-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
@@ -2122,20 +2034,12 @@ jobs:
               --capability-decision-artifact-digest "${{ needs.approval-finalizer.outputs.capability-decision-artifact-digest }}"
             )
           fi
-          if [[ -n "${{ needs.publish-github-packages.outputs.capability-group-bundle-artifact-id }}" ]]; then
+          if [[ -n "${{ needs.publish-github-packages.outputs.action-result-artifact-id }}" ]]; then
             args+=(
-              --capability-group-bundle ".wdv3/input/${{ needs.publish-github-packages.outputs.capability-group-bundle-artifact-name }}"
-              --capability-group-bundle-digest "${{ needs.publish-github-packages.outputs.capability-group-bundle-digest }}"
-              --capability-group-bundle-artifact-id "${{ needs.publish-github-packages.outputs.capability-group-bundle-artifact-id }}"
-              --capability-group-bundle-artifact-digest "${{ needs.publish-github-packages.outputs.capability-group-bundle-artifact-digest }}"
-            )
-          fi
-          if [[ -n "${{ needs.publish-github-packages.outputs.receipt-artifact-id }}" ]]; then
-            args+=(
-              --receipt ".wdv3/input/${{ needs.publish-github-packages.outputs.receipt-artifact-name }}"
-              --receipt-digest "${{ needs.publish-github-packages.outputs.receipt-digest }}"
-              --receipt-artifact-id "${{ needs.publish-github-packages.outputs.receipt-artifact-id }}"
-              --receipt-artifact-digest "${{ needs.publish-github-packages.outputs.receipt-artifact-digest }}"
+              --action-result ".wdv3/input/${{ needs.publish-github-packages.outputs.action-result-artifact-name }}"
+              --action-result-digest "${{ needs.publish-github-packages.outputs.action-result-digest }}"
+              --action-result-artifact-id "${{ needs.publish-github-packages.outputs.action-result-artifact-id }}"
+              --action-result-artifact-digest "${{ needs.publish-github-packages.outputs.action-result-artifact-digest }}"
             )
           fi
           qualification_result="${{ needs.qualification-finalizer.outputs.qualification-result }}"
@@ -2148,8 +2052,7 @@ jobs:
           capability_decision_id="${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }}"
           publish_result="${{ needs.publish-github-packages.result }}"
           capability_marker_id="${{ needs.publish-github-packages.outputs.mutation-marker-artifact-id }}"
-          capability_bundle_id="${{ needs.publish-github-packages.outputs.capability-group-bundle-artifact-id }}"
-          receipt_id="${{ needs.publish-github-packages.outputs.receipt-artifact-id }}"
+          action_result_id="${{ needs.publish-github-packages.outputs.action-result-artifact-id }}"
           workflow_cancelled="${{ needs.workflow-cancellation.outputs.workflow-cancelled || 'false' }}"
           publication_preparation_interrupted=false
           if [[ -n "${snapshot_id}" && -z "${snapshot_upload_digest}" ]]; then
@@ -2190,7 +2093,7 @@ jobs:
               echo "::error::Publication preparation interruption did not skip the publisher" >&2
               exit 1
             fi
-            if [[ -n "${forwarded_snapshot_id}" || -n "${authorization_id}" || -n "${capability_decision_id}" || -n "${capability_marker_id}" || -n "${capability_bundle_id}" || -n "${receipt_id}" ]]; then
+            if [[ -n "${forwarded_snapshot_id}" || -n "${authorization_id}" || -n "${capability_decision_id}" || -n "${capability_marker_id}" || -n "${action_result_id}" ]]; then
               echo "::error::Publication preparation interruption has downstream lineage" >&2
               exit 1
             fi
@@ -2198,14 +2101,14 @@ jobs:
             args+=(--publication-preparation-interrupted)
           fi
           qualification_only_cancellation=false
-          if [[ ( "${qualification_result}" == "failure" || "${qualification_result}" == "incomplete" ) && "${observation_result}" == "skipped" && "${materialization_result}" == "skipped" && "${publish_result}" == "cancelled" && "${workflow_cancelled}" == "true" && -z "${snapshot_id}" && -z "${snapshot_upload_digest}" && -z "${forwarded_snapshot_id}" && -z "${authorization_id}" && -z "${capability_decision_id}" && -z "${capability_marker_id}" && -z "${capability_bundle_id}" && -z "${receipt_id}" ]]; then
+          if [[ ( "${qualification_result}" == "failure" || "${qualification_result}" == "incomplete" ) && "${observation_result}" == "skipped" && "${materialization_result}" == "skipped" && "${publish_result}" == "cancelled" && "${workflow_cancelled}" == "true" && -z "${snapshot_id}" && -z "${snapshot_upload_digest}" && -z "${forwarded_snapshot_id}" && -z "${authorization_id}" && -z "${capability_decision_id}" && -z "${capability_marker_id}" && -z "${action_result_id}" ]]; then
             qualification_only_cancellation=true
           fi
           platform_terminated=false
           capability_may_have_started=false
           if [[ "${publish_result}" == "cancelled" && "${publication_preparation_interrupted}" != "true" && "${qualification_only_cancellation}" != "true" ]]; then
             platform_terminated=true
-          elif [[ "${publish_result}" == "failure" && -z "${capability_bundle_id}" ]]; then
+          elif [[ "${publish_result}" == "failure" && -z "${action_result_id}" ]]; then
             platform_terminated=true
           fi
           if [[ -n "${capability_marker_id}" ]]; then

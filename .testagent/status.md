@@ -14693,3 +14693,108 @@ history, Environment Profile, capability-group, and standalone Receipt
 transport surfaces, then closes record-model integration.
 
 <!-- END APPEND: 2026-09-02-wdv3-record-model-attempt-transport-closure -->
+
+<!-- BEGIN APPEND: 2026-09-03-wdv3-record-model-legacy-retirement-closure -->
+
+## Workflow Delivery v3 legacy-record retirement and record-model closure
+
+### Append integrity
+
+| Append-only file | Pre-append bytes | Pre-append SHA-256 |
+|---|---:|---|
+| `.testagent/status.md` | 876,757 | `2a2bdfffa08ace6fde7433124cc32d8ba85ee1117a9ee6c66a0ce492ba3e4d40` |
+| `docs/wiki/log.md` | 188,582 | `f33d75bd680ca46307feac9107902a3affd3b1b84fd25b85b6cbd36e857ff05c` |
+
+### Implemented boundary
+
+- Removed Actions-history discovery, admission, fixtures, platform calls, and
+  workflow transport. Native Actions history remains diagnostic rather than
+  normal-Live authority.
+- Removed Environment Profile, capability-group records, group result bundles,
+  and standalone Receipt transport. Successful `ActionResult` now owns its
+  immutable Receipt evidence, and Attempt Outcome binds direct ActionResult
+  digests.
+- Preserved current-Attempt authority, Simulation/CI run-attempt contracts,
+  concurrency and resource bindings, Provider/compiler fact authority, and all
+  independent attempt-one workflow guards.
+- Current-authority admission validates the trusted context purpose and its
+  agreement with the payload before purpose-specific schema selection.
+- Publication Snapshot permits zero or one materialized action. Transitional
+  Capability Admission permits zero or one aligned action closure and rejects
+  more than one without fabricating a synthetic closure.
+- Retained records use the exact target-derived
+  `workflow-delivery-v3:<target-sha>` control. Successful action-bearing
+  outcomes require one capability-admission digest and one ActionResult digest;
+  successful no-op outcomes require both tuples to be empty.
+
+### Requirement evidence
+
+| Requirement | Exact test evidence |
+|---|---|
+| Purpose agreement precedes schema selection | `test_current_authority_rejects_mixed_purpose_before_schema_access` |
+| Current context has an exact runtime type | `test_current_authority_rejects_context_subclass` |
+| Trusted context purpose is closed | `test_current_authority_validates_trusted_context_purpose` |
+| Snapshot construction and transport reject multiple actions | `test_publication_snapshot_rejects_more_than_one_action` |
+| Real publication materialization fails closed on multiple actions | `test_publication_materializer_rejects_more_than_one_action` |
+| Transitional zero-action Capability Admission is non-authorizing | `test_capability_decision_allows_transitional_zero_action_closure` |
+| Multiple Capability Admission closures are rejected | `test_capability_decision_rejects_multiple_action_closures`; `test_capability_decision_transport_rejects_multiple_action_closures` |
+| One-action blocked Capability Admission remains non-authorizing | `test_blocked_capability_decision_is_non_authorizing_and_attempt_local` |
+| Existing zero-action CLI persistence remains intact | `test_capability_cli_persists_expiry_decision_before_returning_one` |
+
+### Validation
+
+| Gate | Result |
+|---|---|
+| Bounded new regressions | `5 passed` |
+| Capability-cardinality regressions | `15 passed` |
+| Complete affected record-contraction tests | `544 passed` |
+| Live qualification boundary | `53 passed` |
+| Changed Python file Ruff check and format check | Passed across 21 files |
+| Changed production-file Pyrefly | `0 errors` |
+| Actionlint and staged diff check | Passed |
+| Complete staged Workflow Delivery v3 HK gate | `3,671 passed in 438.12s` |
+| Canonical index static-reference admission | `clean`; zero findings |
+
+The bounded static-reference policy digest remains
+`sha256:c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d`.
+
+### Review and adjudication
+
+- Independent runtime-integration and platform/workflow reviewers reported no
+  findings.
+- A scope reviewer proposed stronger purpose-order coverage and a
+  one-projection Live topology. Independent adjudication classified both
+  findings false positive: the existing malformed mixed-purpose payload kills
+  schema-before-purpose reordering, and the normative record contract limits
+  materialized actions rather than destination projections.
+- The record reviewer found that Capability Admission still accepted aligned
+  zero- or multi-action closures after capability-group retirement. An
+  exact-one correction was tested and rejected because it broke the retained
+  zero-action expiry/no-op CLI path. Two independent adjudicators classified
+  the original finding partial true positive: multi-action admission was
+  invalid, while removing zero-action admission belongs to the deferred
+  Governance/authorization unit.
+- The final record contract rejects more than one closure and preserves zero as
+  non-authorizing. Fresh same-scope and adversarial closure reviewers both
+  returned `RAW_FINDINGS: none`.
+
+No in-scope findings remain.
+
+### Deferred activation blockers
+
+- Pre-marker failures can still form and upload ActionResult.
+- Durable marker evidence is reduced to a Boolean, and success can be formed
+  without admitting the durable marker payload.
+- Final Governance and complete closure still occur after marker creation.
+- Cancelled, failed, and dependency-skipped conclusions can compress distinct
+  side-effect and replayability states.
+- Exact-satisfied no-op Authorization and Capability topology still requires
+  the later Governance/authorization redesign.
+
+These are later disabled-runtime units, not defects to mask or redesign inside
+the completed record-model contraction. Protected Governance remains
+`live_enabled=false`; no Live dispatch, approval, publication, package,
+Governance, Environment, tag, cleanup, push, PR, or other external mutation
+occurred.
+
+<!-- END APPEND: 2026-09-03-wdv3-record-model-legacy-retirement-closure -->

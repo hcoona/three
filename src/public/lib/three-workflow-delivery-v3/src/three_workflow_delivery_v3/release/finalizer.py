@@ -24,7 +24,6 @@ from three_workflow_delivery_v3.records.release import (
     SimulationIdentity,
     SimulationOutcome,
     publication_action_inputs,
-    publication_capability_group,
     publication_expected_result,
     publication_lock_group,
     publication_lock_projection,
@@ -553,8 +552,10 @@ def materialize_hypothetical_actions(
                 potential_action=potential,
                 artifact_digest=artifact.artifact_digest,
                 mutable_resource_keys=(
-                    "external-package-coordinate:"
-                    f"{key_digest.removeprefix('sha256:')}",
+                    (
+                        "external-package-coordinate:"
+                        f"{key_digest.removeprefix('sha256:')}"
+                    ),
                 ),
                 capability_requirements=potential.capability_requirements,
             )
@@ -593,7 +594,6 @@ def _materialize_publication_action(
         ),
         lock_projection=publication_lock_projection(projection),
         lock_group=publication_lock_group(projection),
-        capability_group=publication_capability_group(projection),
         capability_requirements=potential.capability_requirements,
         expected_result=publication_expected_result(projection),
         receipt_contract=publication_receipt_contract(projection),

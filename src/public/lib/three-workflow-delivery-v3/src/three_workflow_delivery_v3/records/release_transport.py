@@ -16,11 +16,8 @@ from three_workflow_delivery_v3.records.release import (
     AUTHORIZATION_RECORD_SCHEMA,
     BUDDY_EXECUTION_IDENTITY_SCHEMA,
     CAPABILITY_ADMISSION_DECISION_SCHEMA,
-    CAPABILITY_GROUP_RESULT_BUNDLE_SCHEMA,
     DESTINATION_PROJECTION_SCHEMA,
-    EXECUTION_HISTORY_ADMISSION_SNAPSHOT_SCHEMA,
     EXTERNAL_PACKAGE_COORDINATE_SCHEMA,
-    HISTORICAL_EXECUTION_RECORD_SCHEMA,
     HYPOTHETICAL_ACTION_SCHEMA,
     OBLIGATION_DISPOSITION_SCHEMA,
     OBSERVATION_REQUEST_FACTS_SCHEMA,
@@ -53,11 +50,8 @@ from three_workflow_delivery_v3.records.release import (
     AuthorizationRecord,
     BuddyExecutionIdentity,
     CapabilityAdmissionDecision,
-    CapabilityGroupResultBundle,
     DestinationProjection,
-    ExecutionHistoryAdmissionSnapshot,
     ExternalPackageCoordinate,
-    HistoricalExecutionRecord,
     HypotheticalAction,
     ObligationDisposition,
     ObservationRequestFacts,
@@ -129,8 +123,6 @@ class ReleaseAdmissionBindings:
     run_attempt: int | None
     target: str
     producer: str | None = None
-    request_id: str | None = None
-    execution: BuddyExecutionIdentity | None = None
 
     def __post_init__(self) -> None:
         """Reject caller bindings outside the purpose-selected field set."""
@@ -1623,7 +1615,6 @@ def _publication_action(value: JsonValue) -> PublicationAction:
                 "mutable-resource-keys",
                 "lock-projection",
                 "lock-group",
-                "capability-group",
                 "capability-requirements",
                 "expected-result",
                 "receipt-contract",
@@ -1665,10 +1656,6 @@ def _publication_action(value: JsonValue) -> PublicationAction:
         lock_group=_string(
             document["lock-group"],
             field="publication action.lock-group",
-        ),
-        capability_group=_string(
-            document["capability-group"],
-            field="publication action.capability-group",
         ),
         capability_requirements=_strings(
             document["capability-requirements"],
@@ -1830,169 +1817,6 @@ def _simulation_outcome(value: JsonValue) -> SimulationOutcome:
     )
 
 
-def _historical_execution_record(
-    value: JsonValue,
-) -> HistoricalExecutionRecord:
-    document = _closed(
-        value,
-        field="historical execution record",
-        schema=HISTORICAL_EXECUTION_RECORD_SCHEMA,
-        fields=frozenset(
-            {
-                "authority",
-                "history-only",
-                "execution",
-                "artifact-id",
-                "artifact-digest",
-                "payload-digest",
-                "source-workflow-run-id",
-                "source-workflow-run-node-id",
-                "source-head-sha",
-                "artifact-metadata",
-                "run-metadata",
-                "queried-run-attempt",
-                "queried-job-id",
-                "queried-job-conclusion",
-                "queried-phase",
-                "diagnostic-claims",
-            }
-        ),
-    )
-    if document["authority"] != "execution-history":
-        message = "historical execution record has the wrong authority"
-        raise ValueError(message)
-    execution = _buddy_execution(document["execution"])
-    return HistoricalExecutionRecord(
-        execution=execution,
-        artifact_id=_integer(
-            document["artifact-id"],
-            field="history.artifact-id",
-        ),
-        artifact_digest=_string(
-            document["artifact-digest"],
-            field="history.artifact-digest",
-        ),
-        payload_digest=_string(
-            document["payload-digest"],
-            field="history.payload-digest",
-        ),
-        source_workflow_run_id=_integer(
-            document["source-workflow-run-id"],
-            field="history.source-workflow-run-id",
-        ),
-        source_workflow_run_node_id=_string(
-            document["source-workflow-run-node-id"],
-            field="history.source-workflow-run-node-id",
-        ),
-        source_head_sha=_string(
-            document["source-head-sha"],
-            field="history.source-head-sha",
-        ),
-        artifact_metadata=_pairs(
-            document["artifact-metadata"],
-            field="history.artifact-metadata",
-        ),
-        run_metadata=_pairs(
-            document["run-metadata"],
-            field="history.run-metadata",
-        ),
-        queried_run_attempt=_integer(
-            document["queried-run-attempt"],
-            field="history.queried-run-attempt",
-        ),
-        queried_job_id=(
-            None
-            if document["queried-job-id"] is None
-            else _integer(
-                document["queried-job-id"],
-                field="history.queried-job-id",
-            )
-        ),
-        queried_job_conclusion=(
-            None
-            if document["queried-job-conclusion"] is None
-            else _string(
-                document["queried-job-conclusion"],
-                field="history.queried-job-conclusion",
-            )
-        ),
-        queried_phase=(
-            None
-            if document["queried-phase"] is None
-            else _string(
-                document["queried-phase"],
-                field="history.queried-phase",
-            )
-        ),
-        diagnostic_claims=_pairs(
-            document["diagnostic-claims"],
-            field="history.diagnostic-claims",
-        ),
-        history_only=_boolean(
-            document["history-only"],
-            field="history.history-only",
-        ),
-    )
-
-
-def _history_snapshot(value: JsonValue) -> ExecutionHistoryAdmissionSnapshot:
-    document = _closed(
-        value,
-        field="execution history admission snapshot",
-        schema=EXECUTION_HISTORY_ADMISSION_SNAPSHOT_SCHEMA,
-        fields=frozenset(
-            {
-                "authority",
-                "history-only",
-                "request-id",
-                "current-workflow-run-id",
-                "current-run-attempt",
-                "execution",
-                "query-basis",
-                "pagination-basis",
-                "records",
-            }
-        ),
-    )
-    if document["authority"] != "execution-history":
-        message = "history Snapshot has the wrong authority"
-        raise ValueError(message)
-    return ExecutionHistoryAdmissionSnapshot(
-        request_id=_string(
-            document["request-id"],
-            field="history snapshot.request-id",
-        ),
-        current_workflow_run_id=_integer(
-            document["current-workflow-run-id"],
-            field="history snapshot.current-workflow-run-id",
-        ),
-        current_run_attempt=_integer(
-            document["current-run-attempt"],
-            field="history snapshot.current-run-attempt",
-        ),
-        execution=_buddy_execution(document["execution"]),
-        query_basis=_strings(
-            document["query-basis"],
-            field="history snapshot.query-basis",
-        ),
-        pagination_basis=_strings(
-            document["pagination-basis"],
-            field="history snapshot.pagination-basis",
-        ),
-        records=tuple(
-            _historical_execution_record(item)
-            for item in _array(
-                document["records"],
-                field="history snapshot.records",
-            )
-        ),
-        history_only=_boolean(
-            document["history-only"],
-            field="history snapshot.history-only",
-        ),
-    )
-
-
 def _release_attempt_binding(value: JsonValue) -> ReleaseAttemptBinding:
     document = _closed(
         value,
@@ -2132,7 +1956,6 @@ def _capability_decision(value: JsonValue) -> CapabilityAdmissionDecision:
                 "artifact-digests",
                 "resource-key-sets",
                 "lock-groups",
-                "capability-group-manifest",
                 "live-eligibility-artifact-id",
                 "live-eligibility-artifact-digest",
                 "governance-provenance",
@@ -2184,10 +2007,6 @@ def _capability_decision(value: JsonValue) -> CapabilityAdmissionDecision:
         lock_groups=_pairs(
             document["lock-groups"],
             field="capability admission.lock-groups",
-        ),
-        capability_group_manifest=_nested_strings(
-            document["capability-group-manifest"],
-            field="capability admission.capability-group-manifest",
         ),
         live_eligibility_artifact_id=_integer(
             document["live-eligibility-artifact-id"],
@@ -2332,11 +2151,7 @@ def _action_result(value: JsonValue) -> ActionResult:
                 "outcome",
                 "mutation-disposition",
                 "response-identity-digest",
-                "receipt-artifact-id",
-                "receipt-artifact-name",
-                "receipt-artifact-digest",
-                "receipt-payload-digest",
-                "receipt-digest",
+                "receipt",
                 "diagnostic-reference",
                 "producer",
                 "control",
@@ -2371,25 +2186,10 @@ def _action_result(value: JsonValue) -> ActionResult:
             document["response-identity-digest"],
             field="action result.response-identity-digest",
         ),
-        receipt_artifact_id=_nullable_integer(
-            document["receipt-artifact-id"],
-            field="action result.receipt-artifact-id",
-        ),
-        receipt_artifact_name=_nullable_string(
-            document["receipt-artifact-name"],
-            field="action result.receipt-artifact-name",
-        ),
-        receipt_artifact_digest=_nullable_string(
-            document["receipt-artifact-digest"],
-            field="action result.receipt-artifact-digest",
-        ),
-        receipt_payload_digest=_nullable_string(
-            document["receipt-payload-digest"],
-            field="action result.receipt-payload-digest",
-        ),
-        receipt_digest=_nullable_string(
-            document["receipt-digest"],
-            field="action result.receipt-digest",
+        receipt=(
+            None
+            if document["receipt"] is None
+            else _receipt(document["receipt"])
         ),
         diagnostic_reference=_nullable_string(
             document["diagnostic-reference"],
@@ -2400,59 +2200,6 @@ def _action_result(value: JsonValue) -> ActionResult:
         workflow_run_id=_integer(
             document["workflow-run-id"],
             field="action result.workflow-run-id",
-        ),
-    )
-
-
-def _group_bundle(value: JsonValue) -> CapabilityGroupResultBundle:
-    document = _closed(
-        value,
-        field="capability group result bundle",
-        schema=CAPABILITY_GROUP_RESULT_BUNDLE_SCHEMA,
-        fields=frozenset(
-            {
-                "attempt",
-                "publication-snapshot-digest",
-                "capability-group",
-                "planned-action-ids",
-                "action-results",
-                "completion-state",
-                "producer",
-                "control",
-                "workflow-run-id",
-            }
-        ),
-    )
-    return CapabilityGroupResultBundle(
-        attempt=_release_attempt(document["attempt"]),
-        publication_snapshot_digest=_string(
-            document["publication-snapshot-digest"],
-            field="group result.publication-snapshot-digest",
-        ),
-        capability_group=_string(
-            document["capability-group"],
-            field="group result.capability-group",
-        ),
-        planned_action_ids=_strings(
-            document["planned-action-ids"],
-            field="group result.planned-action-ids",
-        ),
-        action_results=tuple(
-            _action_result(item)
-            for item in _array(
-                document["action-results"],
-                field="group result.action-results",
-            )
-        ),
-        completion_state=_string(
-            document["completion-state"],
-            field="group result.completion-state",
-        ),
-        producer=_string(document["producer"], field="group result.producer"),
-        control=_string(document["control"], field="group result.control"),
-        workflow_run_id=_integer(
-            document["workflow-run-id"],
-            field="group result.workflow-run-id",
         ),
     )
 
@@ -2470,8 +2217,7 @@ def _attempt_outcome(value: JsonValue) -> AttemptOutcome:
                 "publication-snapshot-digest",
                 "authorization-digest",
                 "capability-admission-digests",
-                "capability-group-bundle-digests",
-                "receipt-digests",
+                "action-result-digests",
                 "terminal-phase",
                 "result",
                 "uncertainty",
@@ -2502,13 +2248,9 @@ def _attempt_outcome(value: JsonValue) -> AttemptOutcome:
             document["capability-admission-digests"],
             field="attempt outcome.capability-admission-digests",
         ),
-        capability_group_bundle_digests=_strings(
-            document["capability-group-bundle-digests"],
-            field="attempt outcome.capability-group-bundle-digests",
-        ),
-        receipt_digests=_strings(
-            document["receipt-digests"],
-            field="attempt outcome.receipt-digests",
+        action_result_digests=_strings(
+            document["action-result-digests"],
+            field="attempt outcome.action-result-digests",
         ),
         terminal_phase=_string(
             document["terminal-phase"],
@@ -2532,8 +2274,6 @@ def _attempt_outcome(value: JsonValue) -> AttemptOutcome:
 
 _PARSERS: dict[type[object], Callable[[JsonValue], ReleaseRecord]] = {
     ReleaseIntent: _release_intent,
-    HistoricalExecutionRecord: _historical_execution_record,
-    ExecutionHistoryAdmissionSnapshot: _history_snapshot,
     ReleaseAttemptBinding: _release_attempt_binding,
     SimulationBinding: _simulation_binding,
     QualificationSnapshot: _qualification_snapshot,
@@ -2548,8 +2288,6 @@ _PARSERS: dict[type[object], Callable[[JsonValue], ReleaseRecord]] = {
     AuthorizationRecord: _authorization,
     CapabilityAdmissionDecision: _capability_decision,
     ActionResult: _action_result,
-    Receipt: _receipt,
-    CapabilityGroupResultBundle: _group_bundle,
     AttemptOutcome: _attempt_outcome,
 }
 
@@ -2594,14 +2332,6 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
             record.workflow_run_id,
             None,
             record.target,
-            None,
-        )
-    if isinstance(record, ExecutionHistoryAdmissionSnapshot):
-        return (
-            "live-release",
-            record.current_workflow_run_id,
-            None,
-            record.execution.target,
             None,
         )
     if isinstance(record, ReleaseAttemptBinding):
@@ -2737,22 +2467,6 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
             record.attempt.execution.target,
             record.producer,
         )
-    if isinstance(record, Receipt):
-        return (
-            "live-release",
-            record.workflow_run_id,
-            None,
-            record.attempt.execution.target,
-            record.producer,
-        )
-    if isinstance(record, CapabilityGroupResultBundle):
-        return (
-            "live-release",
-            record.workflow_run_id,
-            None,
-            record.attempt.execution.target,
-            record.producer,
-        )
     if isinstance(record, AttemptOutcome):
         return (
             "live-release",
@@ -2799,23 +2513,6 @@ def validate_release_admission_bindings(
     if expected.producer is not None and producer != expected.producer:
         message = "Release record current binding mismatch: producer"
         raise ValueError(message)
-    if isinstance(record, ExecutionHistoryAdmissionSnapshot):
-        if expected.request_id is None:
-            message = (
-                "History Snapshot admission requires caller-selected request_id"
-            )
-            raise ValueError(message)
-        if record.request_id != expected.request_id:
-            message = "Release record current binding mismatch: request_id"
-            raise ValueError(message)
-        if expected.execution is None:
-            message = (
-                "History Snapshot admission requires caller-selected execution"
-            )
-            raise ValueError(message)
-        if record.execution != expected.execution:
-            message = "Release record current binding mismatch: execution"
-            raise ValueError(message)
 
 
 __all__ = [
