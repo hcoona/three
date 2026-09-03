@@ -1069,7 +1069,7 @@ jobs:
   materialize-publication:
     name: Materialize publication Snapshot and reviewer summary
     if: github.run_attempt == 1
-    needs: observe-github-packages
+    needs: [admit, observe-github-packages]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -1103,7 +1103,10 @@ jobs:
       reviewer-artifact-url: ${{ steps.upload-reviewer.outputs.artifact-url }}
       reviewer-artifact-name: ${{ steps.names.outputs.reviewer-name }}
       reviewer-digest: ${{ steps.materialize.outputs.reviewer-digest }}
-      reviewer-formatter-input-base64: ${{ steps.bind.outputs.reviewer-formatter-input-base64 }}
+      approval-bundle-artifact-id: ${{ steps.upload-bundle.outputs.artifact-id }}
+      approval-bundle-artifact-digest: ${{ steps.upload-bundle.outputs.artifact-digest }}
+      approval-bundle-artifact-name: ${{ steps.form-bundle.outputs.approval-bundle-artifact-name }}
+      approval-bundle-digest: ${{ steps.form-bundle.outputs.approval-bundle-digest }}
       publish-required: ${{ steps.materialize.outputs.publish-required }}
       resource-concurrency-key: ${{ steps.materialize.outputs.resource-concurrency-key }}
     steps:
@@ -1121,6 +1124,13 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ inputs.intent-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download Release Attempt binding by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.admit.outputs.attempt-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
@@ -1212,6 +1222,7 @@ jobs:
           include-hidden-files: true
       - name: Upload reviewer artifact
         id: upload-reviewer
+        if: steps.materialize.outputs.publish-required == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ steps.names.outputs.reviewer-name }}
@@ -1222,49 +1233,102 @@ jobs:
           include-hidden-files: true
       - name: Bind reviewer artifact transport to exact payloads
         id: bind
+        if: steps.materialize.outputs.publish-required == 'true'
         run: |
-          # shellcheck disable=SC2129
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release bind-reviewer-artifact \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --target "${{ inputs.target-sha }}" \
             --formatter-input ".wdv3/${{ steps.names.outputs.reviewer-name }}/reviewer-formatter-input.json" \
             --publication-snapshot ".wdv3/${{ steps.names.outputs.reviewer-name }}/publication-snapshot.json" \
             --reviewer-summary ".wdv3/${{ steps.names.outputs.reviewer-name }}/reviewer-summary.md" \
+            --reviewer-artifact-name "${{ steps.names.outputs.reviewer-name }}" \
             --reviewer-artifact-id "${{ steps.upload-reviewer.outputs.artifact-id }}" \
             --reviewer-artifact-digest "${{ steps.upload-reviewer.outputs.artifact-digest }}" \
+            --reviewer-artifact-url "${{ steps.upload-reviewer.outputs.artifact-url }}" \
             --snapshot-payload-digest "${{ steps.materialize.outputs.publication-snapshot-payload-digest }}" \
             --summary-payload-digest "${{ steps.materialize.outputs.reviewer-digest }}" \
-            --output .wdv3/bound-reviewer-formatter-input.json \
+            --output .wdv3/reviewer-summary-artifact.json \
             --github-output "${GITHUB_OUTPUT}"
-          echo "reviewer-formatter-input-base64=$(base64 -w0 .wdv3/bound-reviewer-formatter-input.json)" >> "${GITHUB_OUTPUT}"
+      - name: Form complete pre-wait Approval Bundle
+        id: form-bundle
+        if: steps.materialize.outputs.publish-required == 'true'
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 release form-approval-bundle \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --target "${{ inputs.target-sha }}" \
+            --intent ".wdv3/input/${{ inputs.intent-artifact-name }}" \
+            --intent-digest "${{ inputs.intent-digest }}" \
+            --intent-artifact-id "${{ inputs.intent-artifact-id }}" \
+            --intent-artifact-digest "${{ inputs.intent-artifact-digest }}" \
+            --attempt-binding ".wdv3/input/${{ needs.admit.outputs.attempt-artifact-name }}" \
+            --attempt-binding-digest "${{ needs.admit.outputs.attempt-digest }}" \
+            --attempt-binding-artifact-id "${{ needs.admit.outputs.attempt-artifact-id }}" \
+            --attempt-binding-artifact-digest "${{ needs.admit.outputs.attempt-artifact-digest }}" \
+            --qualification-decision ".wdv3/input/${{ needs.observe-github-packages.outputs.decision-artifact-name }}" \
+            --qualification-decision-digest "${{ needs.observe-github-packages.outputs.decision-digest }}" \
+            --qualification-decision-artifact-id "${{ needs.observe-github-packages.outputs.decision-artifact-id }}" \
+            --qualification-decision-artifact-digest "${{ needs.observe-github-packages.outputs.decision-artifact-digest }}" \
+            --publication-snapshot ".wdv3/${{ steps.names.outputs.publication-snapshot-name }}" \
+            --publication-snapshot-digest "${{ steps.materialize.outputs.publication-snapshot-digest }}" \
+            --publication-snapshot-artifact-id "${{ steps.upload-snapshot.outputs.artifact-id }}" \
+            --publication-snapshot-artifact-digest "${{ steps.upload-snapshot.outputs.artifact-digest }}" \
+            --reviewer-summary-artifact .wdv3/reviewer-summary-artifact.json \
+            --reviewer-summary-artifact-digest "${{ steps.bind.outputs.reviewer-summary-artifact-digest }}" \
+            --control "workflow-delivery-v3:${{ inputs.target-sha }}" \
+            --output .wdv3/approval-bundle.json \
+            --github-output "${GITHUB_OUTPUT}"
+          digest="$(sha256sum .wdv3/approval-bundle.json | cut -d' ' -f1)"
+          name="wdv3-live-buddy-approval-bundle-r${GITHUB_RUN_ID}-${digest}.json"
+          mv .wdv3/approval-bundle.json ".wdv3/${name}"
+          echo "approval-bundle-artifact-name=${name}" >> "${GITHUB_OUTPUT}"
+      - name: Upload Approval Bundle
+        id: upload-bundle
+        if: steps.materialize.outputs.publish-required == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.form-bundle.outputs.approval-bundle-artifact-name }}
+          path: .wdv3/${{ steps.form-bundle.outputs.approval-bundle-artifact-name }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
       - name: Publish completed reviewer summary and artifact link
-        if: steps.upload-reviewer.outcome == 'success'
+        if: steps.upload-bundle.outcome == 'success'
         run: |
           cat ".wdv3/${{ steps.names.outputs.reviewer-name }}/reviewer-summary.md" >> "${GITHUB_STEP_SUMMARY}"
           printf '\n[Download immutable reviewer artifact](%s)\n' "${{ steps.upload-reviewer.outputs.artifact-url }}" >> "${GITHUB_STEP_SUMMARY}"
 
-  approval:
-    name: Human approval and same-revision Authorization
-    if: github.run_attempt == 1
-    needs: materialize-publication
+  approve-publication:
+    name: Approve publication
+    if: >-
+      github.run_attempt == 1 &&
+      needs.materialize-publication.outputs.publish-required == 'true'
+    needs: [admit, materialize-publication]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    permissions: {}
+    permissions:
+      contents: read
     environment:
       name: workflow-delivery-v3-buddy-approval
       url: ${{ needs.materialize-publication.outputs.reviewer-artifact-url }}
     outputs:
-      authorization-artifact-name: ${{ steps.authorize.outputs.authorization-artifact-name }}
-      authorization-digest: ${{ steps.authorize.outputs.authorization-digest }}
-      authorization-base64: ${{ steps.authorize.outputs.authorization-base64 }}
-      reviewer-formatter-input-base64: ${{ needs.materialize-publication.outputs.reviewer-formatter-input-base64 }}
+      publication-authorization-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      publication-authorization-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      publication-authorization-artifact-name: ${{ steps.authorize.outputs.publication-authorization-artifact-name }}
+      publication-authorization-digest: ${{ steps.authorize.outputs.publication-authorization-digest }}
+      approval-bundle-artifact-id: ${{ needs.materialize-publication.outputs.approval-bundle-artifact-id }}
+      approval-bundle-artifact-digest: ${{ needs.materialize-publication.outputs.approval-bundle-artifact-digest }}
+      approval-bundle-artifact-name: ${{ needs.materialize-publication.outputs.approval-bundle-artifact-name }}
+      approval-bundle-digest: ${{ needs.materialize-publication.outputs.approval-bundle-digest }}
       publication-snapshot-artifact-id: ${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}
       publication-snapshot-artifact-digest: ${{ needs.materialize-publication.outputs.publication-snapshot-artifact-digest }}
       publication-snapshot-artifact-name: ${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}
       publication-snapshot-digest: ${{ needs.materialize-publication.outputs.publication-snapshot-digest }}
-      reviewer-artifact-id: ${{ needs.materialize-publication.outputs.reviewer-artifact-id }}
-      reviewer-artifact-digest: ${{ needs.materialize-publication.outputs.reviewer-artifact-digest }}
-      reviewer-artifact-name: ${{ needs.materialize-publication.outputs.reviewer-artifact-name }}
-      reviewer-digest: ${{ needs.materialize-publication.outputs.reviewer-digest }}
       publish-required: ${{ needs.materialize-publication.outputs.publish-required }}
       resource-concurrency-key: ${{ needs.materialize-publication.outputs.resource-concurrency-key }}
       qualification-snapshot-artifact-id: ${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-id }}
@@ -1297,135 +1361,6 @@ jobs:
             echo "::error::Environment marker does not match the approval Environment contract" >&2
             exit 1
           fi
-      - name: Fetch exact public target and format Authorization
-        id: authorize
-        if: success() && steps.approval-environment-marker.outcome == 'success'
-        env:
-          REVIEWER_FORMATTER_INPUT_BASE64: ${{ needs.materialize-publication.outputs.reviewer-formatter-input-base64 }}
-        run: |
-          if [[ ! "${GITHUB_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::selected target is not an exact lowercase SHA" >&2
-            exit 1
-          fi
-          git init .wdv3/exact-target
-          git -C .wdv3/exact-target fetch --depth=1 https://github.com/hcoona/three.git "${GITHUB_SHA}"
-          git -C .wdv3/exact-target checkout --detach FETCH_HEAD
-          actual="$(git -C .wdv3/exact-target rev-parse HEAD)"
-          if [[ "${actual}" != "${GITHUB_SHA}" ]]; then
-            echo "::error::fetched revision mismatch" >&2
-            exit 1
-          fi
-          if git -C .wdv3/exact-target symbolic-ref -q HEAD; then
-            echo "::error::exact target checkout is not detached" >&2
-            exit 1
-          fi
-          printf '%s' "${REVIEWER_FORMATTER_INPUT_BASE64}" | base64 -d > .wdv3/bound-reviewer-formatter-input.json
-          jobs_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs?per_page=100"
-          python3 - "${jobs_url}" "${GITHUB_SHA}" "${GITHUB_RUN_ATTEMPT}" > .wdv3/approval-job.env <<'PY'
-          import json
-          import sys
-          import urllib.request
-
-          expected_name = "Run same-revision Buddy live Attempt / Human approval and same-revision Authorization"
-          request = urllib.request.Request(
-              sys.argv[1],
-              headers={
-                  "Accept": "application/vnd.github+json",
-                  "User-Agent": "three-workflow-delivery-v3",
-                  "X-GitHub-Api-Version": "2022-11-28",
-              },
-          )
-          with urllib.request.urlopen(request, timeout=20) as response:
-              document = json.load(response)
-          jobs = [
-              job
-              for job in document.get("jobs", [])
-              if job.get("name") == expected_name
-              and job.get("head_sha") == sys.argv[2]
-              and str(job.get("run_attempt")) == sys.argv[3]
-          ]
-          if len(jobs) != 1:
-              raise SystemExit("approval job correlation is not exact")
-          job = jobs[0]
-          job_id = job.get("id")
-          check_run_url = job.get("check_run_url")
-          if (
-              type(job_id) is not int
-              or job_id <= 0
-              or type(check_run_url) is not str
-              or not check_run_url.startswith(
-                  "https://api.github.com/repos/"
-              )
-              or not check_run_url.rsplit("/", 1)[-1].isdigit()
-          ):
-              raise SystemExit("approval job/check-run identity is malformed")
-          print(f"approval_job_id={job_id}")
-          print(f"approval_check_run_id={check_run_url.rsplit('/', 1)[-1]}")
-          PY
-          source .wdv3/approval-job.env
-          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          PYTHONPATH=".wdv3/exact-target/src/public/lib/three-workflow-delivery-v3/src" \
-            python3 ".wdv3/exact-target/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/authorization_formatter.py" \
-            --workflow-run-id "${GITHUB_RUN_ID}" \
-            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
-            --target "${GITHUB_SHA}" \
-            --formatter-input .wdv3/bound-reviewer-formatter-input.json \
-            --approval-job-id "${approval_job_id}" \
-            --completed-at "${completed_at}" \
-            --control "workflow-delivery-v3:${GITHUB_SHA}" \
-            --output .wdv3/authorization.json \
-            --github-output "${GITHUB_OUTPUT}"
-          digest="$(sha256sum .wdv3/authorization.json | cut -d' ' -f1)"
-          name="wdv3-live-buddy-authorization-r${GITHUB_RUN_ID}-${digest}.json"
-          mv .wdv3/authorization.json ".wdv3/${name}"
-          authorization_base64="$(base64 -w0 ".wdv3/${name}")"
-          echo "authorization-artifact-name=${name}" >> "${GITHUB_OUTPUT}"
-          echo "authorization-base64=${authorization_base64}" >> "${GITHUB_OUTPUT}"
-
-  approval-finalizer:
-    name: Finalize approval and admit capability
-    if: always() && github.run_attempt == 1 && needs.materialize-publication.result != 'skipped'
-    needs: [materialize-publication, approval]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    outputs:
-      authorization-artifact-name: ${{ needs.approval.outputs.authorization-artifact-name }}
-      authorization-digest: ${{ needs.approval.outputs.authorization-digest }}
-      authorization-artifact-id: ${{ steps.upload-authorization.outputs.artifact-id }}
-      authorization-artifact-digest: ${{ steps.upload-authorization.outputs.artifact-digest }}
-      capability-decision-artifact-id: ${{ steps.upload.outputs.artifact-id }}
-      capability-decision-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
-      capability-decision-artifact-name: ${{ steps.finalize.outputs.capability-decision-artifact-name }}
-      capability-decision-digest: ${{ steps.finalize.outputs.capability-decision-digest }}
-      capability-result: ${{ steps.finalize.outputs.capability-result }}
-      publish-required: ${{ steps.finalize.outputs.publish-required }}
-      resource-concurrency-key: ${{ steps.finalize.outputs.resource-concurrency-key }}
-      publication-snapshot-artifact-id: ${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}
-      publication-snapshot-artifact-digest: ${{ needs.materialize-publication.outputs.publication-snapshot-artifact-digest }}
-      publication-snapshot-artifact-name: ${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}
-      publication-snapshot-digest: ${{ needs.materialize-publication.outputs.publication-snapshot-digest }}
-      qualification-snapshot-artifact-id: ${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-id }}
-      qualification-snapshot-artifact-digest: ${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-digest }}
-      qualification-snapshot-artifact-name: ${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-name }}
-      qualification-snapshot-digest: ${{ needs.materialize-publication.outputs.qualification-snapshot-digest }}
-      decision-artifact-id: ${{ needs.materialize-publication.outputs.decision-artifact-id }}
-      decision-artifact-digest: ${{ needs.materialize-publication.outputs.decision-artifact-digest }}
-      decision-artifact-name: ${{ needs.materialize-publication.outputs.decision-artifact-name }}
-      decision-digest: ${{ needs.materialize-publication.outputs.decision-digest }}
-      release-artifact-artifact-id: ${{ needs.materialize-publication.outputs.release-artifact-artifact-id }}
-      release-artifact-artifact-digest: ${{ needs.materialize-publication.outputs.release-artifact-artifact-digest }}
-      release-artifact-artifact-name: ${{ needs.materialize-publication.outputs.release-artifact-artifact-name }}
-      release-artifact-digest: ${{ needs.materialize-publication.outputs.release-artifact-digest }}
-      adapter-context-artifact-id: ${{ needs.materialize-publication.outputs.adapter-context-artifact-id }}
-      adapter-context-artifact-digest: ${{ needs.materialize-publication.outputs.adapter-context-artifact-digest }}
-      adapter-context-artifact-name: ${{ needs.materialize-publication.outputs.adapter-context-artifact-name }}
-      adapter-context-digest: ${{ needs.materialize-publication.outputs.adapter-context-digest }}
-      tarball-artifact-id: ${{ needs.materialize-publication.outputs.tarball-artifact-id }}
-      tarball-artifact-digest: ${{ needs.materialize-publication.outputs.tarball-artifact-digest }}
-      tarball-artifact-name: ${{ needs.materialize-publication.outputs.tarball-artifact-name }}
-    steps:
       - name: Check out exact selected target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -1436,68 +1371,21 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.7'
-      - name: Download Publication Snapshot by artifact ID
+      - name: Download authorization closure by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}
+          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }},${{ needs.materialize-publication.outputs.approval-bundle-artifact-id }}
           path: .wdv3/input
+          merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
-      - name: Download reviewer payload by artifact ID
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          artifact-ids: ${{ needs.materialize-publication.outputs.reviewer-artifact-id }}
-          path: .wdv3/reviewer
-          digest-mismatch: error
-      - name: Download Release Intent by artifact ID
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          artifact-ids: ${{ inputs.intent-artifact-id }}
-          path: .wdv3/input
-          skip-decompress: true
-          digest-mismatch: error
-      - name: Download Repository Model by artifact ID
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          artifact-ids: ${{ inputs.repository-model-artifact-id }}
-          path: .wdv3/input
-          skip-decompress: true
-          digest-mismatch: error
-      - name: Download Live Eligibility Decision by artifact ID
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          artifact-ids: ${{ inputs.live-eligibility-artifact-id }}
-          path: .wdv3/input
-          skip-decompress: true
-          digest-mismatch: error
-      - name: Admit exact capability closure
-        id: finalize
-        continue-on-error: true
+      - name: Form sole Publication Authorization
+        id: authorize
         env:
-          AUTHORIZATION_BASE64: ${{ needs.approval.outputs.authorization-base64 }}
-          REVIEWER_FORMATTER_INPUT_BASE64: ${{ needs.approval.outputs.reviewer-formatter-input-base64 }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          # shellcheck disable=SC2129
-          if [[ "${{ needs.approval.result }}" != "success" || -z "${AUTHORIZATION_BASE64}" ]]; then
-            echo "approval-contract-result=unknown-replayable-approval-contract" >> "${GITHUB_OUTPUT}"
-            echo "capability-result=blocked" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          printf '%s' "${AUTHORIZATION_BASE64}" | base64 -d > ".wdv3/${{ needs.approval.outputs.authorization-artifact-name }}"
-          if [[ "${{ needs.materialize-publication.outputs.publish-required }}" != "true" ]]; then
-            {
-              echo "capability-result=success"
-              echo "publish-required=false"
-              echo "resource-concurrency-key=${{ needs.materialize-publication.outputs.resource-concurrency-key }}"
-              echo "admission-status=0"
-            } >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          printf '%s' "${REVIEWER_FORMATTER_INPUT_BASE64}" | base64 -d > .wdv3/bound-reviewer-formatter-input.json
-          set +e
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
-            three-workflow-delivery-v3 release admit-capability \
+            three-workflow-delivery-v3 release form-publication-authorization \
             --github-token "${GITHUB_TOKEN}" \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1510,138 +1398,156 @@ jobs:
             --repository-model-digest "${{ inputs.repository-model-digest }}" \
             --repository-model-artifact-id "${{ inputs.repository-model-artifact-id }}" \
             --repository-model-artifact-digest "${{ inputs.repository-model-artifact-digest }}" \
-            --authorization ".wdv3/${{ needs.approval.outputs.authorization-artifact-name }}" \
-            --authorization-digest "${{ needs.approval.outputs.authorization-digest }}" \
-            --authorization-artifact-id "1" \
-            --authorization-artifact-digest "sha256:$(sha256sum .wdv3/${{ needs.approval.outputs.authorization-artifact-name }} | cut -d' ' -f1)" \
-            --publication-snapshot ".wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}" \
-            --publication-snapshot-digest "${{ needs.materialize-publication.outputs.publication-snapshot-digest }}" \
-            --publication-snapshot-artifact-id "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}" \
-            --publication-snapshot-artifact-digest "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-digest }}" \
-            --reviewer-summary ".wdv3/reviewer/reviewer-summary.md" \
-            --reviewer-summary-artifact-id "${{ needs.materialize-publication.outputs.reviewer-artifact-id }}" \
-            --reviewer-summary-artifact-digest "${{ needs.materialize-publication.outputs.reviewer-artifact-digest }}" \
+            --attempt-binding ".wdv3/input/${{ needs.admit.outputs.attempt-artifact-name }}" \
+            --attempt-binding-digest "${{ needs.admit.outputs.attempt-digest }}" \
+            --attempt-binding-artifact-id "${{ needs.admit.outputs.attempt-artifact-id }}" \
+            --attempt-binding-artifact-digest "${{ needs.admit.outputs.attempt-artifact-digest }}" \
+            --approval-bundle ".wdv3/input/${{ needs.materialize-publication.outputs.approval-bundle-artifact-name }}" \
+            --approval-bundle-digest "${{ needs.materialize-publication.outputs.approval-bundle-digest }}" \
+            --approval-bundle-artifact-id "${{ needs.materialize-publication.outputs.approval-bundle-artifact-id }}" \
+            --approval-bundle-artifact-digest "${{ needs.materialize-publication.outputs.approval-bundle-artifact-digest }}" \
             --live-eligibility-decision ".wdv3/input/${{ inputs.live-eligibility-artifact-name }}" \
             --live-eligibility-artifact-id "${{ inputs.live-eligibility-artifact-id }}" \
             --live-eligibility-artifact-digest "${{ inputs.live-eligibility-artifact-digest }}" \
             --live-eligibility-payload-digest "${{ inputs.live-eligibility-digest }}" \
             --control "workflow-delivery-v3:${{ inputs.target-sha }}" \
-            --output .wdv3/capability-decision.json \
+            --output .wdv3/publication-authorization.json \
             --github-output "${GITHUB_OUTPUT}"
-          status=$?
-          set -e
-          digest="$(sha256sum .wdv3/capability-decision.json | cut -d' ' -f1)"
-          name="wdv3-live-buddy-capability-r${GITHUB_RUN_ID}-${digest}.json"
-          mv .wdv3/capability-decision.json ".wdv3/${name}"
-          {
-            echo "capability-decision-artifact-name=${name}"
-            echo "publish-required=${{ needs.materialize-publication.outputs.publish-required }}"
-            echo "resource-concurrency-key=${{ needs.materialize-publication.outputs.resource-concurrency-key }}"
-            echo "admission-status=${status}"
-          } >> "${GITHUB_OUTPUT}"
-      - name: Upload Authorization Record
-        id: upload-authorization
-        if: always() && needs.approval.result == 'success' && needs.approval.outputs.authorization-artifact-name != ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ${{ needs.approval.outputs.authorization-artifact-name }}
-          path: .wdv3/${{ needs.approval.outputs.authorization-artifact-name }}
-          if-no-files-found: error
-          retention-days: 45
-          overwrite: false
-          archive: false
-          include-hidden-files: true
-      - name: Upload Capability Admission Decision
+          digest="$(sha256sum .wdv3/publication-authorization.json | cut -d' ' -f1)"
+          name="wdv3-live-buddy-publication-authorization-r${GITHUB_RUN_ID}-${digest}.json"
+          mv .wdv3/publication-authorization.json ".wdv3/${name}"
+          echo "publication-authorization-artifact-name=${name}" >> "${GITHUB_OUTPUT}"
+      - name: Upload Publication Authorization
         id: upload
-        if: >-
-          always() &&
-          steps.upload-authorization.outcome == 'success' &&
-          steps.upload-authorization.outputs.artifact-id != '' &&
-          steps.upload-authorization.outputs.artifact-digest != '' &&
-          steps.finalize.outputs.capability-decision-artifact-name != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ${{ steps.finalize.outputs.capability-decision-artifact-name }}
-          path: .wdv3/${{ steps.finalize.outputs.capability-decision-artifact-name }}
+          name: ${{ steps.authorize.outputs.publication-authorization-artifact-name }}
+          path: .wdv3/${{ steps.authorize.outputs.publication-authorization-artifact-name }}
           if-no-files-found: error
           retention-days: 45
           overwrite: false
           archive: false
           include-hidden-files: true
-      - name: Propagate capability admission status
-        if: always()
-        run: |
-          if [[ ( "${{ steps.finalize.outputs.capability-result }}" == "success" || -n "${{ steps.finalize.outputs.capability-decision-artifact-name }}" ) && ( "${{ steps.upload-authorization.outcome }}" != "success" || -z "${{ steps.upload-authorization.outputs.artifact-id }}" || -z "${{ steps.upload-authorization.outputs.artifact-digest }}" ) ]]; then
-            exit 1
-          fi
-          if [[ -n "${{ steps.finalize.outputs.capability-decision-artifact-name }}" && ( "${{ steps.upload.outcome }}" != "success" || -z "${{ steps.upload.outputs.artifact-id }}" || -z "${{ steps.upload.outputs.artifact-digest }}" ) ]]; then
-            exit 1
-          fi
-          if [[ "${{ steps.finalize.outcome }}" == "failure" || "${{ steps.finalize.outputs.admission-status }}" != "0" ]]; then
-            exit 1
-          fi
 
-  publish-github-packages:
-    name: Publish to GitHub Packages
-    if: success() && github.run_attempt == 1 && needs.approval-finalizer.outputs.capability-result == 'success' && needs.approval-finalizer.outputs.publish-required == 'true'
-    needs: approval-finalizer
+  prove-exact-satisfied:
+    name: Prove exact-satisfied Governance continuity
+    if: >-
+      github.run_attempt == 1 &&
+      needs.materialize-publication.outputs.publish-required == 'false'
+    needs: [admit, materialize-publication]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
-      packages: write
-    environment: workflow-delivery-v3-buddy-github-packages
-    concurrency:
-      group: wdv3-resource-${{ needs.approval-finalizer.outputs.resource-concurrency-key }}
-      cancel-in-progress: false
     outputs:
-      action-result-artifact-id: ${{ steps.upload-result.outputs.artifact-id }}
-      action-result-artifact-digest: ${{ steps.upload-result.outputs.artifact-digest }}
-      action-result-artifact-name: ${{ steps.form-result.outputs.action-result-artifact-name }}
-      action-result-digest: ${{ steps.form-result.outputs.action-result-digest }}
-      mutation-marker-artifact-id: ${{ steps.upload-mutation-marker.outputs.artifact-id }}
-      mutation-marker-artifact-digest: ${{ steps.upload-mutation-marker.outputs.artifact-digest }}
+      exact-satisfied-governance-proof-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      exact-satisfied-governance-proof-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      exact-satisfied-governance-proof-artifact-name: ${{ steps.prove.outputs.exact-satisfied-governance-proof-artifact-name }}
+      exact-satisfied-governance-proof-digest: ${{ steps.prove.outputs.exact-satisfied-governance-proof-digest }}
     steps:
-      - name: Verify capability Environment marker
-        id: capability-environment-marker
-        shell: bash
-        env:
-          ACTUAL_ENVIRONMENT_MARKER: ${{ vars.WDV3_CAPABILITY_ENVIRONMENT_MARKER }}
-        run: |
-          if [[ "${ACTUAL_ENVIRONMENT_MARKER}" != "workflow-delivery-v3-buddy-github-packages/v1" ]]; then
-            echo "::error::Environment marker does not match the capability Environment contract" >&2
-            exit 1
-          fi
       - name: Check out exact selected target
-        if: success() && steps.capability-environment-marker.outcome == 'success'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        if: success() && steps.capability-environment-marker.outcome == 'success'
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.7'
-      - name: Install exact toolchain
-        if: success() && steps.capability-environment-marker.outcome == 'success'
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        with:
-          experimental: true
-          install: true
-      - name: Download publisher closure by artifact ID
-        if: success() && steps.capability-environment-marker.outcome == 'success'
+      - name: Download exact-satisfied closure by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.approval-finalizer.outputs.qualification-snapshot-artifact-id }},${{ needs.approval-finalizer.outputs.decision-artifact-id }},${{ needs.approval-finalizer.outputs.adapter-context-artifact-id }},${{ needs.approval-finalizer.outputs.release-artifact-artifact-id }},${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }},${{ needs.approval-finalizer.outputs.authorization-artifact-id }},${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }},${{ needs.approval-finalizer.outputs.tarball-artifact-id }}
+          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }},${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}
           path: .wdv3/input
           merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
-      - name: Preflight publication without npm mutation
-        id: preflight
-        if: success() && steps.capability-environment-marker.outcome == 'success'
+      - name: Form exact-satisfied Governance proof
+        id: prove
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 release prove-exact-satisfied \
+            --github-token "${GITHUB_TOKEN}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --target "${{ inputs.target-sha }}" \
+            --intent ".wdv3/input/${{ inputs.intent-artifact-name }}" \
+            --intent-digest "${{ inputs.intent-digest }}" \
+            --intent-artifact-id "${{ inputs.intent-artifact-id }}" \
+            --intent-artifact-digest "${{ inputs.intent-artifact-digest }}" \
+            --repository-model ".wdv3/input/${{ inputs.repository-model-artifact-name }}" \
+            --repository-model-digest "${{ inputs.repository-model-digest }}" \
+            --repository-model-artifact-id "${{ inputs.repository-model-artifact-id }}" \
+            --repository-model-artifact-digest "${{ inputs.repository-model-artifact-digest }}" \
+            --attempt-binding ".wdv3/input/${{ needs.admit.outputs.attempt-artifact-name }}" \
+            --attempt-binding-digest "${{ needs.admit.outputs.attempt-digest }}" \
+            --attempt-binding-artifact-id "${{ needs.admit.outputs.attempt-artifact-id }}" \
+            --attempt-binding-artifact-digest "${{ needs.admit.outputs.attempt-artifact-digest }}" \
+            --publication-snapshot ".wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}" \
+            --publication-snapshot-digest "${{ needs.materialize-publication.outputs.publication-snapshot-digest }}" \
+            --publication-snapshot-artifact-id "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}" \
+            --publication-snapshot-artifact-digest "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-digest }}" \
+            --live-eligibility-decision ".wdv3/input/${{ inputs.live-eligibility-artifact-name }}" \
+            --live-eligibility-artifact-id "${{ inputs.live-eligibility-artifact-id }}" \
+            --live-eligibility-artifact-digest "${{ inputs.live-eligibility-artifact-digest }}" \
+            --live-eligibility-payload-digest "${{ inputs.live-eligibility-digest }}" \
+            --control "workflow-delivery-v3:${{ inputs.target-sha }}" \
+            --output .wdv3/exact-satisfied-governance-proof.json \
+            --github-output "${GITHUB_OUTPUT}"
+          digest="$(sha256sum .wdv3/exact-satisfied-governance-proof.json | cut -d' ' -f1)"
+          name="wdv3-live-buddy-exact-satisfied-proof-r${GITHUB_RUN_ID}-${digest}.json"
+          mv .wdv3/exact-satisfied-governance-proof.json ".wdv3/${name}"
+          echo "exact-satisfied-governance-proof-artifact-name=${name}" >> "${GITHUB_OUTPUT}"
+      - name: Upload exact-satisfied Governance proof
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.prove.outputs.exact-satisfied-governance-proof-artifact-name }}
+          path: .wdv3/${{ steps.prove.outputs.exact-satisfied-governance-proof-artifact-name }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+
+  publish-github-packages:
+    name: Reject unsupported GitHub Packages primitive
+    if: >-
+      success() &&
+      github.run_attempt == 1 &&
+      needs.approve-publication.result == 'success' &&
+      needs.approve-publication.outputs.publish-required == 'true'
+    needs: approve-publication
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    concurrency:
+      group: wdv3-resource-${{ needs.approve-publication.outputs.resource-concurrency-key }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.12.7'
+      - name: Download publisher closure by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.approve-publication.outputs.qualification-snapshot-artifact-id }},${{ needs.approve-publication.outputs.decision-artifact-id }},${{ needs.approve-publication.outputs.adapter-context-artifact-id }},${{ needs.approve-publication.outputs.release-artifact-artifact-id }},${{ needs.approve-publication.outputs.publication-snapshot-artifact-id }},${{ needs.approve-publication.outputs.publication-authorization-artifact-id }},${{ needs.approve-publication.outputs.tarball-artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Reject unimplemented conditional destination primitive
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -1650,179 +1556,34 @@ jobs:
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \
-            --qualification-snapshot ".wdv3/input/${{ needs.approval-finalizer.outputs.qualification-snapshot-artifact-name }}" \
-            --qualification-snapshot-digest "${{ needs.approval-finalizer.outputs.qualification-snapshot-digest }}" \
-            --qualification-snapshot-artifact-id "${{ needs.approval-finalizer.outputs.qualification-snapshot-artifact-id }}" \
-            --qualification-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.qualification-snapshot-artifact-digest }}" \
-            --qualification-decision ".wdv3/input/${{ needs.approval-finalizer.outputs.decision-artifact-name }}" \
-            --qualification-decision-digest "${{ needs.approval-finalizer.outputs.decision-digest }}" \
-            --qualification-decision-artifact-id "${{ needs.approval-finalizer.outputs.decision-artifact-id }}" \
-            --qualification-decision-artifact-digest "${{ needs.approval-finalizer.outputs.decision-artifact-digest }}" \
-            --adapter-context ".wdv3/input/${{ needs.approval-finalizer.outputs.adapter-context-artifact-name }}" \
-            --adapter-context-digest "${{ needs.approval-finalizer.outputs.adapter-context-digest }}" \
-            --adapter-context-artifact-id "${{ needs.approval-finalizer.outputs.adapter-context-artifact-id }}" \
-            --adapter-context-artifact-digest "${{ needs.approval-finalizer.outputs.adapter-context-artifact-digest }}" \
-            --release-artifact ".wdv3/input/${{ needs.approval-finalizer.outputs.release-artifact-artifact-name }}" \
-            --release-artifact-digest "${{ needs.approval-finalizer.outputs.release-artifact-digest }}" \
-            --release-artifact-artifact-id "${{ needs.approval-finalizer.outputs.release-artifact-artifact-id }}" \
-            --release-artifact-artifact-digest "${{ needs.approval-finalizer.outputs.release-artifact-artifact-digest }}" \
-            --publication-snapshot ".wdv3/input/${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-name }}" \
-            --publication-snapshot-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-digest }}" \
-            --publication-snapshot-artifact-id "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}" \
-            --publication-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-digest }}" \
-            --authorization ".wdv3/input/${{ needs.approval-finalizer.outputs.authorization-artifact-name }}" \
-            --authorization-digest "${{ needs.approval-finalizer.outputs.authorization-digest }}" \
-            --authorization-artifact-id "${{ needs.approval-finalizer.outputs.authorization-artifact-id }}" \
-            --authorization-artifact-digest "${{ needs.approval-finalizer.outputs.authorization-artifact-digest }}" \
-            --capability-decision ".wdv3/input/${{ needs.approval-finalizer.outputs.capability-decision-artifact-name }}" \
-            --capability-decision-digest "${{ needs.approval-finalizer.outputs.capability-decision-digest }}" \
-            --capability-decision-artifact-id "${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }}" \
-            --capability-decision-artifact-digest "${{ needs.approval-finalizer.outputs.capability-decision-artifact-digest }}" \
-            --tarball ".wdv3/input/${{ needs.approval-finalizer.outputs.tarball-artifact-name }}" \
+            --qualification-snapshot ".wdv3/input/${{ needs.approve-publication.outputs.qualification-snapshot-artifact-name }}" \
+            --qualification-snapshot-digest "${{ needs.approve-publication.outputs.qualification-snapshot-digest }}" \
+            --qualification-snapshot-artifact-id "${{ needs.approve-publication.outputs.qualification-snapshot-artifact-id }}" \
+            --qualification-snapshot-artifact-digest "${{ needs.approve-publication.outputs.qualification-snapshot-artifact-digest }}" \
+            --qualification-decision ".wdv3/input/${{ needs.approve-publication.outputs.decision-artifact-name }}" \
+            --qualification-decision-digest "${{ needs.approve-publication.outputs.decision-digest }}" \
+            --qualification-decision-artifact-id "${{ needs.approve-publication.outputs.decision-artifact-id }}" \
+            --qualification-decision-artifact-digest "${{ needs.approve-publication.outputs.decision-artifact-digest }}" \
+            --adapter-context ".wdv3/input/${{ needs.approve-publication.outputs.adapter-context-artifact-name }}" \
+            --adapter-context-digest "${{ needs.approve-publication.outputs.adapter-context-digest }}" \
+            --adapter-context-artifact-id "${{ needs.approve-publication.outputs.adapter-context-artifact-id }}" \
+            --adapter-context-artifact-digest "${{ needs.approve-publication.outputs.adapter-context-artifact-digest }}" \
+            --release-artifact ".wdv3/input/${{ needs.approve-publication.outputs.release-artifact-artifact-name }}" \
+            --release-artifact-digest "${{ needs.approve-publication.outputs.release-artifact-digest }}" \
+            --release-artifact-artifact-id "${{ needs.approve-publication.outputs.release-artifact-artifact-id }}" \
+            --release-artifact-artifact-digest "${{ needs.approve-publication.outputs.release-artifact-artifact-digest }}" \
+            --publication-snapshot ".wdv3/input/${{ needs.approve-publication.outputs.publication-snapshot-artifact-name }}" \
+            --publication-snapshot-digest "${{ needs.approve-publication.outputs.publication-snapshot-digest }}" \
+            --publication-snapshot-artifact-id "${{ needs.approve-publication.outputs.publication-snapshot-artifact-id }}" \
+            --publication-snapshot-artifact-digest "${{ needs.approve-publication.outputs.publication-snapshot-artifact-digest }}" \
+            --publication-authorization ".wdv3/input/${{ needs.approve-publication.outputs.publication-authorization-artifact-name }}" \
+            --publication-authorization-digest "${{ needs.approve-publication.outputs.publication-authorization-digest }}" \
+            --publication-authorization-artifact-id "${{ needs.approve-publication.outputs.publication-authorization-artifact-id }}" \
+            --publication-authorization-artifact-digest "${{ needs.approve-publication.outputs.publication-authorization-artifact-digest }}" \
+            --tarball ".wdv3/input/${{ needs.approve-publication.outputs.tarball-artifact-name }}" \
             --github-token "${GITHUB_TOKEN}" \
             --preflight-output .wdv3/publication-preflight.json \
             --github-output "${GITHUB_OUTPUT}"
-      - name: Form mutation may-have-started marker
-        id: mark-mutation
-        if: success() && steps.capability-environment-marker.outcome == 'success'
-        run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
-            three-workflow-delivery-v3 release mark-github-packages-mutation-start \
-            --workflow-run-id "${GITHUB_RUN_ID}" \
-            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
-            --target "${{ inputs.target-sha }}" \
-            --publication-snapshot ".wdv3/input/${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-name }}" \
-            --publication-snapshot-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-digest }}" \
-            --publication-snapshot-artifact-id "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}" \
-            --publication-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-digest }}" \
-            --preflight .wdv3/publication-preflight.json \
-            --preflight-digest "${{ steps.preflight.outputs.publication-preflight-digest }}" \
-            --marker-output ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${GITHUB_RUN_ID}" \
-            --github-output "${GITHUB_OUTPUT}"
-      - name: Upload mutation may-have-started marker
-        id: upload-mutation-marker
-        if: success() && steps.capability-environment-marker.outcome == 'success'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}
-          path: .wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}
-          if-no-files-found: error
-          retention-days: 45
-          overwrite: false
-          archive: false
-          include-hidden-files: true
-      - name: Publish create-only package action
-        id: publish
-        if: success() && steps.capability-environment-marker.outcome == 'success'
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set +e
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
-            three-workflow-delivery-v3 release publish-github-packages \
-            --workflow-run-id "${GITHUB_RUN_ID}" \
-            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
-            --target "${{ inputs.target-sha }}" \
-            --qualification-snapshot ".wdv3/input/${{ needs.approval-finalizer.outputs.qualification-snapshot-artifact-name }}" \
-            --qualification-snapshot-digest "${{ needs.approval-finalizer.outputs.qualification-snapshot-digest }}" \
-            --qualification-snapshot-artifact-id "${{ needs.approval-finalizer.outputs.qualification-snapshot-artifact-id }}" \
-            --qualification-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.qualification-snapshot-artifact-digest }}" \
-            --qualification-decision ".wdv3/input/${{ needs.approval-finalizer.outputs.decision-artifact-name }}" \
-            --qualification-decision-digest "${{ needs.approval-finalizer.outputs.decision-digest }}" \
-            --qualification-decision-artifact-id "${{ needs.approval-finalizer.outputs.decision-artifact-id }}" \
-            --qualification-decision-artifact-digest "${{ needs.approval-finalizer.outputs.decision-artifact-digest }}" \
-            --adapter-context ".wdv3/input/${{ needs.approval-finalizer.outputs.adapter-context-artifact-name }}" \
-            --adapter-context-digest "${{ needs.approval-finalizer.outputs.adapter-context-digest }}" \
-            --adapter-context-artifact-id "${{ needs.approval-finalizer.outputs.adapter-context-artifact-id }}" \
-            --adapter-context-artifact-digest "${{ needs.approval-finalizer.outputs.adapter-context-artifact-digest }}" \
-            --release-artifact ".wdv3/input/${{ needs.approval-finalizer.outputs.release-artifact-artifact-name }}" \
-            --release-artifact-digest "${{ needs.approval-finalizer.outputs.release-artifact-digest }}" \
-            --release-artifact-artifact-id "${{ needs.approval-finalizer.outputs.release-artifact-artifact-id }}" \
-            --release-artifact-artifact-digest "${{ needs.approval-finalizer.outputs.release-artifact-artifact-digest }}" \
-            --publication-snapshot ".wdv3/input/${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-name }}" \
-            --publication-snapshot-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-digest }}" \
-            --publication-snapshot-artifact-id "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}" \
-            --publication-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-digest }}" \
-            --authorization ".wdv3/input/${{ needs.approval-finalizer.outputs.authorization-artifact-name }}" \
-            --authorization-digest "${{ needs.approval-finalizer.outputs.authorization-digest }}" \
-            --authorization-artifact-id "${{ needs.approval-finalizer.outputs.authorization-artifact-id }}" \
-            --authorization-artifact-digest "${{ needs.approval-finalizer.outputs.authorization-artifact-digest }}" \
-            --capability-decision ".wdv3/input/${{ needs.approval-finalizer.outputs.capability-decision-artifact-name }}" \
-            --capability-decision-digest "${{ needs.approval-finalizer.outputs.capability-decision-digest }}" \
-            --capability-decision-artifact-id "${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }}" \
-            --capability-decision-artifact-digest "${{ needs.approval-finalizer.outputs.capability-decision-artifact-digest }}" \
-            --tarball ".wdv3/input/${{ needs.approval-finalizer.outputs.tarball-artifact-name }}" \
-            --github-token "${GITHUB_TOKEN}" \
-            --preflight .wdv3/publication-preflight.json \
-            --preflight-digest "${{ steps.preflight.outputs.publication-preflight-digest }}" \
-            --mutation-marker ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}" \
-            --mutation-marker-digest "${{ steps.mark-mutation.outputs.mutation-may-have-started-digest }}" \
-            --mutation-marker-artifact-id "${{ steps.upload-mutation-marker.outputs.artifact-id }}" \
-            --mutation-marker-artifact-digest "${{ steps.upload-mutation-marker.outputs.artifact-digest }}" \
-            --temp-root "${RUNNER_TEMP}/wdv3" \
-            --execution-state-output .wdv3/publication-execution.json \
-            --github-output "${GITHUB_OUTPUT}"
-          status=$?
-          set -e
-          echo "publish-cli-status=${status}" >> "${GITHUB_OUTPUT}"
-          exit "${status}"
-      - name: Form Action Result
-        id: form-result
-        if: always() && steps.capability-environment-marker.outcome == 'success'
-        run: |
-          terminal_args=()
-          if [[ -f .wdv3/publication-execution.json ]]; then
-            terminal_args+=(--execution-state .wdv3/publication-execution.json)
-          fi
-          if [[ -n "${{ steps.upload-mutation-marker.outputs.artifact-id }}" ]]; then
-            terminal_args+=(
-              --mutation-marker ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}"
-              --mutation-marker-artifact-id "${{ steps.upload-mutation-marker.outputs.artifact-id }}"
-            )
-          fi
-          set +e
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
-            three-workflow-delivery-v3 release form-github-packages-result \
-            --workflow-run-id "${GITHUB_RUN_ID}" \
-            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
-            --target "${{ inputs.target-sha }}" \
-            --publication-snapshot ".wdv3/input/${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-name }}" \
-            --publication-snapshot-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-digest }}" \
-            --publication-snapshot-artifact-id "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}" \
-            --publication-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-digest }}" \
-            --publish-step-outcome "${{ steps.publish.outcome }}" \
-            "${terminal_args[@]}" \
-            --result-output .wdv3/action-result.json \
-            --github-output "${GITHUB_OUTPUT}"
-          form_status=$?
-          set -e
-          result_digest="$(sha256sum .wdv3/action-result.json | cut -d' ' -f1)"
-          result_name="wdv3-live-buddy-action-result-r${GITHUB_RUN_ID}-${result_digest}.json"
-          mv .wdv3/action-result.json ".wdv3/${result_name}"
-          echo "action-result-artifact-name=${result_name}" >> "${GITHUB_OUTPUT}"
-          exit "${form_status}"
-      - name: Upload Action Result
-        id: upload-result
-        if: >-
-          always() &&
-          steps.capability-environment-marker.outcome == 'success' &&
-          steps.form-result.outputs.action-result-artifact-name != ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ${{ steps.form-result.outputs.action-result-artifact-name }}
-          path: .wdv3/${{ steps.form-result.outputs.action-result-artifact-name }}
-          if-no-files-found: error
-          retention-days: 45
-          overwrite: false
-          archive: false
-          include-hidden-files: true
-      - name: Propagate publication status
-        if: always()
-        run: |
-          if [[ "${{ steps.capability-environment-marker.outcome }}" != "success" || "${{ steps.preflight.outcome }}" == "failure" || "${{ steps.mark-mutation.outcome }}" == "failure" || "${{ steps.upload-mutation-marker.outcome }}" == "failure" || "${{ steps.publish.outcome }}" == "failure" || "${{ steps.form-result.outcome }}" == "failure" || "${{ steps.upload-result.outcome }}" == "failure" ]]; then
-            exit 1
-          fi
 
   workflow-cancellation:
     name: Record workflow cancellation
@@ -1833,7 +1594,8 @@ jobs:
         qualification-finalizer,
         observe-github-packages,
         materialize-publication,
-        approval-finalizer,
+        approve-publication,
+        prove-exact-satisfied,
         publish-github-packages,
       ]
     runs-on: ubuntu-24.04
@@ -1854,7 +1616,8 @@ jobs:
         qualification-finalizer,
         observe-github-packages,
         materialize-publication,
-        approval-finalizer,
+        approve-publication,
+        prove-exact-satisfied,
         publish-github-packages,
         workflow-cancellation,
       ]
@@ -1955,27 +1718,27 @@ jobs:
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Download Authorization Record by artifact ID
-        if: always() && needs.approval-finalizer.outputs.authorization-artifact-id != ''
+      - name: Download Approval Bundle by artifact ID
+        if: always() && needs.materialize-publication.outputs.approval-bundle-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.approval-finalizer.outputs.authorization-artifact-id }}
+          artifact-ids: ${{ needs.materialize-publication.outputs.approval-bundle-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Download Capability Admission Decision by artifact ID
-        if: always() && needs.approval-finalizer.outputs.capability-decision-artifact-id != ''
+      - name: Download Publication Authorization by artifact ID
+        if: always() && needs.approve-publication.outputs.publication-authorization-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }}
+          artifact-ids: ${{ needs.approve-publication.outputs.publication-authorization-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Download Action Result by artifact ID
-        if: always() && needs.publish-github-packages.outputs.action-result-artifact-id != ''
+      - name: Download exact-satisfied Governance proof by artifact ID
+        if: always() && needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.publish-github-packages.outputs.action-result-artifact-id }}
+          artifact-ids: ${{ needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
@@ -2018,42 +1781,14 @@ jobs:
               --publication-snapshot-artifact-digest "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-digest }}"
             )
           fi
-          if [[ -n "${{ needs.approval-finalizer.outputs.authorization-artifact-id }}" ]]; then
-            args+=(
-              --authorization ".wdv3/input/${{ needs.approval-finalizer.outputs.authorization-artifact-name }}"
-              --authorization-digest "${{ needs.approval-finalizer.outputs.authorization-digest }}"
-              --authorization-artifact-id "${{ needs.approval-finalizer.outputs.authorization-artifact-id }}"
-              --authorization-artifact-digest "${{ needs.approval-finalizer.outputs.authorization-artifact-digest }}"
-            )
-          fi
-          if [[ -n "${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }}" ]]; then
-            args+=(
-              --capability-decision ".wdv3/input/${{ needs.approval-finalizer.outputs.capability-decision-artifact-name }}"
-              --capability-decision-digest "${{ needs.approval-finalizer.outputs.capability-decision-digest }}"
-              --capability-decision-artifact-id "${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }}"
-              --capability-decision-artifact-digest "${{ needs.approval-finalizer.outputs.capability-decision-artifact-digest }}"
-            )
-          fi
-          if [[ -n "${{ needs.publish-github-packages.outputs.action-result-artifact-id }}" ]]; then
-            args+=(
-              --action-result ".wdv3/input/${{ needs.publish-github-packages.outputs.action-result-artifact-name }}"
-              --action-result-digest "${{ needs.publish-github-packages.outputs.action-result-digest }}"
-              --action-result-artifact-id "${{ needs.publish-github-packages.outputs.action-result-artifact-id }}"
-              --action-result-artifact-digest "${{ needs.publish-github-packages.outputs.action-result-artifact-digest }}"
-            )
-          fi
+          add_record approval-bundle ".wdv3/input/${{ needs.materialize-publication.outputs.approval-bundle-artifact-name }}" "${{ needs.materialize-publication.outputs.approval-bundle-digest }}" "${{ needs.materialize-publication.outputs.approval-bundle-artifact-id }}" "${{ needs.materialize-publication.outputs.approval-bundle-artifact-digest }}"
+          add_record publication-authorization ".wdv3/input/${{ needs.approve-publication.outputs.publication-authorization-artifact-name }}" "${{ needs.approve-publication.outputs.publication-authorization-digest }}" "${{ needs.approve-publication.outputs.publication-authorization-artifact-id }}" "${{ needs.approve-publication.outputs.publication-authorization-artifact-digest }}"
+          add_record exact-satisfied-governance-proof ".wdv3/input/${{ needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-name }}" "${{ needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-digest }}" "${{ needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-id }}" "${{ needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-digest }}"
           qualification_result="${{ needs.qualification-finalizer.outputs.qualification-result }}"
           observation_result="${{ needs.observe-github-packages.result }}"
           materialization_result="${{ needs.materialize-publication.result }}"
           snapshot_id="${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}"
           snapshot_upload_digest="${{ needs.materialize-publication.outputs.publication-snapshot-artifact-digest }}"
-          forwarded_snapshot_id="${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}"
-          authorization_id="${{ needs.approval-finalizer.outputs.authorization-artifact-id }}"
-          capability_decision_id="${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }}"
-          publish_result="${{ needs.publish-github-packages.result }}"
-          capability_marker_id="${{ needs.publish-github-packages.outputs.mutation-marker-artifact-id }}"
-          action_result_id="${{ needs.publish-github-packages.outputs.action-result-artifact-id }}"
-          workflow_cancelled="${{ needs.workflow-cancellation.outputs.workflow-cancelled || 'false' }}"
           publication_preparation_interrupted=false
           if [[ -n "${snapshot_id}" && -z "${snapshot_upload_digest}" ]]; then
             echo "::error::Publication Snapshot transport is only partially absent" >&2
@@ -2068,57 +1803,12 @@ jobs:
               echo "::error::Successful publication preparation omitted its durable Snapshot" >&2
               exit 1
             fi
-            interruption_is_legal=false
-            if [[ "${observation_result}" == "failure" || "${observation_result}" == "cancelled" ]]; then
-              if [[ "${materialization_result}" == "skipped" || "${materialization_result}" == "cancelled" ]]; then
-                interruption_is_legal=true
-              fi
-            elif [[ "${observation_result}" == "success" ]]; then
-              if [[ "${materialization_result}" == "failure" || "${materialization_result}" == "cancelled" ]]; then
-                interruption_is_legal=true
-              fi
-            fi
-            if [[ "${workflow_cancelled}" == "true" ]]; then
-              if [[ "${observation_result}" == "skipped" && "${materialization_result}" == "skipped" ]]; then
-                interruption_is_legal=true
-              elif [[ "${observation_result}" == "success" && "${materialization_result}" == "skipped" ]]; then
-                interruption_is_legal=true
-              fi
-            fi
-            if [[ "${interruption_is_legal}" != "true" ]]; then
+            if [[ "${observation_result}" == "success" && "${materialization_result}" != "failure" && "${materialization_result}" != "cancelled" ]]; then
               echo "::error::Publication preparation state is not an admitted interruption" >&2
-              exit 1
-            fi
-            if [[ "${publish_result}" != "skipped" && ! ( "${publish_result}" == "cancelled" && "${workflow_cancelled}" == "true" ) ]]; then
-              echo "::error::Publication preparation interruption did not skip the publisher" >&2
-              exit 1
-            fi
-            if [[ -n "${forwarded_snapshot_id}" || -n "${authorization_id}" || -n "${capability_decision_id}" || -n "${capability_marker_id}" || -n "${action_result_id}" ]]; then
-              echo "::error::Publication preparation interruption has downstream lineage" >&2
               exit 1
             fi
             publication_preparation_interrupted=true
             args+=(--publication-preparation-interrupted)
-          fi
-          qualification_only_cancellation=false
-          if [[ ( "${qualification_result}" == "failure" || "${qualification_result}" == "incomplete" ) && "${observation_result}" == "skipped" && "${materialization_result}" == "skipped" && "${publish_result}" == "cancelled" && "${workflow_cancelled}" == "true" && -z "${snapshot_id}" && -z "${snapshot_upload_digest}" && -z "${forwarded_snapshot_id}" && -z "${authorization_id}" && -z "${capability_decision_id}" && -z "${capability_marker_id}" && -z "${action_result_id}" ]]; then
-            qualification_only_cancellation=true
-          fi
-          platform_terminated=false
-          capability_may_have_started=false
-          if [[ "${publish_result}" == "cancelled" && "${publication_preparation_interrupted}" != "true" && "${qualification_only_cancellation}" != "true" ]]; then
-            platform_terminated=true
-          elif [[ "${publish_result}" == "failure" && -z "${action_result_id}" ]]; then
-            platform_terminated=true
-          fi
-          if [[ -n "${capability_marker_id}" ]]; then
-            capability_may_have_started=true
-          fi
-          if [[ "${platform_terminated}" == "true" ]]; then
-            args+=(--platform-terminated)
-          fi
-          if [[ "${capability_may_have_started}" == "true" ]]; then
-            args+=(--capability-may-have-started)
           fi
           mkdir -p .wdv3/final-attempt
           set +e
@@ -2152,10 +1842,8 @@ jobs:
               printf '%s\n' "- Qualification result: ${qualification_result}"
               printf '%s\n' "- Observation job result: ${observation_result}"
               printf '%s\n' "- Materialization job result: ${materialization_result}"
-              printf '%s\n' "- Publisher job result: ${publish_result}"
               printf '%s\n' "- Durable Publication Snapshot: absent"
-              printf '%s\n' "- Capability path started: no"
-              printf '%s\n' "- Workflow cancellation observed: ${workflow_cancelled}"
+              printf '%s\n' "- Mutation authority: absent"
             } | tee -a .wdv3/final-attempt/attempt-summary.md >> "${GITHUB_STEP_SUMMARY}"
           fi
           outcome_digest="$(sha256sum .wdv3/final-attempt/attempt-outcome.json | cut -d' ' -f1)"

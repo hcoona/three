@@ -525,6 +525,14 @@ def _assert_commit9_inventory(surfaces: tuple[str, ...]) -> None:
         "/catalog" in path or path.endswith("/catalogs.py") for path in surfaces
     )
     assert any("/tests/" in path for path in surfaces)
+    assert (
+        "src/public/lib/three-workflow-delivery-v3/src/"
+        "three_workflow_delivery_v3/release/governance_git.py"
+    ) in surfaces
+    assert (
+        "src/public/lib/three-workflow-delivery-v3/src/"
+        "three_workflow_delivery_v3/authorization_formatter.py"
+    ) not in surfaces
 
 
 def _modify_history_path(repo: Path, path: str) -> None:

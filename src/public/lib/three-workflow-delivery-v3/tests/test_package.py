@@ -39,6 +39,7 @@ APPROVED_RELEASE_MEMBERS = frozenset(
     (RELEASE_ARCHIVE_PATH / module).as_posix()
     for module in APPROVED_RELEASE_MODULES
 )
+DELETED_PACKAGE_MEMBER = "three_workflow_delivery_v3/authorization_formatter.py"
 UV_BINARY = shutil.which("uv")
 if UV_BINARY is None:
     pytest.skip(
@@ -55,6 +56,31 @@ def _venv_executable(environment: Path, name: str) -> Path:
 
 def _process_output(process: subprocess.CompletedProcess[str]) -> str:
     return f"stdout:\n{process.stdout}\nstderr:\n{process.stderr}"
+
+
+def _wheel_package_members(path: Path) -> frozenset[str]:
+    with zipfile.ZipFile(path) as wheel:
+        return frozenset(
+            PurePosixPath(member.filename).as_posix()
+            for member in wheel.infolist()
+            if not member.is_dir()
+        )
+
+
+def _source_package_members(path: Path) -> frozenset[str]:
+    members = set()
+    with tarfile.open(path, "r:gz") as source_distribution:
+        for member in source_distribution.getmembers():
+            if not member.isfile():
+                continue
+            member_path = PurePosixPath(member.name)
+            project_path = PurePosixPath(*member_path.parts[1:])
+            if not project_path.is_relative_to(SDIST_SOURCE_PREFIX):
+                continue
+            members.add(
+                project_path.relative_to(SDIST_SOURCE_PREFIX).as_posix()
+            )
+    return frozenset(members)
 
 
 def test_built_distribution_contains_release_and_runs_cli(
@@ -96,29 +122,23 @@ def test_built_distribution_contains_release_and_runs_cli(
     assert len(wheels) == 1
     assert len(source_distributions) == 1
 
-    with zipfile.ZipFile(wheels[0]) as wheel:
-        wheel_release_members = set()
-        for member in wheel.infolist():
-            member_path = PurePosixPath(member.filename)
-            if not member.is_dir() and member_path.is_relative_to(
-                RELEASE_ARCHIVE_PATH,
-            ):
-                wheel_release_members.add(member_path.as_posix())
+    wheel_members = _wheel_package_members(wheels[0])
+    wheel_release_members = {
+        member
+        for member in wheel_members
+        if PurePosixPath(member).is_relative_to(RELEASE_ARCHIVE_PATH)
+    }
     assert wheel_release_members == APPROVED_RELEASE_MEMBERS
+    assert DELETED_PACKAGE_MEMBER not in wheel_members
 
-    with tarfile.open(source_distributions[0], "r:gz") as source_distribution:
-        source_release_members = set()
-        for member in source_distribution.getmembers():
-            if not member.isfile():
-                continue
-            member_path = PurePosixPath(member.name)
-            project_path = PurePosixPath(*member_path.parts[1:])
-            if not project_path.is_relative_to(SDIST_SOURCE_PREFIX):
-                continue
-            normalized_path = project_path.relative_to(SDIST_SOURCE_PREFIX)
-            if normalized_path.is_relative_to(RELEASE_ARCHIVE_PATH):
-                source_release_members.add(normalized_path.as_posix())
+    source_package_members = _source_package_members(source_distributions[0])
+    source_release_members = {
+        member
+        for member in source_package_members
+        if PurePosixPath(member).is_relative_to(RELEASE_ARCHIVE_PATH)
+    }
     assert source_release_members == APPROVED_RELEASE_MEMBERS
+    assert DELETED_PACKAGE_MEMBER not in source_package_members
 
     environment = tmp_path / "venv"
     venv.EnvBuilder(

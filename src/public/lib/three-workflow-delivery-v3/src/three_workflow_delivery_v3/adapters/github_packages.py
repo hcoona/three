@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import inspect
 import itertools
 import os
 import re
 import stat
-import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from datetime import datetime
 from pathlib import Path
 from time import monotonic
 from typing import TYPE_CHECKING, Protocol, cast
@@ -38,9 +35,7 @@ from three_workflow_delivery_v3.canonical import (
 from three_workflow_delivery_v3.records.release import (
     PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER,
     ActionResult,
-    AuthorizationRecord,
     BuddyExecutionIdentity,
-    CapabilityAdmissionDecision,
     DestinationProjection,
     ExternalPackageCoordinate,
     ObservationRequestFacts,
@@ -48,6 +43,7 @@ from three_workflow_delivery_v3.records.release import (
     ObservationValue,
     ProjectionObservation,
     PublicationAction,
+    PublicationAuthorization,
     PublicationSnapshot,
     QualificationDecision,
     QualificationSnapshot,
@@ -55,19 +51,19 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseArtifact,
     ReleaseAttemptIdentity,
 )
-from three_workflow_delivery_v3.release.eligibility import (
-    GovernanceRejectionError,
-    GovernanceSourceClient,
-    require_fresh_governance_identity,
-)
 from three_workflow_delivery_v3.release.finalizer import (
+    UnsupportedPublicationPrimitiveError,
     desired_projection_state_digest,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from datetime import datetime
 
     from three_workflow_delivery_v3.canonical import JsonValue
+    from three_workflow_delivery_v3.release.eligibility import (
+        GovernanceSourceClient,
+    )
     from three_workflow_delivery_v3.repository.descriptors import (
         GovernanceSource,
     )
@@ -76,7 +72,8 @@ GITHUB_PACKAGES_DESTINATION_ID = "npm/github-packages-hcoona-three-v1"
 GITHUB_PACKAGES_REGISTRY = "https://npm.pkg.github.com"
 GITHUB_PACKAGES_PACKAGE = "@hcoona/hcoona-release-smoke-npm"
 GITHUB_PACKAGES_OBSERVATION_CONTRACT_ID = "npm/github-packages-observation-v1"
-GITHUB_PACKAGES_OPERATION = "npm-publish-create-only"
+GITHUB_PACKAGES_OPERATION = "conditional-create-npm-version-and-target-tag"
+_ACCEPTANCE_OPERATION = "npm-publish-create-only"
 GITHUB_PACKAGES_OWNER = "hcoona"
 GITHUB_PACKAGES_REPOSITORY = "hcoona/three"
 GITHUB_PACKAGES_OBSERVER_PRODUCER = "observe-github-packages"
@@ -1050,7 +1047,7 @@ class FixedAcceptanceSuiteResult:
                     ),
                     "pre": {"state": scenario.pre_state},
                     "action": {
-                        "operation": "npm-publish-create-only",
+                        "operation": _ACCEPTANCE_OPERATION,
                         "executed": scenario.action_executed,
                         "mutation-started": scenario.mutation_started,
                     },
@@ -1152,7 +1149,7 @@ class GitHubPackagesPublishPreflight:
     tarball_sha512: str
     npm_configuration_digest: str
     governance_provenance: tuple[tuple[str, str], ...]
-    governance_content_sha256: str
+    governance_canonical_content_digest: str
     governance_expires_at: str
     governance_live_enabled: bool
 
@@ -1170,7 +1167,9 @@ class GitHubPackagesPublishPreflight:
             "governance-provenance": [
                 [name, value] for name, value in self.governance_provenance
             ],
-            "governance-content-sha256": self.governance_content_sha256,
+            "governance-canonical-content-digest": (
+                self.governance_canonical_content_digest
+            ),
             "governance-expires-at": self.governance_expires_at,
             "governance-live-enabled": self.governance_live_enabled,
         }
@@ -3741,8 +3740,7 @@ def _write_private_npm_config(path: Path, token: str) -> None:
 def _validate_publish_preconditions(  # noqa: PLR0913
     *,
     publication_snapshot: PublicationSnapshot,
-    authorization: AuthorizationRecord,
-    capability_decision: CapabilityAdmissionDecision,
+    authorization: PublicationAuthorization,
     action: PublicationAction,
     qualification_snapshot: QualificationSnapshot,
     qualification_decision: QualificationDecision,
@@ -3751,8 +3749,7 @@ def _validate_publish_preconditions(  # noqa: PLR0913
 ) -> None:
     if (
         type(publication_snapshot) is not PublicationSnapshot
-        or type(authorization) is not AuthorizationRecord
-        or type(capability_decision) is not CapabilityAdmissionDecision
+        or type(authorization) is not PublicationAuthorization
         or type(action) is not PublicationAction
         or type(qualification_snapshot) is not QualificationSnapshot
         or type(qualification_decision) is not QualificationDecision
@@ -3765,40 +3762,16 @@ def _validate_publish_preconditions(  # noqa: PLR0913
     expected_control = f"workflow-delivery-v3:{attempt.execution.target}"
     _validate_artifact_expectation(expectation)
     actions = publication_snapshot.materialized_actions
-    expected_action_digests = tuple(
-        sorted(candidate.action_digest for candidate in actions)
-    )
-    expected_artifact_digests = tuple(
-        sorted(candidate.artifact_digest for candidate in actions)
-    )
-    expected_resource_key_sets = tuple(
-        sorted(
-            (candidate.action_id, candidate.mutable_resource_keys)
-            for candidate in actions
-        )
-    )
-    expected_lock_groups = tuple(
-        sorted(
-            (candidate.action_id, candidate.lock_group) for candidate in actions
-        )
-    )
     if (
         authorization.attempt != attempt
         or authorization.control != expected_control
-        or authorization.publication_snapshot_digest
-        != publication_snapshot.snapshot_digest
-        or capability_decision.attempt != attempt
-        or capability_decision.control != expected_control
-        or capability_decision.publication_snapshot_digest
-        != publication_snapshot.snapshot_digest
-        or capability_decision.authorization_digest
-        != authorization.authorization_digest
-        or not capability_decision.authorizing
+        or authorization.approval_bundle.publication_snapshot
+        != publication_snapshot
+        or authorization.approval_bundle.qualification_decision
+        != qualification_decision
+        or not authorization.authorizing
         or action not in actions
-        or capability_decision.action_digests != expected_action_digests
-        or capability_decision.artifact_digests != expected_artifact_digests
-        or capability_decision.resource_key_sets != expected_resource_key_sets
-        or capability_decision.lock_groups != expected_lock_groups
+        or authorization.action != action
         or action.projection.destination_id != GITHUB_PACKAGES_DESTINATION_ID
         or action.operation != GITHUB_PACKAGES_OPERATION
         or qualification_snapshot.subject != attempt
@@ -3978,8 +3951,7 @@ def preflight_github_packages_action(  # noqa: PLR0913
     tarball: Path,
     target: str,
     publication_snapshot: PublicationSnapshot,
-    authorization: AuthorizationRecord,
-    capability_decision: CapabilityAdmissionDecision,
+    authorization: PublicationAuthorization,
     action: PublicationAction,
     qualification_snapshot: QualificationSnapshot,
     qualification_decision: QualificationDecision,
@@ -3994,54 +3966,25 @@ def preflight_github_packages_action(  # noqa: PLR0913
     _validate_publish_preconditions(
         publication_snapshot=publication_snapshot,
         authorization=authorization,
-        capability_decision=capability_decision,
         action=action,
         qualification_snapshot=qualification_snapshot,
         qualification_decision=qualification_decision,
         artifact=artifact,
         expectation=expectation,
     )
-    if (
-        action.artifact != artifact
-        or action.projection.coordinate.channel != "buddy"
-        or publication_snapshot.attempt.execution.target != target
-    ):
-        message = "publication precondition artifact/action target mismatch"
-        raise ValueError(message)
-    _validate_local_tarball_preconditions(
-        tarball=tarball,
-        artifact=artifact,
-        expectation=expectation,
-        expanded_tarball_limit_bytes=expanded_tarball_limit_bytes,
-    )
-    require_fresh_governance_identity(
+    _ = (
+        tarball,
+        target,
         governance_source,
         governance_client,
-        now=governance_observed_at,
-        expected_provenance=capability_decision.governance_provenance,
-        expected_content_sha256=(capability_decision.governance_content_sha256),
-        expected_expires_at=capability_decision.governance_expires_at,
-        expected_live_enabled=capability_decision.governance_live_enabled,
+        governance_observed_at,
+        expanded_tarball_limit_bytes,
     )
-    content = tarball.read_bytes()
-    return GitHubPackagesPublishPreflight(
-        attempt=publication_snapshot.attempt,
-        publication_snapshot_digest=publication_snapshot.snapshot_digest,
-        action_digest=action.action_digest,
-        lock_group=action.lock_group,
-        tarball_sha256=f"sha256:{hashlib.sha256(content).hexdigest()}",
-        tarball_sha512=f"sha512:{hashlib.sha512(content).hexdigest()}",
-        npm_configuration_digest=_npm_configuration_digest(
-            action=action,
-            target=target,
-        ),
-        governance_provenance=capability_decision.governance_provenance,
-        governance_content_sha256=(
-            capability_decision.governance_content_sha256
-        ),
-        governance_expires_at=capability_decision.governance_expires_at,
-        governance_live_enabled=capability_decision.governance_live_enabled,
+    message = (
+        "The conditional GitHub Packages version-and-tag primitive is not "
+        "implemented; normal Live remains activation-blocked"
     )
+    raise UnsupportedPublicationPrimitiveError(message)
 
 
 def form_mutation_may_have_started_marker(
@@ -4100,7 +4043,7 @@ def _admit_mutation_marker(  # noqa: PLR0913
         raise ValueError(message)
 
 
-def publish_github_packages_action(  # noqa: C901, PLR0912, PLR0913, PLR0915
+def publish_github_packages_action(  # noqa: PLR0913
     *,
     tarball: Path,
     target: str,
@@ -4109,8 +4052,7 @@ def publish_github_packages_action(  # noqa: C901, PLR0912, PLR0913, PLR0915
     temp_root: Path,
     transport: GitHubPackagesTransport | object = _MISSING,
     publication_snapshot: PublicationSnapshot | object = _MISSING,
-    authorization: AuthorizationRecord | object = _MISSING,
-    capability_decision: CapabilityAdmissionDecision | object = _MISSING,
+    authorization: PublicationAuthorization | object = _MISSING,
     action: PublicationAction | object = _MISSING,
     qualification_snapshot: QualificationSnapshot | object = _MISSING,
     qualification_decision: QualificationDecision | object = _MISSING,
@@ -4130,318 +4072,34 @@ def publish_github_packages_action(  # noqa: C901, PLR0912, PLR0913, PLR0915
     | PublicationExecutionResult
     | DeferredPublicationExecutionResult
 ):
-    """Execute exactly one create-only publish and optional exact readback."""
-    tag = _target_tag(target)
-    if not isinstance(tarball, Path) or not isinstance(temp_root, Path):
-        message = "tarball and temp_root must be Paths"
-        raise TypeError(message)
-    full_mode_requested = any(
-        value is not _MISSING
-        for value in (
-            transport,
-            publication_snapshot,
-            authorization,
-            capability_decision,
-            action,
-            qualification_snapshot,
-            qualification_decision,
-            artifact,
-            expectation,
-            preflight,
-            mutation_marker,
-            governance_source,
-            governance_client,
-            governance_observed_at,
-        )
+    """Reject publication until the conditional primitive is implemented."""
+    _ = (
+        tarball,
+        target,
+        token,
+        runner,
+        temp_root,
+        transport,
+        publication_snapshot,
+        authorization,
+        action,
+        qualification_snapshot,
+        qualification_decision,
+        artifact,
+        expectation,
+        preflight,
+        mutation_marker,
+        governance_source,
+        governance_client,
+        governance_observed_at,
+        defer_receipt_binding,
+        checkout_root,
     )
-    if not full_mode_requested or any(
-        value is _MISSING or value is None
-        for value in (
-            transport,
-            publication_snapshot,
-            authorization,
-            capability_decision,
-            action,
-            qualification_snapshot,
-            qualification_decision,
-            artifact,
-            expectation,
-            preflight,
-            mutation_marker,
-            governance_source,
-            governance_client,
-            governance_observed_at,
-        )
-    ):
-        message = "standalone GitHub Packages mutation mode is not public"
-        raise ValueError(message)
-    publication_action = cast("PublicationAction", action)
-    admitted_artifact = cast("ReleaseArtifact", artifact)
-    _admit_mutation_marker(
-        tarball=tarball,
-        target=target,
-        publication_snapshot=cast(
-            "PublicationSnapshot",
-            publication_snapshot,
-        ),
-        action=publication_action,
-        preflight=cast("GitHubPackagesPublishPreflight", preflight),
-        mutation_marker=cast(
-            "MutationMayHaveStartedMarker",
-            mutation_marker,
-        ),
+    message = (
+        "The conditional GitHub Packages version-and-tag primitive is not "
+        "implemented; normal Live remains activation-blocked"
     )
-    _token(token)
-    temp_root.mkdir(parents=True, exist_ok=True)
-    if checkout_root is not None:
-        resolved_temp = temp_root.resolve()
-        resolved_checkout = checkout_root.resolve()
-        if resolved_temp == resolved_checkout or resolved_checkout in (
-            resolved_temp.parents
-        ):
-            message = "temporary npm config must be outside checkout"
-            raise ValueError(message)
-    config_dir = Path(
-        tempfile.mkdtemp(prefix="wdv3-github-packages-", dir=temp_root)
-    )
-    config_path = config_dir / "npmrc"
-    _write_private_npm_config(config_path, token)
-    argv = (
-        "npm",
-        "publish",
-        str(tarball),
-        "--registry",
-        GITHUB_PACKAGES_REGISTRY,
-        "--tag",
-        tag,
-        "--ignore-scripts",
-        "--userconfig",
-        str(config_path),
-    )
-    env = {
-        "HOME": str(config_dir),
-        "NPM_CONFIG_USERCONFIG": str(config_path),
-        "NPM_CONFIG_IGNORE_SCRIPTS": "true",
-    }
-    try:
-        capability = cast("CapabilityAdmissionDecision", capability_decision)
-        admitted_preflight = cast(
-            "GitHubPackagesPublishPreflight",
-            preflight,
-        )
-        if (
-            admitted_preflight.governance_provenance
-            != capability.governance_provenance
-            or admitted_preflight.governance_content_sha256
-            != capability.governance_content_sha256
-            or admitted_preflight.governance_expires_at
-            != capability.governance_expires_at
-            or admitted_preflight.governance_live_enabled
-            is not capability.governance_live_enabled
-        ):
-            message = "Publisher Governance preflight identity mismatch"
-            raise ValueError(message)
-        observed_at = (
-            governance_observed_at()
-            if callable(governance_observed_at)
-            else governance_observed_at
-        )
-        if type(observed_at) is not datetime:
-            message = "Publisher Governance observation time is malformed"
-            raise TypeError(message)
-        try:
-            require_fresh_governance_identity(
-                cast("GovernanceSource", governance_source),
-                cast("GovernanceSourceClient", governance_client),
-                now=observed_at,
-                expected_provenance=admitted_preflight.governance_provenance,
-                expected_content_sha256=(
-                    admitted_preflight.governance_content_sha256
-                ),
-                expected_expires_at=admitted_preflight.governance_expires_at,
-                expected_live_enabled=(
-                    admitted_preflight.governance_live_enabled
-                ),
-            )
-        except GovernanceRejectionError as error:
-            command = PublishCommandResult(
-                outcome="governance-rejected",
-                exit_code=None,
-                stdout="",
-                stderr="",
-                command=argv,
-            )
-            result = DeferredPublicationExecutionResult(
-                command=command,
-                observation=None,
-                classification=PublishClassification(
-                    "failed",
-                    "no-side-effect",
-                    None,
-                ),
-                response_identity_digest=None,
-                diagnostic_reference=(
-                    PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER
-                ),
-                receipt=None,
-            )
-            raise PublisherGovernanceRecheckRejectionError(result) from error
-        try:
-            raw = runner.run(argv, env=env)
-        except Exception as error:
-            if not full_mode_requested:
-                raise
-            command = PublishCommandResult(
-                outcome="lost-response",
-                exit_code=None,
-                stdout="",
-                stderr=redact_diagnostic(str(error), secrets=(token,)),
-                command=argv,
-            )
-        else:
-            command = _runner_result(raw, command=argv, token=token)
-    finally:
-        config_path.unlink(missing_ok=True)
-        with contextlib.suppress(OSError):
-            config_dir.rmdir()
-    publication = cast("PublicationSnapshot", publication_snapshot)
-    if command.outcome == "success":
-        observation = observe_github_packages_projection(
-            cast("QualificationSnapshot", qualification_snapshot),
-            cast("QualificationDecision", qualification_decision),
-            cast("ReleaseArtifact", artifact),
-            cast("ArtifactExpectation", expectation),
-            token=token,
-            transport=cast("GitHubPackagesTransport", transport),
-        )
-        response_identity = _response_identity(command, observation)
-        receipt: Receipt | None = None
-        if observation.value.classification == "exact-satisfied":
-            admitted_artifact = cast("ReleaseArtifact", artifact)
-            receipt = Receipt(
-                attempt=publication.attempt,
-                publication_snapshot_digest=publication.snapshot_digest,
-                action_id=publication_action.action_id,
-                action_digest=publication_action.action_digest,
-                coordinate=publication_action.projection.coordinate,
-                mutable_resource_keys=publication_action.mutable_resource_keys,
-                lock_group=publication_action.lock_group,
-                artifact_transport=admitted_artifact.transport,
-                artifact_content_sha256=(
-                    admitted_artifact.content.content_sha256
-                ),
-                artifact_content_sha512=cast(
-                    "str",
-                    admitted_artifact.content.content_sha512,
-                ),
-                witness_digest=admitted_artifact.witness_digest,
-                creation_result="created",
-                tag_mapping=(
-                    (
-                        _target_tag(publication.attempt.execution.target),
-                        publication_action.projection.coordinate.native_version,
-                    ),
-                ),
-                response_identity_digest=response_identity,
-                producer=GITHUB_PACKAGES_PUBLISHER_PRODUCER,
-                control=cast(
-                    "CapabilityAdmissionDecision",
-                    capability_decision,
-                ).control,
-                workflow_run_id=publication.attempt.workflow_run_id,
-            )
-            if defer_receipt_binding:
-                classification = classify_publish_result(
-                    command_outcome="created",
-                    post_observation=observation.value.classification,
-                    receipt=receipt,
-                )
-                return DeferredPublicationExecutionResult(
-                    command=command,
-                    observation=observation,
-                    classification=classification,
-                    response_identity_digest=response_identity,
-                    diagnostic_reference=None,
-                    receipt=receipt,
-                )
-        classification = classify_publish_result(
-            command_outcome="created",
-            post_observation=observation.value.classification,
-            receipt=receipt,
-        )
-        if defer_receipt_binding:
-            return DeferredPublicationExecutionResult(
-                command=command,
-                observation=observation,
-                classification=classification,
-                response_identity_digest=(
-                    response_identity if receipt is not None else None
-                ),
-                diagnostic_reference=(
-                    None if receipt is not None else "post-publish-not-exact"
-                ),
-                receipt=receipt,
-            )
-        return PublicationExecutionResult(
-            command=command,
-            observation=observation,
-            action_result=_action_result(
-                publication_snapshot=publication,
-                action=publication_action,
-                classification=classification,
-                response_identity_digest=(
-                    response_identity if receipt is not None else None
-                ),
-                receipt=receipt,
-                diagnostic_reference=(
-                    None if receipt is not None else "post-publish-not-exact"
-                ),
-                control=cast(
-                    "CapabilityAdmissionDecision",
-                    capability_decision,
-                ).control,
-            ),
-        )
-
-    command_outcome = command.outcome
-    observation = observe_github_packages_projection(
-        cast("QualificationSnapshot", qualification_snapshot),
-        cast("QualificationDecision", qualification_decision),
-        cast("ReleaseArtifact", artifact),
-        cast("ArtifactExpectation", expectation),
-        token=token,
-        transport=cast("GitHubPackagesTransport", transport),
-    )
-    classification = classify_publish_result(
-        command_outcome=command_outcome,
-        post_observation=observation.value.classification,
-        receipt=None,
-    )
-    if defer_receipt_binding:
-        return DeferredPublicationExecutionResult(
-            command=command,
-            observation=observation,
-            classification=classification,
-            response_identity_digest=None,
-            diagnostic_reference=command.outcome,
-            receipt=None,
-        )
-    return PublicationExecutionResult(
-        command=command,
-        observation=observation,
-        action_result=_action_result(
-            publication_snapshot=publication,
-            action=publication_action,
-            classification=classification,
-            response_identity_digest=None,
-            receipt=None,
-            diagnostic_reference=command.outcome,
-            control=cast(
-                "CapabilityAdmissionDecision",
-                capability_decision,
-            ).control,
-        ),
-    )
+    raise UnsupportedPublicationPrimitiveError(message)
 
 
 def validate_receipt_response_bindings(

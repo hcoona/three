@@ -4,19 +4,35 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from http.client import HTTPMessage
     from typing import IO
 
-    from three_workflow_delivery_v3.release.eligibility import GovernanceBlob
+    from three_workflow_delivery_v3.release.governance_git import (
+        GovernanceGitRead,
+    )
+
+
+class _GovernanceGitReader(Protocol):
+    """Injected isolated Git reader."""
+
+    def read(
+        self,
+        *,
+        repository: str,
+        ref: str,
+        path: str,
+        eligibility_main_sha: str | None = None,
+    ) -> GovernanceGitRead:
+        """Read and optionally prove continuity from eligibility."""
+        ...
 
 
 class GitHubRestError(RuntimeError):
@@ -193,50 +209,52 @@ class GitHubRestClient:
             )
         return protected
 
-    def resolve_ref(self, repository: str, ref: str) -> str:
-        """Resolve the fixed ref to one immutable commit SHA."""
+
+class GitHubGovernanceClient:
+    """GitHub protection read plus isolated complete-history Git proof."""
+
+    def __init__(
+        self,
+        *,
+        repository: str,
+        token: str,
+        rest_client: GitHubRestClient | None = None,
+        git_reader: _GovernanceGitReader | None = None,
+    ) -> None:
+        from three_workflow_delivery_v3.release.governance_git import (  # noqa: PLC0415
+            IsolatedGovernanceGitReader,
+        )
+
+        self._repository = repository
+        self._rest_client = rest_client or GitHubRestClient(
+            repository=repository,
+            token=token,
+        )
+        self._git_reader = git_reader or IsolatedGovernanceGitReader(
+            repository=repository,
+            token=token,
+        )
+
+    def is_ref_protected(self, repository: str, ref: str) -> bool:
+        """Return the exact branch protection state."""
         if repository != self._repository:
             raise GitHubRestError("Governance repository mismatch")
-        encoded = urllib.parse.quote(ref.removeprefix("refs/"), safe="/")
-        document = self._json(f"/repos/{repository}/git/ref/{encoded}")
-        target = document.get("object")
-        if type(target) is not dict or type(target.get("sha")) is not str:
-            raise GitHubRestError("Governance ref response is malformed")
-        return cast("str", target["sha"])
+        return self._rest_client.is_ref_protected(repository, ref)
 
-    def read_blob(
+    def read_source(
         self,
         repository: str,
-        commit: str,
+        ref: str,
         path: str,
-    ) -> GovernanceBlob:
-        """Read exact protected content at an immutable commit."""
-        from three_workflow_delivery_v3.release.eligibility import (  # noqa: PLC0415
-            GovernanceBlob,
-        )
-
+        *,
+        eligibility_main_sha: str | None = None,
+    ) -> GovernanceGitRead:
+        """Read protected Governance through isolated complete Git state."""
         if repository != self._repository:
             raise GitHubRestError("Governance repository mismatch")
-        encoded_path = urllib.parse.quote(path, safe="/")
-        document = self._json(
-            f"/repos/{repository}/contents/{encoded_path}?ref={commit}"
+        return self._git_reader.read(
+            repository=repository,
+            ref=ref,
+            path=path,
+            eligibility_main_sha=eligibility_main_sha,
         )
-        oid = document.get("sha")
-        content = document.get("content")
-        encoding = document.get("encoding")
-        if (
-            type(oid) is not str
-            or type(content) is not str
-            or encoding != "base64"
-        ):
-            raise GitHubRestError("Governance content response is malformed")
-        try:
-            decoded = base64.b64decode(
-                content.replace("\r", "").replace("\n", ""),
-                validate=True,
-            )
-        except ValueError as error:
-            raise GitHubRestError(
-                "Governance content base64 is malformed"
-            ) from error
-        return GovernanceBlob(blob_oid=oid, content=decoded)

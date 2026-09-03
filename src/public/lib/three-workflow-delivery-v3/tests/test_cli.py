@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import inspect
 import json
-import os
 import subprocess
-import sys
 import tomllib
 from argparse import Namespace
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,17 +18,12 @@ from urllib.request import Request
 import pytest
 from three_workflow_delivery_v3 import cli as cli_module
 from three_workflow_delivery_v3.adapters.github_packages import (
-    DeferredPublicationExecutionResult,
     GitHubPackagesPublishPreflight,
-    PublishClassification,
-    PublishCommandResult,
-    PublisherGovernanceRecheckRejectionError,
 )
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
     canonicalize,
-    parse_canonical_json,
 )
 from three_workflow_delivery_v3.ci.planner import (
     form_pull_request_candidate,
@@ -41,20 +34,12 @@ from three_workflow_delivery_v3.records.ci import (
     ci_qualification_snapshot_digest,
 )
 from three_workflow_delivery_v3.records.release import (
-    PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER,
-    AuthorizationRecord,
     BuddyExecutionIdentity,
-    CapabilityAdmissionDecision,
-    PublicationObservationReference,
     PublicationSnapshot,
+    ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
 )
-from three_workflow_delivery_v3.release import (
-    GovernanceAttestation,
-    GovernanceObservation,
-    LiveEligibilityAdmissionMode,
-    LiveEligibilityGovernanceBinding,
-)
+from three_workflow_delivery_v3.release import LiveEligibilityAdmissionMode
 from three_workflow_delivery_v3.release.identity import (
     OFFICIAL_SIMULATION_PRODUCER,
     normalize_official_simulation_intent,
@@ -67,11 +52,6 @@ from three_workflow_delivery_v3.repository import (
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_POLICY_PATH,
-    GOVERNANCE_MAX_AGE_DAYS,
-    GOVERNANCE_PATH,
-    GOVERNANCE_REF,
-    GOVERNANCE_REPOSITORY,
-    GovernanceSource,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
     AUTHORITATIVE_REMOTE,
@@ -93,7 +73,6 @@ if TYPE_CHECKING:
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 PACKAGE_ROOT = REPO_ROOT / "src/public/lib/three-workflow-delivery-v3"
-FIXTURES = PACKAGE_ROOT / "tests/fixtures/release"
 PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 WORKFLOW_RUN_ID = 8101
 RUN_ATTEMPT = 2
@@ -789,16 +768,19 @@ def test_provider_command_propagates_fail_closed_checkout_error(
     assert "npmPackageVersion" not in captured.err
 
 
-def test_validate_attestation_command_reports_disabled_fixture(
+def test_validate_attestation_command_reports_replacement_disabled_governance(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Validate the canonical fixture without creating activation state."""
+    """Validate protected replacement Governance without activation state."""
+    governance_path = REPO_ROOT / (
+        ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json"
+    )
     result = cli_module.main(
         [
             "release",
             "validate-attestation",
             "--document",
-            str(FIXTURES / "governance-disabled.json"),
+            str(governance_path),
         ]
     )
     captured = capsys.readouterr()
@@ -806,11 +788,24 @@ def test_validate_attestation_command_reports_disabled_fixture(
 
     assert result == 0
     assert captured.err == ""
-    assert output["schema"] == ("workflow-delivery/v3/governance-attestation")
+    assert output["schema"] == (
+        "workflow-delivery/v3/normal-live-governance-attestation-v1"
+    )
     assert output["live_enabled"] is False
+    assert output["activation"] == {
+        "state": "blocked",
+        "blockers": [
+            "destination-primitive-unproven",
+            "fresh-native-evidence-required",
+            "repository-retention-readback-required",
+        ],
+    }
     assert output["release_policy"] == "hcoona-release-smoke-npm"
     assert output["package"] == "@hcoona/hcoona-release-smoke-npm"
-    assert output["content-digest"].startswith("sha256:")
+    assert output["accepted_publisher"] == "hcoona"
+    assert output["content-digest"] == (
+        f"sha256:{hashlib.sha256(governance_path.read_bytes()).hexdigest()}"
+    )
 
 
 def test_compile_simulation_model_consumes_uploaded_provider_without_rerun(
@@ -993,20 +988,38 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
             ),
         ),
         (
-            "form-authorization",
+            "form-approval-bundle",
             (
-                "--reviewer-summary-artifact-id",
+                "--attempt-binding",
+                "--qualification-decision",
+                "--publication-snapshot",
+                "--reviewer-summary-artifact",
                 "--reviewer-summary-artifact-digest",
                 "--output",
             ),
         ),
         (
-            "admit-capability",
+            "form-publication-authorization",
             (
                 "--intent",
                 "--repository-model",
-                "--authorization",
+                "--attempt-binding",
+                "--attempt-binding-digest",
+                "--attempt-binding-artifact-id",
+                "--attempt-binding-artifact-digest",
+                "--approval-bundle",
+                "--live-eligibility-decision",
+                "--output",
+            ),
+        ),
+        (
+            "prove-exact-satisfied",
+            (
+                "--intent",
+                "--repository-model",
+                "--attempt-binding",
                 "--publication-snapshot",
+                "--live-eligibility-decision",
                 "--output",
             ),
         ),
@@ -1021,7 +1034,7 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
         (
             "publish-github-packages",
             (
-                "--capability-decision",
+                "--publication-authorization",
                 "--mutation-marker-artifact-id",
                 "--execution-state-output",
             ),
@@ -1039,9 +1052,14 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
             (
                 "--attempt-binding",
                 "--qualification-snapshot",
+                "--qualification-decision",
                 "--build-evidence",
                 "--release-artifact",
                 "--observation",
+                "--publication-snapshot",
+                "--approval-bundle",
+                "--publication-authorization",
+                "--exact-satisfied-governance-proof",
                 "--action-result",
                 "--publication-preparation-interrupted",
                 "--outcome-output",
@@ -1065,6 +1083,26 @@ def test_cli_exposes_strict_commit8_live_transport_commands(
     assert all(option in help_text for option in required_options)
 
 
+@pytest.mark.parametrize(
+    ("command", "removed_option"),
+    [
+        ("form-publication-authorization", "--authorized-at"),
+        ("prove-exact-satisfied", "--proved-at"),
+    ],
+)
+def test_cli_authority_completion_timestamps_are_internal(
+    command: str,
+    removed_option: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Do not accept caller-supplied authority completion timestamps."""
+    with pytest.raises(SystemExit) as error:
+        cli_module.main(["release", command, "--help"])
+
+    assert error.value.code == 0
+    assert removed_option not in capsys.readouterr().out
+
+
 def test_cli_commit8_live_outcome_status_mapping_is_closed() -> None:
     """Pin success versus every fail-closed terminal CLI status."""
     assert getattr(cli_module, "LIVE_OUTCOME_EXIT_STATUS", None) == {
@@ -1073,7 +1111,6 @@ def test_cli_commit8_live_outcome_status_mapping_is_closed() -> None:
         "incomplete": 1,
         "replayable-no-side-effect": 1,
         "incomplete-possibly-mutated": 1,
-        "unknown-replayable-approval-contract": 1,
     }
 
 
@@ -1101,7 +1138,7 @@ def test_cli_commit8_finalizer_exposes_platform_and_status_evidence_contract(
     help_text = capsys.readouterr().out
     for option in (
         "--platform-terminated",
-        "--capability-may-have-started",
+        "--publication-may-have-started",
         "--outcome-output",
         "--summary-output",
         "--github-step-summary",
@@ -1110,90 +1147,6 @@ def test_cli_commit8_finalizer_exposes_platform_and_status_evidence_contract(
         assert option in help_text
     assert "--capability-group-bundle" not in help_text
     assert "--receipt " not in help_text
-
-
-def test_authorization_formatter_runs_isolated_without_indexes_or_cache(
-    tmp_path: Path,
-) -> None:
-    """Run the exact-revision formatter with no import or index state."""
-    approval_job_id = 91
-    target = "a" * 40
-    snapshot = canonicalize(
-        {
-            "schema": "workflow-delivery/v3/publication-snapshot",
-            "attempt": {
-                "schema": "workflow-delivery/v3/release-attempt-identity",
-                "execution": {
-                    "schema": "workflow-delivery/v3/buddy-execution-identity",
-                    "channel": "buddy",
-                    "release-unit": "hcoona-release-smoke-npm",
-                    "target": target,
-                },
-                "workflow-run-id": 41,
-                "run-attempt": 3,
-            },
-        }
-    )
-    summary = b"# exact reviewer summary\n"
-    formatter: dict[str, JsonValue] = {
-        "schema": "workflow-delivery/v3/bound-reviewer-formatter-input",
-        "snapshot-base64": base64.b64encode(snapshot).decode(),
-        "summary-base64": base64.b64encode(summary).decode(),
-        "snapshot-payload-digest": (
-            f"sha256:{hashlib.sha256(snapshot).hexdigest()}"
-        ),
-        "summary-payload-digest": (
-            f"sha256:{hashlib.sha256(summary).hexdigest()}"
-        ),
-        "reviewer-artifact-id": 71,
-        "reviewer-artifact-digest": "sha256:" + ("b" * 64),
-    }
-    formatter_path = tmp_path / "formatter.json"
-    output = tmp_path / "authorization.json"
-    formatter_path.write_bytes(canonicalize(formatter))
-    script = Path(cli_module.__file__).with_name("authorization_formatter.py")
-
-    completed = subprocess.run(  # noqa: S603
-        (
-            sys.executable,
-            "-I",
-            str(script),
-            "--workflow-run-id",
-            "41",
-            "--run-attempt",
-            "3",
-            "--target",
-            target,
-            "--formatter-input",
-            str(formatter_path),
-            "--approval-job-id",
-            str(approval_job_id),
-            "--completed-at",
-            "2026-08-13T20:00:00Z",
-            "--control",
-            f"workflow-delivery-v3:{target}",
-            "--output",
-            str(output),
-        ),
-        check=False,
-        capture_output=True,
-        env={
-            "HOME": str(tmp_path / "empty-home"),
-            "PATH": os.environ["PATH"],
-            "PIP_NO_INDEX": "1",
-            "PYTHONNOUSERSITE": "1",
-        },
-        text=True,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    authorization = json.loads(output.read_bytes())
-    assert authorization["approval-job-id"] == approval_job_id
-    assert authorization["environment"] == "workflow-delivery-v3-buddy-approval"
-    assert (
-        authorization["publication-snapshot-digest"]
-        == (formatter["snapshot-payload-digest"])
-    )
 
 
 def test_project_registers_only_the_bounded_cli() -> None:
@@ -2211,98 +2164,188 @@ def test_ci_finalizer_rejects_pr_number_not_bound_to_plan(
     assert not decision.exists()
 
 
-def test_capability_cli_persists_expiry_decision_before_returning_one(  # noqa: PLR0915
+def _current_release_attempt_binding(
+    *,
+    target: str = "b" * 40,
+) -> ReleaseAttemptBinding:
+    execution = BuddyExecutionIdentity(
+        channel="buddy",
+        release_unit="hcoona-release-smoke-npm",
+        target=target,
+    )
+    return ReleaseAttemptBinding(
+        intent_digest="sha256:" + ("1" * 64),
+        request_id="release-request:" + ("2" * 64),
+        execution=execution,
+        attempt=ReleaseAttemptIdentity(
+            execution=execution,
+            workflow_run_id=WORKFLOW_RUN_ID,
+        ),
+        repository_model_digest="sha256:" + ("3" * 64),
+        live_eligibility_artifact_id=701,
+        live_eligibility_artifact_digest="sha256:" + ("4" * 64),
+        live_eligibility_payload_digest="sha256:" + ("5" * 64),
+        attestation_provenance=(
+            ("blob-oid", "6" * 40),
+            ("canonical-content-digest", "sha256:" + ("7" * 64)),
+            ("eligibility-main-sha", "8" * 40),
+            ("git-object-format", "sha1"),
+            ("path", ".github/workflow-delivery/governance/policy.json"),
+            ("ref", "refs/heads/main"),
+            ("repository", "hcoona/three"),
+        ),
+    )
+
+
+def test_form_approval_bundle_command_binds_current_loaded_records(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Diagnose expiry after replay and persist the blocking Decision."""
-    target = "b" * 40
-    control = f"workflow-delivery-v3:{target}"
-    attempt = ReleaseAttemptIdentity(
-        execution=BuddyExecutionIdentity(
-            channel="buddy",
-            release_unit="hcoona-release-smoke-npm",
-            target=target,
+    """Bind the complete pre-wait bundle to currently loaded records."""
+    binding = _current_release_attempt_binding()
+    intent = SimpleNamespace(
+        intent_digest=binding.intent_digest,
+        request_id=binding.request_id,
+        target=binding.execution.target,
+        selected_ref="refs/heads/release",
+    )
+    qualification = object()
+    publication = object()
+    reviewer = object()
+    bundle_document: dict[str, JsonValue] = {
+        "schema": "workflow-delivery/v3/approval-bundle",
+        "producer": "materialize-publication",
+    }
+    bundle = SimpleNamespace(
+        bundle_digest=canonical_sha256(bundle_document),
+        to_document=lambda: bundle_document,
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(cli_module, "_load_live_intent", lambda _args: intent)
+    monkeypatch.setattr(
+        cli_module,
+        "_load_attempt_binding",
+        lambda _args: binding,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_live_qualification_decision",
+        lambda _args: qualification,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_publication_snapshot",
+        lambda _args: publication,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_reviewer_summary_artifact",
+        lambda _args: reviewer,
+    )
+
+    def form_bundle(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return bundle
+
+    monkeypatch.setattr(cli_module, "form_approval_bundle", form_bundle)
+    output = tmp_path / "approval-bundle.json"
+    github_output = tmp_path / "github-output"
+    control = f"workflow-delivery-v3:{binding.execution.target}"
+
+    status = cli_module._release_form_approval_bundle_command(  # noqa: SLF001
+        Namespace(
+            control=control,
+            output=str(output),
+            github_output=str(github_output),
+        )
+    )
+
+    assert status == 0
+    assert captured == {
+        "attempt_binding": binding,
+        "selected_ref": intent.selected_ref,
+        "qualification_decision": qualification,
+        "publication_snapshot": publication,
+        "reviewer_summary": reviewer,
+        "control": control,
+    }
+    assert json.loads(output.read_bytes()) == bundle_document
+    assert github_output.read_text(encoding="utf-8").splitlines() == [
+        f"approval-bundle-digest={bundle.bundle_digest}",
+        f"approval-bundle-digest-hex={bundle.bundle_digest.removeprefix('sha256:')}",
+    ]
+
+
+def test_form_publication_authorization_command_uses_fresh_governance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Form sole post-wait authorization from a fresh Governance read."""
+    binding = _current_release_attempt_binding()
+    github_token = f"github-{binding.attempt.workflow_run_id}"
+    intent = object()
+    model = object()
+    source = SimpleNamespace(repository="hcoona/three")
+    initial_governance = SimpleNamespace(
+        provenance=binding.attestation_provenance,
+        canonical_content_digest="sha256:" + ("7" * 64),
+        attestation=SimpleNamespace(
+            expires_at=datetime(2026, 10, 1, tzinfo=UTC),
+            live_enabled=True,
         ),
-        workflow_run_id=WORKFLOW_RUN_ID,
-    )
-    projection_id = "projection:npm:github-packages"
-    publication = PublicationSnapshot(
-        attempt=attempt,
-        qualification_snapshot_digest="sha256:" + ("1" * 64),
-        qualification_decision_digest="sha256:" + ("2" * 64),
-        qualification_result="success",
-        projection_ids=(projection_id,),
-        artifact_digests=("sha256:" + ("3" * 64),),
-        artifact_output_ids=("npm-tarball",),
-        observation_references=(
-            PublicationObservationReference(
-                projection_id=projection_id,
-                observation_digest="sha256:" + ("4" * 64),
-                classification="exact-satisfied",
-            ),
-        ),
-        materialized_actions=(),
-    )
-    publication_bytes = canonicalize(publication.to_document())
-    summary_bytes = b"# Capability review\n"
-    publication_path = tmp_path / "publication-snapshot.json"
-    reviewer_summary_path = tmp_path / "reviewer-summary.md"
-    publication_path.write_bytes(publication_bytes)
-    reviewer_summary_path.write_bytes(summary_bytes)
-    reviewer_upload_digest = "sha256:" + ("5" * 64)
-    authorization = AuthorizationRecord(
-        attempt=attempt,
-        publication_snapshot_digest=publication.snapshot_digest,
-        reviewer_summary_artifact_id=710,
-        reviewer_summary_upload_digest=reviewer_upload_digest,
-        reviewer_summary_payload_digest=(
-            f"sha256:{hashlib.sha256(summary_bytes).hexdigest()}"
-        ),
-        workflow_run_id=attempt.workflow_run_id,
-        approval_job_id=711,
-        approval_job="approval",
-        environment="workflow-delivery-v3-buddy-approval",
-        channel="buddy",
-        completed_at="2026-08-13T16:00:00Z",
-        producer="approval",
-        control=control,
-    )
-    source = GovernanceSource(
-        repository=GOVERNANCE_REPOSITORY,
-        ref=GOVERNANCE_REF,
-        path=GOVERNANCE_PATH,
-        max_age_days=GOVERNANCE_MAX_AGE_DAYS,
-    )
-    attestation = GovernanceAttestation(
-        release_policy="hcoona-release-smoke-npm",
-        package="@hcoona/hcoona-release-smoke-npm",
-        issuer="hcoona",
-        inspected_at=datetime(1999, 12, 1, tzinfo=UTC),
-        expires_at=datetime(2000, 1, 1, tzinfo=UTC),
-        accepted_writers=(),
-        access_inventory=None,
-        access_evidence_digest=None,
-        limitations=("Bounded test attestation.",),
-        live_enabled=True,
-    )
-    fresh = GovernanceObservation(
-        source=source,
-        resolved_commit="c" * 40,
-        blob_oid="d" * 40,
-        content_sha256=attestation.content_digest,
-        observed_at=datetime(1999, 12, 15, tzinfo=UTC),
-        attestation=attestation,
     )
     initial_eligibility = SimpleNamespace(
-        governance=LiveEligibilityGovernanceBinding.from_observation(fresh)
+        canonical_digest=binding.live_eligibility_payload_digest,
+        governance=initial_governance,
+        context=SimpleNamespace(selected_ref="refs/heads/release"),
     )
-    policy = SimpleNamespace(governance=source)
-    intent = SimpleNamespace()
-    model = SimpleNamespace()
+    bundle = SimpleNamespace(
+        attempt_binding=binding,
+        selected_ref=initial_eligibility.context.selected_ref,
+    )
+    fresh_governance = object()
+    authorization_document: dict[str, JsonValue] = {
+        "schema": "workflow-delivery/v3/publication-authorization",
+        "producer": "approve-publication",
+        "result": "success",
+    }
+    authorization = SimpleNamespace(
+        authorization_digest=canonical_sha256(authorization_document),
+        to_document=lambda: authorization_document,
+    )
     selected_modes: list[LiveEligibilityAdmissionMode] = []
+    captured: dict[str, object] = {}
+    github_client = object()
+    freshness_observed_at = datetime(
+        2026,
+        9,
+        3,
+        7,
+        48,
+        35,
+        987654,
+        tzinfo=UTC,
+    )
+    authorization_completed_at = datetime(
+        2026,
+        9,
+        3,
+        7,
+        48,
+        36,
+        654321,
+        tzinfo=UTC,
+    )
+    timestamps = iter((freshness_observed_at, authorization_completed_at))
+    events: list[str] = []
 
-    def admit_initial(
+    def now(zone: object) -> datetime:
+        assert zone is UTC
+        events.append("clock")
+        return next(timestamps)
+
+    def admit(
         _arguments: object,
         actual_intent: object,
         actual_model: object,
@@ -2312,289 +2355,531 @@ def test_capability_cli_persists_expiry_decision_before_returning_one(  # noqa: 
         assert actual_intent is intent
         assert actual_model is model
         selected_modes.append(admission_mode)
-        return initial_eligibility, policy
+        return initial_eligibility, SimpleNamespace(governance=source)
 
-    observed_at: list[datetime] = []
+    def construct_client(*, repository: str, token: str) -> object:
+        assert repository == source.repository
+        assert token == github_token
+        return github_client
 
-    def observe(
-        actual_source: GovernanceSource,
-        _client: object,
-        *,
-        now: datetime,
-    ) -> GovernanceObservation:
+    def require_fresh(
+        actual_source: object,
+        actual_client: object,
+        **kwargs: object,
+    ) -> object:
         assert actual_source is source
-        assert _client is rest_client
-        observed_at.append(now)
-        return fresh
+        assert actual_client is github_client
+        assert kwargs["expected_provenance"] == (binding.attestation_provenance)
+        assert kwargs["expected_canonical_content_digest"] == (
+            initial_governance.canonical_content_digest
+        )
+        assert kwargs["expected_expires_at"] == "2026-10-01T00:00:00Z"
+        assert kwargs["expected_live_enabled"] is True
+        assert kwargs["now"] == freshness_observed_at
+        events.append("fresh")
+        return fresh_governance
+
+    def form_authorization(**kwargs: object) -> object:
+        events.append("form")
+        captured.update(kwargs)
+        return authorization
+
+    for name, replacement in (
+        ("datetime", SimpleNamespace(now=now)),
+        ("_load_live_intent", lambda _args: intent),
+        (
+            "_load_live_model",
+            lambda _args, actual_intent: (
+                model
+                if actual_intent is intent
+                else pytest.fail(
+                    "Publication Authorization Intent was substituted"
+                )
+            ),
+        ),
+        ("_load_attempt_binding", lambda _args: binding),
+        ("_admitted_live_eligibility_decision", admit),
+        ("_load_approval_bundle", lambda _args: bundle),
+        ("GitHubGovernanceClient", construct_client),
+        ("require_fresh_governance_identity", require_fresh),
+        ("form_publication_authorization", form_authorization),
+    ):
+        monkeypatch.setattr(cli_module, name, replacement)
+    output, github_output, control = (
+        tmp_path / "publication-authorization.json",
+        tmp_path / "github-output",
+        f"workflow-delivery-v3:{binding.execution.target}",
+    )
+
+    status = cli_module._release_form_publication_authorization_command(  # noqa: SLF001
+        Namespace(
+            github_token=github_token,
+            control=control,
+            output=str(output),
+            github_output=str(github_output),
+        )
+    )
+
+    assert status == 0
+    assert events == ["clock", "fresh", "clock", "form"]
+    assert selected_modes == [LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY]
+    assert captured == {
+        "approval_result": "success",
+        "approval_bundle": bundle,
+        "governance": fresh_governance,
+        "completed_at": "2026-09-03T07:48:36Z",
+        "control": control,
+    }
+    assert json.loads(output.read_bytes()) == authorization_document
+    assert github_output.read_text(encoding="utf-8").splitlines() == [
+        f"publication-authorization-digest={authorization.authorization_digest}",
+        (
+            "publication-authorization-digest-hex="
+            f"{authorization.authorization_digest.removeprefix('sha256:')}"
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field_name", "replacement"),
+    [
+        pytest.param(
+            "intent_digest",
+            "sha256:" + ("9" * 64),
+            id="intent-digest",
+        ),
+        pytest.param(
+            "live_eligibility_artifact_id",
+            702,
+            id="eligibility-artifact-id",
+        ),
+    ],
+)
+def test_form_publication_authorization_rejects_substituted_attempt_binding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field_name: str,
+    replacement: str | int,
+) -> None:
+    """Reject a Bundle whose non-run Attempt authority was substituted."""
+    binding = _current_release_attempt_binding()
+    substituted = replace(binding, **{field_name: replacement})
+    intent = object()
+    model = object()
+    initial_eligibility = SimpleNamespace(
+        canonical_digest=binding.live_eligibility_payload_digest,
+        governance=SimpleNamespace(
+            provenance=binding.attestation_provenance,
+        ),
+        context=SimpleNamespace(selected_ref="refs/heads/release"),
+    )
+    bundle = SimpleNamespace(
+        attempt_binding=substituted,
+        selected_ref=initial_eligibility.context.selected_ref,
+    )
+    output = tmp_path / "publication-authorization.json"
+
+    assert substituted.attempt == binding.attempt
+    assert substituted.execution.target == binding.execution.target
+    monkeypatch.setattr(cli_module, "_load_live_intent", lambda _args: intent)
+    monkeypatch.setattr(
+        cli_module,
+        "_load_live_model",
+        lambda _args, actual_intent: (
+            model
+            if actual_intent is intent
+            else pytest.fail("Publication Authorization Intent was substituted")
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_attempt_binding",
+        lambda _args: binding,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_admitted_live_eligibility_decision",
+        lambda *_args, **_kwargs: (initial_eligibility, object()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_approval_bundle",
+        lambda _args: bundle,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "require_fresh_governance_identity",
+        lambda *_args, **_kwargs: pytest.fail(
+            "Substituted Attempt Binding reached Governance revalidation"
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "form_publication_authorization",
+        lambda **_kwargs: pytest.fail(
+            "Substituted Attempt Binding formed Authorization"
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Approval Bundle Attempt Binding mismatch$",
+    ):
+        cli_module._release_form_publication_authorization_command(  # noqa: SLF001
+            Namespace(output=str(output))
+        )
+
+    assert not output.exists()
+
+
+def test_prove_exact_satisfied_uses_post_freshness_proof_timestamp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Derive the proof timestamp after fresh Governance completes."""
+    binding = _current_release_attempt_binding()
+    github_token = f"github-{binding.attempt.workflow_run_id}"
+    intent = object()
+    model = SimpleNamespace(
+        canonical_digest=binding.repository_model_digest,
+    )
+    publication = SimpleNamespace(attempt=binding.attempt)
+    source = SimpleNamespace(repository="hcoona/three")
+    initial_governance = SimpleNamespace(
+        provenance=binding.attestation_provenance,
+        canonical_content_digest="sha256:" + ("7" * 64),
+        attestation=SimpleNamespace(
+            expires_at=datetime(2026, 10, 1, tzinfo=UTC),
+            live_enabled=True,
+        ),
+    )
+    initial_eligibility = SimpleNamespace(governance=initial_governance)
+    fresh_governance = object()
+    proof_document: dict[str, JsonValue] = {
+        "schema": "workflow-delivery/v3/exact-satisfied-governance-proof",
+        "producer": "prove-exact-satisfied",
+    }
+    proof = SimpleNamespace(
+        proof_digest=canonical_sha256(proof_document),
+        to_document=lambda: proof_document,
+    )
+    freshness_observed_at = datetime(
+        2026,
+        9,
+        3,
+        7,
+        48,
+        35,
+        987654,
+        tzinfo=UTC,
+    )
+    proof_completed_at = datetime(
+        2026,
+        9,
+        3,
+        7,
+        48,
+        36,
+        654321,
+        tzinfo=UTC,
+    )
+    timestamps = iter((freshness_observed_at, proof_completed_at))
+    events: list[str] = []
+    captured: dict[str, object] = {}
+    github_client = object()
+
+    def now(zone: object) -> datetime:
+        assert zone is UTC
+        events.append("clock")
+        return next(timestamps)
+
+    def construct_client(*, repository: str, token: str) -> object:
+        assert repository == source.repository
+        assert token == github_token
+        return github_client
+
+    def require_fresh(
+        actual_source: object,
+        actual_client: object,
+        **kwargs: object,
+    ) -> object:
+        assert actual_source is source
+        assert actual_client is github_client
+        assert kwargs["now"] == freshness_observed_at
+        assert kwargs["expected_provenance"] == binding.attestation_provenance
+        assert kwargs["expected_canonical_content_digest"] == (
+            initial_governance.canonical_content_digest
+        )
+        assert kwargs["expected_expires_at"] == "2026-10-01T00:00:00Z"
+        assert kwargs["expected_live_enabled"] is True
+        events.append("fresh")
+        return fresh_governance
+
+    def form_proof(**kwargs: object) -> object:
+        events.append("form")
+        captured.update(kwargs)
+        return proof
+
+    for name, replacement in (
+        ("datetime", SimpleNamespace(now=now)),
+        ("_load_live_intent", lambda _args: intent),
+        (
+            "_load_live_model",
+            lambda _args, actual_intent: (
+                model
+                if actual_intent is intent
+                else pytest.fail("Exact-satisfied Intent was substituted")
+            ),
+        ),
+        ("_load_attempt_binding", lambda _args: binding),
+        ("_load_publication_snapshot", lambda _args: publication),
+        (
+            "_admitted_live_eligibility_decision",
+            lambda *_args, **_kwargs: (
+                initial_eligibility,
+                SimpleNamespace(governance=source),
+            ),
+        ),
+        ("GitHubGovernanceClient", construct_client),
+        ("require_fresh_governance_identity", require_fresh),
+        ("form_exact_satisfied_governance_proof", form_proof),
+    ):
+        monkeypatch.setattr(cli_module, name, replacement)
+    output = tmp_path / "exact-satisfied-governance-proof.json"
+    github_output = tmp_path / "github-output"
+    control = f"workflow-delivery-v3:{binding.execution.target}"
+
+    status = cli_module._release_prove_exact_satisfied_command(  # noqa: SLF001
+        Namespace(
+            github_token=github_token,
+            control=control,
+            output=str(output),
+            github_output=str(github_output),
+        )
+    )
+
+    assert status == 0
+    assert events == ["clock", "fresh", "clock", "form"]
+    assert captured == {
+        "publication_snapshot": publication,
+        "governance": fresh_governance,
+        "proved_at": "2026-09-03T07:48:36Z",
+        "control": control,
+    }
+    assert json.loads(output.read_bytes()) == proof_document
+    assert github_output.read_text(encoding="utf-8").splitlines() == [
+        f"exact-satisfied-governance-proof-digest={proof.proof_digest}",
+        (
+            "exact-satisfied-governance-proof-digest-hex="
+            f"{proof.proof_digest.removeprefix('sha256:')}"
+        ),
+    ]
+
+
+def test_prove_exact_satisfied_rejects_loaded_attempt_provenance_substitution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject an eligibility replay whose Governance lineage was replaced."""
+    binding = _current_release_attempt_binding()
+    substituted_provenance = tuple(
+        (name, "9" * 40 if name == "blob-oid" else value)
+        for name, value in binding.attestation_provenance
+    )
+    intent = object()
+    model = SimpleNamespace(
+        canonical_digest=binding.repository_model_digest,
+    )
+    publication = SimpleNamespace(attempt=binding.attempt)
+    selected_modes: list[LiveEligibilityAdmissionMode] = []
 
     monkeypatch.setattr(cli_module, "_load_live_intent", lambda _args: intent)
     monkeypatch.setattr(
         cli_module,
         "_load_live_model",
-        lambda _args, _intent: model,
+        lambda _args, actual_intent: (
+            model
+            if actual_intent is intent
+            else pytest.fail("Exact-satisfied Intent was substituted")
+        ),
     )
     monkeypatch.setattr(
         cli_module,
-        "_admitted_live_eligibility_decision",
-        admit_initial,
+        "_load_attempt_binding",
+        lambda _args: binding,
     )
     monkeypatch.setattr(
         cli_module,
         "_load_publication_snapshot",
         lambda _args: publication,
     )
+
+    def admit(
+        _arguments: object,
+        actual_intent: object,
+        actual_model: object,
+        *,
+        admission_mode: LiveEligibilityAdmissionMode,
+    ) -> tuple[object, object]:
+        assert actual_intent is intent
+        assert actual_model is model
+        selected_modes.append(admission_mode)
+        return (
+            SimpleNamespace(
+                governance=SimpleNamespace(
+                    provenance=substituted_provenance,
+                )
+            ),
+            object(),
+        )
+
     monkeypatch.setattr(
         cli_module,
-        "_load_authorization",
+        "_admitted_live_eligibility_decision",
+        admit,
+    )
+    output = tmp_path / "exact-satisfied-governance-proof.json"
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Exact-satisfied proof Attempt authority binding mismatch$",
+    ):
+        cli_module._release_prove_exact_satisfied_command(  # noqa: SLF001
+            Namespace(output=str(output))
+        )
+
+    assert selected_modes == [LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY]
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("record_kind", "expected_message"),
+    [
+        pytest.param(
+            "approval-bundle",
+            "Approval Bundle Attempt Binding mismatch",
+            id="approval-bundle",
+        ),
+        pytest.param(
+            "publication-authorization",
+            "Publication Authorization Attempt Binding mismatch",
+            id="publication-authorization",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("field_name", "replacement"),
+    [
+        pytest.param(
+            "intent_digest",
+            "sha256:" + ("9" * 64),
+            id="intent-digest",
+        ),
+        pytest.param(
+            "live_eligibility_artifact_id",
+            702,
+            id="eligibility-artifact-id",
+        ),
+    ],
+)
+def test_finalize_live_rejects_substituted_embedded_attempt_binding(
+    monkeypatch: pytest.MonkeyPatch,
+    record_kind: str,
+    expected_message: str,
+    field_name: str,
+    replacement: str | int,
+) -> None:
+    """Reject embedded authority that differs from the current Attempt."""
+    binding = _current_release_attempt_binding()
+    substituted = replace(binding, **{field_name: replacement})
+    snapshot = SimpleNamespace(
+        subject=binding.attempt,
+        repository_model_digest=binding.repository_model_digest,
+        snapshot_digest="sha256:" + ("a" * 64),
+    )
+    decision = SimpleNamespace(
+        subject=binding.attempt,
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+    )
+    bundle = SimpleNamespace(attempt_binding=substituted)
+    authorization = SimpleNamespace(approval_bundle=bundle)
+
+    assert substituted.attempt == binding.attempt
+    assert substituted.execution.target == binding.execution.target
+    monkeypatch.setattr(
+        cli_module,
+        "_validate_optional_uploaded_record_transport",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_attempt_binding",
+        lambda _args: binding,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_live_qualification_snapshot",
+        lambda _args: snapshot,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_live_qualification_decision",
+        lambda _args: decision,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_optional_evidence",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "finalize_qualification",
+        lambda *_args, **_kwargs: decision,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_approval_bundle",
+        lambda _args: bundle,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_publication_authorization",
         lambda _args: authorization,
     )
-    rest_client = object()
-
-    def github_client(*, repository: str, token: object) -> object:
-        assert repository == GOVERNANCE_REPOSITORY
-        assert token is None
-        return rest_client
-
-    monkeypatch.setattr(cli_module, "GitHubRestClient", github_client)
-    monkeypatch.setattr(cli_module, "observe_governance_source", observe)
-    output_path = tmp_path / "capability-decision.json"
-    github_output_path = tmp_path / "github-output"
-    arguments = Namespace(
-        github_token=None,
-        publication_snapshot=str(publication_path),
-        reviewer_summary=str(reviewer_summary_path),
-        reviewer_summary_artifact_id=710,
-        reviewer_summary_artifact_digest=reviewer_upload_digest,
-        live_eligibility_artifact_id=701,
-        live_eligibility_artifact_digest="sha256:" + ("6" * 64),
-        control=control,
-        output=str(output_path),
-        github_output=str(github_output_path),
-    )
-
-    status = cli_module._release_admit_capability_command(arguments)  # noqa: SLF001
-
-    assert status == 1
-    assert selected_modes == [LiveEligibilityAdmissionMode.CAPABILITY_REPLAY]
-    assert len(observed_at) == 1
-    assert observed_at[0] >= attestation.expires_at
-    canonical_bytes = output_path.read_bytes()
-    document = parse_canonical_json(canonical_bytes)
-    assert canonical_bytes == canonicalize(document)
-    assert document["schema"] == (
-        "workflow-delivery/v3/capability-admission-decision"
-    )
-    assert document["result"] == "blocked"
-    assert document["diagnostics"] == ["governance-attestation-expired"]
-    decision = CapabilityAdmissionDecision(
-        attempt=attempt,
-        authorization_digest=authorization.authorization_digest,
-        publication_snapshot_digest=publication.snapshot_digest,
-        reviewer_summary_artifact_id=710,
-        reviewer_summary_upload_digest=reviewer_upload_digest,
-        reviewer_summary_payload_digest=(
-            authorization.reviewer_summary_payload_digest
+    monkeypatch.setattr(
+        cli_module,
+        "finalize_attempt_outcome",
+        lambda **_kwargs: pytest.fail(
+            "Substituted Attempt Binding reached core finalization"
         ),
-        action_digests=(),
-        artifact_digests=(),
-        resource_key_sets=(),
-        lock_groups=(),
-        live_eligibility_artifact_id=701,
-        live_eligibility_artifact_digest="sha256:" + ("6" * 64),
-        governance_provenance=(initial_eligibility.governance.provenance),
-        governance_content_sha256=attestation.content_digest,
-        governance_expires_at="2000-01-01T00:00:00Z",
-        governance_live_enabled=True,
-        producer="approval-finalizer",
-        control=control,
-        workflow_run_id=attempt.workflow_run_id,
-        result="blocked",
-        diagnostics=("governance-attestation-expired",),
     )
-    assert document == decision.to_document()
-    github_outputs = dict(
-        line.split("=", 1)
-        for line in github_output_path.read_text(encoding="utf-8").splitlines()
-    )
-    assert github_outputs["capability-decision-digest"] == (
-        decision.decision_digest
-    )
-    assert github_outputs["capability-result"] == "blocked"
-
-
-def test_publish_cli_persists_governance_terminal_state_before_nonzero(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Persist the exact Governance terminal proof before returning failure."""
-    action = SimpleNamespace(
-        action_id="publish-github-packages",
-        action_digest="sha256:" + ("a" * 64),
-        lock_group="npm:@hcoona/hcoona-release-smoke-npm",
-    )
-    publication = SimpleNamespace(
-        attempt=SimpleNamespace(execution=SimpleNamespace(target="b" * 40)),
-        materialized_actions=(action,),
-    )
-    capability = SimpleNamespace(
-        authorizing=True,
-        control="workflow-delivery-v3:" + ("b" * 40),
-    )
-    classification = SimpleNamespace(
-        outcome="failed",
-        mutation_disposition="no-side-effect",
-    )
-
-    terminal_result = DeferredPublicationExecutionResult(
-        command=PublishCommandResult(
-            outcome="governance-rejected",
-            exit_code=None,
-            stdout="",
-            stderr="",
-            command=("npm", "publish"),
+    optional_records = {
+        "observation": None,
+        "publication_snapshot": None,
+        "approval_bundle": (
+            "approval-bundle.json" if record_kind == "approval-bundle" else None
         ),
-        observation=None,
-        classification=PublishClassification(
-            outcome=classification.outcome,
-            mutation_disposition=classification.mutation_disposition,
-            receipt_digest=None,
+        "publication_authorization": (
+            "publication-authorization.json"
+            if record_kind == "publication-authorization"
+            else None
         ),
-        response_identity_digest=None,
-        diagnostic_reference=(
-            PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER
-        ),
-        receipt=None,
-    )
-
-    passthrough_loaders = {
-        "_load_publication_snapshot": publication,
-        "_load_capability_decision": capability,
-        "_load_github_packages_preflight": SimpleNamespace(),
-        "_load_mutation_marker": SimpleNamespace(),
-        "_load_live_qualification_snapshot": SimpleNamespace(),
-        "_load_live_qualification_decision": SimpleNamespace(),
-        "_load_release_adapter_context": SimpleNamespace(),
-        "_load_live_release_artifact_record": SimpleNamespace(),
-        "_load_authorization": SimpleNamespace(),
+        "exact_satisfied_governance_proof": None,
+        "action_result": None,
     }
-    for name, value in passthrough_loaders.items():
-        monkeypatch.setattr(
-            cli_module,
-            name,
-            lambda *_args, _value=value, **_kwargs: _value,
+    namespace_values: dict[str, object] = {
+        "release_artifact": None,
+    }
+    for name, path in optional_records.items():
+        namespace_values[name] = path
+        namespace_values[f"{name}_digest"] = None
+        namespace_values[f"{name}_artifact_id"] = None
+        namespace_values[f"{name}_artifact_digest"] = None
+
+    with pytest.raises(ValueError, match=rf"^{expected_message}$"):
+        cli_module._release_finalize_live_command(  # noqa: SLF001
+            Namespace(**namespace_values)
         )
-    monkeypatch.setattr(
-        cli_module,
-        "load_first_slice_authoring",
-        lambda *_args: (
-            SimpleNamespace(),
-            SimpleNamespace(),
-            SimpleNamespace(
-                governance=SimpleNamespace(repository="owner/repository")
-            ),
-        ),
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "artifact_expectation",
-        lambda *_args: SimpleNamespace(),
-    )
-
-    def reject_governance(**_kwargs: object) -> object:
-        raise PublisherGovernanceRecheckRejectionError(terminal_result)
-
-    monkeypatch.setattr(
-        cli_module,
-        "publish_github_packages_action",
-        reject_governance,
-    )
-
-    events: list[tuple[str, object]] = []
-    original_write_output = cli_module._write_output  # noqa: SLF001
-
-    def write_output(path: str, document: dict[str, JsonValue]) -> None:
-        events.append(("write", document))
-        original_write_output(path, document)
-
-    def record_outputs(
-        _path: str,
-        *,
-        role: str,
-        digest: str,
-        extra: object = (),
-    ) -> None:
-        events.append(("record", (role, digest, extra)))
-
-    monkeypatch.setattr(cli_module, "_write_output", write_output)
-    monkeypatch.setattr(cli_module, "_record_outputs", record_outputs)
-    state_path = tmp_path / "execution-state.json"
-
-    arguments = cast(
-        "argparse.Namespace",
-        SimpleNamespace(
-            preflight="preflight.json",
-            preflight_digest="sha256:" + ("1" * 64),
-            mutation_marker="marker.json",
-            mutation_marker_digest="sha256:" + ("2" * 64),
-            mutation_marker_artifact_id=17,
-            mutation_marker_artifact_digest="sha256:" + ("3" * 64),
-            repo_root=str(tmp_path),
-            target="b" * 40,
-            tarball=str(tmp_path / "package.tgz"),
-            github_token="token",  # noqa: S106
-            temp_root=str(tmp_path),
-            execution_state_output=str(state_path),
-            github_output=str(tmp_path / "github-output"),
-        ),
-    )
-    status = cli_module._release_publish_github_packages_command(  # noqa: SLF001
-        arguments
-    )
-
-    expected_state: dict[str, JsonValue] = {
-        "schema": "workflow-delivery/v3/deferred-publication-result",
-        "action-id": action.action_id,
-        "action-digest": action.action_digest,
-        "lock-group": action.lock_group,
-        "outcome": "failed",
-        "mutation-disposition": "no-side-effect",
-        "response-identity-digest": None,
-        "receipt": None,
-        "diagnostic-reference": (
-            PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER
-        ),
-        "control": capability.control,
-    }
-    persisted_state = json.loads(state_path.read_bytes())
-
-    assert status == 1
-    assert persisted_state == expected_state
-    assert events == [
-        ("write", expected_state),
-        (
-            "record",
-            (
-                "publication-execution",
-                canonical_sha256(expected_state),
-                (),
-            ),
-        ),
-    ]
-
-    def fail_generically(**_kwargs: object) -> object:
-        message = "generic post-marker failure"
-        raise ValueError(message)
-
-    generic_state_path = tmp_path / "generic-execution-state.json"
-    arguments.execution_state_output = str(generic_state_path)
-    monkeypatch.setattr(
-        cli_module,
-        "publish_github_packages_action",
-        fail_generically,
-    )
-    with pytest.raises(ValueError, match="generic post-marker failure"):
-        cli_module._release_publish_github_packages_command(arguments)  # noqa: SLF001
-    assert not generic_state_path.exists()
 
 
 def test_result_cli_fails_closed_on_substituted_control(
@@ -3165,7 +3450,7 @@ def _valid_mutation_marker_fixture(
         tarball_sha512="sha512:" + ("2" * 128),
         npm_configuration_digest="sha256:" + ("3" * 64),
         governance_provenance=(("repository", "hcoona/three"),),
-        governance_content_sha256="sha256:" + ("4" * 64),
+        governance_canonical_content_digest="sha256:" + ("4" * 64),
         governance_expires_at="2026-08-19T00:00:00Z",
         governance_live_enabled=True,
     )
@@ -3690,7 +3975,7 @@ def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
             calls.authoring.append((root, requested_target))
             or (object(), object(), policy)
         ),
-        "GitHubRestClient": lambda *, repository, token: (
+        "GitHubGovernanceClient": lambda *, repository, token: (
             calls.client.append((repository, token)) or client
         ),
         "release_policy_digest": lambda value: (

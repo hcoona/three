@@ -11,10 +11,20 @@ from typing import cast
 import pytest
 from three_workflow_delivery_v3.release import eligibility
 from three_workflow_delivery_v3.release.eligibility import (
+    AccessGrant,
+    AccessInventory,
+    ApprovalEnvironmentAttestation,
+    ApprovalEnvironmentReviewer,
+    ApprovalEnvironmentVariable,
+    ArtifactRetentionAttestation,
+    DestinationPrimitiveAttestation,
     EligibilityResult,
+    EnabledGovernanceActivation,
     GovernanceAttestation,
     GovernanceObservation,
     LiveEligibilityContext,
+    NativeEvidence,
+    PackagePrincipalAttestation,
     WriterInventoryEntry,
 )
 from three_workflow_delivery_v3.release.static_reference_model import (
@@ -30,6 +40,10 @@ from three_workflow_delivery_v3.release.static_reference_policy import (
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
     FIRST_SLICE_RELEASE_UNIT,
+    GOVERNANCE_MAX_AGE_DAYS,
+    GOVERNANCE_PATH,
+    GOVERNANCE_REF,
+    GOVERNANCE_REPOSITORY,
     GovernanceSource,
 )
 
@@ -37,6 +51,7 @@ TARGET = "e" * 40
 NOW = datetime(2026, 9, 1, 6, 0, tzinfo=UTC)
 REPOSITORY_ROOT = Path("/controlled/current-run-repository")
 WORKFLOW_RUN_ID = 8101
+TEST_DESTINATION_PRIMITIVE_ID = "test/conditional-version-and-tag-v1"
 COMPLETE_EVENT_COUNT = 3
 REJECTED_EVENT_COUNT = 2
 EXPECTED_OPERATIONAL_ERROR_COUNT = 7
@@ -68,10 +83,70 @@ def _context() -> LiveEligibilityContext:
 
 def _governance() -> GovernanceObservation:
     source = GovernanceSource(
-        repository="hcoona/hcoona.github.io",
-        ref="refs/heads/governance",
-        path=".github/workflow-delivery/v3/governance.json",
-        max_age_days=90,
+        repository=GOVERNANCE_REPOSITORY,
+        ref=GOVERNANCE_REF,
+        path=GOVERNANCE_PATH,
+        max_age_days=GOVERNANCE_MAX_AGE_DAYS,
+    )
+    evidence_time = NOW - timedelta(days=2)
+    activation = EnabledGovernanceActivation(
+        approval_environment=ApprovalEnvironmentAttestation(
+            name="workflow-delivery-v3-buddy-approval",
+            environment_id=20895030723,
+            required_reviewers=(
+                ApprovalEnvironmentReviewer(
+                    login="hcoona",
+                    reviewer_id=712433,
+                ),
+            ),
+            prevent_self_review=False,
+            can_admins_bypass=False,
+            wait_timer_minutes=0,
+            deployment_policy="all",
+            secret_count=0,
+            variables=(
+                ApprovalEnvironmentVariable(
+                    name="WDV3_APPROVAL_ENVIRONMENT_MARKER",
+                    value="workflow-delivery-v3-buddy-approval/v1",
+                    scope="environment",
+                ),
+            ),
+            same_name_repository_variable_absent=True,
+            same_name_organization_variable="not-applicable-user-owner",
+            evidence=(
+                NativeEvidence(
+                    endpoint=(
+                        "GET /repos/hcoona/three/environments/"
+                        "workflow-delivery-v3-buddy-approval"
+                    ),
+                    captured_at=evidence_time,
+                    response_digest="sha256:" + ("4" * 64),
+                ),
+            ),
+        ),
+        artifact_retention=ArtifactRetentionAttestation(
+            endpoint=(
+                "GET /repos/hcoona/three/actions/permissions/"
+                "artifact-and-log-retention"
+            ),
+            captured_at=evidence_time,
+            days=45,
+            response_digest="sha256:" + ("5" * 64),
+        ),
+        destination_primitive=DestinationPrimitiveAttestation(
+            primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
+            operation="conditional-create-npm-version-and-target-tag",
+            captured_at=evidence_time,
+            race_inputs=(
+                ("coordinate", FIRST_SLICE_PACKAGE),
+                ("target", TARGET),
+            ),
+            race_results=(
+                ("conflicting-tag-preserved", "pass"),
+                ("target-version-remained-absent", "pass"),
+            ),
+            evidence_digest="sha256:" + ("6" * 64),
+        ),
     )
     attestation = GovernanceAttestation(
         release_policy=FIRST_SLICE_RELEASE_UNIT,
@@ -79,19 +154,32 @@ def _governance() -> GovernanceObservation:
         issuer="hcoona",
         inspected_at=NOW - timedelta(days=1),
         expires_at=NOW + timedelta(days=30),
-        accepted_writers=(
-            WriterInventoryEntry(login="release-owner", role="Admin"),
+        accepted_writers=(WriterInventoryEntry(login="hcoona", role="Admin"),),
+        accepted_publisher="hcoona",
+        access_inventory=AccessInventory(
+            repository=(AccessGrant(subject="hcoona", access="admin"),),
+            package=(AccessGrant(subject="hcoona", access="write"),),
+            manage_actions=(AccessGrant(subject="hcoona", access="allowed"),),
         ),
-        access_inventory=None,
-        access_evidence_digest=None,
-        limitations=(),
+        package_principal=PackagePrincipalAttestation(
+            repository=GOVERNANCE_REPOSITORY,
+            intended_coordinate=FIRST_SLICE_PACKAGE,
+            known_wider_reach=(
+                "@hcoona/hexo-renderer-asciidoc",
+                "disposable-smoke-packages",
+            ),
+        ),
+        limitations=("GitHub Packages does not expose a complete grants API.",),
+        activation=activation,
         live_enabled=True,
     )
     return GovernanceObservation(
         source=source,
-        resolved_commit="a" * 40,
+        eligibility_main_sha="a" * 40,
+        current_main_sha="c" * 40,
+        object_format="sha1",
         blob_oid="b" * 40,
-        content_sha256=attestation.content_digest,
+        canonical_content_digest=attestation.content_digest,
         observed_at=NOW,
         attestation=attestation,
     )
@@ -150,6 +238,11 @@ def _evaluate_with_result(
         "_validate_live_context",
         lambda _context, _snapshot, _policy: None,
     )
+    monkeypatch.setattr(
+        eligibility,
+        "_ADMITTED_DESTINATION_PRIMITIVE_IDS",
+        frozenset({TEST_DESTINATION_PRIMITIVE_ID}),
+    )
     monkeypatch.setattr(eligibility, "scan_bounded_static_references", scan)
     monkeypatch.setattr(
         eligibility,
@@ -185,6 +278,8 @@ def test_live_eligibility_runs_its_own_exact_target_static_reference_scan(
     )
     assert events[1] == ("validate", expected)
     assert events[2][0] == "governance"
+    assert events[2][1].ref == "refs/heads/main"
+    assert events[2][1] == decision.governance.source
     assert len(events) == COMPLETE_EVENT_COUNT
     assert decision.static_reference is expected
     assert decision.context.workflow_run_id == WORKFLOW_RUN_ID
@@ -209,6 +304,20 @@ def test_live_eligibility_embeds_the_canonical_clean_result_as_static_reference(
     assert document["result"] == "pass"
     assert document["diagnostics"] == []
     assert events[2][0] == "governance"
+    assert document["governance"]["eligibility-main-sha"] == "a" * 40
+    assert document["governance"]["git-object-format"] == "sha1"
+    assert document["governance"]["blob-oid"] == "b" * 40
+    assert document["governance"]["canonical-content-digest"] == (
+        decision.governance.attestation.content_digest
+    )
+    admitted_attestation = document["governance"]["admitted-attestation"]
+    assert admitted_attestation["schema"] == eligibility.ATTESTATION_SCHEMA
+    assert admitted_attestation["accepted_publisher"] == "hcoona"
+    assert admitted_attestation["activation"]["state"] == "ready"
+    assert {
+        "resolved-commit",
+        "content-sha256",
+    }.isdisjoint(document["governance"])
 
 
 def test_live_eligibility_blocks_on_static_reference_findings_with_evidence(

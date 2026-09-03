@@ -134,7 +134,11 @@ def _workspace_paths() -> set[str]:
         capture_output=True,
         text=True,
     )
-    return set(result.stdout.splitlines())
+    return {
+        path
+        for path in result.stdout.splitlines()
+        if (REPO_ROOT / path).exists()
+    }
 
 
 def _descriptor_paths(paths: set[str]) -> set[str]:

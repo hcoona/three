@@ -55,6 +55,7 @@ PREPARE_STATIC_REFERENCE_SCRIPT = (
 )
 TARGET = "1" * 40
 DIGEST = "sha256:" + ("a" * 64)
+TEST_DESTINATION_PRIMITIVE_ID = "test/conditional-version-and-tag-v1"
 
 
 def _git(repository: Path, *arguments: str) -> str:
@@ -3742,13 +3743,13 @@ def test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared() 
         pytest.param("worktree", None, "rejected", id="worktree-feedback"),
     ],
 )
-def test_cli_live_evidence_accepts_git_target_only(
+def test_cli_live_evidence_accepts_git_target_only(  # noqa: PLR0915
     monkeypatch: pytest.MonkeyPatch,
     source_kind: str,
     result_target: str | None,
     expected_outcome: str,
 ) -> None:
-    """Admit only an exact-target Result at the CLI's Live boundary."""
+    """Bind a selected same-repository ref to only its exact-target Result."""
     from datetime import UTC, datetime, timedelta  # noqa: PLC0415
     from types import SimpleNamespace  # noqa: PLC0415
 
@@ -3761,7 +3762,8 @@ def test_cli_live_evidence_accepts_git_target_only(
         live.admit_live_eligibility_decision
     )
 
-    control = "refs/heads/main@" + TARGET
+    selected_ref = "refs/tags/release-candidate"
+    control = f"{selected_ref}@{TARGET}"
     snapshot_release_policy = object()
     snapshot = SimpleNamespace(
         context=SimpleNamespace(control=control),
@@ -3781,15 +3783,39 @@ def test_cli_live_evidence_accepts_git_target_only(
         release_unit=live.FIRST_SLICE_RELEASE_UNIT,
         request_id="phase-5-live-request",
         workflow_run_id=501,
-        selected_ref="refs/heads/main",
+        selected_ref=selected_ref,
         target=TARGET,
     )
     now = datetime(2026, 9, 1, tzinfo=UTC)
-    governance = SimpleNamespace(
+    governance_attestation = SimpleNamespace(
         inspected_at=now - timedelta(days=2),
-        observed_at=now - timedelta(days=1),
         expires_at=now + timedelta(days=30),
         live_enabled=True,
+        activation=live.EnabledGovernanceActivation(
+            approval_environment=SimpleNamespace(),  # type: ignore[arg-type]
+            artifact_retention=SimpleNamespace(),  # type: ignore[arg-type]
+            destination_primitive=live.DestinationPrimitiveAttestation(
+                primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
+                operation="conditional-create-npm-version-and-target-tag",
+                captured_at=now - timedelta(days=2),
+                race_inputs=(("coordinate", "test"),),
+                race_results=(("conditional-race", "pass"),),
+                evidence_digest=DIGEST,
+            ),
+        ),
+    )
+    governance = SimpleNamespace(
+        source=SimpleNamespace(
+            repository=live.GOVERNANCE_REPOSITORY,
+            ref=live.GOVERNANCE_REF,
+            path=live.GOVERNANCE_PATH,
+        ),
+        eligibility_main_sha="3" * 40,
+        object_format="sha1",
+        blob_oid="4" * 40,
+        canonical_content_digest=DIGEST,
+        observed_at=now - timedelta(days=1),
+        attestation=governance_attestation,
     )
     validation_calls: list[tuple[object, object, object]] = []
     admitted_calls: list[dict[str, object]] = []
@@ -3823,6 +3849,11 @@ def test_cli_live_evidence_accepts_git_target_only(
     monkeypatch.setattr(live, "ReleasePolicy", SimpleNamespace)
     monkeypatch.setattr(live, "_validate_live_context", validate_context)
     monkeypatch.setattr(live, "_decision_governance", parse_governance)
+    monkeypatch.setattr(
+        live,
+        "_ADMITTED_DESTINATION_PRIMITIVE_IDS",
+        frozenset({TEST_DESTINATION_PRIMITIVE_ID}),
+    )
     monkeypatch.setattr(live, "release_policy_digest", policy_digest)
     monkeypatch.setattr(live, "catalog_digest", lambda: DIGEST)
     monkeypatch.setattr(live, "compile_release_policy", compiled_policy)
@@ -3878,8 +3909,12 @@ def test_cli_live_evidence_accepts_git_target_only(
 
         assert admitted.static_reference == static_reference
         assert admitted.context.target == TARGET
+        assert admitted.context.selected_ref == selected_ref
         assert len(admitted_calls) == 1
         assert admitted_calls[0]["static_reference"] == static_reference
+        assert admitted_calls[0]["governance"] is governance
+        assert governance.source.ref == "refs/heads/main"
+        assert governance.eligibility_main_sha != admitted.context.target
     else:
         with pytest.raises(
             ValueError,
