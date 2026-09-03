@@ -81,10 +81,12 @@ requests mechanism extraction and revalidation. Git and the append-only
   Admission; two independent adjudicators preserved the transitional
   zero-action path. Fresh same-scope and adversarial closure reviewers both
   reported no findings.
-- The record-model unit remains disabled and is not yet delivered. Later
-  Governance/authorization, final no-op topology, marker admission and
-  ordering, conclusion semantics, activation, and cleanup remain outside this
-  unit.
+- The record-model unit remains disabled and is under protected delivery in
+  PR #648. Review findings and automatic checks must be closed on the exact
+  current PR head; delivery-specific approval and protected merge remain
+  pending. Later Governance/authorization, final no-op topology, marker
+  admission and ordering, conclusion semantics, activation, and cleanup remain
+  outside this unit.
 - The runtime remains disabled through
   `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with
   `live_enabled: false`.
@@ -92,13 +94,14 @@ requests mechanism extraction and revalidation. Git and the append-only
 - Retry-5 destination acceptance is complete historical evidence. Exact `.17` through `.20` versions and tags remain
   retained and must not be reused; detailed chronology stays in Git and the log.
 
-The record-model unit is locally complete. The immediate boundary is its final
-human-reviewable local commit and, only when requested, normal Git delivery
-through a separate protected PR. Do not reopen the completed contractions,
-introduce a universal record envelope, history fallback, compatibility parser,
-or default attempt, or start a later implementation unit. Live activation,
-operational external mutation, and work assigned to later implementation units
-remain unauthorized.
+PR #648 is the active record-model delivery boundary. Do not create another
+delivery PR or reopen the completed contractions. The immediate work is to
+adjudicate and resolve every review finding, validate the exact resulting PR
+head, wait for fresh automatic checks and review, and obtain delivery-specific
+human approval before protected merge. Do not introduce a universal record
+envelope, history fallback, compatibility parser, or default attempt, or start
+a later implementation unit. Live activation, operational external mutation,
+and work assigned to later implementation units remain unauthorized.
 
 ## Hot Context
 
@@ -383,22 +386,26 @@ Do not infer policy from stale runtime behavior or archived designs.
 
 1. Inspect current branch, status, identities, untracked paths, and complete
    diff before changing anything.
-2. Confirm the branch descends from exact reconciled `main@14cfc212`; if
-   `origin/main` advances before delivery, merge it without rewriting reviewed
-   commits and restart integrated-head validation and review.
+2. Confirm local and remote branch heads match PR #648 and that the PR branch
+   still descends from exact reconciled `main@14cfc212`.
 3. Treat the completed Provider/compiler, Attempt/transport, and legacy-record
    contractions as one closed record-model unit. Preserve its current-Attempt
    authority, Simulation/CI bindings, direct ActionResult lineage, and
    zero-or-one action cardinalities.
-4. Before delivery, rerun complete affected tests, root HK, hooks, and
-   independent multi-angle review against the exact integrated head.
-5. Deliver the record-model unit through a separate protected PR and wait for
-   delivery-specific human approval before merge.
-6. Continue later disabled contraction only in dependency order, beginning
-   with Governance/authorization and final no-op topology, then marker-aware
-   publication/finalization and workflows, activation, and separately
-   authorized cleanup.
-7. Treat the deferred marker, success, failure, cancellation, and
+4. For PR #648, independently adjudicate every review finding, apply only
+   retained corrections, and rerun applicable local validation before pushing
+   a changed head.
+5. Wait for all required checks and fresh review to close on the exact PR head.
+   If `origin/main` advances before merge, integrate it without rewriting
+   reviewed commits and restart integrated-head validation and review.
+6. Obtain delivery-specific human approval before protected merge. Do not
+   approve the review, bypass protection, rerun workflows manually, or merge
+   early.
+7. After separate explicit authorization, continue later disabled contraction
+   only in dependency order, beginning with Governance/authorization and final
+   no-op topology, then marker-aware publication/finalization and workflows,
+   activation, and separately authorized cleanup.
+8. Treat the deferred marker, success, failure, cancellation, and
    dependency-skipped semantics as activation blockers; do not infer their
    resolution from the current disabled runtime.
 
@@ -459,7 +466,9 @@ applicable documentation and repository gates but keeps the same validate-before
 
 The replacement baseline and first disabled implementation unit are merged.
 The complete record-model contraction is locally closed on its own branch from
-exact reconciled `main`; normal Git delivery remains pending. Later disabled
-units remain dependency-ordered, beginning with Governance/authorization and
-the final no-op topology. External-resource, cleanup, protected-merge, and Live
-boundaries still require their own explicit authorization.
+exact reconciled `main`; PR #648 is its active delivery boundary. Review
+closure, delivery-specific approval, and protected merge remain pending. Later
+disabled units remain dependency-ordered, beginning with
+Governance/authorization and the final no-op topology. External-resource,
+cleanup, protected-merge, and Live boundaries still require their own explicit
+authorization.

@@ -14798,3 +14798,45 @@ Governance, Environment, tag, cleanup, push, PR, or other external mutation
 occurred.
 
 <!-- END APPEND: 2026-09-03-wdv3-record-model-legacy-retirement-closure -->
+
+<!-- BEGIN APPEND: 2026-09-03-pr648-initial-delivery-review -->
+
+## Workflow Delivery v3 PR #648 initial delivery review
+
+### Append integrity
+
+| Append-only file | Pre-append bytes | Pre-append SHA-256 |
+|---|---:|---|
+| `.testagent/status.md` | 882,515 | `2717767da47efa98989e47647b804acc6e1536087b10b24bf2568ac41a498e98` |
+| `docs/wiki/log.md` | 190,309 | `484be21379aa669d55e2373499075f1e295913b4dc939bc8d7c4329f30edb465` |
+
+### Delivery checkpoint
+
+- Branch `workflow-delivery-v3-record-model-contraction` was pushed at exact
+  initial head `78a2a54ef9d02f8af405ad4635280dcc0cf4f21d`, and PR #648 was opened
+  against `main`.
+- `origin/main@14cfc212da56bed35d887c88f66c1edeb55b0d23` remained an ancestor.
+  The local and remote branch heads matched.
+- All initial automatic checks completed successfully, including Continuous
+  Integration, Workflow Delivery v3 CI, CodeQL, root HK, Python, Node, .NET,
+  Ruby, and cross-platform AzureAuth artifact jobs.
+- Copilot review generated one documentation finding: the normative handoff
+  still described branch push and PR creation as future work. Independent
+  adjudication classified the finding true positive with 99% confidence
+  because it could direct a later agent to duplicate delivery.
+- The retained correction identifies PR #648 as the active boundary,
+  distinguishes pending review and protected merge, and updates the executable
+  workflow. Existing status and log bytes remain untouched because their
+  no-push/no-PR statements were accurate at their append time.
+- An adversarial closure reviewer then found that the next-unit step could be
+  read as authorization to begin later work automatically after merge.
+  Independent adjudication retained the finding with 95% confidence. The step
+  now requires separate explicit authorization before dependency-ordered later
+  contraction can begin.
+
+The resulting corrected PR head requires fresh automatic checks and review
+before delivery-specific merge approval. No review approval, merge, manual
+rerun, Live dispatch, Governance, Environment, publication, package, tag,
+cleanup, or later-unit work occurred.
+
+<!-- END APPEND: 2026-09-03-pr648-initial-delivery-review -->
