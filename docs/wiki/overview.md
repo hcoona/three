@@ -103,7 +103,13 @@ disabled through
 
 - Local branch `workflow-delivery-v3-governance-authority` contains the
   validated and independently rereviewed disabled replacement implementation
-  in commits `7d8e00cb` and `4a51aac3`. It is not pushed, proposed, or merged.
+  in commits `7d8e00cb`, `4a51aac3`, `52a86b62`, `5d316fcd`, and
+  `0f25204b`. It is not pushed, proposed, or merged.
+- The bounded follow-up contraction uses the fetched protected ref as each
+  Governance read identity, removes redundant repository-wide object
+  scanning, narrows the active disabled publisher to authority-closure
+  validation followed by deterministic rejection, and preserves workflow
+  authority through property tests rather than complete topology snapshots.
 - Approval Environment `workflow-delivery-v3-buddy-approval`, ID
   `20895030723`, has rule `64124473`, sole reviewer
   `hcoona` / `712433`, self-review permitted, zero wait, no secrets, no
@@ -123,8 +129,8 @@ disabled through
 
 The replacement design, static-reference foundation, and record-model
 contraction are merged. The disabled Governance/authorization implementation
-is complete only on its local branch. Push and PR creation require a separate
-delivery decision.
+and its bounded follow-up contraction are complete only on the local branch.
+Push and PR creation require a separate delivery decision.
 
 Later gates separately authorize marker/Result/final-Outcome implementation,
 obsolete-Environment cleanup, destination-primitive acceptance, fresh native

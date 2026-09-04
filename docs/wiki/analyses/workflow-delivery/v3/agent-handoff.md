@@ -45,7 +45,17 @@ requests mechanism extraction and revalidation. Git and the append-only
     - `7d8e00cbbcb1536bdbae6a9f31d9a9179c6f6f7b` adds the isolated complete-
       history Governance Git reader and package coverage; and
     - `4a51aac3b9b3f81e04146ae14984335d02297c33` contracts Governance,
-      authorization, CLI, workflow, publisher, and replacement tests.
+      authorization, CLI, workflow, publisher, and replacement tests;
+    - `52a86b6213b58041201418f55b1f17dff9585ff1` removes redundant repository-
+      wide object scanning and advertisement/fetch identity coupling while
+      retaining the required fetched-history continuity proof;
+    - `5d316fcd8e50567e8d447ed636407589c8777cf5` contracts the active disabled
+      publisher preflight to current authority-closure validation followed by
+      deterministic rejection, and replaces workflow topology snapshots with
+      authority-critical properties; and
+    - `0f25204b93a6ef1a3a71f613763f8cfb46627175` removes duplicate and
+      premature R5 platform-termination precedence assertions while retaining
+      the no-Result fallback and ActionResult binding checks.
 - The replacement parser now requires only
   `workflow-delivery/v3/normal-live-governance-attestation-v1`; superseded
   selected-ref parsers therefore reject the protected document before
@@ -56,12 +66,14 @@ requests mechanism extraction and revalidation. Git and the append-only
   destination-race evidence. The enabled state is valid only with the complete
   native Approval Environment, repository-retention, destination-primitive,
   and conditional non-overwrite evidence required by the LLD.
-- Eligibility, Approval, publisher, and exact-satisfied freshness use isolated
-  complete Git state. Eligibility binds `eligibility-main-sha`, Git object
-  format, exact regular-blob OID, canonical content digest, and admitted
-  semantics. Later checks require descendant lineage and no protected-path
-  touch through full-history path traversal; byte equality alone is
-  insufficient.
+- Eligibility, Approval, and exact-satisfied freshness use isolated complete
+  Git state. Eligibility binds `eligibility-main-sha`, Git object format,
+  exact regular-blob OID, canonical content digest, and admitted semantics.
+  Later checks require descendant lineage and no protected-path touch through
+  full-history path traversal; byte equality alone is insufficient. The
+  fetched protected `main` ref is authoritative for each read; advertisement
+  is used only to determine Git object format, so an unrelated concurrent
+  `main` advance is not rejected.
 - A zero-action exact-satisfied Snapshot takes no Environment, Approval Bundle,
   Publication Authorization, publisher, marker, Result, or Receipt. An
   action-bearing Snapshot persists one complete Approval Bundle before the
@@ -71,6 +83,11 @@ requests mechanism extraction and revalidation. Git and the append-only
   non-overwriting version-and-tag creation. Absent destination state remains
   unsupported and activation-blocking; standard `npm publish --tag` must not
   be installed as an admitted normal-Live primitive.
+- The active disabled publisher path validates only the persisted publication,
+  authorization, qualification, and artifact closure, then deterministically
+  rejects the unimplemented primitive. It accepts no tarball, package token,
+  Governance client, clock, or output path and makes no future publisher-
+  freshness claim.
 - Local primitive admission is code-owned and empty. Governance cannot declare
   implementation capability, and a forged persisted passing eligibility
   decision is rejected.
@@ -88,7 +105,7 @@ requests mechanism extraction and revalidation. Git and the append-only
   mutation, Environment mutation, cleanup, push, PR, or merge is authorized by
   this local implementation continuation.
 
-The authorized local Governance/authorization boundary is complete. The two
+The authorized local Governance/authorization boundary is complete. The five
 implementation commits and closure-document changes remain local. Stop before
 push, PR creation, protected merge, obsolete-Environment cleanup, Governance
 refresh, destination acceptance, activation, dispatch, approval, publication,
@@ -385,7 +402,10 @@ Do not infer policy from stale runtime behavior or archived designs.
    infer delivery from this page.
 2. Preserve
    `7d8e00cbbcb1536bdbae6a9f31d9a9179c6f6f7b` and
-   `4a51aac3b9b3f81e04146ae14984335d02297c33` as the reviewed dependency-
+   `4a51aac3b9b3f81e04146ae14984335d02297c33`, followed by
+   `52a86b6213b58041201418f55b1f17dff9585ff1`,
+   `5d316fcd8e50567e8d447ed636407589c8777cf5`, and
+   `0f25204b93a6ef1a3a71f613763f8cfb46627175`, as the reviewed dependency-
    ordered implementation.
 3. Stop. Push and PR creation are the next delivery boundary and require
    separate explicit authorization.
