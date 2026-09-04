@@ -8,19 +8,25 @@ The user-approved replacement normal-Live baseline is merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
 The static-reference and record-model contractions are merged. The disabled
 Governance/authorization contraction is validated, independently rereviewed,
-and implemented. Git and pull-request state must be inspected rather than
-inferred from this page.
+implemented, and merged. The Publication/Finalizer design contraction is
+complete, independently rereviewed to zero findings, and final-shrink clean.
+PR #652 carries its protected delivery; inspect live Git and pull-request state
+rather than inferring delivery status from this page.
 
-No merged normal-Live runtime, Governance enablement, package access,
+No Publication/Finalizer runtime, Governance enablement, package access,
 deployment, package mutation, or other external resource has changed. The
-local replacement document and the merged runtime remain disabled through
-`live_enabled: false`.
+merged runtime and protected document remain disabled through
+`live_enabled: false` and still use the superseded v1 Governance schema until
+the implementation migration.
 
-Normal Live is also activation-blocked by a destination capability gap:
-standard `npm publish --tag` can overwrite a conflicting tag introduced after
-Observation and is not an admitted primitive for the complete version-and-tag
-projection. A separately reviewed supported primitive and its conditional
-non-overwrite race acceptance are required before activation.
+Normal Live remains activation-blocked by the unimplemented
+Publication/Finalizer runtime and missing fresh native acceptance for the exact
+Destination Operation Profile. The design admits a pinned standard
+`npm publish --tag ... --fetch-retries=0` profile only after its native suite
+proves the required creation, conflict, tag-race, and deleted/restorable
+tombstone behavior. Exact package-version bytes, digests, and witness are
+authoritative; the target-derived tag is a non-authoritative routing side
+effect.
 
 Before planning or editing v3 work, read the [Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md). It is
 operating guidance, not a second normative specification.
@@ -56,62 +62,6 @@ Prior retry-5 destination acceptance is complete historical evidence. Exact
 `.17` through `.20` versions and tags remain intentionally retained, but their
 chronology is not current architecture.
 
-## Replacement Contract
-
-- A normal Buddy dispatch may select any same-repository ref. GitHub resolves
-  it to one exact SHA that is both the workflow/control revision and Release
-  target. Protected Governance is read separately from `main`. Compatible
-  selected-revision control must strictly admit the active replacement
-  Governance schema; older parsers fail before any Environment job.
-- The bounded static-reference policy has exactly `git-target`, `index`, and
-  `worktree` source kinds. Only exact-SHA `git-target` output is Live evidence;
-  the other two are HK feedback.
-- Its closed surface is an exact selector-to-fact matrix. Each selector binds
-  one Ecosystem Authority Graph composed from authoritative source artifacts,
-  exact official libraries or CLIs, and published standards. Policy code
-  consumes normalized facts and contains no competing grammar, schema, or
-  authority-hardening layer.
-- A clean static result prevents bounded accidental references. It does not
-  prove universal consumer absence or package-token isolation.
-- The target architecture has one authority-bearing Environment,
-  `workflow-delivery-v3-buddy-approval`. It has no Capability Environment or
-  generic Environment Profile.
-- An exact-satisfied zero-action path has no approval, Publication
-  Authorization, publisher, mutation marker, Publication Result, or Receipt.
-  It repeats fresh protected Governance continuity checks before success.
-- A one-action path may form only after the destination primitive proves
-  conditional non-overwriting creation of the complete version-and-target-tag
-  projection. It then durably prepares the Approval Bundle and reviewer
-  summary before the Environment wait, emits the complete Publication
-  Authorization, runs a separate publisher, persists the marker before
-  mutation, performs one admitted compound action, and persists one Publication
-  Result. Standard `npm publish --tag` does not satisfy this gate.
-- Only a successful `published` Result embeds exactly one Receipt.
-- `hcoona` self-approval is explicit operator confirmation inside the accepted
-  writer/publisher TCB, not independent security review.
-- Every authoritative normal-Live job independently requires
-  `github.run_attempt == 1`. Normal-Live records omit run attempt; simulation
-  retains its existing run-attempt identity and rerun semantics.
-- Retry is a new manual dispatch with a new run ID and a complete rebuild,
-  requalification, reobservation, and reapproval when an action remains.
-  GitHub rerun is unsupported.
-- Protected Governance is valid for at most 90 days. Identity is bound to the
-  protected path and blob/content or generation; any later touch of that path
-  invalidates the Attempt even after a revert. Unrelated `main` commits do not.
-- First-slice artifact bytes must be deterministic. Resume of a
-  nondeterministic sealed artifact is deferred.
-- Caller-held Release Execution concurrency and publisher mutable-resource
-  concurrency remain separate and required.
-- Native Actions history is diagnostic only and supplies no publication
-  authority.
-- Activation follows design merge, separately authorized disabled
-  implementation, validation/review/merge, separately authorized obsolete
-  Environment cleanup, accepted destination-primitive race proof, fresh native
-  and Governance evidence including repository retention of at least 45 days,
-  one small Activation PR, readback, one API dispatch returning a run ID, and
-  exact run readback. There is no Preparation PR, `main` freeze, activation
-  SHA/tag, or blind redispatch after an ambiguous response.
-
 ## Current External Boundary
 
 - Approval Environment `workflow-delivery-v3-buddy-approval` is ID
@@ -124,9 +74,9 @@ chronology is not current architecture.
   `20895037877`, with no reviewer or protection rule, zero wait, no secrets,
   no branch/tag restriction, `can_admins_bypass: false`, legacy marker
   `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1`,
-  and zero deployments. It is inert in the replacement design but must not be
-  deleted until implementation no longer treats it as input or authority and
-  separate cleanup is authorized.
+  and zero deployments. It is inert in the merged replacement runtime but must
+  not be deleted until exact repository inspection proves no retained
+  dispatchable ref can treat it as input or authority.
 - The GitHub Packages credential principal is repository `hcoona/three`.
   Known reach includes production package `hexo-renderer-asciidoc` and
   disposable smoke packages. This accepted repository-principal blast radius
@@ -136,19 +86,17 @@ chronology is not current architecture.
 
 ## Delivery Boundary
 
-The Governance/authorization implementation boundary is complete. Its
-five dependency-ordered implementation commits passed root HK, complete
-affected validation, package construction, and independent rereview with no
-remaining finding. The bounded follow-up contraction trusts ordinary complete
-Git fetch connectivity instead of scanning every repository object, treats
-the fetched protected ref as the read authority, narrows the active disabled
-publisher to closure validation plus deterministic rejection, and tests
-authority properties without freezing the complete workflow topology.
+The Governance/authorization implementation boundary is merged. The
+Publication/Finalizer requirements, HLD, MLD, glossary, migration, and
+first-slice LLD contraction is complete, independently rereviewed to zero
+findings, and final-shrink clean. PR #652 carries that design package. It has
+not changed runtime code, workflows, protected Governance, or external
+resources.
 
-Git and pull-request delivery state must be inspected live.
-Marker/Result/final-Outcome implementation, Environment cleanup,
-destination-primitive acceptance, Governance refresh, activation, dispatch,
-approval, and package mutation remain separate later authorization boundaries.
+Git and pull-request delivery state must be inspected live. Complete protected
+design delivery if still pending, then proceed to disabled runtime
+implementation, native profile acceptance, Governance v2 activation, and
+exactly one auditable real dispatch.
 
 ## Historical Source Rule
 

@@ -85,8 +85,8 @@ This MLD does not own:
 - logical destination projection selection;
 - destination Observation classification;
 - Publication Action planning;
-- Approval Bundle, Publication Authorization, Publication Result, Receipt, or
-  Attempt Outcome semantics;
+- Approval Bundle, Publication Authorization, Publication Result, or Attempt
+  Outcome semantics;
 - mutable-resource concurrency policy;
 - new-dispatch retry;
 - Break-Glass Remediation policy;
@@ -164,8 +164,8 @@ They do not define a universal record envelope.
 
 CI Plans, CI Evidence, CI Decisions, Release Snapshots, Release Evidence,
 Observation Records, Approval Bundles, Publication Authorizations,
-Publication Results, Receipts, Attempt Outcomes, Reconciliation Records, and
-Remediation Records remain context-owned schemas.
+Publication Results, Attempt Outcomes, Reconciliation Records, and Remediation
+Records remain context-owned schemas.
 
 Foundation may canonicalize or validate those records through typed
 family-specific helpers. It does not choose their business meaning.
@@ -300,7 +300,7 @@ They do not:
 - schedule work;
 - authorize a side effect;
 - classify a Release projection;
-- emit a Publication Result or Receipt; or
+- emit a Publication Result; or
 - produce a final business verdict.
 
 ### Execution and Client Primitives
@@ -337,14 +337,13 @@ lifecycle semantics:
 - an Observation Record binds one Attempt, desired-state basis, and remote
   facts;
 - a Publication Authorization binds one action-bearing current Attempt;
-- a Publication Result records one controlled action outcome; and
-- a Receipt exists exactly once inside a successful first-slice
-  `published` Result.
+- a Publication Result records one controlled action outcome and available
+  normalized post-action facts.
 
-A controlled failed Publication Result after the mutation marker may omit the
-Receipt while preserving mutation classification and diagnostics. Foundation
-may validate this shape only through a Release-owned schema; it does not turn
-the optional Receipt rule into a universal result wrapper.
+A controlled failed Publication Result may retain available normalized
+post-action evidence but does not satisfy the complete Release-owned
+`published` predicate. Foundation validates this shape only through a
+Release-owned schema; it does not create a universal result wrapper.
 
 ### Strict Validation
 
@@ -413,8 +412,8 @@ The calling context then:
 5. canonicalizes and digests the record; and
 6. persists the context-owned authoritative record.
 
-The context Finalizer performs Evidence, Observation, Result, or Receipt
-admission. Foundation does not run a shared Finalizer.
+The context Finalizer performs Evidence, Observation, or Result admission.
+Foundation does not run a shared Finalizer.
 
 ## Selective Contract Versioning
 
@@ -444,8 +443,10 @@ contain:
 - canonical payload digest; and
 - compatibility constraints.
 
-The initial concrete example is a reconciliation or remediation request from an
-older Release Attempt consumed by current protected Break-Glass code.
+The established architectural example is a future reconciliation or
+remediation request from an older Release Attempt consumed by separately
+approved protected Break-Glass code. The first-slice Normal-Live
+implementation has no cross-revision consumer.
 
 Compatibility rules are explicit:
 
@@ -774,7 +775,7 @@ Release Delivery owns Destination ports and Adapters, including:
 - publication operation semantics;
 - action formation;
 - complete mutable-resource keys;
-- Publication Result and Receipt meaning;
+- Publication Result and successful-evidence meaning;
 - new-dispatch recovery; and
 - remediation operations.
 
@@ -791,7 +792,7 @@ Foundation may provide generic clients for:
 
 Generic clients expose facts and responses. They do not classify a projection,
 plan a Publication Action, decide whether exact state is sufficient, create a
-Publication Authorization, or emit a Publication Result or Receipt.
+Publication Authorization, or emit a Publication Result.
 
 ## Invocation and Execution Model
 
@@ -1222,9 +1223,10 @@ Authorization.
 
 - Foundation canonicalizes and validates typed bindings.
 - It does not select the Approval Environment or grant capability.
-- A successful Publication Result validates exactly one embedded Receipt.
-- A controlled failed Result may omit Receipt while retaining mutation
-  classification.
+- A successful Publication Result validates the complete Release-owned
+  `published` predicate.
+- A controlled failed Result may retain available normalized post-action
+  evidence but cannot satisfy that predicate.
 - No generic group result wrapper is introduced.
 
 ### Protected Governance Freshness
@@ -1237,13 +1239,15 @@ Release asks Foundation clients for current protected-path facts.
 - A change-then-revert still reports a protected-path touch.
 - Release, not Foundation, invalidates the current Attempt.
 
-### Cross-Revision Remediation
+### Future Cross-Revision Remediation Contract
 
-Current protected remediation code consumes an older reconciliation request.
+A future separately approved protected remediation implementation may consume
+an older reconciliation request. The first-slice Normal-Live implementation
+does not.
 
 - The request has stable kind, contract version, producer identity, original
   lineage, and payload digest.
-- Current code accepts only declared compatible versions.
+- That future implementation accepts only declared compatible versions.
 - Incompatible input fails before approval or mutation.
 - Any migration preserves the original payload.
 
