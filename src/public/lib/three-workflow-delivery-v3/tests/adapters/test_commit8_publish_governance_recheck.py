@@ -110,11 +110,8 @@ def test_publish_fails_closed_before_npm_runner_when_no_primitive_is_admitted(
 
 def test_preflight_validates_publication_closure_then_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
     closure_calls: list[dict[str, object]] = []
-    forbidden_calls: list[str] = []
-    client = NeverCalledGovernanceClient()
     records = {
         name: cast("Any", object())
         for name in (
@@ -127,38 +124,20 @@ def test_preflight_validates_publication_closure_then_fails_closed(
             "expectation",
         )
     }
-    tarball = tmp_path / "must-not-be-read.tgz"
 
     def record_publication_closure(**kwargs: object) -> None:
         closure_calls.append(kwargs)
-
-    def reject_forbidden_preflight(*_args: object, **_kwargs: object) -> None:
-        forbidden_calls.append("called")
-        message = "mutation-capable preflight must not run"
-        raise AssertionError(message)
 
     monkeypatch.setattr(
         github_packages,
         "_validate_publish_preconditions",
         record_publication_closure,
     )
-    for helper in (
-        "_validate_local_tarball_preconditions",
-        "_npm_configuration_digest",
-        "_write_private_npm_config",
-    ):
-        monkeypatch.setattr(
-            github_packages,
-            helper,
-            reject_forbidden_preflight,
-        )
 
     with pytest.raises(
         github_packages.UnsupportedPublicationPrimitiveError,
     ) as raised:
         github_packages.preflight_github_packages_action(
-            tarball=tarball,
-            target=TARGET,
             publication_snapshot=records["publication_snapshot"],
             authorization=records["authorization"],
             action=records["action"],
@@ -166,16 +145,10 @@ def test_preflight_validates_publication_closure_then_fails_closed(
             qualification_decision=records["qualification_decision"],
             artifact=records["artifact"],
             expectation=records["expectation"],
-            governance_source=GOVERNANCE_SOURCE,
-            governance_client=client,
-            governance_observed_at=OBSERVED_AT,
         )
 
     assert str(raised.value) == UNSUPPORTED_MESSAGE
     assert closure_calls == [records]
-    assert forbidden_calls == []
-    assert client.calls == []
-    assert not tarball.exists()
 
 
 # Existing fail-fast fakes intentionally raise direct assertion diagnostics.

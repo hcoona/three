@@ -1542,14 +1542,12 @@ jobs:
       - name: Download publisher closure by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.approve-publication.outputs.qualification-snapshot-artifact-id }},${{ needs.approve-publication.outputs.decision-artifact-id }},${{ needs.approve-publication.outputs.adapter-context-artifact-id }},${{ needs.approve-publication.outputs.release-artifact-artifact-id }},${{ needs.approve-publication.outputs.publication-snapshot-artifact-id }},${{ needs.approve-publication.outputs.publication-authorization-artifact-id }},${{ needs.approve-publication.outputs.tarball-artifact-id }}
+          artifact-ids: ${{ needs.approve-publication.outputs.qualification-snapshot-artifact-id }},${{ needs.approve-publication.outputs.decision-artifact-id }},${{ needs.approve-publication.outputs.adapter-context-artifact-id }},${{ needs.approve-publication.outputs.release-artifact-artifact-id }},${{ needs.approve-publication.outputs.publication-snapshot-artifact-id }},${{ needs.approve-publication.outputs.publication-authorization-artifact-id }}
           path: .wdv3/input
           merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
       - name: Reject unimplemented conditional destination primitive
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release preflight-github-packages \
@@ -1579,11 +1577,7 @@ jobs:
             --publication-authorization ".wdv3/input/${{ needs.approve-publication.outputs.publication-authorization-artifact-name }}" \
             --publication-authorization-digest "${{ needs.approve-publication.outputs.publication-authorization-digest }}" \
             --publication-authorization-artifact-id "${{ needs.approve-publication.outputs.publication-authorization-artifact-id }}" \
-            --publication-authorization-artifact-digest "${{ needs.approve-publication.outputs.publication-authorization-artifact-digest }}" \
-            --tarball ".wdv3/input/${{ needs.approve-publication.outputs.tarball-artifact-name }}" \
-            --github-token "${GITHUB_TOKEN}" \
-            --preflight-output .wdv3/publication-preflight.json \
-            --github-output "${GITHUB_OUTPUT}"
+            --publication-authorization-artifact-digest "${{ needs.approve-publication.outputs.publication-authorization-artifact-digest }}"
 
   workflow-cancellation:
     name: Record workflow cancellation
