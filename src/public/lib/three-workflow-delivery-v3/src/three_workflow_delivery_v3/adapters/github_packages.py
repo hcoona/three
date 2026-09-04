@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
 from time import monotonic
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Never, Protocol, cast
 
 from three_workflow_delivery_v3.adapters.node import (
     ArtifactExpectation,
@@ -3948,8 +3948,6 @@ def _npm_configuration_digest(
 
 def preflight_github_packages_action(  # noqa: PLR0913
     *,
-    tarball: Path,
-    target: str,
     publication_snapshot: PublicationSnapshot,
     authorization: PublicationAuthorization,
     action: PublicationAction,
@@ -3957,12 +3955,8 @@ def preflight_github_packages_action(  # noqa: PLR0913
     qualification_decision: QualificationDecision,
     artifact: ReleaseArtifact,
     expectation: ArtifactExpectation,
-    governance_source: GovernanceSource,
-    governance_client: GovernanceSourceClient,
-    governance_observed_at: datetime,
-    expanded_tarball_limit_bytes: int = DEFAULT_EXPANDED_TARBALL_LIMIT_BYTES,
-) -> GitHubPackagesPublishPreflight:
-    """Validate all authority, bytes, and npm configuration without mutation."""
+) -> Never:
+    """Validate the authority closure, then reject the missing primitive."""
     _validate_publish_preconditions(
         publication_snapshot=publication_snapshot,
         authorization=authorization,
@@ -3971,14 +3965,6 @@ def preflight_github_packages_action(  # noqa: PLR0913
         qualification_decision=qualification_decision,
         artifact=artifact,
         expectation=expectation,
-    )
-    _ = (
-        tarball,
-        target,
-        governance_source,
-        governance_client,
-        governance_observed_at,
-        expanded_tarball_limit_bytes,
     )
     message = (
         "The conditional GitHub Packages version-and-tag primitive is not "

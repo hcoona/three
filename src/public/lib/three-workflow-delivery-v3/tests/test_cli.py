@@ -1025,7 +1025,11 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
         ),
         (
             "preflight-github-packages",
-            ("--preflight-output", "--github-token", "--tarball"),
+            (
+                "--publication-snapshot",
+                "--publication-authorization",
+                "--qualification-snapshot",
+            ),
         ),
         (
             "mark-github-packages-mutation-start",
@@ -1098,6 +1102,28 @@ def test_cli_authority_completion_timestamps_are_internal(
     """Do not accept caller-supplied authority completion timestamps."""
     with pytest.raises(SystemExit) as error:
         cli_module.main(["release", command, "--help"])
+
+    assert error.value.code == 0
+    assert removed_option not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "removed_option",
+    [
+        "--repo-root",
+        "--tarball",
+        "--github-token",
+        "--preflight-output",
+        "--github-output",
+    ],
+)
+def test_cli_unsupported_preflight_omits_unused_capability_inputs(
+    removed_option: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Keep the disabled preflight free of unused capability inputs."""
+    with pytest.raises(SystemExit) as error:
+        cli_module.main(["release", "preflight-github-packages", "--help"])
 
     assert error.value.code == 0
     assert removed_option not in capsys.readouterr().out

@@ -3852,20 +3852,13 @@ def _release_preflight_github_packages_command(
     authorization = _load_publication_authorization(arguments)
     if not authorization.authorizing:
         raise ValueError("Publication Authorization is not authorizing")
-    _descriptor, _quality, policy = load_first_slice_authoring(
-        Path(arguments.repo_root).resolve(),
-        arguments.target,
-    )
-    observed_at = datetime.now(UTC)
     if len(publication.materialized_actions) != 1:
         raise ValueError("GitHub Packages publisher requires one action")
     snapshot = _load_live_qualification_snapshot(arguments)
     decision = _load_live_qualification_decision(arguments)
     context = _load_release_adapter_context(arguments, snapshot)
     artifact = _load_live_release_artifact_record(arguments)
-    preflight = preflight_github_packages_action(
-        tarball=Path(arguments.tarball),
-        target=publication.attempt.execution.target,
+    preflight_github_packages_action(
         publication_snapshot=publication,
         authorization=authorization,
         action=publication.materialized_actions[0],
@@ -3873,20 +3866,7 @@ def _release_preflight_github_packages_command(
         qualification_decision=decision,
         artifact=artifact,
         expectation=artifact_expectation(snapshot, context, artifact),
-        governance_source=policy.governance,
-        governance_client=GitHubGovernanceClient(
-            repository=policy.governance.repository,
-            token=arguments.github_token,
-        ),
-        governance_observed_at=observed_at,
     )
-    _write_output(arguments.preflight_output, preflight.to_document())
-    _record_outputs(
-        arguments.github_output,
-        role="publication-preflight",
-        digest=preflight.preflight_digest,
-    )
-    return 0
 
 
 def _load_github_packages_preflight(
@@ -6247,7 +6227,6 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     preflight_github = release_commands.add_parser("preflight-github-packages")
     _add_current_release_arguments(preflight_github)
-    preflight_github.add_argument("--repo-root", default=".")
     _add_snapshot_arguments(preflight_github)
     _add_decision_arguments(preflight_github)
     _add_adapter_context_arguments(preflight_github)
@@ -6260,10 +6239,6 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         preflight_github,
         name="publication_authorization",
     )
-    preflight_github.add_argument("--tarball", required=True)
-    preflight_github.add_argument("--github-token", required=True)
-    preflight_github.add_argument("--preflight-output", required=True)
-    preflight_github.add_argument("--github-output")
     preflight_github.set_defaults(
         handler=_release_preflight_github_packages_command
     )

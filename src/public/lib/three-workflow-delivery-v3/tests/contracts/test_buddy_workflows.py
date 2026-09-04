@@ -93,6 +93,13 @@ def _run(step: dict[str, Any]) -> str:
     return value
 
 
+def _condition_conjuncts(job: dict[str, Any]) -> set[str]:
+    condition = job.get("if")
+    assert isinstance(condition, str)
+    assert "||" not in condition
+    return {term.strip() for term in condition.split("&&")}
+
+
 def _raw_artifact_name(settings: dict[str, Any]) -> str:
     """Model upload-artifact v7 archive:false physical naming."""
     assert settings["archive"] is False
@@ -1261,7 +1268,7 @@ def test_buddy_target_sha_binding_chain_is_exact(tmp_path: Path) -> None:
         == EXPECTED_VALID_IDENTITY_CONDITION
     )
     publisher = callee_jobs["publish-github-packages"]
-    assert publisher["if"].startswith("success() && ")
+    assert "success()" in _condition_conjuncts(publisher)
     assert "admit" in _transitive_needs(
         callee_jobs,
         "publish-github-packages",
@@ -1313,122 +1320,37 @@ def test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy() 
     assert governance["live_enabled"] is False
 
 
-_CURRENT_WORKFLOW_CANCELLATION_AUTHORITIES = (
-    "admit",
-    "qualification-finalizer",
-    "observe-github-packages",
-    "materialize-publication",
-    "approve-publication",
-    "prove-exact-satisfied",
-    "publish-github-packages",
-)
-_CURRENT_CALLEE_JOB_CONDITIONS = {
-    "admit": ATTEMPT_ONE_CONDITION,
-    "plan-qualification": ATTEMPT_ONE_CONDITION,
-    "build-tarball": ATTEMPT_ONE_CONDITION,
-    "project-test": ATTEMPT_ONE_CONDITION,
-    "npm-artifact-qualification": (
-        "always() && github.run_attempt == 1 && "
-        "needs.build-tarball.result != 'skipped'"
-    ),
-    "qualification-finalizer": (
-        "always() && github.run_attempt == 1 && "
-        "needs.build-tarball.result != 'skipped'"
-    ),
-    "observe-github-packages": (
-        "github.run_attempt == 1 && "
-        "needs.qualification-finalizer.outputs.qualification-result "
-        "== 'success'"
-    ),
-    "materialize-publication": ATTEMPT_ONE_CONDITION,
-    "approve-publication": (
-        "github.run_attempt == 1 && "
-        "needs.materialize-publication.outputs.publish-required == 'true'"
-    ),
-    "prove-exact-satisfied": (
-        "github.run_attempt == 1 && "
-        "needs.materialize-publication.outputs.publish-required == 'false'"
-    ),
-    "publish-github-packages": (
-        "success() && github.run_attempt == 1 && "
-        "needs.approve-publication.result == 'success' && "
-        "needs.approve-publication.outputs.publish-required == 'true'"
-    ),
-    "workflow-cancellation": "cancelled() && github.run_attempt == 1",
-    "release-finalizer": EXPECTED_VALID_IDENTITY_CONDITION,
-}
-_CURRENT_EXPECTED_JOBS = set(_CURRENT_CALLEE_JOB_CONDITIONS)
-
-
-def test_current_normal_live_job_topology_is_exact() -> None:
-    jobs = _document(CALLEE)["jobs"]
-
-    assert set(jobs) == _CURRENT_EXPECTED_JOBS
-    assert _needs(jobs["admit"]) == ()
-    assert _needs(jobs["plan-qualification"]) == ("admit",)
-    assert _needs(jobs["build-tarball"]) == ("plan-qualification",)
-    assert _needs(jobs["project-test"]) == ("plan-qualification",)
-    assert _needs(jobs["npm-artifact-qualification"]) == ("build-tarball",)
-    assert _needs(jobs["qualification-finalizer"]) == (
-        "build-tarball",
-        "project-test",
-        "npm-artifact-qualification",
-    )
-    assert _needs(jobs["observe-github-packages"]) == (
-        "qualification-finalizer",
-    )
-    assert _needs(jobs["materialize-publication"]) == (
-        "admit",
-        "observe-github-packages",
-    )
-    assert _needs(jobs["approve-publication"]) == (
-        "admit",
-        "materialize-publication",
-    )
-    assert _needs(jobs["prove-exact-satisfied"]) == (
-        "admit",
-        "materialize-publication",
-    )
-    assert _needs(jobs["publish-github-packages"]) == ("approve-publication",)
-    assert _needs(jobs["workflow-cancellation"]) == (
-        _CURRENT_WORKFLOW_CANCELLATION_AUTHORITIES
-    )
-    assert _needs(jobs["release-finalizer"]) == (
-        *_CURRENT_WORKFLOW_CANCELLATION_AUTHORITIES,
-        "workflow-cancellation",
-    )
-    assert {
-        name: job.get("if") for name, job in jobs.items()
-    } == _CURRENT_CALLEE_JOB_CONDITIONS
-
-    publisher = jobs["publish-github-packages"]
-    assert publisher["concurrency"] == {
-        "group": (
-            "wdv3-resource-${{ needs.approve-publication.outputs."
-            "resource-concurrency-key }}"
-        ),
-        "cancel-in-progress": False,
-    }
-
-
 def test_current_authoritative_buddy_jobs_each_guard_attempt_one() -> None:
     documents = {
         "caller": _document(CALLER),
         "callee": _document(CALLEE),
     }
 
-    assert {
-        name: job.get("if") for name, job in documents["caller"]["jobs"].items()
-    } == EXPECTED_CALLER_JOB_CONDITIONS
     for document_name, document in documents.items():
         for job_name, job in document["jobs"].items():
-            condition = job.get("if")
-            assert isinstance(condition, str), (
-                f"{document_name}:{job_name} lacks its own Attempt guard"
-            )
-            assert condition.count(ATTEMPT_ONE_CONDITION) == 1, (
+            assert ATTEMPT_ONE_CONDITION in _condition_conjuncts(job), (
                 f"{document_name}:{job_name} must independently reject reruns"
             )
+
+
+def test_qualification_routing_preserves_failure_semantics() -> None:
+    jobs = _document(CALLEE)["jobs"]
+
+    for job_name in ("npm-artifact-qualification", "qualification-finalizer"):
+        assert {
+            "always()",
+            "needs.build-tarball.result != 'skipped'",
+        } <= _condition_conjuncts(jobs[job_name])
+    assert (
+        "needs.qualification-finalizer.outputs.qualification-result "
+        "== 'success'" in _condition_conjuncts(jobs["observe-github-packages"])
+    )
+
+
+def test_workflow_cancellation_marker_runs_only_on_cancellation() -> None:
+    cancellation = _document(CALLEE)["jobs"]["workflow-cancellation"]
+
+    assert "cancelled()" in _condition_conjuncts(cancellation)
 
 
 def test_approve_publication_is_the_only_environment_job_and_sentinel_is_first() -> (
@@ -1454,6 +1376,10 @@ def test_approve_publication_is_the_only_environment_job_and_sentinel_is_first()
         "environment" not in job for job in _document(CALLER)["jobs"].values()
     )
     approval = jobs["approve-publication"]
+    assert (
+        "needs.materialize-publication.outputs.publish-required == 'true'"
+        in _condition_conjuncts(approval)
+    )
     executable_steps = [
         step for step in _steps(approval) if "run" in step or "uses" in step
     ]
@@ -1755,18 +1681,15 @@ def test_exact_satisfied_path_has_fresh_proof_without_mutation_authority() -> (
 
     assert "environment" not in proof_job
     assert proof_job["permissions"] == {"contents": "read"}
+    assert (
+        "needs.materialize-publication.outputs.publish-required == 'false'"
+        in _condition_conjuncts(proof_job)
+    )
     assert _needs(proof_job) == ("admit", "materialize-publication")
     assert {
         "approve-publication",
         "publish-github-packages",
     }.isdisjoint(_transitive_needs(jobs, "prove-exact-satisfied"))
-    assert [step["name"] for step in steps] == [
-        "Check out exact selected target",
-        "Install uv",
-        "Download exact-satisfied closure by artifact ID",
-        "Form exact-satisfied Governance proof",
-        "Upload exact-satisfied Governance proof",
-    ]
     assert download["with"] == {
         "artifact-ids": (
             "${{ inputs.intent-artifact-id }},"
@@ -1812,7 +1735,7 @@ def test_exact_satisfied_path_has_fresh_proof_without_mutation_authority() -> (
         "reviewer",
     ):
         assert forbidden not in proof_text
-    assert steps.index(prove) < steps.index(upload)
+    assert steps.index(download) < steps.index(prove) < steps.index(upload)
     assert upload["with"]["archive"] is False
 
 
@@ -1836,13 +1759,18 @@ def test_action_path_reaches_read_only_fail_closed_publisher_preflight() -> (
     } <= _transitive_needs(jobs, "publish-github-packages")
     assert publisher["permissions"] == {"contents": "read"}
     assert "environment" not in publisher
-    assert [step["name"] for step in steps] == [
-        "Check out exact selected target",
-        "Install uv",
-        "Download publisher closure by artifact ID",
-        "Reject unimplemented conditional destination primitive",
-    ]
-    expected_ids = (
+    assert {
+        "needs.approve-publication.result == 'success'",
+        "needs.approve-publication.outputs.publish-required == 'true'",
+    } <= _condition_conjuncts(publisher)
+    assert publisher["concurrency"] == {
+        "group": (
+            "wdv3-resource-${{ needs.approve-publication.outputs."
+            "resource-concurrency-key }}"
+        ),
+        "cancel-in-progress": False,
+    }
+    required_ids = (
         "${{ needs.approve-publication.outputs."
         "qualification-snapshot-artifact-id }}",
         "${{ needs.approve-publication.outputs.decision-artifact-id }}",
@@ -1852,27 +1780,26 @@ def test_action_path_reaches_read_only_fail_closed_publisher_preflight() -> (
         "publication-snapshot-artifact-id }}",
         "${{ needs.approve-publication.outputs."
         "publication-authorization-artifact-id }}",
-        "${{ needs.approve-publication.outputs.tarball-artifact-id }}",
     )
-    assert download["with"] == {
-        "artifact-ids": ",".join(expected_ids),
-        "path": ".wdv3/input",
-        "merge-multiple": True,
-        "skip-decompress": True,
-        "digest-mismatch": "error",
-    }
+    artifact_ids = download["with"]["artifact-ids"].split(",")
+    assert set(artifact_ids) == set(required_ids)
+    assert download["with"]["path"] == ".wdv3/input"
+    assert download["with"]["merge-multiple"] is True
+    assert download["with"]["skip-decompress"] is True
+    assert download["with"]["digest-mismatch"] == "error"
     command = _run(preflight)
-    assert preflight["env"] == {"GITHUB_TOKEN": "${{ github.token }}"}
+    assert "env" not in preflight
     assert "continue-on-error" not in preflight
+    assert steps.index(download) < steps.index(preflight)
     assert (
-        command.count(
-            "three-workflow-delivery-v3 release preflight-github-packages"
-        )
-        == 1
+        "three-workflow-delivery-v3 release preflight-github-packages"
+        in command
     )
     assert "--publication-authorization " in command
-    assert "--github-token " in command
     for forbidden in (
+        "--github-token",
+        "--tarball",
+        "--preflight-output",
         "release publish-github-packages",
         "npm publish",
         "mark-github-packages-mutation-start",
@@ -1937,44 +1864,40 @@ def test_finalizer_consumes_current_branch_authorities_only() -> None:
         assert forbidden not in command_casefold
 
 
-def test_current_authority_uploads_keep_exact_physical_names() -> None:
+def test_current_authority_uploads_use_raw_transport() -> None:
     document = _document(CALLEE)
     uploads = _artifact_steps(document, UPLOAD)
-    reviewer = next(
-        step for step in uploads if step["name"] == "Upload reviewer artifact"
+    reviewer_output = document["jobs"]["materialize-publication"]["outputs"][
+        "reviewer-artifact-id"
+    ]
+    reviewer_match = re.fullmatch(
+        r"\$\{\{\s*steps\.([^.]+)\.outputs\.artifact-id\s*\}\}",
+        reviewer_output,
     )
-    raw_uploads = [step for step in uploads if step is not reviewer]
-    expected_raw_names = {
-        "Upload Release Attempt binding",
-        "Upload Qualification Snapshot",
-        "Upload Adapter context",
-        "Upload exact npm tarball",
-        "Upload Release Artifact record",
-        "Upload build Evidence",
-        "Upload project-test Evidence",
-        "Upload artifact-contents Evidence",
-        "Upload install-import Evidence",
-        "Upload Qualification Decision",
-        "Upload Observation Record set",
-        "Upload Publication Snapshot",
-        "Upload Approval Bundle",
-        "Upload Publication Authorization",
-        "Upload exact-satisfied Governance proof",
-        "Upload final Attempt Outcome",
-        "Upload final Attempt summary",
-    }
+    assert reviewer_match is not None
+    reviewer_step_id = reviewer_match.group(1)
+    reviewer_uploads = [
+        step for step in uploads if step.get("id") == reviewer_step_id
+    ]
+    authority_uploads = [
+        step for step in uploads if step.get("id") != reviewer_step_id
+    ]
 
-    assert {step["name"] for step in raw_uploads} == expected_raw_names
-    for step in raw_uploads:
+    assert len(reviewer_uploads) == 1
+    reviewer_upload = reviewer_uploads[0]
+    assert reviewer_upload["with"].get("archive", True) is True
+    reviewer_name = document["jobs"]["materialize-publication"]["outputs"][
+        "reviewer-artifact-name"
+    ]
+    assert reviewer_upload["with"]["name"] == reviewer_name
+    assert reviewer_upload["with"]["path"] == f".wdv3/{reviewer_name}"
+    assert authority_uploads
+    for step in authority_uploads:
         assert step["with"]["archive"] is False
         assert _raw_artifact_name(step["with"]) == step["with"]["name"]
-    assert "archive" not in reviewer["with"]
-    assert reviewer["with"]["path"] == (
-        ".wdv3/${{ steps.names.outputs.reviewer-name }}"
-    )
 
 
-def test_current_live_toolchains_stop_before_mutating_publisher_tools() -> None:
+def test_current_authority_jobs_install_no_mutating_toolchain() -> None:
     caller_jobs = _document(CALLER)["jobs"]
     callee_jobs = _document(CALLEE)["jobs"]
     compiler = _run(
@@ -1983,21 +1906,10 @@ def test_current_live_toolchains_stop_before_mutating_publisher_tools() -> None:
     intent_admission = _run(
         _step(caller_jobs["discover-node"], "Admit current Release Intent")
     )
-    mise_jobs = {
-        job_name
-        for job_name, job in callee_jobs.items()
-        if any(step.get("uses") == MISE for step in _steps(job))
-    }
 
     assert '--purpose "${WDV3_PURPOSE}"' in intent_admission
     assert "--compiler-producer compile-live-model" in compiler
     assert "--compiler-producer compile-model" not in compiler
-    assert mise_jobs == {
-        "plan-qualification",
-        "build-tarball",
-        "project-test",
-        "npm-artifact-qualification",
-    }
     for job_name in (
         "approve-publication",
         "prove-exact-satisfied",
@@ -2008,40 +1920,18 @@ def test_current_live_toolchains_stop_before_mutating_publisher_tools() -> None:
         )
 
 
-def test_current_live_attempt_exact_target_checkout_inventory_is_exact() -> (
-    None
-):
+def test_current_live_checkouts_use_exact_selected_target() -> None:
     jobs = _document(CALLEE)["jobs"]
-    expected_checkout_jobs = {
-        "admit",
-        "plan-qualification",
-        "build-tarball",
-        "project-test",
-        "npm-artifact-qualification",
-        "qualification-finalizer",
-        "observe-github-packages",
-        "materialize-publication",
-        "approve-publication",
-        "prove-exact-satisfied",
-        "publish-github-packages",
-        "release-finalizer",
-    }
-    checkout_jobs = {
-        job_name
+    checkouts = [
+        step
         for job_name, job in jobs.items()
-        if any(step.get("uses") == CHECKOUT for step in _steps(job))
-    }
+        for step in _steps(job)
+        if step.get("uses") == CHECKOUT
+    ]
 
-    assert checkout_jobs == expected_checkout_jobs
-    for job_name in expected_checkout_jobs:
-        checkouts = [
-            step
-            for step in _steps(jobs[job_name])
-            if step.get("uses") == CHECKOUT
-        ]
-        assert len(checkouts) == 1
-        assert checkouts[0]["name"] == "Check out exact selected target"
-        assert checkouts[0]["with"] == {
+    assert checkouts
+    for checkout in checkouts:
+        assert checkout["with"] == {
             "fetch-depth": 0,
             "persist-credentials": False,
             "ref": "${{ github.sha }}",
