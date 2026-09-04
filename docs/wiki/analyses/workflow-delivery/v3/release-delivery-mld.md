@@ -723,9 +723,9 @@ Before mutation, the publisher:
 - transitively resolves and revalidates every Bundle, Snapshot, reviewer,
   artifact, action, and resource binding;
 - performs the final fresh protected Governance check, including path-touch
-  anti-rollback; and
+  anti-rollback;
 - verifies that `live_enabled` remains true;
-- repeats supported package-control readback; and
+- repeats supported package-control readback;
 - verifies native acceptance remains within 90 days of capture; and
 - validates the action's operation profile against current Governance and the
   actual pinned toolchain and effective command configuration.

@@ -101,7 +101,7 @@ Release target.
 Protected Governance is read independently from `refs/heads/main`. The design
 does not substitute protected-main control code for the selected target.
 
-The active protected document uses exact schema
+The replacement protected Governance contract uses exact schema
 `workflow-delivery/v3/normal-live-governance-attestation-v2`. V2 replaces the
 disabled v1 contract because `DestinationPrimitiveAttestation` now has a
 different closed field set. Selected-revision control must require v2 exactly;

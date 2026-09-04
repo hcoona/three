@@ -886,9 +886,10 @@ all overlapping sets are guaranteed to share that group. The first-slice GitHub
 Packages projection uses physical destination plus normalized npm package name,
 so different versions and target-derived tags for the same package serialize.
 The complete coordinate-plus-tag key set remains frozen in the Publication
-Snapshot, action binding, Publication Authorization, and validation.
-Publication Result admission reaches the same set transitively through the
-marker and Authorization; the Result does not copy it.
+Snapshot and action binding. Publication Authorization and publisher admission
+validate it transitively through the immutable predecessor chain. Publication
+Result admission reaches the same set transitively through the marker and
+Authorization; the Result does not copy it.
 
 ### Qualification Evidence
 

@@ -59,7 +59,12 @@ The desired Buddy coordinate is the exact package plus the frozen native NBGV `n
 
 At this design date, protected Governance is disabled, was inspected at `2026-08-14T17:19:12Z`, and expires at `2026-11-12T17:19:12Z`. Both `workflow-delivery-v3-buddy-approval` and the legacy `workflow-delivery-v3-buddy-github-packages` Environment exist.
 
-The merged runtime still uses history-based admission, a post-approval bridge, the legacy publication Environment, run-attempt-bearing normal-Live records, group-oriented publication records, a separate Receipt artifact, and the superseded consumer-policy implementation.
+The merged runtime already uses protected Governance v1, one Approval
+Environment, direct Publication Authorization, current-DAG finalization,
+normal-Live records without run-attempt identity, at-most-one-action
+publication, and the bounded static-reference policy. It remains disabled,
+retains the superseded Receipt/ActionResult publication and Outcome contracts,
+and rejects the unsupported destination mutation primitive.
 
 The replacement target has:
 
@@ -1267,16 +1272,16 @@ is not repaired or synthesized.
 
 ### 14.6 Durable publication-state matrix
 
-| Durable current-run and direct platform facts                                                                                                                                                                                         | Outcome                     | `possibly_mutated` | Required posture                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | -----------------: | --------------------------------------------------------------------- |
-| Sole blocking Observation; no valid zero-action Snapshot; null publication terminal reference; Publisher `skipped`, or Publisher `failure`/`cancelled` with exact platform publication-step outcome `skipped`                         | `failed-before-publication` |              false | Governed operator investigation/remediation before any later dispatch |
-| Exactly one other admitted pre-marker predecessor; no valid zero-action Snapshot; null publication terminal reference; Publisher `skipped`, or Publisher `failure`/`cancelled` with exact platform publication-step outcome `skipped` | `failed-before-publication` |              false | New dispatch                                                          |
-| Valid failed Result proving `not-mutated`                                                                                                                                                                                             | `publication-failed`        |              false | New dispatch reobserves                                               |
-| Valid failed Result classified `possibly-mutated` or `mutated`                                                                                                                                                                        | `publication-failed`        |               true | Read-only operator investigation before any later dispatch            |
-| Publication terminal reference resolves to marker                                                                                                                                                                                     | `unknown`                   |               true | Read-only operator investigation before any later dispatch            |
-| Null publication terminal reference and publication-step start cannot be excluded                                                                                                                                                     | `unknown`                   |               true | Read-only operator investigation before any later dispatch            |
-| Valid `published` Result with Publisher `success`/`failure`/`cancelled`                                                                                                                                                               | `published`                 |              false | Complete                                                              |
-| Malformed, misbound, or other-kind publication terminal reference, or contradictory lineage                                                                                                                                           | No authoritative Outcome    |                n/a | Fail closed                                                           |
+| Durable current-run and direct platform facts                                                                                                                                                                                         | Outcome                     | `possibly_mutated` | Required posture                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | -----------------: | ------------------------------------------------------------------------------------------------------------------- |
+| Sole blocking Observation; no valid zero-action Snapshot; null publication terminal reference; Publisher `skipped`, or Publisher `failure`/`cancelled` with exact platform publication-step outcome `skipped`                         | `failed-before-publication` |              false | New dispatch reobserves; governed operator investigation/remediation may be required before productive continuation |
+| Exactly one other admitted pre-marker predecessor; no valid zero-action Snapshot; null publication terminal reference; Publisher `skipped`, or Publisher `failure`/`cancelled` with exact platform publication-step outcome `skipped` | `failed-before-publication` |              false | New dispatch                                                                                                        |
+| Valid failed Result proving `not-mutated`                                                                                                                                                                                             | `publication-failed`        |              false | New dispatch reobserves                                                                                             |
+| Valid failed Result classified `possibly-mutated` or `mutated`                                                                                                                                                                        | `publication-failed`        |               true | Read-only operator investigation before any later dispatch                                                          |
+| Publication terminal reference resolves to marker                                                                                                                                                                                     | `unknown`                   |               true | Read-only operator investigation before any later dispatch                                                          |
+| Null publication terminal reference and publication-step start cannot be excluded                                                                                                                                                     | `unknown`                   |               true | Read-only operator investigation before any later dispatch                                                          |
+| Valid `published` Result with Publisher `success`/`failure`/`cancelled`                                                                                                                                                               | `published`                 |              false | Complete                                                                                                            |
+| Malformed, misbound, or other-kind publication terminal reference, or contradictory lineage                                                                                                                                           | No authoritative Outcome    |                n/a | Fail closed                                                                                                         |
 
 No row authorizes continuation inside the same Attempt after a failed or ambiguous publish. The only normal recovery boundary is a new manual dispatch and fresh Observation.
 
@@ -1777,7 +1782,10 @@ There is no Preparation PR, main freeze, preselected activation SHA, activation 
 
 ### 19.1 First proving dispatch
 
-Use the REST workflow-dispatch API with `X-GitHub-Api-Version: 2026-03-10`, workflow `workflow-delivery-v3-buddy-smoke.yml`, and `ref: main`. Require HTTP `200` with schema-valid `workflow_run_id`, `run_url`, and `html_url`.
+Use the REST workflow-dispatch API with `X-GitHub-Api-Version: 2026-03-10`,
+workflow `workflow-delivery-v3-buddy-smoke.yml`, and JSON body
+`{"ref":"main","return_run_details":true}`. Require HTTP `200` with
+schema-valid `workflow_run_id`, `run_url`, and `html_url`.
 
 Read back that exact run and verify repository, workflow, actor `hcoona`, event `workflow_dispatch`, `refs/heads/main`, actual head SHA equal to the just-recorded protected-main SHA, workflow/control revision equal to it, and run attempt one.
 
