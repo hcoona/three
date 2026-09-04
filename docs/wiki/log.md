@@ -3388,3 +3388,32 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - The commits remain local. No push, PR, protected merge, Live dispatch,
   approval, deployment, Governance refresh, Environment mutation, package or
   tag mutation, cleanup, or other external mutation occurred.
+
+## [2026-09-04] refactor | Contract local Governance authority implementation
+
+- Added three reviewed follow-up commits:
+  `52a86b6213b58041201418f55b1f17dff9585ff1` narrows the Governance Git
+  continuity proof, `5d316fcd8e50567e8d447ed636407589c8777cf5`
+  contracts the active disabled publisher preflight and workflow contracts,
+  and `0f25204b93a6ef1a3a71f613763f8cfb46627175` defers premature R5
+  platform-termination precedence assertions.
+- Governance reads now use advertisement only for object-format discovery and
+  bind authority to the fetched protected ref. Ordinary complete fetch
+  connectivity and the required ancestry, path-history, tree, and blob
+  operations replace the redundant repository-wide object scan.
+- The active publisher path now validates only the current persisted authority
+  closure before deterministic unsupported-primitive rejection. It receives
+  no tarball, token, Governance client/time, or output path.
+- Workflow tests now preserve authority routing, closure, raw transport,
+  ordering, permissions, concurrency, and exact-target properties without
+  freezing the complete DAG, step inventory, or tool inventory.
+- The complete v3 suite passed 3,648 tests, Pyrefly reported zero errors,
+  package construction and membership passed, actionlint passed, and final
+  root HK passed with the same 3,648-test suite.
+- Independent review closed with no findings after eleven true-positive test
+  properties were fixed and two duplicate-protection findings were rejected
+  because actionlint or the existing external-action contract already owns
+  them.
+- No push, PR, protected merge, Live dispatch, approval, deployment,
+  Governance refresh, Environment mutation, package or tag mutation, cleanup,
+  or other external mutation occurred.

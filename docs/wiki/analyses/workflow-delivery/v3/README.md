@@ -8,9 +8,9 @@ The user-approved replacement normal-Live baseline is merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
 The static-reference and record-model contractions are merged. The disabled
 Governance/authorization contraction is validated, independently rereviewed,
-and committed locally as `7d8e00cb` and `4a51aac3`; it is not pushed, proposed,
-or merged. Git and pull-request state must be inspected rather than inferred
-from this page.
+and committed locally as `7d8e00cb`, `4a51aac3`, `52a86b62`, `5d316fcd`, and
+`0f25204b`; it is not pushed, proposed, or merged. Git and pull-request state
+must be inspected rather than inferred from this page.
 
 No merged normal-Live runtime, Governance enablement, package access,
 deployment, package mutation, or other external resource has changed. The
@@ -138,9 +138,13 @@ chronology is not current architecture.
 ## Delivery Boundary
 
 The local Governance/authorization implementation boundary is complete. Its
-two dependency-ordered implementation commits passed root HK, complete
+five dependency-ordered implementation commits passed root HK, complete
 affected validation, package construction, and independent rereview with no
-remaining finding.
+remaining finding. The bounded follow-up contraction trusts ordinary complete
+Git fetch connectivity instead of scanning every repository object, treats
+the fetched protected ref as the read authority, narrows the active disabled
+publisher to closure validation plus deterministic rejection, and tests
+authority properties without freezing the complete workflow topology.
 
 Push and PR creation are the next delivery boundary and require separate
 explicit authorization. Marker/Result/final-Outcome implementation,

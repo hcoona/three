@@ -15066,3 +15066,66 @@ refresh, Environment mutation, package or tag mutation, cleanup, or other
 external mutation occurred.
 
 <!-- END APPEND: 2026-09-03-wdv3-governance-authority-final-closure -->
+
+<!-- BEGIN APPEND: 2026-09-04-wdv3-governance-authority-bounded-shrink-closure -->
+
+## Workflow Delivery v3 Governance authority bounded-shrink closure
+
+### Append integrity and correction
+
+- Before this append, `.testagent/status.md` was 895,920 bytes with SHA-256
+  `6220674145b40c1c54afb735a02bdf1c63d035b39102c1855db5ef2871e1c91c`.
+- The earlier advertisement/fetch-race test description is historical. The
+  reviewed correction permits an unrelated protected-`main` advance between
+  advertisement and fetch. Advertisement determines only SHA-1 versus
+  SHA-256; the fetched local ref is the Governance read identity.
+- The earlier active-publisher description is also narrowed. The disabled
+  preflight no longer accepts tarball, target, token, Governance client/time,
+  expanded-size, or output parameters. It validates the persisted authority
+  closure and then raises the deterministic unsupported-primitive error.
+
+### Dependency-ordered follow-up commits
+
+- `52a86b6213b58041201418f55b1f17dff9585ff1` removes the duplicate shallow
+  marker check, repository-wide object-closure scan, and advertisement/fetch
+  SHA equality while retaining isolated complete fetch, object-format
+  agreement, hostile-environment isolation, ancestry, protected-path
+  anti-rollback, and exact blob validation.
+- `5d316fcd8e50567e8d447ed636407589c8777cf5` removes dead capability inputs
+  from the active rejecting publisher path and contracts workflow tests from
+  complete topology, step, and tool inventories to authority-critical
+  properties.
+- `0f25204b93a6ef1a3a71f613763f8cfb46627175` removes one duplicate no-Result
+  platform-termination matrix and the assertion that prematurely selected R5
+  precedence when a durable ActionResult also exists.
+
+### Validation and review
+
+| Validation | Observed result |
+|---|---|
+| Final complete Workflow Delivery v3 suite | 3,648 passed in 432.26s |
+| Final root `mise exec -- hk check --unstaged --check` | Success; embedded v3 suite 3,648 passed in 428.54s |
+| Changed-file Ruff and Ruff format | Success |
+| Package Pyrefly | 0 errors |
+| Workflow actionlint and `git diff --check` | Success |
+| Wheel/sdist construction and membership | Success; `governance_git.py` present and `authorization_formatter.py` absent |
+| Independent closure review | Governance Git and preflight scopes clean; test-contraction scope clean after atomic adjudication |
+
+- Eleven test-contraction findings were independently adjudicated true
+  positive and fixed as property-level assertions. They preserve attempt-one,
+  qualification routing, publish/no-op branch selection, cancellation,
+  closure completeness and layout, reviewer closure, raw transport, and
+  consumer ordering without restoring complete DAG or step inventories.
+- Two findings were independently adjudicated false positive: undefined
+  `needs.*` producers are already rejected by actionlint, and action-family
+  revision drift is already rejected by the existing exact external-action
+  set and full-SHA contract.
+- R5 durable Result versus platform-termination precedence remains explicitly
+  deferred. The no-Result fallback and ActionResult type, cardinality, and
+  binding checks remain covered.
+
+No push, PR, protected merge, Live dispatch, approval, deployment, Governance
+refresh, Environment mutation, package or tag mutation, cleanup, or other
+external mutation occurred.
+
+<!-- END APPEND: 2026-09-04-wdv3-governance-authority-bounded-shrink-closure -->
