@@ -3435,3 +3435,34 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   dispatch, approval, deployment, Governance refresh, Environment mutation,
   package or tag mutation, cleanup, or other operational external mutation
   occurred.
+
+## [2026-09-04] design | Close Publication and Finalizer design
+
+- Recorded PR #651 as merged at
+  `db5d9f053baf2c16cd32a1e9e9aae38ffb8c2b74` after reviewed-tree,
+  protected merged-tree, post-merge Continuous Integration, and CodeQL
+  verification.
+- Contracted first-slice destination authority to immutable exact
+  package-version bytes, SHA-256/SHA-512 digests, and embedded witness. The
+  target-derived tag is retained only as a non-authoritative routing side
+  effect and never triggers repair of an existing exact version.
+- Defined the exact pinned standard npm Destination Operation Profile,
+  active-only runtime Observation, embedded Package-Control Proof, and
+  acceptance-only deleted/restorable tombstone suite. Runtime receives no PAT,
+  package-admin authority, or deleted-state facts.
+- Replaced the activation target with strict Governance v2: blocked is exactly
+  `{"state":"blocked"}`, ready binds complete native evidence, and v1 is never
+  an admission alias.
+- Retired Receipt and `ActionResult`. Publication Result now binds Marker,
+  which reaches Authorization, Approval Bundle, and Snapshot. Publisher
+  exposes one Result-preferred, marker-fallback nullable terminal reference;
+  Finalizer consumes only current-DAG references and direct platform facts.
+- Two disjoint final design reviews reached zero findings after independent
+  TP/FP adjudication. The final shrink rereview found no remaining justified
+  contraction or restoration.
+- Synchronized README, handoff, overview, and index status. Contracted
+  duplicate summaries so the overview remains the architecture synopsis and
+  the handoff remains takeover guidance.
+- No runtime code, workflow, protected Governance, Environment, package, tag,
+  approval, deployment, dispatch, or other external resource changed. Design
+  delivery and disabled implementation remain next.

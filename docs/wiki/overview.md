@@ -49,17 +49,19 @@ normative for new work.
   prove universal consumer absence or package-token isolation.
 - The first-slice Publication Snapshot contains exactly zero or one action.
 - Exact destination state takes the zero-action `exact-satisfied` path with no
-  approval, Publication Authorization, publisher, marker, Result, or Receipt.
+  approval, Publication Authorization, publisher, marker, or Result.
   It repeats fresh Governance continuity checks before success.
-- Absent state may take one action only after the destination primitive proves
-  conditional non-overwriting creation of the complete version-and-tag
-  projection. The path then uses a pre-wait Approval Bundle and summary,
-  Approval Environment, complete Publication Authorization, separate
-  publisher, durable pre-mutation marker, one admitted compound action, and one
-  Publication Result. Only `published` embeds one Receipt.
-- Standard `npm publish --tag` can overwrite a competing tag introduced after
-  Observation and is not admitted. Normal Live remains disabled until a
-  separately reviewed supported primitive passes that race acceptance.
+- Active exact-version absence may take one action only with a fresh admitted
+  Package-Control Proof and a Governance-bound Destination Operation Profile
+  whose native acceptance remains fresh. The path then uses a pre-wait
+  Approval Bundle and summary, Approval Environment, complete Publication
+  Authorization, separate publisher, durable pre-mutation marker, one pinned
+  standard npm invocation without mutating retry, and one logical Publication
+  Result for each controlled post-marker terminal state.
+- Exact package-version bytes, digests, and witness are authoritative. The
+  target-derived tag is a non-authoritative routing side effect. Receipt and
+  `ActionResult` are retired; the current DAG carries one nullable scalar
+  Result-preferred, marker-fallback publication terminal reference.
 - Every authoritative normal-Live job independently requires
   `github.run_attempt == 1`; normal-Live records omit run attempt. Simulation
   retains its existing run-attempt identity and rerun behavior.
@@ -102,8 +104,8 @@ disabled through
 `live_enabled: false`.
 
 - The disabled replacement implementation is validated and independently
-  rereviewed. Its Git and pull-request state must be inspected rather than
-  inferred from this page.
+  rereviewed, and the Governance/authorization unit is merged. Its Git and
+  pull-request state must be inspected rather than inferred from this page.
 - The bounded follow-up contraction uses the fetched protected ref as each
   Governance read identity, removes redundant repository-wide object
   scanning, narrows the active disabled publisher to authority-closure
@@ -120,7 +122,8 @@ disabled through
   and zero deployments.
 - The local replacement implementation no longer treats the legacy
   Environment as runtime input or authority. The external resource must remain
-  until retained refs are proven safe and cleanup is separately authorized.
+  until retained refs are proven safe through exact no-reference and
+  compatibility proof.
 - Package access is unchanged. No normal Live dispatch, Approval deployment,
   package publication, tag change, or package mutation has occurred.
 
@@ -128,15 +131,18 @@ disabled through
 
 The replacement design, static-reference foundation, and record-model
 contraction are merged. The disabled Governance/authorization implementation
-and its bounded follow-up contraction are complete. Git delivery state is
-intentionally not frozen in this current-state page.
+and its bounded follow-up contraction are merged. The Publication/Finalizer
+design contraction is complete locally, independently rereviewed to zero
+findings, and final-shrink clean. Git delivery state is intentionally not
+frozen in this current-state page.
 
-Later gates separately authorize marker/Result/final-Outcome implementation,
-obsolete-Environment cleanup, destination-primitive acceptance, fresh native
-and Governance evidence including repository retention of at least 45 days,
-one small Activation PR, readback, one API dispatch returning a run ID, and
-exact run readback. There is no Preparation PR, `main` freeze, activation
-SHA/tag, or blind redispatch after an ambiguous response.
+The next gates deliver this design, implement and merge the disabled runtime
+with strict Governance v2, remove the obsolete Environment after exact proof,
+run native profile acceptance, install fresh ready Governance evidence
+including repository retention of at least 45 days, merge one small Activation
+PR, read back protected state, dispatch once through the run-ID-returning API,
+and verify the exact run. There is no Preparation PR, `main` freeze,
+activation SHA/tag, or blind redispatch after an ambiguous response.
 
 ## Historical Record Rule
 
