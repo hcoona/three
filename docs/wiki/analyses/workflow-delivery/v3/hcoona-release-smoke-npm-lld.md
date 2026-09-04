@@ -654,10 +654,12 @@ Buddy Execution identity is canonical channel + Release Unit + target. Normal-Li
 | Exact-Satisfied Finalization Proof           | Zero-action Snapshot plus fresh Governance, package-control, and authoritative exact-version readback                        |
 | Approval Bundle                              | Direct references to the action-bearing Snapshot and immutable reviewer summary                                              |
 | Publication Authorization                    | Direct Approval Bundle reference plus approval-boundary and fresh-Governance evidence                                        |
-| Package-Control Proof                        | Destination/package subject, supported endpoints, and normalized boundary-local package-control readback                     |
 | Mutation marker                              | Authorization plus final Governance, package-control, and effective-profile-match evidence                                   |
 | Publication Result                           | Marker plus command classification and newly observed post-action facts                                                      |
 | Attempt Outcome                              | Disposition, `possibly_mutated`, and one tagged direct predecessor                                                           |
+
+Package-Control Proof is the closed embedded value described in section 7.4
+and has no standalone record schema or artifact transport.
 
 The only publication-result schema is
 `workflow-delivery/v3/publication-result`; the former

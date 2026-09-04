@@ -793,7 +793,7 @@ The marker uses the normal-Live producer/current-run envelope and adds only:
 - the Publication Authorization canonical payload digest and Shared Foundation
   Artifact Reference;
 - the canonical final publisher-side Governance proof observed at the later
-  mutation boundary and its recomputed digest; and
+  mutation boundary and its recomputed digest;
 - the canonical final supported package-control proof observed at that boundary
   and its recomputed digest; and
 - canonical normalized evidence that the actual pinned toolchain and effective
