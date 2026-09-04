@@ -1664,44 +1664,6 @@ def test_publication_snapshot_action_set_exactly_matches_absent_observations(
 
 
 @pytest.mark.parametrize(
-    ("publication_started", "result", "phase"),
-    [
-        (False, "incomplete", "pre-publication-termination"),
-        (True, "incomplete-possibly-mutated", "post-publication-termination"),
-    ],
-)
-def test_platform_termination_maps_by_publication_phase(
-    qualified_simulation,
-    publication_started: bool,  # noqa: FBT001
-    result: str,
-    phase: str,
-) -> None:
-    attempt, binding, decision, publication = _live_closure(
-        qualified_simulation,
-        with_action=True,
-    )
-    bundle = _approval_bundle(binding, decision, publication)
-    authorization = _publication_authorization(bundle)
-
-    outcome = finalize_attempt_outcome(
-        attempt=attempt,
-        qualification_decision=decision,
-        publication_snapshot=publication,
-        exact_satisfied_governance_proof=None,
-        approval_bundle=bundle,
-        publication_authorization=authorization,
-        action_results=(),
-        platform_terminated=True,
-        publication_may_have_started=publication_started,
-    )
-
-    assert outcome.result == result
-    assert outcome.terminal_phase == phase
-    assert outcome.next_action == "new-attempt"
-    assert outcome.possibly_mutated is publication_started
-
-
-@pytest.mark.parametrize(
     ("field", "value"),
     [
         ("terminal_phase", "approval-contract"),

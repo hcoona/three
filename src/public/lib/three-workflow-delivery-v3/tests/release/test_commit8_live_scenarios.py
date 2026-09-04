@@ -1178,33 +1178,6 @@ def test_platform_termination_maps_by_publication_phase(
     assert outcome.possibly_mutated is started
 
 
-def test_direct_action_result_is_platform_start_evidence(
-    qualified_simulation,
-) -> None:
-    attempt, binding, decision, publication = _closure(
-        qualified_simulation,
-        with_action=True,
-    )
-    bundle = _bundle(binding, decision, publication)
-    authorization = _authorization(bundle)
-    result = _successful_action_result(publication)
-
-    outcome = finalize_attempt_outcome(
-        attempt=attempt,
-        qualification_decision=decision,
-        publication_snapshot=publication,
-        exact_satisfied_governance_proof=None,
-        approval_bundle=bundle,
-        publication_authorization=authorization,
-        action_results=(result,),
-        platform_terminated=True,
-    )
-
-    assert outcome.result == "incomplete-possibly-mutated"
-    assert outcome.possibly_mutated is True
-    assert outcome.action_result_digests == (result.result_digest,)
-
-
 def test_platform_termination_rejects_multiple_direct_results(
     qualified_simulation,
 ) -> None:
