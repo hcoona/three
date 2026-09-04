@@ -496,7 +496,8 @@ and the Release target. Protected Governance remains a separate read from
 `refs/heads/main`; it is not substituted for the selected same-revision
 Repository Model or control stack. The selected-revision control must strictly
 admit exact schema
-`workflow-delivery/v3/normal-live-governance-attestation-v1`; an incompatible
+`workflow-delivery/v3/normal-live-governance-attestation-v2`; v1 is not an
+admission alias, and an incompatible
 ref fails before Release Execution lookup, Attempt creation, or any
 Environment job.
 

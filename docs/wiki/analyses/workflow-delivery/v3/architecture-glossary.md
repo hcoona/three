@@ -100,8 +100,9 @@ after human approval through the literal Approval Environment
 `workflow-delivery-v3-buddy-approval`. Before mutation, the publisher validates
 the complete Publication Authorization and persists the
 mutation-may-have-started marker. A successful `published` Publication Result
-embeds exactly one Receipt; a controlled failed Result after the marker may
-omit the Receipt while preserving mutation classification and diagnostics.
+carries authoritative exact post-action readback; a controlled failed Result
+preserves mutation classification, diagnostics, and any available post-action
+remote evidence without becoming successful.
 
 ### Buddy
 
@@ -140,8 +141,10 @@ the dedicated `hcoona-release-smoke-npm` coordinate to GitHub Packages.
 The selected same-repository ref resolves to one exact SHA that supplies the
 workflow, control, Planner, Finalizer, publisher, and Release target. Protected
 Governance is fetched independently from `main`. The replacement uses exact
-schema `workflow-delivery/v3/normal-live-governance-attestation-v1` as a
-compatibility fence: superseded selected-revision parsers fail before any
+schema `workflow-delivery/v3/normal-live-governance-attestation-v2` as a
+compatibility fence. V2 replaces the disabled v1 contract because native
+destination acceptance has a different closed field set; v1 is not an
+admission alias. Superseded selected-revision parsers fail before any
 Environment job. An action-bearing Attempt uses the literal Approval
 Environment `workflow-delivery-v3-buddy-approval`; after approval and complete
 Publication Authorization, the target-revision publisher receives short-lived
@@ -559,7 +562,7 @@ GitHub's native workflow and job history used for operator inspection only.
 Workflow Delivery does not exhaustively discover, admit, snapshot, or aggregate
 prior runs, reruns, artifacts, Attempt bindings, or outcomes as publication
 authority. History does not establish current Evidence, eligibility,
-Publication Authorization, artifact identity, Receipt, Attempt Outcome,
+Publication Authorization, artifact identity, Publication Result, Attempt Outcome,
 aggregate Execution state, or exhaustive Attempt lineage.
 
 Recovery starts from a new Release Intent and fresh destination observation.
@@ -617,9 +620,11 @@ Canonical `workflow-delivery/provenance.json` embedded inside the npm tarball
 and therefore covered by its bytes and digest. It binds target commit, Release
 Unit, canonical and native NBGV facts, Build Definition, catalog and control
 digests, purpose, and schema. It excludes run and Attempt identities so builds
-of one target remain reproducible across attempts. Exact remote package state
-requires matching coordinate, ownership, witness, and bytes; a sidecar is not a
-substitute.
+of one target remain reproducible across attempts. For first-slice npm,
+immutable remote exactness requires the matching normalized package/version
+coordinate, tarball bytes and digests, and embedded witness. Ownership,
+repository association, visibility, and access are validated separately through
+Package-Control Proof; a sidecar is not a substitute.
 
 ## Build and Quality Terms
 
@@ -713,7 +718,7 @@ and the deterministic pre-observation publication basis before build execution.
 After qualification and observation, the Publication Snapshot closes exact
 artifacts, desired and observed state, materialized actions and inputs, complete
 mutation key sets, the zero-or-one first-slice Publication Action,
-Result/Receipt contract, and authorization basis before side effects.
+Publication Result contract, and authorization basis before side effects.
 
 CI and Release have separate Planners because they select different scope,
 obligations, identities, and side effects.
@@ -754,8 +759,11 @@ permanent global Product Identity-to-target ledger is required. A new manual
 dispatch recompiles the request-local Repository Model and creates new
 Attempt-specific Qualification and Publication Snapshots. Existing destination
 state is accepted only when it matches snapshot-bound desired projection state;
-a differing coordinate, ownership, target binding, or artifact digest requires
-reconciliation.
+a differing coordinate, target binding, or artifact digest requires
+reconciliation. Ownership, repository association, visibility, and access are
+admitted separately through Package-Control Proof. A missing, differing, or
+unprovable package-control fact blocks admission and finalization without
+classifying version projection state or producing a publication action.
 
 ### Buddy Execution Semantics
 
@@ -773,7 +781,8 @@ target creates a different Execution Identity and Execution even when every
 derived coordinate is the same.
 
 A registry coordinate is an external resource address, not a pre-publication
-reservation. No Intent reserves an absent coordinate. Successful durable
+reservation. No Intent reserves a coordinate absent from the active projection,
+and that absence does not exclude a retained tombstone. Successful durable
 destination creation establishes its observable package binding.
 
 ### External Package Coordinate
@@ -787,12 +796,72 @@ mutable-resource key set; an Adapter may also require additional keys.
 
 ### Package Routing Tag
 
-A destination routing projection distinct from package provenance. The
-first-slice npm Adapter uses exactly
-`buddy-sha-<40-lowercase-target-sha>` and maps it to the frozen native
-`npmPackageVersion`. It never uses implicit `latest` or a shared moving Buddy
-tag. Exact state includes this mapping, but the package-internal target witness
-remains the target-provenance authority.
+A declared non-authoritative routing side effect distinct from package identity,
+exactness, and provenance. The first-slice npm Adapter uses exactly
+`buddy-sha-<40-lowercase-target-sha>` and requests that it map to the frozen
+native `npmPackageVersion`. It never uses implicit `latest` or a shared moving
+Buddy tag.
+
+The tag remains inside the Publication Action, reviewer disclosure,
+Authorization lineage, complete mutable-resource keys, Publication Result
+post-action diagnostics, and the combined pre-action Observation/post-action
+readback because `npm publish` mutates it. If the version is exact, tag state
+cannot create a repair action or defeat `exact-satisfied`. If the version is
+absent, a present or unprovable tag blocks action formation. A post-Observation
+race may still move the tag under the explicitly accepted first-slice risk;
+supported consumers resolve only exact `name@version`.
+
+### Destination Operation Profile
+
+The closed, canonical description of one admitted destination mutation
+implementation. For first-slice npm it binds one stable profile identity,
+registry and access mode, exact Node/npm versions, a static normalized
+command/request template with typed package, version, tarball, and tag operand
+slots, deterministic operand derivation and validation rules, all fixed command
+options inside that template, highest-precedence
+configuration, request-generation behavior, and prohibition of mutating
+retries or secondary tag commands.
+
+Its canonical digest is carried by the Publication Action. Protected
+Governance reuses the destination-primitive attestation to bind the accepted
+profile digest and the native evidence that admitted it. Approval compares the
+action digest with current Governance and verifies that the immutable action is
+a valid profile instantiation. Publisher admission repeats those checks,
+verifies the actual pinned toolchain and effective command configuration, and
+binds canonical match evidence in the mutation marker. Concrete package,
+version, tarball, and tag values are bound exclusively by the Publication
+Action. A toolchain or normalized request-profile change requires new
+acceptance rather than compatibility inference.
+
+### Native Acceptance Suite
+
+The versioned destination-qualification scenarios and their closed canonical
+before/after comparison shape. For first-slice npm the suite-owned shape
+contains normalized package identity, complete active version-name inventory,
+complete dist-tag mapping, remote-observed bytes/digests and witness for
+scenario versions, and supported package-control facts. The
+deleted/restorable scenario additionally uses separately authorized
+package-admin evidence for the complete disposable-package deleted-version
+inventory, targeted tombstone identity and continued restorability, and
+original bytes/digests/witness after restoration. Runtime Observation never
+receives those credentials or deleted-state facts. The suite explicitly
+excludes enumerated server-generated timestamps, request identifiers, URLs,
+and equivalent volatile metadata. Derived counters are recomputed from
+included facts or validated against the scenario's declared delta.
+
+Raw native responses and their digests remain evidence, but pass/fail compares
+the suite-owned canonical shape with the scenario's allowed semantic delta. The
+deleted/restorable case publishes and verifies a fresh disposable version,
+deletes it with acceptance-only package-admin authority, requires sequential
+identical- and differing-byte same-version publishes to fail definitively with
+an empty active-plus-deleted semantic delta, then restores and verifies the
+original bytes and witness. Any ambiguity, delta, lost restorability, or failed
+restoration rejects the profile. Each newly admitted operation profile requires
+acceptance captured after its implementation before initial activation. Later
+Governance may reuse that generation while every bound input remains identical,
+but action-bearing admission expires 90 days after capture. Binding change or
+expiry requires recapture; expiry does not block zero-action exact-satisfied
+finalization.
 
 ### Mutable-Resource Key
 
@@ -801,7 +870,7 @@ by one Publication Action.
 
 Every mutating action declares its complete key set through its Destination
 Adapter. Package actions include the exact External Package Coordinate.
-First-slice npm compound publication additionally includes the
+The first-slice standard npm publish action additionally includes the
 destination/package/routing-tag resource and permits no separate normal tag
 mutation. Package actions may also require additional Adapter-declared keys. Non-package
 destinations define their exact keys through Adapter contracts. Publication
@@ -817,7 +886,9 @@ all overlapping sets are guaranteed to share that group. The first-slice GitHub
 Packages projection uses physical destination plus normalized npm package name,
 so different versions and target-derived tags for the same package serialize.
 The complete coordinate-plus-tag key set remains frozen in the Publication
-Snapshot, action binding, Receipt, and validation.
+Snapshot, action binding, Publication Authorization, and validation.
+Publication Result admission reaches the same set transitively through the
+marker and Authorization; the Result does not copy it.
 
 ### Qualification Evidence
 
@@ -901,11 +972,12 @@ not replace the append-only Decision history.
 
 Release authorization does not bind this generic Final Decision or a generic
 Plan digest. After Release qualification and remote-state observation,
-the Publication Authorization binds the exact Publication Snapshot, including
-Qualification Decision, qualified artifacts, observations, the one materialized
-action, complete resource keys, Governance bindings, and Result/Receipt
-contract. An in-progress side-effect execution cannot switch to a later
-Snapshot or Decision.
+the Publication Authorization transitively admits the exact Publication
+Snapshot through its Approval Bundle. The Snapshot owns the Qualification
+Decision, qualified artifacts, observations, one materialized action, complete
+resource keys, Governance bindings, and Publication Result contract. An
+in-progress side-effect execution cannot switch to a later Snapshot or
+Decision.
 
 ### Runtime-Decoupled Delivery Systems
 
@@ -962,7 +1034,7 @@ projection and hypothetical destination coordinate as live Buddy planning. It
 retains `github.run_attempt` as part of its request-scoped identity so a rerun
 is a distinct simulation pass; the normal-Live first-attempt-only contraction
 does not apply. It never contains or acquires a live Product, Release Execution,
-or Attempt identity, Publication Authorization, Capability, Receipt, or
+or Attempt identity, Publication Authorization, Capability, Publication Result, or
 mutation. It may emit hypothetical requirements and actions and a Simulation
 Outcome.
 
@@ -998,7 +1070,7 @@ Qualification Snapshot digest, preserves every frozen semantic field, and adds
 actual artifact identities, content digests, provenance, snapshot-bound desired
 projection state, destination observations, the exact zero-or-one first-slice
 Publication Action and inputs, its complete Adapter-declared mutable-resource
-keys, Qualification Decision, and Publication Result/Receipt contract.
+keys, Qualification Decision, and Publication Result contract.
 
 For an action-bearing Snapshot, the Approval Bundle binds the Snapshot and
 immutable reviewer-summary artifact. After approval, the Approval job validates
@@ -1019,12 +1091,19 @@ that the publisher did not start and no Publication Authorization or mutation
 marker exists. Missing Snapshot transport alone is not proof.
 
 When the sole Release Finalizer runs and the direct facts suffice, it may record
-terminal phase `publication-preparation`, replayable
-`failed-before-publication` disposition, `possibly_mutated: false`, and next
-action `new-dispatch`. It does not fabricate a Publication Snapshot or create
-domain Evidence from GitHub job results. A durably persisted Publication
-Snapshot ends this phase. GitHub cancellation or transport failure may prevent
-the Finalizer from retaining any Outcome.
+`failed-before-publication` disposition and `possibly_mutated: false`, binding
+the sole blocking Observation when present, otherwise the exact successful
+Qualification Decision only when no Observation exists, as the latest valid
+predecessor. The Observation directly binds that Decision. A retained
+non-blocking Observation without a Snapshot has no admitted direct predecessor
+and forms no Outcome. Publication Preparation Interruption is a descriptive
+lifecycle condition, not an Attempt Outcome field or independent
+classification. A later normal continuation is a new manual dispatch, but
+reconciliation or remediation may be required first. The Finalizer does not
+fabricate a Publication Snapshot or create domain Evidence from GitHub job
+results. A durably persisted Publication Snapshot ends this phase. GitHub
+cancellation or transport failure may prevent the Finalizer from retaining any
+Outcome.
 
 ### Release Attempt
 
@@ -1043,9 +1122,11 @@ rerun commands are unsupported for normal Live. Every authoritative job
 independently rejects `github.run_attempt != 1`, so partial reruns cannot form
 authority from a mixed job graph.
 
-An Attempt Outcome records qualification, observation, authorization, action,
-the Receipt when publication succeeds, and reporting results with an explicit
-disposition. Finalization is best effort and may be absent.
+An Attempt Outcome records the applicable validated lineage and reporting
+result with an explicit disposition. An action-bearing Outcome with a Result
+binds that Result directly and reaches its marker, Authorization, and action
+through the Result. A marker-without-Result Outcome binds the marker.
+Finalization is best effort and may be absent.
 
 ### New-Dispatch Retry
 
@@ -1054,7 +1135,7 @@ The supported retry model for a failed or incomplete Release Attempt.
 Retry is a new manual dispatch with a new `workflow_run_id`. It recompiles,
 rebuilds, requalifies, reobserves, and reapproves when an action remains. It
 reuses no prior Snapshot, Environment approval, Publication Authorization,
-artifact, or Receipt.
+artifact, or Publication Result.
 
 For the first-slice npm Release Unit, the same target, frozen inputs, and
 toolchain must reproduce identical bytes. Differing destination bytes fail
@@ -1074,66 +1155,88 @@ Approval Environment, or publication capability.
 Each logical publication projection is classified atomically against its
 snapshot-bound desired projection state, not Product or Execution Identity.
 Desired state is derived from the Qualification Snapshot and admitted qualified
-artifacts and includes exact destination coordinate, expected ownership, target
-binding, and artifact bytes or digest. Each Observation Record binds its Release
-Attempt, logical projection, immutable desired-state basis, and canonical
-remote response and observed facts. It cannot bind a future Publication
-Snapshot. The later Publication Snapshot seals admitted Observation Records
-with the resulting desired state and materialized actions:
+artifacts and includes exact destination coordinate, target binding, and
+artifact bytes or digest. For first-slice npm, authoritative
+exactness is the normalized package name, frozen version, downloaded tarball
+bytes and digests, and embedded witness in the active registry projection.
+Runtime Observation does not enumerate deleted/restorable versions. The
+target-derived dist-tag is separately observed non-authoritative routing
+metadata. Each Observation Record binds its Release Attempt, exact successful
+Qualification Decision, logical projection, immutable desired-state basis, and
+canonical remote response and observed facts. It cannot bind a future
+Publication Snapshot. The later Publication Snapshot seals admitted Observation
+Records with the resulting desired state and materialized actions:
 
-- absent state may produce a publish action;
+- state absent from the active projection may produce a publish action only
+  under current Governance-bound tombstone acceptance;
 - exact satisfied state produces no side effect;
 - partial, unknown, conflicting, or unprovable state fails closed and requires
   reconciliation.
 
-An absent coordinate remains a legitimate initial-publication state when no
-operational Release lineage is retained. It does not require a tag witness,
-binding index, or permanent ledger. After authorization, registry publication
-uses the destination's atomic non-overwriting create contract. Pre-observed
-exact state produces no action and may finalize as `exact-satisfied` success
-without approval or publication lineage. Atomic create-or-exact may accept a
-concurrently created exact state without mutation, but differing state fails
-without mutation. It is never read-then-upsert, overwrite, or
-delete-and-recreate. A pure create-only conflict is reobserved on a new
-dispatch.
+For first-slice npm, the Observation also embeds a Package-Control Proof for
+the version-independent package container. That proof is an admission
+precondition and is not part of version-projection equality.
+
+An active-absent coordinate remains a legitimate action candidate when no
+operational Release lineage is retained and does not require a binding index or
+permanent ledger. It does not prove the version was never published, is not
+retained as deleted/restorable state, or will accept creation. After
+authorization, registry publication relies on the destination's attested
+non-overwriting exact-version behavior. Pre-observed exact active version state
+produces no action and may finalize as `exact-satisfied` success without
+approval or publication lineage, regardless of tag state or tag-read
+availability. Differing version bytes fail closed. A duplicate,
+hidden-tombstone, conflict, non-success, or ambiguous response remains failed in
+the current Attempt even when post-failure readback is exact. A new dispatch
+may reobserve the exact active version and take `exact-satisfied`. It is never
+version overwrite, delete-and-recreate, compensation, or tag repair.
 
 Cancellation does not create a separate reconciliation workflow. A later
 manual dispatch performs the same Remote-State Observation before any new
 write.
 
-The initial architecture assumes Delivery Governance is the only normal writer.
-It does not require a second observation after authorization and accepts
-out-of-band mutation between observation and publication as a residual risk
-only when the destination mutation primitive still enforces atomic
-non-overwriting behavior at linearization. Repository concurrency, another
-read, or post-action readback cannot substitute for that primitive. Standard
-`npm publish --tag` can move a conflicting tag and is not an admitted primitive
-for the complete first-slice projection.
+For first-slice npm, a version absent from active state may form an action only
+when the target-derived tag is successfully observed absent and current
+Governance binds unexpired acceptance covering the deleted/restorable
+same-version case. The one approved standard `npm publish --tag` invocation may
+move that declared tag if an authorized external writer races after
+Observation. The tag remains in the action, reviewer summary, Authorization
+lineage, mutable-resource keys, pre-action Observation, and Publication Result
+post-action diagnostics and readback, but not in exactness, identity,
+provenance, installation, retry, or success. This bounded last-writer-wins
+routing risk is accepted only for the dedicated smoke package and sole-writer
+TCB. Repository concurrency covers repository-controlled publishers but is not
+a registry lock.
 
 ### Publication Projection
 
-A channel-selected logical remote product that must become exact as one unit,
-such as a registry package version or a GitHub Release with its required assets.
+A channel-selected logical remote product whose authoritative state must become
+exact, such as a registry package version or a GitHub Release with its required
+assets. Declared non-authoritative side effects remain within the action's
+mutation footprint without becoming projection equality.
 
 The Release Unit selects projections, the Destination Adapter defines their
 mechanics, and Delivery Governance grants authority only when an action exists.
-For the first slice, an exact projection materializes zero actions and requests
-no Capability; an absent projection may materialize one compound action only
-after the destination primitive has passed the required conditional
-non-overwrite acceptance. The current GitHub Packages npm primitive has not
-passed and keeps normal Live disabled. Multiple ordered actions and
-projection-internal partial progression require a future explicit design.
+For the first slice, an exact active projection materializes zero actions and
+requests no Capability. A version absent from the active registry projection
+with an observed-absent target-derived tag may materialize one standard npm
+publish action only after bounded native acceptance proves the pinned operation
+safely rejects a deleted/restorable same-version reservation. Active absence
+does not claim the version was never published, is not retained as a tombstone,
+or will accept creation. Multiple ordered actions and projection-internal
+partial progression require a future explicit design.
 
 ### Approval Bundle
 
 The immutable reviewer and machine-admission payload prepared before the
 first-slice Environment wait.
 
-It closes the selected ref and target, Qualification Decision, Publication
-Snapshot, reviewer summary, artifact identities and digests, manifest and
-lifecycle information, and the exact Publication Action with its complete
-mutable-resource keys. The Approval job strictly re-admits this bundle;
-human-readable summary alone is not authority.
+It directly binds the Publication Snapshot and immutable reviewer-summary
+artifact by canonical payload digest and Artifact Reference. The Snapshot
+remains sole owner of the selected ref and target, Qualification Decision,
+artifact, action, and mutable-resource closure. The Approval job strictly
+resolves and admits the complete immutable chain; human-readable summary alone
+is not authority.
 
 ### Approval Job
 
@@ -1143,13 +1246,17 @@ The publication-credential-free authoritative job that references
 It validates the resolved exact Environment marker value as its first
 authority-critical executable check, has no publication capability, freshly
 validates protected Governance including path-touch anti-rollback, and strictly
-admits the Approval Bundle, Publication Snapshot, artifact, action, and resource
-closure. Its `contents: read` access for the protected Governance reread means
-it is not fully credential-free. It cannot determine marker source scope or
-prove same-name broader-variable absence; authenticated native
-Governance/provisioning/activation readback and attestation provide that
-evidence. After Environment approval, it durably emits one Publication
-Authorization.
+admits the Approval Bundle and its transitive Snapshot, reviewer, artifact,
+action, and resource closure. Its `contents: read` access for the protected
+Governance reread means it is not fully credential-free. It cannot determine
+marker source scope or prove same-name broader-variable absence; authenticated
+native Governance/provisioning/activation readback and attestation provide
+that evidence. After Environment approval, it compares the immutable action's
+Destination Operation Profile with current Governance, verifies native
+acceptance remains unexpired for action-bearing admission, and validates the
+action as a profile instantiation. It neither reads mutable package-control
+state nor claims to validate the publisher's effective runtime. It then
+durably emits one Publication Authorization.
 
 The publisher has an ordinary success dependency on this job. There is no
 approval-finalizer or separate Capability Admission Decision.
@@ -1158,56 +1265,160 @@ approval-finalizer or separate Capability Admission Decision.
 
 The complete post-approval admission record for one action-bearing Attempt.
 
-It binds the Attempt, selected ref and target, Live Eligibility Decision and
-fresh Governance state, Approval Bundle, Publication Snapshot, reviewer
-artifact, exact artifact identities and digests, the one action, and its
-complete mutable-resource keys. It does not contain credentials and does not
-bind `github.run_attempt`.
+Its standard producer/current-run envelope identifies the Attempt. It directly
+binds the Approval Bundle plus approval-boundary and fresh-Governance evidence.
+The immutable Bundle-to-Snapshot chain supplies the selected ref and target,
+Live Eligibility Decision, reviewer artifact, exact artifact identities and
+digests, the one action and Destination Operation Profile digest, and complete
+mutable-resource keys. Authorization validates but does not copy those ancestor
+facts. It does not contain credentials or bind `github.run_attempt`.
 
 A zero-action exact-satisfied Attempt has no Publication Authorization.
+
+### Package-Control Proof
+
+A closed embedded value that validates mutable package-container
+preconditions separately from immutable version-projection exactness.
+
+For first-slice npm its subject is the destination/registry plus normalized
+package identity. It binds supported authoritative endpoints, observed owner,
+repository association, visibility, exposed access facts, observation time,
+and canonical response digests. It is admissible only inside a parent that
+binds the applicable protected-Governance identity or proof, derives expected
+package-control values from that parent-bound Governance, and jointly validates
+the observed facts. It copies neither expected values nor the Governance
+content digest. Complete access-grant inventory that GitHub Packages does not
+expose remains an explicit Governance-attested limitation.
+
+The initial Remote-State Observation, publisher-boundary mutation marker, and
+zero-action exact-satisfied finalization proof each embed a proof observed at
+their own freshness boundary. The value is not a standalone decision, authority
+record, or artifact.
+
+### Exact-Satisfied Finalization Proof
+
+The canonical
+`workflow-delivery/v3/exact-satisfied-finalization-proof` record formed
+immediately before zero-action success. It directly binds the zero-action
+Publication Snapshot, fresh protected-Governance continuity proof, and fresh
+Package-Control Proof. It also directly embeds fresh authoritative
+exact-version readback proving the Snapshot-bound normalized package and
+version, tarball bytes and digests, and witness remain exact. Its presence does
+not authorize mutation.
+
+It replaces the narrower
+`workflow-delivery/v3/exact-satisfied-governance-proof` schema without a
+compatibility alias. Attempt Outcome binds this record as its sole direct
+predecessor for `exact-satisfied`.
 
 ### Mutation-May-Have-Started Marker
 
 The durable record persisted immediately before the publisher's first mutating
 destination operation. Failure to persist the marker blocks mutation.
 
+It directly binds the Publication Authorization, the final publisher-side
+Governance proof, and the final supported package-control proof observed at the
+later mutation boundary. It also binds canonical evidence that the actual
+pinned toolchain and effective command configuration matched the admitted
+Destination Operation Profile. Its normal-Live producer/current-run envelope
+identifies the publisher. The Authorization reaches the approved Snapshot,
+action, resources, artifact, and Attempt closure through its Approval Bundle.
+The publisher validates durable marker persistence before crossing the
+mutation boundary.
+
 Once present, absence of a later Publication Result means mutation status is
 unknown and possibly mutated. The next dispatch must reobserve the destination.
 
 ### Publication Result
 
-The durable result of the first slice's one attempted or completed Publication
-Action. It binds the Publication Authorization, exact action and resources,
-and actual destination outcome. A successful `published` Result embeds exactly
-one Receipt. A controlled failed Result after the mutation marker may omit the
-Receipt and must preserve mutation classification and diagnostics.
+The canonical `workflow-delivery/v3/publication-result` record for the first
+slice's one attempted or completed Publication Action. `ActionResult` is not an
+alternate schema.
+
+It directly binds the durable mutation marker, which reaches the Publication
+Authorization, plus command classification, post-action evidence, mutation
+classification, sanitized command/response diagnostics, and actual destination
+outcome. Its post-action readback may include actual remote
+coordinate/version state, remote-observed artifact digests, remote-extracted
+witness, and observed state of the action-bound target-derived tag. Those
+newly observed facts may be retained on either a published or controlled failed
+Result.
+
+The Result does not repeat the requested coordinate or tag, pre-action
+Observation, expected artifact digests, expected witness, action, resources, or
+other authority already reachable through
+`Result -> marker -> Authorization -> Approval Bundle -> Snapshot`. The
+before/after audit view combines that Snapshot lineage with the Result's
+post-action readback.
+
+A `published` Result requires definitive command success,
+`mutation-classification: mutated`, and successful authoritative exact-version
+readback. Conflict, non-success, or ambiguous responses remain failed in that
+Attempt even when readback is exact. Post-action tag state remains diagnostic
+and never determines the publication outcome.
 
 The first-slice Publication Snapshot admits exactly zero or one action. An
-action-bearing Attempt may durably retain at most one Result rather than a
-capability-group bundle. A Result cannot precede the mutation marker for an
-action that may mutate. A marker without a durable Result remains unknown and
-possibly mutated.
+action-bearing publisher forms one logical Result for each controlled
+post-marker terminal state and initiates one logical persistence operation.
+Transport may retry only the same immutable payload without creating another
+logical Result. The current DAG exposes one nullable scalar immutable
+publication terminal reference to the Finalizer. It points to the Result when
+one was durably persisted, otherwise to the marker when one was durably
+persisted, otherwise it is null. Result takes precedence; this transport does
+not introduce a wrapper schema. Only null or one well-formed, correctly bound
+marker or Result Artifact Reference is admitted; malformed, non-scalar,
+misbound, or other-kind input fails closed. A referenced Result resolves the
+marker through its direct lineage. A Result cannot precede the mutation marker
+for an action that may mutate. A failure before the marker emits no Result. A
+terminal marker without a durable Result remains unknown and possibly mutated;
+no later component repairs or synthesizes the missing Result.
 
 ### Attempt Outcome
 
 The best-effort read-only final record for one Attempt.
 
+Its authoritative classification is the disposition
+`exact-satisfied`, `published`, `failed-before-publication`,
+`publication-failed`, or `unknown`, plus `possibly_mutated`. Platform job
+conclusions remain execution facts and are not Attempt Outcome dispositions.
+Human-readable result summaries and operator guidance are non-authoritative
+projections outside the canonical record.
+
 Successful outcomes have an explicit disposition:
 
 - `exact-satisfied`: destination state was already exact; no approval,
   Publication Authorization, publisher, destination write or publication
-  credential, Publication Capability, marker, Publication Result, or Receipt
-  exists; only minimum read-only Observation authority may have been used, and
-  a fresh protected Governance continuity proof was admitted immediately
-  before success; or
+  credential, Publication Capability, marker, or Publication Result exists;
+  only minimum read-only Observation authority may have been used, and a fresh
+  protected Governance continuity proof was admitted immediately before
+  success. The publisher conclusion is `skipped`, and no Approval Bundle or
+  other action-bearing lineage exists; or
 - `published`: the complete Publication Authorization and a successful
-  Publication Result with exactly one embedded Receipt exist and validate.
+  Publication Result with definitive command success and authoritative exact
+  post-action readback exist and validate.
 
-Incomplete, unknown, conflicting, partial, or possibly mutated state is not
-successful reconciliation. If current-DAG facts prove the publisher never
-started, the Finalizer may emit replayable `failed-before-publication` without
-reconstructing an Environment rejection reason. GitHub cancellation or
-Finalizer transport failure may leave no durable Attempt Outcome.
+`failed-before-publication` requires direct current-DAG proof that the isolated
+publication step never started: either the publisher was skipped or a started
+publisher exposes the exact platform-derived `skipped` outcome for that step.
+Missing or script-produced execution facts do not provide that proof.
+
+The HLD terminal-state matrix defines the valid classification tuples and
+Publication Result/platform compatibility. Contradictory lineage fails closed.
+GitHub cancellation or Finalizer transport failure may leave no durable
+Attempt Outcome.
+
+The canonical Outcome contains exactly one tagged direct predecessor. It is the
+exact-satisfied finalization proof for `exact-satisfied`; Publication Result for
+`published` or `publication-failed`; marker for marker-without-Result
+`unknown`; zero-action Publication Snapshot for missing-proof `unknown`; or,
+for a pre-marker action path, the Publication Authorization, otherwise a
+persisted Approval Bundle, otherwise the action-bearing Snapshot, otherwise the
+sole blocking Observation, otherwise the exact successful Qualification
+Decision only when no Observation exists. A selected Observation directly
+binds that Qualification Decision. A retained non-blocking Observation without
+a Snapshot has no admitted direct predecessor and forms no Outcome. Multiple
+candidates at the selected predecessor tier are contradictory. The Outcome
+does not copy ancestor lineage reachable through that predecessor.
 
 ### Release Reconciliation
 
@@ -1216,6 +1427,12 @@ classify a projection as safely absent or exactly satisfied.
 
 Reconciliation resolves partial, unknown, conflicting, or unprovable state.
 Existing successful publication is not automatically rolled back.
+It is a separate exceptional process, not an Attempt Outcome field, and it
+never resumes the old Attempt. The first-slice implementation defers the
+standalone workflow and Reconciliation Record; operator investigation plus a
+fresh normal Observation is not formal Release Reconciliation. Break-Glass
+Remediation is likewise deferred and, when implemented, must consume a valid
+Reconciliation Record.
 
 ### Release Execution Serialization
 
@@ -1303,7 +1520,7 @@ environment, or alternate workflow identity.
 A small structured object required to establish delivery correctness, including
 a frozen Plan, admitted Evidence, artifact identity and provenance, Final
 Decision, Publication Authorization, mutation-may-have-started marker,
-Publication Result and its Receipt when published, or Remediation Record.
+Publication Result, or Remediation Record.
 
 Authoritative Delivery Records must be persisted before a later stage relies on
 them. If the mutation marker exists but the Publication Result cannot be
@@ -1319,9 +1536,9 @@ reduce observability without changing the decision.
 The retention model that uses each existing platform for the facts it can
 actually preserve.
 
-GitHub Actions Plans, Evidence, Receipts, reports, and build artifacts are
-operational records available only within the configured Actions retention
-window. In this public repository, GitHub supports at most 90 days. The
+GitHub Actions Plans, Evidence, Publication Results, reports, and build
+artifacts are operational records available only within the configured Actions
+retention window. In this public repository, GitHub supports at most 90 days. The
 first-slice LLD uses 45 days for Release control and artifacts so retention
 exceeds the platform Environment gate-expiry window, currently up to 30 days;
 activation blocks if repository policy cannot provide that margin. Fresh
@@ -1421,9 +1638,9 @@ does not directly emit authoritative CI or Release Evidence.
 ### Destination Adapter
 
 A Release Delivery infrastructure adapter that implements projection
-observation, publication, Receipt payload, mutability, digest visibility, and
-remediation semantics for one destination family. It defines complete
-deterministic mutable-resource keys for every mutating action.
+observation, publication, successful-result evidence, mutability, digest
+visibility, and remediation semantics for one destination family. It defines
+complete deterministic mutable-resource keys for every mutating action.
 
 It does not decide whether Buddy or Official policy selects the destination and
 is not owned by Shared Foundation. Shared Foundation may provide generic GitHub,
@@ -1452,7 +1669,7 @@ A family-specific Provider or Adapter output that reports normalized facts,
 outputs, outcomes, and diagnostics without expressing a business verdict.
 
 CI or Release binds the result to its own Plan or Attempt and forms the
-authoritative Evidence, Observation Record, or Receipt.
+authoritative Evidence, Observation Record, or Publication Result.
 
 ### Execution Class
 
@@ -1496,7 +1713,7 @@ relationships, Release Units, selected obligations, variants, Evidence,
 outcomes, verdict, and corrective actions.
 
 Release explanations connect the Release Unit, target commit, version, channel,
-artifacts, destination observations, planned actions, Receipts, outcomes,
+artifacts, destination observations, planned actions, Publication Results, outcomes,
 authority, authorization, and allowed operator actions.
 
 GitHub Job Summary is the human projection and the structured Decision or report
@@ -1546,8 +1763,9 @@ digest, artifact digests, or exact action set.
 
 Independent trusted side-effect executors generally validate the Publication
 Authorization, Publication Snapshot, artifact digests, action IDs, and Attempt
-before using capability. Receipts record both the authorized semantic action
-and the actual platform identity used.
+before using capability. Successful Publication Results reach the authorized
+semantic action transitively through their marker lineage and record the actual
+platform identity used.
 
 For the First-Slice Buddy Risk Exception, that executor is target-revision code
 and is not an independent adversarial enforcement boundary. It validates exact
