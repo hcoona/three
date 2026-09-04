@@ -37,12 +37,16 @@ must not be deleted until:
 The direct v1 Buddy-to-v3 Buddy cutover and destination acceptance are complete
 historical facts. They do not authorize normal Live activation.
 
-Normal Live also remains activation-blocked because standard
-`npm publish --tag` cannot prove conditional non-overwriting creation of the
-complete version-and-tag projection. Resolving that platform capability gap
-requires a separately reviewed design and implementation while
-`live_enabled: false`; repository concurrency, another read, or post-action
-readback is not a substitute.
+Normal Live also remains activation-blocked until the pinned standard
+`npm publish --tag ... --fetch-retries=0` operation profile passes the
+documented-and-observable native acceptance suite and fresh protected
+Governance binds that acceptance generation. The gate proves non-overwriting
+creation of the authoritative exact version and characterizes the accepted
+non-authoritative tag race. It also proves, with separately authorized
+acceptance-only package-admin credentials, that the pinned operation cannot
+reuse or alter a deleted/restorable same-version slot and that the original
+object can be restored with exact bytes and witness. It does not require
+unavailable atomic version-plus-tag CAS or grant those credentials to runtime.
 
 ## Why v2 Is Not an Incremental Base
 
@@ -68,7 +72,11 @@ The replacement is delivered in this order:
 1. Merge the coherent design-document changes only.
 2. Implement the runtime and static-policy contraction while
    `live_enabled: false`, including migration to exact Governance schema
-   `workflow-delivery/v3/normal-live-governance-attestation-v1`.
+   `workflow-delivery/v3/normal-live-governance-attestation-v2`. V2 replaces
+   the disabled v1 contract because native destination acceptance has a
+   different closed field set; no v1 admission alias is retained. The migrated
+   document uses the closed object `{"state":"blocked"}` with no fabricated
+   native evidence.
 3. Run the complete affected tests and HK gates, then complete independent
    multi-reviewer review and atomic adjudication. Compatibility fixtures must
    prove superseded selected-ref parsers reject the new schema before any
@@ -80,10 +88,15 @@ The replacement is delivered in this order:
    inspection proving every retained dispatchable ref either implements the
    one-Environment contract or rejects the new Governance schema before any
    Environment job or deployment.
-6. Before activation, merge a separately reviewed design and implementation
-   for a documented destination primitive and pass the conditional
-   non-overwrite race for the complete version-and-tag projection. Standard
-   `npm publish --tag` does not satisfy this gate.
+6. Before activation, execute the separately authorized native acceptance
+   suite against a pre-existing disposable package and prove the pinned
+   standard `npm publish --tag ... --fetch-retries=0` profile satisfies the
+   authoritative exact-version non-overwrite contract and the bounded
+   non-authoritative tag-race model. The suite must also publish, delete,
+   republish-test, and restore a fresh disposable version to prove hidden
+   deleted/restorable state cannot be reused or altered and that original bytes
+   and witness survive restoration. A replacement primitive is required only
+   if that acceptance fails.
 7. Gather fresh at-most-90-day Governance and native-platform evidence,
    explicitly covering the one Approval Environment, the accepted residual
    package reach, and authenticated repository Actions retention of at least
@@ -97,10 +110,11 @@ The replacement is delivered in this order:
     run ID. Validate the returned workflow and run identity, actor,
     `workflow_dispatch` event, actual head SHA, `refs/heads/main`, and
     `github.run_attempt == 1`. A lost response or ambiguous correlation requires
-    read-only reconciliation and never blind redispatch.
+    read-only operator investigation and native run lookup and never blind
+    redispatch.
 11. Request human approval only when the Publication Snapshot contains an
-    action. Complete terminal and read-only reconciliation. Any activation
-    failure remains fail closed.
+    action. Complete read-only best-effort finalization and destination
+    readback. Any activation failure remains fail closed.
 
 There is no separate Preparation PR, repository-wide `main` freeze,
 pre-pinned Activation SHA, or activation tag.
@@ -180,10 +194,11 @@ The implementation phase removes these normal-Live mechanisms:
   and
 - mandatory approval for a zero-action exact-satisfied Attempt.
 
-It also replaces the current
-`workflow-delivery/v3/governance-attestation` schema with the exact incompatible
-schema `workflow-delivery/v3/normal-live-governance-attestation-v1`.
-Selected-revision control must reject every other schema before Release
+It also replaces the current disabled
+`workflow-delivery/v3/normal-live-governance-attestation-v1` schema with the
+exact incompatible schema
+`workflow-delivery/v3/normal-live-governance-attestation-v2`.
+Selected-revision control must reject v1 and every other schema before Release
 Execution lookup, Attempt creation, or any Environment job. A retained fixture
 of known stale dispatchable control must prove this negative path.
 
@@ -201,10 +216,15 @@ The contraction preserves:
   Attempt;
 - Release Execution and mutable-resource concurrency boundaries;
 - the mutation-may-have-started marker;
-- Publication Result and its embedded Receipt on successful publication;
+- Publication Result, including authoritative exact post-action readback on
+  successful publication;
 - read-only best-effort finalization, including the possibility that no durable
   Attempt Outcome survives cancellation or transport failure; and
-- read-only reconciliation and separately authorized Break-Glass Remediation.
+- read-only operator investigation using native run lookup after ambiguous
+  dispatch, without blind redispatch, plus the architectural boundaries for
+  future formal Release Reconciliation and separately authorized Break-Glass
+  Remediation. The first slice implements neither runtime workflow nor a
+  Reconciliation Record.
 
 ## External-State Inventory
 

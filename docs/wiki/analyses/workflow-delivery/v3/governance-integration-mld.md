@@ -74,7 +74,7 @@ same candidate revision             same selected target revision
 no publication capability           plan/build/qualify/observe: no write
                                      |
                                      +-- zero action
-                                     |     read-only exact reconciliation
+                                     |     read-only exact finalization
                                      |
                                      +-- one action
                                            Approval Bundle
@@ -102,11 +102,24 @@ Protected Governance is read independently from `refs/heads/main`. The design
 does not substitute protected-main control code for the selected target.
 
 The active protected document uses exact schema
-`workflow-delivery/v3/normal-live-governance-attestation-v1`. Selected-revision
-control must require it exactly. Superseded parsers therefore fail before
-Release Execution lookup, Attempt creation, or any Environment job. Arbitrary
-ref selection remains available to refs compatible with the active Governance
+`workflow-delivery/v3/normal-live-governance-attestation-v2`. V2 replaces the
+disabled v1 contract because `DestinationPrimitiveAttestation` now has a
+different closed field set. Selected-revision control must require v2 exactly;
+v1 is not an admission alias. Superseded parsers therefore fail before Release
+Execution lookup, Attempt creation, or any Environment job. Arbitrary ref
+selection remains available to refs compatible with the active Governance
 contract.
+
+V2 keeps the existing closed activation-state discrimination while replacing
+the ready-state destination attestation. `blocked` contains only
+`state: "blocked"`, requires `live_enabled: false`, and carries no Approval
+Environment, retention, or destination evidence. `ready` contains
+only `state`, complete pass-only `approval_environment`,
+`artifact_retention`, and `destination_primitive` objects. A true live flag
+requires `ready`; a false flag may coexist with either state so protected
+Governance can disable fresh admission without discarding retained evidence.
+The implementation migration uses blocked v2, and the Activation PR changes to
+ready evidence plus `live_enabled: true` atomically.
 
 Release simulation uses its selected simulation revision and receives no
 approval or live Publication Capability. Its existing run-attempt identity and
@@ -257,11 +270,20 @@ Normal publication does not permit delete, restore, permission, visibility, or
 administrative operations. Those operations require separately governed
 Break-Glass Remediation.
 
-This authority boundary does not prove that the destination can execute the
-compound action safely. Standard `npm publish --tag` can overwrite a
-conflicting tag introduced after Observation and is not an admitted
-normal-Live primitive. Activation remains blocked until a reviewed supported
-primitive passes the conditional non-overwrite race acceptance.
+This authority boundary does not by itself establish that the destination can
+execute the compound action within the accepted footprint. Standard
+`npm publish --tag` can overwrite a conflicting tag introduced after
+Observation. It becomes an admitted normal-Live primitive only when its exact
+pinned Destination Operation Profile passes the bounded
+documented-and-observable native acceptance and protected Governance binds that
+evidence. Runtime Observation proves only active-state absence and never
+receives package-admin or PAT authority. The acceptance procedure therefore
+also uses a fresh disposable version and separately authorized package-admin
+credentials to prove that identical- and differing-byte same-version publishes
+against deleted/restorable state fail definitively with no active or deleted
+semantic delta, after which the original object is restored and its bytes and
+witness are verified. Those privileged credentials authorize only the
+acceptance procedure, not normal publication.
 
 The bounded static-reference policy reports prohibited direct references in
 its closed supported catalog. A clean result is an eligibility input, not proof
@@ -296,22 +318,27 @@ Evidence Admission, qualification finalization, and destination observation:
 Read-only observation may use the minimum destination read authority required
 by its Adapter. It cannot convert that access into publication authority.
 
-### Zero-Action Reconciliation
+### Zero-Action Exact Finalization
 
-A manual Release Intent plus valid protected Governance may authorize read-only
-reconciliation.
+A manual Release Intent plus valid protected Governance may authorize normal
+read-only Observation and no-op finalization.
 
 When the first-slice Publication Snapshot contains zero actions because the
 destination is already exact:
 
 - the no-op job repeats protected Governance ancestry, path-touch,
-  blob/content, expiry, and `live_enabled` validation and persists that fresh
-  proof for Finalizer admission;
+  blob/content, expiry, and `live_enabled` validation, repeats supported
+  package-control readback, repeats authoritative exact-version readback
+  against the Snapshot-bound bytes, digests, and embedded witness, and persists
+  one exact-satisfied finalization proof binding the zero-action Snapshot and
+  all three fresh checks for Finalizer admission;
 - no Environment approval is requested;
 - no Approval Bundle is sent through an Environment wait;
 - no Publication Authorization is formed;
 - no publisher or Publication Capability is used;
-- no mutation marker, Publication Result, or Receipt exists; and
+- the current-DAG publisher conclusion is `skipped`;
+- no mutation marker, Publication Result, or other action-bearing lineage
+  exists; and
 - the Attempt may finalize as `success` with disposition
   `exact-satisfied`.
 
@@ -339,9 +366,24 @@ The Approval job:
 - may use `contents: read` for fresh protected Governance;
 - performs the sentinel check before other authority-critical executable work;
 - validates path-touch anti-rollback and current Governance validity;
-- strictly admits the complete Approval Bundle, current Snapshot, reviewer,
-  artifact, action, and resource closure; and
+- compares the action's destination-operation-profile digest with current
+  Governance, verifies native acceptance is unexpired for action-bearing
+  admission, and validates the immutable action as a profile instantiation;
+- strictly admits the Approval Bundle and transitively resolves its complete
+  Snapshot, reviewer, artifact, action, and resource closure; and
 - durably emits the sole Publication Authorization.
+
+The Authorization directly binds the Approval Bundle plus approval-boundary
+and fresh-Governance evidence. It reaches Snapshot-owned target, artifact,
+action, resource, and operation-profile fields through that immutable
+predecessor rather than copying them. The publisher embeds the only
+post-Observation action-path package-control proof in the mutation marker. That
+closed value binds authoritative endpoints, normalized supported facts,
+observation time, and response digests; it copies neither expected values nor
+the Governance content digest and is not a separate decision or artifact. The
+marker jointly validates it against the directly bound final Governance proof.
+The marker also records canonical evidence that the actual pinned toolchain and
+effective command configuration matched the admitted operation profile.
 
 The reviewer-visible projection includes target SHA and selected ref, exact
 package coordinate, artifact digest and manifest, lifecycle scripts, and the
@@ -359,6 +401,9 @@ The publisher has an ordinary success dependency on the Approval job. It:
 - strictly validates the Publication Authorization and every bound current
   Attempt input;
 - repeats the fresh protected Governance check immediately before mutation;
+- repeats supported package-control readback immediately before the marker;
+- compares current Governance, the action profile, and the actual pinned
+  toolchain and command configuration;
 - receives short-lived repository `GITHUB_TOKEN` with effective
   `packages: write`;
 - receives no PAT fallback and no `id-token: write`;
@@ -389,9 +434,11 @@ The non-executable attestation:
 - identifies `hcoona` as the sole accepted writer and publisher;
 - binds the policy and package;
 - records relevant repository and package-access inspection;
-- identifies the reviewed destination primitive and retained disposable-package
-  race acceptance that proves conditional non-overwriting version-and-tag
-  creation;
+- reuses its destination-primitive attestation to bind the canonical
+  Destination Operation Profile digest, native-acceptance-suite version,
+  approved disposable-package preconditions, GitHub API and cited lower-layer
+  contract revisions, capture time, and canonical evidence digest identifying
+  the exact successful acceptance generation;
 - records authenticated repository Actions retention readback proving the
   effective policy permits at least 45 days;
 - records issuer and inspection time;
@@ -400,6 +447,24 @@ The non-executable attestation:
 - carries top-level `live_enabled`.
 
 It grants no Publication Capability by itself.
+
+The separately authorized acceptance evidence, not runtime Governance, contains
+the disposable tombstone scenario's detailed active and deleted inventories,
+targeted deleted-version identity and continued restorability, publish
+responses, semantic deltas, and restoration readback. Governance binds the
+canonical digest of that complete successful evidence. The ready activation
+state is the issuer's successful-acceptance attestation. Any missing or
+ambiguous evidence element makes the operation profile inadmissible, but those
+privileged facts do not become runtime inputs.
+
+Initial activation of a newly admitted operation profile binds a destination-
+acceptance generation captured after implementation of that exact profile and
+no later than the new attestation's inspection time. Later attestations may
+reuse that generation only while every bound input remains identical.
+Action-bearing admission must occur no later than 90 days after capture; a
+binding change or age expiry requires recapture before action-bearing
+publication. Expired acceptance does not block fresh protected Governance from
+authorizing zero-action exact-satisfied finalization.
 
 ### Eligibility Binding
 
@@ -509,8 +574,10 @@ response schema, and reads back the returned:
 - `refs/heads/main`; and
 - `github.run_attempt == 1`.
 
-A lost response or ambiguous correlation triggers read-only reconciliation.
-The operator never blindly redispatches.
+A lost response or ambiguous correlation triggers read-only operator
+investigation and native run lookup. It creates no formal Reconciliation Record
+and does not invoke a standalone Release Reconciliation workflow. The operator
+never blindly redispatches.
 
 Later normal Buddy runs retain the approved ability to select arbitrary
 same-repository refs whose selected-revision control strictly admits the active
@@ -524,8 +591,9 @@ unprotected Environment names after cleanup.
 
 Fresh authenticated preactivation evidence must also prove that repository
 artifact retention permits at least 45 days and that the selected destination
-primitive has passed the complete version-and-tag conditional non-overwrite
-acceptance. Standard `npm publish --tag` does not satisfy that gate.
+primitive and exact Destination Operation Profile have passed the bounded
+documented-and-observable native acceptance. The command is not admitted by
+name alone.
 
 Every authoritative normal-Live job independently fails closed unless
 `github.run_attempt == 1`. The value is a platform invariant and diagnostic,
@@ -583,10 +651,20 @@ Governance integration fails closed when:
   readback;
 - repository Actions retention has not been authenticated as permitting at
   least 45 days;
-- the selected destination primitive has not passed the complete version-and-
-  tag conditional non-overwrite acceptance;
-- the action-bearing Approval Bundle or any Snapshot, reviewer, artifact,
-  action, or resource binding is missing or inconsistent;
+- the selected destination primitive, exact operation profile, or bound
+  lower-layer/API contract has not passed the bounded documented-and-observable
+  native acceptance;
+- the acceptance lacks the deleted/restorable same-version scenario, a
+  definitive empty active-plus-deleted delta for either republish attempt, or
+  exact restoration readback;
+- publisher-boundary supported package-control readback no longer matches
+  accepted owner, repository association, visibility, or exposed access facts;
+- native acceptance is older than 90 days for an action-bearing admission;
+- the action's operation-profile digest differs from current Governance, the
+  immutable action is not a valid profile instantiation, or the publisher's
+  actual pinned runtime configuration differs from the profile;
+- the action-bearing Approval Bundle or any transitively referenced Snapshot,
+  reviewer, artifact, action, or resource binding is missing or inconsistent;
 - the Approval job can publish or the publisher can start without its successful
   Publication Authorization;
 - any step-running job other than the publisher has effective
