@@ -228,8 +228,6 @@ class IsolatedGovernanceGitReader:
         )
         if shallow != "false":
             raise GovernanceGitReadError("Governance Git history is shallow")
-        if (git_dir / "shallow").exists():
-            raise GovernanceGitReadError("Governance Git history is shallow")
         if (git_dir / "info" / "grafts").exists():
             raise GovernanceGitReadError("Governance Git grafts are forbidden")
         if (git_dir / "objects" / "info" / "alternates").exists():
@@ -264,26 +262,13 @@ class IsolatedGovernanceGitReader:
             raise GovernanceGitReadError(
                 "Governance Git ancestry is incomplete"
             )
-        objects = self._git(
-            git_dir,
-            "rev-list",
-            "--objects",
-            "--missing=print",
-            main_sha,
-            environment=environment,
-            failure="Governance Git object closure is incomplete",
-        ).stdout
-        if any(line.startswith(b"?") for line in objects.splitlines()):
-            raise GovernanceGitReadError(
-                "Governance Git object closure is incomplete"
-            )
 
-    def _remote_ref_identity(
+    def _remote_object_format(
         self,
         root: Path,
         *,
         environment: Mapping[str, str],
-    ) -> tuple[str, str]:
+    ) -> str:
         advertised = self._ascii_line(
             self._run(
                 (
@@ -313,14 +298,12 @@ class IsolatedGovernanceGitReader:
             ),
             "",
         )
-        return (
-            object_format,
-            self._require_object_id(
-                raw_oid,
-                object_format=object_format,
-                failure="Governance main ref advertisement is malformed",
-            ),
+        self._require_object_id(
+            raw_oid,
+            object_format=object_format,
+            failure="Governance main ref advertisement is malformed",
         )
+        return object_format
 
     def _require_continuity(  # noqa: PLR0913
         self,
@@ -479,11 +462,9 @@ class IsolatedGovernanceGitReader:
             root = Path(raw_root)
             git_dir = root / "repository.git"
             environment = self._environment(root)
-            advertised_object_format, advertised_main_sha = (
-                self._remote_ref_identity(
-                    root,
-                    environment=environment,
-                )
+            advertised_object_format = self._remote_object_format(
+                root,
+                environment=environment,
             )
             self._run(
                 (
@@ -536,12 +517,9 @@ class IsolatedGovernanceGitReader:
                 object_format=object_format,
                 failure="Governance main SHA is malformed",
             )
-            if (
-                object_format != advertised_object_format
-                or main_sha != advertised_main_sha
-            ):
+            if object_format != advertised_object_format:
                 raise GovernanceGitReadError(
-                    "Governance main ref changed during isolated read"
+                    "Governance Git object format changed during isolated read"
                 )
             self._require_complete_history(
                 git_dir,

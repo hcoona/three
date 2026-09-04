@@ -435,7 +435,7 @@ def test_isolated_read_rejects_missing_git_object(tmp_path: Path) -> None:
 
     with pytest.raises(
         GovernanceGitReadError,
-        match=(r"fetch failed|object closure is incomplete|blob is unreadable"),
+        match=(r"fetch failed|blob is unreadable"),
     ):
         _read(_reader(repository, tmp_path))
 
@@ -510,18 +510,18 @@ class _PushAfterAdvertisementReader(IsolatedGovernanceGitReader):
         )
         self._callback = callback
 
-    def _remote_ref_identity(
+    def _remote_object_format(
         self,
         root: Path,
         *,
         environment: Mapping[str, str],
-    ) -> tuple[str, str]:
-        identity = super()._remote_ref_identity(
+    ) -> str:
+        object_format = super()._remote_object_format(
             root,
             environment=environment,
         )
         self._callback()
-        return identity
+        return object_format
 
 
 def test_isolated_read_ignores_hostile_ambient_git_environment(
@@ -560,7 +560,7 @@ def test_isolated_read_ignores_hostile_ambient_git_environment(
     assert result.content == expected_content
 
 
-def test_isolated_read_rejects_advertisement_fetch_race(
+def test_isolated_read_binds_fetched_main_after_unrelated_advertised_advance(
     tmp_path: Path,
 ) -> None:
     repository, remote, advertised_main_sha = _create_remote_repository(
@@ -581,13 +581,12 @@ def test_isolated_read_rejects_advertisement_fetch_race(
         callback=push_prepared_main,
     )
 
-    with pytest.raises(
-        GovernanceGitReadError,
-        match=r"^Governance main ref changed during isolated read$",
-    ):
-        _read(reader)
+    result = _read(reader)
 
     assert fetched_main_sha != advertised_main_sha
+    assert result.main_sha == fetched_main_sha
+    assert result.object_format == "sha1"
+    assert result.content == CONTENT
     assert (
         _output(
             tmp_path,
