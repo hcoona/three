@@ -26,9 +26,10 @@ requests mechanism extraction and revalidation. Git and the append-only
   `workflow-delivery-v3-publication-finalizer` from exact
   `main@db5d9f053baf2c16cd32a1e9e9aae38ffb8c2b74`.
 - The Publication/Finalizer requirements, HLD, glossary, MLD, migration, and
-  first-slice LLD contraction is complete locally. Two disjoint design
-  rereviews reached zero findings after independent TP/FP adjudication, and
-  the final shrink rereview is clean.
+  first-slice LLD contraction is complete. Two disjoint design rereviews
+  reached zero findings after independent TP/FP adjudication, and the final
+  shrink rereview is clean. PR #652 carries the protected design delivery;
+  inspect its current head and live state before acting.
 - The merged runtime and protected document still use v1 and remain disabled
   through `live_enabled: false`. This design branch has no runtime, workflow,
   protected-Governance, Environment, package, tag, approval, deployment, or
@@ -169,27 +170,26 @@ Do not infer policy from stale runtime behavior or archived designs.
 
 ## Next Executable Workflow
 
-1. Reinspect the isolated branch, exact `origin/main`, merge base, status, and
-   complete documentation diff.
-2. Validate the synchronized design set and status pages, rerun OCR delegation,
-   independently adjudicate any finding, and require clean rereview and shrink.
-3. Create dependency-ordered, human-reviewable design commit or commits, push
-   the branch, open the design PR, complete protected review/checks, merge, and
-   verify the exact merged tree and post-merge checks.
-4. Start the disabled implementation from that protected design revision.
+1. Reinspect PR #652, its exact head and base, checks, reviews, complete diff,
+   and protected delivery state.
+2. If design delivery remains open, validate the current head, rerun applicable
+   OCR delegation, independently adjudicate any finding, require clean
+   rereview and shrink, merge, and verify the exact protected tree and
+   post-merge checks.
+3. Start the disabled implementation from that protected design revision.
    Implement record/schema migration, strict state-only blocked Governance v2,
    Destination Operation Profile, active-only Observation, package-control
    proof admission, zero/one-action Snapshot, Approval/Authorization/marker/
    Publication Result lineage, single terminal-reference Finalizer, and
    workflow permissions/topology.
-5. Run targeted scenarios, the complete v3 suite, root HK and hooks, OCR
+4. Run targeted scenarios, the complete v3 suite, root HK and hooks, OCR
    multi-review, independent TP/FP adjudication, clean rereview, and final
    shrink before protected implementation delivery.
-6. Prove retained-ref compatibility and remove the obsolete Environment only
+5. Prove retained-ref compatibility and remove the obsolete Environment only
    after exact no-reference proof. Then execute the acceptance-only native
    suite, restore and verify its disposable tombstone object, and prepare fresh
    ready Governance v2 evidence.
-7. Deliver the small Activation PR, read back protected state, dispatch exactly
+6. Deliver the small Activation PR, read back protected state, dispatch exactly
    once through the run-ID-returning API, and verify actor, event, workflow,
    actual `main` head, `run_attempt == 1`, current-run records, final Outcome,
    and authoritative destination state.

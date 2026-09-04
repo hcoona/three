@@ -9,9 +9,9 @@ requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
 The static-reference and record-model contractions are merged. The disabled
 Governance/authorization contraction is validated, independently rereviewed,
 implemented, and merged. The Publication/Finalizer design contraction is
-complete locally, independently rereviewed to zero findings, and final-shrink
-clean. Git and pull-request state must be inspected rather than inferred from
-this page.
+complete, independently rereviewed to zero findings, and final-shrink clean.
+PR #652 carries its protected delivery; inspect live Git and pull-request state
+rather than inferring delivery status from this page.
 
 No Publication/Finalizer runtime, Governance enablement, package access,
 deployment, package mutation, or other external resource has changed. The
@@ -88,14 +88,15 @@ chronology is not current architecture.
 
 The Governance/authorization implementation boundary is merged. The
 Publication/Finalizer requirements, HLD, MLD, glossary, migration, and
-first-slice LLD contraction is complete locally, independently rereviewed to
-zero findings, and final-shrink clean. It has not yet changed runtime code,
-workflows, protected Governance, or external resources.
+first-slice LLD contraction is complete, independently rereviewed to zero
+findings, and final-shrink clean. PR #652 carries that design package. It has
+not changed runtime code, workflows, protected Governance, or external
+resources.
 
-Git and pull-request delivery state must be inspected live.
-The next dependency-ordered gate is design delivery, followed by disabled
-runtime implementation, native profile acceptance, Governance v2 activation,
-and exactly one auditable real dispatch.
+Git and pull-request delivery state must be inspected live. Complete protected
+design delivery if still pending, then proceed to disabled runtime
+implementation, native profile acceptance, Governance v2 activation, and
+exactly one auditable real dispatch.
 
 ## Historical Source Rule
 
