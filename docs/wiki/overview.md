@@ -101,10 +101,9 @@ disabled through
 `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with
 `live_enabled: false`.
 
-- Local branch `workflow-delivery-v3-governance-authority` contains the
-  validated and independently rereviewed disabled replacement implementation
-  in commits `7d8e00cb`, `4a51aac3`, `52a86b62`, `5d316fcd`, and
-  `0f25204b`. It is not pushed, proposed, or merged.
+- The disabled replacement implementation is validated and independently
+  rereviewed. Its Git and pull-request state must be inspected rather than
+  inferred from this page.
 - The bounded follow-up contraction uses the fetched protected ref as each
   Governance read identity, removes redundant repository-wide object
   scanning, narrows the active disabled publisher to authority-closure
@@ -129,8 +128,8 @@ disabled through
 
 The replacement design, static-reference foundation, and record-model
 contraction are merged. The disabled Governance/authorization implementation
-and its bounded follow-up contraction are complete only on the local branch.
-Push and PR creation require a separate delivery decision.
+and its bounded follow-up contraction are complete. Git delivery state is
+intentionally not frozen in this current-state page.
 
 Later gates separately authorize marker/Result/final-Outcome implementation,
 obsolete-Environment cleanup, destination-primitive acceptance, fresh native

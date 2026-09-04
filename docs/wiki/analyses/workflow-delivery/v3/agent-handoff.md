@@ -102,15 +102,17 @@ requests mechanism extraction and revalidation. Git and the append-only
   `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with
   `live_enabled: false`.
 - No normal Live dispatch, Approval deployment, Governance refresh, package
-  mutation, Environment mutation, cleanup, push, PR, or merge is authorized by
-  this local implementation continuation.
+  mutation, Environment mutation, cleanup, activation, approval, publication,
+  or other operational external mutation is authorized by implementation or
+  Git delivery alone.
+- PR #651 is the recorded delivery vehicle. Its live review, check, and merge
+  state must be inspected rather than inferred from this handoff.
 
-The authorized local Governance/authorization boundary is complete. The five
-implementation commits and closure-document changes remain local. Stop before
-push, PR creation, protected merge, obsolete-Environment cleanup, Governance
-refresh, destination acceptance, activation, dispatch, approval, publication,
-or any other external mutation unless the user separately authorizes that
-boundary.
+The authorized Governance/authorization implementation boundary is complete.
+Complete only the review or protected-merge work that remains for PR #651.
+Creation or merge of that PR does not authorize obsolete-Environment cleanup,
+Governance refresh, destination acceptance, activation, dispatch, approval,
+publication, or any other operational external mutation.
 
 ## Hot Context
 
@@ -398,22 +400,17 @@ Do not infer policy from stale runtime behavior or archived designs.
 
 ## Next Executable Workflow
 
-1. Inspect the exact local branch and commits before any continuation. Do not
-   infer delivery from this page.
-2. Preserve
-   `7d8e00cbbcb1536bdbae6a9f31d9a9179c6f6f7b` and
-   `4a51aac3b9b3f81e04146ae14984335d02297c33`, followed by
-   `52a86b6213b58041201418f55b1f17dff9585ff1`,
-   `5d316fcd8e50567e8d447ed636407589c8777cf5`, and
-   `0f25204b93a6ef1a3a71f613763f8cfb46627175`, as the reviewed dependency-
-   ordered implementation.
-3. Stop. Push and PR creation are the next delivery boundary and require
-   separate explicit authorization.
-4. After any later protected implementation merge, separately authorize the
+1. Inspect the exact branch, upstream, protected `main`, and live state of
+   PR #651 before any continuation. Do not infer delivery from this page.
+2. If PR #651 is open, address only outstanding review and checks, then perform
+   an authorized protected merge when clean. If it is already merged, verify
+   the resulting protected revision and post-merge checks; do not repeat push,
+   PR creation, or merge.
+3. After protected implementation delivery, separately authorize the
    marker/Result/final-Outcome unit. It must close exact Publication
    Authorization digest lineage and durable Result versus platform-
    termination precedence.
-5. Keep native activation-evidence authoring, obsolete-Environment cleanup,
+4. Keep native activation-evidence authoring, obsolete-Environment cleanup,
    destination-primitive acceptance, Governance refresh, activation, dispatch,
    approval, and publication behind their own later authorization and proof
    gates.
@@ -474,10 +471,9 @@ applicable documentation and repository gates but keeps the same validate-before
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
 
 The replacement baseline, static-reference foundation, and record-model
-contraction are merged. The Governance/authorization and exact-satisfied local
-unit is validated, independently rereviewed, and committed on
-`workflow-delivery-v3-governance-authority`, but is not pushed, proposed, or
-merged. Publication marker/Result/final-Outcome work remains the next
-dependency-ordered implementation unit after a separate delivery decision.
-Push, PR, protected merge, external-resource, cleanup, activation, and Live
-boundaries still require their own explicit authorization.
+contraction are merged. The Governance/authorization and exact-satisfied unit
+is validated and independently rereviewed; inspect PR #651 for its live
+delivery state. Publication marker/Result/final-Outcome work remains the next
+dependency-ordered implementation unit after a separate authorization.
+External-resource, cleanup, activation, and Live boundaries still require
+their own explicit authorization.
