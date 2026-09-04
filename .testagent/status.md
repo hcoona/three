@@ -15129,3 +15129,31 @@ refresh, Environment mutation, package or tag mutation, cleanup, or other
 external mutation occurred.
 
 <!-- END APPEND: 2026-09-04-wdv3-governance-authority-bounded-shrink-closure -->
+
+<!-- BEGIN APPEND: 2026-09-04-wdv3-governance-authority-pr-review-correction -->
+
+## Workflow Delivery v3 Governance authority PR review correction
+
+- Before this append, `.testagent/status.md` was 899,378 bytes with SHA-256
+  `c87092fd1e1dd010c1f4268196b78b13da080165d88aeb6a6b716bd00d247b90`.
+- Branch `workflow-delivery-v3-governance-authority` was pushed and PR #651
+  was opened against `main` at head
+  `3f2d72a568367051cd816dbe6fecb87cd5266eb7`.
+- Continuous Integration, Workflow Delivery v3 CI, and CodeQL completed
+  successfully for that head.
+- Copilot review reported three independently resolvable current-state
+  documentation findings in the v3 README, AI Agent Handoff, and wiki
+  overview. Each incorrectly froze pre-PR lifecycle state after PR #651
+  existed.
+- Three independent adjudications classified the findings true positive with
+  99% confidence. Mutable current-state pages now omit transient
+  pushed/proposed/merged claims. The handoff instead requires live inspection
+  of PR #651 and conditionally performs only review or merge work that remains.
+- Existing append-only statements remain historical evidence and were not
+  rewritten.
+
+No Live dispatch, approval, deployment, Governance refresh, Environment
+mutation, package or tag mutation, cleanup, or other operational external
+mutation occurred.
+
+<!-- END APPEND: 2026-09-04-wdv3-governance-authority-pr-review-correction -->

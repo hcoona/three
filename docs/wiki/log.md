@@ -3417,3 +3417,21 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - No push, PR, protected merge, Live dispatch, approval, deployment,
   Governance refresh, Environment mutation, package or tag mutation, cleanup,
   or other external mutation occurred.
+
+## [2026-09-04] query | Correct Governance authority PR delivery state
+
+- Pushed `workflow-delivery-v3-governance-authority` and opened PR #651
+  against `main` at
+  `3f2d72a568367051cd816dbe6fecb87cd5266eb7`.
+- Continuous Integration, Workflow Delivery v3 CI, and CodeQL completed
+  successfully for the initial PR head.
+- Copilot review found three stale current-state claims that still described
+  push and PR creation as future work. Independent adjudication classified
+  each finding true positive with 99% confidence.
+- Updated the v3 README, AI Agent Handoff, overview, and index so mutable pages
+  do not freeze pushed/proposed/merged state. The handoff now inspects PR #651
+  live and skips Git-delivery steps that are already complete.
+- Historical append-only statements were preserved unchanged. No Live
+  dispatch, approval, deployment, Governance refresh, Environment mutation,
+  package or tag mutation, cleanup, or other operational external mutation
+  occurred.
