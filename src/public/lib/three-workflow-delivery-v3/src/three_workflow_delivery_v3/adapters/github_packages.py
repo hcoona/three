@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import inspect
 import itertools
 import os
@@ -40,13 +41,17 @@ from three_workflow_delivery_v3.records.release import (
     BuddyExecutionIdentity,
     DestinationOperationProfile,
     DestinationProjection,
+    DestinationReadback,
     ExternalPackageCoordinate,
     ObservationRequestFacts,
     ObservationResponseFacts,
     ObservationValue,
+    PackageControlProof,
+    PackageControlSubject,
     ProjectionObservation,
     PublicationAction,
     PublicationAuthorization,
+    PublicationDiagnostics,
     PublicationSnapshot,
     QualificationDecision,
     QualificationSnapshot,
@@ -455,32 +460,28 @@ class GitHubPackagesHttpTransport:
 
         opener = urllib.request.build_opener(_NoRedirect)
         try:
-            with opener.open(request, timeout=timeout) as response:
+            try:
+                response = opener.open(request, timeout=timeout)
+                status = response.status
+            except urllib.error.HTTPError as error:
+                response = error
+                status = error.code
+            with response:
                 body = response.read(max_bytes + 1)
                 return GitHubPackagesHttpResponse(
-                    status=response.status,
+                    status=status,
                     url=response.geturl(),
                     headers=tuple(response.headers.items()),
                     body=body[:max_bytes],
                     truncated=len(body) > max_bytes,
                     complete=len(body) <= max_bytes,
                 )
-        except urllib.error.HTTPError as error:
-            body = error.read(max_bytes + 1)
-            return GitHubPackagesHttpResponse(
-                status=error.code,
-                url=error.geturl(),
-                headers=tuple(error.headers.items()),
-                body=body[:max_bytes],
-                truncated=len(body) > max_bytes,
-                complete=len(body) <= max_bytes,
-            )
         except TimeoutError as error:
             raise GitHubPackagesTimeoutError(str(error)) from error
-        except OSError as error:
+        except (http.client.HTTPException, OSError) as error:
             raise GitHubPackagesNetworkError(str(error)) from error
 
-    def get(
+    def get(  # noqa: C901
         self,
         url: str,
         *,
@@ -538,7 +539,11 @@ class GitHubPackagesHttpTransport:
             if location is None:
                 message = "redirect location is missing"
                 raise GitHubPackagesPolicyError(message)
-            target_url = urllib.parse.urljoin(current_url, location)
+            try:
+                target_url = urllib.parse.urljoin(current_url, location)
+            except ValueError as error:
+                message = "redirect location is malformed"
+                raise GitHubPackagesPolicyError(message) from error
             if len(redirects) >= self._max_redirects:
                 message = "redirect limit exceeded before credentialed request"
                 raise GitHubPackagesPolicyError(message)
@@ -2635,11 +2640,11 @@ def redact_diagnostic(value: str, *, secrets: tuple[str, ...] = ()) -> str:
 
 
 def _origin(url: str) -> tuple[str, str, int]:
-    parsed = urllib.parse.urlparse(url)
     try:
+        parsed = urllib.parse.urlparse(url)
         port = parsed.port
     except ValueError as error:
-        message = "URL has an invalid port"
+        message = "URL is malformed or has an invalid port"
         raise GitHubPackagesPolicyError(message) from error
     if (
         parsed.scheme != "https"
@@ -2762,9 +2767,11 @@ def _identity_encoding(response: GitHubPackagesHttpResponse) -> bool:
 
 def _selected_headers(
     response: GitHubPackagesHttpResponse,
+    *,
+    secrets: tuple[str, ...] = (),
 ) -> tuple[tuple[str, str], ...]:
     return tuple(
-        (name.lower(), redact_diagnostic(value))
+        (name.lower(), redact_diagnostic(value, secrets=secrets))
         for name, value in sorted(
             response.headers,
             key=lambda item: item[0].lower(),
@@ -2783,14 +2790,18 @@ def _exchange(
     response: GitHubPackagesHttpResponse,
     *,
     detail: str | None = None,
+    secrets: tuple[str, ...] = (),
 ) -> _Exchange:
     return _Exchange(
         stage=stage,
-        requested_url=requested_url,
-        final_url=response.url,
-        redirects=response.redirects,
+        requested_url=redact_diagnostic(requested_url, secrets=secrets),
+        final_url=redact_diagnostic(response.url, secrets=secrets),
+        redirects=tuple(
+            redact_diagnostic(url, secrets=secrets)
+            for url in response.redirects
+        ),
         status=response.status,
-        selected_headers=_selected_headers(response),
+        selected_headers=_selected_headers(response, secrets=secrets),
         truncated=response.truncated,
         complete=response.complete,
         body_sha256=_body_digest(response.body),
@@ -2841,6 +2852,357 @@ def _target_tag(target: str) -> str:
         message = "target must be a 40-character lowercase SHA"
         raise ValueError(message)
     return f"buddy-sha-{target}"
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubPackagesActiveState:
+    """Read-only facts; callers own Governance and desired-state admission."""
+
+    package_control: PackageControlProof | None
+    readback: DestinationReadback
+    response_identity: str
+    diagnostics: PublicationDiagnostics
+
+
+def _active_get(  # noqa: PLR0913
+    url: str,
+    *,
+    stage: str,
+    token: str,
+    transport: GitHubPackagesTransport,
+    timeout: int,
+    max_bytes: int,
+) -> tuple[GitHubPackagesHttpResponse | None, _Exchange]:
+    headers = (
+        (
+            *_github_transport_headers(token),
+            ("Accept-Encoding", "identity"),
+            ("Cache-Control", "no-cache"),
+        )
+        if stage == "rest"
+        else _npm_transport_headers(token, tarball=stage == "tarball")
+    )
+    headers = tuple(
+        (name, "Bearer " + token if name == "Authorization" else value)
+        for name, value in headers
+    )
+    headers = redirect_headers(
+        source_url=GITHUB_API_ORIGIN
+        if stage == "rest"
+        else GITHUB_PACKAGES_REGISTRY,
+        target_url=url,
+        headers=headers,
+    )
+    try:
+        response = transport.get(
+            url,
+            headers=headers,
+            timeout=float(timeout),
+            max_bytes=max_bytes,
+        )
+    except GitHubPackagesPolicyError:
+        return None, _synthetic_exchange(
+            stage, redact_diagnostic(url, secrets=(token,)), "off-policy"
+        )
+    except (GitHubPackagesNetworkError, OSError):
+        return None, _synthetic_exchange(
+            stage, redact_diagnostic(url, secrets=(token,)), "network-error"
+        )
+    if type(response) is not GitHubPackagesHttpResponse:
+        message = "GitHub Packages transport returned a malformed response"
+        raise TypeError(message)
+    failure = _status_classification(response)
+    if len(response.body) > max_bytes:
+        failure = "unknown"
+    if (
+        not _response_policy_ok(
+            response,
+            requested_url=url,
+            stage=stage,
+            credentialed=any(
+                name.lower() == "authorization" for name, _ in headers
+            ),
+        )
+        or not _identity_encoding(response)
+        or (
+            stage != "tarball"
+            and any(hop != url for hop in (*response.redirects, response.url))
+        )
+    ):
+        failure = "unprovable"
+    if failure is None and response.status not in {HTTP_OK, HTTP_NOT_FOUND}:
+        failure = "unprovable"
+    exchange = _exchange(stage, url, response, detail=failure, secrets=(token,))
+    return (response if failure is None else None), exchange
+
+
+def _active_metadata(
+    response: GitHubPackagesHttpResponse | None,
+    exchange: _Exchange,
+) -> tuple[dict[str, JsonValue] | None, str]:
+    if response is None:
+        return None, _active_read_failure(exchange)
+    if response.status == HTTP_NOT_FOUND:
+        return None, "absent"
+    try:
+        document = _json(response, field=exchange.stage)
+    except ValueError:
+        return None, "unprovable"
+    if not isinstance(document, dict):
+        return None, "unprovable"
+    return document, "present"
+
+
+def _active_read_failure(exchange: _Exchange) -> str:
+    return (
+        "unknown"
+        if exchange.status == "network-error" or exchange.detail == "unknown"
+        else "unprovable"
+    )
+
+
+def _active_package_control(
+    document: dict[str, JsonValue] | None,
+    *,
+    observed_at: str,
+    exchange: _Exchange,
+    token: str,
+) -> PackageControlProof | None:
+    resource = GITHUB_PACKAGES_PACKAGE.removeprefix(
+        f"@{GITHUB_PACKAGES_OWNER}/"
+    )
+    if (
+        document is None
+        or document.get("package_type") != "npm"
+        or document.get("name") not in (resource, GITHUB_PACKAGES_PACKAGE)
+    ):
+        return None
+    # The USER route establishes ownership when the nullable owner is absent.
+    owner = GITHUB_PACKAGES_OWNER
+    owner_document = document.get("owner")
+    if owner_document is not None:
+        if not isinstance(owner_document, dict):
+            return None
+        owner = owner_document.get("login")
+        if (
+            not isinstance(owner, str)
+            or re.fullmatch(r"[A-Za-z0-9-]+", owner) is None
+            or owner_document.get("type", "User") != "User"
+        ):
+            return None
+    repository = document.get("repository")
+    if not isinstance(repository, dict):
+        return None
+    full_name = repository.get("full_name")
+    visibility = document.get("visibility")
+    if (
+        not isinstance(full_name, str)
+        or re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", full_name) is None
+        or visibility not in ("public", "private", "internal")
+        or any(
+            token in value
+            for value in (owner, full_name, cast("str", visibility))
+        )
+    ):
+        return None
+    return PackageControlProof(
+        subject=PackageControlSubject(
+            destination_id=GITHUB_PACKAGES_DESTINATION_ID,
+            registry=GITHUB_PACKAGES_REGISTRY,
+            normalized_package=GITHUB_PACKAGES_PACKAGE,
+        ),
+        observed_at=observed_at,
+        endpoints=(exchange.requested_url,),
+        facts=(
+            ("exposed-access", ()),
+            ("owner", (owner.lower(),)),
+            ("repository-association", (full_name.lower(),)),
+            ("visibility", (cast("str", visibility),)),
+        ),
+        response_digests=(
+            (exchange.requested_url, canonical_sha256(exchange.to_document())),
+        ),
+    )
+
+
+def _active_tag(
+    document: dict[str, JsonValue] | None,
+    classification: str,
+    tag: str,
+    token: str,
+) -> tuple[str, str | None]:
+    if classification == "absent":
+        return "absent", None
+    if document is None or document.get("name") != GITHUB_PACKAGES_PACKAGE:
+        return "unreadable", None
+    tags = document.get("dist-tags")
+    if not isinstance(tags, dict):
+        return "unreadable", None
+    if tag not in tags:
+        return "absent", None
+    version = tags[tag]
+    if not isinstance(version, str) or not version or token in version:
+        return "unreadable", None
+    return "present", version
+
+
+def read_github_packages_active_state(  # noqa: C901, PLR0913, PLR0915
+    artifact: ReleaseArtifact,
+    expectation: ArtifactExpectation,
+    *,
+    token: str,
+    transport: GitHubPackagesTransport,
+    observed_at: str,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    metadata_limit_bytes: int = DEFAULT_METADATA_LIMIT_BYTES,
+    tarball_limit_bytes: int = DEFAULT_TARBALL_LIMIT_BYTES,
+    expanded_tarball_limit_bytes: int = DEFAULT_EXPANDED_TARBALL_LIMIT_BYTES,
+) -> GitHubPackagesActiveState:
+    """Read active package control, exact bytes/witness, and independent tag.
+
+    The caller supplies qualified desired inputs and owns authority admission.
+    Missing control proof is blocking; differing control facts are preserved.
+    No active absence claims anything about deleted or restorable versions.
+    """
+    _token(token)
+    for field, value in (
+        ("timeout", timeout),
+        ("metadata_limit_bytes", metadata_limit_bytes),
+        ("tarball_limit_bytes", tarball_limit_bytes),
+        ("expanded_tarball_limit_bytes", expanded_tarball_limit_bytes),
+    ):
+        _positive_exact_int(value, field=field)
+    witness = _validate_artifact_expectation(expectation)
+    if type(artifact) is not ReleaseArtifact:
+        message = "active readback requires a ReleaseArtifact"
+        raise TypeError(message)
+    if (
+        expectation.package_name != GITHUB_PACKAGES_PACKAGE
+        or artifact.target != witness.target
+        or artifact.witness_digest != _body_digest(expectation.witness_bytes)
+    ):
+        message = "active readback desired artifact/witness binding mismatch"
+        raise ValueError(message)
+
+    def read(
+        url: str, stage: str
+    ) -> tuple[GitHubPackagesHttpResponse | None, _Exchange]:
+        return _active_get(
+            url,
+            stage=stage,
+            token=token,
+            transport=transport,
+            timeout=timeout,
+            max_bytes=tarball_limit_bytes
+            if stage == "tarball"
+            else metadata_limit_bytes,
+        )
+
+    package_url = (
+        f"{GITHUB_API_ORIGIN}/users/{GITHUB_PACKAGES_OWNER}/packages/npm/"
+        "hcoona-release-smoke-npm"
+    )
+    control_response, control_exchange = read(package_url, "rest")
+    control_document, control_class = _active_metadata(
+        control_response, control_exchange
+    )
+    control = _active_package_control(
+        control_document,
+        observed_at=observed_at,
+        exchange=control_exchange,
+        token=token,
+    )
+    diagnostics: list[str] = []
+    if control is None:
+        control_failure = (
+            "unknown" if control_class == "unknown" else "unprovable"
+        )
+        diagnostics.append(f"package-control: {control_failure}")
+
+    exact_url = npm_exact_metadata_url(
+        expectation.package_name, expectation.npm_package_version
+    )
+    exact_response, selected = read(exact_url, "npm-metadata")
+    exact_document, classification = _active_metadata(exact_response, selected)
+    exchanges = [selected]
+    sha256 = sha512 = witness_digest = witness_target = None
+    if exact_document is not None:
+        classification = "unprovable"
+        dist = exact_document.get("dist")
+        tarball_url = dist.get("tarball") if isinstance(dist, dict) else None
+        if (
+            exact_document.get("name") == expectation.package_name
+            and exact_document.get("version") == expectation.npm_package_version
+            and isinstance(tarball_url, str)
+            and _allowed_url(tarball_url, stage="tarball")
+        ):
+            tarball_response, selected = read(tarball_url, "tarball")
+            exchanges.append(selected)
+            if tarball_response is None:
+                classification = _active_read_failure(selected)
+            elif tarball_response.status == HTTP_OK:
+                remote = _remote_tarball_observation(
+                    tarball_response.body,
+                    artifact=artifact,
+                    expectation=expectation,
+                    expanded_limit_bytes=expanded_tarball_limit_bytes,
+                )
+                sha256 = _body_digest(tarball_response.body)
+                sha512 = remote.content_sha512
+                witness_digest = remote.witness_digest
+                witness_target = remote.witness_target
+                classification = remote.classification
+                if witness_digest is None or witness_target is None:
+                    classification = "unprovable"
+                elif classification == "exact-satisfied" and (
+                    sha256 != artifact.content.content_sha256
+                    or sha512 != artifact.content.content_sha512
+                    or remote.byte_size != artifact.content.byte_size
+                    or witness_digest != artifact.witness_digest
+                    or witness_target != artifact.target
+                ):
+                    classification = "conflicting"
+    if classification not in {"absent", "exact-satisfied"}:
+        diagnostics.append(f"exact-version: {classification}")
+
+    tag = _target_tag(artifact.target)
+    tags_response, tags_exchange = read(
+        _npm_package_metadata_url(expectation.package_name), "npm-tags"
+    )
+    exchanges.append(tags_exchange)
+    tags_document, tags_class = _active_metadata(tags_response, tags_exchange)
+    tag_state, tag_version = _active_tag(tags_document, tags_class, tag, token)
+    if tag_state == "unreadable":
+        diagnostics.append("target-tag: unreadable")
+    return GitHubPackagesActiveState(
+        package_control=control,
+        readback=DestinationReadback(
+            package=expectation.package_name,
+            version=expectation.npm_package_version,
+            classification=classification,
+            content_sha256=sha256,
+            content_sha512=sha512,
+            witness_digest=witness_digest,
+            witness_target=witness_target,
+            tag=tag,
+            tag_state=tag_state,
+            tag_version=tag_version,
+            observed_at=observed_at,
+            response_digests=tuple(
+                sorted(
+                    (
+                        exchange.stage,
+                        canonical_sha256(exchange.to_document()),
+                    )
+                    for exchange in exchanges
+                )
+            ),
+        ),
+        response_identity=canonical_sha256(selected.to_document()),
+        diagnostics=PublicationDiagnostics(
+            entries=tuple(diagnostics), truncated=False
+        ),
+    )
 
 
 def _probe_value(  # noqa: PLR0913

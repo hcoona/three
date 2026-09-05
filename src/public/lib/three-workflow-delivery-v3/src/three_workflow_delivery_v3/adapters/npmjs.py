@@ -8,7 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast, override
 
 from three_workflow_delivery_v3.adapters.node import (
     _PACKED_WITNESS_PATH,
@@ -116,13 +116,14 @@ class NpmjsPolicyError(RuntimeError):
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    def redirect_request(  # type: ignore[override] # noqa: PLR0913
+    @override
+    def redirect_request(  # type: ignore[override]
         self,
         req: urllib.request.Request,
-        fp: Any,  # noqa: ANN401
+        fp: Any,
         code: int,
         msg: str,
-        headers: Any,  # noqa: ANN401
+        headers: Any,
         newurl: str,
     ) -> None:
         del req, fp, code, msg, headers, newurl
@@ -533,15 +534,16 @@ class _RemoteTarballObservation:
     content_sha512: str
     byte_size: int
     witness_digest: str | None
+    witness_target: str | None = None
 
 
-def _parsed_witness_digest(entries: dict[str, bytes]) -> str | None:
-    witness = entries.get(_PACKED_WITNESS_PATH)
-    if witness is None:
-        return None
+def _parsed_witness_identity(
+    entries: dict[str, bytes],
+) -> tuple[str, str]:
+    witness = entries[_PACKED_WITNESS_PATH]
     document = parse_canonical_json(witness)
-    package_target_witness_from_document(document)
-    return canonical_sha256(document)
+    parsed = package_target_witness_from_document(document)
+    return canonical_sha256(document), parsed.target
 
 
 def _remote_tarball_observation(  # noqa: C901, PLR0911
@@ -598,11 +600,15 @@ def _remote_tarball_observation(  # noqa: C901, PLR0911
         witness = entries.get(_PACKED_WITNESS_PATH)
         witness_document: JsonValue | None = None
         witness_digest: str | None = None
+        witness_target: str | None = None
         if witness is not None:
             try:
                 witness_document = parse_canonical_json(witness)
-                package_target_witness_from_document(witness_document)
+                parsed_witness = package_target_witness_from_document(
+                    witness_document
+                )
                 witness_digest = canonical_sha256(witness_document)
+                witness_target = parsed_witness.target
             except (TypeError, ValueError):
                 witness_document = None
                 witness_digest = None
@@ -612,6 +618,7 @@ def _remote_tarball_observation(  # noqa: C901, PLR0911
                 remote_sha512,
                 byte_size,
                 witness_digest,
+                witness_target,
             )
         if witness_document is None:
             return _RemoteTarballObservation(
@@ -625,20 +632,23 @@ def _remote_tarball_observation(  # noqa: C901, PLR0911
             remote_sha512,
             byte_size,
             canonical_sha256(witness_document),
+            witness_target,
         )
-    witness_digest = _parsed_witness_digest(entries)
+    witness_digest, witness_target = _parsed_witness_identity(entries)
     if remote_sha512 == artifact.content.content_sha512:
         return _RemoteTarballObservation(
             "exact-satisfied",
             remote_sha512,
             byte_size,
             witness_digest,
+            witness_target,
         )
     return _RemoteTarballObservation(
         "conflicting",
         remote_sha512,
         byte_size,
         witness_digest,
+        witness_target,
     )
 
 
