@@ -2,7 +2,9 @@
 
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactContentIdentity,
+    ArtifactReference,
     ArtifactTransportIdentity,
+    artifact_reference_from_document,
 )
 from three_workflow_delivery_v3.records.bindings import (
     Admission,
@@ -91,6 +93,7 @@ __all__ = [
     "Admission",
     "ApprovalBundle",
     "ArtifactContentIdentity",
+    "ArtifactReference",
     "ArtifactTransportIdentity",
     "ArtifactVariantIdentity",
     "AttemptOutcome",
@@ -134,6 +137,7 @@ __all__ = [
     "admit",
     "admit_governance_acceptance_evidence",
     "admit_release_record",
+    "artifact_reference_from_document",
     "release_artifact_transport_name",
     "release_record_digest",
     "release_record_from_document",
