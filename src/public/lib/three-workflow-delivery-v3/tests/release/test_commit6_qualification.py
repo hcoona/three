@@ -9,16 +9,22 @@ from typing import cast
 import pytest
 import three_workflow_delivery_v3.release as release_api
 from three_workflow_delivery_v3.adapters import node as node_adapter
+from three_workflow_delivery_v3.adapters.github_packages import (
+    github_packages_destination_operation_profile,
+)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
+    canonicalize,
 )
 from three_workflow_delivery_v3.records.artifacts import (
+    ArtifactReference,
     ArtifactTransportIdentity,
 )
 from three_workflow_delivery_v3.records.release import (
     CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION,
     BuddyExecutionIdentity,
+    DestinationOperationProfile,
     OfficialExecutionIdentity,
     OfficialProductIdentity,
     PublicationAction,
@@ -26,21 +32,21 @@ from three_workflow_delivery_v3.records.release import (
     PublicationSnapshot,
     ReleaseArtifact,
     ReleaseAttemptIdentity,
-    publication_action_inputs,
+    admit_release_record,
+    form_publication_action,
     publication_capability_requirements,
-    publication_expected_result,
-    publication_lock_group,
-    publication_lock_projection,
     publication_mutable_resource_key_basis,
     publication_mutable_resource_keys,
-    publication_receipt_contract,
+    publication_serialization_projection,
+    publication_target_tag,
     release_artifact_transport_name,
+    validate_publication_action_instantiation,
 )
 from three_workflow_delivery_v3.records.release_transport import (
+    ReleaseAdmissionBindings,
     release_record_from_document,
 )
 from three_workflow_delivery_v3.release.finalizer import (
-    UnsupportedPublicationPrimitiveError,
     _admit_synthetic_projection_observation,
     finalize_qualification,
     finalize_simulation,
@@ -562,24 +568,12 @@ def _live_publication_context(scenario):
 
 def _publication_action(snapshot, artifact) -> PublicationAction:
     projection = snapshot.destination_projections[0]
-    return PublicationAction(
-        action_id=projection.potential_action_id,
-        projection=projection,
-        operation=projection.operation,
-        artifact=artifact,
-        artifact_digest=artifact.artifact_digest,
-        artifact_output=artifact.output,
-        prerequisites=(),
-        action_inputs=publication_action_inputs(projection, artifact),
-        mutable_resource_keys=publication_mutable_resource_keys(
-            projection,
-            artifact,
+    return form_publication_action(
+        destination_operation_profile=(
+            github_packages_destination_operation_profile()
         ),
-        lock_projection=publication_lock_projection(projection),
-        lock_group=publication_lock_group(projection),
-        capability_requirements=publication_capability_requirements(projection),
-        expected_result=publication_expected_result(projection),
-        receipt_contract=publication_receipt_contract(projection),
+        projection=projection,
+        artifact=artifact,
     )
 
 
@@ -621,12 +615,14 @@ def _live_action_publication_snapshot(scenario) -> PublicationSnapshot:
         qualification_snapshot_digest=snapshot.snapshot_digest,
         qualification_decision_digest=decision.decision_digest,
         qualification_result=decision.terminal_result,
-        projection_ids=(action.projection.projection_id,),
+        projection_ids=(snapshot.destination_projections[0].projection_id,),
         artifact_digests=(artifact.artifact_digest,),
         artifact_output_ids=(artifact.output.output_id,),
         observation_references=(
             PublicationObservationReference(
-                projection_id=action.projection.projection_id,
+                projection_id=(
+                    snapshot.destination_projections[0].projection_id
+                ),
                 observation_digest=observation.observation_digest,
                 classification=observation.value.classification,
             ),
@@ -668,48 +664,107 @@ def test_publication_action_uses_current_normal_live_bindings(
 ) -> None:
     scenario = qualified_simulation
     snapshot, decision, artifact = _live_publication_context(scenario)
+    projection = snapshot.destination_projections[0]
+    profile = github_packages_destination_operation_profile()
     action = _publication_action(snapshot, artifact)
     assert action.action_id == "publish-github-packages"
-    assert decision.admitted_artifact_digests == (action.artifact_digest,)
-    assert action.artifact.subject == snapshot.subject
-    assert action.artifact.purpose == "live-release"
-    assert (
-        action.operation
-        == action.projection.operation
-        == "conditional-create-npm-version-and-target-tag"
+    assert decision.admitted_artifact_digests == (artifact.artifact_digest,)
+    assert action.destination_operation_profile_digest == profile.profile_digest
+    assert action.package == projection.coordinate.package_name
+    assert action.version == projection.coordinate.native_version
+    assert action.tarball_reference == ArtifactReference(
+        artifact_id=artifact.transport.artifact_id,
+        artifact_digest=artifact.transport.transport_digest,
+        artifact_url=artifact.transport.artifact_url,
+        payload_path=artifact.content.basename,
+        payload_digest=artifact.content.content_sha256,
     )
-    assert action.artifact_digest == action.artifact.artifact_digest
-    assert action.artifact_output == action.artifact.output
-    assert action.prerequisites == ()
-    assert action.action_inputs == publication_action_inputs(
-        action.projection,
-        action.artifact,
-    )
-    action_inputs = dict(action.action_inputs)
-    assert action_inputs["operation"] == action.operation
-    assert action_inputs["artifact-digest"] == action.artifact_digest
+    assert action.tag == publication_target_tag(artifact)
     assert action.mutable_resource_keys == publication_mutable_resource_keys(
-        action.projection,
-        action.artifact,
+        projection,
+        artifact,
     )
-    assert len(action.mutable_resource_keys) == 2
-    assert action.mutable_resource_keys[0].startswith(
-        "external-package-coordinate:"
+    assert action.serialization_projection == (
+        publication_serialization_projection(projection)
     )
-    assert action.mutable_resource_keys[1].startswith("npm-dist-tag:")
-    assert action.lock_projection == publication_lock_projection(
-        action.projection
+    assert set(action.to_document()) == {
+        "schema",
+        "action-id",
+        "destination-operation-profile-digest",
+        "package",
+        "version",
+        "tarball-reference",
+        "tag",
+        "mutable-resource-keys",
+        "serialization-projection",
+    }
+    validate_publication_action_instantiation(
+        action,
+        destination_operation_profile=profile,
+        projection=projection,
+        artifact=artifact,
     )
-    assert action.lock_group == publication_lock_group(action.projection)
-    assert action.lock_group == action.lock_projection
-    assert action.lock_group.startswith("destination-package:")
-    assert action.capability_requirements == (
-        "github/packages-conditional-version-and-tag-v1",
-    )
-    assert action.expected_result == "created-version-and-target-tag-or-exact"
     assert (
-        action.receipt_contract
-        == "npm/conditional-version-and-target-tag-receipt-v1"
+        release_record_from_document(
+            action.to_document(),
+            expected_type=PublicationAction,
+        )
+        == action
+    )
+
+
+def test_github_packages_destination_operation_profile_is_closed() -> None:
+    profile = github_packages_destination_operation_profile()
+
+    assert type(profile) is DestinationOperationProfile
+    assert profile.profile_id == (
+        "npm/github-packages-hcoona-three-standard-publish-v1"
+    )
+    assert profile.to_document() == {
+        "schema": "workflow-delivery/v3/destination-operation-profile",
+        "profile-id": ("npm/github-packages-hcoona-three-standard-publish-v1"),
+        "registry": "https://npm.pkg.github.com",
+        "access-mode": "existing-public-package/no-access-mutation",
+        "node-version": "24.19.0",
+        "npm-version": "11.17.0",
+        "command-template": [
+            "npm",
+            "publish",
+            "{tarball-path}",
+            "--registry",
+            "https://npm.pkg.github.com",
+            "--tag",
+            "{tag}",
+            "--ignore-scripts",
+            "--fetch-retries=0",
+        ],
+        "operand-slots": [
+            ["package", "npm-package-name/equal-tarball-manifest-name"],
+            ["version", "npm-version/equal-tarball-manifest-version"],
+            ["tarball-reference", "artifact-reference/exact-payload-path"],
+            ["tag", "npm-dist-tag/buddy-sha-target"],
+        ],
+        "configuration-precedence": [
+            [
+                "authentication",
+                "temporary-user-config/current-repository-github-token",
+            ],
+            ["fetch-retries", "command-line/0"],
+            ["ignore-scripts", "command-line/true"],
+            ["project-config", "disabled"],
+            ["registry", "command-line/https://npm.pkg.github.com"],
+            ["tag", "command-line/publication-action"],
+        ],
+        "request-generation": [
+            ["client", "pinned-standard-npm"],
+            ["hand-built-publish-request", "forbidden"],
+            ["wrapper-registry-protocol", "forbidden"],
+        ],
+        "mutation-retry": "forbidden-after-request-initiation",
+    }
+    assert profile.profile_digest == (
+        "sha256:e36373d3f7230f3186f76e7aba9e8beb"
+        "cec6c7259fec725d6932d874f2b849b1"
     )
 
 
@@ -734,14 +789,14 @@ def test_publication_snapshot_rejects_more_than_one_action(
         )
 
 
-def test_absent_publication_requires_action_but_materializer_is_blocked(
+def test_absent_publication_requires_exact_profile_and_materializes_one_action(
     qualified_simulation,
 ) -> None:
     scenario = qualified_simulation
     publication = _live_action_publication_snapshot(scenario)
     with pytest.raises(
         ValueError,
-        match="actions must exactly cover absent projections",
+        match="action count must match absent observations",
     ):
         replace(publication, materialized_actions=())
 
@@ -749,7 +804,7 @@ def test_absent_publication_requires_action_but_materializer_is_blocked(
     document["materialized-actions"] = []
     with pytest.raises(
         ValueError,
-        match="actions must exactly cover absent projections",
+        match="action count must match absent observations",
     ):
         release_record_from_document(
             document,
@@ -765,8 +820,8 @@ def test_absent_publication_requires_action_but_materializer_is_blocked(
     )
 
     with pytest.raises(
-        UnsupportedPublicationPrimitiveError,
-        match="destination primitive is not implemented",
+        TypeError,
+        match="requires an exact Destination Operation Profile",
     ):
         materialize_publication_snapshot(
             snapshot,
@@ -774,6 +829,18 @@ def test_absent_publication_requires_action_but_materializer_is_blocked(
             (observation,),
             (artifact,),
         )
+    materialized = materialize_publication_snapshot(
+        snapshot,
+        decision,
+        (observation,),
+        (artifact,),
+        destination_operation_profile=(
+            github_packages_destination_operation_profile()
+        ),
+    )
+    assert materialized.materialized_actions == (
+        _publication_action(snapshot, artifact),
+    )
 
 
 @pytest.mark.parametrize(
@@ -784,74 +851,54 @@ def test_absent_publication_requires_action_but_materializer_is_blocked(
             lambda action: replace(action, action_id=f"{action.action_id}:x"),
         ),
         (
-            "operation",
-            lambda action: replace(action, operation=f"{action.operation}:x"),
-        ),
-        (
-            "artifact-digest",
+            "destination-operation-profile-digest",
             lambda action: replace(
                 action,
-                artifact_digest="sha256:" + ("f" * 64),
+                destination_operation_profile_digest=("sha256:" + ("f" * 64)),
             ),
         ),
         (
-            "artifact-output",
+            "package",
             lambda action: replace(
                 action,
-                artifact_output=replace(
-                    action.artifact_output,
-                    output_id="other-output",
+                package=f"{action.package}-substituted",
+            ),
+        ),
+        (
+            "version",
+            lambda action: replace(
+                action,
+                version=f"{action.version}-substituted",
+            ),
+        ),
+        (
+            "tarball-reference",
+            lambda action: replace(
+                action,
+                tarball_reference=replace(
+                    action.tarball_reference,
+                    artifact_id=action.tarball_reference.artifact_id + 1,
                 ),
             ),
         ),
         (
-            "prerequisites",
-            lambda action: replace(action, prerequisites=("unexpected",)),
-        ),
-        (
-            "action-inputs",
-            lambda action: replace(
-                action,
-                action_inputs=(
-                    ("artifact-content-sha256", "sha256:" + ("0" * 64)),
-                    *action.action_inputs[1:],
-                ),
-            ),
+            "tag",
+            lambda action: replace(action, tag=f"{action.tag}-substituted"),
         ),
         (
             "mutable-resource-keys",
-            lambda action: replace(action, mutable_resource_keys=()),
-        ),
-        (
-            "lock-projection",
             lambda action: replace(
                 action,
-                lock_projection=f"{action.lock_projection}:x",
+                mutable_resource_keys=action.mutable_resource_keys[:1],
             ),
         ),
         (
-            "lock-group",
-            lambda action: replace(action, lock_group=f"{action.lock_group}:x"),
-        ),
-        (
-            "capability-requirements",
+            "serialization-projection",
             lambda action: replace(
                 action,
-                capability_requirements=("npmjs/trusted-publishing-oidc-v2",),
-            ),
-        ),
-        (
-            "expected-result",
-            lambda action: replace(
-                action,
-                expected_result=f"{action.expected_result}:x",
-            ),
-        ),
-        (
-            "receipt-contract",
-            lambda action: replace(
-                action,
-                receipt_contract=f"{action.receipt_contract}:x",
+                serialization_projection=(
+                    f"{action.serialization_projection}:substituted"
+                ),
             ),
         ),
     ],
@@ -861,10 +908,24 @@ def test_publication_action_rejects_substituted_concrete_bindings(
     _binding_category,
     mutate,
 ) -> None:
-    action = _live_publication_action(qualified_simulation)
+    snapshot, _decision, artifact = _live_publication_context(
+        qualified_simulation
+    )
+    projection = snapshot.destination_projections[0]
+    action = _publication_action(snapshot, artifact)
 
-    with pytest.raises(ValueError, match="Publication Action"):
-        mutate(action)
+    with pytest.raises(
+        ValueError,
+        match="not an exact profile instantiation",
+    ):
+        validate_publication_action_instantiation(
+            mutate(action),
+            destination_operation_profile=(
+                github_packages_destination_operation_profile()
+            ),
+            projection=projection,
+            artifact=artifact,
+        )
 
 
 def test_failed_decision_cannot_materialize_hypothetical_actions(
@@ -985,4 +1046,76 @@ def test_success_decision_transport_rejects_unsatisfied_disposition(
         release_record_from_document(
             document,
             expected_type=type(decision),
+        )
+
+
+def test_publication_action_standalone_admission_has_no_current_bindings(
+    qualified_simulation,
+) -> None:
+    snapshot, _decision, artifact = _live_publication_context(
+        qualified_simulation
+    )
+    action = _publication_action(snapshot, artifact)
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Publication Action has no standalone current bindings$",
+    ):
+        admit_release_record(
+            canonicalize(action.to_document()),
+            expected_type=PublicationAction,
+            expected_digest=action.action_digest,
+            expected_bindings=ReleaseAdmissionBindings(
+                purpose="live-release",
+                workflow_run_id=snapshot.subject.workflow_run_id,
+                run_attempt=None,
+                target=snapshot.target,
+                producer=artifact.transport.producer,
+            ),
+        )
+
+
+def test_publication_action_transport_rejects_retired_lock_group(
+    qualified_simulation,
+) -> None:
+    action = _live_publication_action(qualified_simulation)
+    document = action.to_document()
+    document["lock-group"] = action.serialization_projection
+
+    with pytest.raises(
+        ValueError,
+        match=r"^publication action unknown field: lock-group$",
+    ):
+        release_record_from_document(
+            document,
+            expected_type=PublicationAction,
+        )
+
+
+def test_exact_satisfied_publication_snapshot_rejects_surplus_action(
+    qualified_simulation,
+) -> None:
+    publication = _live_publication_snapshot(qualified_simulation)
+    action = _live_publication_action(qualified_simulation)
+    assert publication.materialized_actions == ()
+    assert tuple(
+        reference.classification
+        for reference in publication.observation_references
+    ) == ("exact-satisfied",)
+
+    with pytest.raises(
+        ValueError,
+        match=r"action count must match absent observations",
+    ):
+        replace(publication, materialized_actions=(action,))
+
+    document = publication.to_document()
+    document["materialized-actions"] = [action.to_document()]
+    with pytest.raises(
+        ValueError,
+        match=r"action count must match absent observations",
+    ):
+        release_record_from_document(
+            document,
+            expected_type=PublicationSnapshot,
         )

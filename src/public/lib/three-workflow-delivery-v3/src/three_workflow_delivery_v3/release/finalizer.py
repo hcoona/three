@@ -6,6 +6,7 @@ from three_workflow_delivery_v3.canonical import canonical_sha256
 from three_workflow_delivery_v3.records.release import (
     NPMJS_OBSERVATION_CONTRACT_ID,
     NPMJS_OBSERVER_PRODUCER,
+    DestinationOperationProfile,
     HypotheticalAction,
     ObligationDisposition,
     ObservationRequestFacts,
@@ -22,6 +23,7 @@ from three_workflow_delivery_v3.records.release import (
     SimulationBinding,
     SimulationIdentity,
     SimulationOutcome,
+    form_publication_action,
 )
 from three_workflow_delivery_v3.release.qualification import (
     admit_evidence_for_snapshot,
@@ -565,6 +567,8 @@ def materialize_publication_snapshot(
     decision: QualificationDecision,
     observations: tuple[ProjectionObservation, ...],
     artifacts: tuple[ReleaseArtifact, ...],
+    *,
+    destination_operation_profile: DestinationOperationProfile | None = None,
 ) -> PublicationSnapshot:
     """Materialize the guarded second Snapshot for a live Attempt only."""
     if not isinstance(snapshot.subject, ReleaseAttemptIdentity):
@@ -596,12 +600,30 @@ def materialize_publication_snapshot(
         for observation in admitted_observations
         if observation.value.classification == "absent"
     }
+    materialized_actions = ()
     if absent_projection_ids:
-        message = (
-            "Normal Live destination primitive is not implemented; "
-            "publication remains activation-blocked"
+        if (
+            type(destination_operation_profile)
+            is not DestinationOperationProfile
+        ):
+            message = (
+                "Publication Action requires an exact Destination Operation "
+                "Profile"
+            )
+            raise TypeError(message)
+        artifact_by_output = {
+            artifact.output.output_id: artifact
+            for artifact in admitted_artifacts
+        }
+        materialized_actions = tuple(
+            form_publication_action(
+                destination_operation_profile=destination_operation_profile,
+                projection=projection,
+                artifact=artifact_by_output[projection.output.output_id],
+            )
+            for projection in snapshot.destination_projections
+            if projection.projection_id in absent_projection_ids
         )
-        raise UnsupportedPublicationPrimitiveError(message)
     return PublicationSnapshot(
         attempt=snapshot.subject,
         qualification_snapshot_digest=snapshot.snapshot_digest,
@@ -625,7 +647,7 @@ def materialize_publication_snapshot(
             )
             for observation in admitted_observations
         ),
-        materialized_actions=(),
+        materialized_actions=materialized_actions,
     )
 
 

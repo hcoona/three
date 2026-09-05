@@ -71,6 +71,9 @@ OBSERVATION_RESPONSE_FACTS_SCHEMA = (
 )
 PROJECTION_OBSERVATION_SCHEMA = "workflow-delivery/v3/projection-observation"
 HYPOTHETICAL_ACTION_SCHEMA = "workflow-delivery/v3/hypothetical-action"
+DESTINATION_OPERATION_PROFILE_SCHEMA = (
+    "workflow-delivery/v3/destination-operation-profile"
+)
 PUBLICATION_ACTION_SCHEMA = "workflow-delivery/v3/publication-action"
 PUBLICATION_OBSERVATION_REFERENCE_SCHEMA = (
     "workflow-delivery/v3/publication-observation-reference"
@@ -2315,36 +2318,85 @@ class HypotheticalAction:
         )
 
 
-def publication_action_inputs(
-    projection: DestinationProjection,
-    artifact: ReleaseArtifact,
-) -> tuple[tuple[str, str], ...]:
-    """Return the exact ordered concrete Publication Action inputs."""
-    _exact(
-        projection,
-        DestinationProjection,
-        field="publication action inputs.projection",
-    )
-    _exact(
-        artifact,
-        ReleaseArtifact,
-        field="publication action inputs.artifact",
-    )
-    content_sha512 = artifact.content.content_sha512
-    if content_sha512 is None:
-        message = "Publication Action artifact requires SHA-512"
-        raise ValueError(message)
-    return (
-        ("artifact-content-sha256", artifact.content.content_sha256),
-        ("artifact-content-sha512", content_sha512),
-        ("artifact-digest", artifact.artifact_digest),
-        ("coordinate", canonical_sha256(projection.coordinate.to_document())),
-        ("operation", projection.operation),
-        ("output-id", artifact.output.output_id),
-        ("projection-digest", projection.projection_digest),
-        ("transport-artifact-id", str(artifact.transport.artifact_id)),
-        ("witness-digest", artifact.witness_digest),
-    )
+@dataclass(frozen=True, slots=True)
+class DestinationOperationProfile:
+    """Closed canonical description of one destination mutation primitive."""
+
+    profile_id: str
+    registry: str
+    access_mode: str
+    node_version: str
+    npm_version: str
+    command_template: tuple[str, ...]
+    operand_slots: tuple[tuple[str, str], ...]
+    configuration_precedence: tuple[tuple[str, str], ...]
+    request_generation: tuple[tuple[str, str], ...]
+    mutation_retry: str
+
+    def __post_init__(self) -> None:
+        """Reject incomplete or noncanonical profile definitions."""
+        _string(self.profile_id, field="destination profile.profile_id")
+        _string(self.registry, field="destination profile.registry")
+        _string(self.access_mode, field="destination profile.access_mode")
+        _string(self.node_version, field="destination profile.node_version")
+        _string(self.npm_version, field="destination profile.npm_version")
+        _string_tuple(
+            self.command_template,
+            field="destination profile.command_template",
+            unique=False,
+        )
+        _pairs(
+            self.operand_slots,
+            field="destination profile.operand_slots",
+            sorted_values=False,
+        )
+        if tuple(name for name, _rule in self.operand_slots) != (
+            "package",
+            "version",
+            "tarball-reference",
+            "tag",
+        ):
+            message = "Destination profile operand slots are not exact"
+            raise ValueError(message)
+        _pairs(
+            self.configuration_precedence,
+            field="destination profile.configuration_precedence",
+        )
+        _pairs(
+            self.request_generation,
+            field="destination profile.request_generation",
+        )
+        _string(self.mutation_retry, field="destination profile.mutation_retry")
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the canonical Destination Operation Profile."""
+        return cast(
+            "dict[str, JsonValue]",
+            {
+                "schema": DESTINATION_OPERATION_PROFILE_SCHEMA,
+                "profile-id": self.profile_id,
+                "registry": self.registry,
+                "access-mode": self.access_mode,
+                "node-version": self.node_version,
+                "npm-version": self.npm_version,
+                "command-template": list(self.command_template),
+                "operand-slots": [
+                    [name, rule] for name, rule in self.operand_slots
+                ],
+                "configuration-precedence": [
+                    [name, rule] for name, rule in self.configuration_precedence
+                ],
+                "request-generation": [
+                    [name, rule] for name, rule in self.request_generation
+                ],
+                "mutation-retry": self.mutation_retry,
+            },
+        )
+
+    @property
+    def profile_digest(self) -> str:
+        """Return the canonical Destination Operation Profile digest."""
+        return canonical_sha256(self.to_document())
 
 
 def publication_mutable_resource_keys(
@@ -2397,12 +2449,14 @@ def publication_mutable_resource_keys(
     )
 
 
-def publication_lock_projection(projection: DestinationProjection) -> str:
-    """Return the exact conservative destination/package lock projection."""
+def publication_serialization_projection(
+    projection: DestinationProjection,
+) -> str:
+    """Return the exact conservative destination/package serialization key."""
     _exact(
         projection,
         DestinationProjection,
-        field="publication lock projection.projection",
+        field="publication serialization projection.projection",
     )
     digest = canonical_sha256(
         {
@@ -2412,11 +2466,6 @@ def publication_lock_projection(projection: DestinationProjection) -> str:
         }
     )
     return f"destination-package:{digest.removeprefix('sha256:')}"
-
-
-def publication_lock_group(projection: DestinationProjection) -> str:
-    """Return the exact conservative platform serialization group."""
-    return publication_lock_projection(projection)
 
 
 def publication_capability_requirements(
@@ -2456,153 +2505,79 @@ def publication_mutable_resource_key_basis(
     return ("external-package-coordinate", "npm-dist-tag")
 
 
-def publication_expected_result(projection: DestinationProjection) -> str:
-    """Return the exact expected result contract for a supported action."""
+def publication_tarball_reference(
+    artifact: ReleaseArtifact,
+) -> ArtifactReference:
+    """Return the exact tarball payload reference carried by an action."""
     _exact(
-        projection,
-        DestinationProjection,
-        field="publication expected result.projection",
+        artifact,
+        ReleaseArtifact,
+        field="publication tarball reference.artifact",
     )
-    if projection.operation == "npm-publish-create-only":
-        return "created-or-exact"
-    if projection.operation == CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION:
-        return "created-version-and-target-tag-or-exact"
-    message = "Publication Action expected result is unsupported in commit 6"
-    raise ValueError(message)
+    return ArtifactReference(
+        artifact_id=artifact.transport.artifact_id,
+        artifact_digest=artifact.transport.transport_digest,
+        artifact_url=artifact.transport.artifact_url,
+        payload_path=artifact.content.basename,
+        payload_digest=artifact.content.content_sha256,
+    )
 
 
-def publication_receipt_contract(projection: DestinationProjection) -> str:
-    """Return the exact Receipt contract for a supported action."""
+def publication_target_tag(artifact: ReleaseArtifact) -> str:
+    """Return the exact first-slice target-derived Buddy routing tag."""
     _exact(
-        projection,
-        DestinationProjection,
-        field="publication receipt contract.projection",
+        artifact,
+        ReleaseArtifact,
+        field="publication target tag.artifact",
     )
-    if projection.operation == "npm-publish-create-only":
-        return "npm/package-publication-receipt-v1"
-    if projection.operation == CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION:
-        return "npm/conditional-version-and-target-tag-receipt-v1"
-    message = "Publication Action Receipt is unsupported in commit 6"
-    raise ValueError(message)
+    attempt = artifact.subject
+    if not isinstance(attempt, ReleaseAttemptIdentity):
+        message = "Publication Action requires a live artifact"
+        raise TypeError(message)
+    execution = attempt.execution
+    if type(execution) is not BuddyExecutionIdentity:
+        message = "Publication Action requires Buddy Execution"
+        raise TypeError(message)
+    return f"buddy-sha-{execution.target}"
 
 
 @dataclass(frozen=True, slots=True)
 class PublicationAction:
-    """Live action with exact artifact, key, and Receipt bindings."""
+    """Closed typed instantiation of one destination operation profile."""
 
     action_id: str
-    projection: DestinationProjection
-    operation: str
-    artifact: ReleaseArtifact
-    artifact_digest: str
-    artifact_output: ReleaseOutputIdentity
-    prerequisites: tuple[str, ...]
-    action_inputs: tuple[tuple[str, str], ...]
+    destination_operation_profile_digest: str
+    package: str
+    version: str
+    tarball_reference: ArtifactReference
+    tag: str
     mutable_resource_keys: tuple[str, ...]
-    lock_projection: str
-    lock_group: str
-    capability_requirements: tuple[str, ...]
-    expected_result: str
-    receipt_contract: str
+    serialization_projection: str
 
-    def __post_init__(self) -> None:  # noqa: C901, PLR0915
-        """Reject incomplete or substituted live action bindings."""
+    def __post_init__(self) -> None:
+        """Reject malformed profile-instantiation values."""
         _string(self.action_id, field="publication action.action_id")
-        _exact(
-            self.projection,
-            DestinationProjection,
-            field="publication action.projection",
-        )
-        _string(self.operation, field="publication action.operation")
-        _exact(
-            self.artifact,
-            ReleaseArtifact,
-            field="publication action.artifact",
-        )
         _digest(
-            self.artifact_digest,
-            field="publication action.artifact_digest",
+            self.destination_operation_profile_digest,
+            field="publication action.destination_operation_profile_digest",
         )
+        _string(self.package, field="publication action.package")
+        _string(self.version, field="publication action.version")
         _exact(
-            self.artifact_output,
-            ReleaseOutputIdentity,
-            field="publication action.artifact_output",
+            self.tarball_reference,
+            ArtifactReference,
+            field="publication action.tarball_reference",
         )
-        _string_tuple(
-            self.prerequisites,
-            field="publication action.prerequisites",
-        )
-        _pairs(self.action_inputs, field="publication action.action_inputs")
+        _string(self.tag, field="publication action.tag")
         _string_tuple(
             self.mutable_resource_keys,
             field="publication action.mutable_resource_keys",
+            sorted_values=True,
         )
         _string(
-            self.lock_projection,
-            field="publication action.lock_projection",
+            self.serialization_projection,
+            field="publication action.serialization_projection",
         )
-        _string(self.lock_group, field="publication action.lock_group")
-        _string_tuple(
-            self.capability_requirements,
-            field="publication action.capability_requirements",
-        )
-        _string(
-            self.expected_result,
-            field="publication action.expected_result",
-        )
-        _string(
-            self.receipt_contract,
-            field="publication action.receipt_contract",
-        )
-        if self.projection.potential_action_id != self.action_id:
-            message = "Publication Action action ID binding mismatch"
-            raise ValueError(message)
-        if self.projection.operation != self.operation:
-            message = "Publication Action operation binding mismatch"
-            raise ValueError(message)
-        if self.projection.output != self.artifact_output:
-            message = "Publication Action projection output binding mismatch"
-            raise ValueError(message)
-        if (
-            self.artifact.output != self.artifact_output
-            or self.artifact.artifact_digest != self.artifact_digest
-        ):
-            message = "Publication Action projection/artifact binding mismatch"
-            raise ValueError(message)
-        if self.prerequisites != ():
-            message = "Publication Action prerequisites are not exact"
-            raise ValueError(message)
-        if self.action_inputs != publication_action_inputs(
-            self.projection,
-            self.artifact,
-        ):
-            message = "Publication Action inputs are not exact"
-            raise ValueError(message)
-        if self.mutable_resource_keys != publication_mutable_resource_keys(
-            self.projection,
-            self.artifact,
-        ):
-            message = "Publication Action mutable keys are not exact"
-            raise ValueError(message)
-        if self.lock_projection != publication_lock_projection(self.projection):
-            message = "Publication Action lock projection is not exact"
-            raise ValueError(message)
-        if self.lock_group != publication_lock_group(self.projection):
-            message = "Publication Action lock group is not exact"
-            raise ValueError(message)
-        if self.capability_requirements != publication_capability_requirements(
-            self.projection
-        ):
-            message = "Publication Action capability requirements are not exact"
-            raise ValueError(message)
-        if self.expected_result != publication_expected_result(self.projection):
-            message = "Publication Action expected result is not exact"
-            raise ValueError(message)
-        if self.receipt_contract != publication_receipt_contract(
-            self.projection
-        ):
-            message = "Publication Action Receipt contract is not exact"
-            raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical Publication Action."""
@@ -2611,21 +2586,15 @@ class PublicationAction:
             {
                 "schema": PUBLICATION_ACTION_SCHEMA,
                 "action-id": self.action_id,
-                "projection": self.projection.to_document(),
-                "operation": self.operation,
-                "artifact": self.artifact.to_document(),
-                "artifact-digest": self.artifact_digest,
-                "artifact-output": self.artifact_output.to_document(),
-                "prerequisites": list(self.prerequisites),
-                "action-inputs": [
-                    [name, value] for name, value in self.action_inputs
-                ],
+                "destination-operation-profile-digest": (
+                    self.destination_operation_profile_digest
+                ),
+                "package": self.package,
+                "version": self.version,
+                "tarball-reference": self.tarball_reference.to_document(),
+                "tag": self.tag,
                 "mutable-resource-keys": list(self.mutable_resource_keys),
-                "lock-projection": self.lock_projection,
-                "lock-group": self.lock_group,
-                "capability-requirements": list(self.capability_requirements),
-                "expected-result": self.expected_result,
-                "receipt-contract": self.receipt_contract,
+                "serialization-projection": self.serialization_projection,
             },
         )
 
@@ -2633,6 +2602,82 @@ class PublicationAction:
     def action_digest(self) -> str:
         """Return the canonical Publication Action digest."""
         return canonical_sha256(self.to_document())
+
+
+def form_publication_action(
+    *,
+    destination_operation_profile: DestinationOperationProfile,
+    projection: DestinationProjection,
+    artifact: ReleaseArtifact,
+) -> PublicationAction:
+    """Form the exact action from admitted profile, projection, and artifact."""
+    _exact(
+        destination_operation_profile,
+        DestinationOperationProfile,
+        field="publication action profile",
+    )
+    _exact(
+        projection,
+        DestinationProjection,
+        field="publication action projection",
+    )
+    _exact(
+        artifact,
+        ReleaseArtifact,
+        field="publication action artifact",
+    )
+    if not isinstance(artifact.subject, ReleaseAttemptIdentity):
+        message = "Publication Action requires a live artifact"
+        raise TypeError(message)
+    if artifact.purpose != "live-release":
+        message = "Publication Action requires a live-release artifact"
+        raise ValueError(message)
+    if destination_operation_profile.registry != projection.registry:
+        message = "Publication Action profile/projection registry mismatch"
+        raise ValueError(message)
+    if projection.output != artifact.output:
+        message = "Publication Action projection/artifact output mismatch"
+        raise ValueError(message)
+    return PublicationAction(
+        action_id=projection.potential_action_id,
+        destination_operation_profile_digest=(
+            destination_operation_profile.profile_digest
+        ),
+        package=projection.coordinate.package_name,
+        version=projection.coordinate.native_version,
+        tarball_reference=publication_tarball_reference(artifact),
+        tag=publication_target_tag(artifact),
+        mutable_resource_keys=publication_mutable_resource_keys(
+            projection,
+            artifact,
+        ),
+        serialization_projection=publication_serialization_projection(
+            projection
+        ),
+    )
+
+
+def validate_publication_action_instantiation(
+    action: PublicationAction,
+    *,
+    destination_operation_profile: DestinationOperationProfile,
+    projection: DestinationProjection,
+    artifact: ReleaseArtifact,
+) -> None:
+    """Admit only the exact typed action instantiation for its ancestors."""
+    _exact(
+        action,
+        PublicationAction,
+        field="publication action instantiation.action",
+    )
+    expected = form_publication_action(
+        destination_operation_profile=destination_operation_profile,
+        projection=projection,
+        artifact=artifact,
+    )
+    if action != expected:
+        message = "Publication Action is not an exact profile instantiation"
+        raise ValueError(message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2695,7 +2740,7 @@ class PublicationSnapshot:
     observation_references: tuple[PublicationObservationReference, ...]
     materialized_actions: tuple[PublicationAction, ...]
 
-    def __post_init__(self) -> None:  # noqa: C901
+    def __post_init__(self) -> None:
         """Reject placeholder, incomplete, or simulation second Snapshots."""
         _exact(
             self.attempt, ReleaseAttemptIdentity, field="publication.attempt"
@@ -2758,42 +2803,19 @@ class PublicationSnapshot:
             message = "Publication Snapshot requires complete artifacts"
             raise ValueError(message)
         _validate_materialized_actions(self.materialized_actions)
-        action_projection_ids = tuple(
-            action.projection.projection_id
-            for action in self.materialized_actions
-        )
-        if len(set(action_projection_ids)) != len(action_projection_ids):
-            message = (
-                "Publication Snapshot contains duplicate action projections"
-            )
-            raise ValueError(message)
         action_ids = {action.action_id for action in self.materialized_actions}
         if len(action_ids) != len(self.materialized_actions):
             message = "Publication Snapshot contains duplicate actions"
             raise ValueError(message)
-        if any(
-            projection_id not in projection_ids
-            for projection_id in action_projection_ids
-        ):
-            message = "Publication Snapshot action projection is not planned"
-            raise ValueError(message)
-        absent_projection_ids = {
-            reference.projection_id
+        absent_count = sum(
+            reference.classification == "absent"
             for reference in self.observation_references
-            if reference.classification == "absent"
-        }
-        if set(action_projection_ids) != absent_projection_ids:
+        )
+        if len(self.materialized_actions) != absent_count:
             message = (
-                "Publication Snapshot actions must exactly cover absent "
-                "projections"
+                "Publication Snapshot action count must match absent "
+                "observations"
             )
-            raise ValueError(message)
-        if any(
-            action.artifact_digest not in artifact_digests
-            or action.artifact_output.output_id not in output_ids
-            for action in self.materialized_actions
-        ):
-            message = "Publication Snapshot action artifact is not admitted"
             raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:

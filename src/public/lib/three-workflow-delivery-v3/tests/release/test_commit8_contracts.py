@@ -8,6 +8,9 @@ from dataclasses import FrozenInstanceError, fields, replace
 
 import pytest
 from three_workflow_delivery_v3 import platform as platform_api
+from three_workflow_delivery_v3.adapters.github_packages import (
+    github_packages_destination_operation_profile,
+)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
@@ -41,14 +44,11 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseAttemptIdentity,
     ReleaseRecord,
     SimulationBinding,
-    publication_action_inputs,
+    form_publication_action,
     publication_capability_requirements,
-    publication_expected_result,
-    publication_lock_group,
-    publication_lock_projection,
     publication_mutable_resource_key_basis,
     publication_mutable_resource_keys,
-    publication_receipt_contract,
+    publication_serialization_projection,
     release_artifact_transport_name,
 )
 from three_workflow_delivery_v3.records.release_transport import (
@@ -676,7 +676,15 @@ def test_approval_bundle_requires_exact_resolved_references(
     qualified_simulation,
     substitution,
 ) -> None:
-    _, attempt_binding, decision, publication = _live_closure(
+    (
+        _attempt,
+        attempt_binding,
+        decision,
+        publication,
+        _projection,
+        artifact,
+        qualification_snapshot,
+    ) = _live_closure_details(
         qualified_simulation,
         with_action=True,
     )
@@ -686,6 +694,11 @@ def test_approval_bundle_requires_exact_resolved_references(
         "intent": _intent(attempt_binding.attempt),
         "attempt_binding": attempt_binding,
         "qualification_decision": decision,
+        "qualification_snapshot": qualification_snapshot,
+        "release_artifact": artifact,
+        "destination_operation_profile": (
+            github_packages_destination_operation_profile()
+        ),
         "publication_snapshot": publication,
         "publication_snapshot_reference": _snapshot_reference(publication),
         "reviewer_summary_reference": _reviewer_reference(),
@@ -1253,7 +1266,7 @@ def test_buddy_complete_keys_are_distinct_from_conservative_group(
     )
 
     keys = publication_mutable_resource_keys(projection, attempt)
-    group = publication_lock_group(projection)
+    group = publication_serialization_projection(projection)
     normalized_projection = replace(
         projection,
         coordinate=replace(
@@ -1265,7 +1278,7 @@ def test_buddy_complete_keys_are_distinct_from_conservative_group(
     assert len(keys) == COMPLETE_RESOURCE_KEY_COUNT
     assert keys[0].startswith("external-package-coordinate:")
     assert keys[1].startswith("npm-dist-tag:")
-    assert group == publication_lock_group(normalized_projection)
+    assert group == publication_serialization_projection(normalized_projection)
     assert group not in keys
 
 
@@ -1279,7 +1292,7 @@ def _intent(attempt: ReleaseAttemptIdentity):
     )
 
 
-def _live_closure(scenario, *, with_action: bool):
+def _live_closure_details(scenario, *, with_action: bool):
     attempt = ReleaseAttemptIdentity(
         execution=BuddyExecutionIdentity(
             channel="buddy",
@@ -1358,29 +1371,12 @@ def _live_closure(scenario, *, with_action: bool):
     actions: tuple[PublicationAction, ...] = ()
     if with_action:
         actions = (
-            PublicationAction(
-                action_id=projection.potential_action_id,
+            form_publication_action(
+                destination_operation_profile=(
+                    github_packages_destination_operation_profile()
+                ),
                 projection=projection,
-                operation=projection.operation,
                 artifact=artifact,
-                artifact_digest=artifact.artifact_digest,
-                artifact_output=artifact.output,
-                prerequisites=(),
-                action_inputs=publication_action_inputs(
-                    projection,
-                    artifact,
-                ),
-                mutable_resource_keys=publication_mutable_resource_keys(
-                    projection,
-                    artifact,
-                ),
-                lock_projection=publication_lock_projection(projection),
-                lock_group=publication_lock_group(projection),
-                capability_requirements=(
-                    publication_capability_requirements(projection)
-                ),
-                expected_result=publication_expected_result(projection),
-                receipt_contract=publication_receipt_contract(projection),
             ),
         )
     publication = PublicationSnapshot(
@@ -1412,7 +1408,19 @@ def _live_closure(scenario, *, with_action: bool):
         live_eligibility_payload_digest="sha256:" + ("3" * 64),
         attestation_provenance=_governance_provenance(),
     )
-    return attempt, attempt_binding, decision, publication
+    return (
+        attempt,
+        attempt_binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        live_snapshot,
+    )
+
+
+def _live_closure(scenario, *, with_action: bool):
+    return _live_closure_details(scenario, with_action=with_action)[:4]
 
 
 def _snapshot_reference(
@@ -1505,12 +1513,14 @@ def _exact_satisfied_proof(
 
 def _publication_action_result(
     publication: PublicationSnapshot,
+    projection,
+    artifact,
     *,
     outcome: str = "success",
     mutation_disposition: str = "created",
 ) -> ActionResult:
     action = publication.materialized_actions[0]
-    assert action.artifact.content.content_sha512 is not None
+    assert artifact.content.content_sha512 is not None
     with_receipt = outcome == "success"
     receipt = (
         Receipt(
@@ -1518,20 +1528,15 @@ def _publication_action_result(
             publication_snapshot_digest=publication.snapshot_digest,
             action_id=action.action_id,
             action_digest=action.action_digest,
-            coordinate=action.projection.coordinate,
+            coordinate=projection.coordinate,
             mutable_resource_keys=action.mutable_resource_keys,
-            lock_group=action.lock_group,
-            artifact_transport=action.artifact.transport,
-            artifact_content_sha256=(action.artifact.content.content_sha256),
-            artifact_content_sha512=(action.artifact.content.content_sha512),
-            witness_digest=action.artifact.witness_digest,
+            lock_group=action.serialization_projection,
+            artifact_transport=artifact.transport,
+            artifact_content_sha256=artifact.content.content_sha256,
+            artifact_content_sha512=artifact.content.content_sha512,
+            witness_digest=artifact.witness_digest,
             creation_result=mutation_disposition,
-            tag_mapping=(
-                (
-                    "buddy-sha-" + publication.attempt.execution.target,
-                    action.projection.coordinate.native_version,
-                ),
-            ),
+            tag_mapping=((action.tag, action.version),),
             response_identity_digest="sha256:" + ("9" * 64),
             producer="publish-github-packages",
             control=(
@@ -1547,7 +1552,7 @@ def _publication_action_result(
         publication_snapshot_digest=publication.snapshot_digest,
         action_id=action.action_id,
         action_digest=action.action_digest,
-        lock_group=action.lock_group,
+        lock_group=action.serialization_projection,
         outcome=outcome,
         mutation_disposition=mutation_disposition,
         response_identity_digest=(
@@ -1569,14 +1574,21 @@ def _transport_records(scenario) -> dict[str, ReleaseRecord]:
         attempt_binding,
         decision,
         action_publication,
-    ) = _live_closure(scenario, with_action=True)
+        action_projection,
+        action_artifact,
+        _action_qualification_snapshot,
+    ) = _live_closure_details(scenario, with_action=True)
     bundle = _approval_bundle(
         attempt_binding,
         decision,
         action_publication,
     )
     authorization = _publication_authorization(bundle)
-    action_result = _publication_action_result(action_publication)
+    action_result = _publication_action_result(
+        action_publication,
+        action_projection,
+        action_artifact,
+    )
     (
         _noop_attempt,
         _noop_binding,
@@ -1686,14 +1698,21 @@ def test_exact_noop_rejects_environment_authorization_and_result_lineage(
         action_binding,
         action_decision,
         action_publication,
-    ) = _live_closure(qualified_simulation, with_action=True)
+        action_projection,
+        action_artifact,
+        _action_qualification_snapshot,
+    ) = _live_closure_details(qualified_simulation, with_action=True)
     action_bundle = _approval_bundle(
         action_binding,
         action_decision,
         action_publication,
     )
     action_authorization = _publication_authorization(action_bundle)
-    action_result = _publication_action_result(action_publication)
+    action_result = _publication_action_result(
+        action_publication,
+        action_projection,
+        action_artifact,
+    )
     proof = _exact_satisfied_proof(publication)
     proof_keys = _nested_document_keys(proof.to_document())
 
@@ -1734,7 +1753,10 @@ def test_publication_snapshot_action_set_exactly_matches_absent_observations(
     )
     reference = publication.observation_references[0]
 
-    with pytest.raises(ValueError, match="exactly cover absent"):
+    with pytest.raises(
+        ValueError,
+        match="action count must match absent observations",
+    ):
         replace(
             publication,
             observation_references=(

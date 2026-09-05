@@ -1894,19 +1894,13 @@ def _publication_action(value: JsonValue) -> PublicationAction:
         fields=frozenset(
             {
                 "action-id",
-                "projection",
-                "operation",
-                "artifact",
-                "artifact-digest",
-                "artifact-output",
-                "prerequisites",
-                "action-inputs",
+                "destination-operation-profile-digest",
+                "package",
+                "version",
+                "tarball-reference",
+                "tag",
                 "mutable-resource-keys",
-                "lock-projection",
-                "lock-group",
-                "capability-requirements",
-                "expected-result",
-                "receipt-contract",
+                "serialization-projection",
             }
         ),
     )
@@ -1915,48 +1909,32 @@ def _publication_action(value: JsonValue) -> PublicationAction:
             document["action-id"],
             field="publication action.action-id",
         ),
-        projection=_projection(document["projection"]),
-        operation=_string(
-            document["operation"],
-            field="publication action.operation",
+        destination_operation_profile_digest=_string(
+            document["destination-operation-profile-digest"],
+            field=("publication action.destination-operation-profile-digest"),
         ),
-        artifact=_release_artifact(document["artifact"]),
-        artifact_digest=_string(
-            document["artifact-digest"],
-            field="publication action.artifact-digest",
+        package=_string(
+            document["package"],
+            field="publication action.package",
         ),
-        artifact_output=_output(document["artifact-output"]),
-        prerequisites=_strings(
-            document["prerequisites"],
-            field="publication action.prerequisites",
+        version=_string(
+            document["version"],
+            field="publication action.version",
         ),
-        action_inputs=_pairs(
-            document["action-inputs"],
-            field="publication action.action-inputs",
+        tarball_reference=artifact_reference_from_document(
+            document["tarball-reference"]
+        ),
+        tag=_string(
+            document["tag"],
+            field="publication action.tag",
         ),
         mutable_resource_keys=_strings(
             document["mutable-resource-keys"],
             field="publication action.mutable-resource-keys",
         ),
-        lock_projection=_string(
-            document["lock-projection"],
-            field="publication action.lock-projection",
-        ),
-        lock_group=_string(
-            document["lock-group"],
-            field="publication action.lock-group",
-        ),
-        capability_requirements=_strings(
-            document["capability-requirements"],
-            field="publication action.capability-requirements",
-        ),
-        expected_result=_string(
-            document["expected-result"],
-            field="publication action.expected-result",
-        ),
-        receipt_contract=_string(
-            document["receipt-contract"],
-            field="publication action.receipt-contract",
+        serialization_projection=_string(
+            document["serialization-projection"],
+            field="publication action.serialization-projection",
         ),
     )
 
@@ -2847,17 +2825,8 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
             record.producer,
         )
     if isinstance(record, PublicationAction):
-        subject = record.artifact.subject
-        if not isinstance(subject, ReleaseAttemptIdentity):
-            message = "Publication Action is not bound to a live Attempt"
-            raise TypeError(message)
-        return (
-            "live-release",
-            subject.workflow_run_id,
-            None,
-            subject.execution.target,
-            record.artifact.transport.producer,
-        )
+        message = "Publication Action has no standalone current bindings"
+        raise ValueError(message)  # noqa: TRY004
     if isinstance(record, PublicationSnapshot):
         return (
             "live-release",

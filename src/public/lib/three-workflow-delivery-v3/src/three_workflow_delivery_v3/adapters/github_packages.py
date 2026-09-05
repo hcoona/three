@@ -38,6 +38,7 @@ from three_workflow_delivery_v3.records.release import (
     ActionResult,
     ApprovalBundle,
     BuddyExecutionIdentity,
+    DestinationOperationProfile,
     DestinationProjection,
     ExternalPackageCoordinate,
     ObservationRequestFacts,
@@ -52,6 +53,7 @@ from three_workflow_delivery_v3.records.release import (
     Receipt,
     ReleaseArtifact,
     ReleaseAttemptIdentity,
+    validate_publication_action_instantiation,
 )
 from three_workflow_delivery_v3.release.finalizer import (
     UnsupportedPublicationPrimitiveError,
@@ -75,6 +77,11 @@ GITHUB_PACKAGES_REGISTRY = "https://npm.pkg.github.com"
 GITHUB_PACKAGES_PACKAGE = "@hcoona/hcoona-release-smoke-npm"
 GITHUB_PACKAGES_OBSERVATION_CONTRACT_ID = "npm/github-packages-observation-v1"
 GITHUB_PACKAGES_OPERATION = "conditional-create-npm-version-and-target-tag"
+GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE_ID = (
+    "npm/github-packages-hcoona-three-standard-publish-v1"
+)
+GITHUB_PACKAGES_NODE_VERSION = "24.19.0"
+GITHUB_PACKAGES_NPM_VERSION = "11.17.0"
 _ACCEPTANCE_OPERATION = "npm-publish-create-only"
 GITHUB_PACKAGES_OWNER = "hcoona"
 GITHUB_PACKAGES_REPOSITORY = "hcoona/three"
@@ -168,6 +175,89 @@ ACCEPTANCE_COORDINATES = {
 ACCEPTANCE_TAGS = frozenset(
     tag for _scenario, _version, tag in ACCEPTANCE_SCENARIO_SPECS
 )
+
+_GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE = DestinationOperationProfile(
+    profile_id=GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE_ID,
+    registry=GITHUB_PACKAGES_REGISTRY,
+    access_mode="existing-public-package/no-access-mutation",
+    node_version=GITHUB_PACKAGES_NODE_VERSION,
+    npm_version=GITHUB_PACKAGES_NPM_VERSION,
+    command_template=(
+        "npm",
+        "publish",
+        "{tarball-path}",
+        "--registry",
+        GITHUB_PACKAGES_REGISTRY,
+        "--tag",
+        "{tag}",
+        "--ignore-scripts",
+        "--fetch-retries=0",
+    ),
+    operand_slots=(
+        (
+            "package",
+            "npm-package-name/equal-tarball-manifest-name",
+        ),
+        (
+            "version",
+            "npm-version/equal-tarball-manifest-version",
+        ),
+        (
+            "tarball-reference",
+            "artifact-reference/exact-payload-path",
+        ),
+        ("tag", "npm-dist-tag/buddy-sha-target"),
+    ),
+    configuration_precedence=(
+        (
+            "authentication",
+            "temporary-user-config/current-repository-github-token",
+        ),
+        ("fetch-retries", "command-line/0"),
+        ("ignore-scripts", "command-line/true"),
+        ("project-config", "disabled"),
+        ("registry", f"command-line/{GITHUB_PACKAGES_REGISTRY}"),
+        ("tag", "command-line/publication-action"),
+    ),
+    request_generation=(
+        ("client", "pinned-standard-npm"),
+        ("hand-built-publish-request", "forbidden"),
+        ("wrapper-registry-protocol", "forbidden"),
+    ),
+    mutation_retry="forbidden-after-request-initiation",
+)
+
+
+def github_packages_destination_operation_profile() -> (
+    DestinationOperationProfile
+):
+    """Resolve the sole first-slice GitHub Packages mutation profile."""
+    return _GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE
+
+
+def validate_github_packages_publication_action(
+    *,
+    action: PublicationAction,
+    projection: DestinationProjection,
+    artifact: ReleaseArtifact,
+) -> None:
+    """Admit only an exact instance of the first-slice destination profile."""
+    profile = github_packages_destination_operation_profile()
+    if (
+        projection.coordinate.channel != "buddy"
+        or projection.destination_id != GITHUB_PACKAGES_DESTINATION_ID
+        or projection.operation != GITHUB_PACKAGES_OPERATION
+    ):
+        message = "GitHub Packages Publication Action projection is unsupported"
+        raise ValueError(message)
+    validate_publication_action_instantiation(
+        action,
+        destination_operation_profile=profile,
+        projection=projection,
+        artifact=artifact,
+    )
+
+
 ACCEPTANCE_SCENARIOS = frozenset(
     {
         "absent-create-readback",
@@ -3768,6 +3858,15 @@ def _validate_publish_preconditions(  # noqa: PLR0913
     expected_control = f"workflow-delivery-v3:{attempt.execution.target}"
     _validate_artifact_expectation(expectation)
     actions = publication_snapshot.materialized_actions
+    if len(qualification_snapshot.destination_projections) != 1:
+        message = "publication precondition requires one destination projection"
+        raise ValueError(message)
+    projection = qualification_snapshot.destination_projections[0]
+    validate_github_packages_publication_action(
+        action=action,
+        projection=projection,
+        artifact=artifact,
+    )
     if (
         authorization.attempt != attempt
         or authorization.control != expected_control
@@ -3778,9 +3877,16 @@ def _validate_publish_preconditions(  # noqa: PLR0913
         != reviewer_summary_reference
         or authorization.approval_bundle_reference.payload_digest
         != approval_bundle.bundle_digest
-        or action not in actions
-        or action.projection.destination_id != GITHUB_PACKAGES_DESTINATION_ID
-        or action.operation != GITHUB_PACKAGES_OPERATION
+        or actions != (action,)
+        or publication_snapshot.projection_ids != (projection.projection_id,)
+        or publication_snapshot.artifact_digests != (artifact.artifact_digest,)
+        or publication_snapshot.artifact_output_ids
+        != (artifact.output.output_id,)
+        or len(publication_snapshot.observation_references) != 1
+        or publication_snapshot.observation_references[0].projection_id
+        != projection.projection_id
+        or publication_snapshot.observation_references[0].classification
+        != "absent"
         or qualification_snapshot.subject != attempt
         or qualification_snapshot.snapshot_digest
         != publication_snapshot.qualification_snapshot_digest
@@ -3791,21 +3897,12 @@ def _validate_publish_preconditions(  # noqa: PLR0913
         != publication_snapshot.qualification_decision_digest
         or qualification_decision.terminal_result != "success"
         or qualification_decision.admitted_artifact_digests
-        != tuple(
-            candidate.artifact_digest
-            for candidate in publication_snapshot.materialized_actions
-        )
-        or artifact != action.artifact
+        != (artifact.artifact_digest,)
         or artifact.qualification_snapshot_digest
         != qualification_snapshot.snapshot_digest
-        or artifact.artifact_digest != action.artifact_digest
-        or artifact.output != action.artifact_output
-        or action.projection
-        not in qualification_snapshot.destination_projections
-        or action.projection.output not in qualification_snapshot.outputs
-        or expectation.package_name != action.projection.coordinate.package_name
-        or expectation.npm_package_version
-        != action.projection.coordinate.native_version
+        or projection.output not in qualification_snapshot.outputs
+        or expectation.package_name != action.package
+        or expectation.npm_package_version != action.version
         or expectation.lifecycle_scripts != artifact.lifecycle_scripts
         or expectation.entry_allowlist != artifact.entries
         or f"sha256:{hashlib.sha256(expectation.witness_bytes).hexdigest()}"
@@ -3905,7 +4002,7 @@ def _action_result(  # noqa: PLR0913
         publication_snapshot_digest=publication_snapshot.snapshot_digest,
         action_id=action.action_id,
         action_digest=action.action_digest,
-        lock_group=action.lock_group,
+        lock_group=action.serialization_projection,
         outcome=classification.outcome,
         mutation_disposition=classification.mutation_disposition,
         response_identity_digest=response_identity_digest,
@@ -3941,14 +4038,22 @@ def _npm_configuration_digest(
     action: PublicationAction,
     target: str,
 ) -> str:
+    profile = github_packages_destination_operation_profile()
+    if (
+        action.destination_operation_profile_digest != profile.profile_digest
+        or action.tag != _target_tag(target)
+    ):
+        message = "Publication Action profile or target tag binding mismatch"
+        raise ValueError(message)
     return canonical_sha256(
         {
             "schema": "workflow-delivery/v3/github-packages-npm-config",
-            "registry": GITHUB_PACKAGES_REGISTRY,
-            "tag": _target_tag(target),
+            "destination-operation-profile-digest": profile.profile_digest,
+            "registry": profile.registry,
+            "tag": action.tag,
             "ignore-scripts": True,
-            "operation": action.operation,
-            "coordinate": action.projection.coordinate.to_document(),
+            "package": action.package,
+            "version": action.version,
         }
     )
 
@@ -4017,7 +4122,7 @@ def _admit_mutation_marker(  # noqa: PLR0913
         or preflight.publication_snapshot_digest
         != publication_snapshot.snapshot_digest
         or preflight.action_digest != action.action_digest
-        or preflight.lock_group != action.lock_group
+        or preflight.lock_group != action.serialization_projection
         or preflight.npm_configuration_digest
         != _npm_configuration_digest(action=action, target=target)
         or mutation_marker.attempt != preflight.attempt
@@ -4125,6 +4230,9 @@ __all__ = [  # noqa: RUF022
     "DEFAULT_TIMEOUT_SECONDS",
     "DeferredPublicationExecutionResult",
     "GITHUB_PACKAGES_DESTINATION_ID",
+    "GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE_ID",
+    "GITHUB_PACKAGES_NODE_VERSION",
+    "GITHUB_PACKAGES_NPM_VERSION",
     "GITHUB_PACKAGES_OBSERVATION_CONTRACT_ID",
     "GITHUB_PACKAGES_OPERATION",
     "GITHUB_PACKAGES_PACKAGE",
@@ -4146,6 +4254,7 @@ __all__ = [  # noqa: RUF022
     "classify_publish_result",
     "classify_rest_npm_consistency",
     "github_api_headers",
+    "github_packages_destination_operation_profile",
     "github_package_versions_url",
     "npm_exact_metadata_url",
     "observe_github_packages_projection",
@@ -4155,5 +4264,6 @@ __all__ = [  # noqa: RUF022
     "redact_diagnostic",
     "redirect_headers",
     "validate_observation_bounds",
+    "validate_github_packages_publication_action",
     "validate_receipt_response_bindings",
 ]

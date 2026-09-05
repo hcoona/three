@@ -16,8 +16,8 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseAttemptIdentity,
     ReleaseBuildIdentity,
     ReleaseOutputIdentity,
-    publication_lock_group,
     publication_mutable_resource_keys,
+    publication_serialization_projection,
 )
 
 TARGET = "a" * 40
@@ -642,11 +642,13 @@ def test_replacement_adapter_contract_api_is_available() -> None:
     adapter = _adapter()
     expected_api = (
         "GITHUB_PACKAGES_OPERATION",
+        "GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE_ID",
         "GitHubPackagesHttpResponse",
         "GitHubPackagesTransport",
         "UnsupportedPublicationPrimitiveError",
         "classify_github_packages_probe",
         "github_api_headers",
+        "github_packages_destination_operation_profile",
         "github_package_versions_url",
         "npm_exact_metadata_url",
         "observe_github_packages_projection",
@@ -655,6 +657,7 @@ def test_replacement_adapter_contract_api_is_available() -> None:
         "redact_diagnostic",
         "redirect_headers",
         "validate_observation_bounds",
+        "validate_github_packages_publication_action",
     )
     missing = tuple(name for name in expected_api if not hasattr(adapter, name))
 
@@ -784,4 +787,6 @@ def test_conditional_action_keys_remain_exact_and_conservatively_grouped() -> (
     assert first_keys != second_keys
     assert first_keys[0] != second_keys[0]
     assert first_keys[1] == second_keys[1]
-    assert publication_lock_group(first) == publication_lock_group(second)
+    assert publication_serialization_projection(
+        first
+    ) == publication_serialization_projection(second)

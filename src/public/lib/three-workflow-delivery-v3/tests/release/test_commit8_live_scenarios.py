@@ -5,7 +5,7 @@ from __future__ import annotations
 # ruff: noqa: D103, FBT001
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from three_workflow_delivery_v3.adapters import github_packages
@@ -30,14 +30,9 @@ from three_workflow_delivery_v3.records.release import (
     Receipt,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
-    publication_action_inputs,
+    form_publication_action,
     publication_capability_requirements,
-    publication_expected_result,
-    publication_lock_group,
-    publication_lock_projection,
     publication_mutable_resource_key_basis,
-    publication_mutable_resource_keys,
-    publication_receipt_contract,
     release_artifact_transport_name,
 )
 from three_workflow_delivery_v3.release import live
@@ -68,6 +63,9 @@ from three_workflow_delivery_v3.repository.descriptors import (
     GOVERNANCE_REPOSITORY,
     GovernanceSource,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 TARGET = "a" * 40
 SUMMARY_DIGEST = "sha256:" + ("5" * 64)
@@ -198,7 +196,7 @@ def _governance(
     )
 
 
-def _closure(scenario, *, with_action: bool):
+def _closure_details(scenario, *, with_action: bool):
     attempt = ReleaseAttemptIdentity(
         execution=BuddyExecutionIdentity(
             channel="buddy",
@@ -277,25 +275,12 @@ def _closure(scenario, *, with_action: bool):
     actions: tuple[PublicationAction, ...] = ()
     if with_action:
         actions = (
-            PublicationAction(
-                action_id=projection.potential_action_id,
+            form_publication_action(
+                destination_operation_profile=(
+                    github_packages.github_packages_destination_operation_profile()
+                ),
                 projection=projection,
-                operation=projection.operation,
                 artifact=artifact,
-                artifact_digest=artifact.artifact_digest,
-                artifact_output=artifact.output,
-                prerequisites=(),
-                action_inputs=publication_action_inputs(projection, artifact),
-                mutable_resource_keys=publication_mutable_resource_keys(
-                    projection, artifact
-                ),
-                lock_projection=publication_lock_projection(projection),
-                lock_group=publication_lock_group(projection),
-                capability_requirements=publication_capability_requirements(
-                    projection
-                ),
-                expected_result=publication_expected_result(projection),
-                receipt_contract=publication_receipt_contract(projection),
             ),
         )
     publication = PublicationSnapshot(
@@ -328,7 +313,19 @@ def _closure(scenario, *, with_action: bool):
         live_eligibility_payload_digest="sha256:" + ("4" * 64),
         attestation_provenance=governance_observation_provenance(governance),
     )
-    return attempt, binding, decision, publication
+    return (
+        attempt,
+        binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        snapshot,
+    )
+
+
+def _closure(scenario, *, with_action: bool):
+    return _closure_details(scenario, with_action=with_action)[:4]
 
 
 def _bundle(
@@ -410,28 +407,25 @@ def _proof(
 
 def _successful_action_result(
     publication: PublicationSnapshot,
+    projection,
+    artifact,
 ) -> ActionResult:
     action = publication.materialized_actions[0]
-    assert action.artifact.content.content_sha512 is not None
+    assert artifact.content.content_sha512 is not None
     receipt = Receipt(
         attempt=publication.attempt,
         publication_snapshot_digest=publication.snapshot_digest,
         action_id=action.action_id,
         action_digest=action.action_digest,
-        coordinate=action.projection.coordinate,
+        coordinate=projection.coordinate,
         mutable_resource_keys=action.mutable_resource_keys,
-        lock_group=action.lock_group,
-        artifact_transport=action.artifact.transport,
-        artifact_content_sha256=action.artifact.content.content_sha256,
-        artifact_content_sha512=action.artifact.content.content_sha512,
-        witness_digest=action.artifact.witness_digest,
+        lock_group=action.serialization_projection,
+        artifact_transport=artifact.transport,
+        artifact_content_sha256=artifact.content.content_sha256,
+        artifact_content_sha512=artifact.content.content_sha512,
+        witness_digest=artifact.witness_digest,
         creation_result="created",
-        tag_mapping=(
-            (
-                "buddy-sha-" + publication.attempt.execution.target,
-                action.projection.coordinate.native_version,
-            ),
-        ),
+        tag_mapping=((action.tag, action.version),),
         response_identity_digest="sha256:" + ("9" * 64),
         producer="publish-github-packages",
         control=_control(publication.attempt),
@@ -442,7 +436,7 @@ def _successful_action_result(
         publication_snapshot_digest=publication.snapshot_digest,
         action_id=action.action_id,
         action_digest=action.action_digest,
-        lock_group=action.lock_group,
+        lock_group=action.serialization_projection,
         outcome="success",
         mutation_disposition="created",
         response_identity_digest=receipt.response_identity_digest,
@@ -675,13 +669,21 @@ def test_unsuccessful_qualification_terminalizes_without_publication(
 def test_publication_preparation_interruption_has_no_downstream_lineage(
     qualified_simulation,
 ) -> None:
-    attempt, binding, decision, publication = _closure(
+    (
+        attempt,
+        binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        _qualification_snapshot,
+    ) = _closure_details(
         qualified_simulation,
         with_action=True,
     )
     bundle = _bundle(binding, decision, publication)
     authorization = _authorization(bundle)
-    result = _successful_action_result(publication)
+    result = _successful_action_result(publication, projection, artifact)
 
     outcome = finalize_attempt_outcome(
         attempt=attempt,
@@ -739,14 +741,22 @@ def test_blocking_observation_requires_reconciliation(
     result: str,
     uncertainty: bool,
 ) -> None:
-    attempt, _binding, decision, publication = _closure(
+    (
+        attempt,
+        _binding,
+        decision,
+        _publication,
+        projection,
+        _artifact,
+        _qualification_snapshot,
+    ) = _closure_details(
         qualified_simulation,
         with_action=True,
     )
     observation = _blocking_observation(
         attempt=attempt,
         qualification_decision=decision,
-        projection=publication.materialized_actions[0].projection,
+        projection=projection,
         classification=classification,
     )
 
@@ -785,11 +795,8 @@ def test_approval_bundle_closes_one_action_before_wait(
         publication
     )
     assert bundle.reviewer_summary_reference == reviewer
-    assert (
-        decision.admitted_artifact_digests
-        == publication.artifact_digests
-        == (publication.materialized_actions[0].artifact_digest,)
-    )
+    assert decision.admitted_artifact_digests == publication.artifact_digests
+    assert len(publication.artifact_digests) == 1
     assert {
         "approval-result",
         "completed-at",
@@ -799,6 +806,108 @@ def test_approval_bundle_closes_one_action_before_wait(
         "publication-snapshot",
         "qualification-decision",
     }.isdisjoint(bundle.to_document())
+
+
+def test_approval_admission_rejects_substituted_action_profile_digest(
+    qualified_simulation,
+) -> None:
+    (
+        attempt,
+        binding,
+        decision,
+        original_publication,
+        _projection,
+        artifact,
+        qualification_snapshot,
+    ) = _closure_details(
+        qualified_simulation,
+        with_action=True,
+    )
+    action = replace(
+        original_publication.materialized_actions[0],
+        destination_operation_profile_digest="sha256:" + ("0" * 64),
+    )
+    publication = replace(
+        original_publication,
+        materialized_actions=(action,),
+    )
+    bundle = _bundle(binding, decision, publication)
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Publication Action is not an exact profile instantiation$",
+    ):
+        live.validate_approval_bundle_closure(
+            approval_bundle=bundle,
+            intent=_intent(attempt),
+            attempt_binding=binding,
+            qualification_decision=decision,
+            qualification_snapshot=qualification_snapshot,
+            release_artifact=artifact,
+            destination_operation_profile=(
+                github_packages.github_packages_destination_operation_profile()
+            ),
+            publication_snapshot=publication,
+            publication_snapshot_reference=_snapshot_reference(publication),
+            reviewer_summary_reference=bundle.reviewer_summary_reference,
+            control=bundle.control,
+        )
+
+
+@pytest.mark.parametrize(
+    "substitution",
+    ["qualification-snapshot", "release-artifact"],
+)
+def test_approval_admission_rejects_substituted_qualification_context(
+    qualified_simulation,
+    substitution: str,
+) -> None:
+    (
+        attempt,
+        binding,
+        decision,
+        publication,
+        _projection,
+        artifact,
+        qualification_snapshot,
+    ) = _closure_details(
+        qualified_simulation,
+        with_action=True,
+    )
+    bundle = _bundle(binding, decision, publication)
+    if substitution == "qualification-snapshot":
+        qualification_snapshot = replace(
+            qualification_snapshot,
+            subject=replace(
+                attempt,
+                workflow_run_id=attempt.workflow_run_id + 1,
+            ),
+        )
+    else:
+        artifact = replace(
+            artifact,
+            entries=tuple(sorted((*artifact.entries, "substituted-entry"))),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Approval Bundle action qualification context mismatch$",
+    ):
+        live.validate_approval_bundle_closure(
+            approval_bundle=bundle,
+            intent=_intent(attempt),
+            attempt_binding=binding,
+            qualification_decision=decision,
+            qualification_snapshot=qualification_snapshot,
+            release_artifact=artifact,
+            destination_operation_profile=(
+                github_packages.github_packages_destination_operation_profile()
+            ),
+            publication_snapshot=publication,
+            publication_snapshot_reference=_snapshot_reference(publication),
+            reviewer_summary_reference=bundle.reviewer_summary_reference,
+            control=bundle.control,
+        )
 
 
 def test_publication_authorization_binds_bundle_and_fresh_governance(
@@ -878,7 +987,15 @@ def test_exact_satisfied_proof_rejects_action_bearing_snapshot(
 def test_action_bearing_missing_authority_is_incomplete(
     qualified_simulation,
 ) -> None:
-    attempt, _binding, decision, publication = _closure(
+    (
+        attempt,
+        _binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        _qualification_snapshot,
+    ) = _closure_details(
         qualified_simulation,
         with_action=True,
     )
@@ -910,7 +1027,9 @@ def test_action_bearing_missing_authority_is_incomplete(
             exact_satisfied_governance_proof=None,
             approval_bundle=None,
             publication_authorization=None,
-            action_results=(_successful_action_result(publication),),
+            action_results=(
+                _successful_action_result(publication, projection, artifact),
+            ),
         )
 
 
@@ -947,13 +1066,21 @@ def test_action_bearing_bundle_without_authorization_is_incomplete(
 def test_live_finalizer_consumes_direct_action_result_with_embedded_receipt(
     qualified_simulation,
 ) -> None:
-    attempt, binding, decision, publication = _closure(
+    (
+        attempt,
+        binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        qualification_snapshot,
+    ) = _closure_details(
         qualified_simulation,
         with_action=True,
     )
     bundle = _bundle(binding, decision, publication)
     authorization = _authorization(bundle)
-    result = _successful_action_result(publication)
+    result = _successful_action_result(publication, projection, artifact)
 
     outcome = finalize_attempt_outcome(
         attempt=attempt,
@@ -963,6 +1090,11 @@ def test_live_finalizer_consumes_direct_action_result_with_embedded_receipt(
         approval_bundle=bundle,
         publication_authorization=authorization,
         action_results=(result,),
+        qualification_snapshot=qualification_snapshot,
+        release_artifact=artifact,
+        destination_operation_profile=(
+            github_packages.github_packages_destination_operation_profile()
+        ),
         publication_snapshot_reference=_snapshot_reference(publication),
         approval_bundle_reference=_bundle_reference(bundle),
     )
@@ -979,13 +1111,21 @@ def test_live_finalizer_consumes_direct_action_result_with_embedded_receipt(
 def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
     qualified_simulation,
 ) -> None:
-    attempt, binding, decision, publication = _closure(
+    (
+        attempt,
+        binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        qualification_snapshot,
+    ) = _closure_details(
         qualified_simulation,
         with_action=True,
     )
     bundle = _bundle(binding, decision, publication)
     authorization = _authorization(bundle)
-    result = _successful_action_result(publication)
+    result = _successful_action_result(publication, projection, artifact)
     assert result.receipt is not None
 
     substituted_bundle = replace(
@@ -1011,6 +1151,11 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             approval_bundle=bundle,
             publication_authorization=substituted_authorization,
             action_results=(result,),
+            qualification_snapshot=qualification_snapshot,
+            release_artifact=artifact,
+            destination_operation_profile=(
+                github_packages.github_packages_destination_operation_profile()
+            ),
             publication_snapshot_reference=_snapshot_reference(publication),
             approval_bundle_reference=_bundle_reference(bundle),
         )
@@ -1033,6 +1178,11 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
                 ),
             ),
             action_results=(result,),
+            qualification_snapshot=qualification_snapshot,
+            release_artifact=artifact,
+            destination_operation_profile=(
+                github_packages.github_packages_destination_operation_profile()
+            ),
             publication_snapshot_reference=_snapshot_reference(publication),
             approval_bundle_reference=_bundle_reference(bundle),
         )
@@ -1052,6 +1202,11 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             ),
             publication_authorization=authorization,
             action_results=(result,),
+            qualification_snapshot=qualification_snapshot,
+            release_artifact=artifact,
+            destination_operation_profile=(
+                github_packages.github_packages_destination_operation_profile()
+            ),
             publication_snapshot_reference=_snapshot_reference(publication),
             approval_bundle_reference=_bundle_reference(bundle),
         )
@@ -1075,17 +1230,149 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(substituted_result,),
+            qualification_snapshot=qualification_snapshot,
+            release_artifact=artifact,
+            destination_operation_profile=(
+                github_packages.github_packages_destination_operation_profile()
+            ),
             publication_snapshot_reference=_snapshot_reference(publication),
             approval_bundle_reference=_bundle_reference(bundle),
         )
 
+    substituted_action_id = "publish-substituted"
     substituted_receipt = replace(
         result.receipt,
-        artifact_transport=replace(
-            result.receipt.artifact_transport,
-            artifact_id=999,
-        ),
+        action_id=substituted_action_id,
     )
+    substituted_result = replace(
+        result,
+        action_id=substituted_action_id,
+        receipt=substituted_receipt,
+    )
+    with pytest.raises(ValueError, match="Action Result binding mismatch"):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=publication,
+            exact_satisfied_governance_proof=None,
+            approval_bundle=bundle,
+            publication_authorization=authorization,
+            action_results=(substituted_result,),
+            qualification_snapshot=qualification_snapshot,
+            release_artifact=artifact,
+            destination_operation_profile=(
+                github_packages.github_packages_destination_operation_profile()
+            ),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
+        )
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(
+            lambda receipt: replace(
+                receipt,
+                artifact_transport=replace(
+                    receipt.artifact_transport,
+                    artifact_id=999,
+                ),
+            ),
+            id="artifact-id",
+        ),
+        pytest.param(
+            lambda receipt: replace(
+                receipt,
+                coordinate=replace(receipt.coordinate, channel="official"),
+            ),
+            id="coordinate-channel",
+        ),
+        pytest.param(
+            lambda receipt: replace(
+                receipt,
+                coordinate=replace(
+                    receipt.coordinate,
+                    destination_id="npm/substituted",
+                ),
+            ),
+            id="coordinate-destination",
+        ),
+        pytest.param(
+            lambda receipt: replace(
+                receipt,
+                artifact_transport=replace(
+                    receipt.artifact_transport,
+                    artifact_name="substituted.tgz",
+                ),
+            ),
+            id="transport-name",
+        ),
+        pytest.param(
+            lambda receipt: replace(
+                receipt,
+                artifact_transport=replace(
+                    receipt.artifact_transport,
+                    producer="substituted-producer",
+                ),
+            ),
+            id="transport-producer",
+        ),
+        pytest.param(
+            lambda receipt: replace(
+                receipt,
+                mutable_resource_keys=(
+                    "external-package-coordinate:" + ("0" * 64),
+                    "npm-dist-tag:" + ("1" * 64),
+                ),
+            ),
+            id="mutable-resource-keys",
+        ),
+        pytest.param(
+            lambda receipt: replace(
+                receipt,
+                artifact_content_sha256="sha256:" + ("0" * 64),
+            ),
+            id="content-sha256",
+        ),
+        pytest.param(
+            lambda receipt: replace(
+                receipt,
+                artifact_content_sha512="sha512:" + ("0" * 128),
+            ),
+            id="content-sha512",
+        ),
+        pytest.param(
+            lambda receipt: replace(
+                receipt,
+                witness_digest="sha256:" + ("0" * 64),
+            ),
+            id="witness-digest",
+        ),
+    ],
+)
+def test_live_finalizer_rejects_substituted_receipt_ancestor_fact(
+    qualified_simulation,
+    mutate: Callable[[Receipt], Receipt],
+) -> None:
+    (
+        attempt,
+        binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        qualification_snapshot,
+    ) = _closure_details(
+        qualified_simulation,
+        with_action=True,
+    )
+    bundle = _bundle(binding, decision, publication)
+    authorization = _authorization(bundle)
+    result = _successful_action_result(publication, projection, artifact)
+    assert result.receipt is not None
+    substituted_receipt = mutate(result.receipt)
+
     with pytest.raises(ValueError, match="Receipt binding mismatch"):
         finalize_attempt_outcome(
             attempt=attempt,
@@ -1095,6 +1382,151 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(replace(result, receipt=substituted_receipt),),
+            qualification_snapshot=qualification_snapshot,
+            release_artifact=artifact,
+            destination_operation_profile=(
+                github_packages.github_packages_destination_operation_profile()
+            ),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
+        )
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["qualification-snapshot", "release-artifact"],
+)
+def test_live_finalizer_requires_each_context_for_success_receipt(
+    qualified_simulation,
+    missing: str,
+) -> None:
+    (
+        attempt,
+        binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        qualification_snapshot,
+    ) = _closure_details(
+        qualified_simulation,
+        with_action=True,
+    )
+    bundle = _bundle(binding, decision, publication)
+    authorization = _authorization(bundle)
+    result = _successful_action_result(publication, projection, artifact)
+
+    with pytest.raises(
+        TypeError,
+        match="Receipt requires exact qualification context",
+    ):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=publication,
+            exact_satisfied_governance_proof=None,
+            approval_bundle=bundle,
+            publication_authorization=authorization,
+            action_results=(result,),
+            qualification_snapshot=(
+                None
+                if missing == "qualification-snapshot"
+                else qualification_snapshot
+            ),
+            release_artifact=(
+                None if missing == "release-artifact" else artifact
+            ),
+            destination_operation_profile=(
+                github_packages.github_packages_destination_operation_profile()
+            ),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
+        )
+
+
+def test_live_finalizer_requires_profile_for_success_receipt(
+    qualified_simulation,
+) -> None:
+    (
+        attempt,
+        binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        qualification_snapshot,
+    ) = _closure_details(
+        qualified_simulation,
+        with_action=True,
+    )
+    bundle = _bundle(binding, decision, publication)
+    authorization = _authorization(bundle)
+    result = _successful_action_result(publication, projection, artifact)
+
+    with pytest.raises(
+        TypeError,
+        match="Receipt requires an exact Destination Operation Profile",
+    ):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=publication,
+            exact_satisfied_governance_proof=None,
+            approval_bundle=bundle,
+            publication_authorization=authorization,
+            action_results=(result,),
+            qualification_snapshot=qualification_snapshot,
+            release_artifact=artifact,
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
+        )
+
+
+def test_live_finalizer_rejects_substituted_action_profile_digest(
+    qualified_simulation,
+) -> None:
+    (
+        attempt,
+        binding,
+        decision,
+        original_publication,
+        projection,
+        artifact,
+        qualification_snapshot,
+    ) = _closure_details(
+        qualified_simulation,
+        with_action=True,
+    )
+    original_action = original_publication.materialized_actions[0]
+    action = replace(
+        original_action,
+        destination_operation_profile_digest="sha256:" + ("0" * 64),
+    )
+    publication = replace(
+        original_publication,
+        materialized_actions=(action,),
+    )
+    bundle = _bundle(binding, decision, publication)
+    authorization = _authorization(bundle)
+    result = _successful_action_result(publication, projection, artifact)
+
+    with pytest.raises(
+        ValueError,
+        match="Publication Action is not an exact profile instantiation",
+    ):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=publication,
+            exact_satisfied_governance_proof=None,
+            approval_bundle=bundle,
+            publication_authorization=authorization,
+            action_results=(result,),
+            qualification_snapshot=qualification_snapshot,
+            release_artifact=artifact,
+            destination_operation_profile=(
+                github_packages.github_packages_destination_operation_profile()
+            ),
             publication_snapshot_reference=_snapshot_reference(publication),
             approval_bundle_reference=_bundle_reference(bundle),
         )
@@ -1159,14 +1591,21 @@ def test_publisher_rejects_substituted_authority_attempt(
     qualified_simulation,
     authority: str,
 ) -> None:
-    attempt, binding, decision, publication = _closure(
+    (
+        attempt,
+        binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        _qualification_snapshot,
+    ) = _closure_details(
         qualified_simulation,
         with_action=True,
     )
     bundle = _bundle(binding, decision, publication)
     authorization = _authorization(bundle)
     action = publication.materialized_actions[0]
-    projection = action.projection
     potential_action = replace(
         qualified_simulation.snapshot.potential_actions[0],
         contract_id=projection.potential_action_id,
@@ -1198,7 +1637,7 @@ def test_publisher_rejects_substituted_authority_attempt(
             action=action,
             qualification_snapshot=qualification_snapshot,
             qualification_decision=decision,
-            artifact=action.artifact,
+            artifact=artifact,
             expectation=qualified_simulation.expectation,
         )
 
@@ -1346,13 +1785,21 @@ def test_platform_termination_maps_by_publication_phase(
 def test_platform_termination_rejects_multiple_direct_results(
     qualified_simulation,
 ) -> None:
-    attempt, binding, decision, publication = _closure(
+    (
+        attempt,
+        binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        _qualification_snapshot,
+    ) = _closure_details(
         qualified_simulation,
         with_action=True,
     )
     bundle = _bundle(binding, decision, publication)
     authorization = _authorization(bundle)
-    result = _successful_action_result(publication)
+    result = _successful_action_result(publication, projection, artifact)
     assert result.receipt is not None
     substituted_digest = "sha256:" + ("8" * 64)
     second_result = replace(
@@ -1412,13 +1859,21 @@ def test_action_bearing_publication_rejects_exact_satisfied_proof(
 def test_platform_termination_rejects_misbound_action_result(
     qualified_simulation,
 ) -> None:
-    attempt, binding, decision, publication = _closure(
+    (
+        attempt,
+        binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        _qualification_snapshot,
+    ) = _closure_details(
         qualified_simulation,
         with_action=True,
     )
     bundle = _bundle(binding, decision, publication)
     authorization = _authorization(bundle)
-    result = _successful_action_result(publication)
+    result = _successful_action_result(publication, projection, artifact)
     assert result.receipt is not None
     substituted_digest = "sha256:" + ("8" * 64)
     substituted_lock = "destination-package:substituted"
@@ -1480,7 +1935,7 @@ def test_failed_no_side_effect_result_is_terminal_failure(
         publication_snapshot_digest=publication.snapshot_digest,
         action_id=action.action_id,
         action_digest=action.action_digest,
-        lock_group=action.lock_group,
+        lock_group=action.serialization_projection,
         outcome="failed",
         mutation_disposition="no-side-effect",
         response_identity_digest=None,
@@ -1513,13 +1968,21 @@ def test_failed_no_side_effect_result_is_terminal_failure(
 def test_mixed_attempt_action_result_is_rejected(
     qualified_simulation,
 ) -> None:
-    attempt, binding, decision, publication = _closure(
+    (
+        attempt,
+        binding,
+        decision,
+        publication,
+        projection,
+        artifact,
+        _qualification_snapshot,
+    ) = _closure_details(
         qualified_simulation,
         with_action=True,
     )
     bundle = _bundle(binding, decision, publication)
     authorization = _authorization(bundle)
-    result = _successful_action_result(publication)
+    result = _successful_action_result(publication, projection, artifact)
     assert result.receipt is not None
     mixed_attempt = replace(
         attempt,
@@ -1555,4 +2018,57 @@ def test_mixed_attempt_action_result_is_rejected(
             action_results=(mixed_result,),
             publication_snapshot_reference=_snapshot_reference(publication),
             approval_bundle_reference=_bundle_reference(bundle),
+        )
+
+
+def test_publisher_preflight_rejects_substituted_action_profile_digest(
+    qualified_simulation,
+) -> None:
+    (
+        _attempt,
+        binding,
+        decision,
+        original_publication,
+        _projection,
+        artifact,
+        qualification_snapshot,
+    ) = _closure_details(
+        qualified_simulation,
+        with_action=True,
+    )
+    original_action = original_publication.materialized_actions[0]
+    action = replace(
+        original_action,
+        destination_operation_profile_digest="sha256:" + ("0" * 64),
+    )
+    publication = replace(
+        original_publication,
+        materialized_actions=(action,),
+    )
+    bundle = _bundle(binding, decision, publication)
+    authorization = _authorization(bundle)
+
+    assert (
+        bundle.publication_snapshot_reference.payload_digest
+        == publication.snapshot_digest
+    )
+    assert (
+        authorization.approval_bundle_reference.payload_digest
+        == bundle.bundle_digest
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Publication Action is not an exact profile instantiation$",
+    ):
+        github_packages.preflight_github_packages_action(
+            publication_snapshot=publication,
+            approval_bundle=bundle,
+            reviewer_summary_reference=bundle.reviewer_summary_reference,
+            authorization=authorization,
+            action=action,
+            qualification_snapshot=qualification_snapshot,
+            qualification_decision=decision,
+            artifact=artifact,
+            expectation=qualified_simulation.expectation,
         )

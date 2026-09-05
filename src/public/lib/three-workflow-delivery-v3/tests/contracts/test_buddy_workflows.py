@@ -1544,7 +1544,11 @@ def test_approve_publication_freshly_admits_governance_and_emits_sole_authorizat
             "${{ inputs.live-eligibility-artifact-id }},"
             "${{ needs.admit.outputs.attempt-artifact-id }},"
             "${{ needs.materialize-publication.outputs."
+            "qualification-snapshot-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
             "decision-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "release-artifact-artifact-id }},"
             "${{ needs.materialize-publication.outputs."
             "publication-snapshot-artifact-id }},"
             "${{ needs.materialize-publication.outputs."
@@ -1580,7 +1584,15 @@ def test_approve_publication_freshly_admits_governance_and_emits_sole_authorizat
         "--approval-bundle-artifact-digest",
         "--approval-bundle-artifact-url",
         "--approval-bundle-payload-path",
+        "--qualification-snapshot",
+        "--qualification-snapshot-digest",
+        "--qualification-snapshot-artifact-id",
+        "--qualification-snapshot-artifact-digest",
         "--qualification-decision",
+        "--release-artifact",
+        "--release-artifact-digest",
+        "--release-artifact-artifact-id",
+        "--release-artifact-artifact-digest",
         "--publication-snapshot",
         "--publication-snapshot-digest",
         "--publication-snapshot-artifact-id",
@@ -1601,6 +1613,16 @@ def test_approve_publication_freshly_admits_governance_and_emits_sole_authorizat
         "--control",
     ):
         assert command.count(f"{option} ") == 1
+    assert (
+        "--qualification-snapshot-artifact-id "
+        '"${{ needs.materialize-publication.outputs.'
+        'qualification-snapshot-artifact-id }}"' in command
+    )
+    assert (
+        "--release-artifact-artifact-id "
+        '"${{ needs.materialize-publication.outputs.'
+        'release-artifact-artifact-id }}"' in command
+    )
     assert '--reviewer-summary ".wdv3/input/reviewer-summary.md"' in command
     assert (
         "--approval-boundary-sentinel-result "

@@ -10,6 +10,9 @@ from unittest.mock import Mock
 import pytest
 from three_workflow_delivery_v3 import cli as cli_module
 from three_workflow_delivery_v3.adapters import node as node_adapter
+from three_workflow_delivery_v3.adapters.github_packages import (
+    github_packages_destination_operation_profile,
+)
 from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
@@ -18,6 +21,7 @@ from three_workflow_delivery_v3.records.release import (
     ApprovalBundle,
     AttemptOutcome,
     BuddyExecutionIdentity,
+    DestinationOperationProfile,
     DestinationProjection,
     ExactSatisfiedGovernanceProof,
     GovernanceProof,
@@ -27,7 +31,6 @@ from three_workflow_delivery_v3.records.release import (
     OfficialExecutionIdentity,
     OfficialProductIdentity,
     ProjectionObservation,
-    PublicationAction,
     PublicationAuthorization,
     PublicationObservationReference,
     PublicationSnapshot,
@@ -38,14 +41,9 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
     admit_release_record,
-    publication_action_inputs,
+    form_publication_action,
     publication_capability_requirements,
-    publication_expected_result,
-    publication_lock_group,
-    publication_lock_projection,
     publication_mutable_resource_key_basis,
-    publication_mutable_resource_keys,
-    publication_receipt_contract,
     release_artifact_transport_name,
 )
 from three_workflow_delivery_v3.records.release_transport import (
@@ -283,24 +281,12 @@ def _action_bearing_publication(
         message = "action-bearing publication requires a Release Attempt"
         raise TypeError(message)
     projection = snapshot.destination_projections[0]
-    action = PublicationAction(
-        action_id=projection.potential_action_id,
-        projection=projection,
-        operation=projection.operation,
-        artifact=artifact,
-        artifact_digest=artifact.artifact_digest,
-        artifact_output=artifact.output,
-        prerequisites=(),
-        action_inputs=publication_action_inputs(projection, artifact),
-        mutable_resource_keys=publication_mutable_resource_keys(
-            projection,
-            artifact,
+    action = form_publication_action(
+        destination_operation_profile=(
+            github_packages_destination_operation_profile()
         ),
-        lock_projection=publication_lock_projection(projection),
-        lock_group=publication_lock_group(projection),
-        capability_requirements=publication_capability_requirements(projection),
-        expected_result=publication_expected_result(projection),
-        receipt_contract=publication_receipt_contract(projection),
+        projection=projection,
+        artifact=artifact,
     )
     return PublicationSnapshot(
         attempt=snapshot.subject,
@@ -1335,10 +1321,19 @@ def test_materialize_publication_cli_emits_path_specific_review_outputs(  # noqa
         "_load_live_release_artifact_record",
         lambda _arguments: artifact,
     )
+    destination_operation_profiles: list[DestinationOperationProfile] = []
+
+    def capture_materialization(
+        *_arguments: object,
+        destination_operation_profile: DestinationOperationProfile,
+    ) -> PublicationSnapshot:
+        destination_operation_profiles.append(destination_operation_profile)
+        return publication
+
     monkeypatch.setattr(
         cli_module,
         "materialize_publication_snapshot",
-        lambda *_arguments: publication,
+        capture_materialization,
     )
     output_path = tmp_path / "publication-snapshot.json"
     summary_path = tmp_path / "reviewer-summary.md"
@@ -1408,6 +1403,12 @@ def test_materialize_publication_cli_emits_path_specific_review_outputs(  # noqa
         assert "reviewer-digest=" not in emitted
         return
 
+    assert len(destination_operation_profiles) == 1
+    (destination_operation_profile,) = destination_operation_profiles
+    assert (
+        destination_operation_profile
+        == github_packages_destination_operation_profile()
+    )
     summary = summary_path.read_text(encoding="utf-8")
     coordinate = projection.coordinate
     required_values = (
@@ -1441,7 +1442,7 @@ def test_materialize_publication_cli_emits_path_specific_review_outputs(  # noqa
     assert f"reviewer-digest={reviewer_digest}\n" in emitted
     assert (
         "resource-concurrency-key="
-        f"{publication.materialized_actions[0].lock_group}\n"
+        f"{publication.materialized_actions[0].serialization_projection}\n"
     ) in emitted
 
 
@@ -2225,7 +2226,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         artifact,
     )
     action = publication.materialized_actions[0]
-    projection = action.projection
+    projection = live_qualification_snapshot.destination_projections[0]
     control = f"workflow-delivery-v3:{live_intent.target}"
     approval_bundle = ApprovalBundle(
         attempt=attempt,
@@ -2282,7 +2283,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         action_digest=action.action_digest,
         coordinate=projection.coordinate,
         mutable_resource_keys=action.mutable_resource_keys,
-        lock_group=action.lock_group,
+        lock_group=action.serialization_projection,
         artifact_transport=artifact.transport,
         artifact_content_sha256=artifact.content.content_sha256,
         artifact_content_sha512=artifact.content.content_sha512,
@@ -2312,6 +2313,10 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         tmp_path / "forwarded-qualification-decision.json",
         canonicalize(decision.to_document()),
     )
+    artifact_path = _write(
+        tmp_path / "forwarded-release-artifact.json",
+        canonicalize(artifact.to_document()),
+    )
     publication_path = _write(
         tmp_path / "forwarded-publication-snapshot.json",
         canonicalize(publication.to_document()),
@@ -2329,7 +2334,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         publication_snapshot_digest=publication.snapshot_digest,
         action_id=action.action_id,
         action_digest=action.action_digest,
-        lock_group=action.lock_group,
+        lock_group=action.serialization_projection,
         outcome="success",
         mutation_disposition="created",
         response_identity_digest=receipt.response_identity_digest,
@@ -2369,6 +2374,11 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         approval_bundle: ApprovalBundle | None,
         publication_authorization: PublicationAuthorization | None,
         action_results: tuple[ActionResult, ...],
+        qualification_snapshot: QualificationSnapshot | None = None,
+        release_artifact: ReleaseArtifact | None = None,
+        destination_operation_profile: DestinationOperationProfile | None = (
+            None
+        ),
         publication_snapshot_reference: ArtifactReference | None = None,
         approval_bundle_reference: ArtifactReference | None = None,
         observations: tuple[ProjectionObservation, ...] = (),
@@ -2387,6 +2397,11 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
                 "approval_bundle": approval_bundle,
                 "publication_authorization": publication_authorization,
                 "action_results": action_results,
+                "qualification_snapshot": qualification_snapshot,
+                "release_artifact": release_artifact,
+                "destination_operation_profile": (
+                    destination_operation_profile
+                ),
                 "publication_snapshot_reference": (
                     publication_snapshot_reference
                 ),
@@ -2442,6 +2457,12 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
                 decision.decision_digest,
                 916,
             ),
+            *_uploaded_arguments(
+                "release_artifact",
+                artifact_path,
+                artifact.artifact_digest,
+                917,
+            ),
             *_referenced_uploaded_arguments(
                 "publication_snapshot",
                 publication_path,
@@ -2481,6 +2502,14 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
     assert captured["attempt"] is not attempt
     assert captured["qualification_decision"] == decision
     assert captured["qualification_decision"] is not decision
+    assert captured["qualification_snapshot"] == live_qualification_snapshot
+    assert captured["qualification_snapshot"] is not live_qualification_snapshot
+    assert captured["release_artifact"] == artifact
+    assert captured["release_artifact"] is not artifact
+    assert (
+        captured["destination_operation_profile"]
+        == github_packages_destination_operation_profile()
+    )
     assert type(captured["publication_snapshot"]) is PublicationSnapshot
     assert captured["publication_snapshot"] == publication
     assert captured["publication_snapshot"] is not publication

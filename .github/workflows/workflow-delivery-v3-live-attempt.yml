@@ -1325,7 +1325,7 @@ jobs:
       - name: Download authorization closure by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }},${{ needs.materialize-publication.outputs.decision-artifact-id }},${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }},${{ needs.materialize-publication.outputs.approval-bundle-artifact-id }},${{ needs.materialize-publication.outputs.reviewer-artifact-id }}
+          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }},${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-id }},${{ needs.materialize-publication.outputs.decision-artifact-id }},${{ needs.materialize-publication.outputs.release-artifact-artifact-id }},${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }},${{ needs.materialize-publication.outputs.approval-bundle-artifact-id }},${{ needs.materialize-publication.outputs.reviewer-artifact-id }}
           path: .wdv3/input
           merge-multiple: true
           skip-decompress: true
@@ -1359,10 +1359,18 @@ jobs:
             --approval-bundle-artifact-digest "${{ needs.materialize-publication.outputs.approval-bundle-artifact-digest }}" \
             --approval-bundle-artifact-url "${{ needs.materialize-publication.outputs.approval-bundle-artifact-url }}" \
             --approval-bundle-payload-path "${{ needs.materialize-publication.outputs.approval-bundle-artifact-name }}" \
+            --qualification-snapshot ".wdv3/input/${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-name }}" \
+            --qualification-snapshot-digest "${{ needs.materialize-publication.outputs.qualification-snapshot-digest }}" \
+            --qualification-snapshot-artifact-id "${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-id }}" \
+            --qualification-snapshot-artifact-digest "${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-digest }}" \
             --qualification-decision ".wdv3/input/${{ needs.materialize-publication.outputs.decision-artifact-name }}" \
             --qualification-decision-digest "${{ needs.materialize-publication.outputs.decision-digest }}" \
             --qualification-decision-artifact-id "${{ needs.materialize-publication.outputs.decision-artifact-id }}" \
             --qualification-decision-artifact-digest "${{ needs.materialize-publication.outputs.decision-artifact-digest }}" \
+            --release-artifact ".wdv3/input/${{ needs.materialize-publication.outputs.release-artifact-artifact-name }}" \
+            --release-artifact-digest "${{ needs.materialize-publication.outputs.release-artifact-digest }}" \
+            --release-artifact-artifact-id "${{ needs.materialize-publication.outputs.release-artifact-artifact-id }}" \
+            --release-artifact-artifact-digest "${{ needs.materialize-publication.outputs.release-artifact-artifact-digest }}" \
             --publication-snapshot ".wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}" \
             --publication-snapshot-digest "${{ needs.materialize-publication.outputs.publication-snapshot-digest }}" \
             --publication-snapshot-artifact-id "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}" \

@@ -14,6 +14,8 @@ from three_workflow_delivery_v3.records.release import (
     ApprovalBoundary,
     ApprovalBundle,
     AttemptOutcome,
+    DestinationOperationProfile,
+    DestinationProjection,
     ExactSatisfiedGovernanceProof,
     GovernanceProof,
     ProjectionObservation,
@@ -21,9 +23,12 @@ from three_workflow_delivery_v3.records.release import (
     PublicationAuthorization,
     PublicationSnapshot,
     QualificationDecision,
+    QualificationSnapshot,
+    ReleaseArtifact,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
     ReleaseIntent,
+    validate_publication_action_instantiation,
 )
 from three_workflow_delivery_v3.release.eligibility import (
     GovernanceObservation,
@@ -122,6 +127,9 @@ def validate_approval_bundle_closure(
     intent: ReleaseIntent,
     attempt_binding: ReleaseAttemptBinding,
     qualification_decision: QualificationDecision,
+    qualification_snapshot: QualificationSnapshot,
+    release_artifact: ReleaseArtifact,
+    destination_operation_profile: DestinationOperationProfile,
     publication_snapshot: PublicationSnapshot,
     publication_snapshot_reference: ArtifactReference,
     reviewer_summary_reference: ArtifactReference,
@@ -142,6 +150,15 @@ def validate_approval_bundle_closure(
         or approval_bundle != expected
     ):
         raise ValueError("Approval Bundle resolved closure mismatch")
+    _validate_publication_action_context(
+        action=publication_snapshot.materialized_actions[0],
+        publication_snapshot=publication_snapshot,
+        qualification_decision=qualification_decision,
+        qualification_snapshot=qualification_snapshot,
+        release_artifact=release_artifact,
+        destination_operation_profile=destination_operation_profile,
+        context="Approval Bundle action",
+    )
 
 
 def form_publication_authorization(
@@ -332,28 +349,96 @@ def _outcome(
     )
 
 
+def _validate_publication_action_context(
+    *,
+    action: PublicationAction,
+    publication_snapshot: PublicationSnapshot,
+    qualification_decision: QualificationDecision,
+    qualification_snapshot: QualificationSnapshot | None,
+    release_artifact: ReleaseArtifact | None,
+    destination_operation_profile: DestinationOperationProfile | None,
+    context: str,
+) -> tuple[DestinationProjection, ReleaseArtifact]:
+    qualification_context_error = (
+        f"{context} requires exact qualification context"
+    )
+    destination_profile_error = (
+        f"{context} requires an exact Destination Operation Profile"
+    )
+    context_mismatch_error = f"{context} qualification context mismatch"
+    if (
+        type(qualification_snapshot) is not QualificationSnapshot
+        or type(release_artifact) is not ReleaseArtifact
+    ):
+        raise TypeError(qualification_context_error)
+    if type(destination_operation_profile) is not DestinationOperationProfile:
+        raise TypeError(destination_profile_error)
+    if len(qualification_snapshot.destination_projections) != 1:
+        raise ValueError(context_mismatch_error)
+    projection = qualification_snapshot.destination_projections[0]
+    if (
+        qualification_snapshot.subject != publication_snapshot.attempt
+        or qualification_snapshot.snapshot_digest
+        != publication_snapshot.qualification_snapshot_digest
+        or publication_snapshot.projection_ids != (projection.projection_id,)
+        or publication_snapshot.artifact_digests
+        != (release_artifact.artifact_digest,)
+        or publication_snapshot.artifact_output_ids
+        != (release_artifact.output.output_id,)
+        or qualification_decision.admitted_artifact_digests
+        != (release_artifact.artifact_digest,)
+        or release_artifact.subject != publication_snapshot.attempt
+        or release_artifact.qualification_snapshot_digest
+        != qualification_snapshot.snapshot_digest
+        or projection.output != release_artifact.output
+    ):
+        raise ValueError(context_mismatch_error)
+    validate_publication_action_instantiation(
+        action,
+        destination_operation_profile=destination_operation_profile,
+        projection=projection,
+        artifact=release_artifact,
+    )
+    return projection, release_artifact
+
+
 def _validate_publication_result(
     *,
     action_result: ActionResult,
     action: PublicationAction,
+    publication_snapshot: PublicationSnapshot,
+    qualification_decision: QualificationDecision,
+    qualification_snapshot: QualificationSnapshot | None,
+    release_artifact: ReleaseArtifact | None,
+    destination_operation_profile: DestinationOperationProfile | None,
 ) -> None:
     if (
-        action_result.action_digest != action.action_digest
-        or action_result.lock_group != action.lock_group
+        action_result.action_id != action.action_id
+        or action_result.action_digest != action.action_digest
+        or action_result.lock_group != action.serialization_projection
     ):
         raise ValueError("Live finalization Action Result binding mismatch")
     receipt = action_result.receipt
-    if receipt is not None and (
-        receipt.action_digest != action.action_digest
-        or receipt.coordinate != action.projection.coordinate
+    if receipt is None:
+        return
+    projection, admitted_artifact = _validate_publication_action_context(
+        action=action,
+        publication_snapshot=publication_snapshot,
+        qualification_decision=qualification_decision,
+        qualification_snapshot=qualification_snapshot,
+        release_artifact=release_artifact,
+        destination_operation_profile=destination_operation_profile,
+        context="Live finalization Receipt",
+    )
+    if (
+        receipt.coordinate != projection.coordinate
         or receipt.mutable_resource_keys != action.mutable_resource_keys
-        or receipt.lock_group != action.lock_group
-        or receipt.artifact_transport != action.artifact.transport
+        or receipt.artifact_transport != admitted_artifact.transport
         or receipt.artifact_content_sha256
-        != action.artifact.content.content_sha256
+        != admitted_artifact.content.content_sha256
         or receipt.artifact_content_sha512
-        != action.artifact.content.content_sha512
-        or receipt.witness_digest != action.artifact.witness_digest
+        != admitted_artifact.content.content_sha512
+        or receipt.witness_digest != admitted_artifact.witness_digest
     ):
         raise ValueError("Live finalization Receipt binding mismatch")
 
@@ -475,6 +560,9 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912
     approval_bundle: ApprovalBundle | None,
     publication_authorization: PublicationAuthorization | None,
     action_results: tuple[ActionResult, ...],
+    qualification_snapshot: QualificationSnapshot | None = None,
+    release_artifact: ReleaseArtifact | None = None,
+    destination_operation_profile: DestinationOperationProfile | None = None,
     publication_snapshot_reference: ArtifactReference | None = None,
     approval_bundle_reference: ArtifactReference | None = None,
     observations: tuple[ProjectionObservation, ...] = (),
@@ -656,6 +744,11 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912
         _validate_publication_result(
             action_result=result_record,
             action=action,
+            publication_snapshot=publication_snapshot,
+            qualification_decision=qualification_decision,
+            qualification_snapshot=qualification_snapshot,
+            release_artifact=release_artifact,
+            destination_operation_profile=destination_operation_profile,
         )
     if platform_terminated:
         possibly_mutated = bool(publication_may_have_started or action_results)

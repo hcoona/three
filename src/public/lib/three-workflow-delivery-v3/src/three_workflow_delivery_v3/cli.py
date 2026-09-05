@@ -39,6 +39,7 @@ from three_workflow_delivery_v3.adapters.github_packages import (
     ValidatedAcceptanceRequestProof,
     fixed_acceptance_coordinates,
     form_mutation_may_have_started_marker,
+    github_packages_destination_operation_profile,
     inspect_fixed_acceptance_tarball,
     observe_github_packages_projection,
     preflight_github_packages_action,
@@ -3348,6 +3349,9 @@ def _release_materialize_publication_command(
         decision,
         (observation,),
         (artifact,),
+        destination_operation_profile=(
+            github_packages_destination_operation_profile()
+        ),
     )
     snapshot_bytes = canonicalize(publication.to_document())
     snapshot_digest = publication.snapshot_digest
@@ -3376,7 +3380,7 @@ def _release_materialize_publication_command(
             ),
             (
                 "resource-concurrency-key",
-                publication.materialized_actions[0].lock_group
+                publication.materialized_actions[0].serialization_projection
                 if publication.materialized_actions
                 else "no-op",
             ),
@@ -3497,6 +3501,8 @@ def _release_form_publication_authorization_command(
         raise ValueError("Publication Authorization Attempt binding mismatch")
     bundle = _load_approval_bundle(arguments)
     decision = _load_live_qualification_decision(arguments)
+    qualification_snapshot = _load_live_qualification_snapshot(arguments)
+    release_artifact = _load_live_release_artifact_record(arguments)
     publication = _load_publication_snapshot(arguments)
     publication_reference = _uploaded_payload_reference(
         arguments,
@@ -3515,6 +3521,11 @@ def _release_form_publication_authorization_command(
         intent=intent,
         attempt_binding=binding,
         qualification_decision=decision,
+        qualification_snapshot=qualification_snapshot,
+        release_artifact=release_artifact,
+        destination_operation_profile=(
+            github_packages_destination_operation_profile()
+        ),
         publication_snapshot=publication,
         publication_snapshot_reference=publication_reference,
         reviewer_summary_reference=reviewer_reference,
@@ -3750,7 +3761,9 @@ def _release_publish_github_packages_command(
         "schema": "workflow-delivery/v3/deferred-publication-result",
         "action-id": publication.materialized_actions[0].action_id,
         "action-digest": publication.materialized_actions[0].action_digest,
-        "lock-group": publication.materialized_actions[0].lock_group,
+        "lock-group": (
+            publication.materialized_actions[0].serialization_projection
+        ),
         "outcome": result.classification.outcome,
         "mutation-disposition": result.classification.mutation_disposition,
         "response-identity-digest": result.response_identity_digest,
@@ -3829,7 +3842,7 @@ def _load_github_packages_preflight(
         or value.get("publication-snapshot-digest")
         != publication.snapshot_digest
         or value.get("action-digest") != action.action_digest
-        or value.get("lock-group") != action.lock_group
+        or value.get("lock-group") != action.serialization_projection
     ):
         raise ValueError(
             "GitHub Packages preflight is malformed or substituted"
@@ -3852,7 +3865,7 @@ def _load_github_packages_preflight(
         attempt=publication.attempt,
         publication_snapshot_digest=publication.snapshot_digest,
         action_digest=action.action_digest,
-        lock_group=action.lock_group,
+        lock_group=action.serialization_projection,
         tarball_sha256=cast("str", value.get("tarball-sha256")),
         tarball_sha512=cast("str", value.get("tarball-sha512")),
         npm_configuration_digest=cast(
@@ -3925,7 +3938,7 @@ def _load_mutation_marker(  # noqa: PLR0913
         or value.get("publication-snapshot-digest")
         != publication.snapshot_digest
         or value.get("action-digest") != action.action_digest
-        or value.get("lock-group") != action.lock_group
+        or value.get("lock-group") != action.serialization_projection
         or value.get("preflight-digest") != preflight.preflight_digest
     ):
         raise ValueError("mutation-start marker is malformed or substituted")
@@ -3933,7 +3946,7 @@ def _load_mutation_marker(  # noqa: PLR0913
         attempt=publication.attempt,
         publication_snapshot_digest=publication.snapshot_digest,
         action_digest=action.action_digest,
-        lock_group=action.lock_group,
+        lock_group=action.serialization_projection,
         preflight_digest=preflight.preflight_digest,
     )
 
@@ -3959,7 +3972,8 @@ def _release_form_github_packages_result_command(
             == "workflow-delivery/v3/deferred-publication-result"
             and loaded_state.get("action-id") == action.action_id
             and loaded_state.get("action-digest") == action.action_digest
-            and loaded_state.get("lock-group") == action.lock_group
+            and loaded_state.get("lock-group")
+            == action.serialization_projection
         ):
             state_value = cast("dict[str, JsonValue]", loaded_state)
     if state_value is not None and (
@@ -4014,7 +4028,7 @@ def _release_form_github_packages_result_command(
             "schema": "workflow-delivery/v3/deferred-publication-result",
             "action-id": action.action_id,
             "action-digest": action.action_digest,
-            "lock-group": action.lock_group,
+            "lock-group": action.serialization_projection,
             "outcome": "incomplete" if marker_present else "failed",
             "mutation-disposition": (
                 "possibly-mutated" if marker_present else "no-side-effect"
@@ -4038,7 +4052,7 @@ def _release_form_github_packages_result_command(
         "publication-snapshot-digest": publication.snapshot_digest,
         "action-id": action.action_id,
         "action-digest": action.action_digest,
-        "lock-group": action.lock_group,
+        "lock-group": action.serialization_projection,
         "outcome": state_value["outcome"],
         "mutation-disposition": state_value["mutation-disposition"],
         "response-identity-digest": state_value["response-identity-digest"],
@@ -4275,6 +4289,15 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
         approval_bundle=approval_bundle,
         publication_authorization=publication_authorization,
         action_results=() if action_result is None else (action_result,),
+        qualification_snapshot=snapshot,
+        release_artifact=(
+            qualification_artifacts[0]
+            if len(qualification_artifacts) == 1
+            else None
+        ),
+        destination_operation_profile=(
+            github_packages_destination_operation_profile()
+        ),
         publication_snapshot_reference=publication_snapshot_reference,
         approval_bundle_reference=approval_bundle_reference,
         observations=() if observation is None else (observation,),
@@ -6093,7 +6116,9 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         authorization,
         name="approval_bundle",
     )
+    _add_snapshot_arguments(authorization)
     _add_decision_arguments(authorization)
+    _add_release_artifact_arguments(authorization)
     _add_referenced_uploaded_payload_arguments(
         authorization,
         name="publication_snapshot",
