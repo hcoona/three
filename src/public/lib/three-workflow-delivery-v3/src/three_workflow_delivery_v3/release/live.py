@@ -17,7 +17,7 @@ from three_workflow_delivery_v3.records.release import (
     AttemptOutcome,
     DestinationOperationProfile,
     DestinationProjection,
-    ExactSatisfiedGovernanceProof,
+    ExactSatisfiedFinalizationProof,
     GovernanceProof,
     PublicationAction,
     PublicationAuthorization,
@@ -37,6 +37,9 @@ from three_workflow_delivery_v3.release.eligibility import (
     GovernanceObservation,
     governance_observation_provenance,
     require_action_governance,
+)
+from three_workflow_delivery_v3.release.exact_satisfied import (
+    admit_exact_satisfied_finalization_proof,
 )
 from three_workflow_delivery_v3.release.identity import (
     derive_buddy_execution_identity,
@@ -225,51 +228,6 @@ def form_publication_authorization(
     )
 
 
-def form_exact_satisfied_governance_proof(
-    *,
-    publication_snapshot: PublicationSnapshot,
-    governance: GovernanceObservation,
-    proved_at: str,
-    control: str,
-) -> ExactSatisfiedGovernanceProof:
-    """Form the fresh proof that an exact state requires no mutation."""
-    if (
-        type(publication_snapshot) is not PublicationSnapshot
-        or publication_snapshot.materialized_actions
-        or any(
-            reference.classification != "exact-satisfied"
-            for reference in publication_snapshot.observation_references
-        )
-    ):
-        message = (
-            "Exact-satisfied Governance proof requires an actionless exact "
-            "Publication Snapshot"
-        )
-        raise ValueError(message)
-    if type(governance) is not GovernanceObservation:
-        raise TypeError(
-            "Exact-satisfied proof requires fresh Governance observation"
-        )
-    if not governance.attestation.live_enabled:
-        raise ValueError("Exact-satisfied proof requires enabled Governance")
-    return ExactSatisfiedGovernanceProof(
-        attempt=publication_snapshot.attempt,
-        publication_snapshot=publication_snapshot,
-        governance_provenance=governance_observation_provenance(governance),
-        governance_current_main_sha=governance.current_main_sha,
-        governance_expires_at=governance.attestation.expires_at.strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        ),
-        governance_live_enabled=governance.attestation.live_enabled,
-        governance_observed_at=governance.observed_at.strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        ),
-        proved_at=proved_at,
-        producer="prove-exact-satisfied",
-        control=control,
-    )
-
-
 def fetch_exact_public_revision(
     *,
     target: str,
@@ -316,8 +274,8 @@ def _outcome(
     attempt: ReleaseAttemptIdentity,
     qualification_decision: QualificationDecision,
     publication_snapshot: PublicationSnapshot | None,
-    exact_satisfied_governance_proof: (
-        ExactSatisfiedGovernanceProof | None
+    exact_satisfied_finalization_proof: (
+        ExactSatisfiedFinalizationProof | None
     ) = None,
     approval_bundle: ApprovalBundle | None,
     publication_authorization: PublicationAuthorization | None,
@@ -337,10 +295,10 @@ def _outcome(
             if publication_snapshot is None
             else publication_snapshot.snapshot_digest
         ),
-        exact_satisfied_governance_proof_digest=(
+        exact_satisfied_finalization_proof_digest=(
             None
-            if exact_satisfied_governance_proof is None
-            else exact_satisfied_governance_proof.proof_digest
+            if exact_satisfied_finalization_proof is None
+            else exact_satisfied_finalization_proof.proof_digest
         ),
         approval_bundle_digest=(
             None if approval_bundle is None else approval_bundle.bundle_digest
@@ -467,7 +425,11 @@ def _validate_finalization_references(
     approval_bundle_reference: ArtifactReference | None,
 ) -> None:
     if approval_bundle is None:
-        if publication_snapshot_reference is not None:
+        if publication_snapshot_reference is not None and (
+            publication_snapshot is None
+            or publication_snapshot_reference.payload_digest
+            != publication_snapshot.snapshot_digest
+        ):
             raise ValueError("Live finalization Publication reference mismatch")
         if approval_bundle_reference is not None:
             raise ValueError("Live finalization Approval reference mismatch")
@@ -500,7 +462,9 @@ def _validate_finalization_inputs(
     attempt: ReleaseAttemptIdentity,
     qualification_decision: QualificationDecision,
     publication_snapshot: PublicationSnapshot | None,
-    exact_satisfied_governance_proof: (ExactSatisfiedGovernanceProof | None),
+    exact_satisfied_finalization_proof: (
+        ExactSatisfiedFinalizationProof | None
+    ),
     approval_bundle: ApprovalBundle | None,
     publication_authorization: PublicationAuthorization | None,
     action_results: tuple[ActionResult, ...],
@@ -524,16 +488,16 @@ def _validate_finalization_inputs(
         != qualification_decision.qualification_snapshot_digest
     ):
         raise ValueError("Live finalization Publication binding mismatch")
-    if exact_satisfied_governance_proof is not None and (
-        type(exact_satisfied_governance_proof)
-        is not ExactSatisfiedGovernanceProof
+    if exact_satisfied_finalization_proof is not None and (
+        type(exact_satisfied_finalization_proof)
+        is not ExactSatisfiedFinalizationProof
         or publication_snapshot is None
-        or exact_satisfied_governance_proof.attempt != attempt
-        or exact_satisfied_governance_proof.publication_snapshot
-        != publication_snapshot
+        or exact_satisfied_finalization_proof.attempt != attempt
+        or exact_satisfied_finalization_proof.publication_snapshot_reference
+        != publication_snapshot_reference
     ):
         raise ValueError(
-            "Live finalization exact-satisfied Governance proof mismatch"
+            "Live finalization exact-satisfied finalization proof mismatch"
         )
     if approval_bundle is not None and (
         type(approval_bundle) is not ApprovalBundle
@@ -569,8 +533,8 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
     attempt: ReleaseAttemptIdentity,
     qualification_decision: QualificationDecision,
     publication_snapshot: PublicationSnapshot | None,
-    exact_satisfied_governance_proof: (
-        ExactSatisfiedGovernanceProof | None
+    exact_satisfied_finalization_proof: (
+        ExactSatisfiedFinalizationProof | None
     ) = None,
     approval_bundle: ApprovalBundle | None,
     publication_authorization: PublicationAuthorization | None,
@@ -589,6 +553,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
     publication_preparation_interrupted: bool = False,
     platform_terminated: bool = False,
     publication_may_have_started: bool = False,
+    publisher_conclusion: str | None = None,
 ) -> AttemptOutcome:
     """Finalize from current-DAG records without remote history queries."""
     for value in (
@@ -609,7 +574,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
         attempt=attempt,
         qualification_decision=qualification_decision,
         publication_snapshot=publication_snapshot,
-        exact_satisfied_governance_proof=(exact_satisfied_governance_proof),
+        exact_satisfied_finalization_proof=exact_satisfied_finalization_proof,
         approval_bundle=approval_bundle,
         publication_authorization=publication_authorization,
         action_results=action_results,
@@ -654,7 +619,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
             (
                 observations,
                 publication_snapshot is not None,
-                exact_satisfied_governance_proof is not None,
+                exact_satisfied_finalization_proof is not None,
                 approval_bundle is not None,
                 publication_authorization is not None,
                 action_results,
@@ -682,7 +647,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
         if any(
             (
                 publication_snapshot is not None,
-                exact_satisfied_governance_proof is not None,
+                exact_satisfied_finalization_proof is not None,
                 approval_bundle is not None,
                 publication_authorization is not None,
                 action_results,
@@ -737,6 +702,10 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
             )
     actions = publication_snapshot.materialized_actions
     if not actions:
+        if publisher_conclusion != "skipped":
+            raise ValueError(
+                "Exact-satisfied finalization requires publisher skipped"
+            )
         if any(
             (
                 approval_bundle is not None,
@@ -748,7 +717,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
             raise ValueError(
                 "Exact-satisfied no-op cannot bind publication authority"
             )
-        if exact_satisfied_governance_proof is None:
+        if exact_satisfied_finalization_proof is None:
             return _outcome(
                 attempt=attempt,
                 qualification_decision=qualification_decision,
@@ -761,11 +730,39 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 possibly_mutated=False,
                 next_action="new-attempt",
             )
+        if (
+            intent is None
+            or attempt_binding is None
+            or eligibility is None
+            or policy is None
+            or decision_reference is None
+            or qualification_snapshot is None
+            or release_artifact is None
+            or publication_snapshot_reference is None
+            or len(observations) != 1
+        ):
+            raise ValueError(
+                "Exact-satisfied finalization requires full authority"
+            )
+        admit_exact_satisfied_finalization_proof(
+            exact_satisfied_finalization_proof,
+            publication_snapshot=publication_snapshot,
+            publication_snapshot_reference=publication_snapshot_reference,
+            intent=intent,
+            attempt_binding=attempt_binding,
+            eligibility=eligibility,
+            policy=policy,
+            snapshot=qualification_snapshot,
+            decision=qualification_decision,
+            decision_reference=decision_reference,
+            artifact=release_artifact,
+            observation=observations[0],
+        )
         return _outcome(
             attempt=attempt,
             qualification_decision=qualification_decision,
             publication_snapshot=publication_snapshot,
-            exact_satisfied_governance_proof=(exact_satisfied_governance_proof),
+            exact_satisfied_finalization_proof=exact_satisfied_finalization_proof,
             approval_bundle=None,
             publication_authorization=None,
             terminal_phase="finalized-no-op",
@@ -774,7 +771,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
             possibly_mutated=False,
             next_action="none",
         )
-    if exact_satisfied_governance_proof is not None:
+    if exact_satisfied_finalization_proof is not None:
         raise ValueError(
             "Action-bearing publication cannot bind exact-satisfied proof"
         )
@@ -879,7 +876,6 @@ __all__ = [
     "fetch_exact_public_revision",
     "finalize_attempt_outcome",
     "form_approval_bundle",
-    "form_exact_satisfied_governance_proof",
     "form_publication_authorization",
     "validate_approval_bundle_closure",
 ]

@@ -63,7 +63,6 @@ from three_workflow_delivery_v3.release.live import (
     fetch_exact_public_revision,
     finalize_attempt_outcome,
     form_approval_bundle,
-    form_exact_satisfied_governance_proof,
     form_publication_authorization,
     validate_approval_bundle_closure,
 )
@@ -142,7 +141,6 @@ __all__ = [  # noqa: RUF022
     "finalize_qualification",
     "finalize_simulation",
     "form_approval_bundle",
-    "form_exact_satisfied_governance_proof",
     "form_publication_authorization",
     "form_incomplete_evidence",
     "form_release_adapter_context",

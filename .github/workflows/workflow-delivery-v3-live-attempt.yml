@@ -1456,20 +1456,27 @@ jobs:
           include-hidden-files: true
 
   prove-exact-satisfied:
-    name: Prove exact-satisfied Governance continuity
+    name: Prove fresh exact-satisfied state
     if: >-
+      always() &&
       github.run_attempt == 1 &&
-      needs.materialize-publication.outputs.publish-required == 'false'
-    needs: [admit, materialize-publication]
+      needs.materialize-publication.result == 'success' &&
+      needs.materialize-publication.outputs.publish-required == 'false' &&
+      needs.materialize-publication.outputs.approval-bundle-artifact-id == '' &&
+      needs.approve-publication.result == 'skipped' &&
+      needs.approve-publication.outputs.publication-authorization-artifact-id == '' &&
+      needs.publish-github-packages.result == 'skipped'
+    needs: [admit, plan-qualification, materialize-publication, approve-publication, publish-github-packages]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
+      packages: read
     outputs:
-      exact-satisfied-governance-proof-artifact-id: ${{ steps.upload.outputs.artifact-id }}
-      exact-satisfied-governance-proof-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
-      exact-satisfied-governance-proof-artifact-name: ${{ steps.prove.outputs.exact-satisfied-governance-proof-artifact-name }}
-      exact-satisfied-governance-proof-digest: ${{ steps.prove.outputs.exact-satisfied-governance-proof-digest }}
+      exact-satisfied-finalization-proof-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      exact-satisfied-finalization-proof-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      exact-satisfied-finalization-proof-artifact-name: ${{ steps.prove.outputs.exact-satisfied-finalization-proof-artifact-name }}
+      exact-satisfied-finalization-proof-digest: ${{ steps.prove.outputs.exact-satisfied-finalization-proof-digest }}
     steps:
       - name: Check out exact selected target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1484,18 +1491,23 @@ jobs:
       - name: Download exact-satisfied closure by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }},${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-id }},${{ needs.materialize-publication.outputs.decision-artifact-id }},${{ needs.materialize-publication.outputs.release-artifact-artifact-id }},${{ needs.materialize-publication.outputs.observation-artifact-id }},${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}
+          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }},${{ needs.plan-qualification.outputs.adapter-context-artifact-id }},${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-id }},${{ needs.materialize-publication.outputs.decision-artifact-id }},${{ needs.materialize-publication.outputs.release-artifact-artifact-id }},${{ needs.materialize-publication.outputs.observation-artifact-id }},${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}
           path: .wdv3/input
           merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
-      - name: Form exact-satisfied Governance proof
+      - name: Form exact-satisfied finalization proof
         id: prove
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release prove-exact-satisfied \
+            --publisher-conclusion "${{ needs.publish-github-packages.result }}" \
+            --adapter-context ".wdv3/input/${{ needs.plan-qualification.outputs.adapter-context-artifact-name }}" \
+            --adapter-context-digest "${{ needs.plan-qualification.outputs.adapter-context-digest }}" \
+            --adapter-context-artifact-id "${{ needs.plan-qualification.outputs.adapter-context-artifact-id }}" \
+            --adapter-context-artifact-digest "${{ needs.plan-qualification.outputs.adapter-context-artifact-digest }}" \
             --github-token "${GITHUB_TOKEN}" \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1534,23 +1546,25 @@ jobs:
             --publication-snapshot-digest "${{ needs.materialize-publication.outputs.publication-snapshot-digest }}" \
             --publication-snapshot-artifact-id "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}" \
             --publication-snapshot-artifact-digest "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-digest }}" \
+            --publication-snapshot-artifact-url "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-url }}" \
+            --publication-snapshot-payload-path "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}" \
             --live-eligibility-decision ".wdv3/input/${{ inputs.live-eligibility-artifact-name }}" \
             --live-eligibility-artifact-id "${{ inputs.live-eligibility-artifact-id }}" \
             --live-eligibility-artifact-digest "${{ inputs.live-eligibility-artifact-digest }}" \
             --live-eligibility-payload-digest "${{ inputs.live-eligibility-digest }}" \
             --control "workflow-delivery-v3:${{ inputs.target-sha }}" \
-            --output .wdv3/exact-satisfied-governance-proof.json \
+            --output .wdv3/exact-satisfied-finalization-proof.json \
             --github-output "${GITHUB_OUTPUT}"
-          digest="$(sha256sum .wdv3/exact-satisfied-governance-proof.json | cut -d' ' -f1)"
+          digest="$(sha256sum .wdv3/exact-satisfied-finalization-proof.json | cut -d' ' -f1)"
           name="wdv3-live-buddy-exact-satisfied-proof-r${GITHUB_RUN_ID}-${digest}.json"
-          mv .wdv3/exact-satisfied-governance-proof.json ".wdv3/${name}"
-          echo "exact-satisfied-governance-proof-artifact-name=${name}" >> "${GITHUB_OUTPUT}"
-      - name: Upload exact-satisfied Governance proof
+          mv .wdv3/exact-satisfied-finalization-proof.json ".wdv3/${name}"
+          echo "exact-satisfied-finalization-proof-artifact-name=${name}" >> "${GITHUB_OUTPUT}"
+      - name: Upload exact-satisfied finalization proof
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ${{ steps.prove.outputs.exact-satisfied-governance-proof-artifact-name }}
-          path: .wdv3/${{ steps.prove.outputs.exact-satisfied-governance-proof-artifact-name }}
+          name: ${{ steps.prove.outputs.exact-satisfied-finalization-proof-artifact-name }}
+          path: .wdv3/${{ steps.prove.outputs.exact-satisfied-finalization-proof-artifact-name }}
           if-no-files-found: error
           retention-days: 45
           overwrite: false
@@ -1786,11 +1800,11 @@ jobs:
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Download exact-satisfied Governance proof by artifact ID
-        if: always() && needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-id != ''
+      - name: Download exact-satisfied finalization proof by artifact ID
+        if: always() && needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-id }}
+          artifact-ids: ${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
@@ -1845,7 +1859,7 @@ jobs:
             )
           fi
           add_record publication-authorization ".wdv3/input/${{ needs.approve-publication.outputs.publication-authorization-artifact-name }}" "${{ needs.approve-publication.outputs.publication-authorization-digest }}" "${{ needs.approve-publication.outputs.publication-authorization-artifact-id }}" "${{ needs.approve-publication.outputs.publication-authorization-artifact-digest }}"
-          add_record exact-satisfied-governance-proof ".wdv3/input/${{ needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-name }}" "${{ needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-digest }}" "${{ needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-id }}" "${{ needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-digest }}"
+          add_record exact-satisfied-finalization-proof ".wdv3/input/${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-artifact-name }}" "${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-digest }}" "${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-artifact-id }}" "${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-artifact-digest }}"
           qualification_result="${{ needs.qualification-finalizer.outputs.qualification-result }}"
           observation_result="${{ needs.observe-github-packages.result }}"
           materialization_result="${{ needs.materialize-publication.result }}"
@@ -1876,6 +1890,7 @@ jobs:
           set +e
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release finalize-live \
+            --publisher-conclusion "${{ needs.publish-github-packages.result }}" \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \

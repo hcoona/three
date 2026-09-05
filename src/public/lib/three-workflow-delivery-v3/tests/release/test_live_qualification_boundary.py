@@ -23,7 +23,7 @@ from three_workflow_delivery_v3.records.release import (
     AttemptOutcome,
     BuddyExecutionIdentity,
     DestinationOperationProfile,
-    ExactSatisfiedGovernanceProof,
+    ExactSatisfiedFinalizationProof,
     GovernanceProof,
     OfficialExecutionIdentity,
     OfficialProductIdentity,
@@ -562,7 +562,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
     assert outcome.publication_snapshot_digest is None
     assert outcome.approval_bundle_digest is None
     assert outcome.publication_authorization_digest is None
-    assert outcome.exact_satisfied_governance_proof_digest is None
+    assert outcome.exact_satisfied_finalization_proof_digest is None
     assert outcome.uncertainty is True
     assert outcome.possibly_mutated is False
     assert outcome.next_action == "new-attempt"
@@ -934,24 +934,40 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         ),
         materialized_actions=(),
     )
-    proof = ExactSatisfiedGovernanceProof(
+    publication_reference = ArtifactReference(
+        artifact_id=114,
+        artifact_digest=publication.snapshot_digest,
+        artifact_url=f"https://github.com/hcoona/three/actions/runs/{live_intent.workflow_run_id}/artifacts/114",
+        payload_path="live-publication-snapshot.json",
+        payload_digest=publication.snapshot_digest,
+    )
+    governance = observation_case.eligibility.governance
+    observed_at = governance.observed_at.isoformat().replace("+00:00", "Z")
+    proof = ExactSatisfiedFinalizationProof(
         attempt=live_attempt_binding.attempt,
-        publication_snapshot=publication,
-        governance_provenance=live_attempt_binding.attestation_provenance,
-        governance_current_main_sha=live_intent.target,
-        governance_expires_at="2026-09-30T00:00:00Z",
-        governance_live_enabled=True,
-        governance_observed_at="2026-09-03T07:30:00Z",
-        proved_at="2026-09-03T07:31:00Z",
+        publication_snapshot_reference=publication_reference,
+        governance_proof=GovernanceProof(
+            provenance=governance.provenance,
+            current_main_sha=live_intent.target,
+            observed_at=observed_at,
+            expires_at=governance.attestation.expires_at.isoformat().replace(
+                "+00:00", "Z"
+            ),
+            live_enabled=True,
+        ),
+        package_control_proof=exact_observation.package_control,
+        exact_version_readback=exact_observation.active_readback,
+        proved_at=observed_at,
         producer="prove-exact-satisfied",
         control=f"workflow-delivery-v3:{live_intent.target}",
+        workflow_run_id=live_intent.workflow_run_id,
     )
     publication_path = _write(
         tmp_path / "live-publication-snapshot.json",
         canonicalize(publication.to_document()),
     )
     proof_path = _write(
-        tmp_path / "exact-satisfied-governance-proof.json",
+        tmp_path / "exact-satisfied-finalization-proof.json",
         canonicalize(proof.to_document()),
     )
     publication_arguments = [
@@ -961,15 +977,17 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
             exact_observation.to_document(),
             118,
         ),
-        *_uploaded_arguments(
+        *_referenced_uploaded_arguments(
             "publication_snapshot",
             publication_path,
             publication.snapshot_digest,
-            114,
+            publication_reference,
         ),
+        "--publisher-conclusion",
+        "skipped",
     ]
     proof_arguments = _uploaded_arguments(
-        "exact_satisfied_governance_proof",
+        "exact_satisfied_finalization_proof",
         proof_path,
         proof.proof_digest,
         115,
@@ -1052,7 +1070,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
     assert success_outcome.publication_snapshot_digest == (
         publication.snapshot_digest
     )
-    assert success_outcome.exact_satisfied_governance_proof_digest == (
+    assert success_outcome.exact_satisfied_finalization_proof_digest == (
         proof.proof_digest
     )
     assert success_outcome.approval_bundle_digest is None
@@ -1061,13 +1079,16 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
 
     substituted_proof = replace(
         proof,
-        governance_provenance=tuple(
-            ("blob-oid", "e" * 40) if name == "blob-oid" else (name, value)
-            for name, value in proof.governance_provenance
+        governance_proof=replace(
+            proof.governance_proof,
+            provenance=tuple(
+                ("blob-oid", "e" * 40) if name == "blob-oid" else (name, value)
+                for name, value in proof.governance_proof.provenance
+            ),
         ),
     )
     substituted_proof_path = _write(
-        tmp_path / "substituted-exact-satisfied-governance-proof.json",
+        tmp_path / "substituted-exact-satisfied-finalization-proof.json",
         canonicalize(substituted_proof.to_document()),
     )
     substituted_outcome_path = tmp_path / "substituted-proof-outcome.json"
@@ -1088,7 +1109,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
                 *success_decision_arguments,
                 *publication_arguments,
                 *_uploaded_arguments(
-                    "exact_satisfied_governance_proof",
+                    "exact_satisfied_finalization_proof",
                     substituted_proof_path,
                     substituted_proof.proof_digest,
                     116,
@@ -1102,7 +1123,7 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         == 1
     )
     assert (
-        "Live finalization exact-satisfied Governance authority binding "
+        "Exact-satisfied finalization proof authority binding "
         "mismatch" in capsys.readouterr().err
     )
     assert not substituted_outcome_path.exists()
@@ -1684,7 +1705,7 @@ _OPTIONAL_TRANSPORT_GROUPS = (
     "publication_snapshot",
     "approval_bundle",
     "publication_authorization",
-    "exact_satisfied_governance_proof",
+    "exact_satisfied_finalization_proof",
     "action_result",
 )
 _OPTIONAL_TRANSPORT_MEMBERS = (
@@ -2262,8 +2283,8 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         attempt: ReleaseAttemptIdentity,
         qualification_decision: QualificationDecision,
         publication_snapshot: PublicationSnapshot | None,
-        exact_satisfied_governance_proof: (
-            ExactSatisfiedGovernanceProof | None
+        exact_satisfied_finalization_proof: (
+            ExactSatisfiedFinalizationProof | None
         ),
         approval_bundle: ApprovalBundle | None,
         publication_authorization: PublicationAuthorization | None,
@@ -2286,8 +2307,8 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
                 "attempt": attempt,
                 "qualification_decision": qualification_decision,
                 "publication_snapshot": publication_snapshot,
-                "exact_satisfied_governance_proof": (
-                    exact_satisfied_governance_proof
+                "exact_satisfied_finalization_proof": (
+                    exact_satisfied_finalization_proof
                 ),
                 "approval_bundle": approval_bundle,
                 "publication_authorization": publication_authorization,
@@ -2415,7 +2436,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
     assert type(captured["publication_snapshot"]) is PublicationSnapshot
     assert captured["publication_snapshot"] == publication
     assert captured["publication_snapshot"] is not publication
-    assert captured["exact_satisfied_governance_proof"] is None
+    assert captured["exact_satisfied_finalization_proof"] is None
     assert type(captured["approval_bundle"]) is ApprovalBundle
     assert captured["approval_bundle"] == approval_bundle
     assert captured["approval_bundle"] is not approval_bundle

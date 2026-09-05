@@ -17,8 +17,9 @@ from three_workflow_delivery_v3.records.release import (
     ApprovalBundle,
     AttemptOutcome,
     BuddyExecutionIdentity,
-    ExactSatisfiedGovernanceProof,
+    ExactSatisfiedFinalizationProof,
     ExternalPackageCoordinate,
+    GovernanceProof,
     PublicationAction,
     PublicationAuthorization,
     PublicationObservationReference,
@@ -38,6 +39,9 @@ from three_workflow_delivery_v3.release.eligibility import (
     governance_observation_provenance,
     parse_governance_attestation,
 )
+from three_workflow_delivery_v3.release.exact_satisfied import (
+    validate_exact_satisfied_snapshot,
+)
 from three_workflow_delivery_v3.release.identity import (
     normalize_buddy_live_intent,
 )
@@ -50,12 +54,14 @@ from three_workflow_delivery_v3.repository.descriptors import (
     GovernanceSource,
 )
 
+from .observation_fixtures import exact_finalization_arguments
 from .test_eligibility import (
     _admit_test_destination_primitive,
     _attestation_content,
     _ready_activation,
 )
 from .test_observation_admission import (
+    NOW,
     _observation,
 )
 from .test_observation_admission import (
@@ -72,7 +78,6 @@ EXPECTED_LIVE_API = (
     "fetch_exact_public_revision",
     "finalize_attempt_outcome",
     "form_approval_bundle",
-    "form_exact_satisfied_governance_proof",
     "form_publication_authorization",
     "validate_approval_bundle_closure",
 )
@@ -338,12 +343,33 @@ def _authorization(
 def _proof(
     publication: PublicationSnapshot,
     governance: GovernanceObservation | None = None,
-) -> ExactSatisfiedGovernanceProof:
-    return _require_api("form_exact_satisfied_governance_proof")(
-        publication_snapshot=publication,
-        governance=governance or _governance(),
+) -> ExactSatisfiedFinalizationProof:
+    from ..contracts.test_publication_finalizer_records import (  # noqa: PLC0415
+        _finalization_proof,
+    )
+
+    fresh = governance or _governance()
+    proof = _finalization_proof(attempt=publication.attempt)
+    observed_at = fresh.observed_at.isoformat().replace("+00:00", "Z")
+    return replace(
+        proof,
+        publication_snapshot_reference=_snapshot_reference(publication),
+        governance_proof=GovernanceProof(
+            provenance=governance_observation_provenance(fresh),
+            current_main_sha=fresh.current_main_sha,
+            observed_at=observed_at,
+            expires_at=fresh.attestation.expires_at.isoformat().replace(
+                "+00:00", "Z"
+            ),
+            live_enabled=fresh.attestation.live_enabled,
+        ),
+        package_control_proof=replace(
+            proof.package_control_proof, observed_at=observed_at
+        ),
+        exact_version_readback=replace(
+            proof.exact_version_readback, observed_at=observed_at
+        ),
         proved_at="2026-08-13T16:00:00Z",
-        control=_control(publication.attempt),
     )
 
 
@@ -437,39 +463,24 @@ def test_anonymous_fetch_verifies_exact_commit_and_detached_head() -> None:
 
 
 def test_exact_noop_requires_fresh_proof_and_no_mutation_authority(
-    qualified_simulation,
+    observation_case,
 ) -> None:
-    attempt, _binding, decision, publication = _closure(
-        qualified_simulation,
-        with_action=False,
-    )
-    proof = _proof(publication)
-
-    outcome = finalize_attempt_outcome(
-        attempt=attempt,
-        qualification_decision=decision,
-        publication_snapshot=publication,
-        exact_satisfied_governance_proof=proof,
-        approval_bundle=None,
-        publication_authorization=None,
-        action_results=(),
-    )
+    arguments = exact_finalization_arguments(observation_case)
+    proof = arguments["exact_satisfied_finalization_proof"]
+    publication = arguments["publication_snapshot"]
+    outcome = finalize_attempt_outcome(**arguments)
 
     assert outcome.result == "success"
     assert outcome.terminal_phase == "finalized-no-op"
-    assert outcome.exact_satisfied_governance_proof_digest == proof.proof_digest
+    assert (
+        outcome.exact_satisfied_finalization_proof_digest == proof.proof_digest
+    )
     assert outcome.approval_bundle_digest is None
     assert outcome.publication_authorization_digest is None
     assert outcome.action_result_digests == ()
 
     missing_proof = finalize_attempt_outcome(
-        attempt=attempt,
-        qualification_decision=decision,
-        publication_snapshot=publication,
-        exact_satisfied_governance_proof=None,
-        approval_bundle=None,
-        publication_authorization=None,
-        action_results=(),
+        **(arguments | {"exact_satisfied_finalization_proof": None}),
     )
     assert missing_proof.terminal_phase == "exact-satisfied-proof-missing"
     assert missing_proof.result == "incomplete"
@@ -479,7 +490,7 @@ def test_exact_noop_requires_fresh_proof_and_no_mutation_authority(
     assert missing_proof.publication_snapshot_digest == (
         publication.snapshot_digest
     )
-    assert missing_proof.exact_satisfied_governance_proof_digest is None
+    assert missing_proof.exact_satisfied_finalization_proof_digest is None
 
 
 @pytest.mark.parametrize(
@@ -516,7 +527,6 @@ def test_unsuccessful_qualification_terminalizes_without_publication(
         attempt=attempt,
         qualification_decision=unsuccessful,
         publication_snapshot=None,
-        exact_satisfied_governance_proof=None,
         approval_bundle=None,
         publication_authorization=None,
         action_results=(),
@@ -536,7 +546,6 @@ def test_unsuccessful_qualification_terminalizes_without_publication(
             attempt=attempt,
             qualification_decision=unsuccessful,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=None,
             publication_authorization=None,
             action_results=(),
@@ -566,7 +575,6 @@ def test_publication_preparation_interruption_has_no_downstream_lineage(
         attempt=attempt,
         qualification_decision=decision,
         publication_snapshot=None,
-        exact_satisfied_governance_proof=None,
         approval_bundle=None,
         publication_authorization=None,
         action_results=(),
@@ -589,7 +597,6 @@ def test_publication_preparation_interruption_has_no_downstream_lineage(
             "attempt": attempt,
             "qualification_decision": decision,
             "publication_snapshot": None,
-            "exact_satisfied_governance_proof": None,
             "approval_bundle": None,
             "publication_authorization": None,
             "action_results": (),
@@ -635,7 +642,6 @@ def test_blocking_observation_requires_reconciliation(
         policy=case.policy,
         decision_reference=case.decision_reference,
         publication_snapshot=None,
-        exact_satisfied_governance_proof=None,
         approval_bundle=None,
         publication_authorization=None,
         action_results=(),
@@ -857,14 +863,20 @@ def test_publication_authorization_rejects_substituted_freshness(
 
 def test_exact_satisfied_proof_rejects_action_bearing_snapshot(
     qualified_simulation,
+    observation_case,
 ) -> None:
     _attempt, _binding, _decision, publication = _closure(
         qualified_simulation,
         with_action=True,
     )
 
-    with pytest.raises(ValueError, match="actionless exact"):
-        _proof(publication)
+    with pytest.raises(ValueError, match="zero-action Snapshot"):
+        validate_exact_satisfied_snapshot(
+            **observation_case.arguments(),
+            publication_snapshot=publication,
+            publication_snapshot_reference=_snapshot_reference(publication),
+            observation=_observation(observation_case),
+        )
 
 
 @pytest.mark.parametrize(
@@ -928,36 +940,17 @@ def test_approval_rechecks_current_v2_action_authority(
         )
 
 
+@pytest.mark.parametrize(
+    "observation_case", [NOW - timedelta(days=91)], indirect=True
+)
 def test_exact_proof_does_not_require_action_acceptance_freshness(
-    qualified_simulation,
+    observation_case,
 ) -> None:
     """Fresh Governance may finalize exact state after acceptance ages."""
-    _attempt, _binding, _decision, publication = _closure(
-        qualified_simulation, with_action=False
-    )
-    governance = _governance()
-    activation = governance.attestation.activation
-    assert isinstance(activation, EnabledGovernanceActivation)
-    attestation = replace(
-        governance.attestation,
-        activation=replace(
-            activation,
-            destination_primitive=replace(
-                activation.destination_primitive,
-                captured_at=governance.observed_at - timedelta(days=91),
-            ),
-        ),
-    )
-    proof = _proof(
-        publication,
-        replace(
-            governance,
-            attestation=attestation,
-            canonical_content_digest=attestation.content_digest,
-        ),
-    )
-    assert proof.publication_snapshot == publication
-    assert proof.governance_live_enabled is True
+    arguments = exact_finalization_arguments(observation_case)
+    outcome = finalize_attempt_outcome(**arguments)
+    assert outcome.result == "success"
+    assert outcome.possibly_mutated is False
 
 
 def test_action_bearing_missing_authority_is_incomplete(
@@ -980,7 +973,6 @@ def test_action_bearing_missing_authority_is_incomplete(
         attempt=attempt,
         qualification_decision=decision,
         publication_snapshot=publication,
-        exact_satisfied_governance_proof=None,
         approval_bundle=None,
         publication_authorization=None,
         action_results=(),
@@ -1000,7 +992,6 @@ def test_action_bearing_missing_authority_is_incomplete(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=None,
             publication_authorization=None,
             action_results=(
@@ -1022,7 +1013,6 @@ def test_action_bearing_bundle_without_authorization_is_incomplete(
         attempt=attempt,
         qualification_decision=decision,
         publication_snapshot=publication,
-        exact_satisfied_governance_proof=None,
         approval_bundle=bundle,
         publication_authorization=None,
         action_results=(),
@@ -1062,7 +1052,6 @@ def test_live_finalizer_consumes_direct_action_result_with_embedded_receipt(
         attempt=attempt,
         qualification_decision=decision,
         publication_snapshot=publication,
-        exact_satisfied_governance_proof=None,
         approval_bundle=bundle,
         publication_authorization=authorization,
         action_results=(result,),
@@ -1123,7 +1112,6 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=bundle,
             publication_authorization=substituted_authorization,
             action_results=(result,),
@@ -1144,7 +1132,6 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=bundle,
             publication_authorization=replace(
                 authorization,
@@ -1168,7 +1155,6 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=replace(
                 bundle,
                 publication_snapshot_reference=replace(
@@ -1202,7 +1188,6 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(substituted_result,),
@@ -1230,7 +1215,6 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(substituted_result,),
@@ -1354,7 +1338,6 @@ def test_live_finalizer_rejects_substituted_receipt_ancestor_fact(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(replace(result, receipt=substituted_receipt),),
@@ -1400,7 +1383,6 @@ def test_live_finalizer_requires_each_context_for_success_receipt(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(result,),
@@ -1447,7 +1429,6 @@ def test_live_finalizer_requires_profile_for_success_receipt(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(result,),
@@ -1494,7 +1475,6 @@ def test_live_finalizer_rejects_substituted_action_profile_digest(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(result,),
@@ -1550,7 +1530,6 @@ def test_live_finalizer_rejects_substituted_authority_attempt(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(),
@@ -1663,7 +1642,6 @@ def test_missing_action_result_is_incomplete_after_authorization(
         attempt=attempt,
         qualification_decision=decision,
         publication_snapshot=publication,
-        exact_satisfied_governance_proof=None,
         approval_bundle=bundle,
         publication_authorization=authorization,
         action_results=(),
@@ -1740,7 +1718,6 @@ def test_platform_termination_maps_by_publication_phase(
         attempt=attempt,
         qualification_decision=decision,
         publication_snapshot=publication,
-        exact_satisfied_governance_proof=None,
         approval_bundle=bundle,
         publication_authorization=authorization,
         action_results=(),
@@ -1792,7 +1769,6 @@ def test_platform_termination_rejects_multiple_direct_results(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(result, second_result),
@@ -1817,12 +1793,12 @@ def test_action_bearing_publication_rejects_exact_satisfied_proof(
     )
     proof = _proof(noop)
 
-    with pytest.raises(ValueError, match="Governance proof mismatch"):
+    with pytest.raises(ValueError, match="finalization proof mismatch"):
         finalize_attempt_outcome(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=proof,
+            exact_satisfied_finalization_proof=proof,
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(),
@@ -1878,7 +1854,6 @@ def test_platform_termination_rejects_misbound_action_result(
                 attempt=attempt,
                 qualification_decision=decision,
                 publication_snapshot=publication,
-                exact_satisfied_governance_proof=None,
                 approval_bundle=bundle,
                 publication_authorization=authorization,
                 action_results=(candidate,),
@@ -1926,7 +1901,6 @@ def test_failed_no_side_effect_result_is_terminal_failure(
         attempt=attempt,
         qualification_decision=decision,
         publication_snapshot=publication,
-        exact_satisfied_governance_proof=None,
         approval_bundle=bundle,
         publication_authorization=authorization,
         action_results=(result,),
@@ -1988,7 +1962,6 @@ def test_mixed_attempt_action_result_is_rejected(
             attempt=attempt,
             qualification_decision=decision,
             publication_snapshot=publication,
-            exact_satisfied_governance_proof=None,
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(mixed_result,),

@@ -1717,6 +1717,7 @@ def test_normal_live_pair_has_no_package_write_permission() -> None:
     assert package_grants == {
         "caller:run-live-attempt": "read",
         "callee:observe-github-packages": "read",
+        "callee:prove-exact-satisfied": "read",
     }
     assert all(
         document.get("permissions", {}).get("packages") != "write"
@@ -1736,26 +1737,41 @@ def test_exact_satisfied_path_has_fresh_proof_without_mutation_authority() -> (
         proof_job,
         "Download exact-satisfied closure by artifact ID",
     )
-    prove = _step(proof_job, "Form exact-satisfied Governance proof")
-    upload = _step(proof_job, "Upload exact-satisfied Governance proof")
+    prove = _step(proof_job, "Form exact-satisfied finalization proof")
+    upload = _step(proof_job, "Upload exact-satisfied finalization proof")
 
     assert "environment" not in proof_job
-    assert proof_job["permissions"] == {"contents": "read"}
+    assert proof_job["permissions"] == {"contents": "read", "packages": "read"}
     assert (
         "needs.materialize-publication.outputs.publish-required == 'false'"
         in _condition_conjuncts(proof_job)
     )
-    assert _needs(proof_job) == ("admit", "materialize-publication")
-    assert {
+    assert set(_needs(proof_job)) == {
+        "admit",
+        "plan-qualification",
+        "materialize-publication",
         "approve-publication",
         "publish-github-packages",
-    }.isdisjoint(_transitive_needs(jobs, "prove-exact-satisfied"))
+    }
+    assert (
+        "needs.publish-github-packages.result == 'skipped'"
+        in _condition_conjuncts(proof_job)
+    )
+    assert (
+        "needs.approve-publication.result == 'skipped'"
+        in _condition_conjuncts(proof_job)
+    )
+    assert (
+        '--publisher-conclusion "${{ needs.publish-github-packages.result }}"'
+        in prove["run"]
+    )
     assert download["with"] == {
         "artifact-ids": (
             "${{ inputs.intent-artifact-id }},"
             "${{ inputs.repository-model-artifact-id }},"
             "${{ inputs.live-eligibility-artifact-id }},"
             "${{ needs.admit.outputs.attempt-artifact-id }},"
+            "${{ needs.plan-qualification.outputs.adapter-context-artifact-id }},"
             "${{ needs.materialize-publication.outputs."
             "qualification-snapshot-artifact-id }},"
             "${{ needs.materialize-publication.outputs."
@@ -1799,16 +1815,18 @@ def test_exact_satisfied_path_has_fresh_proof_without_mutation_authority() -> (
     assert "--proved-at" not in command
     assert "proved_at=" not in command
     assert "date -u" not in command
-    proof_text = str(proof_job).casefold()
+    proof_text = str(steps).casefold()
     for forbidden in (
         "environment",
         "approval-bundle",
         "publication-authorization",
         "approve-publication",
-        "publish-github-packages",
         "reviewer",
     ):
         assert forbidden not in proof_text
+    assert "--publication-snapshot-artifact-url " in command
+    assert "--publication-snapshot-payload-path " in command
+    assert "--adapter-context " in command
     assert steps.index(download) < steps.index(prove) < steps.index(upload)
     assert upload["with"]["archive"] is False
 
@@ -1930,9 +1948,9 @@ def test_finalizer_consumes_current_branch_authorities_only() -> None:
             "approve-publication",
             "publication-authorization",
         ),
-        "Download exact-satisfied Governance proof by artifact ID": (
+        "Download exact-satisfied finalization proof by artifact ID": (
             "prove-exact-satisfied",
-            "exact-satisfied-governance-proof",
+            "exact-satisfied-finalization-proof",
         ),
     }
 
@@ -1955,7 +1973,7 @@ def test_finalizer_consumes_current_branch_authorities_only() -> None:
         ("publication-snapshot", "materialize-publication"),
         ("approval-bundle", "materialize-publication"),
         ("publication-authorization", "approve-publication"),
-        ("exact-satisfied-governance-proof", "prove-exact-satisfied"),
+        ("exact-satisfied-finalization-proof", "prove-exact-satisfied"),
     ):
         assert (
             f'add_record {role} ".wdv3/input/${{{{ needs.{producer}.outputs.'
@@ -2020,7 +2038,7 @@ def test_live_observation_authority_closes_every_current_consumer() -> None:
         ),
         (
             "prove-exact-satisfied",
-            "Form exact-satisfied Governance proof",
+            "Form exact-satisfied finalization proof",
             "materialize-publication",
         ),
         (
@@ -2226,6 +2244,7 @@ def _current_finalizer_facts(
     upload_digest = "sha256:" + ("d" * 64)
     facts = {
         "inputs.target-sha": "1" * 40,
+        "needs.publish-github-packages.result": "skipped",
         "needs.admit.outputs.attempt-artifact-digest": upload_digest,
         "needs.admit.outputs.attempt-artifact-id": "101",
         "needs.admit.outputs.attempt-artifact-name": "attempt-binding.json",
@@ -2250,10 +2269,10 @@ def _current_finalizer_facts(
         "needs.approve-publication.outputs.publication-authorization-artifact-id": "",
         "needs.approve-publication.outputs.publication-authorization-artifact-name": "",
         "needs.approve-publication.outputs.publication-authorization-digest": "",
-        "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-digest": "",
-        "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-id": "",
-        "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-name": "",
-        "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-digest": "",
+        "needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-artifact-digest": "",
+        "needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-artifact-id": "",
+        "needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-artifact-name": "",
+        "needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-digest": "",
         "needs.qualification-finalizer.outputs.qualification-result": "success",
         "needs.qualification-finalizer.outputs.qualification-snapshot-artifact-digest": upload_digest,
         "needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id": "107",
@@ -2316,10 +2335,10 @@ def _current_finalizer_facts(
         assert authority_path == "exact-satisfied"
         facts.update(
             {
-                "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-digest": upload_digest,
-                "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-id": "734",
-                "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-name": "exact-satisfied-proof.json",
-                "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-digest": record_digest,
+                "needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-artifact-digest": upload_digest,
+                "needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-artifact-id": "734",
+                "needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-artifact-name": "exact-satisfied-proof.json",
+                "needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-digest": record_digest,
             }
         )
 
@@ -2347,12 +2366,12 @@ def _current_finalizer_facts(
                 "--publication-authorization",
                 "--observation",
             ),
-            ("--exact-satisfied-governance-proof",),
+            ("--exact-satisfied-finalization-proof",),
             id="action",
         ),
         pytest.param(
             "exact-satisfied",
-            ("--exact-satisfied-governance-proof", "--observation"),
+            ("--exact-satisfied-finalization-proof", "--observation"),
             (
                 "--approval-bundle",
                 "--publication-authorization",
@@ -2391,7 +2410,7 @@ def _current_missing_authority_facts(
     for producer, role in (
         ("materialize-publication", "approval-bundle"),
         ("approve-publication", "publication-authorization"),
-        ("prove-exact-satisfied", "exact-satisfied-governance-proof"),
+        ("prove-exact-satisfied", "exact-satisfied-finalization-proof"),
     ):
         for suffix in (
             "artifact-digest",
@@ -2601,7 +2620,7 @@ def test_finalizer_missing_authority_uses_current_safe_result(  # noqa: PLR0913
     assert {
         "--approval-bundle",
         "--publication-authorization",
-        "--exact-satisfied-governance-proof",
+        "--exact-satisfied-finalization-proof",
     }.isdisjoint(argv)
     outcome = json.loads(execution["outcome"].read_text(encoding="utf-8"))
     assert outcome == {

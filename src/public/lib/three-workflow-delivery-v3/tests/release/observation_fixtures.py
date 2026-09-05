@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from three_workflow_delivery_v3 import cli
@@ -13,8 +13,15 @@ from three_workflow_delivery_v3.records.release import (
     PublicationSnapshot,
     admit_release_record,
 )
+from three_workflow_delivery_v3.release.exact_satisfied import (
+    prove_exact_satisfied,
+)
+from three_workflow_delivery_v3.release.finalizer import (
+    materialize_publication_snapshot,
+)
 from three_workflow_delivery_v3.release.live import form_approval_bundle
 
+from .test_eligibility import RecordingGovernanceClient
 from .test_observation_admission import NOW, ObservationCase, _observation
 
 if TYPE_CHECKING:
@@ -199,13 +206,18 @@ def publication_authority_arguments(
             "publication_snapshot",
             publication.to_document(),
             109,
-            reference=publication_reference
-            if classification == "absent"
-            else None,
+            reference=publication_reference,
         ),
     ]
     if classification == "exact-satisfied":
-        return arguments
+        return [
+            *arguments,
+            *uploaded_arguments(
+                root, "adapter_context", case.context.to_document(), 112
+            ),
+            "--publisher-conclusion",
+            "skipped",
+        ]
     reviewer_digest = (
         "sha256:" + hashlib.sha256(reviewer_path.read_bytes()).hexdigest()
     )
@@ -254,3 +266,90 @@ def publication_authority_arguments(
         "--reviewer-summary-payload-path",
         reviewer_reference.payload_path,
     ]
+
+
+def active_transport(case: ObservationCase):
+    """Serve actual qualified bytes through the read-only adapter contract."""
+    from ..adapters.test_github_packages_active_state import (  # noqa: PLC0415
+        CONTROL_URL,
+        TAGS_URL,
+        TARBALL_URL,
+        ScenarioTransport,
+        _control,
+        _response,
+    )
+
+    exact_url = TAGS_URL + "/" + case.expectation.npm_package_version
+    return ScenarioTransport(
+        {
+            CONTROL_URL: _response(CONTROL_URL, _control()),
+            exact_url: _response(
+                exact_url,
+                {
+                    "name": case.expectation.package_name,
+                    "version": case.expectation.npm_package_version,
+                    "dist": {"tarball": TARBALL_URL},
+                },
+            ),
+            TARBALL_URL: _response(TARBALL_URL, body=case.tarball),
+            TAGS_URL: _response(
+                TAGS_URL,
+                {
+                    "name": case.expectation.package_name,
+                    "dist-tags": {},
+                },
+            ),
+        }
+    )
+
+
+def exact_finalization_arguments(case: ObservationCase) -> dict:
+    """Create a real-byte proof and its full read-only Finalizer closure."""
+    observation = _observation(case)
+    publication = materialize_publication_snapshot(
+        case.snapshot,
+        case.decision,
+        (observation,),
+        (case.artifact,),
+        **materialization_arguments(case),
+    )
+    reference = ArtifactReference(
+        artifact_id=109,
+        artifact_digest=publication.snapshot_digest,
+        artifact_url=f"https://github.com/hcoona/three/actions/runs/{case.intent.workflow_run_id}/artifacts/109",
+        payload_path="publication-snapshot.json",
+        payload_digest=publication.snapshot_digest,
+    )
+    proof = prove_exact_satisfied(
+        **case.arguments(),
+        publication_snapshot=publication,
+        publication_snapshot_reference=reference,
+        observation=observation,
+        publisher_conclusion="skipped",
+        expectation=case.expectation,
+        governance_client=RecordingGovernanceClient(
+            canonicalize(case.eligibility.governance.attestation.to_document())
+        ),
+        transport=active_transport(case),
+        token="test-only-token",  # noqa: S106
+        clock=lambda: NOW + timedelta(seconds=1),
+    )
+    return {
+        "attempt": case.attempt_binding.attempt,
+        "qualification_decision": case.decision,
+        "publication_snapshot": publication,
+        "publication_snapshot_reference": reference,
+        "exact_satisfied_finalization_proof": proof,
+        "approval_bundle": None,
+        "publication_authorization": None,
+        "action_results": (),
+        "publisher_conclusion": "skipped",
+        "qualification_snapshot": case.snapshot,
+        "release_artifact": case.artifact,
+        "observations": (observation,),
+        "intent": case.intent,
+        "attempt_binding": case.attempt_binding,
+        "eligibility": case.eligibility,
+        "policy": case.policy,
+        "decision_reference": case.decision_reference,
+    }

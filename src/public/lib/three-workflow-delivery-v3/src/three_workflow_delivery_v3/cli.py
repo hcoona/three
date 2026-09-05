@@ -113,7 +113,7 @@ from three_workflow_delivery_v3.records.release import (
     ActionResult,
     ApprovalBundle,
     AttemptOutcome,
-    ExactSatisfiedGovernanceProof,
+    ExactSatisfiedFinalizationProof,
     HypotheticalAction,
     ProjectionObservation,
     PublicationAuthorization,
@@ -148,7 +148,6 @@ from three_workflow_delivery_v3.release import (
     finalize_qualification,
     finalize_simulation,
     form_approval_bundle,
-    form_exact_satisfied_governance_proof,
     form_publication_authorization,
     form_incomplete_evidence,
     form_uploaded_release_artifact,
@@ -2128,7 +2127,7 @@ def _load_release_record(  # noqa: PLR0913
         | PublicationSnapshot
         | ApprovalBundle
         | PublicationAuthorization
-        | ExactSatisfiedGovernanceProof
+        | ExactSatisfiedFinalizationProof
         | ActionResult
         | AttemptOutcome
         | SimulationOutcome
@@ -2151,7 +2150,7 @@ def _load_release_record(  # noqa: PLR0913
     | PublicationSnapshot
     | ApprovalBundle
     | PublicationAuthorization
-    | ExactSatisfiedGovernanceProof
+    | ExactSatisfiedFinalizationProof
     | ActionResult
     | AttemptOutcome
     | SimulationOutcome
@@ -3735,6 +3734,10 @@ def _release_form_publication_authorization_command(
 def _release_prove_exact_satisfied_command(
     arguments: argparse.Namespace,
 ) -> int:
+    from three_workflow_delivery_v3.release.exact_satisfied import (  # noqa: PLC0415
+        prove_exact_satisfied,
+    )
+
     intent, binding, initial_eligibility, policy = (
         _load_live_observation_authority(
             arguments,
@@ -3745,11 +3748,20 @@ def _release_prove_exact_satisfied_command(
     snapshot = _load_live_qualification_snapshot(arguments)
     decision = _load_live_qualification_decision(arguments)
     artifact = _load_live_release_artifact_record(arguments)
-    expected_publication = materialize_publication_snapshot(
-        snapshot,
-        decision,
-        (_load_remote_state_observation(arguments),),
-        (artifact,),
+    context = _load_release_adapter_context(arguments, snapshot)
+    if arguments.control != initial_eligibility.context.control:
+        raise ValueError("Exact-satisfied proof control mismatch")
+    proof = prove_exact_satisfied(
+        publication_snapshot=publication,
+        publication_snapshot_reference=_payload_reference(
+            arguments,
+            name="publication_snapshot",
+            payload_digest=publication.snapshot_digest,
+        ),
+        snapshot=snapshot,
+        decision=decision,
+        observation=_load_remote_state_observation(arguments),
+        artifact=artifact,
         intent=intent,
         attempt_binding=binding,
         eligibility=initial_eligibility,
@@ -3759,60 +3771,39 @@ def _release_prove_exact_satisfied_command(
             name="qualification_decision",
             payload_digest=decision.decision_digest,
         ),
-        action_creation_at=datetime.now(UTC),
-    )
-    if publication != expected_publication or publication.materialized_actions:
-        raise ValueError("Exact-satisfied proof Observation closure mismatch")
-    observed_at = datetime.now(UTC)
-    initial_governance = initial_eligibility.governance
-    fresh = require_fresh_governance_identity(
-        policy.governance,
-        GitHubGovernanceClient(
+        publisher_conclusion=arguments.publisher_conclusion,
+        expectation=artifact_expectation(snapshot, context, artifact),
+        governance_client=GitHubGovernanceClient(
             repository=policy.governance.repository,
             token=arguments.github_token,
         ),
-        now=observed_at,
-        expected_provenance=initial_governance.provenance,
-        expected_canonical_content_digest=(
-            initial_governance.canonical_content_digest
-        ),
-        expected_expires_at=(
-            initial_governance.attestation.expires_at.strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
-        ),
-        expected_live_enabled=initial_governance.attestation.live_enabled,
-    )
-    proved_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    proof = form_exact_satisfied_governance_proof(
-        publication_snapshot=publication,
-        governance=fresh,
-        proved_at=proved_at,
-        control=arguments.control,
+        transport=GitHubPackagesHttpTransport(),
+        token=arguments.github_token,
+        clock=lambda: datetime.now(UTC),
     )
     _write_output(arguments.output, proof.to_document())
     _record_outputs(
         arguments.github_output,
-        role="exact-satisfied-governance-proof",
+        role="exact-satisfied-finalization-proof",
         digest=proof.proof_digest,
     )
     return 0
 
 
-def _load_exact_satisfied_governance_proof(
+def _load_exact_satisfied_finalization_proof(
     arguments: argparse.Namespace,
-) -> ExactSatisfiedGovernanceProof:
+) -> ExactSatisfiedFinalizationProof:
     return cast(
-        "ExactSatisfiedGovernanceProof",
+        "ExactSatisfiedFinalizationProof",
         _load_release_record(
-            arguments.exact_satisfied_governance_proof,
-            record_type=ExactSatisfiedGovernanceProof,
-            expected_digest=(arguments.exact_satisfied_governance_proof_digest),
+            arguments.exact_satisfied_finalization_proof,
+            record_type=ExactSatisfiedFinalizationProof,
+            expected_digest=arguments.exact_satisfied_finalization_proof_digest,
             artifact_id=(
-                arguments.exact_satisfied_governance_proof_artifact_id
+                arguments.exact_satisfied_finalization_proof_artifact_id
             ),
             artifact_digest=(
-                arguments.exact_satisfied_governance_proof_artifact_digest
+                arguments.exact_satisfied_finalization_proof_artifact_digest
             ),
             bindings=_release_bindings(
                 arguments,
@@ -4297,12 +4288,12 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
         artifact_digest=(arguments.publication_authorization_artifact_digest),
     )
     _validate_optional_uploaded_record_transport(
-        "exact_satisfied_governance_proof",
-        path=arguments.exact_satisfied_governance_proof,
-        record_digest=(arguments.exact_satisfied_governance_proof_digest),
-        artifact_id=(arguments.exact_satisfied_governance_proof_artifact_id),
+        "exact_satisfied_finalization_proof",
+        path=arguments.exact_satisfied_finalization_proof,
+        record_digest=arguments.exact_satisfied_finalization_proof_digest,
+        artifact_id=arguments.exact_satisfied_finalization_proof_artifact_id,
         artifact_digest=(
-            arguments.exact_satisfied_governance_proof_artifact_digest
+            arguments.exact_satisfied_finalization_proof_artifact_digest
         ),
     )
     _validate_optional_uploaded_record_transport(
@@ -4402,7 +4393,7 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
         raise ValueError("Approval Bundle requires Publication Snapshot")
     publication_snapshot_reference = (
         None
-        if approval_bundle is None or publication is None
+        if publication is None
         else _payload_reference(
             arguments,
             name="publication_snapshot",
@@ -4418,20 +4409,11 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
             payload_digest=approval_bundle.bundle_digest,
         )
     )
-    exact_satisfied_governance_proof = (
+    exact_satisfied_finalization_proof = (
         None
-        if arguments.exact_satisfied_governance_proof is None
-        else _load_exact_satisfied_governance_proof(arguments)
+        if arguments.exact_satisfied_finalization_proof is None
+        else _load_exact_satisfied_finalization_proof(arguments)
     )
-    if (
-        exact_satisfied_governance_proof is not None
-        and exact_satisfied_governance_proof.governance_provenance
-        != binding.attestation_provenance
-    ):
-        raise ValueError(
-            "Live finalization exact-satisfied Governance authority "
-            "binding mismatch"
-        )
     action_result = None
     if arguments.action_result is not None:
         action_result = cast(
@@ -4453,7 +4435,7 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
         attempt=attempt,
         qualification_decision=decision,
         publication_snapshot=publication,
-        exact_satisfied_governance_proof=(exact_satisfied_governance_proof),
+        exact_satisfied_finalization_proof=exact_satisfied_finalization_proof,
         approval_bundle=approval_bundle,
         publication_authorization=publication_authorization,
         action_results=() if action_result is None else (action_result,),
@@ -4483,6 +4465,7 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
         ),
         platform_terminated=arguments.platform_terminated,
         publication_may_have_started=(arguments.publication_may_have_started),
+        publisher_conclusion=arguments.publisher_conclusion,
     )
     _write_output(arguments.outcome_output, outcome.to_document())
     summary = (
@@ -6363,8 +6346,9 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         prove_exact, name="qualification_decision"
     )
     _add_release_artifact_arguments(prove_exact)
+    _add_adapter_context_arguments(prove_exact)
     _add_uploaded_record_arguments(prove_exact, name="observation")
-    _add_uploaded_record_arguments(
+    _add_referenced_uploaded_payload_arguments(
         prove_exact,
         name="publication_snapshot",
     )
@@ -6383,6 +6367,11 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         required=True,
     )
     prove_exact.add_argument("--control", required=True)
+    prove_exact.add_argument(
+        "--publisher-conclusion",
+        required=True,
+        choices=("skipped", "success", "failure", "cancelled"),
+    )
     prove_exact.add_argument("--output", required=True)
     prove_exact.add_argument("--github-output")
     prove_exact.set_defaults(handler=_release_prove_exact_satisfied_command)
@@ -6534,13 +6523,17 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     _add_uploaded_record_arguments(
         finalize_live,
-        name="exact_satisfied_governance_proof",
+        name="exact_satisfied_finalization_proof",
         required=False,
     )
     _add_uploaded_record_arguments(
         finalize_live,
         name="action_result",
         required=False,
+    )
+    finalize_live.add_argument(
+        "--publisher-conclusion",
+        choices=("skipped", "success", "failure", "cancelled"),
     )
     finalize_live.add_argument(
         "--publication-preparation-interrupted",

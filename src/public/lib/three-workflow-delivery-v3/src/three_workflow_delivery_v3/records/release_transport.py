@@ -19,7 +19,6 @@ from three_workflow_delivery_v3.records.release import (
     BUDDY_EXECUTION_IDENTITY_SCHEMA,
     DESTINATION_PROJECTION_SCHEMA,
     EXACT_SATISFIED_FINALIZATION_PROOF_SCHEMA,
-    EXACT_SATISFIED_GOVERNANCE_PROOF_SCHEMA,
     EXTERNAL_PACKAGE_COORDINATE_SCHEMA,
     HYPOTHETICAL_ACTION_SCHEMA,
     MUTATION_MAY_HAVE_STARTED_SCHEMA,
@@ -60,7 +59,6 @@ from three_workflow_delivery_v3.records.release import (
     DestinationProjection,
     DestinationReadback,
     ExactSatisfiedFinalizationProof,
-    ExactSatisfiedGovernanceProof,
     ExternalPackageCoordinate,
     GovernanceProof,
     HypotheticalAction,
@@ -2300,68 +2298,6 @@ def _publication_authorization(
     )
 
 
-def _exact_satisfied_governance_proof(
-    value: JsonValue,
-) -> ExactSatisfiedGovernanceProof:
-    document = _closed(
-        value,
-        field="exact-satisfied Governance proof",
-        schema=EXACT_SATISFIED_GOVERNANCE_PROOF_SCHEMA,
-        fields=frozenset(
-            {
-                "attempt",
-                "publication-snapshot",
-                "governance-provenance",
-                "governance-current-main-sha",
-                "governance-expires-at",
-                "governance-live-enabled",
-                "governance-observed-at",
-                "proved-at",
-                "producer",
-                "control",
-            }
-        ),
-    )
-    return ExactSatisfiedGovernanceProof(
-        attempt=_release_attempt(document["attempt"]),
-        publication_snapshot=_publication_snapshot(
-            document["publication-snapshot"]
-        ),
-        governance_provenance=_pairs(
-            document["governance-provenance"],
-            field="exact-satisfied proof.governance-provenance",
-        ),
-        governance_current_main_sha=_string(
-            document["governance-current-main-sha"],
-            field="exact-satisfied proof.governance-current-main-sha",
-        ),
-        governance_expires_at=_string(
-            document["governance-expires-at"],
-            field="exact-satisfied proof.governance-expires-at",
-        ),
-        governance_live_enabled=_boolean(
-            document["governance-live-enabled"],
-            field="exact-satisfied proof.governance-live-enabled",
-        ),
-        governance_observed_at=_string(
-            document["governance-observed-at"],
-            field="exact-satisfied proof.governance-observed-at",
-        ),
-        proved_at=_string(
-            document["proved-at"],
-            field="exact-satisfied proof.proved-at",
-        ),
-        producer=_string(
-            document["producer"],
-            field="exact-satisfied proof.producer",
-        ),
-        control=_string(
-            document["control"],
-            field="exact-satisfied proof.control",
-        ),
-    )
-
-
 def _mutation_may_have_started_marker(
     value: JsonValue,
 ) -> MutationMayHaveStartedMarker:
@@ -2685,7 +2621,7 @@ def _attempt_outcome(value: JsonValue) -> AttemptOutcome:
                 "qualification-decision-digest",
                 "observation-digests",
                 "publication-snapshot-digest",
-                "exact-satisfied-governance-proof-digest",
+                "exact-satisfied-finalization-proof-digest",
                 "approval-bundle-digest",
                 "publication-authorization-digest",
                 "action-result-digests",
@@ -2711,9 +2647,9 @@ def _attempt_outcome(value: JsonValue) -> AttemptOutcome:
             document["publication-snapshot-digest"],
             field="attempt outcome.publication-snapshot-digest",
         ),
-        exact_satisfied_governance_proof_digest=_nullable_string(
-            document["exact-satisfied-governance-proof-digest"],
-            field=("attempt outcome.exact-satisfied-governance-proof-digest"),
+        exact_satisfied_finalization_proof_digest=_nullable_string(
+            document["exact-satisfied-finalization-proof-digest"],
+            field=("attempt outcome.exact-satisfied-finalization-proof-digest"),
         ),
         approval_bundle_digest=_nullable_string(
             document["approval-bundle-digest"],
@@ -2766,7 +2702,6 @@ _PARSERS: dict[type[object], Callable[[JsonValue], ReleaseRecord]] = {
     MutationMayHaveStartedMarker: _mutation_may_have_started_marker,
     PublicationResult: _publication_result,
     ExactSatisfiedFinalizationProof: _exact_satisfied_finalization_proof,
-    ExactSatisfiedGovernanceProof: _exact_satisfied_governance_proof,
     ActionResult: _action_result,
     AttemptOutcome: _attempt_outcome,
 }
@@ -2947,14 +2882,6 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
         return (
             "live-release",
             record.workflow_run_id,
-            None,
-            record.attempt.execution.target,
-            record.producer,
-        )
-    if isinstance(record, ExactSatisfiedGovernanceProof):
-        return (
-            "live-release",
-            record.attempt.workflow_run_id,
             None,
             record.attempt.execution.target,
             record.producer,

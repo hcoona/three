@@ -20,6 +20,7 @@ SDIST_SOURCE_PREFIX = PurePosixPath("src")
 APPROVED_RELEASE_MODULES = (
     "__init__.py",
     "eligibility.py",
+    "exact_satisfied.py",
     "finalizer.py",
     "governance_git.py",
     "identity.py",

@@ -82,6 +82,7 @@ from .release.conftest import (
     policy as policy,  # noqa: PLC0414
 )
 from .release.observation_fixtures import (
+    active_transport,
     current_arguments,
     publication_authority_arguments,
     uploaded_arguments,
@@ -101,7 +102,7 @@ PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 WORKFLOW_RUN_ID = 8101
 RUN_ATTEMPT = 2
 ARGPARSE_ERROR = 2
-LIVE_GITHUB_PACKAGES_TRANSPORT_SELECTIONS = 2
+LIVE_GITHUB_PACKAGES_TRANSPORT_SELECTIONS = 3
 NPM_ARTIFACT_ID = 303
 NPM_ARTIFACT_DIGEST = "a" * 64
 GITHUB_API_TIMEOUT_SECONDS = 10
@@ -1097,7 +1098,7 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
                 "--approval-bundle-artifact-url",
                 "--approval-bundle-payload-path",
                 "--publication-authorization",
-                "--exact-satisfied-governance-proof",
+                "--exact-satisfied-finalization-proof",
                 "--action-result",
                 "--publication-preparation-interrupted",
                 "--outcome-output",
@@ -1178,7 +1179,7 @@ def test_cli_commit8_live_outcome_status_mapping_is_closed() -> None:
 def test_cli_live_github_packages_paths_select_manual_redirect_transport() -> (
     None
 ):
-    """Select the credential-safe redirect transport for both live paths."""
+    """Select credential-safe redirects for every Live remote-reading path."""
     source = inspect.getsource(cli_module)
 
     assert "_UrlopenGitHubPackagesTransport" not in source
@@ -2446,6 +2447,19 @@ def test_observation_authority_uses_fresh_governance_and_post_read_time(
         cli_module, "GitHubGovernanceClient", lambda **_kwargs: client
     )
     monkeypatch.setattr(cli_module, "_verify_uploaded_payload", record_read)
+    if not action:
+        transport = active_transport(case)
+        get = transport.get
+
+        def remote_read(*args, **kwargs):
+            response = get(*args, **kwargs)
+            instant[0] += timedelta(seconds=1)
+            return response
+
+        monkeypatch.setattr(transport, "get", remote_read)
+        monkeypatch.setattr(
+            cli_module, "GitHubPackagesHttpTransport", lambda: transport
+        )
     output = tmp_path / "authority.json"
     github_output = tmp_path / "github-output"
     assert (
@@ -2474,12 +2488,10 @@ def test_observation_authority_uses_fresh_governance_and_post_read_time(
     )
     document = json.loads(output.read_bytes())
     timestamp = "completed-at" if action else "proved-at"
-    assert document[timestamp] == "2026-08-06T12:00:02Z"
-    governance_observed_at = (
-        document["governance-proof"]["observed-at"]
-        if action
-        else document["governance-observed-at"]
+    assert document[timestamp] == (
+        "2026-08-06T12:00:02Z" if action else "2026-08-06T12:00:06Z"
     )
+    governance_observed_at = document["governance-proof"]["observed-at"]
     assert governance_observed_at == "2026-08-06T12:00:01Z"
     assert client.calls == [
         ("protected", "hcoona/three", "refs/heads/main"),
@@ -2506,12 +2518,42 @@ def test_observation_authority_uses_fresh_governance_and_post_read_time(
     }
     if action:
         expected_reads |= {"approval-bundle.json", "reviewer-summary.md"}
+    else:
+        expected_reads.add("adapter-context.json")
+        reference = document["publication-snapshot-reference"]
+        assert reference == {
+            "artifact-id": 109,
+            "artifact-digest": canonical_sha256(
+                json.loads(
+                    (tmp_path / "publication-snapshot.json").read_bytes()
+                )
+            ),
+            "artifact-url": f"https://github.com/hcoona/three/actions/runs/{case.intent.workflow_run_id}/artifacts/109",
+            "payload-path": "publication-snapshot.json",
+            "payload-digest": canonical_sha256(
+                json.loads(
+                    (tmp_path / "publication-snapshot.json").read_bytes()
+                )
+            ),
+        }
+        assert (
+            document["exact-version-readback"]["content-sha256"]
+            == case.artifact.content.content_sha256
+        )
+        assert (
+            document["exact-version-readback"]["content-sha512"]
+            == case.artifact.content.content_sha512
+        )
+        assert (
+            document["package-control-proof"]["observed-at"]
+            == "2026-08-06T12:00:02Z"
+        )
     assert set(reads) == expected_reads
     assert len(reads) == len(expected_reads)
     role = (
         "publication-authorization"
         if action
-        else "exact-satisfied-governance-proof"
+        else "exact-satisfied-finalization-proof"
     )
     assert (
         f"{role}-digest={canonical_sha256(document)}\n"
@@ -2579,12 +2621,11 @@ def test_observation_authority_rejects_substitution_before_fresh_governance(
         actual.to_document(),
         901,
     )
+    client = RecordingGovernanceClient(
+        canonicalize(case.eligibility.governance.attestation.to_document())
+    )
     monkeypatch.setattr(
-        cli_module,
-        "GitHubGovernanceClient",
-        lambda *_arguments, **_kwargs: pytest.fail(
-            "Substituted binding reached fresh Governance read"
-        ),
+        cli_module, "GitHubGovernanceClient", lambda **_kwargs: client
     )
 
     output = tmp_path / "authority.json"
@@ -2611,6 +2652,7 @@ def test_observation_authority_rejects_substitution_before_fresh_governance(
         == 1
     )
     assert not output.exists()
+    assert client.calls == []
 
 
 def _publication_authority_references() -> tuple[

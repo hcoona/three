@@ -32,7 +32,7 @@ from three_workflow_delivery_v3.records.release import (
     ApprovalBundle,
     AttemptOutcome,
     BuddyExecutionIdentity,
-    ExactSatisfiedGovernanceProof,
+    ExactSatisfiedFinalizationProof,
     ExternalPackageCoordinate,
     GovernanceProof,
     PublicationAction,
@@ -85,13 +85,14 @@ COMMIT8_RECORD_TYPES = (
     "ReleaseAttemptBinding",
     "ApprovalBundle",
     "PublicationAuthorization",
-    "ExactSatisfiedGovernanceProof",
+    "ExactSatisfiedFinalizationProof",
     "ActionResult",
     "Receipt",
     "AttemptOutcome",
 )
 
 RETIRED_RECORD_TYPES = (
+    "ExactSatisfiedGovernanceProof",
     "HistoricalExecutionRecord",
     "ExecutionHistoryAdmissionSnapshot",
     "ReceiptTransportReference",
@@ -418,7 +419,7 @@ def _attempt_outcome() -> AttemptOutcome:
         attempt=ATTEMPT,
         qualification_decision_digest="sha256:" + ("d" * 64),
         publication_snapshot_digest="sha256:" + ("1" * 64),
-        exact_satisfied_governance_proof_digest=None,
+        exact_satisfied_finalization_proof_digest=None,
         approval_bundle_digest="sha256:" + ("2" * 64),
         publication_authorization_digest="sha256:" + ("3" * 64),
         action_result_digests=(_action_result().result_digest,),
@@ -435,7 +436,7 @@ def _qualification_outcome() -> AttemptOutcome:
         attempt=ATTEMPT,
         qualification_decision_digest="sha256:" + ("d" * 64),
         publication_snapshot_digest=None,
-        exact_satisfied_governance_proof_digest=None,
+        exact_satisfied_finalization_proof_digest=None,
         approval_bundle_digest=None,
         publication_authorization_digest=None,
         action_result_digests=(),
@@ -452,7 +453,7 @@ def _publication_preparation_outcome() -> AttemptOutcome:
         attempt=ATTEMPT,
         qualification_decision_digest="sha256:" + ("d" * 64),
         publication_snapshot_digest=None,
-        exact_satisfied_governance_proof_digest=None,
+        exact_satisfied_finalization_proof_digest=None,
         approval_bundle_digest=None,
         publication_authorization_digest=None,
         action_result_digests=(),
@@ -469,7 +470,7 @@ def _observation_outcome() -> AttemptOutcome:
         attempt=ATTEMPT,
         qualification_decision_digest="sha256:" + ("d" * 64),
         publication_snapshot_digest=None,
-        exact_satisfied_governance_proof_digest=None,
+        exact_satisfied_finalization_proof_digest=None,
         approval_bundle_digest=None,
         publication_authorization_digest=None,
         action_result_digests=(),
@@ -578,7 +579,7 @@ def test_new_authority_transport_rejects_wrong_field_type(
     ("record_name", "wrong_type"),
     [
         ("approval-bundle", PublicationAuthorization),
-        ("publication-authorization", ExactSatisfiedGovernanceProof),
+        ("publication-authorization", ExactSatisfiedFinalizationProof),
         ("exact-satisfied-proof", ApprovalBundle),
     ],
 )
@@ -863,7 +864,7 @@ def test_exact_satisfied_proof_rejects_action_or_control_substitution(
 ) -> None:
     records = _transport_records(qualified_simulation)
     proof = records["exact-satisfied-proof"]
-    assert isinstance(proof, ExactSatisfiedGovernanceProof)
+    assert isinstance(proof, ExactSatisfiedFinalizationProof)
     (
         _attempt,
         _binding,
@@ -871,22 +872,17 @@ def test_exact_satisfied_proof_rejects_action_or_control_substitution(
         action_publication,
     ) = _live_closure(qualified_simulation, with_action=True)
 
-    with pytest.raises(ValueError, match="actionless exact"):
-        replace(
-            proof,
-            publication_snapshot=action_publication,
-        )
-    with pytest.raises(ValueError, match="control mismatch"):
+    with pytest.raises(ValueError, match="control"):
         replace(proof, control=f"workflow-delivery-v3:{'0' * 40}")
 
     document = deepcopy(proof.to_document())
     action_snapshot_document = action_publication.to_document()
     assert action_snapshot_document["materialized-actions"]
     document["publication-snapshot"] = action_snapshot_document
-    with pytest.raises(ValueError, match="actionless exact"):
+    with pytest.raises(ValueError, match="unknown field"):
         release_record_from_document(
             document,
-            expected_type=ExactSatisfiedGovernanceProof,
+            expected_type=ExactSatisfiedFinalizationProof,
         )
 
 
@@ -950,7 +946,7 @@ def test_persisted_release_records_require_target_derived_control(
         record = records[name]
         assert_transport_rejected(record, type(record))
     proof = records["exact-satisfied-proof"]
-    assert_transport_rejected(proof, type(proof), "control mismatch")
+    assert_transport_rejected(proof, type(proof), "control.*mismatch")
     assert_transport_rejected(failed_result, ActionResult)
 
     action_result_document = _action_result().to_document()
@@ -1012,10 +1008,10 @@ def test_persisted_release_records_require_target_derived_control(
         ),
         pytest.param(
             _publication_preparation_outcome(),
-            "exact_satisfied_governance_proof_digest",
+            "exact_satisfied_finalization_proof_digest",
             "sha256:" + ("f" * 64),
             "only valid for successful no-op",
-            id="exact-satisfied-governance-proof-digest",
+            id="exact-satisfied-finalization-proof-digest",
         ),
         pytest.param(
             _publication_preparation_outcome(),
@@ -1186,7 +1182,7 @@ def test_successful_noop_outcome_requires_only_fresh_proof_lineage() -> None:
         attempt=ATTEMPT,
         qualification_decision_digest="sha256:" + ("d" * 64),
         publication_snapshot_digest="sha256:" + ("1" * 64),
-        exact_satisfied_governance_proof_digest=("sha256:" + ("2" * 64)),
+        exact_satisfied_finalization_proof_digest=("sha256:" + ("2" * 64)),
         approval_bundle_digest=None,
         publication_authorization_digest=None,
         action_result_digests=(),
@@ -1197,9 +1193,9 @@ def test_successful_noop_outcome_requires_only_fresh_proof_lineage() -> None:
         next_action="none",
     )
 
-    assert outcome.exact_satisfied_governance_proof_digest is not None
+    assert outcome.exact_satisfied_finalization_proof_digest is not None
     for field, value in (
-        ("exact_satisfied_governance_proof_digest", None),
+        ("exact_satisfied_finalization_proof_digest", None),
         ("approval_bundle_digest", "sha256:" + ("3" * 64)),
         (
             "publication_authorization_digest",
@@ -1496,18 +1492,17 @@ def _publication_authorization(
 
 def _exact_satisfied_proof(
     publication: PublicationSnapshot,
-) -> ExactSatisfiedGovernanceProof:
-    return ExactSatisfiedGovernanceProof(
-        attempt=publication.attempt,
-        publication_snapshot=publication,
-        governance_provenance=_governance_provenance(),
-        governance_current_main_sha="c" * 40,
-        governance_expires_at="2026-09-01T00:00:00Z",
-        governance_live_enabled=True,
-        governance_observed_at="2026-08-13T15:59:00Z",
-        proved_at="2026-08-13T16:00:00Z",
-        producer="prove-exact-satisfied",
-        control=f"workflow-delivery-v3:{publication.attempt.execution.target}",
+) -> ExactSatisfiedFinalizationProof:
+    from .test_commit8_live_scenarios import _proof  # noqa: PLC0415
+
+    proof = _proof(publication)
+    return replace(
+        proof,
+        governance_proof=replace(
+            proof.governance_proof,
+            provenance=_governance_provenance(),
+            expires_at="2026-09-01T00:00:00Z",
+        ),
     )
 
 
@@ -1600,7 +1595,7 @@ def _transport_records(scenario) -> dict[str, ReleaseRecord]:
         attempt=action_publication.attempt,
         qualification_decision_digest=decision.decision_digest,
         publication_snapshot_digest=action_publication.snapshot_digest,
-        exact_satisfied_governance_proof_digest=None,
+        exact_satisfied_finalization_proof_digest=None,
         approval_bundle_digest=bundle.bundle_digest,
         publication_authorization_digest=authorization.authorization_digest,
         action_result_digests=(action_result.result_digest,),
@@ -1614,7 +1609,7 @@ def _transport_records(scenario) -> dict[str, ReleaseRecord]:
         attempt=noop_publication.attempt,
         qualification_decision_digest=noop_decision.decision_digest,
         publication_snapshot_digest=noop_publication.snapshot_digest,
-        exact_satisfied_governance_proof_digest=proof.proof_digest,
+        exact_satisfied_finalization_proof_digest=proof.proof_digest,
         approval_bundle_digest=None,
         publication_authorization_digest=None,
         action_result_digests=(),
@@ -1638,7 +1633,7 @@ def _transport_records(scenario) -> dict[str, ReleaseRecord]:
     }
 
 
-def test_exact_preobserved_noop_requires_fresh_governance_proof(
+def test_exact_preobserved_noop_requires_contextual_proof_authority(
     qualified_simulation,
 ) -> None:
     attempt, _binding, decision, publication = _live_closure(
@@ -1647,27 +1642,23 @@ def test_exact_preobserved_noop_requires_fresh_governance_proof(
     )
     proof = _exact_satisfied_proof(publication)
 
-    outcome = finalize_attempt_outcome(
-        attempt=attempt,
-        qualification_decision=decision,
-        publication_snapshot=publication,
-        exact_satisfied_governance_proof=proof,
-        approval_bundle=None,
-        publication_authorization=None,
-        action_results=(),
-    )
-
-    assert outcome.result == "success"
-    assert outcome.terminal_phase == "finalized-no-op"
-    assert outcome.exact_satisfied_governance_proof_digest == proof.proof_digest
-    assert outcome.approval_bundle_digest is None
-    assert outcome.publication_authorization_digest is None
-    assert outcome.action_result_digests == ()
+    with pytest.raises(ValueError, match="requires full authority"):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=publication,
+            publication_snapshot_reference=proof.publication_snapshot_reference,
+            exact_satisfied_finalization_proof=proof,
+            publisher_conclusion="skipped",
+            approval_bundle=None,
+            publication_authorization=None,
+            action_results=(),
+        )
     missing_proof = finalize_attempt_outcome(
         attempt=attempt,
         qualification_decision=decision,
         publication_snapshot=publication,
-        exact_satisfied_governance_proof=None,
+        publisher_conclusion="skipped",
         approval_bundle=None,
         publication_authorization=None,
         action_results=(),
@@ -1681,7 +1672,7 @@ def test_exact_preobserved_noop_requires_fresh_governance_proof(
     assert missing_proof.publication_snapshot_digest == (
         publication.snapshot_digest
     )
-    assert missing_proof.exact_satisfied_governance_proof_digest is None
+    assert missing_proof.exact_satisfied_finalization_proof_digest is None
 
 
 def test_exact_noop_rejects_environment_authorization_and_result_lineage(
@@ -1734,7 +1725,7 @@ def test_exact_noop_rejects_environment_authorization_and_result_lineage(
             "attempt": attempt,
             "qualification_decision": decision,
             "publication_snapshot": publication,
-            "exact_satisfied_governance_proof": proof,
+            "exact_satisfied_finalization_proof": proof,
             "approval_bundle": None,
             "publication_authorization": None,
             "action_results": (),
@@ -1788,7 +1779,7 @@ def test_replayable_no_side_effect_outcome_requires_exact_safe_state(
         attempt=attempt,
         qualification_decision_digest=decision.decision_digest,
         publication_snapshot_digest=publication.snapshot_digest,
-        exact_satisfied_governance_proof_digest=None,
+        exact_satisfied_finalization_proof_digest=None,
         approval_bundle_digest=None,
         publication_authorization_digest=None,
         action_result_digests=(),
@@ -1993,13 +1984,13 @@ def _sha256_authority_records(
     qualified_simulation,
 ) -> dict[
     str,
-    PublicationAuthorization | ExactSatisfiedGovernanceProof,
+    PublicationAuthorization | ExactSatisfiedFinalizationProof,
 ]:
     records = _transport_records(qualified_simulation)
     authorization = records["publication-authorization"]
     proof = records["exact-satisfied-proof"]
     assert isinstance(authorization, PublicationAuthorization)
-    assert isinstance(proof, ExactSatisfiedGovernanceProof)
+    assert isinstance(proof, ExactSatisfiedFinalizationProof)
 
     provenance = dict(_governance_provenance())
     provenance["blob-oid"] = "b" * 64
@@ -2016,10 +2007,13 @@ def _sha256_authority_records(
                 current_main_sha="a" * 64,
             ),
         ),
-        "exact-satisfied-governance-proof": replace(
+        "exact-satisfied-finalization-proof": replace(
             proof,
-            governance_provenance=sha256_provenance,
-            governance_current_main_sha="a" * 64,
+            governance_proof=replace(
+                proof.governance_proof,
+                provenance=sha256_provenance,
+                current_main_sha="a" * 64,
+            ),
         ),
     }
 
@@ -2032,8 +2026,8 @@ def _sha256_authority_records(
             id="publication-authorization",
         ),
         pytest.param(
-            "exact-satisfied-governance-proof",
-            id="exact-satisfied-governance-proof",
+            "exact-satisfied-finalization-proof",
+            id="exact-satisfied-finalization-proof",
         ),
     ],
 )
@@ -2053,9 +2047,9 @@ def test_new_authority_records_round_trip_sha256_governance_provenance(
         provenance = dict(parsed.governance_proof.provenance)
         current_main_sha = parsed.governance_proof.current_main_sha
     else:
-        assert isinstance(parsed, ExactSatisfiedGovernanceProof)
-        provenance = dict(parsed.governance_provenance)
-        current_main_sha = parsed.governance_current_main_sha
+        assert isinstance(parsed, ExactSatisfiedFinalizationProof)
+        provenance = dict(parsed.governance_proof.provenance)
+        current_main_sha = parsed.governance_proof.current_main_sha
     assert provenance["git-object-format"] == "sha256"
     assert current_main_sha == "a" * 64
     assert provenance["blob-oid"] == "b" * 64
@@ -2066,8 +2060,8 @@ def test_new_authority_records_round_trip_sha256_governance_provenance(
     [
         pytest.param(
             "exact-satisfied-proof",
-            r"^Exact-satisfied Governance proof requires Live enabled$",
-            id="exact-satisfied-governance-proof",
+            "requires Live enabled",
+            id="exact-satisfied-finalization-proof",
         ),
     ],
 )
@@ -2079,7 +2073,12 @@ def test_new_authority_records_reject_disabled_governance(
     record = _transport_records(qualified_simulation)[record_name]
 
     with pytest.raises(ValueError, match=message):
-        replace(record, governance_live_enabled=False)
+        replace(
+            record,
+            governance_proof=replace(
+                record.governance_proof, live_enabled=False
+            ),
+        )
 
 
 def test_publication_authorization_rejects_disabled_governance(
@@ -2105,10 +2104,10 @@ def test_publication_authorization_rejects_disabled_governance(
     [
         pytest.param(
             "exact-satisfied-proof",
-            "governance-live-enabled",
-            ExactSatisfiedGovernanceProof,
-            r"^Exact-satisfied Governance proof requires Live enabled$",
-            id="exact-satisfied-governance-proof",
+            "live-enabled",
+            ExactSatisfiedFinalizationProof,
+            "requires Live enabled",
+            id="exact-satisfied-finalization-proof",
         ),
     ],
 )
@@ -2122,7 +2121,7 @@ def test_new_authority_transport_rejects_disabled_governance(
     document = deepcopy(
         _transport_records(qualified_simulation)[record_name].to_document()
     )
-    document[enabled_field] = False
+    document["governance-proof"][enabled_field] = False
 
     with pytest.raises(ValueError, match=message):
         release_record_from_document(
@@ -2155,8 +2154,7 @@ _PUBLICATION_AUTHORIZATION_TIME_ERROR = (
     r"completed_at < governance expires_at$"
 )
 _EXACT_SATISFIED_PROOF_TIME_ERROR = (
-    r"^Exact-satisfied Governance proof requires "
-    r"governance_observed_at <= proved_at < governance_expires_at$"
+    r"Exact-satisfied proof (cannot precede|must precede)"
 )
 
 
@@ -2236,7 +2234,7 @@ def test_exact_proof_constructor_rejects_time_outside_governance_window(
     proved_at: str,
 ) -> None:
     proof = _transport_records(qualified_simulation)["exact-satisfied-proof"]
-    assert isinstance(proof, ExactSatisfiedGovernanceProof)
+    assert isinstance(proof, ExactSatisfiedFinalizationProof)
 
     with pytest.raises(
         ValueError,
@@ -2267,7 +2265,7 @@ def test_exact_satisfied_proof_transport_rejects_time_outside_governance_window(
     proved_at: str,
 ) -> None:
     proof = _transport_records(qualified_simulation)["exact-satisfied-proof"]
-    assert isinstance(proof, ExactSatisfiedGovernanceProof)
+    assert isinstance(proof, ExactSatisfiedFinalizationProof)
     document = deepcopy(proof.to_document())
     document["proved-at"] = proved_at
 
@@ -2277,7 +2275,7 @@ def test_exact_satisfied_proof_transport_rejects_time_outside_governance_window(
     ):
         release_record_from_document(
             document,
-            expected_type=ExactSatisfiedGovernanceProof,
+            expected_type=ExactSatisfiedFinalizationProof,
         )
 
 
@@ -2285,18 +2283,18 @@ def test_exact_satisfied_proof_accepts_governance_observation_boundary(
     qualified_simulation,
 ) -> None:
     proof = _transport_records(qualified_simulation)["exact-satisfied-proof"]
-    assert isinstance(proof, ExactSatisfiedGovernanceProof)
+    assert isinstance(proof, ExactSatisfiedFinalizationProof)
     boundary_proof = replace(
         proof,
-        proved_at=proof.governance_observed_at,
+        proved_at=proof.governance_proof.observed_at,
     )
 
     parsed = release_record_from_document(
         boundary_proof.to_document(),
-        expected_type=ExactSatisfiedGovernanceProof,
+        expected_type=ExactSatisfiedFinalizationProof,
     )
 
-    assert boundary_proof.proved_at == proof.governance_observed_at
+    assert boundary_proof.proved_at == proof.governance_proof.observed_at
     assert parsed == boundary_proof
 
 
@@ -2324,7 +2322,7 @@ def test_exact_proof_constructor_rejects_invalid_mixed_precision_window(
     expires_at: str,
 ) -> None:
     proof = _transport_records(qualified_simulation)["exact-satisfied-proof"]
-    assert isinstance(proof, ExactSatisfiedGovernanceProof)
+    assert isinstance(proof, ExactSatisfiedFinalizationProof)
 
     with pytest.raises(
         ValueError,
@@ -2332,9 +2330,12 @@ def test_exact_proof_constructor_rejects_invalid_mixed_precision_window(
     ):
         replace(
             proof,
-            governance_observed_at=observed_at,
+            governance_proof=replace(
+                proof.governance_proof,
+                observed_at=observed_at,
+                expires_at=expires_at,
+            ),
             proved_at=proved_at,
-            governance_expires_at=expires_at,
         )
 
 
@@ -2362,11 +2363,11 @@ def test_exact_satisfied_proof_transport_rejects_invalid_mixed_precision_window(
     expires_at: str,
 ) -> None:
     proof = _transport_records(qualified_simulation)["exact-satisfied-proof"]
-    assert isinstance(proof, ExactSatisfiedGovernanceProof)
+    assert isinstance(proof, ExactSatisfiedFinalizationProof)
     document = deepcopy(proof.to_document())
-    document["governance-observed-at"] = observed_at
+    document["governance-proof"]["observed-at"] = observed_at
     document["proved-at"] = proved_at
-    document["governance-expires-at"] = expires_at
+    document["governance-proof"]["expires-at"] = expires_at
 
     with pytest.raises(
         ValueError,
@@ -2374,7 +2375,7 @@ def test_exact_satisfied_proof_transport_rejects_invalid_mixed_precision_window(
     ):
         release_record_from_document(
             document,
-            expected_type=ExactSatisfiedGovernanceProof,
+            expected_type=ExactSatisfiedFinalizationProof,
         )
 
 
@@ -2402,22 +2403,25 @@ def test_exact_satisfied_proof_accepts_valid_mixed_precision_window(
     expires_at: str,
 ) -> None:
     proof = _transport_records(qualified_simulation)["exact-satisfied-proof"]
-    assert isinstance(proof, ExactSatisfiedGovernanceProof)
+    assert isinstance(proof, ExactSatisfiedFinalizationProof)
     accepted = replace(
         proof,
-        governance_observed_at=observed_at,
+        governance_proof=replace(
+            proof.governance_proof,
+            observed_at=observed_at,
+            expires_at=expires_at,
+        ),
         proved_at=proved_at,
-        governance_expires_at=expires_at,
     )
     document = deepcopy(accepted.to_document())
 
-    assert document["governance-observed-at"] == observed_at
+    assert document["governance-proof"]["observed-at"] == observed_at
     assert document["proved-at"] == proved_at
-    assert document["governance-expires-at"] == expires_at
+    assert document["governance-proof"]["expires-at"] == expires_at
     assert (
         release_record_from_document(
             document,
-            expected_type=ExactSatisfiedGovernanceProof,
+            expected_type=ExactSatisfiedFinalizationProof,
         )
         == accepted
     )

@@ -87,9 +87,6 @@ APPROVAL_BUNDLE_SCHEMA = "workflow-delivery/v3/approval-bundle"
 PUBLICATION_AUTHORIZATION_SCHEMA = (
     "workflow-delivery/v3/publication-authorization"
 )
-EXACT_SATISFIED_GOVERNANCE_PROOF_SCHEMA = (
-    "workflow-delivery/v3/exact-satisfied-governance-proof"
-)
 EXACT_SATISFIED_FINALIZATION_PROOF_SCHEMA = (
     "workflow-delivery/v3/exact-satisfied-finalization-proof"
 )
@@ -4100,140 +4097,6 @@ class DirectPredecessor:
 
 
 @dataclass(frozen=True, slots=True)
-class ExactSatisfiedGovernanceProof:
-    """Fresh Governance continuity proof for an actionless publication."""
-
-    attempt: ReleaseAttemptIdentity
-    publication_snapshot: PublicationSnapshot
-    governance_provenance: tuple[tuple[str, str], ...]
-    governance_current_main_sha: str
-    governance_expires_at: str
-    governance_live_enabled: bool
-    governance_observed_at: str
-    proved_at: str
-    producer: str
-    control: str
-
-    def __post_init__(self) -> None:
-        """Reject proof that could authorize an action or stale authority."""
-        _exact(
-            self.attempt,
-            ReleaseAttemptIdentity,
-            field="exact-satisfied proof.attempt",
-        )
-        _exact(
-            self.publication_snapshot,
-            PublicationSnapshot,
-            field="exact-satisfied proof.publication_snapshot",
-        )
-        if (
-            self.publication_snapshot.attempt != self.attempt
-            or self.publication_snapshot.materialized_actions
-            or any(
-                reference.classification != "exact-satisfied"
-                for reference in (
-                    self.publication_snapshot.observation_references
-                )
-            )
-        ):
-            message = (
-                "Exact-satisfied Governance proof requires an actionless "
-                "exact Publication Snapshot"
-            )
-            raise ValueError(message)
-        provenance = _pairs(
-            self.governance_provenance,
-            field="exact-satisfied proof.governance_provenance",
-        )
-        if {name for name, _ in provenance} != _GOVERNANCE_PROVENANCE_FIELDS:
-            message = "Exact-satisfied Governance proof is incomplete"
-            raise ValueError(message)
-        object_format = dict(provenance)["git-object-format"]
-        expected_length = {"sha1": 40, "sha256": 64}.get(object_format)
-        current_main_sha = _string(
-            self.governance_current_main_sha,
-            field="exact-satisfied proof.governance_current_main_sha",
-        )
-        if (
-            expected_length is None
-            or len(current_main_sha) != expected_length
-            or any(
-                character not in "0123456789abcdef"
-                for character in current_main_sha
-            )
-        ):
-            message = "Exact-satisfied current main SHA is malformed"
-            raise ValueError(message)
-        governance_expires_at = _timestamp(
-            self.governance_expires_at,
-            field="exact-satisfied proof.governance_expires_at",
-        )
-        _boolean(
-            self.governance_live_enabled,
-            field="exact-satisfied proof.governance_live_enabled",
-        )
-        if not self.governance_live_enabled:
-            message = "Exact-satisfied Governance proof requires Live enabled"
-            raise ValueError(message)
-        governance_observed_at = _timestamp(
-            self.governance_observed_at,
-            field="exact-satisfied proof.governance_observed_at",
-        )
-        proved_at = _timestamp(
-            self.proved_at,
-            field="exact-satisfied proof.proved_at",
-        )
-        if not (
-            _compare_timestamps(governance_observed_at, proved_at) <= 0
-            and _compare_timestamps(proved_at, governance_expires_at) < 0
-        ):
-            message = (
-                "Exact-satisfied Governance proof requires "
-                "governance_observed_at <= proved_at < governance_expires_at"
-            )
-            raise ValueError(message)
-        if self.producer != "prove-exact-satisfied":
-            message = "Exact-satisfied Governance proof producer is invalid"
-            raise ValueError(message)
-        expected_control = (
-            f"workflow-delivery-v3:{self.attempt.execution.target}"
-        )
-        if self.control != expected_control:
-            message = "Exact-satisfied Governance proof control mismatch"
-            raise ValueError(message)
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the complete canonical proof document."""
-        return cast(
-            "dict[str, JsonValue]",
-            {
-                "schema": EXACT_SATISFIED_GOVERNANCE_PROOF_SCHEMA,
-                "attempt": self.attempt.to_document(),
-                "publication-snapshot": (
-                    self.publication_snapshot.to_document()
-                ),
-                "governance-provenance": _json_pairs(
-                    self.governance_provenance
-                ),
-                "governance-current-main-sha": (
-                    self.governance_current_main_sha
-                ),
-                "governance-expires-at": self.governance_expires_at,
-                "governance-live-enabled": self.governance_live_enabled,
-                "governance-observed-at": self.governance_observed_at,
-                "proved-at": self.proved_at,
-                "producer": self.producer,
-                "control": self.control,
-            },
-        )
-
-    @property
-    def proof_digest(self) -> str:
-        """Return the canonical exact-satisfied proof digest."""
-        return canonical_sha256(self.to_document())
-
-
-@dataclass(frozen=True, slots=True)
 class Receipt:
     """Durable exact create-or-exact package publication proof."""
 
@@ -4506,7 +4369,7 @@ def _validate_successful_attempt_outcome(outcome: AttemptOutcome) -> None:
         raise ValueError(message)
     if outcome.terminal_phase == "finalized":
         if (
-            outcome.exact_satisfied_governance_proof_digest is not None
+            outcome.exact_satisfied_finalization_proof_digest is not None
             or outcome.approval_bundle_digest is None
             or outcome.publication_authorization_digest is None
             or len(outcome.action_result_digests) != 1
@@ -4519,14 +4382,14 @@ def _validate_successful_attempt_outcome(outcome: AttemptOutcome) -> None:
         return
     if outcome.terminal_phase == "finalized-no-op":
         if (
-            outcome.exact_satisfied_governance_proof_digest is None
+            outcome.exact_satisfied_finalization_proof_digest is None
             or outcome.approval_bundle_digest is not None
             or outcome.publication_authorization_digest is not None
             or outcome.action_result_digests
         ):
             message = (
                 "Successful no-op Attempt Outcome requires the fresh "
-                "Governance proof and no mutation authority"
+                "finalization proof and no mutation authority"
             )
             raise ValueError(message)
         return
@@ -4549,7 +4412,7 @@ class AttemptOutcome:
     uncertainty: bool
     possibly_mutated: bool
     next_action: str
-    exact_satisfied_governance_proof_digest: str | None = None
+    exact_satisfied_finalization_proof_digest: str | None = None
     observation_digests: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:  # noqa: C901, PLR0912, PLR0915
@@ -4568,8 +4431,8 @@ class AttemptOutcome:
             field="attempt outcome.publication_snapshot_digest",
         )
         _optional_digest(
-            self.exact_satisfied_governance_proof_digest,
-            field=("attempt outcome.exact_satisfied_governance_proof_digest"),
+            self.exact_satisfied_finalization_proof_digest,
+            field=("attempt outcome.exact_satisfied_finalization_proof_digest"),
         )
         _optional_digest(
             self.approval_bundle_digest,
@@ -4621,11 +4484,11 @@ class AttemptOutcome:
                 field=f"attempt outcome.observation_digests[{index}]",
             )
         _validate_successful_attempt_outcome(self)
-        if self.exact_satisfied_governance_proof_digest is not None and (
+        if self.exact_satisfied_finalization_proof_digest is not None and (
             self.result != "success" or self.terminal_phase != "finalized-no-op"
         ):
             message = (
-                "Exact-satisfied Governance proof is only valid for "
+                "Exact-satisfied finalization proof is only valid for "
                 "successful no-op finalization"
             )
             raise ValueError(message)
@@ -4645,7 +4508,7 @@ class AttemptOutcome:
             raise ValueError(message)
         if self.publication_snapshot_digest is None:
             has_later_records = bool(
-                self.exact_satisfied_governance_proof_digest is not None
+                self.exact_satisfied_finalization_proof_digest is not None
                 or self.approval_bundle_digest is not None
                 or self.publication_authorization_digest is not None
                 or self.action_result_digests
@@ -4721,8 +4584,8 @@ class AttemptOutcome:
             ),
             "observation-digests": _json_strings(self.observation_digests),
             "publication-snapshot-digest": self.publication_snapshot_digest,
-            "exact-satisfied-governance-proof-digest": (
-                self.exact_satisfied_governance_proof_digest
+            "exact-satisfied-finalization-proof-digest": (
+                self.exact_satisfied_finalization_proof_digest
             ),
             "approval-bundle-digest": self.approval_bundle_digest,
             "publication-authorization-digest": (
@@ -4854,7 +4717,6 @@ type ReleaseRecord = (
     | MutationMayHaveStartedMarker
     | PublicationResult
     | ExactSatisfiedFinalizationProof
-    | ExactSatisfiedGovernanceProof
     | ActionResult
     | AttemptOutcome
     | SimulationOutcome
@@ -4927,7 +4789,6 @@ __all__ = [
     "DestinationReadback",
     "DirectPredecessor",
     "ExactSatisfiedFinalizationProof",
-    "ExactSatisfiedGovernanceProof",
     "ExternalPackageCoordinate",
     "GovernanceProof",
     "HypotheticalAction",
