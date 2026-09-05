@@ -47,6 +47,7 @@ from three_workflow_delivery_v3.records.release import (
     RELEASE_INTENT_SCHEMA,
     RELEASE_OBLIGATION_SCHEMA,
     RELEASE_OUTPUT_IDENTITY_SCHEMA,
+    REMOTE_STATE_OBSERVATION_SCHEMA,
     SIMULATION_BINDING_SCHEMA,
     SIMULATION_IDENTITY_SCHEMA,
     SIMULATION_OUTCOME_SCHEMA,
@@ -93,6 +94,7 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseIntent,
     ReleaseObligation,
     ReleaseOutputIdentity,
+    RemoteStateObservation,
     SimulationBinding,
     SimulationIdentity,
     SimulationOutcome,
@@ -1838,6 +1840,82 @@ def _projection_observation(value: JsonValue) -> ProjectionObservation:
     )
 
 
+def _remote_state_observation(value: JsonValue) -> RemoteStateObservation:
+    field = "Remote-State Observation"
+    document = _closed(
+        value,
+        field=field,
+        schema=REMOTE_STATE_OBSERVATION_SCHEMA,
+        fields=frozenset(
+            {
+                "attempt",
+                "qualification-decision-reference",
+                "desired-subject",
+                "desired-version",
+                "desired-content-sha256",
+                "desired-content-sha512",
+                "desired-witness-digest",
+                "classification",
+                "package-control",
+                "active-readback",
+                "response-identity",
+                "diagnostics",
+                "producer",
+                "control",
+                "workflow-run-id",
+            }
+        ),
+    )
+    return RemoteStateObservation(
+        attempt=_release_attempt(document["attempt"]),
+        qualification_decision_reference=_artifact_reference(
+            document["qualification-decision-reference"]
+        ),
+        desired_subject=_package_control_subject(document["desired-subject"]),
+        desired_version=_string(
+            document["desired-version"],
+            field=f"{field}.desired-version",
+        ),
+        desired_content_sha256=_string(
+            document["desired-content-sha256"],
+            field=f"{field}.desired-content-sha256",
+        ),
+        desired_content_sha512=_string(
+            document["desired-content-sha512"],
+            field=f"{field}.desired-content-sha512",
+        ),
+        desired_witness_digest=_string(
+            document["desired-witness-digest"],
+            field=f"{field}.desired-witness-digest",
+        ),
+        classification=_string(
+            document["classification"],
+            field=f"{field}.classification",
+        ),
+        package_control=(
+            None
+            if document["package-control"] is None
+            else _package_control_proof(document["package-control"])
+        ),
+        active_readback=(
+            None
+            if document["active-readback"] is None
+            else _destination_readback(document["active-readback"])
+        ),
+        response_identity=_nullable_string(
+            document["response-identity"],
+            field=f"{field}.response-identity",
+        ),
+        diagnostics=_publication_diagnostics(document["diagnostics"]),
+        producer=_string(document["producer"], field=f"{field}.producer"),
+        control=_string(document["control"], field=f"{field}.control"),
+        workflow_run_id=_integer(
+            document["workflow-run-id"],
+            field=f"{field}.workflow-run-id",
+        ),
+    )
+
+
 def _hypothetical_action(value: JsonValue) -> HypotheticalAction:
     document = _closed(
         value,
@@ -2678,6 +2756,7 @@ _PARSERS: dict[type[object], Callable[[JsonValue], ReleaseRecord]] = {
     QualificationEvidence: _qualification_evidence,
     QualificationDecision: _qualification_decision,
     ProjectionObservation: _projection_observation,
+    RemoteStateObservation: _remote_state_observation,
     HypotheticalAction: _hypothetical_action,
     PublicationAction: _publication_action,
     PublicationSnapshot: _publication_snapshot,
@@ -2851,7 +2930,12 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
             record.attempt.execution.target,
             record.producer,
         )
-    if isinstance(record, MutationMayHaveStartedMarker | PublicationResult):
+    if isinstance(
+        record,
+        RemoteStateObservation
+        | MutationMayHaveStartedMarker
+        | PublicationResult,
+    ):
         return (
             "live-release",
             record.workflow_run_id,

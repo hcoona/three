@@ -11,6 +11,7 @@ import pytest
 from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
+    REMOTE_STATE_OBSERVATION_SCHEMA,
     ApprovalBoundary,
     ApprovalBundle,
     BuddyExecutionIdentity,
@@ -26,6 +27,7 @@ from three_workflow_delivery_v3.records.release import (
     PublicationDiagnostics,
     PublicationResult,
     ReleaseAttemptIdentity,
+    RemoteStateObservation,
     admit_release_record,
     release_record_digest,
 )
@@ -71,6 +73,7 @@ _ARTIFACT_DIGEST = _sha256("1")
 _AUTHORIZATION_PAYLOAD_DIGEST = _sha256("2")
 _MARKER_PAYLOAD_DIGEST = _sha256("3")
 _SNAPSHOT_PAYLOAD_DIGEST = _sha256("4")
+_DECISION_PAYLOAD_DIGEST = _sha256("0")
 _CANONICAL_GOVERNANCE_DIGEST = _sha256("5")
 _API_RESPONSE_DIGEST = _sha256("6")
 _REGISTRY_RESPONSE_DIGEST = _sha256("7")
@@ -345,6 +348,37 @@ def _diagnostics():
     )
 
 
+def _remote_observation(*, attempt=None):
+    selected_attempt = attempt or _attempt()
+    target = selected_attempt.execution.target
+    return RemoteStateObservation(
+        attempt=selected_attempt,
+        qualification_decision_reference=_artifact_reference(
+            payload_path="qualification/qualification-decision.json",
+            payload_digest=_DECISION_PAYLOAD_DIGEST,
+        ),
+        desired_subject=_package_control_subject(),
+        desired_version=_VERSION,
+        desired_content_sha256=_CONTENT_SHA256,
+        desired_content_sha512=_CONTENT_SHA512,
+        desired_witness_digest=_WITNESS_DIGEST,
+        classification="exact-satisfied",
+        package_control=_package_control_proof(),
+        active_readback=replace(
+            _readback(witness_target=target),
+            tag=f"buddy-sha-{target}",
+        ),
+        response_identity=_VERSION_RESPONSE_DIGEST,
+        diagnostics=PublicationDiagnostics(
+            entries=("active version bytes and witness observed",),
+            truncated=False,
+        ),
+        producer="observe-github-packages",
+        control=f"workflow-delivery-v3:{target}",
+        workflow_run_id=selected_attempt.workflow_run_id,
+    )
+
+
 def _reference(path, digest):
     return _artifact_reference(payload_path=path, payload_digest=digest)
 
@@ -485,6 +519,7 @@ def test_publication_finalizer_records_are_frozen_and_slotted():
         (_profile_match, "command"),
         (_readback, "classification"),
         (_diagnostics, "entries"),
+        (_remote_observation, "classification"),
         (_predecessor, "kind"),
         (_approval_bundle, "producer"),
         (_publication_authorization, "completed_at"),
@@ -541,6 +576,447 @@ def test_package_control_proof_emits_first_slice_authority_shape():
     assert document["endpoints"][0].startswith(
         "https://api.github.com/users/hcoona/packages/",
     )
+
+
+def test_public_package_api_proof_preserves_unexposed_access_facts():
+    proof = _package_control_proof()
+    proof = replace(
+        proof,
+        endpoints=(_API_ENDPOINT,),
+        facts=_fact_values(proof, "exposed-access", ()),
+        response_digests=((_API_ENDPOINT, _API_RESPONSE_DIGEST),),
+    )
+    observation = replace(_remote_observation(), package_control=proof)
+
+    parsed = release_record_from_document(
+        observation.to_document(),
+        expected_type=RemoteStateObservation,
+    )
+
+    assert type(parsed) is RemoteStateObservation
+    assert parsed.package_control is not None
+    assert parsed.package_control == proof
+    assert dict(parsed.package_control.facts) == {
+        "exposed-access": (),
+        "owner": ("hcoona",),
+        "repository-association": ("hcoona/three",),
+        "visibility": ("public",),
+    }
+
+
+def test_remote_observation_emits_only_its_direct_authority_and_desired_basis():
+    record = _remote_observation()
+    document = record.to_document()
+
+    assert REMOTE_STATE_OBSERVATION_SCHEMA == (
+        "workflow-delivery/v3/remote-state-observation"
+    )
+    assert document == {
+        "schema": REMOTE_STATE_OBSERVATION_SCHEMA,
+        "attempt": _attempt().to_document(),
+        "qualification-decision-reference": _artifact_reference(
+            payload_path="qualification/qualification-decision.json",
+            payload_digest=_DECISION_PAYLOAD_DIGEST,
+        ).to_document(),
+        "desired-subject": _package_control_subject().to_document(),
+        "desired-version": _VERSION,
+        "desired-content-sha256": _CONTENT_SHA256,
+        "desired-content-sha512": _CONTENT_SHA512,
+        "desired-witness-digest": _WITNESS_DIGEST,
+        "classification": "exact-satisfied",
+        "package-control": _package_control_proof().to_document(),
+        "active-readback": _readback().to_document(),
+        "response-identity": _VERSION_RESPONSE_DIGEST,
+        "diagnostics": {
+            "entries": ["active version bytes and witness observed"],
+            "truncated": False,
+        },
+        "producer": "observe-github-packages",
+        "control": _CONTROL,
+        "workflow-run-id": _WORKFLOW_RUN_ID,
+    }
+    assert record.observation_digest == release_record_digest(record)
+
+
+@pytest.mark.parametrize(
+    ("tag_state", "tag_version"),
+    [
+        ("absent", None),
+        ("present", _VERSION),
+        ("present", "0.0.0-other"),
+        ("unreadable", None),
+    ],
+    ids=("absent", "same", "elsewhere", "unreadable"),
+)
+def test_exact_observation_preserves_non_authoritative_tag_states(
+    tag_state,
+    tag_version,
+):
+    record = replace(
+        _remote_observation(),
+        active_readback=replace(
+            _readback(), tag_state=tag_state, tag_version=tag_version
+        ),
+    )
+    parsed = release_record_from_document(
+        record.to_document(), expected_type=RemoteStateObservation
+    )
+
+    assert type(parsed) is RemoteStateObservation
+    assert parsed == record
+
+
+def test_absent_observation_requires_only_active_absence_not_history():
+    record = replace(
+        _remote_observation(),
+        classification="absent",
+        active_readback=_readback(classification="absent", tag_state="absent"),
+    )
+    parsed = release_record_from_document(
+        record.to_document(), expected_type=RemoteStateObservation
+    )
+
+    assert type(parsed) is RemoteStateObservation
+    assert parsed == record
+
+
+@pytest.mark.parametrize("tag_state", ["present", "unreadable"])
+def test_active_absence_with_unavailable_tag_absence_remains_blocking(
+    tag_state,
+):
+    readback = _readback(classification="absent", tag_state=tag_state)
+    record = replace(
+        _remote_observation(),
+        classification="unprovable",
+        active_readback=readback,
+    )
+    parsed = release_record_from_document(
+        record.to_document(), expected_type=RemoteStateObservation
+    )
+
+    assert type(parsed) is RemoteStateObservation
+    assert parsed.classification == "unprovable"
+    assert parsed.active_readback == readback
+    with pytest.raises(ValueError, match="observed absent tag"):
+        replace(record, classification="absent")
+
+
+@pytest.mark.parametrize(
+    "classification", ["partial", "conflicting", "unknown", "unprovable"]
+)
+@pytest.mark.parametrize(
+    "missing", ["package-control", "active-readback", "both"]
+)
+def test_blocking_observation_preserves_missing_http_evidence(
+    classification,
+    missing,
+):
+    record = replace(
+        _remote_observation(),
+        classification=classification,
+        package_control=(
+            None
+            if missing in {"package-control", "both"}
+            else _package_control_proof()
+        ),
+        active_readback=(
+            None if missing in {"active-readback", "both"} else _readback()
+        ),
+        response_identity=None,
+    )
+    parsed = release_record_from_document(
+        record.to_document(), expected_type=RemoteStateObservation
+    )
+
+    assert type(parsed) is RemoteStateObservation
+    assert parsed == record
+    for ready_classification in ("absent", "exact-satisfied"):
+        with pytest.raises(
+            ValueError, match="requires package control and active readback"
+        ):
+            replace(record, classification=ready_classification)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("content_sha256", _sha256("8")),
+        ("content_sha512", _sha512("b")),
+        ("witness_digest", _sha256("a")),
+        ("witness_target", _ALTERNATE_TARGET),
+    ],
+)
+def test_observation_blocks_differing_bytes_or_witness(field_name, value):
+    readback = replace(_readback(), **{field_name: value})
+    with pytest.raises(
+        ValueError, match="differs from desired bytes or witness"
+    ):
+        replace(_remote_observation(), active_readback=readback)
+
+    record = replace(
+        _remote_observation(),
+        classification="conflicting",
+        active_readback=replace(readback, classification="conflicting"),
+    )
+    parsed = release_record_from_document(
+        record.to_document(), expected_type=RemoteStateObservation
+    )
+    assert type(parsed) is RemoteStateObservation
+    assert parsed.active_readback is not None
+    assert parsed.classification == "conflicting"
+    assert getattr(parsed.active_readback, field_name) == value
+
+
+@pytest.mark.parametrize(
+    ("classification", "readback"),
+    [
+        ("absent", _readback()),
+        (
+            "exact-satisfied",
+            _readback(classification="absent", tag_state="absent"),
+        ),
+        ("exact-satisfied", _readback(classification="unknown")),
+    ],
+)
+def test_ready_observation_rejects_different_readback_classification(
+    classification, readback
+):
+    with pytest.raises(ValueError, match="readback classification mismatch"):
+        replace(
+            _remote_observation(),
+            classification=classification,
+            active_readback=readback,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("package", "@hcoona/other"),
+        ("version", "0.0.0-other"),
+        ("tag", f"buddy-sha-{_ALTERNATE_TARGET}"),
+    ],
+)
+def test_observation_rejects_readback_for_another_identity(field_name, value):
+    with pytest.raises(ValueError, match="readback identity mismatch"):
+        replace(
+            _remote_observation(),
+            active_readback=replace(_readback(), **{field_name: value}),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("destination_id", "npmjs"),
+        ("registry", "https://registry.npmjs.org"),
+        ("normalized_package", "@hcoona/other"),
+    ],
+)
+def test_observation_rejects_another_package_control_subject(field_name, value):
+    proof = _package_control_proof(
+        subject=replace(_package_control_subject(), **{field_name: value})
+    )
+    with pytest.raises(ValueError, match="package-control subject mismatch"):
+        replace(_remote_observation(), package_control=proof)
+
+
+def test_blocking_observation_retains_facts_for_later_governance_admission():
+    proof = _package_control_proof()
+    proof = replace(proof, facts=_fact_values(proof, "owner", ("octocat",)))
+    record = replace(
+        _remote_observation(),
+        classification="conflicting",
+        package_control=proof,
+    )
+
+    assert record.package_control is not None
+    assert dict(record.package_control.facts)["owner"] == ("octocat",)
+    assert record.classification == "conflicting"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value", "message"),
+    [
+        ("producer", "observe-npmjs", "producer is not exact"),
+        (
+            "control",
+            f"workflow-delivery-v3:{_ALTERNATE_TARGET}",
+            "target binding",
+        ),
+        (
+            "workflow_run_id",
+            _ALTERNATE_WORKFLOW_RUN_ID,
+            "Attempt binding mismatch",
+        ),
+        ("classification", "satisfied", "invalid closed value"),
+        ("desired_version", "", "nonempty exact string"),
+        ("desired_content_sha256", "a" * 64, "SHA-256"),
+        ("desired_content_sha512", _sha256("b"), "SHA-512"),
+        ("desired_witness_digest", _sha256("A"), "SHA-256"),
+        ("response_identity", "raw response", "SHA-256"),
+    ],
+)
+def test_observation_rejects_invalid_envelope_or_desired_basis(
+    field_name, value, message
+):
+    with pytest.raises(ValueError, match=message):
+        replace(_remote_observation(), **{field_name: value})
+    document = _remote_observation().to_document()
+    document[field_name.replace("_", "-")] = value
+    with pytest.raises(ValueError, match=message):
+        release_record_from_document(
+            document, expected_type=RemoteStateObservation
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("qualification_decision_reference", _derived_artifact_reference()),
+        ("attempt", object()),
+        ("desired_subject", object()),
+        ("package_control", {}),
+        ("active_readback", {}),
+        ("diagnostics", ("unbounded",)),
+        ("workflow_run_id", True),
+    ],
+)
+def test_observation_requires_exact_nested_and_scalar_types(field_name, value):
+    with pytest.raises(TypeError, match="wrong runtime type"):
+        replace(_remote_observation(), **{field_name: value})
+
+
+def test_observation_admits_a_coherently_rebound_current_attempt():
+    record = _remote_observation(
+        attempt=_attempt(
+            target=_ALTERNATE_TARGET,
+            workflow_run_id=_ALTERNATE_WORKFLOW_RUN_ID,
+        )
+    )
+    admitted = admit_release_record(
+        canonicalize(record.to_document()),
+        expected_type=RemoteStateObservation,
+        expected_digest=record.observation_digest,
+        expected_bindings=ReleaseAdmissionBindings(
+            purpose="live-release",
+            workflow_run_id=_ALTERNATE_WORKFLOW_RUN_ID,
+            run_attempt=None,
+            target=_ALTERNATE_TARGET,
+            producer="observe-github-packages",
+        ),
+    )
+
+    assert type(admitted) is RemoteStateObservation
+    assert admitted.active_readback is not None
+    assert admitted == record
+    assert admitted.active_readback.witness_target == _ALTERNATE_TARGET
+    assert admitted.active_readback.tag == f"buddy-sha-{_ALTERNATE_TARGET}"
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"workflow_run_id": _ALTERNATE_WORKFLOW_RUN_ID},
+        {"target": _ALTERNATE_TARGET},
+        {"producer": "observe-npmjs"},
+        {"purpose": "release-simulation", "run_attempt": 1},
+    ],
+)
+def test_observation_admission_rejects_noncurrent_authority(changes):
+    record = _remote_observation()
+    bindings = ReleaseAdmissionBindings(
+        purpose="live-release",
+        workflow_run_id=_WORKFLOW_RUN_ID,
+        run_attempt=None,
+        target=_TARGET,
+        producer=record.producer,
+    )
+    with pytest.raises(ValueError, match="current binding mismatch"):
+        admit_release_record(
+            canonicalize(record.to_document()),
+            expected_type=RemoteStateObservation,
+            expected_digest=record.observation_digest,
+            expected_bindings=replace(bindings, **changes),
+        )
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "run-attempt",
+        "publication-snapshot-reference",
+        "qualification-decision-digest",
+        "qualification-snapshot-digest",
+        "governance-digest",
+        "artifact-id",
+    ],
+)
+def test_observation_transport_rejects_copied_authority_and_legacy_fields(
+    field_name,
+):
+    document = _remote_observation().to_document()
+    document[field_name] = _sha256("f")
+    with pytest.raises(ValueError, match=f"unknown field: {field_name}"):
+        release_record_from_document(
+            document, expected_type=RemoteStateObservation
+        )
+
+
+def test_observation_transport_does_not_alias_projection_observation():
+    document = _remote_observation().to_document()
+    document["schema"] = "workflow-delivery/v3/projection-observation"
+    with pytest.raises(ValueError, match="wrong schema"):
+        release_record_from_document(
+            document, expected_type=RemoteStateObservation
+        )
+
+
+def test_observation_transport_checks_digest_and_duplicate_fields():
+    record = _remote_observation()
+    payload = canonicalize(record.to_document())
+    with pytest.raises(ValueError, match="canonical digest mismatch"):
+        admit_release_record(
+            payload,
+            expected_type=RemoteStateObservation,
+            expected_digest=_sha256("f"),
+        )
+    with pytest.raises(ValueError, match="duplicate"):
+        admit_release_record(
+            b'{"classification":"unknown",' + payload[1:],
+            expected_type=RemoteStateObservation,
+            expected_digest=record.observation_digest,
+        )
+
+
+@pytest.mark.parametrize(
+    "field_name", ["package-control", "active-readback", "response-identity"]
+)
+def test_observation_transport_requires_nullable_evidence_fields(field_name):
+    document = replace(
+        _remote_observation(),
+        classification="unknown",
+        package_control=None,
+        active_readback=None,
+        response_identity=None,
+    ).to_document()
+    document.pop(field_name)
+    with pytest.raises(
+        ValueError, match=f"missing required field: {field_name}"
+    ):
+        release_record_from_document(
+            document, expected_type=RemoteStateObservation
+        )
+
+
+def test_package_control_proof_has_no_standalone_transport():
+    with pytest.raises(
+        ValueError, match="unsupported transported Release record"
+    ):
+        release_record_from_document(
+            _package_control_proof().to_document(),
+            expected_type=PackageControlProof,  # pyrefly: ignore[bad-argument-type]
+        )
 
 
 def test_profile_match_emits_resolved_first_slice_command():
@@ -933,6 +1409,7 @@ def test_package_control_proof_requires_sorted_authoritative_endpoints(
     "facts",
     [
         _PACKAGE_FACTS[:-1],
+        _PACKAGE_FACTS[1:],
         (*_PACKAGE_FACTS, ("unexpected", ("value",))),
         (
             *_PACKAGE_FACTS[:2],
@@ -945,7 +1422,13 @@ def test_package_control_proof_requires_sorted_authoritative_endpoints(
             *_PACKAGE_FACTS[2:],
         ),
     ],
-    ids=("missing", "extra", "duplicate", "unsorted"),
+    ids=(
+        "missing-visibility",
+        "missing-access",
+        "extra",
+        "duplicate",
+        "unsorted",
+    ),
 )
 def test_package_control_proof_requires_the_exact_fact_set(facts):
     with pytest.raises(ValueError, match=r"facts|incomplete"):
@@ -958,7 +1441,6 @@ def test_package_control_proof_requires_the_exact_fact_set(facts):
         ("owner", ("hcoona", "octocat")),
         ("visibility", ("internal", "public")),
         ("repository-association", ()),
-        ("exposed-access", ()),
     ],
 )
 def test_package_control_proof_enforces_fact_cardinality(
@@ -1894,6 +2376,11 @@ def test_direct_predecessor_rejects_open_kind_or_reference_subclass(
 
 _TRANSPORT_RECORDS = (
     (
+        "remote-state-observation",
+        _remote_observation,
+        RemoteStateObservation,
+    ),
+    (
         "mutation-marker",
         _marker,
         MutationMayHaveStartedMarker,
@@ -2066,12 +2553,22 @@ def test_release_transport_rejects_wrong_top_level_schemas(
         )
 
 
+@pytest.mark.parametrize(
+    ("factory", "reference_field"),
+    [
+        (_marker, "publication-authorization-reference"),
+        (_remote_observation, "qualification-decision-reference"),
+    ],
+)
 @pytest.mark.parametrize("missing_field", _REFERENCE_FIELDS)
 def test_release_transport_requires_every_artifact_lineage_slot(
     missing_field,
+    factory,
+    reference_field,
 ):
-    document = _marker().to_document()
-    reference = document["publication-authorization-reference"]
+    record = factory()
+    document = record.to_document()
+    reference = document[reference_field]
     reference.pop(missing_field)
 
     with pytest.raises(
@@ -2080,7 +2577,7 @@ def test_release_transport_requires_every_artifact_lineage_slot(
     ):
         release_record_from_document(
             document,
-            expected_type=MutationMayHaveStartedMarker,
+            expected_type=type(record),
         )
 
 

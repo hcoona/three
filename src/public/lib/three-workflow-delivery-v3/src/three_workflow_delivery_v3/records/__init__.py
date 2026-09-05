@@ -29,6 +29,7 @@ from three_workflow_delivery_v3.records.governance import (
 )
 from three_workflow_delivery_v3.records.release import (
     OFFICIAL_SIMULATION_WORKFLOW_PATH,
+    REMOTE_STATE_OBSERVATION_SCHEMA,
     ActionResult,
     ApprovalBoundary,
     ApprovalBundle,
@@ -74,6 +75,7 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseIntent,
     ReleaseObligation,
     ReleaseOutputIdentity,
+    RemoteStateObservation,
     SimulationBinding,
     SimulationIdentity,
     SimulationOutcome,
@@ -100,6 +102,7 @@ __all__ = [
     "GOVERNANCE_ACCEPTANCE_REPOSITORY",
     "GOVERNANCE_ACCEPTANCE_WORKFLOW_PATH",
     "OFFICIAL_SIMULATION_WORKFLOW_PATH",
+    "REMOTE_STATE_OBSERVATION_SCHEMA",
     "ActionResult",
     "Admission",
     "ApprovalBoundary",
@@ -153,6 +156,7 @@ __all__ = [
     "ReleaseIntent",
     "ReleaseObligation",
     "ReleaseOutputIdentity",
+    "RemoteStateObservation",
     "SimulationBinding",
     "SimulationIdentity",
     "SimulationOutcome",

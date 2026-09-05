@@ -70,6 +70,9 @@ OBSERVATION_RESPONSE_FACTS_SCHEMA = (
     "workflow-delivery/v3/observation-response-facts"
 )
 PROJECTION_OBSERVATION_SCHEMA = "workflow-delivery/v3/projection-observation"
+REMOTE_STATE_OBSERVATION_SCHEMA = (
+    "workflow-delivery/v3/remote-state-observation"
+)
 HYPOTHETICAL_ACTION_SCHEMA = "workflow-delivery/v3/hypothetical-action"
 DESTINATION_OPERATION_PROFILE_SCHEMA = (
     "workflow-delivery/v3/destination-operation-profile"
@@ -3261,7 +3264,11 @@ class PackageControlSubject:
 
 @dataclass(frozen=True, slots=True)
 class PackageControlProof:
-    """Observed package-container facts without expected Governance values."""
+    """Observed package-container facts without expected Governance values.
+
+    Empty exposed-access means the interface exposed no package-grant facts,
+    not that the package has no grants.
+    """
 
     subject: PackageControlSubject
     observed_at: str
@@ -3306,7 +3313,6 @@ class PackageControlProof:
             len(fact_map["owner"]) != 1
             or len(fact_map["visibility"]) != 1
             or not fact_map["repository-association"]
-            or not fact_map["exposed-access"]
         ):
             message = "Package-Control proof fact cardinality is invalid"
             raise ValueError(message)
@@ -3509,7 +3515,7 @@ class DestinationReadback:
 
 @dataclass(frozen=True, slots=True)
 class PublicationDiagnostics:
-    """Bounded sanitized diagnostics retained by Publication Result."""
+    """Bounded sanitized diagnostics retained by Observation and Result."""
 
     entries: tuple[str, ...]
     truncated: bool
@@ -3544,6 +3550,185 @@ class PublicationDiagnostics:
             "entries": _json_strings(self.entries),
             "truncated": self.truncated,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class RemoteStateObservation:
+    """Active-only observation with direct Qualification Decision authority.
+
+    The Attempt supplies the desired witness target and target-derived tag.
+    Response identity is a nullable selected sanitized response digest, as in
+    Publication Result; embedded evidence retains individual response digests.
+    """
+
+    attempt: ReleaseAttemptIdentity
+    qualification_decision_reference: ArtifactReference
+    desired_subject: PackageControlSubject
+    desired_version: str
+    desired_content_sha256: str
+    desired_content_sha512: str
+    desired_witness_digest: str
+    classification: str
+    package_control: PackageControlProof | None
+    active_readback: DestinationReadback | None
+    response_identity: str | None
+    diagnostics: PublicationDiagnostics
+    producer: str
+    control: str
+    workflow_run_id: int
+
+    def __post_init__(self) -> None:
+        """Reject open identity, substituted subjects, or false ready state."""
+        field = "remote-state observation"
+        _exact(self.attempt, ReleaseAttemptIdentity, field=f"{field}.attempt")
+        if (
+            _string(self.producer, field=f"{field}.producer")
+            != "observe-github-packages"
+        ):
+            message = "Remote-State Observation producer is not exact"
+            raise ValueError(message)
+        _target_control(
+            self.control,
+            target=self.attempt.execution.target,
+            field=f"{field}.control",
+        )
+        if (
+            _positive(self.workflow_run_id, field=f"{field}.workflow_run_id")
+            != self.attempt.workflow_run_id
+        ):
+            message = (
+                "Remote-State Observation current Attempt binding mismatch"
+            )
+            raise ValueError(message)
+        _exact(
+            self.qualification_decision_reference,
+            ArtifactReference,
+            field=f"{field}.qualification_decision_reference",
+        )
+        _exact(
+            self.desired_subject,
+            PackageControlSubject,
+            field=f"{field}.desired_subject",
+        )
+        _string(self.desired_version, field=f"{field}.desired_version")
+        _digest(
+            self.desired_content_sha256,
+            field=f"{field}.desired_content_sha256",
+        )
+        _digest(
+            self.desired_content_sha512,
+            field=f"{field}.desired_content_sha512",
+            sha512=True,
+        )
+        _digest(
+            self.desired_witness_digest,
+            field=f"{field}.desired_witness_digest",
+        )
+        _choice(
+            self.classification,
+            _OBSERVATION_CLASSIFICATIONS,
+            field=f"{field}.classification",
+        )
+        _optional_digest(
+            self.response_identity, field=f"{field}.response_identity"
+        )
+        _exact(
+            self.diagnostics,
+            PublicationDiagnostics,
+            field=f"{field}.diagnostics",
+        )
+        if self.package_control is not None:
+            _exact(
+                self.package_control,
+                PackageControlProof,
+                field=f"{field}.package_control",
+            )
+            if self.package_control.subject != self.desired_subject:
+                message = (
+                    "Remote-State Observation package-control subject mismatch"
+                )
+                raise ValueError(message)
+        readback = self.active_readback
+        if readback is not None:
+            _exact(
+                readback, DestinationReadback, field=f"{field}.active_readback"
+            )
+            if (
+                readback.package != self.desired_subject.normalized_package
+                or readback.version != self.desired_version
+                or readback.tag != f"buddy-sha-{self.attempt.execution.target}"
+            ):
+                message = "Remote-State Observation readback identity mismatch"
+                raise ValueError(message)
+        if self.classification in {"absent", "exact-satisfied"}:
+            if self.package_control is None or readback is None:
+                message = (
+                    "Ready Observation requires package control "
+                    "and active readback"
+                )
+                raise ValueError(message)
+            self._validate_ready_readback(readback)
+
+    def _validate_ready_readback(self, readback: DestinationReadback) -> None:
+        if readback.classification != self.classification:
+            message = "Ready Observation readback classification mismatch"
+            raise ValueError(message)
+        if self.classification == "absent":
+            if readback.tag_state != "absent":
+                message = "Absent Observation requires an observed absent tag"
+                raise ValueError(message)
+        elif (
+            readback.content_sha256,
+            readback.content_sha512,
+            readback.witness_digest,
+            readback.witness_target,
+        ) != (
+            self.desired_content_sha256,
+            self.desired_content_sha512,
+            self.desired_witness_digest,
+            self.attempt.execution.target,
+        ):
+            message = (
+                "Exact Observation readback differs from desired "
+                "bytes or witness"
+            )
+            raise ValueError(message)
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed active-only Remote-State Observation."""
+        return {
+            "schema": REMOTE_STATE_OBSERVATION_SCHEMA,
+            "attempt": self.attempt.to_document(),
+            "qualification-decision-reference": (
+                self.qualification_decision_reference.to_document()
+            ),
+            "desired-subject": self.desired_subject.to_document(),
+            "desired-version": self.desired_version,
+            "desired-content-sha256": self.desired_content_sha256,
+            "desired-content-sha512": self.desired_content_sha512,
+            "desired-witness-digest": self.desired_witness_digest,
+            "classification": self.classification,
+            "package-control": (
+                None
+                if self.package_control is None
+                else self.package_control.to_document()
+            ),
+            "active-readback": (
+                None
+                if self.active_readback is None
+                else self.active_readback.to_document()
+            ),
+            "response-identity": self.response_identity,
+            "diagnostics": self.diagnostics.to_document(),
+            "producer": self.producer,
+            "control": self.control,
+            "workflow-run-id": self.workflow_run_id,
+        }
+
+    @property
+    def observation_digest(self) -> str:
+        """Return the canonical Remote-State Observation digest."""
+        return canonical_sha256(self.to_document())
 
 
 @dataclass(frozen=True, slots=True)
@@ -4667,6 +4852,7 @@ type ReleaseRecord = (
     | QualificationEvidence
     | QualificationDecision
     | ProjectionObservation
+    | RemoteStateObservation
     | HypotheticalAction
     | PublicationAction
     | PublicationSnapshot
@@ -4737,6 +4923,7 @@ __all__ = [
     "NPMJS_OBSERVATION_CONTRACT_ID",
     "NPMJS_OBSERVER_PRODUCER",
     "OFFICIAL_SIMULATION_WORKFLOW_PATH",
+    "REMOTE_STATE_OBSERVATION_SCHEMA",
     "ActionResult",
     "ApprovalBoundary",
     "ApprovalBundle",
@@ -4779,6 +4966,7 @@ __all__ = [
     "ReleaseIntent",
     "ReleaseObligation",
     "ReleaseOutputIdentity",
+    "RemoteStateObservation",
     "SimulationBinding",
     "SimulationIdentity",
     "SimulationOutcome",
