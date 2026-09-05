@@ -361,9 +361,8 @@ def test_blocking_observation_is_retained_before_status_propagation() -> None:
         "needs.observe-github-packages.outputs."
         "observation-set-artifact-name }}"
     ) in command
-    assert command.index('if [[ -z "${snapshot_id}" ]]') < command.index(
-        "add_record observation"
-    )
+    assert 'if [[ -z "${snapshot_id}" ]]' not in command
+    assert command.count("add_record observation ") == 1
 
 
 def test_blocking_observation_shell_names_record_before_failure(
@@ -926,7 +925,9 @@ def test_publication_materializer_binds_selected_ref_to_immutable_intent() -> (
     None
 ):
     materializer = _document(CALLEE)["jobs"]["materialize-publication"]
-    download = _step(materializer, "Download Intent by artifact ID")
+    download = _step(
+        materializer, "Download Intent Model and Eligibility by artifact ID"
+    )
     run = _run(
         _step(
             materializer,
@@ -935,8 +936,13 @@ def test_publication_materializer_binds_selected_ref_to_immutable_intent() -> (
     )
 
     assert download["with"] == {
-        "artifact-ids": "${{ inputs.intent-artifact-id }}",
+        "artifact-ids": (
+            "${{ inputs.intent-artifact-id }},"
+            "${{ inputs.repository-model-artifact-id }},"
+            "${{ inputs.live-eligibility-artifact-id }}"
+        ),
         "path": ".wdv3/input",
+        "merge-multiple": True,
         "skip-decompress": True,
         "digest-mismatch": "error",
     }
@@ -1550,6 +1556,8 @@ def test_approve_publication_freshly_admits_governance_and_emits_sole_authorizat
             "${{ needs.materialize-publication.outputs."
             "release-artifact-artifact-id }},"
             "${{ needs.materialize-publication.outputs."
+            "observation-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
             "publication-snapshot-artifact-id }},"
             "${{ needs.materialize-publication.outputs."
             "approval-bundle-artifact-id }},"
@@ -1749,6 +1757,14 @@ def test_exact_satisfied_path_has_fresh_proof_without_mutation_authority() -> (
             "${{ inputs.live-eligibility-artifact-id }},"
             "${{ needs.admit.outputs.attempt-artifact-id }},"
             "${{ needs.materialize-publication.outputs."
+            "qualification-snapshot-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "decision-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "release-artifact-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "observation-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
             "publication-snapshot-artifact-id }}"
         ),
         "path": ".wdv3/input",
@@ -1770,6 +1786,12 @@ def test_exact_satisfied_path_has_fresh_proof_without_mutation_authority() -> (
         "--repository-model",
         "--attempt-binding",
         "--publication-snapshot",
+        "--qualification-snapshot",
+        "--qualification-decision",
+        "--qualification-decision-artifact-url",
+        "--qualification-decision-payload-path",
+        "--release-artifact",
+        "--observation",
         "--live-eligibility-decision",
         "--control",
     ):
@@ -1975,6 +1997,99 @@ def test_current_authority_uploads_use_raw_transport() -> None:
     assert reviewer_upload["with"]["name"] == "reviewer-summary.md"
 
 
+def test_live_observation_authority_closes_every_current_consumer() -> None:
+    jobs = _document(CALLEE)["jobs"]
+    assert jobs["qualification-finalizer"]["outputs"][
+        "decision-artifact-url"
+    ] == ("${{ steps.upload.outputs.artifact-url }}")
+    consumers = (
+        (
+            "observe-github-packages",
+            "Observe exact GitHub Packages state",
+            "qualification-finalizer",
+        ),
+        (
+            "materialize-publication",
+            "Materialize immutable publication and reviewer payload",
+            "observe-github-packages",
+        ),
+        (
+            "approve-publication",
+            "Form sole Publication Authorization",
+            "materialize-publication",
+        ),
+        (
+            "prove-exact-satisfied",
+            "Form exact-satisfied Governance proof",
+            "materialize-publication",
+        ),
+        (
+            "release-finalizer",
+            "Finalize Attempt Outcome",
+            "qualification-finalizer",
+        ),
+    )
+    for name, step_name, producer in consumers:
+        job = jobs[name]
+        command = _run(_step(job, step_name))
+        assert producer in _needs(job)
+        assert "admit" in _needs(job)
+        downloads = [
+            reference
+            for step in _steps(job)
+            if step.get("uses") == DOWNLOAD
+            for reference in step["with"]["artifact-ids"].split(",")
+        ]
+        for role in ("intent", "repository-model", "live-eligibility"):
+            assert downloads.count(f"${{{{ inputs.{role}-artifact-id }}}}") == 1
+        assert (
+            downloads.count("${{ needs.admit.outputs.attempt-artifact-id }}")
+            == 1
+        )
+        assert (
+            downloads.count(
+                f"${{{{ needs.{producer}.outputs.decision-artifact-id }}}}"
+            )
+            == 1
+        )
+        for option, output in (
+            ("artifact-id", "artifact-id"),
+            ("artifact-digest", "artifact-digest"),
+            ("artifact-url", "artifact-url"),
+            ("payload-path", "artifact-name"),
+            ("digest", "digest"),
+        ):
+            assert (
+                f'--qualification-decision-{option} "${{{{ needs.{producer}.outputs.decision-{output} }}}}"'
+            ) in command
+        for option in (
+            "intent",
+            "intent-digest",
+            "intent-artifact-id",
+            "intent-artifact-digest",
+            "repository-model",
+            "repository-model-digest",
+            "repository-model-artifact-id",
+            "repository-model-artifact-digest",
+            "live-eligibility-decision",
+            "live-eligibility-artifact-id",
+            "live-eligibility-artifact-digest",
+            "live-eligibility-payload-digest",
+            "attempt-binding",
+            "attempt-binding-digest",
+            "attempt-binding-artifact-id",
+            "attempt-binding-artifact-digest",
+        ):
+            assert command.count(f"--{option} ") == 1
+    for consumer, producer in (
+        ("observe-github-packages", "qualification-finalizer"),
+        ("materialize-publication", "observe-github-packages"),
+    ):
+        assert jobs[consumer]["outputs"]["decision-artifact-url"] == (
+            f"${{{{ needs.{producer}.outputs.decision-artifact-url }}}}"
+        )
+
+
 def test_current_authority_jobs_install_no_mutating_toolchain() -> None:
     caller_jobs = _document(CALLER)["jobs"]
     callee_jobs = _document(CALLEE)["jobs"]
@@ -2147,8 +2262,21 @@ def _current_finalizer_facts(
         "needs.qualification-finalizer.outputs.decision-artifact-digest": upload_digest,
         "needs.qualification-finalizer.outputs.decision-artifact-id": "108",
         "needs.qualification-finalizer.outputs.decision-artifact-name": "qualification-decision.json",
+        "needs.qualification-finalizer.outputs.decision-artifact-url": "https://github.com/hcoona/three/actions/runs/424242/artifacts/108",
         "needs.qualification-finalizer.outputs.decision-digest": record_digest,
     }
+    for index, role in enumerate(
+        ("intent", "repository-model", "live-eligibility"),
+        start=801,
+    ):
+        facts.update(
+            {
+                f"inputs.{role}-artifact-id": str(index),
+                f"inputs.{role}-artifact-digest": upload_digest,
+                f"inputs.{role}-artifact-name": f"{role}.json",
+                f"inputs.{role}-digest": record_digest,
+            }
+        )
     for index, role in enumerate(
         (
             "build-evidence",
@@ -2214,17 +2342,20 @@ def _current_finalizer_facts(
     [
         pytest.param(
             "action",
-            ("--approval-bundle", "--publication-authorization"),
-            ("--exact-satisfied-governance-proof", "--observation"),
-            id="action",
-        ),
-        pytest.param(
-            "exact-satisfied",
-            ("--exact-satisfied-governance-proof",),
             (
                 "--approval-bundle",
                 "--publication-authorization",
                 "--observation",
+            ),
+            ("--exact-satisfied-governance-proof",),
+            id="action",
+        ),
+        pytest.param(
+            "exact-satisfied",
+            ("--exact-satisfied-governance-proof", "--observation"),
+            (
+                "--approval-bundle",
+                "--publication-authorization",
             ),
             id="exact-satisfied",
         ),

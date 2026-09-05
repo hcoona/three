@@ -1809,7 +1809,7 @@ def _projection_observation(value: JsonValue) -> ProjectionObservation:
         ),
     )
     return ProjectionObservation(
-        subject=_subject(document["subject"]),
+        subject=_simulation_identity(document["subject"]),
         purpose=_string(document["purpose"], field="observation.purpose"),
         target=_string(document["target"], field="observation.target"),
         producer=_string(document["producer"], field="observation.producer"),

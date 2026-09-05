@@ -19,10 +19,6 @@ from three_workflow_delivery_v3.records.release import (
     BuddyExecutionIdentity,
     ExactSatisfiedGovernanceProof,
     ExternalPackageCoordinate,
-    ObservationRequestFacts,
-    ObservationResponseFacts,
-    ObservationValue,
-    ProjectionObservation,
     PublicationAction,
     PublicationAuthorization,
     PublicationObservationReference,
@@ -62,6 +58,13 @@ from three_workflow_delivery_v3.repository.descriptors import (
     GOVERNANCE_REF,
     GOVERNANCE_REPOSITORY,
     GovernanceSource,
+)
+
+from .test_observation_admission import (
+    _observation,
+)
+from .test_observation_admission import (
+    observation_case as observation_case,  # noqa: PLC0414
 )
 
 if TYPE_CHECKING:
@@ -448,71 +451,6 @@ def _successful_action_result(
     )
 
 
-def _blocking_observation(
-    *,
-    attempt: ReleaseAttemptIdentity,
-    qualification_decision,
-    projection,
-    classification: str,
-) -> ProjectionObservation:
-    desired_state_digest = "sha256:" + ("9" * 64)
-    value = ObservationValue(
-        classification=classification,
-        owner=None,
-        coordinate=None,
-        content_sha512=None,
-        witness_digest=None,
-        routing=(),
-    )
-    request_facts = ObservationRequestFacts(
-        qualification_snapshot_digest=(
-            qualification_decision.qualification_snapshot_digest
-        ),
-        projection_digest=projection.projection_digest,
-        desired_state_digest=desired_state_digest,
-        method="GET",
-        url="https://api.github.com/users/hcoona/packages/npm/"
-        "hcoona-release-smoke-npm/versions",
-        headers=(),
-    )
-    response_facts = ObservationResponseFacts(
-        stage="synthetic",
-        requested_url=request_facts.url,
-        final_url=request_facts.url,
-        redirects=(),
-        status=200,
-        selected_headers=(),
-        truncated=False,
-        body_sha256=None,
-        status_detail=classification,
-    )
-    response_digest = canonical_sha256(
-        {
-            "schema": "workflow-delivery/v3/observation-response",
-            "request-digest": request_facts.request_digest,
-            "facts": response_facts.to_document(),
-            "value": value.to_document(),
-        }
-    )
-    return ProjectionObservation(
-        subject=attempt,
-        purpose="live-release",
-        target=attempt.execution.target,
-        producer="observe-github-packages",
-        qualification_snapshot_digest=(
-            qualification_decision.qualification_snapshot_digest
-        ),
-        projection=projection,
-        desired_state_digest=desired_state_digest,
-        observation_contract_id=projection.observation_contract_id,
-        request_facts=request_facts,
-        request_digest=request_facts.request_digest,
-        response_facts=response_facts,
-        response_digest=response_digest,
-        value=value,
-    )
-
-
 def test_live_api_has_no_history_query_surface() -> None:
     assert tuple(live.__all__) == EXPECTED_LIVE_API
     assert not hasattr(live, "discover_execution_history")
@@ -736,33 +674,27 @@ def test_publication_preparation_interruption_has_no_downstream_lineage(
     ],
 )
 def test_blocking_observation_requires_reconciliation(
-    qualified_simulation,
+    observation_case,
     classification: str,
     result: str,
     uncertainty: bool,
 ) -> None:
-    (
-        attempt,
-        _binding,
-        decision,
-        _publication,
-        projection,
-        _artifact,
-        _qualification_snapshot,
-    ) = _closure_details(
-        qualified_simulation,
-        with_action=True,
-    )
-    observation = _blocking_observation(
-        attempt=attempt,
-        qualification_decision=decision,
-        projection=projection,
+    case = observation_case
+    observation = replace(
+        _observation(case, classification="absent"),
         classification=classification,
     )
 
     outcome = finalize_attempt_outcome(
-        attempt=attempt,
-        qualification_decision=decision,
+        attempt=case.attempt_binding.attempt,
+        qualification_decision=case.decision,
+        qualification_snapshot=case.snapshot,
+        release_artifact=case.artifact,
+        intent=case.intent,
+        attempt_binding=case.attempt_binding,
+        eligibility=case.eligibility,
+        policy=case.policy,
+        decision_reference=case.decision_reference,
         publication_snapshot=None,
         exact_satisfied_governance_proof=None,
         approval_bundle=None,

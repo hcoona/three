@@ -763,6 +763,7 @@ jobs:
     outputs:
       decision-artifact-id: ${{ steps.upload.outputs.artifact-id }}
       decision-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      decision-artifact-url: ${{ steps.upload.outputs.artifact-url }}
       decision-artifact-name: ${{ steps.finalize.outputs.qualification-decision-artifact-name }}
       decision-digest: ${{ steps.finalize.outputs.qualification-decision-digest }}
       qualification-result: ${{ steps.finalize.outputs.qualification-result }}
@@ -933,7 +934,7 @@ jobs:
   observe-github-packages:
     name: Observe GitHub Packages destination
     if: github.run_attempt == 1 && needs.qualification-finalizer.outputs.qualification-result == 'success'
-    needs: qualification-finalizer
+    needs: [admit, qualification-finalizer]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -954,10 +955,12 @@ jobs:
       release-artifact-digest: ${{ needs.qualification-finalizer.outputs.release-artifact-digest }}
       decision-artifact-id: ${{ needs.qualification-finalizer.outputs.decision-artifact-id }}
       decision-artifact-digest: ${{ needs.qualification-finalizer.outputs.decision-artifact-digest }}
+      decision-artifact-url: ${{ needs.qualification-finalizer.outputs.decision-artifact-url }}
       decision-artifact-name: ${{ needs.qualification-finalizer.outputs.decision-artifact-name }}
       decision-digest: ${{ needs.qualification-finalizer.outputs.decision-digest }}
       observation-set-artifact-id: ${{ steps.upload.outputs.artifact-id }}
       observation-set-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      observation-set-artifact-url: ${{ steps.upload.outputs.artifact-url }}
       observation-set-artifact-name: ${{ steps.observe.outputs.observation-set-artifact-name }}
       observation-set-digest: ${{ steps.observe.outputs.observation-digest }}
       tarball-artifact-id: ${{ needs.qualification-finalizer.outputs.tarball-artifact-id }}
@@ -974,11 +977,12 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.7'
-      - name: Download Qualification Snapshot by artifact ID
+      - name: Download Observation authority by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id }}
+          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }},${{ needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id }}
           path: .wdv3/input
+          merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
       - name: Download Qualification Decision by artifact ID
@@ -1014,6 +1018,22 @@ jobs:
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \
+            --intent ".wdv3/input/${{ inputs.intent-artifact-name }}" \
+            --intent-digest "${{ inputs.intent-digest }}" \
+            --intent-artifact-id "${{ inputs.intent-artifact-id }}" \
+            --intent-artifact-digest "${{ inputs.intent-artifact-digest }}" \
+            --repository-model ".wdv3/input/${{ inputs.repository-model-artifact-name }}" \
+            --repository-model-digest "${{ inputs.repository-model-digest }}" \
+            --repository-model-artifact-id "${{ inputs.repository-model-artifact-id }}" \
+            --repository-model-artifact-digest "${{ inputs.repository-model-artifact-digest }}" \
+            --attempt-binding ".wdv3/input/${{ needs.admit.outputs.attempt-artifact-name }}" \
+            --attempt-binding-digest "${{ needs.admit.outputs.attempt-digest }}" \
+            --attempt-binding-artifact-id "${{ needs.admit.outputs.attempt-artifact-id }}" \
+            --attempt-binding-artifact-digest "${{ needs.admit.outputs.attempt-artifact-digest }}" \
+            --live-eligibility-decision ".wdv3/input/${{ inputs.live-eligibility-artifact-name }}" \
+            --live-eligibility-artifact-id "${{ inputs.live-eligibility-artifact-id }}" \
+            --live-eligibility-artifact-digest "${{ inputs.live-eligibility-artifact-digest }}" \
+            --live-eligibility-payload-digest "${{ inputs.live-eligibility-digest }}" \
             --qualification-snapshot ".wdv3/input/${{ needs.qualification-finalizer.outputs.qualification-snapshot-artifact-name }}" \
             --qualification-snapshot-digest "${{ needs.qualification-finalizer.outputs.qualification-snapshot-digest }}" \
             --qualification-snapshot-artifact-id "${{ needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id }}" \
@@ -1022,6 +1042,8 @@ jobs:
             --qualification-decision-digest "${{ needs.qualification-finalizer.outputs.decision-digest }}" \
             --qualification-decision-artifact-id "${{ needs.qualification-finalizer.outputs.decision-artifact-id }}" \
             --qualification-decision-artifact-digest "${{ needs.qualification-finalizer.outputs.decision-artifact-digest }}" \
+            --qualification-decision-artifact-url "${{ needs.qualification-finalizer.outputs.decision-artifact-url }}" \
+            --qualification-decision-payload-path "${{ needs.qualification-finalizer.outputs.decision-artifact-name }}" \
             --adapter-context ".wdv3/input/${{ needs.qualification-finalizer.outputs.adapter-context-artifact-name }}" \
             --adapter-context-digest "${{ needs.qualification-finalizer.outputs.adapter-context-digest }}" \
             --adapter-context-artifact-id "${{ needs.qualification-finalizer.outputs.adapter-context-artifact-id }}" \
@@ -1081,8 +1103,13 @@ jobs:
       qualification-snapshot-digest: ${{ needs.observe-github-packages.outputs.qualification-snapshot-digest }}
       decision-artifact-id: ${{ needs.observe-github-packages.outputs.decision-artifact-id }}
       decision-artifact-digest: ${{ needs.observe-github-packages.outputs.decision-artifact-digest }}
+      decision-artifact-url: ${{ needs.observe-github-packages.outputs.decision-artifact-url }}
       decision-artifact-name: ${{ needs.observe-github-packages.outputs.decision-artifact-name }}
       decision-digest: ${{ needs.observe-github-packages.outputs.decision-digest }}
+      observation-artifact-id: ${{ needs.observe-github-packages.outputs.observation-set-artifact-id }}
+      observation-artifact-digest: ${{ needs.observe-github-packages.outputs.observation-set-artifact-digest }}
+      observation-artifact-name: ${{ needs.observe-github-packages.outputs.observation-set-artifact-name }}
+      observation-digest: ${{ needs.observe-github-packages.outputs.observation-set-digest }}
       release-artifact-artifact-id: ${{ needs.observe-github-packages.outputs.release-artifact-artifact-id }}
       release-artifact-artifact-digest: ${{ needs.observe-github-packages.outputs.release-artifact-artifact-digest }}
       release-artifact-artifact-name: ${{ needs.observe-github-packages.outputs.release-artifact-artifact-name }}
@@ -1121,11 +1148,12 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.7'
-      - name: Download Intent by artifact ID
+      - name: Download Intent Model and Eligibility by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ inputs.intent-artifact-id }}
+          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }}
           path: .wdv3/input
+          merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
       - name: Download Release Attempt binding by artifact ID
@@ -1176,6 +1204,18 @@ jobs:
             --intent-digest "${{ inputs.intent-digest }}" \
             --intent-artifact-id "${{ inputs.intent-artifact-id }}" \
             --intent-artifact-digest "${{ inputs.intent-artifact-digest }}" \
+            --repository-model ".wdv3/input/${{ inputs.repository-model-artifact-name }}" \
+            --repository-model-digest "${{ inputs.repository-model-digest }}" \
+            --repository-model-artifact-id "${{ inputs.repository-model-artifact-id }}" \
+            --repository-model-artifact-digest "${{ inputs.repository-model-artifact-digest }}" \
+            --attempt-binding ".wdv3/input/${{ needs.admit.outputs.attempt-artifact-name }}" \
+            --attempt-binding-digest "${{ needs.admit.outputs.attempt-digest }}" \
+            --attempt-binding-artifact-id "${{ needs.admit.outputs.attempt-artifact-id }}" \
+            --attempt-binding-artifact-digest "${{ needs.admit.outputs.attempt-artifact-digest }}" \
+            --live-eligibility-decision ".wdv3/input/${{ inputs.live-eligibility-artifact-name }}" \
+            --live-eligibility-artifact-id "${{ inputs.live-eligibility-artifact-id }}" \
+            --live-eligibility-artifact-digest "${{ inputs.live-eligibility-artifact-digest }}" \
+            --live-eligibility-payload-digest "${{ inputs.live-eligibility-digest }}" \
             --qualification-snapshot ".wdv3/input/${{ needs.observe-github-packages.outputs.qualification-snapshot-artifact-name }}" \
             --qualification-snapshot-digest "${{ needs.observe-github-packages.outputs.qualification-snapshot-digest }}" \
             --qualification-snapshot-artifact-id "${{ needs.observe-github-packages.outputs.qualification-snapshot-artifact-id }}" \
@@ -1184,6 +1224,8 @@ jobs:
             --qualification-decision-digest "${{ needs.observe-github-packages.outputs.decision-digest }}" \
             --qualification-decision-artifact-id "${{ needs.observe-github-packages.outputs.decision-artifact-id }}" \
             --qualification-decision-artifact-digest "${{ needs.observe-github-packages.outputs.decision-artifact-digest }}" \
+            --qualification-decision-artifact-url "${{ needs.observe-github-packages.outputs.decision-artifact-url }}" \
+            --qualification-decision-payload-path "${{ needs.observe-github-packages.outputs.decision-artifact-name }}" \
             --release-artifact ".wdv3/input/${{ needs.observe-github-packages.outputs.release-artifact-artifact-name }}" \
             --release-artifact-digest "${{ needs.observe-github-packages.outputs.release-artifact-digest }}" \
             --release-artifact-artifact-id "${{ needs.observe-github-packages.outputs.release-artifact-artifact-id }}" \
@@ -1325,7 +1367,7 @@ jobs:
       - name: Download authorization closure by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }},${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-id }},${{ needs.materialize-publication.outputs.decision-artifact-id }},${{ needs.materialize-publication.outputs.release-artifact-artifact-id }},${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }},${{ needs.materialize-publication.outputs.approval-bundle-artifact-id }},${{ needs.materialize-publication.outputs.reviewer-artifact-id }}
+          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }},${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-id }},${{ needs.materialize-publication.outputs.decision-artifact-id }},${{ needs.materialize-publication.outputs.release-artifact-artifact-id }},${{ needs.materialize-publication.outputs.observation-artifact-id }},${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }},${{ needs.materialize-publication.outputs.approval-bundle-artifact-id }},${{ needs.materialize-publication.outputs.reviewer-artifact-id }}
           path: .wdv3/input
           merge-multiple: true
           skip-decompress: true
@@ -1367,6 +1409,12 @@ jobs:
             --qualification-decision-digest "${{ needs.materialize-publication.outputs.decision-digest }}" \
             --qualification-decision-artifact-id "${{ needs.materialize-publication.outputs.decision-artifact-id }}" \
             --qualification-decision-artifact-digest "${{ needs.materialize-publication.outputs.decision-artifact-digest }}" \
+            --qualification-decision-artifact-url "${{ needs.materialize-publication.outputs.decision-artifact-url }}" \
+            --qualification-decision-payload-path "${{ needs.materialize-publication.outputs.decision-artifact-name }}" \
+            --observation ".wdv3/input/${{ needs.materialize-publication.outputs.observation-artifact-name }}" \
+            --observation-digest "${{ needs.materialize-publication.outputs.observation-digest }}" \
+            --observation-artifact-id "${{ needs.materialize-publication.outputs.observation-artifact-id }}" \
+            --observation-artifact-digest "${{ needs.materialize-publication.outputs.observation-artifact-digest }}" \
             --release-artifact ".wdv3/input/${{ needs.materialize-publication.outputs.release-artifact-artifact-name }}" \
             --release-artifact-digest "${{ needs.materialize-publication.outputs.release-artifact-digest }}" \
             --release-artifact-artifact-id "${{ needs.materialize-publication.outputs.release-artifact-artifact-id }}" \
@@ -1436,7 +1484,7 @@ jobs:
       - name: Download exact-satisfied closure by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }},${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}
+          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }},${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-id }},${{ needs.materialize-publication.outputs.decision-artifact-id }},${{ needs.materialize-publication.outputs.release-artifact-artifact-id }},${{ needs.materialize-publication.outputs.observation-artifact-id }},${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}
           path: .wdv3/input
           merge-multiple: true
           skip-decompress: true
@@ -1464,6 +1512,24 @@ jobs:
             --attempt-binding-digest "${{ needs.admit.outputs.attempt-digest }}" \
             --attempt-binding-artifact-id "${{ needs.admit.outputs.attempt-artifact-id }}" \
             --attempt-binding-artifact-digest "${{ needs.admit.outputs.attempt-artifact-digest }}" \
+            --qualification-snapshot ".wdv3/input/${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-name }}" \
+            --qualification-snapshot-digest "${{ needs.materialize-publication.outputs.qualification-snapshot-digest }}" \
+            --qualification-snapshot-artifact-id "${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-id }}" \
+            --qualification-snapshot-artifact-digest "${{ needs.materialize-publication.outputs.qualification-snapshot-artifact-digest }}" \
+            --qualification-decision ".wdv3/input/${{ needs.materialize-publication.outputs.decision-artifact-name }}" \
+            --qualification-decision-digest "${{ needs.materialize-publication.outputs.decision-digest }}" \
+            --qualification-decision-artifact-id "${{ needs.materialize-publication.outputs.decision-artifact-id }}" \
+            --qualification-decision-artifact-digest "${{ needs.materialize-publication.outputs.decision-artifact-digest }}" \
+            --qualification-decision-artifact-url "${{ needs.materialize-publication.outputs.decision-artifact-url }}" \
+            --qualification-decision-payload-path "${{ needs.materialize-publication.outputs.decision-artifact-name }}" \
+            --release-artifact ".wdv3/input/${{ needs.materialize-publication.outputs.release-artifact-artifact-name }}" \
+            --release-artifact-digest "${{ needs.materialize-publication.outputs.release-artifact-digest }}" \
+            --release-artifact-artifact-id "${{ needs.materialize-publication.outputs.release-artifact-artifact-id }}" \
+            --release-artifact-artifact-digest "${{ needs.materialize-publication.outputs.release-artifact-artifact-digest }}" \
+            --observation ".wdv3/input/${{ needs.materialize-publication.outputs.observation-artifact-name }}" \
+            --observation-digest "${{ needs.materialize-publication.outputs.observation-digest }}" \
+            --observation-artifact-id "${{ needs.materialize-publication.outputs.observation-artifact-id }}" \
+            --observation-artifact-digest "${{ needs.materialize-publication.outputs.observation-artifact-digest }}" \
             --publication-snapshot ".wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}" \
             --publication-snapshot-digest "${{ needs.materialize-publication.outputs.publication-snapshot-digest }}" \
             --publication-snapshot-artifact-id "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}" \
@@ -1623,12 +1689,13 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.7'
-      - name: Download Release Attempt binding by artifact ID
+      - name: Download Intent Model Eligibility and Attempt by artifact ID
         if: always() && needs.admit.outputs.attempt-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.admit.outputs.attempt-artifact-id }}
+          artifact-ids: ${{ inputs.intent-artifact-id }},${{ inputs.repository-model-artifact-id }},${{ inputs.live-eligibility-artifact-id }},${{ needs.admit.outputs.attempt-artifact-id }}
           path: .wdv3/input
+          merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
       - name: Download Qualification Snapshot by artifact ID
@@ -1754,10 +1821,7 @@ jobs:
           add_record artifact-contents-evidence ".wdv3/input/${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-name }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-digest }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-id }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-digest }}"
           add_record install-import-evidence ".wdv3/input/${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-name }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-digest }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-id }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-digest }}"
           add_record release-artifact ".wdv3/input/${{ needs.qualification-finalizer.outputs.release-artifact-artifact-name }}" "${{ needs.qualification-finalizer.outputs.release-artifact-digest }}" "${{ needs.qualification-finalizer.outputs.release-artifact-artifact-id }}" "${{ needs.qualification-finalizer.outputs.release-artifact-artifact-digest }}"
-          snapshot_id="${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}"
-          if [[ -z "${snapshot_id}" ]]; then
-            add_record observation ".wdv3/input/${{ needs.observe-github-packages.outputs.observation-set-artifact-name }}" "${{ needs.observe-github-packages.outputs.observation-set-digest }}" "${{ needs.observe-github-packages.outputs.observation-set-artifact-id }}" "${{ needs.observe-github-packages.outputs.observation-set-artifact-digest }}"
-          fi
+          add_record observation ".wdv3/input/${{ needs.observe-github-packages.outputs.observation-set-artifact-name }}" "${{ needs.observe-github-packages.outputs.observation-set-digest }}" "${{ needs.observe-github-packages.outputs.observation-set-artifact-id }}" "${{ needs.observe-github-packages.outputs.observation-set-artifact-digest }}"
           add_record publication-snapshot ".wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}" "${{ needs.materialize-publication.outputs.publication-snapshot-digest }}" "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}" "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-digest }}"
           if [[ -n "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}" ]]; then
             if [[ -z "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-url }}" || -z "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}" ]]; then
@@ -1815,6 +1879,18 @@ jobs:
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \
+            --intent ".wdv3/input/${{ inputs.intent-artifact-name }}" \
+            --intent-digest "${{ inputs.intent-digest }}" \
+            --intent-artifact-id "${{ inputs.intent-artifact-id }}" \
+            --intent-artifact-digest "${{ inputs.intent-artifact-digest }}" \
+            --repository-model ".wdv3/input/${{ inputs.repository-model-artifact-name }}" \
+            --repository-model-digest "${{ inputs.repository-model-digest }}" \
+            --repository-model-artifact-id "${{ inputs.repository-model-artifact-id }}" \
+            --repository-model-artifact-digest "${{ inputs.repository-model-artifact-digest }}" \
+            --live-eligibility-decision ".wdv3/input/${{ inputs.live-eligibility-artifact-name }}" \
+            --live-eligibility-artifact-id "${{ inputs.live-eligibility-artifact-id }}" \
+            --live-eligibility-artifact-digest "${{ inputs.live-eligibility-artifact-digest }}" \
+            --live-eligibility-payload-digest "${{ inputs.live-eligibility-digest }}" \
             --attempt-binding ".wdv3/input/${{ needs.admit.outputs.attempt-artifact-name }}" \
             --attempt-binding-digest "${{ needs.admit.outputs.attempt-digest }}" \
             --attempt-binding-artifact-id "${{ needs.admit.outputs.attempt-artifact-id }}" \
@@ -1827,6 +1903,8 @@ jobs:
             --qualification-decision-digest "${{ needs.qualification-finalizer.outputs.decision-digest }}" \
             --qualification-decision-artifact-id "${{ needs.qualification-finalizer.outputs.decision-artifact-id }}" \
             --qualification-decision-artifact-digest "${{ needs.qualification-finalizer.outputs.decision-artifact-digest }}" \
+            --qualification-decision-artifact-url "${{ needs.qualification-finalizer.outputs.decision-artifact-url }}" \
+            --qualification-decision-payload-path "${{ needs.qualification-finalizer.outputs.decision-artifact-name }}" \
             "${args[@]}" \
             --outcome-output .wdv3/final-attempt/attempt-outcome.json \
             --summary-output .wdv3/final-attempt/attempt-summary.md \

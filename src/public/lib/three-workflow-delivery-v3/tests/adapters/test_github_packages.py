@@ -227,153 +227,6 @@ def test_github_packages_requests_exact_escaped_endpoints_headers_and_pages() ->
         )
 
 
-def test_github_packages_rejects_wrong_basis_before_transport() -> None:
-    adapter = _adapter()
-    transport = RecordingTransport({})
-
-    with pytest.raises(ValueError, match="basis"):
-        adapter.observe_github_packages_projection(
-            snapshot=object(),
-            decision=object(),
-            artifact=object(),
-            expectation=object(),
-            token=TOKEN,
-            transport=transport,
-        )
-
-    assert transport.requests == []
-
-
-@pytest.mark.parametrize(
-    (
-        "rest_state",
-        "npm_state",
-        "remote_sha512",
-        "remote_witness",
-        "tag_version",
-        "classification",
-    ),
-    [
-        ("absent", "absent", None, None, None, "absent"),
-        (
-            "present",
-            "present",
-            "sha512:" + ("6" * 128),
-            "sha256:" + ("7" * 64),
-            VERSION,
-            "exact-satisfied",
-        ),
-        (
-            "present",
-            "present",
-            "sha512:" + ("6" * 128),
-            "sha256:" + ("7" * 64),
-            None,
-            "partial",
-        ),
-        (
-            "present",
-            "present",
-            "sha512:" + ("8" * 128),
-            "sha256:" + ("7" * 64),
-            VERSION,
-            "conflicting",
-        ),
-        ("denied", "unknown", None, None, None, "unknown"),
-        ("present", "present", None, None, VERSION, "unprovable"),
-    ],
-)
-def test_github_packages_classifies_all_six_closed_states(  # noqa: PLR0913, PLR0917
-    rest_state: str,
-    npm_state: str,
-    remote_sha512: str | None,
-    remote_witness: str | None,
-    tag_version: str | None,
-    classification: str,
-) -> None:
-    adapter = _adapter()
-    observation = adapter.classify_github_packages_probe(
-        coordinate=_coordinate(),
-        target=TARGET,
-        rest_state=rest_state,
-        npm_state=npm_state,
-        local_sha512="sha512:" + ("6" * 128),
-        remote_sha512=remote_sha512,
-        local_witness="sha256:" + ("7" * 64),
-        remote_witness=remote_witness,
-        tag_version=tag_version,
-    )
-
-    assert observation.value.classification == classification
-    assert TOKEN not in repr(observation.to_document())
-
-
-def test_github_packages_exact_requires_tar_witness_and_target_tag() -> None:
-    adapter = _adapter()
-    common = {
-        "coordinate": _coordinate(),
-        "target": TARGET,
-        "rest_state": "present",
-        "npm_state": "present",
-        "local_sha512": "sha512:" + ("6" * 128),
-        "local_witness": "sha256:" + ("7" * 64),
-    }
-
-    exact = adapter.classify_github_packages_probe(
-        **common,
-        remote_sha512=common["local_sha512"],
-        remote_witness=common["local_witness"],
-        tag_version=VERSION,
-    )
-    byte_conflict = adapter.classify_github_packages_probe(
-        **common,
-        remote_sha512="sha512:" + ("8" * 128),
-        remote_witness=common["local_witness"],
-        tag_version=VERSION,
-    )
-    witness_conflict = adapter.classify_github_packages_probe(
-        **common,
-        remote_sha512=common["local_sha512"],
-        remote_witness="sha256:" + ("9" * 64),
-        tag_version=VERSION,
-    )
-    tag_conflict = adapter.classify_github_packages_probe(
-        **common,
-        remote_sha512=common["local_sha512"],
-        remote_witness=common["local_witness"],
-        tag_version="9.9.9",
-    )
-
-    assert exact.value.classification == "exact-satisfied"
-    assert exact.value.content_sha512 == common["local_sha512"]
-    assert exact.value.witness_digest == common["local_witness"]
-    assert exact.value.routing == (("buddy-sha-" + TARGET, VERSION),)
-    assert byte_conflict.value.classification == "conflicting"
-    assert witness_conflict.value.classification == "conflicting"
-    assert tag_conflict.value.classification == "conflicting"
-
-
-def test_github_packages_rest_npm_inconsistency_is_blocking() -> None:
-    adapter = _adapter()
-
-    assert (
-        adapter.classify_rest_npm_consistency(
-            rest_version=VERSION,
-            npm_version="9.9.9",
-            tag_version=VERSION,
-        )
-        == "conflicting"
-    )
-    assert (
-        adapter.classify_rest_npm_consistency(
-            rest_version=VERSION,
-            npm_version=VERSION,
-            tag_version=None,
-        )
-        == "partial"
-    )
-
-
 def test_github_packages_redacts_token_and_rejects_cross_origin_redirect() -> (
     None
 ):
@@ -495,149 +348,6 @@ def test_concrete_transport_rejects_bad_redirects_and_off_origin() -> None:
         )
 
 
-def test_github_packages_versions_link_next_is_authoritative() -> None:
-    adapter = _adapter()
-    requested = (
-        "https://api.github.com/users/hcoona/packages/npm/"
-        "hcoona-release-smoke-npm/versions?per_page=100&page=1"
-    )
-    next_url = requested.replace("page=1", "page=2")
-    short_page_with_next = adapter.GitHubPackagesHttpResponse(
-        200,
-        requested,
-        (("Link", f'<{next_url}>; rel="next"'),),
-        b"[]",
-    )
-    exhausted = adapter.GitHubPackagesHttpResponse(200, requested, (), b"[]")
-    off_origin = adapter.GitHubPackagesHttpResponse(
-        200,
-        requested,
-        (("Link", '<https://example.invalid/page>; rel="next"'),),
-        b"[]",
-    )
-
-    assert (
-        adapter._github_link_next_url(  # noqa: SLF001
-            short_page_with_next,
-            requested_url=requested,
-        )
-        == next_url
-    )
-    assert (
-        adapter._github_link_next_url(exhausted, requested_url=requested)  # noqa: SLF001
-        is None
-    )
-    with pytest.raises(adapter.GitHubPackagesPolicyError, match="origin"):
-        adapter._github_link_next_url(off_origin, requested_url=requested)  # noqa: SLF001
-
-
-@pytest.mark.parametrize(
-    ("version_url", "expected_owner"),
-    [
-        (
-            (
-                "https://api.github.com/users/hcoona/packages/npm/"
-                "hcoona-release-smoke-npm/versions/42"
-            ),
-            "hcoona",
-        ),
-        (
-            (
-                "https://api.github.com/orgs/example/packages/npm/"
-                "hcoona-release-smoke-npm/versions/42"
-            ),
-            "example",
-        ),
-    ],
-)
-def test_package_version_owner_comes_from_the_api_resource_url(
-    version_url: str,
-    expected_owner: str,
-) -> None:
-    adapter = _adapter()
-    document = {
-        "url": version_url,
-        "package_html_url": (
-            "https://github.com/users/not-authoritative/packages/npm/"
-            "package/hcoona-release-smoke-npm"
-        ),
-    }
-
-    assert adapter._rest_owner(document) == expected_owner  # noqa: SLF001
-
-
-@pytest.mark.parametrize(
-    "document",
-    [
-        {},
-        {
-            "package_html_url": (
-                "https://github.com/users/hcoona/packages/npm/"
-                "package/hcoona-release-smoke-npm"
-            )
-        },
-        {
-            "url": (
-                "http://api.github.com/users/hcoona/packages/npm/"
-                "hcoona-release-smoke-npm/versions/42"
-            )
-        },
-        {
-            "url": (
-                "https://api.github.com.example/users/hcoona/packages/npm/"
-                "hcoona-release-smoke-npm/versions/42"
-            )
-        },
-        {
-            "url": (
-                "https://api.github.com/users/hcoona/packages/npm/"
-                "another-package/versions/42"
-            )
-        },
-        {
-            "url": (
-                "https://api.github.com/users/hcoona/packages/npm/"
-                "hcoona-release-smoke-npm/versions/not-an-id"
-            )
-        },
-        {
-            "url": (
-                "https://api.github.com/users/hcoona/packages/npm/"
-                "hcoona-release-smoke-npm/versions/42?unexpected=true"
-            )
-        },
-        {
-            "url": (
-                "https://[api.github.com/users/hcoona/packages/npm/"
-                "hcoona-release-smoke-npm/versions/42"
-            )
-        },
-        {
-            "url": (
-                "https://api.github.com/users/hcoona/packages/npm/"
-                "hcoona-release-smoke-npm/versions/42;ignored"
-            )
-        },
-        {
-            "url": (
-                "https://api.github.com/users/hcoona/packages//npm/"
-                "hcoona-release-smoke-npm/versions/42"
-            )
-        },
-        {
-            "url": (
-                "https://api.github.com/users/hcoona/packages/npm/"
-                "hcoona-release-smoke-npm/versions/42/"
-            )
-        },
-    ],
-)
-def test_package_version_owner_rejects_noncanonical_api_routes(
-    document: dict[str, str],
-) -> None:
-    assert _adapter()._rest_owner(document) == "ambiguous"  # noqa: SLF001
-
-
 def test_replacement_adapter_contract_api_is_available() -> None:
     adapter = _adapter()
     expected_api = (
@@ -646,12 +356,11 @@ def test_replacement_adapter_contract_api_is_available() -> None:
         "GitHubPackagesHttpResponse",
         "GitHubPackagesTransport",
         "UnsupportedPublicationPrimitiveError",
-        "classify_github_packages_probe",
         "github_api_headers",
         "github_packages_destination_operation_profile",
         "github_package_versions_url",
         "npm_exact_metadata_url",
-        "observe_github_packages_projection",
+        "read_github_packages_active_state",
         "preflight_github_packages_action",
         "publish_github_packages_action",
         "redact_diagnostic",
@@ -728,7 +437,7 @@ def test_publish_fails_before_every_mutation_capable_seam(
         "_validate_local_tarball_preconditions",
         "_validate_publish_preconditions",
         "_write_private_npm_config",
-        "observe_github_packages_projection",
+        "read_github_packages_active_state",
         "preflight_github_packages_action",
     ):
         monkeypatch.setattr(adapter, helper, reject_forbidden_call)

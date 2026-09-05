@@ -370,15 +370,14 @@ def _observation(
     response_facts: ObservationResponseFacts,
     value: ObservationValue,
 ) -> ProjectionObservation:
+    if not isinstance(snapshot.subject, SimulationBinding):
+        message = "npmjs Projection Observation is Simulation-only"
+        raise TypeError(message)
     projection = snapshot.destination_projections[0]
     request_digest = request_facts.request_digest
     return ProjectionObservation(
-        subject=snapshot.subject.simulation
-        if isinstance(snapshot.subject, SimulationBinding)
-        else snapshot.subject,
-        purpose="release-simulation"
-        if isinstance(snapshot.subject, SimulationBinding)
-        else "live-release",
+        subject=snapshot.subject.simulation,
+        purpose="release-simulation",
         target=snapshot.target,
         producer=NPMJS_OBSERVER_PRODUCER,
         qualification_snapshot_digest=snapshot.snapshot_digest,

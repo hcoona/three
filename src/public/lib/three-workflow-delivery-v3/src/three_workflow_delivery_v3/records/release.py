@@ -2115,9 +2115,9 @@ class ObservationResponseFacts:
 
 @dataclass(frozen=True, slots=True)
 class ProjectionObservation:
-    """One admitted Adapter classification for one logical projection."""
+    """One Simulation-only Adapter classification for a logical projection."""
 
-    subject: SimulationIdentity | ReleaseAttemptIdentity
+    subject: SimulationIdentity
     purpose: str
     target: str
     producer: str
@@ -2133,22 +2133,15 @@ class ProjectionObservation:
 
     def __post_init__(self) -> None:
         """Reject substituted projection or request/response bindings."""
-        if type(self.subject) not in {
-            SimulationIdentity,
-            ReleaseAttemptIdentity,
-        }:
-            message = "Projection Observation subject has wrong type"
+        if type(self.subject) is not SimulationIdentity:
+            message = "Projection Observation subject must be Simulation-only"
             raise TypeError(message)
         purpose = _choice(
             self.purpose,
             _PURPOSES,
             field="observation.purpose",
         )
-        expected_purpose = (
-            "release-simulation"
-            if type(self.subject) is SimulationIdentity
-            else "live-release"
-        )
+        expected_purpose = "release-simulation"
         if purpose != expected_purpose:
             message = "Projection Observation purpose binding mismatch"
             raise ValueError(message)

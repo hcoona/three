@@ -28,7 +28,6 @@ from three_workflow_delivery_v3.records.release import (
     OfficialExecutionIdentity,
     OfficialProductIdentity,
     PublicationAction,
-    PublicationObservationReference,
     PublicationSnapshot,
     ReleaseArtifact,
     ReleaseAttemptIdentity,
@@ -57,6 +56,14 @@ from three_workflow_delivery_v3.release.qualification import (
     admit_evidence_for_snapshot,
     execute_release_build,
     form_uploaded_release_artifact,
+)
+
+from .observation_fixtures import materialization_arguments
+from .test_observation_admission import (
+    _observation,
+)
+from .test_observation_admission import (
+    observation_case as observation_case,  # noqa: PLC0414
 )
 
 
@@ -577,22 +584,14 @@ def _publication_action(snapshot, artifact) -> PublicationAction:
     )
 
 
-def _live_publication_snapshot(scenario) -> PublicationSnapshot:
-    live_snapshot, live_decision, live_artifact = _live_publication_context(
-        scenario
-    )
-    live_exact = _admit_synthetic_projection_observation(
-        live_snapshot,
-        live_decision,
-        live_artifact,
-        classification="exact-satisfied",
-        owner="hcoona",
-    )
+def _live_publication_snapshot(case) -> PublicationSnapshot:
+    live_exact = _observation(case)
     return materialize_publication_snapshot(
-        live_snapshot,
-        live_decision,
+        case.snapshot,
+        case.decision,
         (live_exact,),
-        (live_artifact,),
+        (case.artifact,),
+        **materialization_arguments(case),
     )
 
 
@@ -601,38 +600,20 @@ def _live_publication_action(scenario) -> PublicationAction:
     return _publication_action(snapshot, artifact)
 
 
-def _live_action_publication_snapshot(scenario) -> PublicationSnapshot:
-    snapshot, decision, artifact = _live_publication_context(scenario)
-    observation = _admit_synthetic_projection_observation(
-        snapshot,
-        decision,
-        artifact,
-        classification="absent",
-    )
-    action = _publication_action(snapshot, artifact)
-    return PublicationSnapshot(
-        attempt=snapshot.subject,
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-        qualification_decision_digest=decision.decision_digest,
-        qualification_result=decision.terminal_result,
-        projection_ids=(snapshot.destination_projections[0].projection_id,),
-        artifact_digests=(artifact.artifact_digest,),
-        artifact_output_ids=(artifact.output.output_id,),
-        observation_references=(
-            PublicationObservationReference(
-                projection_id=(
-                    snapshot.destination_projections[0].projection_id
-                ),
-                observation_digest=observation.observation_digest,
-                classification=observation.value.classification,
-            ),
-        ),
-        materialized_actions=(action,),
+def _live_action_publication_snapshot(case) -> PublicationSnapshot:
+    return materialize_publication_snapshot(
+        case.snapshot,
+        case.decision,
+        (_observation(case, classification="absent"),),
+        (case.artifact,),
+        **materialization_arguments(case),
+        destination_operation_profile=github_packages_destination_operation_profile(),
     )
 
 
 def test_publication_snapshot_guards_success_observation_and_artifacts(
     qualified_simulation,
+    observation_case,
 ) -> None:
     scenario = qualified_simulation
     with pytest.raises(TypeError, match="cannot be emitted for simulation"):
@@ -641,9 +622,10 @@ def test_publication_snapshot_guards_success_observation_and_artifacts(
             scenario.decision,
             (),
             (scenario.artifact,),
+            **materialization_arguments(observation_case),
         )
 
-    publication = _live_publication_snapshot(scenario)
+    publication = _live_publication_snapshot(observation_case)
     assert isinstance(publication.attempt.execution, BuddyExecutionIdentity)
     assert publication.materialized_actions == ()
     assert tuple(
@@ -769,9 +751,9 @@ def test_github_packages_destination_operation_profile_is_closed() -> None:
 
 
 def test_publication_snapshot_rejects_more_than_one_action(
-    qualified_simulation,
+    observation_case,
 ) -> None:
-    publication = _live_action_publication_snapshot(qualified_simulation)
+    publication = _live_action_publication_snapshot(observation_case)
     action = publication.materialized_actions[0]
 
     assert publication.materialized_actions == (action,)
@@ -790,9 +772,9 @@ def test_publication_snapshot_rejects_more_than_one_action(
 
 
 def test_absent_publication_requires_exact_profile_and_materializes_one_action(
-    qualified_simulation,
+    observation_case,
 ) -> None:
-    scenario = qualified_simulation
+    scenario = observation_case
     publication = _live_action_publication_snapshot(scenario)
     with pytest.raises(
         ValueError,
@@ -811,13 +793,12 @@ def test_absent_publication_requires_exact_profile_and_materializes_one_action(
             expected_type=PublicationSnapshot,
         )
 
-    snapshot, decision, artifact = _live_publication_context(scenario)
-    observation = _admit_synthetic_projection_observation(
-        snapshot,
-        decision,
-        artifact,
-        classification="absent",
+    snapshot, decision, artifact = (
+        scenario.snapshot,
+        scenario.decision,
+        scenario.artifact,
     )
+    observation = _observation(scenario, classification="absent")
 
     with pytest.raises(
         TypeError,
@@ -828,12 +809,14 @@ def test_absent_publication_requires_exact_profile_and_materializes_one_action(
             decision,
             (observation,),
             (artifact,),
+            **materialization_arguments(scenario),
         )
     materialized = materialize_publication_snapshot(
         snapshot,
         decision,
         (observation,),
         (artifact,),
+        **materialization_arguments(scenario),
         destination_operation_profile=(
             github_packages_destination_operation_profile()
         ),
@@ -1093,10 +1076,12 @@ def test_publication_action_transport_rejects_retired_lock_group(
 
 
 def test_exact_satisfied_publication_snapshot_rejects_surplus_action(
-    qualified_simulation,
+    observation_case,
 ) -> None:
-    publication = _live_publication_snapshot(qualified_simulation)
-    action = _live_publication_action(qualified_simulation)
+    publication = _live_publication_snapshot(observation_case)
+    action = _publication_action(
+        observation_case.snapshot, observation_case.artifact
+    )
     assert publication.materialized_actions == ()
     assert tuple(
         reference.classification

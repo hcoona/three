@@ -18,9 +18,9 @@ from three_workflow_delivery_v3.records.release import (
     DestinationProjection,
     ExactSatisfiedGovernanceProof,
     GovernanceProof,
-    ProjectionObservation,
     PublicationAction,
     PublicationAuthorization,
+    PublicationObservationReference,
     PublicationSnapshot,
     QualificationDecision,
     QualificationSnapshot,
@@ -28,18 +28,25 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
     ReleaseIntent,
+    RemoteStateObservation,
     validate_publication_action_instantiation,
 )
 from three_workflow_delivery_v3.release.eligibility import (
+    AdmittedLiveEligibilityDecision,
     GovernanceObservation,
     governance_observation_provenance,
 )
 from three_workflow_delivery_v3.release.identity import (
     derive_buddy_execution_identity,
 )
+from three_workflow_delivery_v3.release.observation import (
+    admit_remote_state_observation,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
 
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 _PUBLIC_REPOSITORY_URL = "https://github.com/hcoona/three.git"
@@ -307,7 +314,7 @@ def _outcome(
     approval_bundle: ApprovalBundle | None,
     publication_authorization: PublicationAuthorization | None,
     action_results: tuple[ActionResult, ...] = (),
-    observations: tuple[ProjectionObservation, ...] = (),
+    observations: tuple[RemoteStateObservation, ...] = (),
     terminal_phase: str,
     result: str,
     uncertainty: bool,
@@ -549,7 +556,7 @@ def _validate_finalization_inputs(
             raise ValueError("Live finalization Action Result mismatch")
 
 
-def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912
+def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
     *,
     attempt: ReleaseAttemptIdentity,
     qualification_decision: QualificationDecision,
@@ -565,7 +572,12 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912
     destination_operation_profile: DestinationOperationProfile | None = None,
     publication_snapshot_reference: ArtifactReference | None = None,
     approval_bundle_reference: ArtifactReference | None = None,
-    observations: tuple[ProjectionObservation, ...] = (),
+    observations: tuple[RemoteStateObservation, ...] = (),
+    intent: ReleaseIntent | None = None,
+    attempt_binding: ReleaseAttemptBinding | None = None,
+    eligibility: AdmittedLiveEligibilityDecision | None = None,
+    policy: ReleasePolicy | None = None,
+    decision_reference: ArtifactReference | None = None,
     publication_preparation_interrupted: bool = False,
     platform_terminated: bool = False,
     publication_may_have_started: bool = False,
@@ -596,16 +608,39 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912
         publication_snapshot_reference=publication_snapshot_reference,
         approval_bundle_reference=approval_bundle_reference,
     )
+    if len(observations) > 1:
+        raise ValueError(
+            "Live finalization permits one Remote-State Observation"
+        )
     for observation in observations:
         if (
-            type(observation) is not ProjectionObservation
-            or observation.subject != attempt
-            or observation.target != attempt.execution.target
-            or observation.purpose != "live-release"
-            or observation.qualification_snapshot_digest
-            != qualification_decision.qualification_snapshot_digest
+            type(observation) is not RemoteStateObservation
+            or observation.attempt != attempt
         ):
             raise ValueError("Live finalization Observation mismatch")
+        if (
+            intent is None
+            or attempt_binding is None
+            or eligibility is None
+            or policy is None
+            or decision_reference is None
+            or qualification_snapshot is None
+            or release_artifact is None
+        ):
+            raise ValueError(
+                "Live finalization requires full Observation authority"
+            )
+        admit_remote_state_observation(
+            observation,
+            intent=intent,
+            attempt_binding=attempt_binding,
+            eligibility=eligibility,
+            policy=policy,
+            snapshot=qualification_snapshot,
+            decision=qualification_decision,
+            decision_reference=decision_reference,
+            artifact=release_artifact,
+        )
     if qualification_decision.terminal_result != "success":
         if any(
             (
@@ -651,8 +686,12 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912
                 "Publication preparation interruption is contradictory"
             )
         blocking = {
-            observation.value.classification for observation in observations
+            observation.classification for observation in observations
         } & {"partial", "conflicting", "unknown", "unprovable"}
+        if observations and not blocking:
+            raise ValueError(
+                "Publication interruption requires a blocking Observation"
+            )
         uncertain = bool(blocking & {"unknown", "unprovable"})
         return _outcome(
             attempt=attempt,
@@ -669,14 +708,25 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912
             possibly_mutated=False,
             next_action="reconcile" if blocking else "new-attempt",
         )
-    if observations:
-        raise ValueError(
-            "Direct Observations require publication preparation interruption"
-        )
     if type(publication_snapshot) is not PublicationSnapshot:
         raise TypeError(
             "Successful qualification requires Publication Snapshot"
         )
+    if observations:
+        if qualification_snapshot is None:
+            raise ValueError("Observation requires Qualification Snapshot")
+        (projection,) = qualification_snapshot.destination_projections
+        (observation,) = observations
+        if publication_snapshot.observation_references != (
+            PublicationObservationReference(
+                projection_id=projection.projection_id,
+                observation_digest=observation.observation_digest,
+                classification=observation.classification,
+            ),
+        ):
+            raise ValueError(
+                "Live finalization Publication Observation mismatch"
+            )
     actions = publication_snapshot.materialized_actions
     if not actions:
         if any(

@@ -1,4 +1,4 @@
-"""Pure contextual admission of first-slice active-state observations."""
+"""Authority-first observation runtime and pure contextual admission."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from three_workflow_delivery_v3.records.release import (
     DestinationReadback,
     PackageControlProof,
     PackageControlSubject,
+    PublicationDiagnostics,
+    RemoteStateObservation,
 )
 from three_workflow_delivery_v3.release.eligibility import (
     AdmittedLiveEligibilityDecision,
@@ -35,6 +37,10 @@ from three_workflow_delivery_v3.repository.descriptors import (
 )
 
 if TYPE_CHECKING:
+    from three_workflow_delivery_v3.adapters.github_packages import (
+        GitHubPackagesTransport,
+    )
+    from three_workflow_delivery_v3.adapters.node import ArtifactExpectation
     from three_workflow_delivery_v3.records.artifacts import ArtifactReference
     from three_workflow_delivery_v3.records.release import (
         DestinationProjection,
@@ -43,7 +49,6 @@ if TYPE_CHECKING:
         ReleaseArtifact,
         ReleaseAttemptBinding,
         ReleaseIntent,
-        RemoteStateObservation,
     )
     from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
 
@@ -217,15 +222,21 @@ def _require_action_freshness(
     now: datetime,
 ) -> None:
     _require_current_eligibility(eligibility, now)
+    if now >= _native_acceptance_expiry(eligibility):
+        message = "Absent Observation requires unexpired native acceptance"
+        raise ValueError(message)
+
+
+def _native_acceptance_expiry(
+    eligibility: AdmittedLiveEligibilityDecision,
+) -> datetime:
     activation = cast(
         "EnabledGovernanceActivation",
         eligibility.governance.attestation.activation,
     )
-    if now >= activation.destination_primitive.captured_at + timedelta(
+    return activation.destination_primitive.captured_at + timedelta(
         days=GOVERNANCE_MAX_AGE_DAYS
-    ):
-        message = "Absent Observation requires unexpired native acceptance"
-        raise ValueError(message)
+    )
 
 
 def validate_remote_state_observation_basis(  # noqa: PLR0913
@@ -333,3 +344,118 @@ def admit_remote_state_observation(  # noqa: PLR0913
                 message = "Action creation cannot precede Observation evidence"
                 raise ValueError(message)
     return observation
+
+
+def observe_remote_state(  # noqa: PLR0913
+    *,
+    intent: ReleaseIntent,
+    attempt_binding: ReleaseAttemptBinding,
+    eligibility: AdmittedLiveEligibilityDecision,
+    policy: ReleasePolicy,
+    snapshot: QualificationSnapshot,
+    decision: QualificationDecision,
+    decision_reference: ArtifactReference,
+    artifact: ReleaseArtifact,
+    expectation: ArtifactExpectation,
+    token: str,
+    transport: GitHubPackagesTransport,
+    now: datetime,
+) -> RemoteStateObservation:
+    """Read active facts only after admitting the complete current authority."""
+    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
+        read_github_packages_active_state,
+    )
+
+    projection = validate_remote_state_observation_basis(
+        intent=intent,
+        attempt_binding=attempt_binding,
+        eligibility=eligibility,
+        policy=policy,
+        snapshot=snapshot,
+        decision=decision,
+        decision_reference=decision_reference,
+        artifact=artifact,
+        now=now,
+    )
+    subject = PackageControlSubject(
+        projection.destination_id,
+        projection.registry,
+        projection.coordinate.package_name,
+    )
+    if (
+        expectation.package_name != subject.normalized_package
+        or expectation.npm_package_version
+        != projection.coordinate.native_version
+    ):
+        message = "Observation expectation differs from qualified projection"
+        raise ValueError(message)
+    state = read_github_packages_active_state(
+        artifact,
+        expectation,
+        token=token,
+        transport=transport,
+        observed_at=now.isoformat().replace("+00:00", "Z"),
+    )
+    control = classify_package_control(
+        state.package_control, subject=subject, eligibility=eligibility
+    )
+    readback = state.readback
+    blockers: set[str] = set()
+    diagnostics = list(state.diagnostics.entries)
+    if control != "ready":
+        blockers.add(control)
+        diagnostics.append(f"package-control admission: {control}")
+    if readback.classification not in {"absent", "exact-satisfied"}:
+        blockers.add(readback.classification)
+    if readback.classification == "absent":
+        if readback.tag_state != "absent":
+            blockers.add(
+                "conflicting"
+                if readback.tag_state == "present"
+                else "unprovable"
+            )
+            diagnostics.append(
+                f"absent-version target-tag: {readback.tag_state}"
+            )
+        if now >= _native_acceptance_expiry(eligibility):
+            blockers.add("unprovable")
+            diagnostics.append("absent-version native acceptance: expired")
+    # Different blocking dimensions have no normative priority. Preserve all
+    # evidence and report the combined state as unprovable.
+    classification = (
+        next(iter(blockers))
+        if len(blockers) == 1
+        else "unprovable"
+        if blockers
+        else readback.classification
+    )
+    observation = RemoteStateObservation(
+        attempt=attempt_binding.attempt,
+        qualification_decision_reference=decision_reference,
+        desired_subject=subject,
+        desired_version=projection.coordinate.native_version,
+        desired_content_sha256=artifact.content.content_sha256,
+        desired_content_sha512=cast("str", artifact.content.content_sha512),
+        desired_witness_digest=artifact.witness_digest,
+        classification=classification,
+        package_control=state.package_control,
+        active_readback=readback,
+        response_identity=state.response_identity,
+        diagnostics=PublicationDiagnostics(
+            entries=tuple(diagnostics), truncated=state.diagnostics.truncated
+        ),
+        producer="observe-github-packages",
+        control=eligibility.context.control,
+        workflow_run_id=intent.workflow_run_id,
+    )
+    return admit_remote_state_observation(
+        observation,
+        intent=intent,
+        attempt_binding=attempt_binding,
+        eligibility=eligibility,
+        policy=policy,
+        snapshot=snapshot,
+        decision=decision,
+        decision_reference=decision_reference,
+        artifact=artifact,
+    )

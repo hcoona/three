@@ -48,17 +48,27 @@ from three_workflow_delivery_v3.release.qualification import (
     MechanicalBuildResult,
     form_uploaded_release_artifact,
 )
+from three_workflow_delivery_v3.release.workflow import (
+    artifact_expectation,
+    form_release_adapter_context,
+)
 
+from ..adapters.test_npmjs import _make_tarball
 from . import test_eligibility as eligibility_fixtures
 
 if TYPE_CHECKING:
+    from three_workflow_delivery_v3.adapters.node import ArtifactExpectation
     from three_workflow_delivery_v3.records.release import (
         QualificationDecision,
+        QualificationEvidence,
         QualificationSnapshot,
         ReleaseArtifact,
         ReleaseAttemptBinding,
         ReleaseIntent,
         ReleaseRecord,
+    )
+    from three_workflow_delivery_v3.release.simulation import (
+        ReleaseAdapterContext,
     )
     from three_workflow_delivery_v3.repository.compiler import (
         AdmittedRepositoryModelSnapshot,
@@ -97,6 +107,10 @@ class ObservationCase:
     artifact: ReleaseArtifact
     decision: QualificationDecision
     decision_reference: ArtifactReference
+    evidence: tuple[QualificationEvidence, ...]
+    context: ReleaseAdapterContext
+    tarball: bytes
+    expectation: ArtifactExpectation
 
     def arguments(self) -> dict[str, Any]:
         """Supply the same authority inputs to producer and consumer."""
@@ -161,7 +175,7 @@ def observation_case(
             execution=derive_buddy_execution_identity(live_intent),
             repository_model_digest=live_admitted_repository_model.canonical_digest,
             live_eligibility_artifact_id=7001,
-            live_eligibility_artifact_digest=DIGEST,
+            live_eligibility_artifact_digest=eligibility.canonical_digest,
             live_eligibility_payload_digest=eligibility.canonical_digest,
             attestation_provenance=eligibility.governance.provenance,
         )
@@ -172,9 +186,40 @@ def observation_case(
         )
     )
     build_request = snapshot.build_requests[0]
-    # Only the qualified byte identity is consumed here; Node execution and
-    # tarball-content qualification have their own Adapter tests.
-    tarball = b"observation-qualified-live-tarball"
+    context = form_release_adapter_context(
+        snapshot,
+        live_admitted_repository_model,
+        source_date_epoch=1_700_000_000,
+        node_version="24.14.0",
+        pnpm_version="11.21.0",
+        npm_version="11.9.0",
+    )
+    package_files = {
+        "package/README.md": b"Observation scenario package\n",
+        "package/dist/index.js": (
+            b"export const message = 'hcoona-release-smoke-npm';\n"
+        ),
+        "package/package.json": canonicalize(
+            {
+                "name": snapshot.destination_projections[
+                    0
+                ].coordinate.package_name,
+                "version": snapshot.nbgv.npm_package_version,
+                "type": "module",
+                "main": "dist/index.js",
+                "files": [
+                    "dist",
+                    "README.md",
+                    "workflow-delivery/provenance.json",
+                ],
+                "scripts": {},
+            }
+        ),
+        "package/workflow-delivery/provenance.json": (
+            context.witness.canonical_bytes
+        ),
+    }
+    tarball = _make_tarball(package_files)
     content = ArtifactContentIdentity(
         output_id=build_request.output.output_id,
         logical_role=build_request.output.logical_role,
@@ -195,7 +240,7 @@ def observation_case(
         build_request_digest=build_request.request_digest,
         tarball=tarball,
         content=content,
-        entries=("package/workflow-delivery/provenance.json",),
+        entries=tuple(sorted(package_files)),
         lifecycle_scripts=(),
         witness_digest=build_request.witness_digest,
         source_input_manifest=tuple(
@@ -221,7 +266,7 @@ def observation_case(
         artifact_url=(
             f"https://github.com/hcoona/three/actions/runs/{run_id}/artifacts/801"
         ),
-        transport_digest=DIGEST,
+        transport_digest=content.content_sha256,
         producer="build-tarball",
         workflow_run_id=run_id,
         run_attempt=None,
@@ -254,15 +299,12 @@ def observation_case(
         for obligation in snapshot.obligations
         if obligation != build_evidence.obligation
     )
-    decision = _parsed(
-        finalize_qualification(
-            snapshot, (_parsed(build_evidence), *evidence), (artifact,)
-        )
-    )
+    evidence = (_parsed(build_evidence), *evidence)
+    decision = _parsed(finalize_qualification(snapshot, evidence, (artifact,)))
     assert decision.terminal_result == "success"
     reference = ArtifactReference(
         artifact_id=802,
-        artifact_digest=DIGEST,
+        artifact_digest=decision.decision_digest,
         artifact_url=(
             f"https://github.com/hcoona/three/actions/runs/{run_id}/artifacts/802"
         ),
@@ -279,6 +321,10 @@ def observation_case(
         artifact,
         decision,
         reference,
+        evidence,
+        context,
+        tarball,
+        artifact_expectation(snapshot, context, artifact),
     )
 
 
