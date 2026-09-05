@@ -28,6 +28,15 @@ from three_workflow_delivery_v3.records.release import (
 from three_workflow_delivery_v3.release.qualification import (
     admit_evidence_for_snapshot,
 )
+from three_workflow_delivery_v3.release.qualification import (
+    validate_qualification_artifacts as _validate_artifacts,
+)
+from three_workflow_delivery_v3.release.qualification import (
+    validate_qualification_decision as _validate_decision,
+)
+from three_workflow_delivery_v3.release.qualification import (
+    validate_qualification_decision_artifacts as _validate_decision_artifacts,
+)
 
 
 class UnsupportedPublicationPrimitiveError(RuntimeError):
@@ -40,49 +49,6 @@ def _subject(
     if isinstance(snapshot.subject, SimulationBinding):
         return snapshot.subject.simulation
     return snapshot.subject
-
-
-def _validate_artifacts(
-    snapshot: QualificationSnapshot,
-    artifacts: tuple[ReleaseArtifact, ...],
-) -> tuple[ReleaseArtifact, ...]:
-    if type(artifacts) is not tuple:
-        message = "Release artifacts must be an exact tuple"
-        raise TypeError(message)
-    by_output: dict[str, ReleaseArtifact] = {}
-    record_digests: set[str] = set()
-    expected_subject = _subject(snapshot)
-    for artifact in artifacts:
-        if type(artifact) is not ReleaseArtifact:
-            message = "Release artifact has the wrong runtime type"
-            raise TypeError(message)
-        record_digest = artifact.artifact_digest
-        if record_digest in record_digests:
-            message = "Release artifact set contains a duplicate record"
-            raise ValueError(message)
-        record_digests.add(record_digest)
-        if (
-            artifact.subject != expected_subject
-            or artifact.repository != snapshot.repository
-            or artifact.qualification_snapshot_digest
-            != snapshot.snapshot_digest
-            or artifact.repository_model_digest
-            != snapshot.repository_model_digest
-            or artifact.target != snapshot.target
-            or artifact.output not in snapshot.outputs
-        ):
-            message = "Release artifact does not match the current Snapshot"
-            raise ValueError(message)
-        output_id = artifact.output.output_id
-        if output_id in by_output:
-            message = "Release artifact set substitutes a planned output"
-            raise ValueError(message)
-        by_output[output_id] = artifact
-    return tuple(
-        by_output[output.output_id]
-        for output in snapshot.outputs
-        if output.output_id in by_output
-    )
 
 
 def finalize_qualification(  # noqa: C901, PLR0912, PLR0915
@@ -361,50 +327,6 @@ def _admit_synthetic_projection_observation(
         response_digest=response_digest,
         value=value,
     )
-
-
-def _validate_decision(
-    snapshot: QualificationSnapshot,
-    decision: QualificationDecision,
-) -> None:
-    if type(decision) is not QualificationDecision:
-        message = "finalization requires an exact QualificationDecision"
-        raise TypeError(message)
-    if (
-        decision.subject != _subject(snapshot)
-        or decision.qualification_snapshot_digest != snapshot.snapshot_digest
-        or tuple(
-            disposition.obligation
-            for disposition in decision.obligation_dispositions
-        )
-        != snapshot.obligations
-    ):
-        message = "Qualification Decision does not match the Snapshot"
-        raise ValueError(message)
-    disposition_outcomes = tuple(
-        disposition.outcome for disposition in decision.obligation_dispositions
-    )
-    if decision.terminal_result == "success" and (
-        not disposition_outcomes
-        or any(outcome != "satisfied" for outcome in disposition_outcomes)
-        or len(decision.admitted_evidence_digests)
-        != len(snapshot.expected_evidence_ids)
-        or len(decision.admitted_artifact_digests) != len(snapshot.outputs)
-    ):
-        message = "successful Qualification Decision is not complete"
-        raise ValueError(message)
-
-
-def _validate_decision_artifacts(
-    decision: QualificationDecision,
-    artifacts: tuple[ReleaseArtifact, ...],
-) -> None:
-    if (
-        tuple(artifact.artifact_digest for artifact in artifacts)
-        != decision.admitted_artifact_digests
-    ):
-        message = "Qualification Decision artifact binding mismatch"
-        raise ValueError(message)
 
 
 def _validate_observation_producer(
