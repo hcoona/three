@@ -32,9 +32,11 @@ from three_workflow_delivery_v3.canonical import (
     canonicalize,
     parse_json_strict,
 )
+from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
     PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER,
     ActionResult,
+    ApprovalBundle,
     BuddyExecutionIdentity,
     DestinationProjection,
     ExternalPackageCoordinate,
@@ -3740,6 +3742,8 @@ def _write_private_npm_config(path: Path, token: str) -> None:
 def _validate_publish_preconditions(  # noqa: PLR0913
     *,
     publication_snapshot: PublicationSnapshot,
+    approval_bundle: ApprovalBundle,
+    reviewer_summary_reference: ArtifactReference,
     authorization: PublicationAuthorization,
     action: PublicationAction,
     qualification_snapshot: QualificationSnapshot,
@@ -3749,6 +3753,8 @@ def _validate_publish_preconditions(  # noqa: PLR0913
 ) -> None:
     if (
         type(publication_snapshot) is not PublicationSnapshot
+        or type(approval_bundle) is not ApprovalBundle
+        or type(reviewer_summary_reference) is not ArtifactReference
         or type(authorization) is not PublicationAuthorization
         or type(action) is not PublicationAction
         or type(qualification_snapshot) is not QualificationSnapshot
@@ -3765,13 +3771,14 @@ def _validate_publish_preconditions(  # noqa: PLR0913
     if (
         authorization.attempt != attempt
         or authorization.control != expected_control
-        or authorization.approval_bundle.publication_snapshot
-        != publication_snapshot
-        or authorization.approval_bundle.qualification_decision
-        != qualification_decision
-        or not authorization.authorizing
+        or approval_bundle.attempt != attempt
+        or approval_bundle.publication_snapshot_reference.payload_digest
+        != publication_snapshot.snapshot_digest
+        or approval_bundle.reviewer_summary_reference
+        != reviewer_summary_reference
+        or authorization.approval_bundle_reference.payload_digest
+        != approval_bundle.bundle_digest
         or action not in actions
-        or authorization.action != action
         or action.projection.destination_id != GITHUB_PACKAGES_DESTINATION_ID
         or action.operation != GITHUB_PACKAGES_OPERATION
         or qualification_snapshot.subject != attempt
@@ -3949,6 +3956,8 @@ def _npm_configuration_digest(
 def preflight_github_packages_action(  # noqa: PLR0913
     *,
     publication_snapshot: PublicationSnapshot,
+    approval_bundle: ApprovalBundle,
+    reviewer_summary_reference: ArtifactReference,
     authorization: PublicationAuthorization,
     action: PublicationAction,
     qualification_snapshot: QualificationSnapshot,
@@ -3959,6 +3968,8 @@ def preflight_github_packages_action(  # noqa: PLR0913
     """Validate the authority closure, then reject the missing primitive."""
     _validate_publish_preconditions(
         publication_snapshot=publication_snapshot,
+        approval_bundle=approval_bundle,
+        reviewer_summary_reference=reviewer_summary_reference,
         authorization=authorization,
         action=action,
         qualification_snapshot=qualification_snapshot,
@@ -4038,6 +4049,8 @@ def publish_github_packages_action(  # noqa: PLR0913
     temp_root: Path,
     transport: GitHubPackagesTransport | object = _MISSING,
     publication_snapshot: PublicationSnapshot | object = _MISSING,
+    approval_bundle: ApprovalBundle | object = _MISSING,
+    reviewer_summary_reference: ArtifactReference | object = _MISSING,
     authorization: PublicationAuthorization | object = _MISSING,
     action: PublicationAction | object = _MISSING,
     qualification_snapshot: QualificationSnapshot | object = _MISSING,
@@ -4067,6 +4080,8 @@ def publish_github_packages_action(  # noqa: PLR0913
         temp_root,
         transport,
         publication_snapshot,
+        approval_bundle,
+        reviewer_summary_reference,
         authorization,
         action,
         qualification_snapshot,

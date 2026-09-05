@@ -11,16 +11,16 @@ import pytest
 from three_workflow_delivery_v3 import cli as cli_module
 from three_workflow_delivery_v3.adapters import node as node_adapter
 from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
-from three_workflow_delivery_v3.records.artifacts import (
-    ArtifactTransportIdentity,
-)
+from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
     ActionResult,
+    ApprovalBoundary,
     ApprovalBundle,
     AttemptOutcome,
     BuddyExecutionIdentity,
     DestinationProjection,
     ExactSatisfiedGovernanceProof,
+    GovernanceProof,
     ObservationRequestFacts,
     ObservationResponseFacts,
     ObservationValue,
@@ -37,7 +37,6 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseArtifact,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
-    ReviewerSummaryArtifact,
     admit_release_record,
     publication_action_inputs,
     publication_capability_requirements,
@@ -143,6 +142,27 @@ def _uploaded_arguments(
     ]
 
 
+def _referenced_uploaded_arguments(
+    name: str,
+    path: Path,
+    semantic_digest: str,
+    reference: ArtifactReference,
+) -> list[str]:
+    option = name.replace("_", "-")
+    return [
+        *_uploaded_arguments(
+            name,
+            path,
+            semantic_digest,
+            reference.artifact_id,
+        ),
+        f"--{option}-artifact-url",
+        reference.artifact_url,
+        f"--{option}-payload-path",
+        reference.payload_path,
+    ]
+
+
 def _live_observation(
     snapshot: QualificationSnapshot,
     artifact: ReleaseArtifact,
@@ -209,6 +229,95 @@ def _live_observation(
         response_facts=response_facts,
         response_digest=response_digest,
         value=value,
+    )
+
+
+def _live_artifact(
+    source: ReleaseArtifact,
+    snapshot: QualificationSnapshot,
+) -> ReleaseArtifact:
+    if not isinstance(snapshot.subject, ReleaseAttemptIdentity):
+        message = "live artifact requires a Release Attempt"
+        raise TypeError(message)
+    attempt = snapshot.subject
+    transport = replace(
+        source.transport,
+        artifact_name=release_artifact_transport_name(
+            repository=source.repository,
+            purpose="live-release",
+            output=source.output,
+            qualification_snapshot_digest=snapshot.snapshot_digest,
+            workflow_run_id=attempt.workflow_run_id,
+            run_attempt=None,
+            producer=source.transport.producer,
+        ),
+        run_attempt=None,
+    )
+    provenance = source.provenance_document()
+    provenance.update(
+        {
+            "subject": attempt.to_document(),
+            "qualification-snapshot-digest": snapshot.snapshot_digest,
+            "repository-model-digest": snapshot.repository_model_digest,
+            "purpose": "live-release",
+            "transport": transport.to_document(),
+        }
+    )
+    return replace(
+        source,
+        subject=attempt,
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+        repository_model_digest=snapshot.repository_model_digest,
+        purpose="live-release",
+        transport=transport,
+        provenance_digest=canonical_sha256(provenance),
+    )
+
+
+def _action_bearing_publication(
+    snapshot: QualificationSnapshot,
+    decision: QualificationDecision,
+    artifact: ReleaseArtifact,
+) -> PublicationSnapshot:
+    if not isinstance(snapshot.subject, ReleaseAttemptIdentity):
+        message = "action-bearing publication requires a Release Attempt"
+        raise TypeError(message)
+    projection = snapshot.destination_projections[0]
+    action = PublicationAction(
+        action_id=projection.potential_action_id,
+        projection=projection,
+        operation=projection.operation,
+        artifact=artifact,
+        artifact_digest=artifact.artifact_digest,
+        artifact_output=artifact.output,
+        prerequisites=(),
+        action_inputs=publication_action_inputs(projection, artifact),
+        mutable_resource_keys=publication_mutable_resource_keys(
+            projection,
+            artifact,
+        ),
+        lock_projection=publication_lock_projection(projection),
+        lock_group=publication_lock_group(projection),
+        capability_requirements=publication_capability_requirements(projection),
+        expected_result=publication_expected_result(projection),
+        receipt_contract=publication_receipt_contract(projection),
+    )
+    return PublicationSnapshot(
+        attempt=snapshot.subject,
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+        qualification_decision_digest=decision.decision_digest,
+        qualification_result="success",
+        projection_ids=(projection.projection_id,),
+        artifact_digests=(artifact.artifact_digest,),
+        artifact_output_ids=(artifact.output.output_id,),
+        observation_references=(
+            PublicationObservationReference(
+                projection_id=projection.projection_id,
+                observation_digest="sha256:" + ("6" * 64),
+                classification="absent",
+            ),
+        ),
+        materialized_actions=(action,),
     )
 
 
@@ -1136,61 +1245,30 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
     assert not malformed_outcome_path.exists()
 
 
-def test_materialize_publication_cli_renders_exact_satisfied_context(
+@pytest.mark.parametrize(
+    ("classification", "action_count"),
+    [
+        pytest.param("exact-satisfied", 0, id="zero-action"),
+        pytest.param("absent", 1, id="action-bearing"),
+    ],
+)
+def test_materialize_publication_cli_emits_path_specific_review_outputs(  # noqa: PLR0913, PLR0917
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     qualified_simulation,
     live_intent,
     live_qualification_snapshot,
+    classification: str,
+    action_count: int,
 ) -> None:
-    """Render the complete no-action context for exact satisfaction."""
-    classification = "exact-satisfied"
+    """Emit reviewer evidence only when a publication action needs approval."""
     intent_path = _write(
         tmp_path / "live-intent.json",
         canonicalize(live_intent.to_document()),
     )
-    source_artifact = qualified_simulation.artifact
-    transport = replace(
-        source_artifact.transport,
-        artifact_name=release_artifact_transport_name(
-            repository=source_artifact.repository,
-            purpose="live-release",
-            output=source_artifact.output,
-            qualification_snapshot_digest=(
-                live_qualification_snapshot.snapshot_digest
-            ),
-            workflow_run_id=live_intent.workflow_run_id,
-            run_attempt=None,
-            producer=source_artifact.transport.producer,
-        ),
-        run_attempt=None,
-    )
-    provenance = source_artifact.provenance_document()
-    provenance.update(
-        {
-            "subject": live_qualification_snapshot.subject.to_document(),
-            "qualification-snapshot-digest": (
-                live_qualification_snapshot.snapshot_digest
-            ),
-            "repository-model-digest": (
-                live_qualification_snapshot.repository_model_digest
-            ),
-            "purpose": "live-release",
-            "transport": transport.to_document(),
-        }
-    )
-    artifact = replace(
-        source_artifact,
-        subject=live_qualification_snapshot.subject,
-        qualification_snapshot_digest=(
-            live_qualification_snapshot.snapshot_digest
-        ),
-        repository_model_digest=(
-            live_qualification_snapshot.repository_model_digest
-        ),
-        purpose="live-release",
-        transport=transport,
-        provenance_digest=canonical_sha256(provenance),
+    artifact = _live_artifact(
+        qualified_simulation.artifact,
+        live_qualification_snapshot,
     )
     observation = _live_observation(
         live_qualification_snapshot,
@@ -1202,27 +1280,46 @@ def test_materialize_publication_cli_renders_exact_satisfied_context(
         canonicalize(observation.to_document()),
     )
     projection = live_qualification_snapshot.destination_projections[0]
-    publication = PublicationSnapshot(
-        attempt=live_qualification_snapshot.subject,
-        qualification_snapshot_digest=(
-            live_qualification_snapshot.snapshot_digest
-        ),
-        qualification_decision_digest=(
-            qualified_simulation.decision.decision_digest
-        ),
-        qualification_result="success",
-        projection_ids=(projection.projection_id,),
-        artifact_digests=(artifact.artifact_digest,),
-        artifact_output_ids=(artifact.output.output_id,),
-        observation_references=(
-            PublicationObservationReference(
-                projection_id=projection.projection_id,
-                observation_digest=observation.observation_digest,
-                classification=classification,
+    publication = (
+        _action_bearing_publication(
+            live_qualification_snapshot,
+            qualified_simulation.decision,
+            artifact,
+        )
+        if action_count
+        else PublicationSnapshot(
+            attempt=live_qualification_snapshot.subject,
+            qualification_snapshot_digest=(
+                live_qualification_snapshot.snapshot_digest
             ),
-        ),
-        materialized_actions=(),
+            qualification_decision_digest=(
+                qualified_simulation.decision.decision_digest
+            ),
+            qualification_result="success",
+            projection_ids=(projection.projection_id,),
+            artifact_digests=(artifact.artifact_digest,),
+            artifact_output_ids=(artifact.output.output_id,),
+            observation_references=(
+                PublicationObservationReference(
+                    projection_id=projection.projection_id,
+                    observation_digest=observation.observation_digest,
+                    classification=classification,
+                ),
+            ),
+            materialized_actions=(),
+        )
     )
+    if action_count:
+        publication = replace(
+            publication,
+            observation_references=(
+                PublicationObservationReference(
+                    projection_id=projection.projection_id,
+                    observation_digest=observation.observation_digest,
+                    classification=classification,
+                ),
+            ),
+        )
     monkeypatch.setattr(
         cli_module,
         "_load_live_qualification_snapshot",
@@ -1245,7 +1342,7 @@ def test_materialize_publication_cli_renders_exact_satisfied_context(
     )
     output_path = tmp_path / "publication-snapshot.json"
     summary_path = tmp_path / "reviewer-summary.md"
-    formatter_input_path = tmp_path / "reviewer-formatter-input.json"
+    github_output = tmp_path / "github-output.txt"
     current = [
         "--workflow-run-id",
         str(live_intent.workflow_run_id),
@@ -1296,12 +1393,21 @@ def test_materialize_publication_cli_renders_exact_satisfied_context(
             str(output_path),
             "--summary-output",
             str(summary_path),
-            "--formatter-input-output",
-            str(formatter_input_path),
+            "--github-output",
+            str(github_output),
         ]
     )
 
     assert status == 0
+    assert output_path.read_bytes() == canonicalize(publication.to_document())
+    emitted = github_output.read_text(encoding="utf-8")
+    if not action_count:
+        assert not summary_path.exists()
+        assert "publish-required=false\n" in emitted
+        assert "resource-concurrency-key=no-op\n" in emitted
+        assert "reviewer-digest=" not in emitted
+        return
+
     summary = summary_path.read_text(encoding="utf-8")
     coordinate = projection.coordinate
     required_values = (
@@ -1326,10 +1432,17 @@ def test_materialize_publication_cli_renders_exact_satisfied_context(
     assert all(
         value is not None and value in summary for value in required_values
     )
-    assert "Materialized actions: `0`" in summary
-    assert "no publication action is required" in summary
-    assert "already exactly satisfies the projection" in summary
-    assert "### Action" not in summary
+    assert "Materialized actions: `1`" in summary
+    assert "### Action" in summary
+    reviewer_digest = (
+        "sha256:" + hashlib.sha256(summary_path.read_bytes()).hexdigest()
+    )
+    assert "publish-required=true\n" in emitted
+    assert f"reviewer-digest={reviewer_digest}\n" in emitted
+    assert (
+        "resource-concurrency-key="
+        f"{publication.materialized_actions[0].lock_group}\n"
+    ) in emitted
 
 
 def test_materialize_publication_rejects_selected_ref_substitution(
@@ -1403,8 +1516,6 @@ def test_materialize_publication_rejects_selected_ref_substitution(
             str(output_path),
             "--summary-output",
             str(summary_path),
-            "--formatter-input-output",
-            str(tmp_path / "reviewer-formatter-input.json"),
         ]
     )
     error = capsys.readouterr().err
@@ -1738,27 +1849,20 @@ _OPTIONAL_TRANSPORT_MEMBERS = (
     "artifact-id",
     "artifact-digest",
 )
+_REPRESENTATIVE_PARTIAL_TRANSPORT_PATTERNS = (
+    ("path", "only"),
+    ("record-digest", "missing"),
+    ("artifact-id", "missing"),
+)
 _PARTIAL_OPTIONAL_TRANSPORT_CASES = [
-    *(
-        pytest.param(
-            group,
-            member,
-            "missing",
-            id=f"{group.replace('_', '-')}-missing-{member}",
-        )
-        for group in _OPTIONAL_TRANSPORT_GROUPS
-        for member in _OPTIONAL_TRANSPORT_MEMBERS
-    ),
-    *(
-        pytest.param(
-            group,
-            member,
-            "only",
-            id=f"{group.replace('_', '-')}-only-{member}",
-        )
-        for group in _OPTIONAL_TRANSPORT_GROUPS
-        for member in _OPTIONAL_TRANSPORT_MEMBERS
-    ),
+    pytest.param(
+        group,
+        member,
+        mode,
+        id=f"{group.replace('_', '-')}-{mode}-{member}",
+    )
+    for group in _OPTIONAL_TRANSPORT_GROUPS
+    for member, mode in _REPRESENTATIVE_PARTIAL_TRANSPORT_PATTERNS
 ]
 
 
@@ -1766,7 +1870,7 @@ _PARTIAL_OPTIONAL_TRANSPORT_CASES = [
     ("group", "selected_member", "provided_member_mode"),
     _PARTIAL_OPTIONAL_TRANSPORT_CASES,
 )
-def test_finalize_live_rejects_each_partial_optional_transport_group(  # noqa: PLR0913, PLR0917
+def test_finalize_live_rejects_representative_partial_transport_groups(  # noqa: PLR0913, PLR0917
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -1777,7 +1881,7 @@ def test_finalize_live_rejects_each_partial_optional_transport_group(  # noqa: P
     selected_member: str,
     provided_member_mode: str,
 ) -> None:
-    """Reject every partial downstream transport before finalization writes."""
+    """Distinguish every optional transport field before record loading."""
     binding_path = _write(
         tmp_path / "live-attempt-binding.json",
         canonicalize(live_attempt_binding.to_document()),
@@ -1895,6 +1999,159 @@ def test_finalize_live_rejects_each_partial_optional_transport_group(  # noqa: P
     load_attempt_binding.assert_not_called()
 
 
+def test_finalize_live_persists_bundle_without_authorization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    qualified_simulation,
+    live_attempt_binding,
+    live_qualification_snapshot,
+) -> None:
+    """Persist the durable Bundle as the incomplete direct predecessor."""
+    artifact = _live_artifact(
+        qualified_simulation.artifact,
+        live_qualification_snapshot,
+    )
+    target = live_attempt_binding.attempt.execution.target
+    decision = replace(
+        qualified_simulation.decision,
+        subject=live_attempt_binding.attempt,
+        qualification_snapshot_digest=(
+            live_qualification_snapshot.snapshot_digest
+        ),
+        admitted_artifact_digests=(artifact.artifact_digest,),
+    )
+    publication = _action_bearing_publication(
+        live_qualification_snapshot,
+        decision,
+        artifact,
+    )
+    control = f"workflow-delivery-v3:{target}"
+
+    binding_path = _write(
+        tmp_path / "attempt-binding.json",
+        canonicalize(live_attempt_binding.to_document()),
+    )
+    snapshot_path = _write(
+        tmp_path / "qualification-snapshot.json",
+        canonicalize(live_qualification_snapshot.to_document()),
+    )
+    decision_path = _write(
+        tmp_path / "qualification-decision.json",
+        canonicalize(decision.to_document()),
+    )
+    publication_path = _write(
+        tmp_path / "publication-snapshot.json",
+        canonicalize(publication.to_document()),
+    )
+    publication_reference = ArtifactReference(
+        artifact_id=910,
+        artifact_digest=_transport_digest(publication_path),
+        artifact_url="https://example.test/artifacts/910",
+        payload_path=publication_path.name,
+        payload_digest=publication.snapshot_digest,
+    )
+    bundle = ApprovalBundle(
+        attempt=live_attempt_binding.attempt,
+        publication_snapshot_reference=publication_reference,
+        reviewer_summary_reference=ArtifactReference(
+            artifact_id=911,
+            artifact_digest="sha256:" + ("7" * 64),
+            artifact_url="https://example.test/artifacts/911",
+            payload_path="reviewer-summary.md",
+            payload_digest="sha256:" + ("8" * 64),
+        ),
+        producer="materialize-publication",
+        control=control,
+        workflow_run_id=live_attempt_binding.attempt.workflow_run_id,
+    )
+    bundle_path = _write(
+        tmp_path / "approval-bundle.json",
+        canonicalize(bundle.to_document()),
+    )
+    bundle_reference = ArtifactReference(
+        artifact_id=912,
+        artifact_digest=_transport_digest(bundle_path),
+        artifact_url="https://example.test/artifacts/912",
+        payload_path=bundle_path.name,
+        payload_digest=bundle.bundle_digest,
+    )
+    outcome_path = tmp_path / "attempt-outcome.json"
+    summary_path = tmp_path / "attempt-summary.md"
+
+    monkeypatch.setattr(
+        cli_module,
+        "finalize_qualification",
+        lambda *_args: decision,
+    )
+
+    status = cli_module.main(
+        [
+            "release",
+            "finalize-live",
+            "--workflow-run-id",
+            str(live_attempt_binding.attempt.workflow_run_id),
+            "--run-attempt",
+            str(PLATFORM_RUN_ATTEMPT),
+            "--target",
+            target,
+            *_uploaded_arguments(
+                "attempt_binding",
+                binding_path,
+                live_attempt_binding.binding_digest,
+                907,
+            ),
+            *_uploaded_arguments(
+                "qualification_snapshot",
+                snapshot_path,
+                live_qualification_snapshot.snapshot_digest,
+                908,
+            ),
+            *_uploaded_arguments(
+                "qualification_decision",
+                decision_path,
+                decision.decision_digest,
+                909,
+            ),
+            *_referenced_uploaded_arguments(
+                "publication_snapshot",
+                publication_path,
+                publication.snapshot_digest,
+                publication_reference,
+            ),
+            *_referenced_uploaded_arguments(
+                "approval_bundle",
+                bundle_path,
+                bundle.bundle_digest,
+                bundle_reference,
+            ),
+            "--outcome-output",
+            str(outcome_path),
+            "--summary-output",
+            str(summary_path),
+        ]
+    )
+
+    assert status == 1
+    outcome = admit_release_record(
+        outcome_path.read_bytes(),
+        expected_type=AttemptOutcome,
+        expected_digest=_transport_digest(outcome_path),
+        expected_bindings=ReleaseAdmissionBindings(
+            purpose="live-release",
+            workflow_run_id=live_attempt_binding.attempt.workflow_run_id,
+            run_attempt=None,
+            target=target,
+        ),
+    )
+    assert isinstance(outcome, AttemptOutcome)
+    assert outcome.result == "incomplete"
+    assert outcome.terminal_phase == "approval-contract"
+    assert outcome.approval_bundle_digest == bundle.bundle_digest
+    assert outcome.publication_authorization_digest is None
+    assert outcome.possibly_mutated is False
+    assert summary_path.is_file()
+
+
 @pytest.mark.parametrize(
     ("platform_flag", "expected_platform_facts"),
     [
@@ -1927,48 +2184,9 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
 ) -> None:
     """Forward admitted downstream records and exact platform facts."""
     attempt = live_attempt_binding.attempt
-    source_artifact = qualified_simulation.artifact
-    artifact_transport = replace(
-        source_artifact.transport,
-        artifact_name=release_artifact_transport_name(
-            repository=source_artifact.repository,
-            purpose="live-release",
-            output=source_artifact.output,
-            qualification_snapshot_digest=(
-                live_qualification_snapshot.snapshot_digest
-            ),
-            workflow_run_id=live_intent.workflow_run_id,
-            run_attempt=None,
-            producer=source_artifact.transport.producer,
-        ),
-        run_attempt=None,
-    )
-    artifact_provenance = source_artifact.provenance_document()
-    artifact_provenance.update(
-        {
-            "subject": attempt.to_document(),
-            "qualification-snapshot-digest": (
-                live_qualification_snapshot.snapshot_digest
-            ),
-            "repository-model-digest": (
-                live_qualification_snapshot.repository_model_digest
-            ),
-            "purpose": "live-release",
-            "transport": artifact_transport.to_document(),
-        }
-    )
-    artifact = replace(
-        source_artifact,
-        subject=attempt,
-        qualification_snapshot_digest=(
-            live_qualification_snapshot.snapshot_digest
-        ),
-        repository_model_digest=(
-            live_qualification_snapshot.repository_model_digest
-        ),
-        purpose="live-release",
-        transport=artifact_transport,
-        provenance_digest=canonical_sha256(artifact_provenance),
+    artifact = _live_artifact(
+        qualified_simulation.artifact,
+        live_qualification_snapshot,
     )
     simulation_evidence_by_obligation = {
         evidence.obligation.obligation_id: evidence
@@ -2001,83 +2219,61 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         (artifact,),
     )
     assert decision.terminal_result == "success"
-    projection = live_qualification_snapshot.destination_projections[0]
-    action = PublicationAction(
-        action_id=projection.potential_action_id,
-        projection=projection,
-        operation=projection.operation,
-        artifact=artifact,
-        artifact_digest=artifact.artifact_digest,
-        artifact_output=artifact.output,
-        prerequisites=(),
-        action_inputs=publication_action_inputs(projection, artifact),
-        mutable_resource_keys=publication_mutable_resource_keys(
-            projection,
-            artifact,
-        ),
-        lock_projection=publication_lock_projection(projection),
-        lock_group=publication_lock_group(projection),
-        capability_requirements=publication_capability_requirements(projection),
-        expected_result=publication_expected_result(projection),
-        receipt_contract=publication_receipt_contract(projection),
+    publication = _action_bearing_publication(
+        live_qualification_snapshot,
+        decision,
+        artifact,
     )
+    action = publication.materialized_actions[0]
+    projection = action.projection
     control = f"workflow-delivery-v3:{live_intent.target}"
-    publication = PublicationSnapshot(
-        attempt=attempt,
-        qualification_snapshot_digest=live_qualification_snapshot.snapshot_digest,
-        qualification_decision_digest=decision.decision_digest,
-        qualification_result="success",
-        projection_ids=(projection.projection_id,),
-        artifact_digests=(artifact.artifact_digest,),
-        artifact_output_ids=(artifact.output.output_id,),
-        observation_references=(
-            PublicationObservationReference(
-                projection_id=projection.projection_id,
-                observation_digest="sha256:" + ("6" * 64),
-                classification="absent",
-            ),
-        ),
-        materialized_actions=(action,),
-    )
-    reviewer = ReviewerSummaryArtifact(
-        attempt=attempt,
-        transport=ArtifactTransportIdentity(
-            artifact_id=911,
-            artifact_name="publication-review",
-            artifact_url="https://example.test/artifacts/911",
-            transport_digest="sha256:" + ("7" * 64),
-            producer="materialize-publication",
-            workflow_run_id=attempt.workflow_run_id,
-            run_attempt=None,
-        ),
-        snapshot_payload_digest=publication.snapshot_digest,
-        summary_payload_digest="sha256:" + ("8" * 64),
-    )
     approval_bundle = ApprovalBundle(
-        attempt_binding=live_attempt_binding,
-        selected_ref=live_intent.selected_ref,
-        qualification_decision=decision,
-        publication_snapshot=publication,
-        reviewer_summary=reviewer,
-        environment="workflow-delivery-v3-buddy-approval",
-        approval_job="approve-publication",
+        attempt=attempt,
+        publication_snapshot_reference=ArtifactReference(
+            artifact_id=910,
+            artifact_digest=publication.snapshot_digest,
+            artifact_url="https://example.test/artifacts/910",
+            payload_path="publication-snapshot.json",
+            payload_digest=publication.snapshot_digest,
+        ),
+        reviewer_summary_reference=ArtifactReference(
+            artifact_id=911,
+            artifact_digest="sha256:" + ("7" * 64),
+            artifact_url="https://example.test/artifacts/911",
+            payload_path="reviewer-summary.md",
+            payload_digest="sha256:" + ("8" * 64),
+        ),
         producer="materialize-publication",
         control=control,
+        workflow_run_id=attempt.workflow_run_id,
     )
     authorization = PublicationAuthorization(
-        approval_bundle=approval_bundle,
-        approval_governance_provenance=(
-            live_attempt_binding.attestation_provenance
+        attempt=attempt,
+        approval_bundle_reference=ArtifactReference(
+            artifact_id=912,
+            artifact_digest=approval_bundle.bundle_digest,
+            artifact_url="https://example.test/artifacts/912",
+            payload_path="approval-bundle.json",
+            payload_digest=approval_bundle.bundle_digest,
         ),
-        approval_governance_current_main_sha=live_intent.target,
-        approval_governance_observed_at="2026-08-19T07:59:00Z",
-        approval_governance_expires_at="2026-09-01T00:00:00Z",
-        approval_governance_live_enabled=True,
-        environment=approval_bundle.environment,
-        approval_job=approval_bundle.approval_job,
+        approval_boundary=ApprovalBoundary(
+            environment="workflow-delivery-v3-buddy-approval",
+            job="approve-publication",
+            sentinel_name="WDV3_APPROVAL_ENVIRONMENT_MARKER",
+            sentinel_value="workflow-delivery-v3-buddy-approval/v1",
+            sentinel_result="success",
+        ),
+        governance_proof=GovernanceProof(
+            provenance=live_attempt_binding.attestation_provenance,
+            current_main_sha=live_intent.target,
+            observed_at="2026-08-19T07:59:00Z",
+            expires_at="2026-09-01T00:00:00Z",
+            live_enabled=True,
+        ),
         completed_at="2026-08-19T08:00:00Z",
         producer="approve-publication",
         control=control,
+        workflow_run_id=attempt.workflow_run_id,
     )
     receipt = Receipt(
         attempt=attempt,
@@ -2173,6 +2369,8 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         approval_bundle: ApprovalBundle | None,
         publication_authorization: PublicationAuthorization | None,
         action_results: tuple[ActionResult, ...],
+        publication_snapshot_reference: ArtifactReference | None = None,
+        approval_bundle_reference: ArtifactReference | None = None,
         observations: tuple[ProjectionObservation, ...] = (),
         publication_preparation_interrupted: bool = False,
         platform_terminated: bool = False,
@@ -2189,6 +2387,10 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
                 "approval_bundle": approval_bundle,
                 "publication_authorization": publication_authorization,
                 "action_results": action_results,
+                "publication_snapshot_reference": (
+                    publication_snapshot_reference
+                ),
+                "approval_bundle_reference": approval_bundle_reference,
                 "observations": observations,
                 "publication_preparation_interrupted": (
                     publication_preparation_interrupted
@@ -2240,17 +2442,17 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
                 decision.decision_digest,
                 916,
             ),
-            *_uploaded_arguments(
+            *_referenced_uploaded_arguments(
                 "publication_snapshot",
                 publication_path,
                 publication.snapshot_digest,
-                917,
+                approval_bundle.publication_snapshot_reference,
             ),
-            *_uploaded_arguments(
+            *_referenced_uploaded_arguments(
                 "approval_bundle",
                 approval_bundle_path,
                 approval_bundle.bundle_digest,
-                918,
+                authorization.approval_bundle_reference,
             ),
             *_uploaded_arguments(
                 "publication_authorization",
@@ -2291,6 +2493,14 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
     )
     assert captured["publication_authorization"] == authorization
     assert captured["publication_authorization"] is not authorization
+    assert (
+        captured["publication_snapshot_reference"]
+        == approval_bundle.publication_snapshot_reference
+    )
+    assert (
+        captured["approval_bundle_reference"]
+        == authorization.approval_bundle_reference
+    )
     loaded_action_results = captured["action_results"]
     assert isinstance(loaded_action_results, tuple)
     assert loaded_action_results == (action_result,)

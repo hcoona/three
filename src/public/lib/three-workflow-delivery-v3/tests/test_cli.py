@@ -29,6 +29,7 @@ from three_workflow_delivery_v3.ci.planner import (
     form_pull_request_candidate,
     form_slice_validation_candidate,
 )
+from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.ci import (
     CI_WORKFLOW_PATH,
     ci_qualification_snapshot_digest,
@@ -993,8 +994,14 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
                 "--attempt-binding",
                 "--qualification-decision",
                 "--publication-snapshot",
-                "--reviewer-summary-artifact",
+                "--publication-snapshot-artifact-url",
+                "--publication-snapshot-payload-path",
+                "--reviewer-summary",
+                "--reviewer-summary-digest",
+                "--reviewer-summary-artifact-id",
                 "--reviewer-summary-artifact-digest",
+                "--reviewer-summary-artifact-url",
+                "--reviewer-summary-payload-path",
                 "--output",
             ),
         ),
@@ -1027,6 +1034,8 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
             "preflight-github-packages",
             (
                 "--publication-snapshot",
+                "--approval-bundle",
+                "--reviewer-summary",
                 "--publication-authorization",
                 "--qualification-snapshot",
             ),
@@ -1038,6 +1047,7 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
         (
             "publish-github-packages",
             (
+                "--reviewer-summary",
                 "--publication-authorization",
                 "--mutation-marker-artifact-id",
                 "--execution-state-output",
@@ -1061,7 +1071,11 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
                 "--release-artifact",
                 "--observation",
                 "--publication-snapshot",
+                "--publication-snapshot-artifact-url",
+                "--publication-snapshot-payload-path",
                 "--approval-bundle",
+                "--approval-bundle-artifact-url",
+                "--approval-bundle-payload-path",
                 "--publication-authorization",
                 "--exact-satisfied-governance-proof",
                 "--action-result",
@@ -1322,6 +1336,35 @@ def test_ci_payload_admission_requires_upload_digest_and_canonical_bytes(
         == 1
     )
     assert "does not match upload output" in capsys.readouterr().err
+
+
+def test_uploaded_payload_reference_rejects_reviewer_byte_substitution(
+    tmp_path: Path,
+) -> None:
+    """Bind a raw reviewer reference only to its exact local bytes."""
+    reviewer = tmp_path / "reviewer-summary.md"
+    reviewer.write_bytes(b"substituted reviewer summary")
+    expected_digest = (
+        "sha256:" + hashlib.sha256(b"approved reviewer summary").hexdigest()
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"^reviewer_summary payload digest mismatch$",
+    ):
+        cli_module._uploaded_payload_reference(  # noqa: SLF001
+            Namespace(
+                reviewer_summary=str(reviewer),
+                reviewer_summary_digest=expected_digest,
+                reviewer_summary_artifact_id=712,
+                reviewer_summary_artifact_digest="sha256:" + ("3" * 64),
+                reviewer_summary_artifact_url=(
+                    "https://example.test/artifacts/712"
+                ),
+                reviewer_summary_payload_path="reviewer-summary.md",
+            ),
+            name="reviewer_summary",
+        )
 
 
 @pytest.mark.parametrize(
@@ -2228,16 +2271,35 @@ def test_form_approval_bundle_command_binds_current_loaded_records(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Bind the complete pre-wait bundle to currently loaded records."""
-    binding = _current_release_attempt_binding()
-    intent = SimpleNamespace(
-        intent_digest=binding.intent_digest,
-        request_id=binding.request_id,
-        target=binding.execution.target,
+    base_binding = _current_release_attempt_binding()
+    intent = cli_module.normalize_buddy_live_intent(
+        repository="hcoona/three",
         selected_ref="refs/heads/release",
+        target=base_binding.execution.target,
+        actor="hcoona",
+        workflow_run_id=base_binding.attempt.workflow_run_id,
+    )
+    binding = replace(
+        base_binding,
+        intent_digest=intent.intent_digest,
+        request_id=intent.request_id,
     )
     qualification = object()
     publication = object()
-    reviewer = object()
+    publication_reference = ArtifactReference(
+        artifact_id=711,
+        artifact_digest="sha256:" + ("1" * 64),
+        artifact_url="https://example.test/artifacts/711",
+        payload_path="publication-snapshot.json",
+        payload_digest="sha256:" + ("2" * 64),
+    )
+    reviewer_reference = ArtifactReference(
+        artifact_id=712,
+        artifact_digest="sha256:" + ("3" * 64),
+        artifact_url="https://example.test/artifacts/712",
+        payload_path="reviewer-summary.md",
+        payload_digest="sha256:" + ("4" * 64),
+    )
     bundle_document: dict[str, JsonValue] = {
         "schema": "workflow-delivery/v3/approval-bundle",
         "producer": "materialize-publication",
@@ -2266,8 +2328,11 @@ def test_form_approval_bundle_command_binds_current_loaded_records(
     )
     monkeypatch.setattr(
         cli_module,
-        "_load_reviewer_summary_artifact",
-        lambda _args: reviewer,
+        "_uploaded_payload_reference",
+        lambda _args, *, name: {
+            "publication_snapshot": publication_reference,
+            "reviewer_summary": reviewer_reference,
+        }[name],
     )
 
     def form_bundle(**kwargs: object) -> object:
@@ -2289,11 +2354,12 @@ def test_form_approval_bundle_command_binds_current_loaded_records(
 
     assert status == 0
     assert captured == {
+        "intent": intent,
         "attempt_binding": binding,
-        "selected_ref": intent.selected_ref,
         "qualification_decision": qualification,
         "publication_snapshot": publication,
-        "reviewer_summary": reviewer,
+        "publication_snapshot_reference": publication_reference,
+        "reviewer_summary_reference": reviewer_reference,
         "control": control,
     }
     assert json.loads(output.read_bytes()) == bundle_document
@@ -2303,15 +2369,28 @@ def test_form_approval_bundle_command_binds_current_loaded_records(
     ]
 
 
-def test_form_publication_authorization_command_uses_fresh_governance(
+def test_form_publication_authorization_command_uses_fresh_governance(  # noqa: PLR0915
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Form sole post-wait authorization from a fresh Governance read."""
-    binding = _current_release_attempt_binding()
+    base_binding = _current_release_attempt_binding()
+    intent = cli_module.normalize_buddy_live_intent(
+        repository="hcoona/three",
+        selected_ref="refs/heads/release",
+        target=base_binding.execution.target,
+        actor="hcoona",
+        workflow_run_id=base_binding.attempt.workflow_run_id,
+    )
+    binding = replace(
+        base_binding,
+        intent_digest=intent.intent_digest,
+        request_id=intent.request_id,
+    )
     github_token = f"github-{binding.attempt.workflow_run_id}"
-    intent = object()
-    model = object()
+    model = SimpleNamespace(canonical_digest=binding.repository_model_digest)
+    qualification = object()
+    publication = object()
     source = SimpleNamespace(repository="hcoona/three")
     initial_governance = SimpleNamespace(
         provenance=binding.attestation_provenance,
@@ -2327,8 +2406,29 @@ def test_form_publication_authorization_command_uses_fresh_governance(
         context=SimpleNamespace(selected_ref="refs/heads/release"),
     )
     bundle = SimpleNamespace(
-        attempt_binding=binding,
-        selected_ref=initial_eligibility.context.selected_ref,
+        attempt=binding.attempt,
+        bundle_digest="sha256:" + ("8" * 64),
+    )
+    publication_reference = ArtifactReference(
+        artifact_id=711,
+        artifact_digest="sha256:" + ("1" * 64),
+        artifact_url="https://example.test/artifacts/711",
+        payload_path="publication-snapshot.json",
+        payload_digest="sha256:" + ("2" * 64),
+    )
+    reviewer_reference = ArtifactReference(
+        artifact_id=712,
+        artifact_digest="sha256:" + ("3" * 64),
+        artifact_url="https://example.test/artifacts/712",
+        payload_path="reviewer-summary.md",
+        payload_digest="sha256:" + ("4" * 64),
+    )
+    bundle_reference = ArtifactReference(
+        artifact_id=713,
+        artifact_digest="sha256:" + ("5" * 64),
+        artifact_url="https://example.test/artifacts/713",
+        payload_path="approval-bundle.json",
+        payload_digest=bundle.bundle_digest,
     )
     fresh_governance = object()
     authorization_document: dict[str, JsonValue] = {
@@ -2342,6 +2442,7 @@ def test_form_publication_authorization_command_uses_fresh_governance(
     )
     selected_modes: list[LiveEligibilityAdmissionMode] = []
     captured: dict[str, object] = {}
+    closure: dict[str, object] = {}
     github_client = object()
     freshness_observed_at = datetime(
         2026,
@@ -2426,6 +2527,23 @@ def test_form_publication_authorization_command_uses_fresh_governance(
         ("_load_attempt_binding", lambda _args: binding),
         ("_admitted_live_eligibility_decision", admit),
         ("_load_approval_bundle", lambda _args: bundle),
+        (
+            "_load_live_qualification_decision",
+            lambda _args: qualification,
+        ),
+        ("_load_publication_snapshot", lambda _args: publication),
+        (
+            "_uploaded_payload_reference",
+            lambda _args, *, name: {
+                "publication_snapshot": publication_reference,
+                "reviewer_summary": reviewer_reference,
+                "approval_bundle": bundle_reference,
+            }[name],
+        ),
+        (
+            "validate_approval_bundle_closure",
+            lambda **kwargs: closure.update(kwargs),
+        ),
         ("GitHubGovernanceClient", construct_client),
         ("require_fresh_governance_identity", require_fresh),
         ("form_publication_authorization", form_authorization),
@@ -2440,6 +2558,11 @@ def test_form_publication_authorization_command_uses_fresh_governance(
     status = cli_module._release_form_publication_authorization_command(  # noqa: SLF001
         Namespace(
             github_token=github_token,
+            live_eligibility_artifact_id=(binding.live_eligibility_artifact_id),
+            live_eligibility_artifact_digest=(
+                binding.live_eligibility_artifact_digest
+            ),
+            approval_boundary_sentinel_result="success",
             control=control,
             output=str(output),
             github_output=str(github_output),
@@ -2449,9 +2572,20 @@ def test_form_publication_authorization_command_uses_fresh_governance(
     assert status == 0
     assert events == ["clock", "fresh", "clock", "form"]
     assert selected_modes == [LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY]
-    assert captured == {
-        "approval_result": "success",
+    assert closure == {
         "approval_bundle": bundle,
+        "intent": intent,
+        "attempt_binding": binding,
+        "qualification_decision": qualification,
+        "publication_snapshot": publication,
+        "publication_snapshot_reference": publication_reference,
+        "reviewer_summary_reference": reviewer_reference,
+        "control": control,
+    }
+    assert captured == {
+        "approval_bundle": bundle,
+        "approval_bundle_reference": bundle_reference,
+        "approval_boundary_sentinel_result": "success",
         "governance": fresh_governance,
         "completed_at": "2026-09-03T07:48:36Z",
         "control": control,
@@ -2467,65 +2601,168 @@ def test_form_publication_authorization_command_uses_fresh_governance(
 
 
 @pytest.mark.parametrize(
-    ("field_name", "replacement"),
-    [
-        pytest.param(
-            "intent_digest",
-            "sha256:" + ("9" * 64),
-            id="intent-digest",
-        ),
-        pytest.param(
-            "live_eligibility_artifact_id",
-            702,
-            id="eligibility-artifact-id",
-        ),
-    ],
+    "substitution",
+    ["intent-digest", "repository-model", "eligibility-transport"],
 )
 def test_form_publication_authorization_rejects_substituted_attempt_binding(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    field_name: str,
-    replacement: str | int,
+    substitution: str,
 ) -> None:
-    """Reject a Bundle whose non-run Attempt authority was substituted."""
-    binding = _current_release_attempt_binding()
-    substituted = replace(binding, **{field_name: replacement})
-    intent = object()
-    model = object()
-    initial_eligibility = SimpleNamespace(
-        canonical_digest=binding.live_eligibility_payload_digest,
-        governance=SimpleNamespace(
-            provenance=binding.attestation_provenance,
-        ),
-        context=SimpleNamespace(selected_ref="refs/heads/release"),
+    """Reject a post-wait binding substitution before reading Governance."""
+    expected = _current_release_attempt_binding()
+    intent = cli_module.normalize_buddy_live_intent(
+        repository="hcoona/three",
+        selected_ref="refs/heads/release",
+        target=expected.execution.target,
+        actor="hcoona",
+        workflow_run_id=expected.attempt.workflow_run_id,
     )
-    bundle = SimpleNamespace(
-        attempt_binding=substituted,
-        selected_ref=initial_eligibility.context.selected_ref,
+    expected = replace(
+        expected,
+        intent_digest=intent.intent_digest,
+        request_id=intent.request_id,
     )
-    output = tmp_path / "publication-authorization.json"
+    if substitution == "intent-digest":
+        actual = replace(expected, intent_digest="sha256:" + ("e" * 64))
+    elif substitution == "repository-model":
+        actual = replace(
+            expected,
+            repository_model_digest="sha256:" + ("e" * 64),
+        )
+    else:
+        actual = replace(
+            expected,
+            live_eligibility_artifact_id=(
+                expected.live_eligibility_artifact_id + 1
+            ),
+        )
+    model = SimpleNamespace(canonical_digest=expected.repository_model_digest)
+    eligibility = SimpleNamespace(
+        canonical_digest=expected.live_eligibility_payload_digest,
+        governance=SimpleNamespace(provenance=expected.attestation_provenance),
+    )
 
-    assert substituted.attempt == binding.attempt
-    assert substituted.execution.target == binding.execution.target
-    monkeypatch.setattr(cli_module, "_load_live_intent", lambda _args: intent)
+    monkeypatch.setattr(
+        cli_module,
+        "_load_live_intent",
+        lambda _arguments: intent,
+    )
     monkeypatch.setattr(
         cli_module,
         "_load_live_model",
-        lambda _args, actual_intent: (
-            model
-            if actual_intent is intent
-            else pytest.fail("Publication Authorization Intent was substituted")
-        ),
+        lambda _arguments, _intent: model,
     )
     monkeypatch.setattr(
         cli_module,
         "_load_attempt_binding",
-        lambda _args: binding,
+        lambda _arguments: actual,
     )
     monkeypatch.setattr(
         cli_module,
         "_admitted_live_eligibility_decision",
-        lambda *_args, **_kwargs: (initial_eligibility, object()),
+        lambda *_arguments, **_kwargs: (
+            eligibility,
+            SimpleNamespace(),
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "require_fresh_governance_identity",
+        lambda *_arguments, **_kwargs: pytest.fail(
+            "Substituted binding reached fresh Governance read"
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Publication Authorization Attempt binding mismatch$",
+    ):
+        cli_module._release_form_publication_authorization_command(  # noqa: SLF001
+            Namespace(
+                live_eligibility_artifact_id=(
+                    expected.live_eligibility_artifact_id
+                ),
+                live_eligibility_artifact_digest=(
+                    expected.live_eligibility_artifact_digest
+                ),
+            )
+        )
+
+
+def _publication_authority_references() -> tuple[
+    ArtifactReference,
+    ArtifactReference,
+    ArtifactReference,
+]:
+    return (
+        ArtifactReference(
+            artifact_id=711,
+            artifact_digest="sha256:" + ("1" * 64),
+            artifact_url="https://example.test/artifacts/711",
+            payload_path="publication-snapshot.json",
+            payload_digest="sha256:" + ("2" * 64),
+        ),
+        ArtifactReference(
+            artifact_id=712,
+            artifact_digest="sha256:" + ("3" * 64),
+            artifact_url="https://example.test/artifacts/712",
+            payload_path="reviewer-summary.md",
+            payload_digest="sha256:" + ("4" * 64),
+        ),
+        ArtifactReference(
+            artifact_id=713,
+            artifact_digest="sha256:" + ("5" * 64),
+            artifact_url="https://example.test/artifacts/713",
+            payload_path="approval-bundle.json",
+            payload_digest="sha256:" + ("6" * 64),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "substituted_edge",
+    ["authorization-bundle", "bundle-publication", "bundle-reviewer"],
+)
+def test_preflight_rejects_equal_payload_different_transport(
+    monkeypatch: pytest.MonkeyPatch,
+    substituted_edge: str,
+) -> None:
+    """Reject a current-DAG edge that keeps bytes but changes transport."""
+    (
+        publication_reference,
+        reviewer_reference,
+        bundle_reference,
+    ) = _publication_authority_references()
+    bundle = SimpleNamespace(
+        publication_snapshot_reference=(
+            replace(publication_reference, artifact_id=999)
+            if substituted_edge == "bundle-publication"
+            else publication_reference
+        ),
+        reviewer_summary_reference=(
+            replace(reviewer_reference, artifact_id=999)
+            if substituted_edge == "bundle-reviewer"
+            else reviewer_reference
+        ),
+    )
+    authorization = SimpleNamespace(
+        approval_bundle_reference=(
+            replace(bundle_reference, artifact_id=999)
+            if substituted_edge == "authorization-bundle"
+            else bundle_reference
+        ),
+    )
+    publication = SimpleNamespace(materialized_actions=(object(),))
+    resolved = {
+        "publication_snapshot": publication_reference,
+        "reviewer_summary": reviewer_reference,
+        "approval_bundle": bundle_reference,
+    }
+
+    monkeypatch.setattr(
+        cli_module,
+        "_load_publication_snapshot",
+        lambda _args: publication,
     )
     monkeypatch.setattr(
         cli_module,
@@ -2534,28 +2771,92 @@ def test_form_publication_authorization_rejects_substituted_attempt_binding(
     )
     monkeypatch.setattr(
         cli_module,
-        "require_fresh_governance_identity",
-        lambda *_args, **_kwargs: pytest.fail(
-            "Substituted Attempt Binding reached Governance revalidation"
-        ),
+        "_load_publication_authorization",
+        lambda _args: authorization,
     )
     monkeypatch.setattr(
         cli_module,
-        "form_publication_authorization",
+        "_uploaded_payload_reference",
+        lambda _args, *, name: resolved[name],
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "preflight_github_packages_action",
         lambda **_kwargs: pytest.fail(
-            "Substituted Attempt Binding formed Authorization"
+            "Substituted authority reached publisher preflight"
+        ),
+    )
+
+    with pytest.raises(ValueError, match="authority reference mismatch"):
+        cli_module._release_preflight_github_packages_command(  # noqa: SLF001
+            Namespace()
+        )
+
+
+def test_publish_rejects_equal_payload_different_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep the dormant publish handler behind the same exact authority gate."""
+    (
+        publication_reference,
+        reviewer_reference,
+        bundle_reference,
+    ) = _publication_authority_references()
+    publication = object()
+    bundle = SimpleNamespace(
+        publication_snapshot_reference=replace(
+            publication_reference,
+            artifact_url="https://example.test/artifacts/999",
+        ),
+        reviewer_summary_reference=reviewer_reference,
+    )
+    authorization = SimpleNamespace(
+        approval_bundle_reference=bundle_reference,
+    )
+    resolved = {
+        "publication_snapshot": publication_reference,
+        "reviewer_summary": reviewer_reference,
+        "approval_bundle": bundle_reference,
+    }
+
+    monkeypatch.setattr(
+        cli_module,
+        "_load_publication_snapshot",
+        lambda _arguments: publication,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_approval_bundle",
+        lambda _arguments: bundle,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_publication_authorization",
+        lambda _arguments: authorization,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_uploaded_payload_reference",
+        lambda _arguments, *, name: resolved[name],
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_github_packages_preflight",
+        lambda *_arguments, **_kwargs: pytest.fail(
+            "Substituted authority passed the publish CLI gate"
         ),
     )
 
     with pytest.raises(
         ValueError,
-        match=r"^Approval Bundle Attempt Binding mismatch$",
+        match=r"^Publication authority reference mismatch$",
     ):
-        cli_module._release_form_publication_authorization_command(  # noqa: SLF001
-            Namespace(output=str(output))
+        cli_module._release_publish_github_packages_command(  # noqa: SLF001
+            Namespace(
+                preflight="unused",
+                preflight_digest="sha256:" + ("0" * 64),
+            )
         )
-
-    assert not output.exists()
 
 
 def test_prove_exact_satisfied_uses_post_freshness_proof_timestamp(
@@ -2776,136 +3077,6 @@ def test_prove_exact_satisfied_rejects_loaded_attempt_provenance_substitution(
 
     assert selected_modes == [LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY]
     assert not output.exists()
-
-
-@pytest.mark.parametrize(
-    ("record_kind", "expected_message"),
-    [
-        pytest.param(
-            "approval-bundle",
-            "Approval Bundle Attempt Binding mismatch",
-            id="approval-bundle",
-        ),
-        pytest.param(
-            "publication-authorization",
-            "Publication Authorization Attempt Binding mismatch",
-            id="publication-authorization",
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    ("field_name", "replacement"),
-    [
-        pytest.param(
-            "intent_digest",
-            "sha256:" + ("9" * 64),
-            id="intent-digest",
-        ),
-        pytest.param(
-            "live_eligibility_artifact_id",
-            702,
-            id="eligibility-artifact-id",
-        ),
-    ],
-)
-def test_finalize_live_rejects_substituted_embedded_attempt_binding(
-    monkeypatch: pytest.MonkeyPatch,
-    record_kind: str,
-    expected_message: str,
-    field_name: str,
-    replacement: str | int,
-) -> None:
-    """Reject embedded authority that differs from the current Attempt."""
-    binding = _current_release_attempt_binding()
-    substituted = replace(binding, **{field_name: replacement})
-    snapshot = SimpleNamespace(
-        subject=binding.attempt,
-        repository_model_digest=binding.repository_model_digest,
-        snapshot_digest="sha256:" + ("a" * 64),
-    )
-    decision = SimpleNamespace(
-        subject=binding.attempt,
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-    )
-    bundle = SimpleNamespace(attempt_binding=substituted)
-    authorization = SimpleNamespace(approval_bundle=bundle)
-
-    assert substituted.attempt == binding.attempt
-    assert substituted.execution.target == binding.execution.target
-    monkeypatch.setattr(
-        cli_module,
-        "_validate_optional_uploaded_record_transport",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_attempt_binding",
-        lambda _args: binding,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_live_qualification_snapshot",
-        lambda _args: snapshot,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_live_qualification_decision",
-        lambda _args: decision,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_optional_evidence",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "finalize_qualification",
-        lambda *_args, **_kwargs: decision,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_approval_bundle",
-        lambda _args: bundle,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_publication_authorization",
-        lambda _args: authorization,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "finalize_attempt_outcome",
-        lambda **_kwargs: pytest.fail(
-            "Substituted Attempt Binding reached core finalization"
-        ),
-    )
-    optional_records = {
-        "observation": None,
-        "publication_snapshot": None,
-        "approval_bundle": (
-            "approval-bundle.json" if record_kind == "approval-bundle" else None
-        ),
-        "publication_authorization": (
-            "publication-authorization.json"
-            if record_kind == "publication-authorization"
-            else None
-        ),
-        "exact_satisfied_governance_proof": None,
-        "action_result": None,
-    }
-    namespace_values: dict[str, object] = {
-        "release_artifact": None,
-    }
-    for name, path in optional_records.items():
-        namespace_values[name] = path
-        namespace_values[f"{name}_digest"] = None
-        namespace_values[f"{name}_artifact_id"] = None
-        namespace_values[f"{name}_artifact_digest"] = None
-
-    with pytest.raises(ValueError, match=rf"^{expected_message}$"):
-        cli_module._release_finalize_live_command(  # noqa: SLF001
-            Namespace(**namespace_values)
-        )
 
 
 def test_result_cli_fails_closed_on_substituted_control(

@@ -60,14 +60,12 @@ from three_workflow_delivery_v3.release.identity import (
 )
 from three_workflow_delivery_v3.release.live import (
     PublicRevisionCheckout,
-    ReviewerPayload,
-    bind_reviewer_artifact,
     fetch_exact_public_revision,
     finalize_attempt_outcome,
     form_approval_bundle,
     form_exact_satisfied_governance_proof,
     form_publication_authorization,
-    materialize_reviewer_payload,
+    validate_approval_bundle_closure,
 )
 from three_workflow_delivery_v3.release.planner import (
     plan_live_qualification,
@@ -125,7 +123,6 @@ __all__ = [  # noqa: RUF022
     "ApprovalEnvironmentReviewer",
     "ApprovalEnvironmentVariable",
     "ArtifactRetentionAttestation",
-    "bind_reviewer_artifact",
     "artifact_expectation",
     "BUDDY_LIVE_WORKFLOW_PATH",
     "BoundedStaticReferenceResult",
@@ -170,7 +167,6 @@ __all__ = [  # noqa: RUF022
     "LiveEligibilityGovernanceBinding",
     "materialize_hypothetical_actions",
     "materialize_publication_snapshot",
-    "materialize_reviewer_payload",
     "mechanical_build_document",
     "mechanical_build_from_bytes",
     "MechanicalBuildResult",
@@ -192,7 +188,6 @@ __all__ = [  # noqa: RUF022
     "release_policy_digest",
     "ReleaseAdapterContext",
     "render_simulation_summary",
-    "ReviewerPayload",
     "UnsupportedPublicationPrimitiveError",
     "require_fresh_governance_identity",
     "runtime_request",
@@ -208,4 +203,5 @@ __all__ = [  # noqa: RUF022
     "validate_bounded_static_reference_result",
     "validate_projection_observations",
     "WriterInventoryEntry",
+    "validate_approval_bundle_closure",
 ]

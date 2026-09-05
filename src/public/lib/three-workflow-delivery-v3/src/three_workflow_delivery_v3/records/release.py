@@ -77,9 +77,6 @@ PUBLICATION_OBSERVATION_REFERENCE_SCHEMA = (
 )
 PUBLICATION_SNAPSHOT_SCHEMA = "workflow-delivery/v3/publication-snapshot"
 RELEASE_ATTEMPT_BINDING_SCHEMA = "workflow-delivery/v3/release-attempt-binding"
-REVIEWER_SUMMARY_ARTIFACT_SCHEMA = (
-    "workflow-delivery/v3/reviewer-summary-artifact"
-)
 APPROVAL_BUNDLE_SCHEMA = "workflow-delivery/v3/approval-bundle"
 PUBLICATION_AUTHORIZATION_SCHEMA = (
     "workflow-delivery/v3/publication-authorization"
@@ -2919,167 +2916,68 @@ class ReleaseAttemptBinding:
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewerSummaryArtifact:
-    """Immutable reviewer-summary payload and Actions transport identity."""
+class ApprovalBundle:
+    """Reference-only immutable closure persisted before approval."""
 
     attempt: ReleaseAttemptIdentity
-    transport: ArtifactTransportIdentity
-    snapshot_payload_digest: str
-    summary_payload_digest: str
+    publication_snapshot_reference: ArtifactReference
+    reviewer_summary_reference: ArtifactReference
+    producer: str
+    control: str
+    workflow_run_id: int
 
     def __post_init__(self) -> None:
-        """Reject substituted payload or normal-Live transport identity."""
+        """Reject copied authority or a non-current materialization envelope."""
         _exact(
             self.attempt,
             ReleaseAttemptIdentity,
-            field="reviewer summary.attempt",
+            field="approval bundle.attempt",
         )
         _exact(
-            self.transport,
-            ArtifactTransportIdentity,
-            field="reviewer summary.transport",
+            self.publication_snapshot_reference,
+            ArtifactReference,
+            field="approval bundle.publication_snapshot_reference",
         )
-        _digest(
-            self.snapshot_payload_digest,
-            field="reviewer summary.snapshot_payload_digest",
-        )
-        _digest(
-            self.summary_payload_digest,
-            field="reviewer summary.summary_payload_digest",
+        _exact(
+            self.reviewer_summary_reference,
+            ArtifactReference,
+            field="approval bundle.reviewer_summary_reference",
         )
         if (
-            self.transport.workflow_run_id != self.attempt.workflow_run_id
-            or self.transport.run_attempt is not None
-            or self.transport.producer != "materialize-publication"
+            _string(self.producer, field="approval bundle.producer")
+            != "materialize-publication"
         ):
-            message = "Reviewer summary transport is not exact"
-            raise ValueError(message)
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical reviewer-summary artifact identity."""
-        return {
-            "schema": REVIEWER_SUMMARY_ARTIFACT_SCHEMA,
-            "attempt": self.attempt.to_document(),
-            "transport": self.transport.to_document(),
-            "snapshot-payload-digest": self.snapshot_payload_digest,
-            "summary-payload-digest": self.summary_payload_digest,
-        }
-
-    @property
-    def artifact_digest(self) -> str:
-        """Return the canonical reviewer-summary artifact digest."""
-        return canonical_sha256(self.to_document())
-
-
-@dataclass(frozen=True, slots=True)
-class ApprovalBundle:
-    """Complete immutable one-action closure persisted before approval."""
-
-    attempt_binding: ReleaseAttemptBinding
-    selected_ref: str
-    qualification_decision: QualificationDecision
-    publication_snapshot: PublicationSnapshot
-    reviewer_summary: ReviewerSummaryArtifact
-    environment: str
-    approval_job: str
-    producer: str
-    control: str
-
-    def __post_init__(self) -> None:
-        """Reject incomplete, substituted, or approval-bearing Bundles."""
-        _exact(
-            self.attempt_binding,
-            ReleaseAttemptBinding,
-            field="approval bundle.attempt_binding",
-        )
-        selected_ref = _string(
-            self.selected_ref,
-            field="approval bundle.selected_ref",
-        )
-        if not selected_ref.startswith(_SELECTED_REF_PREFIXES):
-            message = "Approval Bundle selected ref is not a branch or tag"
-            raise ValueError(message)
-        _exact(
-            self.qualification_decision,
-            QualificationDecision,
-            field="approval bundle.qualification_decision",
-        )
-        _exact(
-            self.publication_snapshot,
-            PublicationSnapshot,
-            field="approval bundle.publication_snapshot",
-        )
-        _exact(
-            self.reviewer_summary,
-            ReviewerSummaryArtifact,
-            field="approval bundle.reviewer_summary",
-        )
-        attempt = self.attempt_binding.attempt
-        decision = self.qualification_decision
-        snapshot = self.publication_snapshot
-        if (
-            decision.subject != attempt
-            or snapshot.attempt != attempt
-            or snapshot.qualification_snapshot_digest
-            != decision.qualification_snapshot_digest
-            or snapshot.qualification_decision_digest
-            != canonical_sha256(decision.to_document())
-            or decision.terminal_result != "success"
-            or decision.admitted_artifact_digests != snapshot.artifact_digests
-        ):
-            message = "Approval Bundle qualification closure mismatch"
-            raise ValueError(message)
-        if (
-            len(snapshot.materialized_actions) != 1
-            or self.reviewer_summary.attempt != attempt
-            or self.reviewer_summary.snapshot_payload_digest
-            != snapshot.snapshot_digest
-            or self.reviewer_summary.transport.workflow_run_id
-            != attempt.workflow_run_id
-        ):
-            message = "Approval Bundle action or reviewer closure mismatch"
-            raise ValueError(message)
-        _string(self.environment, field="approval bundle.environment")
-        _string(self.approval_job, field="approval bundle.approval_job")
-        _string(self.producer, field="approval bundle.producer")
-        if (
-            self.environment != "workflow-delivery-v3-buddy-approval"
-            or self.approval_job != "approve-publication"
-            or self.producer != "materialize-publication"
-        ):
-            message = "Approval Bundle approval boundary is not exact"
+            message = "Approval Bundle producer is not exact"
             raise ValueError(message)
         _target_control(
             self.control,
-            target=attempt.execution.target,
+            target=self.attempt.execution.target,
             field="Approval Bundle control",
         )
-
-    @property
-    def attempt(self) -> ReleaseAttemptIdentity:
-        """Return the exact current Attempt."""
-        return self.attempt_binding.attempt
-
-    @property
-    def action(self) -> PublicationAction:
-        """Return the sole exact Publication Action."""
-        return self.publication_snapshot.materialized_actions[0]
+        if (
+            _positive(
+                self.workflow_run_id,
+                field="approval bundle.workflow_run_id",
+            )
+            != self.attempt.workflow_run_id
+        ):
+            message = "Approval Bundle current Attempt binding mismatch"
+            raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical pre-wait Approval Bundle."""
+        """Return the canonical reference-only Approval Bundle."""
         return {
             "schema": APPROVAL_BUNDLE_SCHEMA,
-            "attempt-binding": self.attempt_binding.to_document(),
-            "selected-ref": self.selected_ref,
-            "qualification-decision": (
-                self.qualification_decision.to_document()
+            "attempt": self.attempt.to_document(),
+            "publication-snapshot-reference": (
+                self.publication_snapshot_reference.to_document()
             ),
-            "publication-snapshot": self.publication_snapshot.to_document(),
-            "reviewer-summary": self.reviewer_summary.to_document(),
-            "environment": self.environment,
-            "approval-job": self.approval_job,
+            "reviewer-summary-reference": (
+                self.reviewer_summary_reference.to_document()
+            ),
             "producer": self.producer,
             "control": self.control,
+            "workflow-run-id": self.workflow_run_id,
         }
 
     @property
@@ -3090,150 +2988,97 @@ class ApprovalBundle:
 
 @dataclass(frozen=True, slots=True)
 class PublicationAuthorization:
-    """Sole complete post-wait authorization for one publication action."""
+    """Sole reference-only authority emitted after protected approval."""
 
-    approval_bundle: ApprovalBundle
-    approval_governance_provenance: tuple[tuple[str, str], ...]
-    approval_governance_current_main_sha: str
-    approval_governance_observed_at: str
-    approval_governance_expires_at: str
-    approval_governance_live_enabled: bool
-    environment: str
-    approval_job: str
+    attempt: ReleaseAttemptIdentity
+    approval_bundle_reference: ArtifactReference
+    approval_boundary: ApprovalBoundary
+    governance_proof: GovernanceProof
     completed_at: str
     producer: str
     control: str
-    result: str = "success"
+    workflow_run_id: int
 
     def __post_init__(self) -> None:
-        """Accept only complete fresh successful Approval output."""
+        """Accept only a fresh current-Attempt approval authority."""
         _exact(
-            self.approval_bundle,
-            ApprovalBundle,
-            field="publication authorization.approval_bundle",
+            self.attempt,
+            ReleaseAttemptIdentity,
+            field="publication authorization.attempt",
         )
-        provenance = _pairs(
-            self.approval_governance_provenance,
-            field="publication authorization.approval_governance_provenance",
+        _exact(
+            self.approval_bundle_reference,
+            ArtifactReference,
+            field="publication authorization.approval_bundle_reference",
         )
-        if (
-            {name for name, _ in provenance} != _GOVERNANCE_PROVENANCE_FIELDS
-            or provenance
-            != self.approval_bundle.attempt_binding.attestation_provenance
-        ):
-            message = "Publication Authorization Governance proof mismatch"
-            raise ValueError(message)
-        object_format = dict(provenance)["git-object-format"]
-        expected_length = {"sha1": 40, "sha256": 64}.get(object_format)
-        current_main_sha = _string(
-            self.approval_governance_current_main_sha,
-            field=(
-                "publication authorization.approval_governance_current_main_sha"
-            ),
+        _exact(
+            self.approval_boundary,
+            ApprovalBoundary,
+            field="publication authorization.approval_boundary",
         )
-        if (
-            expected_length is None
-            or len(current_main_sha) != expected_length
-            or any(
-                character not in "0123456789abcdef"
-                for character in current_main_sha
-            )
-        ):
-            message = "Publication Authorization current main SHA is malformed"
-            raise ValueError(message)
-        governance_observed_at = _timestamp(
-            self.approval_governance_observed_at,
-            field=("publication authorization.approval_governance_observed_at"),
-        )
-        governance_expires_at = _timestamp(
-            self.approval_governance_expires_at,
-            field=("publication authorization.approval_governance_expires_at"),
-        )
-        if self.approval_governance_live_enabled is not True:
-            message = "Publication Authorization Governance is not enabled"
-            raise ValueError(message)
-        _string(
-            self.environment,
-            field="publication authorization.environment",
-        )
-        _string(
-            self.approval_job,
-            field="publication authorization.approval_job",
+        _exact(
+            self.governance_proof,
+            GovernanceProof,
+            field="publication authorization.governance_proof",
         )
         completed_at = _timestamp(
             self.completed_at,
             field="publication authorization.completed_at",
         )
         if not (
-            _compare_timestamps(governance_observed_at, completed_at) <= 0
-            and _compare_timestamps(completed_at, governance_expires_at) < 0
+            _compare_timestamps(
+                self.governance_proof.observed_at,
+                completed_at,
+            )
+            <= 0
+            and _compare_timestamps(
+                completed_at,
+                self.governance_proof.expires_at,
+            )
+            < 0
         ):
             message = (
                 "Publication Authorization requires "
-                "approval_governance_observed_at <= completed_at < "
-                "approval_governance_expires_at"
+                "governance observed_at <= completed_at < governance expires_at"
             )
             raise ValueError(message)
-        _string(self.producer, field="publication authorization.producer")
-        bundle = self.approval_bundle
         if (
-            self.environment != bundle.environment
-            or self.approval_job != bundle.approval_job
-            or self.producer != "approve-publication"
-            or self.result != "success"
+            _string(self.producer, field="publication authorization.producer")
+            != "approve-publication"
         ):
-            message = "Publication Authorization approval identity mismatch"
+            message = "Publication Authorization producer is not exact"
             raise ValueError(message)
         _target_control(
             self.control,
-            target=bundle.attempt.execution.target,
+            target=self.attempt.execution.target,
             field="Publication Authorization control",
         )
-        if self.control != bundle.control:
-            message = "Publication Authorization Bundle control mismatch"
+        if (
+            _positive(
+                self.workflow_run_id,
+                field="publication authorization.workflow_run_id",
+            )
+            != self.attempt.workflow_run_id
+        ):
+            message = (
+                "Publication Authorization current Attempt binding mismatch"
+            )
             raise ValueError(message)
-
-    @property
-    def attempt(self) -> ReleaseAttemptIdentity:
-        """Return the exact authorized Attempt."""
-        return self.approval_bundle.attempt
-
-    @property
-    def action(self) -> PublicationAction:
-        """Return the sole authorized Publication Action."""
-        return self.approval_bundle.action
-
-    @property
-    def authorizing(self) -> bool:
-        """Return whether the closed record authorizes publication."""
-        return self.result == "success"
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical Publication Authorization."""
         return {
             "schema": PUBLICATION_AUTHORIZATION_SCHEMA,
-            "approval-bundle": self.approval_bundle.to_document(),
-            "approval-governance-provenance": _json_pairs(
-                self.approval_governance_provenance
+            "attempt": self.attempt.to_document(),
+            "approval-bundle-reference": (
+                self.approval_bundle_reference.to_document()
             ),
-            "approval-governance-current-main-sha": (
-                self.approval_governance_current_main_sha
-            ),
-            "approval-governance-observed-at": (
-                self.approval_governance_observed_at
-            ),
-            "approval-governance-expires-at": (
-                self.approval_governance_expires_at
-            ),
-            "approval-governance-live-enabled": (
-                self.approval_governance_live_enabled
-            ),
-            "environment": self.environment,
-            "approval-job": self.approval_job,
+            "approval-boundary": self.approval_boundary.to_document(),
+            "governance-proof": self.governance_proof.to_document(),
             "completed-at": self.completed_at,
             "producer": self.producer,
             "control": self.control,
-            "result": self.result,
+            "workflow-run-id": self.workflow_run_id,
         }
 
     @property
@@ -4803,7 +4648,6 @@ type ReleaseRecord = (
     | HypotheticalAction
     | PublicationAction
     | PublicationSnapshot
-    | ReviewerSummaryArtifact
     | ApprovalBundle
     | PublicationAuthorization
     | MutationMayHaveStartedMarker
@@ -4913,7 +4757,6 @@ __all__ = [
     "ReleaseIntent",
     "ReleaseObligation",
     "ReleaseOutputIdentity",
-    "ReviewerSummaryArtifact",
     "SimulationBinding",
     "SimulationIdentity",
     "SimulationOutcome",

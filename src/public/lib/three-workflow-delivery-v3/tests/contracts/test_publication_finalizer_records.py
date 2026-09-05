@@ -12,6 +12,7 @@ from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
     ApprovalBoundary,
+    ApprovalBundle,
     BuddyExecutionIdentity,
     DestinationReadback,
     DirectPredecessor,
@@ -21,6 +22,7 @@ from three_workflow_delivery_v3.records.release import (
     PackageControlProof,
     PackageControlSubject,
     ProfileMatchEvidence,
+    PublicationAuthorization,
     PublicationDiagnostics,
     PublicationResult,
     ReleaseAttemptIdentity,
@@ -139,6 +141,26 @@ _REFERENCE_FIELDS = (
     "artifact-url",
     "payload-path",
     "payload-digest",
+)
+_APPROVAL_BUNDLE_FIELDS = (
+    "schema",
+    "attempt",
+    "publication-snapshot-reference",
+    "reviewer-summary-reference",
+    "producer",
+    "control",
+    "workflow-run-id",
+)
+_PUBLICATION_AUTHORIZATION_FIELDS = (
+    "schema",
+    "attempt",
+    "approval-bundle-reference",
+    "approval-boundary",
+    "governance-proof",
+    "completed-at",
+    "producer",
+    "control",
+    "workflow-run-id",
 )
 _PREDECESSOR_KINDS = (
     "publication-result",
@@ -323,6 +345,36 @@ def _diagnostics():
     )
 
 
+def _reference(path, digest):
+    return _artifact_reference(payload_path=path, payload_digest=digest)
+
+
+def _approval_bundle(*, attempt=None):
+    attempt = attempt or _attempt()
+    return ApprovalBundle(
+        attempt,
+        _reference("publication-snapshot.json", _SNAPSHOT_PAYLOAD_DIGEST),
+        _reference("reviewer-summary.md", _sha256("f")),
+        "materialize-publication",
+        f"workflow-delivery-v3:{attempt.execution.target}",
+        attempt.workflow_run_id,
+    )
+
+
+def _publication_authorization(*, attempt=None):
+    attempt = attempt or _attempt()
+    return PublicationAuthorization(
+        attempt,
+        _reference("approval-bundle.json", _sha256("0")),
+        _approval_boundary(),
+        _governance_proof(),
+        _PROVED_AT,
+        "approve-publication",
+        f"workflow-delivery-v3:{attempt.execution.target}",
+        attempt.workflow_run_id,
+    )
+
+
 def _marker(*, attempt=None):
     selected_attempt = attempt or _attempt()
     return MutationMayHaveStartedMarker(
@@ -434,6 +486,8 @@ def test_publication_finalizer_records_are_frozen_and_slotted():
         (_readback, "classification"),
         (_diagnostics, "entries"),
         (_predecessor, "kind"),
+        (_approval_bundle, "producer"),
+        (_publication_authorization, "completed_at"),
         (_marker, "producer"),
         (_publication_result, "result"),
         (_finalization_proof, "proved_at"),
@@ -553,8 +607,20 @@ def test_direct_predecessor_emits_exact_reference_slots():
 
 
 @pytest.mark.parametrize(
-    ("factory", "schema", "fields", "reference_field"),
+    ("factory", "schema", "fields", "reference_fields"),
     [
+        (
+            _approval_bundle,
+            "workflow-delivery/v3/approval-bundle",
+            _APPROVAL_BUNDLE_FIELDS,
+            _APPROVAL_BUNDLE_FIELDS[2:4],
+        ),
+        (
+            _publication_authorization,
+            "workflow-delivery/v3/publication-authorization",
+            _PUBLICATION_AUTHORIZATION_FIELDS,
+            ("approval-bundle-reference",),
+        ),
         (
             _marker,
             ("workflow-delivery/v3/github-packages-mutation-may-have-started"),
@@ -569,7 +635,7 @@ def test_direct_predecessor_emits_exact_reference_slots():
                 "control",
                 "workflow-run-id",
             ),
-            "publication-authorization-reference",
+            ("publication-authorization-reference",),
         ),
         (
             _publication_result,
@@ -588,7 +654,7 @@ def test_direct_predecessor_emits_exact_reference_slots():
                 "control",
                 "workflow-run-id",
             ),
-            "mutation-marker-reference",
+            ("mutation-marker-reference",),
         ),
         (
             _finalization_proof,
@@ -605,7 +671,7 @@ def test_direct_predecessor_emits_exact_reference_slots():
                 "control",
                 "workflow-run-id",
             ),
-            "publication-snapshot-reference",
+            ("publication-snapshot-reference",),
         ),
     ],
 )
@@ -613,14 +679,32 @@ def test_top_level_records_emit_closed_canonical_shapes(
     factory,
     schema,
     fields,
-    reference_field,
+    reference_fields,
 ):
     document = factory().to_document()
 
     assert document["schema"] == schema
     assert tuple(document) == fields
-    assert tuple(document[reference_field]) == _REFERENCE_FIELDS
-    assert "schema" not in document[reference_field]
+    for reference_field in reference_fields:
+        assert tuple(document[reference_field]) == _REFERENCE_FIELDS
+        assert "schema" not in document[reference_field]
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [_approval_bundle, _publication_authorization],
+)
+def test_reference_only_records_reject_workflow_run_mismatch(factory):
+    record = factory()
+    message = r"current Attempt binding mismatch$"
+    with pytest.raises(ValueError, match=message):
+        replace(record, workflow_run_id=_ALTERNATE_WORKFLOW_RUN_ID)
+
+    document = record.to_document()
+    document["workflow-run-id"] = _ALTERNATE_WORKFLOW_RUN_ID
+    assert document["attempt"]["workflow-run-id"] == _WORKFLOW_RUN_ID
+    with pytest.raises(ValueError, match=message):
+        release_record_from_document(document, expected_type=type(record))
 
 
 @pytest.mark.parametrize(

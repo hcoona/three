@@ -116,6 +116,8 @@ def test_preflight_validates_publication_closure_then_fails_closed(
         name: cast("Any", object())
         for name in (
             "publication_snapshot",
+            "approval_bundle",
+            "reviewer_summary_reference",
             "authorization",
             "action",
             "qualification_snapshot",
@@ -139,6 +141,8 @@ def test_preflight_validates_publication_closure_then_fails_closed(
     ) as raised:
         github_packages.preflight_github_packages_action(
             publication_snapshot=records["publication_snapshot"],
+            approval_bundle=records["approval_bundle"],
+            reviewer_summary_reference=records["reviewer_summary_reference"],
             authorization=records["authorization"],
             action=records["action"],
             qualification_snapshot=records["qualification_snapshot"],

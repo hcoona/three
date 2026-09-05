@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-# ruff: noqa: D103, FBT001, PLR2004
-import hashlib
+# ruff: noqa: D103, FBT001
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
+from three_workflow_delivery_v3.adapters import github_packages
+from three_workflow_delivery_v3.canonical import canonical_sha256
+from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
     CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION,
     ActionResult,
@@ -29,7 +30,6 @@ from three_workflow_delivery_v3.records.release import (
     Receipt,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
-    ReviewerSummaryArtifact,
     publication_action_inputs,
     publication_capability_requirements,
     publication_expected_result,
@@ -57,6 +57,9 @@ from three_workflow_delivery_v3.release.eligibility import (
     WriterInventoryEntry,
     governance_observation_provenance,
 )
+from three_workflow_delivery_v3.release.identity import (
+    normalize_buddy_live_intent,
+)
 from three_workflow_delivery_v3.release.live import finalize_attempt_outcome
 from three_workflow_delivery_v3.repository.descriptors import (
     GOVERNANCE_MAX_AGE_DAYS,
@@ -67,24 +70,15 @@ from three_workflow_delivery_v3.repository.descriptors import (
 )
 
 TARGET = "a" * 40
-SNAPSHOT_BYTES = b'{"schema":"workflow-delivery/v3/publication-snapshot"}'
-SNAPSHOT_DIGEST = f"sha256:{hashlib.sha256(SNAPSHOT_BYTES).hexdigest()}"
-SUMMARY = (
-    b"# Buddy publication review\n\nSnapshot: "
-    + SNAPSHOT_DIGEST.encode()
-    + b"\n"
-)
-SUMMARY_DIGEST = f"sha256:{hashlib.sha256(SUMMARY).hexdigest()}"
+SUMMARY_DIGEST = "sha256:" + ("5" * 64)
 EXPECTED_LIVE_API = (
     "PublicRevisionCheckout",
-    "ReviewerPayload",
-    "bind_reviewer_artifact",
     "fetch_exact_public_revision",
     "finalize_attempt_outcome",
     "form_approval_bundle",
     "form_exact_satisfied_governance_proof",
     "form_publication_authorization",
-    "materialize_reviewer_payload",
+    "validate_approval_bundle_closure",
 )
 
 
@@ -96,6 +90,16 @@ def _require_api(name: str) -> Any:
     value = getattr(live, name, None)
     assert callable(value), f"live production API is missing: {name}"
     return value
+
+
+def _intent(attempt: ReleaseAttemptIdentity):
+    return normalize_buddy_live_intent(
+        repository="hcoona/three",
+        selected_ref="refs/heads/feature/release",
+        target=attempt.execution.target,
+        actor="hcoona",
+        workflow_run_id=attempt.workflow_run_id,
+    )
 
 
 def _governance(
@@ -312,9 +316,10 @@ def _closure(scenario, *, with_action: bool):
         materialized_actions=actions,
     )
     governance = _governance()
+    intent = _intent(attempt)
     binding = ReleaseAttemptBinding(
-        intent_digest="sha256:" + ("0" * 64),
-        request_id="release-request:" + ("1" * 64),
+        intent_digest=intent.intent_digest,
+        request_id=intent.request_id,
         execution=attempt.execution,
         attempt=attempt,
         repository_model_digest="sha256:" + ("2" * 64),
@@ -326,41 +331,54 @@ def _closure(scenario, *, with_action: bool):
     return attempt, binding, decision, publication
 
 
-def _reviewer_payload(publication: PublicationSnapshot):
-    return _require_api("materialize_reviewer_payload")(
-        snapshot_bytes=canonicalize(publication.to_document()),
-        summary_bytes=SUMMARY,
-    )
-
-
-def _reviewer(publication: PublicationSnapshot) -> ReviewerSummaryArtifact:
-    payload = _reviewer_payload(publication)
-    return _require_api("bind_reviewer_artifact")(
-        payload=payload,
-        attempt=publication.attempt,
-        artifact_id=710,
-        artifact_name="publication-review",
-        artifact_url="https://example.test/artifacts/710",
-        upload_digest="sha256:" + ("2" * 64),
-        workflow_run_id=publication.attempt.workflow_run_id,
-        snapshot_payload_digest=payload.snapshot_payload_digest,
-        summary_payload_digest=payload.summary_payload_digest,
-    )
-
-
 def _bundle(
     attempt_binding: ReleaseAttemptBinding,
     qualification_decision,
     publication: PublicationSnapshot,
-    reviewer_summary: ReviewerSummaryArtifact | None = None,
+    reviewer_summary_reference: ArtifactReference | None = None,
 ) -> ApprovalBundle:
     return _require_api("form_approval_bundle")(
+        intent=_intent(publication.attempt),
         attempt_binding=attempt_binding,
-        selected_ref="refs/heads/feature/release",
         qualification_decision=qualification_decision,
         publication_snapshot=publication,
-        reviewer_summary=reviewer_summary or _reviewer(publication),
+        publication_snapshot_reference=_snapshot_reference(publication),
+        reviewer_summary_reference=(
+            reviewer_summary_reference or _reviewer_reference()
+        ),
         control=_control(publication.attempt),
+    )
+
+
+def _snapshot_reference(
+    publication: PublicationSnapshot,
+) -> ArtifactReference:
+    return ArtifactReference(
+        artifact_id=711,
+        artifact_digest="sha256:" + ("4" * 64),
+        artifact_url="https://example.test/artifacts/711",
+        payload_path="publication-snapshot.json",
+        payload_digest=publication.snapshot_digest,
+    )
+
+
+def _reviewer_reference() -> ArtifactReference:
+    return ArtifactReference(
+        artifact_id=710,
+        artifact_digest="sha256:" + ("2" * 64),
+        artifact_url="https://example.test/artifacts/710",
+        payload_path="reviewer-summary.md",
+        payload_digest=SUMMARY_DIGEST,
+    )
+
+
+def _bundle_reference(bundle: ApprovalBundle) -> ArtifactReference:
+    return ArtifactReference(
+        artifact_id=712,
+        artifact_digest="sha256:" + ("6" * 64),
+        artifact_url="https://example.test/artifacts/712",
+        payload_path="approval-bundle.json",
+        payload_digest=bundle.bundle_digest,
     )
 
 
@@ -369,8 +387,9 @@ def _authorization(
     governance: GovernanceObservation | None = None,
 ) -> PublicationAuthorization:
     return _require_api("form_publication_authorization")(
-        approval_result="success",
         approval_bundle=bundle,
+        approval_bundle_reference=_bundle_reference(bundle),
+        approval_boundary_sentinel_result="success",
         governance=governance or _governance(),
         completed_at="2026-08-13T16:00:00Z",
         control=bundle.control,
@@ -504,80 +523,6 @@ def test_live_api_has_no_history_query_surface() -> None:
     assert tuple(live.__all__) == EXPECTED_LIVE_API
     assert not hasattr(live, "discover_execution_history")
     assert not hasattr(live, "form_execution_history_admission_snapshot")
-
-
-def test_reviewer_payload_and_artifact_preserve_exact_bindings() -> None:
-    attempt = ReleaseAttemptIdentity(
-        execution=BuddyExecutionIdentity(
-            channel="buddy",
-            release_unit="hcoona-release-smoke-npm",
-            target=TARGET,
-        ),
-        workflow_run_id=101,
-    )
-    payload = _require_api("materialize_reviewer_payload")(
-        snapshot_bytes=SNAPSHOT_BYTES,
-        summary_bytes=SUMMARY,
-    )
-    artifact = _require_api("bind_reviewer_artifact")(
-        payload=payload,
-        attempt=attempt,
-        artifact_id=710,
-        artifact_name="publication-review",
-        artifact_url="https://example.test/artifacts/710",
-        upload_digest="sha256:" + ("2" * 64),
-        workflow_run_id=attempt.workflow_run_id,
-        snapshot_payload_digest=payload.snapshot_payload_digest,
-        summary_payload_digest=payload.summary_payload_digest,
-    )
-
-    assert payload.summary_bytes == SUMMARY
-    assert payload.snapshot_bytes == SNAPSHOT_BYTES
-    assert artifact.snapshot_payload_digest == SNAPSHOT_DIGEST
-    assert artifact.summary_payload_digest == SUMMARY_DIGEST
-    assert artifact.transport.artifact_id == 710
-    assert artifact.attempt == attempt
-    assert "snapshot-base64" not in artifact.to_document()
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("snapshot_payload_digest", "sha256:" + ("8" * 64)),
-        ("summary_payload_digest", "sha256:" + ("9" * 64)),
-    ],
-)
-def test_reviewer_artifact_rejects_payload_digest_substitution(
-    field: str,
-    value: str,
-) -> None:
-    attempt = ReleaseAttemptIdentity(
-        execution=BuddyExecutionIdentity(
-            channel="buddy",
-            release_unit="hcoona-release-smoke-npm",
-            target=TARGET,
-        ),
-        workflow_run_id=101,
-    )
-    payload = _require_api("materialize_reviewer_payload")(
-        snapshot_bytes=SNAPSHOT_BYTES,
-        summary_bytes=SUMMARY,
-    )
-    arguments = {
-        "payload": payload,
-        "attempt": attempt,
-        "artifact_id": 710,
-        "artifact_name": "publication-review",
-        "artifact_url": "https://example.test/artifacts/710",
-        "upload_digest": "sha256:" + ("2" * 64),
-        "workflow_run_id": attempt.workflow_run_id,
-        "snapshot_payload_digest": payload.snapshot_payload_digest,
-        "summary_payload_digest": payload.summary_payload_digest,
-    }
-    arguments[field] = value
-
-    with pytest.raises(ValueError, match="payload digest substitution"):
-        _require_api("bind_reviewer_artifact")(**arguments)
 
 
 @pytest.mark.parametrize(
@@ -824,25 +769,6 @@ def test_blocking_observation_requires_reconciliation(
     assert outcome.next_action == "reconcile"
 
 
-def test_denied_environment_cannot_form_publication_authorization(
-    qualified_simulation,
-) -> None:
-    _attempt, binding, decision, publication = _closure(
-        qualified_simulation,
-        with_action=True,
-    )
-    bundle = _bundle(binding, decision, publication)
-
-    with pytest.raises(ValueError, match="denial cannot form"):
-        _require_api("form_publication_authorization")(
-            approval_result="deployment-review-denied",
-            approval_bundle=bundle,
-            governance=_governance(),
-            completed_at="2026-08-13T16:00:00Z",
-            control=bundle.control,
-        )
-
-
 def test_approval_bundle_closes_one_action_before_wait(
     qualified_simulation,
 ) -> None:
@@ -850,26 +776,28 @@ def test_approval_bundle_closes_one_action_before_wait(
         qualified_simulation,
         with_action=True,
     )
-    reviewer = _reviewer(publication)
+    reviewer = _reviewer_reference()
 
     bundle = _bundle(binding, decision, publication, reviewer)
 
     assert bundle.attempt == attempt
-    assert bundle.action == publication.materialized_actions[0]
-    assert bundle.reviewer_summary == reviewer
+    assert bundle.publication_snapshot_reference == _snapshot_reference(
+        publication
+    )
+    assert bundle.reviewer_summary_reference == reviewer
     assert (
         decision.admitted_artifact_digests
         == publication.artifact_digests
-        == (bundle.action.artifact_digest,)
+        == (publication.materialized_actions[0].artifact_digest,)
     )
-    assert bundle.action.artifact.purpose == "live-release"
-    assert bundle.action.artifact.subject == attempt
-    assert bundle.environment == "workflow-delivery-v3-buddy-approval"
-    assert bundle.approval_job == "approve-publication"
     assert {
         "approval-result",
         "completed-at",
         "approver",
+        "environment",
+        "approval-job",
+        "publication-snapshot",
+        "qualification-decision",
     }.isdisjoint(bundle.to_document())
 
 
@@ -885,16 +813,21 @@ def test_publication_authorization_binds_bundle_and_fresh_governance(
 
     authorization = _authorization(bundle, governance)
 
-    assert authorization.authorizing is True
     assert authorization.attempt == attempt
-    assert authorization.action == publication.materialized_actions[0]
-    assert authorization.approval_bundle == bundle
-    assert authorization.approval_governance_provenance == (
+    assert authorization.approval_bundle_reference == _bundle_reference(bundle)
+    assert authorization.governance_proof.provenance == (
         governance_observation_provenance(governance)
     )
-    assert authorization.approval_governance_current_main_sha == (
+    assert authorization.governance_proof.current_main_sha == (
         governance.current_main_sha
     )
+    assert authorization.approval_boundary.to_document() == {
+        "environment": "workflow-delivery-v3-buddy-approval",
+        "job": "approve-publication",
+        "sentinel-name": "WDV3_APPROVAL_ENVIRONMENT_MARKER",
+        "sentinel-value": "workflow-delivery-v3-buddy-approval/v1",
+        "sentinel-result": "success",
+    }
 
 
 def test_publication_authorization_rejects_substituted_freshness(
@@ -908,15 +841,26 @@ def test_publication_authorization_rejects_substituted_freshness(
 
     with pytest.raises(ValueError, match="control target binding mismatch"):
         _require_api("form_publication_authorization")(
-            approval_result="success",
             approval_bundle=bundle,
+            approval_bundle_reference=_bundle_reference(bundle),
+            approval_boundary_sentinel_result="success",
             governance=_governance(),
             completed_at="2026-08-13T16:00:00Z",
             control=f"workflow-delivery-v3:{'0' * 40}",
         )
 
-    with pytest.raises(ValueError, match="Governance proof mismatch"):
-        _authorization(bundle, _governance(blob_oid="d" * 40))
+    with pytest.raises(ValueError, match="Bundle reference mismatch"):
+        _require_api("form_publication_authorization")(
+            approval_bundle=bundle,
+            approval_bundle_reference=replace(
+                _bundle_reference(bundle),
+                payload_digest="sha256:" + ("d" * 64),
+            ),
+            approval_boundary_sentinel_result="success",
+            governance=_governance(),
+            completed_at="2026-08-13T16:00:00Z",
+            control=bundle.control,
+        )
 
 
 def test_exact_satisfied_proof_rejects_action_bearing_snapshot(
@@ -970,6 +914,36 @@ def test_action_bearing_missing_authority_is_incomplete(
         )
 
 
+def test_action_bearing_bundle_without_authorization_is_incomplete(
+    qualified_simulation,
+) -> None:
+    attempt, binding, decision, publication = _closure(
+        qualified_simulation,
+        with_action=True,
+    )
+    bundle = _bundle(binding, decision, publication)
+
+    outcome = finalize_attempt_outcome(
+        attempt=attempt,
+        qualification_decision=decision,
+        publication_snapshot=publication,
+        exact_satisfied_governance_proof=None,
+        approval_bundle=bundle,
+        publication_authorization=None,
+        action_results=(),
+        publication_snapshot_reference=_snapshot_reference(publication),
+        approval_bundle_reference=_bundle_reference(bundle),
+    )
+
+    assert outcome.result == "incomplete"
+    assert outcome.terminal_phase == "approval-contract"
+    assert outcome.approval_bundle_digest == bundle.bundle_digest
+    assert outcome.publication_authorization_digest is None
+    assert outcome.uncertainty is True
+    assert outcome.possibly_mutated is False
+    assert outcome.next_action == "new-attempt"
+
+
 def test_live_finalizer_consumes_direct_action_result_with_embedded_receipt(
     qualified_simulation,
 ) -> None:
@@ -989,6 +963,8 @@ def test_live_finalizer_consumes_direct_action_result_with_embedded_receipt(
         approval_bundle=bundle,
         publication_authorization=authorization,
         action_results=(result,),
+        publication_snapshot_reference=_snapshot_reference(publication),
+        approval_bundle_reference=_bundle_reference(bundle),
     )
 
     assert outcome.result == "success"
@@ -1012,12 +988,16 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
     result = _successful_action_result(publication)
     assert result.receipt is not None
 
+    substituted_bundle = replace(
+        bundle,
+        reviewer_summary_reference=replace(
+            bundle.reviewer_summary_reference,
+            payload_digest="sha256:" + ("7" * 64),
+        ),
+    )
     substituted_authorization = replace(
         authorization,
-        approval_bundle=replace(
-            bundle,
-            selected_ref="refs/heads/substituted",
-        ),
+        approval_bundle_reference=_bundle_reference(substituted_bundle),
     )
     with pytest.raises(
         ValueError,
@@ -1031,6 +1011,49 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             approval_bundle=bundle,
             publication_authorization=substituted_authorization,
             action_results=(result,),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="Publication Authorization mismatch",
+    ):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=publication,
+            exact_satisfied_governance_proof=None,
+            approval_bundle=bundle,
+            publication_authorization=replace(
+                authorization,
+                approval_bundle_reference=replace(
+                    authorization.approval_bundle_reference,
+                    artifact_id=999,
+                ),
+            ),
+            action_results=(result,),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
+        )
+
+    with pytest.raises(ValueError, match="Approval Bundle mismatch"):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=publication,
+            exact_satisfied_governance_proof=None,
+            approval_bundle=replace(
+                bundle,
+                publication_snapshot_reference=replace(
+                    bundle.publication_snapshot_reference,
+                    artifact_id=999,
+                ),
+            ),
+            publication_authorization=authorization,
+            action_results=(result,),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
         )
 
     substituted_digest = "sha256:" + ("8" * 64)
@@ -1052,6 +1075,8 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(substituted_result,),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
         )
 
     substituted_receipt = replace(
@@ -1070,7 +1095,143 @@ def test_live_finalizer_recomputes_action_result_and_receipt_bindings(
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(replace(result, receipt=substituted_receipt),),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
         )
+
+
+@pytest.mark.parametrize(
+    "authority",
+    ["approval-bundle", "publication-authorization"],
+)
+def test_live_finalizer_rejects_substituted_authority_attempt(
+    qualified_simulation,
+    authority: str,
+) -> None:
+    attempt, binding, decision, publication = _closure(
+        qualified_simulation,
+        with_action=True,
+    )
+    bundle = _bundle(binding, decision, publication)
+    authorization = _authorization(bundle)
+    substituted_attempt = replace(
+        attempt,
+        execution=replace(
+            attempt.execution,
+            release_unit="substituted-release-unit",
+        ),
+    )
+    if authority == "approval-bundle":
+        bundle = replace(bundle, attempt=substituted_attempt)
+        authorization = replace(
+            authorization,
+            approval_bundle_reference=_bundle_reference(bundle),
+        )
+        expected_error = r"^Live finalization Approval Bundle mismatch$"
+    else:
+        authorization = replace(
+            authorization,
+            attempt=substituted_attempt,
+        )
+        expected_error = (
+            r"^Live finalization Publication Authorization mismatch$"
+        )
+
+    with pytest.raises(ValueError, match=expected_error):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=publication,
+            exact_satisfied_governance_proof=None,
+            approval_bundle=bundle,
+            publication_authorization=authorization,
+            action_results=(),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
+        )
+
+
+@pytest.mark.parametrize(
+    "authority",
+    ["approval-bundle", "publication-authorization"],
+)
+def test_publisher_rejects_substituted_authority_attempt(
+    qualified_simulation,
+    authority: str,
+) -> None:
+    attempt, binding, decision, publication = _closure(
+        qualified_simulation,
+        with_action=True,
+    )
+    bundle = _bundle(binding, decision, publication)
+    authorization = _authorization(bundle)
+    action = publication.materialized_actions[0]
+    projection = action.projection
+    potential_action = replace(
+        qualified_simulation.snapshot.potential_actions[0],
+        contract_id=projection.potential_action_id,
+        projection_id=projection.projection_id,
+        operation=projection.operation,
+        output=projection.output,
+        capability_requirements=publication_capability_requirements(projection),
+        mutable_resource_key_basis=publication_mutable_resource_key_basis(
+            projection
+        ),
+    )
+    qualification_snapshot = replace(
+        qualified_simulation.snapshot,
+        subject=attempt,
+        channel="buddy",
+        destination_projections=(projection,),
+        potential_actions=(potential_action,),
+    )
+
+    def validate(
+        candidate_bundle: ApprovalBundle,
+        candidate_authorization: PublicationAuthorization,
+    ) -> None:
+        github_packages._validate_publish_preconditions(  # noqa: SLF001
+            publication_snapshot=publication,
+            approval_bundle=candidate_bundle,
+            reviewer_summary_reference=bundle.reviewer_summary_reference,
+            authorization=candidate_authorization,
+            action=action,
+            qualification_snapshot=qualification_snapshot,
+            qualification_decision=decision,
+            artifact=action.artifact,
+            expectation=qualified_simulation.expectation,
+        )
+
+    assert validate(bundle, authorization) is None
+
+    substituted_attempt = replace(
+        attempt,
+        execution=replace(
+            attempt.execution,
+            release_unit="substituted-release-unit",
+        ),
+    )
+    if authority == "approval-bundle":
+        substituted_bundle = replace(bundle, attempt=substituted_attempt)
+        substituted_authorization = replace(
+            authorization,
+            approval_bundle_reference=replace(
+                authorization.approval_bundle_reference,
+                payload_digest=substituted_bundle.bundle_digest,
+            ),
+        )
+    else:
+        substituted_bundle = bundle
+        substituted_authorization = replace(
+            authorization,
+            attempt=substituted_attempt,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=r"^publication precondition binding mismatch$",
+    ):
+        validate(substituted_bundle, substituted_authorization)
 
 
 def test_missing_action_result_is_incomplete_after_authorization(
@@ -1091,6 +1252,8 @@ def test_missing_action_result_is_incomplete_after_authorization(
         approval_bundle=bundle,
         publication_authorization=authorization,
         action_results=(),
+        publication_snapshot_reference=_snapshot_reference(publication),
+        approval_bundle_reference=_bundle_reference(bundle),
     )
 
     assert outcome.result == "incomplete"
@@ -1166,6 +1329,8 @@ def test_platform_termination_maps_by_publication_phase(
         approval_bundle=bundle,
         publication_authorization=authorization,
         action_results=(),
+        publication_snapshot_reference=_snapshot_reference(publication),
+        approval_bundle_reference=_bundle_reference(bundle),
         platform_terminated=True,
         publication_may_have_started=started,
     )
@@ -1208,6 +1373,8 @@ def test_platform_termination_rejects_multiple_direct_results(
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(result, second_result),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
             platform_terminated=True,
         )
 
@@ -1236,6 +1403,8 @@ def test_action_bearing_publication_rejects_exact_satisfied_proof(
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
             platform_terminated=True,
         )
 
@@ -1282,6 +1451,8 @@ def test_platform_termination_rejects_misbound_action_result(
                 approval_bundle=bundle,
                 publication_authorization=authorization,
                 action_results=(candidate,),
+                publication_snapshot_reference=_snapshot_reference(publication),
+                approval_bundle_reference=_bundle_reference(bundle),
                 platform_terminated=True,
             )
 
@@ -1328,6 +1499,8 @@ def test_failed_no_side_effect_result_is_terminal_failure(
         approval_bundle=bundle,
         publication_authorization=authorization,
         action_results=(result,),
+        publication_snapshot_reference=_snapshot_reference(publication),
+        approval_bundle_reference=_bundle_reference(bundle),
     )
 
     assert outcome.result == "failure"
@@ -1380,4 +1553,6 @@ def test_mixed_attempt_action_result_is_rejected(
             approval_bundle=bundle,
             publication_authorization=authorization,
             action_results=(mixed_result,),
+            publication_snapshot_reference=_snapshot_reference(publication),
+            approval_bundle_reference=_bundle_reference(bundle),
         )

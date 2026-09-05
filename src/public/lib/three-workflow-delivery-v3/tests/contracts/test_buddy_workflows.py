@@ -895,7 +895,6 @@ def test_publication_snapshot_lifecycle_and_transport_identity_are_exact() -> (
 ):
     materializer = _document(CALLEE)["jobs"]["materialize-publication"]
     lifecycle_ids = {
-        "bind",
         "materialize",
         "names",
         "upload-reviewer",
@@ -911,7 +910,6 @@ def test_publication_snapshot_lifecycle_and_transport_identity_are_exact() -> (
         "names",
         "upload-snapshot",
         "upload-reviewer",
-        "bind",
     )
     assert materializer["outputs"]["publication-snapshot-artifact-id"] == (
         "${{ steps.upload-snapshot.outputs.artifact-id }}"
@@ -972,31 +970,18 @@ def test_release_finalizer_downloads_snapshot_directly_from_materialization() ->
         "${{ needs.materialize-publication.outputs."
         "publication-snapshot-artifact-id }}"
     )
-    expected_arguments = (
-        (
-            "--publication-snapshot",
-            '".wdv3/input/${{ needs.materialize-publication.outputs.'
-            'publication-snapshot-artifact-name }}"',
-        ),
-        (
-            "--publication-snapshot-digest",
-            '"${{ needs.materialize-publication.outputs.'
-            'publication-snapshot-digest }}"',
-        ),
-        (
-            "--publication-snapshot-artifact-id",
-            '"${{ needs.materialize-publication.outputs.'
-            'publication-snapshot-artifact-id }}"',
-        ),
-        (
-            "--publication-snapshot-artifact-digest",
-            '"${{ needs.materialize-publication.outputs.'
-            'publication-snapshot-artifact-digest }}"',
-        ),
-    )
-    for option, expression in expected_arguments:
-        assert f"{option} {expression}" in run
-        assert f'{option} "${{{{ needs.approval-finalizer.outputs.' not in run
+    assert "add_record publication-snapshot " in run
+    for fact in (
+        "publication-snapshot-artifact-name",
+        "publication-snapshot-digest",
+        "publication-snapshot-artifact-id",
+        "publication-snapshot-artifact-digest",
+        "publication-snapshot-artifact-url",
+    ):
+        assert f"needs.materialize-publication.outputs.{fact}" in run
+        assert f"needs.approval-finalizer.outputs.{fact}" not in run
+    assert "--publication-snapshot-artifact-url " in run
+    assert "--publication-snapshot-payload-path " in run
 
 
 @pytest.mark.parametrize(
@@ -1251,17 +1236,17 @@ def test_buddy_target_sha_binding_chain_is_exact(tmp_path: Path) -> None:
         assert invalid_execution["output"] == ""
         assert not invalid_output.exists()
 
-    target_arguments = [
-        target
+    release_commands = [
+        str(step["run"])
         for job in callee_jobs.values()
         for step in _steps(job)
         if "three-workflow-delivery-v3 release " in str(step.get("run", ""))
-        for target in re.findall(
-            r'--target "([^"]+)"',
-            str(step.get("run", "")),
-        )
     ]
-    assert target_arguments == [_CALLEE_TARGET_SHA] * 19
+    assert release_commands
+    assert [
+        re.findall(r'--target "([^"]+)"', command)
+        for command in release_commands
+    ] == [[_CALLEE_TARGET_SHA]] * len(release_commands)
 
     assert (
         callee_jobs["release-finalizer"]["if"]
@@ -1444,11 +1429,7 @@ def test_reviewer_identity_and_approval_bundle_are_durable_before_wait() -> (
     materializer = jobs["materialize-publication"]
     approval = jobs["approve-publication"]
     steps = _steps(materializer)
-    upload_reviewer = _step(materializer, "Upload reviewer artifact")
-    bind_reviewer = _step(
-        materializer,
-        "Bind reviewer artifact transport to exact payloads",
-    )
+    upload_reviewer = _step(materializer, "Upload reviewer summary")
     form_bundle = _step(
         materializer,
         "Form complete pre-wait Approval Bundle",
@@ -1463,7 +1444,6 @@ def test_reviewer_identity_and_approval_bundle_are_durable_before_wait() -> (
     assert _needs(approval) == ("admit", "materialize-publication")
     assert (
         steps.index(upload_reviewer)
-        < steps.index(bind_reviewer)
         < steps.index(form_bundle)
         < steps.index(upload_bundle)
         < steps.index(publish_summary)
@@ -1471,32 +1451,52 @@ def test_reviewer_identity_and_approval_bundle_are_durable_before_wait() -> (
     publish_condition = "steps.materialize.outputs.publish-required == 'true'"
     for step in (
         upload_reviewer,
-        bind_reviewer,
         form_bundle,
         upload_bundle,
     ):
         assert step["if"] == publish_condition
     assert publish_summary["if"] == "steps.upload-bundle.outcome == 'success'"
 
-    bind_command = _run(bind_reviewer)
-    assert "release bind-reviewer-artifact" in bind_command
-    assert "--output .wdv3/reviewer-summary-artifact.json" in bind_command
     bundle_command = _run(form_bundle)
     assert "release form-approval-bundle" in bundle_command
     for option in (
         "--attempt-binding",
         "--qualification-decision",
         "--publication-snapshot",
-        "--reviewer-summary-artifact",
+        "--publication-snapshot-digest",
+        "--publication-snapshot-artifact-id",
+        "--publication-snapshot-artifact-digest",
+        "--publication-snapshot-artifact-url",
+        "--publication-snapshot-payload-path",
+        "--reviewer-summary",
+        "--reviewer-summary-digest",
+        "--reviewer-summary-artifact-id",
         "--reviewer-summary-artifact-digest",
+        "--reviewer-summary-artifact-url",
+        "--reviewer-summary-payload-path",
         "--control",
     ):
         assert bundle_command.count(f"{option} ") == 1
+    assert "bind-reviewer-artifact" not in str(materializer)
+    assert "reviewer-formatter-input" not in str(materializer)
+    assert '--reviewer-summary ".wdv3/reviewer-summary.md"' in bundle_command
+    assert upload_reviewer["with"] == {
+        "name": "reviewer-summary.md",
+        "path": ".wdv3/reviewer-summary.md",
+        "if-no-files-found": "error",
+        "retention-days": RETENTION_DAYS,
+        "overwrite": False,
+        "archive": False,
+        "include-hidden-files": True,
+    }
     assert materializer["outputs"]["approval-bundle-artifact-id"] == (
         "${{ steps.upload-bundle.outputs.artifact-id }}"
     )
     assert materializer["outputs"]["approval-bundle-artifact-digest"] == (
         "${{ steps.upload-bundle.outputs.artifact-digest }}"
+    )
+    assert materializer["outputs"]["approval-bundle-artifact-url"] == (
+        "${{ steps.upload-bundle.outputs.artifact-url }}"
     )
     assert materializer["outputs"]["approval-bundle-artifact-name"] == (
         "${{ steps.form-bundle.outputs.approval-bundle-artifact-name }}"
@@ -1544,7 +1544,13 @@ def test_approve_publication_freshly_admits_governance_and_emits_sole_authorizat
             "${{ inputs.live-eligibility-artifact-id }},"
             "${{ needs.admit.outputs.attempt-artifact-id }},"
             "${{ needs.materialize-publication.outputs."
-            "approval-bundle-artifact-id }}"
+            "decision-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "publication-snapshot-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "approval-bundle-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "reviewer-artifact-id }}"
         ),
         "path": ".wdv3/input",
         "merge-multiple": True,
@@ -1569,13 +1575,37 @@ def test_approve_publication_freshly_admits_governance_and_emits_sole_authorizat
         "--attempt-binding-artifact-id",
         "--attempt-binding-artifact-digest",
         "--approval-bundle",
+        "--approval-bundle-digest",
+        "--approval-bundle-artifact-id",
+        "--approval-bundle-artifact-digest",
+        "--approval-bundle-artifact-url",
+        "--approval-bundle-payload-path",
+        "--qualification-decision",
+        "--publication-snapshot",
+        "--publication-snapshot-digest",
+        "--publication-snapshot-artifact-id",
+        "--publication-snapshot-artifact-digest",
+        "--publication-snapshot-artifact-url",
+        "--publication-snapshot-payload-path",
+        "--reviewer-summary",
+        "--reviewer-summary-digest",
+        "--reviewer-summary-artifact-id",
+        "--reviewer-summary-artifact-digest",
+        "--reviewer-summary-artifact-url",
+        "--reviewer-summary-payload-path",
         "--live-eligibility-decision",
         "--live-eligibility-artifact-id",
         "--live-eligibility-artifact-digest",
         "--live-eligibility-payload-digest",
+        "--approval-boundary-sentinel-result",
         "--control",
     ):
         assert command.count(f"{option} ") == 1
+    assert '--reviewer-summary ".wdv3/input/reviewer-summary.md"' in command
+    assert (
+        "--approval-boundary-sentinel-result "
+        '"${{ steps.approval-environment-marker.outcome }}"' in command
+    )
     assert "--authorized-at" not in command
     assert "authorized_at=" not in command
     assert "date -u" not in command
@@ -1743,6 +1773,7 @@ def test_action_path_reaches_read_only_fail_closed_publisher_preflight() -> (
     None
 ):
     jobs = _document(CALLEE)["jobs"]
+    approval = jobs["approve-publication"]
     publisher = jobs["publish-github-packages"]
     steps = _steps(publisher)
     download = _step(publisher, "Download publisher closure by artifact ID")
@@ -1752,7 +1783,16 @@ def test_action_path_reaches_read_only_fail_closed_publisher_preflight() -> (
     )
 
     assert publisher["name"] == ("Reject unsupported GitHub Packages primitive")
-    assert _needs(publisher) == ("approve-publication",)
+    assert set(approval["outputs"]) == {
+        "publication-authorization-artifact-id",
+        "publication-authorization-artifact-digest",
+        "publication-authorization-artifact-name",
+        "publication-authorization-digest",
+    }
+    assert _needs(publisher) == (
+        "approve-publication",
+        "materialize-publication",
+    )
     assert {
         "materialize-publication",
         "approve-publication",
@@ -1761,25 +1801,27 @@ def test_action_path_reaches_read_only_fail_closed_publisher_preflight() -> (
     assert "environment" not in publisher
     assert {
         "needs.approve-publication.result == 'success'",
-        "needs.approve-publication.outputs.publish-required == 'true'",
     } <= _condition_conjuncts(publisher)
+    assert "publish-required" not in publisher["if"]
     assert publisher["concurrency"] == {
         "group": (
-            "wdv3-resource-${{ needs.approve-publication.outputs."
+            "wdv3-resource-${{ needs.materialize-publication.outputs."
             "resource-concurrency-key }}"
         ),
         "cancel-in-progress": False,
     }
     required_ids = (
-        "${{ needs.approve-publication.outputs."
+        "${{ needs.materialize-publication.outputs."
         "qualification-snapshot-artifact-id }}",
-        "${{ needs.approve-publication.outputs.decision-artifact-id }}",
-        "${{ needs.approve-publication.outputs.adapter-context-artifact-id }}",
-        "${{ needs.approve-publication.outputs.release-artifact-artifact-id }}",
-        "${{ needs.approve-publication.outputs."
+        "${{ needs.materialize-publication.outputs.decision-artifact-id }}",
+        "${{ needs.materialize-publication.outputs.adapter-context-artifact-id }}",
+        "${{ needs.materialize-publication.outputs.release-artifact-artifact-id }}",
+        "${{ needs.materialize-publication.outputs."
         "publication-snapshot-artifact-id }}",
+        "${{ needs.materialize-publication.outputs.approval-bundle-artifact-id }}",
         "${{ needs.approve-publication.outputs."
         "publication-authorization-artifact-id }}",
+        "${{ needs.materialize-publication.outputs.reviewer-artifact-id }}",
     )
     artifact_ids = download["with"]["artifact-ids"].split(",")
     assert set(artifact_ids) == set(required_ids)
@@ -1795,7 +1837,29 @@ def test_action_path_reaches_read_only_fail_closed_publisher_preflight() -> (
         "three-workflow-delivery-v3 release preflight-github-packages"
         in command
     )
-    assert "--publication-authorization " in command
+    for option in (
+        "--publication-snapshot",
+        "--publication-snapshot-digest",
+        "--publication-snapshot-artifact-id",
+        "--publication-snapshot-artifact-digest",
+        "--publication-snapshot-artifact-url",
+        "--publication-snapshot-payload-path",
+        "--approval-bundle",
+        "--approval-bundle-digest",
+        "--approval-bundle-artifact-id",
+        "--approval-bundle-artifact-digest",
+        "--approval-bundle-artifact-url",
+        "--approval-bundle-payload-path",
+        "--reviewer-summary",
+        "--reviewer-summary-digest",
+        "--reviewer-summary-artifact-id",
+        "--reviewer-summary-artifact-digest",
+        "--reviewer-summary-artifact-url",
+        "--reviewer-summary-payload-path",
+        "--publication-authorization",
+    ):
+        assert command.count(f"{option} ") == 1
+    assert '--reviewer-summary ".wdv3/input/reviewer-summary.md"' in command
     for forbidden in (
         "--github-token",
         "--tarball",
@@ -1844,6 +1908,7 @@ def test_finalizer_consumes_current_branch_authorities_only() -> None:
 
     command = _run(_step(finalizer, "Finalize Attempt Outcome"))
     for role, producer in (
+        ("publication-snapshot", "materialize-publication"),
         ("approval-bundle", "materialize-publication"),
         ("publication-authorization", "approve-publication"),
         ("exact-satisfied-governance-proof", "prove-exact-satisfied"),
@@ -1852,6 +1917,15 @@ def test_finalizer_consumes_current_branch_authorities_only() -> None:
             f'add_record {role} ".wdv3/input/${{{{ needs.{producer}.outputs.'
             f'{role}-artifact-name }}}}"'
         ) in command
+    for role in ("publication-snapshot", "approval-bundle"):
+        assert (
+            f"needs.materialize-publication.outputs.{role}-artifact-url"
+            in command
+        )
+        assert (
+            f"needs.materialize-publication.outputs.{role}-artifact-name"
+            in command
+        )
     command_casefold = command.casefold()
     for forbidden in (
         "approval-finalizer",
@@ -1867,34 +1941,16 @@ def test_finalizer_consumes_current_branch_authorities_only() -> None:
 def test_current_authority_uploads_use_raw_transport() -> None:
     document = _document(CALLEE)
     uploads = _artifact_steps(document, UPLOAD)
-    reviewer_output = document["jobs"]["materialize-publication"]["outputs"][
-        "reviewer-artifact-id"
-    ]
-    reviewer_match = re.fullmatch(
-        r"\$\{\{\s*steps\.([^.]+)\.outputs\.artifact-id\s*\}\}",
-        reviewer_output,
-    )
-    assert reviewer_match is not None
-    reviewer_step_id = reviewer_match.group(1)
-    reviewer_uploads = [
-        step for step in uploads if step.get("id") == reviewer_step_id
-    ]
-    authority_uploads = [
-        step for step in uploads if step.get("id") != reviewer_step_id
-    ]
-
-    assert len(reviewer_uploads) == 1
-    reviewer_upload = reviewer_uploads[0]
-    assert reviewer_upload["with"].get("archive", True) is True
-    reviewer_name = document["jobs"]["materialize-publication"]["outputs"][
-        "reviewer-artifact-name"
-    ]
-    assert reviewer_upload["with"]["name"] == reviewer_name
-    assert reviewer_upload["with"]["path"] == f".wdv3/{reviewer_name}"
-    assert authority_uploads
-    for step in authority_uploads:
+    assert uploads
+    raw_names = []
+    for step in uploads:
         assert step["with"]["archive"] is False
-        assert _raw_artifact_name(step["with"]) == step["with"]["name"]
+        raw_names.append(_raw_artifact_name(step["with"]))
+    assert len(raw_names) == len(set(raw_names))
+    materializer = document["jobs"]["materialize-publication"]
+    assert "reviewer-artifact-name" not in materializer["outputs"]
+    reviewer_upload = _step(materializer, "Upload reviewer summary")
+    assert reviewer_upload["with"]["name"] == "reviewer-summary.md"
 
 
 def test_current_authority_jobs_install_no_mutating_toolchain() -> None:
@@ -1982,10 +2038,10 @@ def test_completed_pre_wait_bundle_gates_reviewer_summary_link(
 ) -> None:
     materializer = _document(CALLEE)["jobs"]["materialize-publication"]
     steps = _steps(materializer)
-    upload_reviewer = _step(materializer, "Upload reviewer artifact")
-    bind = _step(
+    upload_reviewer = _step(materializer, "Upload reviewer summary")
+    form_bundle = _step(
         materializer,
-        "Bind reviewer artifact transport to exact payloads",
+        "Form complete pre-wait Approval Bundle",
     )
     upload_bundle = _step(materializer, "Upload Approval Bundle")
     summary = _step(
@@ -1995,16 +2051,14 @@ def test_completed_pre_wait_bundle_gates_reviewer_summary_link(
 
     assert (
         steps.index(upload_reviewer)
-        < steps.index(bind)
+        < steps.index(form_bundle)
         < steps.index(upload_bundle)
         < steps.index(summary)
     )
     assert summary["if"] == "steps.upload-bundle.outcome == 'success'"
 
-    reviewer_name = "current-reviewer-payload"
-    reviewer_directory = tmp_path / ".wdv3" / reviewer_name
-    reviewer_directory.mkdir(parents=True)
-    reviewer = reviewer_directory / "reviewer-summary.md"
+    reviewer = tmp_path / ".wdv3" / "reviewer-summary.md"
+    reviewer.parent.mkdir(parents=True)
     reviewer_bytes = b"# Immutable reviewer summary\n\n- Action count: 1\n"
     reviewer.write_bytes(reviewer_bytes)
     artifact_url = (
@@ -2016,10 +2070,7 @@ def test_completed_pre_wait_bundle_gates_reviewer_summary_link(
     execution = _phase3_execute_workflow_run(
         tmp_path,
         _run(summary),
-        {
-            "steps.names.outputs.reviewer-name": reviewer_name,
-            "steps.upload-reviewer.outputs.artifact-url": artifact_url,
-        },
+        {"steps.upload-reviewer.outputs.artifact-url": artifact_url},
         environment={"GITHUB_STEP_SUMMARY": str(github_summary)},
     )
 
@@ -2045,10 +2096,12 @@ def _current_finalizer_facts(
         "needs.materialize-publication.outputs.approval-bundle-artifact-digest": "",
         "needs.materialize-publication.outputs.approval-bundle-artifact-id": "",
         "needs.materialize-publication.outputs.approval-bundle-artifact-name": "",
+        "needs.materialize-publication.outputs.approval-bundle-artifact-url": "",
         "needs.materialize-publication.outputs.approval-bundle-digest": "",
         "needs.materialize-publication.outputs.publication-snapshot-artifact-digest": upload_digest,
         "needs.materialize-publication.outputs.publication-snapshot-artifact-id": "731",
         "needs.materialize-publication.outputs.publication-snapshot-artifact-name": "publication-snapshot.json",
+        "needs.materialize-publication.outputs.publication-snapshot-artifact-url": "https://example.test/artifacts/731",
         "needs.materialize-publication.outputs.publication-snapshot-digest": record_digest,
         "needs.materialize-publication.result": "success",
         "needs.observe-github-packages.outputs.observation-set-artifact-digest": upload_digest,
@@ -2101,6 +2154,7 @@ def _current_finalizer_facts(
                 "needs.materialize-publication.outputs.approval-bundle-artifact-digest": upload_digest,
                 "needs.materialize-publication.outputs.approval-bundle-artifact-id": "732",
                 "needs.materialize-publication.outputs.approval-bundle-artifact-name": "approval-bundle.json",
+                "needs.materialize-publication.outputs.approval-bundle-artifact-url": "https://example.test/artifacts/732",
                 "needs.materialize-publication.outputs.approval-bundle-digest": record_digest,
                 "needs.approve-publication.outputs.publication-authorization-artifact-digest": upload_digest,
                 "needs.approve-publication.outputs.publication-authorization-artifact-id": "733",

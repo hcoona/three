@@ -4,20 +4,18 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from three_workflow_delivery_v3.records.artifacts import (
-    ArtifactTransportIdentity,
-)
+from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
     ActionResult,
+    ApprovalBoundary,
     ApprovalBundle,
     AttemptOutcome,
     ExactSatisfiedGovernanceProof,
+    GovernanceProof,
     ProjectionObservation,
     PublicationAction,
     PublicationAuthorization,
@@ -25,43 +23,26 @@ from three_workflow_delivery_v3.records.release import (
     QualificationDecision,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
-    ReviewerSummaryArtifact,
+    ReleaseIntent,
 )
 from three_workflow_delivery_v3.release.eligibility import (
     GovernanceObservation,
     governance_observation_provenance,
 )
+from three_workflow_delivery_v3.release.identity import (
+    derive_buddy_execution_identity,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from three_workflow_delivery_v3.canonical import JsonValue
-
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
-_DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _PUBLIC_REPOSITORY_URL = "https://github.com/hcoona/three.git"
 _APPROVAL_ENVIRONMENT = "workflow-delivery-v3-buddy-approval"
 _APPROVAL_JOB = "approve-publication"
-
-
-@dataclass(frozen=True, slots=True)
-class ReviewerPayload:
-    """Credential-free immutable reviewer payload closure."""
-
-    snapshot_bytes: bytes
-    summary_bytes: bytes
-    snapshot_payload_digest: str
-    summary_payload_digest: str
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical formatter input carried across approval."""
-        return {
-            "schema": "workflow-delivery/v3/reviewer-formatter-input",
-            "snapshot-base64": base64.b64encode(self.snapshot_bytes).decode(),
-            "summary-base64": base64.b64encode(self.summary_bytes).decode(),
-            "snapshot-payload-digest": self.snapshot_payload_digest,
-            "summary-payload-digest": self.summary_payload_digest,
-        }
+_APPROVAL_SENTINEL_NAME = "WDV3_APPROVAL_ENVIRONMENT_MARKER"
+_APPROVAL_SENTINEL_VALUE = "workflow-delivery-v3-buddy-approval/v1"
+_REVIEWER_SUMMARY_PAYLOAD_PATH = "reviewer-summary.md"
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,138 +56,140 @@ class PublicRevisionCheckout:
     commands: tuple[tuple[str, ...], ...]
 
 
-def _sha256_bytes(payload: bytes) -> str:
-    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
-
-
-def _require_digest(value: str, *, field: str) -> str:
-    if type(value) is not str or _DIGEST_PATTERN.fullmatch(value) is None:
-        message = f"{field} must be a prefixed lowercase SHA-256"
-        raise ValueError(message)
-    return value
-
-
-def materialize_reviewer_payload(
-    *,
-    snapshot_bytes: bytes,
-    summary_bytes: bytes,
-) -> ReviewerPayload:
-    """Materialize exact reviewer bytes before transport IDs exist."""
-    if type(snapshot_bytes) is not bytes or type(summary_bytes) is not bytes:
-        raise TypeError("reviewer payload inputs must be exact bytes")
-    return ReviewerPayload(
-        snapshot_bytes=snapshot_bytes,
-        summary_bytes=summary_bytes,
-        snapshot_payload_digest=_sha256_bytes(snapshot_bytes),
-        summary_payload_digest=_sha256_bytes(summary_bytes),
-    )
-
-
-def bind_reviewer_artifact(
-    *,
-    payload: ReviewerPayload,
-    attempt: ReleaseAttemptIdentity,
-    artifact_id: int,
-    artifact_name: str,
-    artifact_url: str,
-    upload_digest: str,
-    workflow_run_id: int,
-    snapshot_payload_digest: str,
-    summary_payload_digest: str,
-) -> ReviewerSummaryArtifact:
-    """Bind returned Actions identity to the exact pre-upload payload."""
-    if type(payload) is not ReviewerPayload:
-        raise TypeError("reviewer binding requires an exact payload")
-    if type(attempt) is not ReleaseAttemptIdentity:
-        raise TypeError("reviewer binding requires an exact Attempt")
-    if (
-        snapshot_payload_digest != payload.snapshot_payload_digest
-        or summary_payload_digest != payload.summary_payload_digest
-    ):
-        raise ValueError("reviewer payload digest substitution")
-    return ReviewerSummaryArtifact(
-        attempt=attempt,
-        transport=ArtifactTransportIdentity(
-            artifact_id=artifact_id,
-            artifact_name=artifact_name,
-            artifact_url=artifact_url,
-            transport_digest=_require_digest(
-                upload_digest,
-                field="reviewer artifact upload_digest",
-            ),
-            producer="materialize-publication",
-            workflow_run_id=workflow_run_id,
-            run_attempt=None,
-        ),
-        snapshot_payload_digest=payload.snapshot_payload_digest,
-        summary_payload_digest=payload.summary_payload_digest,
-    )
-
-
 def form_approval_bundle(
     *,
+    intent: ReleaseIntent,
     attempt_binding: ReleaseAttemptBinding,
-    selected_ref: str,
     qualification_decision: QualificationDecision,
     publication_snapshot: PublicationSnapshot,
-    reviewer_summary: ReviewerSummaryArtifact,
+    publication_snapshot_reference: ArtifactReference,
+    reviewer_summary_reference: ArtifactReference,
     control: str,
 ) -> ApprovalBundle:
-    """Form the complete one-action closure before the Environment wait."""
+    """Validate the pre-wait closure and retain only direct references."""
+    if type(intent) is not ReleaseIntent:
+        raise TypeError("Approval Bundle requires an exact Release Intent")
+    if type(attempt_binding) is not ReleaseAttemptBinding:
+        raise TypeError("Approval Bundle requires an exact Attempt binding")
+    if (
+        attempt_binding.intent_digest != intent.intent_digest
+        or attempt_binding.request_id != intent.request_id
+        or attempt_binding.execution != derive_buddy_execution_identity(intent)
+    ):
+        raise ValueError("Approval Bundle Intent binding mismatch")
+    if type(qualification_decision) is not QualificationDecision:
+        raise TypeError("Approval Bundle requires a Qualification Decision")
+    if type(publication_snapshot) is not PublicationSnapshot:
+        raise TypeError("Approval Bundle requires a Publication Snapshot")
+    if (
+        qualification_decision.subject != attempt_binding.attempt
+        or publication_snapshot.attempt != attempt_binding.attempt
+        or publication_snapshot.qualification_snapshot_digest
+        != qualification_decision.qualification_snapshot_digest
+        or publication_snapshot.qualification_decision_digest
+        != qualification_decision.decision_digest
+        or qualification_decision.terminal_result != "success"
+        or qualification_decision.admitted_artifact_digests
+        != publication_snapshot.artifact_digests
+        or len(publication_snapshot.materialized_actions) != 1
+    ):
+        raise ValueError("Approval Bundle qualification closure mismatch")
+    if (
+        type(publication_snapshot_reference) is not ArtifactReference
+        or publication_snapshot_reference.payload_digest
+        != publication_snapshot.snapshot_digest
+    ):
+        raise ValueError("Approval Bundle Snapshot reference mismatch")
+    if (
+        type(reviewer_summary_reference) is not ArtifactReference
+        or reviewer_summary_reference.payload_path
+        != _REVIEWER_SUMMARY_PAYLOAD_PATH
+    ):
+        raise ValueError("Approval Bundle reviewer reference mismatch")
     return ApprovalBundle(
-        attempt_binding=attempt_binding,
-        selected_ref=selected_ref,
-        qualification_decision=qualification_decision,
-        publication_snapshot=publication_snapshot,
-        reviewer_summary=reviewer_summary,
-        environment=_APPROVAL_ENVIRONMENT,
-        approval_job=_APPROVAL_JOB,
+        attempt=attempt_binding.attempt,
+        publication_snapshot_reference=publication_snapshot_reference,
+        reviewer_summary_reference=reviewer_summary_reference,
         producer="materialize-publication",
         control=control,
+        workflow_run_id=attempt_binding.attempt.workflow_run_id,
     )
+
+
+def validate_approval_bundle_closure(
+    *,
+    approval_bundle: ApprovalBundle,
+    intent: ReleaseIntent,
+    attempt_binding: ReleaseAttemptBinding,
+    qualification_decision: QualificationDecision,
+    publication_snapshot: PublicationSnapshot,
+    publication_snapshot_reference: ArtifactReference,
+    reviewer_summary_reference: ArtifactReference,
+    control: str,
+) -> None:
+    """Resolve and validate the exact transitive pre-wait closure."""
+    expected = form_approval_bundle(
+        intent=intent,
+        attempt_binding=attempt_binding,
+        qualification_decision=qualification_decision,
+        publication_snapshot=publication_snapshot,
+        publication_snapshot_reference=publication_snapshot_reference,
+        reviewer_summary_reference=reviewer_summary_reference,
+        control=control,
+    )
+    if (
+        type(approval_bundle) is not ApprovalBundle
+        or approval_bundle != expected
+    ):
+        raise ValueError("Approval Bundle resolved closure mismatch")
 
 
 def form_publication_authorization(
     *,
-    approval_result: str,
     approval_bundle: ApprovalBundle,
+    approval_bundle_reference: ArtifactReference,
+    approval_boundary_sentinel_result: str,
     governance: GovernanceObservation,
     completed_at: str,
     control: str,
 ) -> PublicationAuthorization:
     """Form the sole authorization after successful Environment approval."""
-    if approval_result != "success":
-        raise ValueError(
-            "Environment denial cannot form Publication Authorization"
-        )
     if type(approval_bundle) is not ApprovalBundle:
         raise TypeError("Publication Authorization requires Approval Bundle")
+    if (
+        type(approval_bundle_reference) is not ArtifactReference
+        or approval_bundle_reference.payload_digest
+        != approval_bundle.bundle_digest
+    ):
+        raise ValueError("Publication Authorization Bundle reference mismatch")
     if type(governance) is not GovernanceObservation:
         raise TypeError(
             "Publication Authorization requires fresh Governance proof"
         )
-    if not governance.attestation.live_enabled:
-        raise ValueError(
-            "Publication Authorization requires enabled Governance"
-        )
-    return PublicationAuthorization(
-        approval_bundle=approval_bundle,
-        approval_governance_provenance=(
-            governance_observation_provenance(governance)
-        ),
-        approval_governance_current_main_sha=governance.current_main_sha,
-        approval_governance_observed_at=governance.observed_at.strftime(
+    governance_proof = GovernanceProof(
+        provenance=governance_observation_provenance(governance),
+        current_main_sha=governance.current_main_sha,
+        observed_at=governance.observed_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        expires_at=governance.attestation.expires_at.strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         ),
-        approval_governance_expires_at=(
-            governance.attestation.expires_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+        live_enabled=governance.attestation.live_enabled,
+    )
+    return PublicationAuthorization(
+        attempt=approval_bundle.attempt,
+        approval_bundle_reference=approval_bundle_reference,
+        approval_boundary=ApprovalBoundary(
+            environment=_APPROVAL_ENVIRONMENT,
+            job=_APPROVAL_JOB,
+            sentinel_name=_APPROVAL_SENTINEL_NAME,
+            sentinel_value=_APPROVAL_SENTINEL_VALUE,
+            sentinel_result=approval_boundary_sentinel_result,
         ),
-        approval_governance_live_enabled=(governance.attestation.live_enabled),
-        environment=_APPROVAL_ENVIRONMENT,
-        approval_job=_APPROVAL_JOB,
+        governance_proof=governance_proof,
         completed_at=completed_at,
         producer=_APPROVAL_JOB,
         control=control,
+        workflow_run_id=approval_bundle.workflow_run_id,
     )
 
 
@@ -375,6 +358,43 @@ def _validate_publication_result(
         raise ValueError("Live finalization Receipt binding mismatch")
 
 
+def _validate_finalization_references(
+    *,
+    publication_snapshot: PublicationSnapshot | None,
+    approval_bundle: ApprovalBundle | None,
+    publication_authorization: PublicationAuthorization | None,
+    publication_snapshot_reference: ArtifactReference | None,
+    approval_bundle_reference: ArtifactReference | None,
+) -> None:
+    if approval_bundle is None:
+        if publication_snapshot_reference is not None:
+            raise ValueError("Live finalization Publication reference mismatch")
+        if approval_bundle_reference is not None:
+            raise ValueError("Live finalization Approval reference mismatch")
+        return
+    if (
+        publication_snapshot is None
+        or type(publication_snapshot_reference) is not ArtifactReference
+        or publication_snapshot_reference.payload_digest
+        != publication_snapshot.snapshot_digest
+        or approval_bundle.publication_snapshot_reference
+        != publication_snapshot_reference
+    ):
+        raise ValueError("Live finalization Approval Bundle mismatch")
+    if (
+        type(approval_bundle_reference) is not ArtifactReference
+        or approval_bundle_reference.payload_digest
+        != approval_bundle.bundle_digest
+    ):
+        raise ValueError("Live finalization Approval reference mismatch")
+    if (
+        publication_authorization is not None
+        and publication_authorization.approval_bundle_reference
+        != approval_bundle_reference
+    ):
+        raise ValueError("Live finalization Publication Authorization mismatch")
+
+
 def _validate_finalization_inputs(
     *,
     attempt: ReleaseAttemptIdentity,
@@ -384,6 +404,8 @@ def _validate_finalization_inputs(
     approval_bundle: ApprovalBundle | None,
     publication_authorization: PublicationAuthorization | None,
     action_results: tuple[ActionResult, ...],
+    publication_snapshot_reference: ArtifactReference | None,
+    approval_bundle_reference: ArtifactReference | None,
 ) -> None:
     if type(attempt) is not ReleaseAttemptIdentity:
         raise TypeError("Live finalization requires an exact Attempt")
@@ -416,16 +438,21 @@ def _validate_finalization_inputs(
     if approval_bundle is not None and (
         type(approval_bundle) is not ApprovalBundle
         or approval_bundle.attempt != attempt
-        or publication_snapshot is None
-        or approval_bundle.publication_snapshot != publication_snapshot
     ):
         raise ValueError("Live finalization Approval Bundle mismatch")
     if publication_authorization is not None and (
         type(publication_authorization) is not PublicationAuthorization
         or approval_bundle is None
-        or publication_authorization.approval_bundle != approval_bundle
+        or publication_authorization.attempt != attempt
     ):
         raise ValueError("Live finalization Publication Authorization mismatch")
+    _validate_finalization_references(
+        publication_snapshot=publication_snapshot,
+        approval_bundle=approval_bundle,
+        publication_authorization=publication_authorization,
+        publication_snapshot_reference=publication_snapshot_reference,
+        approval_bundle_reference=approval_bundle_reference,
+    )
     for record in action_results:
         if (
             type(record) is not ActionResult
@@ -448,6 +475,8 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912
     approval_bundle: ApprovalBundle | None,
     publication_authorization: PublicationAuthorization | None,
     action_results: tuple[ActionResult, ...],
+    publication_snapshot_reference: ArtifactReference | None = None,
+    approval_bundle_reference: ArtifactReference | None = None,
     observations: tuple[ProjectionObservation, ...] = (),
     publication_preparation_interrupted: bool = False,
     platform_terminated: bool = False,
@@ -476,6 +505,8 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912
         approval_bundle=approval_bundle,
         publication_authorization=publication_authorization,
         action_results=action_results,
+        publication_snapshot_reference=publication_snapshot_reference,
+        approval_bundle_reference=approval_bundle_reference,
     )
     for observation in observations:
         if (
@@ -619,12 +650,6 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912
             next_action="new-attempt",
         )
     action = actions[0]
-    if (
-        approval_bundle.action != action
-        or publication_authorization.action != action
-        or not publication_authorization.authorizing
-    ):
-        raise ValueError("Live finalization Authorization is not exact")
     if len(action_results) > 1:
         raise ValueError("Live finalization permits one Action Result")
     for result_record in action_results:
@@ -700,12 +725,10 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912
 
 __all__ = [
     "PublicRevisionCheckout",
-    "ReviewerPayload",
-    "bind_reviewer_artifact",
     "fetch_exact_public_revision",
     "finalize_attempt_outcome",
     "form_approval_bundle",
     "form_exact_satisfied_governance_proof",
     "form_publication_authorization",
-    "materialize_reviewer_payload",
+    "validate_approval_bundle_closure",
 ]

@@ -47,7 +47,6 @@ from three_workflow_delivery_v3.records.release import (
     RELEASE_INTENT_SCHEMA,
     RELEASE_OBLIGATION_SCHEMA,
     RELEASE_OUTPUT_IDENTITY_SCHEMA,
-    REVIEWER_SUMMARY_ARTIFACT_SCHEMA,
     SIMULATION_BINDING_SCHEMA,
     SIMULATION_IDENTITY_SCHEMA,
     SIMULATION_OUTCOME_SCHEMA,
@@ -94,7 +93,6 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseIntent,
     ReleaseObligation,
     ReleaseOutputIdentity,
-    ReviewerSummaryArtifact,
     SimulationBinding,
     SimulationIdentity,
     SimulationOutcome,
@@ -2161,36 +2159,6 @@ def _release_attempt_binding(value: JsonValue) -> ReleaseAttemptBinding:
     )
 
 
-def _reviewer_summary_artifact(
-    value: JsonValue,
-) -> ReviewerSummaryArtifact:
-    document = _closed(
-        value,
-        field="reviewer summary artifact",
-        schema=REVIEWER_SUMMARY_ARTIFACT_SCHEMA,
-        fields=frozenset(
-            {
-                "attempt",
-                "transport",
-                "snapshot-payload-digest",
-                "summary-payload-digest",
-            }
-        ),
-    )
-    return ReviewerSummaryArtifact(
-        attempt=_release_attempt(document["attempt"]),
-        transport=_transport(document["transport"], purpose="live-release"),
-        snapshot_payload_digest=_string(
-            document["snapshot-payload-digest"],
-            field="reviewer summary artifact.snapshot-payload-digest",
-        ),
-        summary_payload_digest=_string(
-            document["summary-payload-digest"],
-            field="reviewer summary artifact.summary-payload-digest",
-        ),
-    )
-
-
 def _approval_bundle(value: JsonValue) -> ApprovalBundle:
     document = _closed(
         value,
@@ -2198,40 +2166,22 @@ def _approval_bundle(value: JsonValue) -> ApprovalBundle:
         schema=APPROVAL_BUNDLE_SCHEMA,
         fields=frozenset(
             {
-                "attempt-binding",
-                "selected-ref",
-                "qualification-decision",
-                "publication-snapshot",
-                "reviewer-summary",
-                "environment",
-                "approval-job",
+                "attempt",
+                "publication-snapshot-reference",
+                "reviewer-summary-reference",
                 "producer",
                 "control",
+                "workflow-run-id",
             }
         ),
     )
     return ApprovalBundle(
-        attempt_binding=_release_attempt_binding(document["attempt-binding"]),
-        selected_ref=_string(
-            document["selected-ref"],
-            field="approval bundle.selected-ref",
+        attempt=_release_attempt(document["attempt"]),
+        publication_snapshot_reference=artifact_reference_from_document(
+            document["publication-snapshot-reference"]
         ),
-        qualification_decision=_qualification_decision(
-            document["qualification-decision"]
-        ),
-        publication_snapshot=_publication_snapshot(
-            document["publication-snapshot"]
-        ),
-        reviewer_summary=_reviewer_summary_artifact(
-            document["reviewer-summary"]
-        ),
-        environment=_string(
-            document["environment"],
-            field="approval bundle.environment",
-        ),
-        approval_job=_string(
-            document["approval-job"],
-            field="approval bundle.approval-job",
+        reviewer_summary_reference=artifact_reference_from_document(
+            document["reviewer-summary-reference"]
         ),
         producer=_string(
             document["producer"],
@@ -2240,6 +2190,10 @@ def _approval_bundle(value: JsonValue) -> ApprovalBundle:
         control=_string(
             document["control"],
             field="approval bundle.control",
+        ),
+        workflow_run_id=_integer(
+            document["workflow-run-id"],
+            field="approval bundle.workflow-run-id",
         ),
     )
 
@@ -2253,55 +2207,24 @@ def _publication_authorization(
         schema=PUBLICATION_AUTHORIZATION_SCHEMA,
         fields=frozenset(
             {
-                "approval-bundle",
-                "approval-governance-provenance",
-                "approval-governance-current-main-sha",
-                "approval-governance-observed-at",
-                "approval-governance-expires-at",
-                "approval-governance-live-enabled",
-                "environment",
-                "approval-job",
+                "attempt",
+                "approval-bundle-reference",
+                "approval-boundary",
+                "governance-proof",
                 "completed-at",
                 "producer",
                 "control",
-                "result",
+                "workflow-run-id",
             }
         ),
     )
     return PublicationAuthorization(
-        approval_bundle=_approval_bundle(document["approval-bundle"]),
-        approval_governance_provenance=_pairs(
-            document["approval-governance-provenance"],
-            field=("publication authorization.approval-governance-provenance"),
+        attempt=_release_attempt(document["attempt"]),
+        approval_bundle_reference=artifact_reference_from_document(
+            document["approval-bundle-reference"]
         ),
-        approval_governance_current_main_sha=_string(
-            document["approval-governance-current-main-sha"],
-            field=(
-                "publication authorization.approval-governance-current-main-sha"
-            ),
-        ),
-        approval_governance_observed_at=_string(
-            document["approval-governance-observed-at"],
-            field=("publication authorization.approval-governance-observed-at"),
-        ),
-        approval_governance_expires_at=_string(
-            document["approval-governance-expires-at"],
-            field=("publication authorization.approval-governance-expires-at"),
-        ),
-        approval_governance_live_enabled=_boolean(
-            document["approval-governance-live-enabled"],
-            field=(
-                "publication authorization.approval-governance-live-enabled"
-            ),
-        ),
-        environment=_string(
-            document["environment"],
-            field="publication authorization.environment",
-        ),
-        approval_job=_string(
-            document["approval-job"],
-            field="publication authorization.approval-job",
-        ),
+        approval_boundary=_approval_boundary(document["approval-boundary"]),
+        governance_proof=_governance_proof(document["governance-proof"]),
         completed_at=_string(
             document["completed-at"],
             field="publication authorization.completed-at",
@@ -2314,9 +2237,9 @@ def _publication_authorization(
             document["control"],
             field="publication authorization.control",
         ),
-        result=_string(
-            document["result"],
-            field="publication authorization.result",
+        workflow_run_id=_integer(
+            document["workflow-run-id"],
+            field="publication authorization.workflow-run-id",
         ),
     )
 
@@ -2781,7 +2704,6 @@ _PARSERS: dict[type[object], Callable[[JsonValue], ReleaseRecord]] = {
     PublicationAction: _publication_action,
     PublicationSnapshot: _publication_snapshot,
     SimulationOutcome: _simulation_outcome,
-    ReviewerSummaryArtifact: _reviewer_summary_artifact,
     ApprovalBundle: _approval_bundle,
     PublicationAuthorization: _publication_authorization,
     MutationMayHaveStartedMarker: _mutation_may_have_started_marker,
@@ -2943,14 +2865,6 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
             None,
             record.attempt.execution.target,
             None,
-        )
-    if isinstance(record, ReviewerSummaryArtifact):
-        return (
-            "live-release",
-            record.attempt.workflow_run_id,
-            None,
-            record.attempt.execution.target,
-            record.transport.producer,
         )
     if isinstance(record, ApprovalBundle):
         return (
