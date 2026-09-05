@@ -110,7 +110,7 @@ def test_actual_protected_attestation_is_canonical_disabled_and_exactly_bound() 
     assert canonicalize(document) == content
     assert attestation.to_document() == document
     assert document["schema"] == (
-        "workflow-delivery/v3/normal-live-governance-attestation-v1"
+        "workflow-delivery/v3/normal-live-governance-attestation-v2"
     )
     assert attestation.release_policy == "hcoona-release-smoke-npm"
     assert attestation.package == FIRST_SLICE_PACKAGE
@@ -242,11 +242,6 @@ def test_commit10_attestation_binds_disabled_normal_live_without_acceptance_evid
 
     assert document["live_enabled"] is False
     assert document["activation"] == {
-        "blockers": [
-            "destination-primitive-unproven",
-            "fresh-native-evidence-required",
-            "repository-retention-readback-required",
-        ],
         "state": "blocked",
     }
     assert document["release_policy"] == "hcoona-release-smoke-npm"

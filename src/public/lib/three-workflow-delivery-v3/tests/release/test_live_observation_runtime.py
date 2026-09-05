@@ -311,7 +311,7 @@ def test_live_absence_creates_only_current_profile_action(observation_case):
 
 
 @pytest.mark.parametrize(
-    "observation_case", [NOW - timedelta(days=90)], indirect=True
+    "observation_case", [NOW - timedelta(days=90, seconds=1)], indirect=True
 )
 def test_expired_native_acceptance_is_blocking_evidence_not_lost_observation(
     observation_case,

@@ -33,20 +33,10 @@ from three_workflow_delivery_v3.records.release import (
 )
 from three_workflow_delivery_v3.release import live
 from three_workflow_delivery_v3.release.eligibility import (
-    AccessGrant,
-    AccessInventory,
-    ApprovalEnvironmentAttestation,
-    ApprovalEnvironmentReviewer,
-    ApprovalEnvironmentVariable,
-    ArtifactRetentionAttestation,
-    DestinationPrimitiveAttestation,
     EnabledGovernanceActivation,
-    GovernanceAttestation,
     GovernanceObservation,
-    NativeEvidence,
-    PackagePrincipalAttestation,
-    WriterInventoryEntry,
     governance_observation_provenance,
+    parse_governance_attestation,
 )
 from three_workflow_delivery_v3.release.identity import (
     normalize_buddy_live_intent,
@@ -60,6 +50,11 @@ from three_workflow_delivery_v3.repository.descriptors import (
     GovernanceSource,
 )
 
+from .test_eligibility import (
+    _admit_test_destination_primitive,
+    _attestation_content,
+    _ready_activation,
+)
 from .test_observation_admission import (
     _observation,
 )
@@ -109,78 +104,17 @@ def _governance(
     blob_oid: str = "b" * 40,
 ) -> GovernanceObservation:
     now = datetime(2026, 8, 13, 15, 59, tzinfo=UTC)
-    evidence = (
-        NativeEvidence(
-            endpoint="GET /repos/hcoona/three/environments/approval",
-            captured_at=now,
-            response_digest="sha256:" + ("5" * 64),
-        ),
-    )
-    activation = EnabledGovernanceActivation(
-        approval_environment=ApprovalEnvironmentAttestation(
-            name="workflow-delivery-v3-buddy-approval",
-            environment_id=20895030723,
-            required_reviewers=(
-                ApprovalEnvironmentReviewer(
-                    login="hcoona",
-                    reviewer_id=712433,
-                ),
+    attestation = parse_governance_attestation(
+        _attestation_content(
+            inspected_at=(now - timedelta(days=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
             ),
-            prevent_self_review=False,
-            can_admins_bypass=False,
-            wait_timer_minutes=0,
-            deployment_policy="all",
-            secret_count=0,
-            variables=(
-                ApprovalEnvironmentVariable(
-                    name="WDV3_APPROVAL_ENVIRONMENT_MARKER",
-                    value="workflow-delivery-v3-buddy-approval/v1",
-                    scope="environment",
-                ),
+            expires_at=(now + timedelta(days=30)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
             ),
-            same_name_repository_variable_absent=True,
-            same_name_organization_variable="",
-            evidence=evidence,
-        ),
-        artifact_retention=ArtifactRetentionAttestation(
-            endpoint=(
-                "GET /repos/hcoona/three/actions/permissions/"
-                "artifact-and-log-retention"
-            ),
-            captured_at=now,
-            days=90,
-            response_digest="sha256:" + ("6" * 64),
-        ),
-        destination_primitive=DestinationPrimitiveAttestation(
-            primitive_id="test/conditional-version-and-tag-v1",
-            operation=CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION,
-            captured_at=now,
-            race_inputs=(("coordinate", "@hcoona/test"),),
-            race_results=(("result", "non-overwrite"),),
-            evidence_digest="sha256:" + ("7" * 64),
-        ),
-    )
-    attestation = GovernanceAttestation(
-        release_policy="hcoona-release-smoke-npm",
-        package="@hcoona/hcoona-release-smoke-npm",
-        issuer="hcoona",
-        inspected_at=now - timedelta(days=1),
-        expires_at=now + timedelta(days=30),
-        accepted_writers=(WriterInventoryEntry(login="hcoona", role="Admin"),),
-        accepted_publisher="hcoona",
-        access_inventory=AccessInventory(
-            repository=(AccessGrant(subject="hcoona", access="Admin"),),
-            package=(AccessGrant(subject="hcoona", access="write"),),
-            manage_actions=(AccessGrant(subject="hcoona", access="write"),),
-        ),
-        package_principal=PackagePrincipalAttestation(
-            repository="hcoona/three",
-            intended_coordinate="@hcoona/hcoona-release-smoke-npm",
-            known_wider_reach=("@hcoona/hexo-renderer-asciidoc",),
-        ),
-        limitations=("Test-only complete Governance.",),
-        activation=activation,
-        live_enabled=live_enabled,
+            activation=_ready_activation(),
+            live_enabled=live_enabled,
+        )
     )
     return GovernanceObservation(
         source=GovernanceSource(
@@ -386,14 +320,19 @@ def _authorization(
     bundle: ApprovalBundle,
     governance: GovernanceObservation | None = None,
 ) -> PublicationAuthorization:
-    return _require_api("form_publication_authorization")(
-        approval_bundle=bundle,
-        approval_bundle_reference=_bundle_reference(bundle),
-        approval_boundary_sentinel_result="success",
-        governance=governance or _governance(),
-        completed_at="2026-08-13T16:00:00Z",
-        control=bundle.control,
-    )
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        _admit_test_destination_primitive(monkeypatch)
+        return _require_api("form_publication_authorization")(
+            approval_bundle=bundle,
+            approval_bundle_reference=_bundle_reference(bundle),
+            approval_boundary_sentinel_result="success",
+            governance=governance or _governance(),
+            destination_operation_profile_digest=(
+                github_packages.github_packages_destination_operation_profile().profile_digest
+            ),
+            completed_at="2026-08-13T16:00:00Z",
+            control=bundle.control,
+        )
 
 
 def _proof(
@@ -873,7 +812,9 @@ def test_publication_authorization_binds_bundle_and_fresh_governance(
 
 def test_publication_authorization_rejects_substituted_freshness(
     qualified_simulation,
+    monkeypatch,
 ) -> None:
+    _admit_test_destination_primitive(monkeypatch)
     _attempt, binding, decision, publication = _closure(
         qualified_simulation,
         with_action=True,
@@ -886,6 +827,11 @@ def test_publication_authorization_rejects_substituted_freshness(
             approval_bundle_reference=_bundle_reference(bundle),
             approval_boundary_sentinel_result="success",
             governance=_governance(),
+            destination_operation_profile_digest=(
+                publication.materialized_actions[
+                    0
+                ].destination_operation_profile_digest
+            ),
             completed_at="2026-08-13T16:00:00Z",
             control=f"workflow-delivery-v3:{'0' * 40}",
         )
@@ -899,6 +845,11 @@ def test_publication_authorization_rejects_substituted_freshness(
             ),
             approval_boundary_sentinel_result="success",
             governance=_governance(),
+            destination_operation_profile_digest=(
+                publication.materialized_actions[
+                    0
+                ].destination_operation_profile_digest
+            ),
             completed_at="2026-08-13T16:00:00Z",
             control=bundle.control,
         )
@@ -914,6 +865,99 @@ def test_exact_satisfied_proof_rejects_action_bearing_snapshot(
 
     with pytest.raises(ValueError, match="actionless exact"):
         _proof(publication)
+
+
+@pytest.mark.parametrize(
+    ("state", "message"),
+    [
+        ("disabled-ready", "fresh enabled Governance"),
+        ("expired-native", "unexpired native acceptance"),
+        ("different-profile", "profile differs"),
+        ("unadmitted-suite", "not implemented"),
+    ],
+)
+def test_approval_rechecks_current_v2_action_authority(
+    qualified_simulation, monkeypatch, state, message
+) -> None:
+    """Fresh Authorization requires the current Action's admitted acceptance."""
+    _admit_test_destination_primitive(monkeypatch)
+    _attempt, binding, decision, publication = _closure(
+        qualified_simulation, with_action=True
+    )
+    bundle = _bundle(binding, decision, publication)
+    governance = _governance(live_enabled=state != "disabled-ready")
+    attestation = governance.attestation
+    activation = attestation.activation
+    assert isinstance(activation, EnabledGovernanceActivation)
+    primitive = activation.destination_primitive
+    profile_digest = publication.materialized_actions[
+        0
+    ].destination_operation_profile_digest
+    if state == "expired-native":
+        primitive = replace(
+            primitive,
+            captured_at=governance.observed_at - timedelta(days=90),
+        )
+        _admit_test_destination_primitive(monkeypatch, primitive=primitive)
+    elif state == "unadmitted-suite":
+        primitive = replace(
+            primitive, native_acceptance_suite_version="unadmitted"
+        )
+    elif state == "different-profile":
+        profile_digest = "sha256:" + "e" * 64
+    attestation = replace(
+        attestation,
+        activation=replace(activation, destination_primitive=primitive),
+    )
+    governance = replace(
+        governance,
+        attestation=attestation,
+        canonical_content_digest=attestation.content_digest,
+    )
+    with pytest.raises(ValueError, match=message):
+        live.form_publication_authorization(
+            approval_bundle=bundle,
+            approval_bundle_reference=_bundle_reference(bundle),
+            approval_boundary_sentinel_result="success",
+            governance=governance,
+            destination_operation_profile_digest=profile_digest,
+            completed_at=(governance.observed_at + timedelta(seconds=1))
+            .isoformat()
+            .replace("+00:00", "Z"),
+            control=bundle.control,
+        )
+
+
+def test_exact_proof_does_not_require_action_acceptance_freshness(
+    qualified_simulation,
+) -> None:
+    """Fresh Governance may finalize exact state after acceptance ages."""
+    _attempt, _binding, _decision, publication = _closure(
+        qualified_simulation, with_action=False
+    )
+    governance = _governance()
+    activation = governance.attestation.activation
+    assert isinstance(activation, EnabledGovernanceActivation)
+    attestation = replace(
+        governance.attestation,
+        activation=replace(
+            activation,
+            destination_primitive=replace(
+                activation.destination_primitive,
+                captured_at=governance.observed_at - timedelta(days=91),
+            ),
+        ),
+    )
+    proof = _proof(
+        publication,
+        replace(
+            governance,
+            attestation=attestation,
+            canonical_content_digest=attestation.content_digest,
+        ),
+    )
+    assert proof.publication_snapshot == publication
+    assert proof.governance_live_enabled is True
 
 
 def test_action_bearing_missing_authority_is_incomplete(

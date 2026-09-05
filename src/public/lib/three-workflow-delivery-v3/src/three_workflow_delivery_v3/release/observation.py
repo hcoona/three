@@ -17,6 +17,7 @@ from three_workflow_delivery_v3.release.eligibility import (
     AdmittedLiveEligibilityDecision,
     EnabledGovernanceActivation,
     release_policy_digest,
+    require_action_governance,
 )
 from three_workflow_delivery_v3.release.identity import (
     derive_buddy_execution_identity,
@@ -222,9 +223,17 @@ def _require_action_freshness(
     now: datetime,
 ) -> None:
     _require_current_eligibility(eligibility, now)
-    if now >= _native_acceptance_expiry(eligibility):
-        message = "Absent Observation requires unexpired native acceptance"
-        raise ValueError(message)
+    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
+        github_packages_destination_operation_profile,
+    )
+
+    require_action_governance(
+        eligibility.governance.attestation,
+        now=now,
+        destination_operation_profile_digest=(
+            github_packages_destination_operation_profile().profile_digest
+        ),
+    )
 
 
 def _native_acceptance_expiry(
@@ -417,7 +426,7 @@ def observe_remote_state(  # noqa: PLR0913
             diagnostics.append(
                 f"absent-version target-tag: {readback.tag_state}"
             )
-        if now >= _native_acceptance_expiry(eligibility):
+        if now > _native_acceptance_expiry(eligibility):
             blockers.add("unprovable")
             diagnostics.append("absent-version native acceptance: expired")
     # Different blocking dimensions have no normative priority. Preserve all

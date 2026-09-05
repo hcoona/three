@@ -3709,6 +3709,7 @@ def _release_form_publication_authorization_command(
         expected_live_enabled=initial_governance.attestation.live_enabled,
     )
     completed_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    (action,) = publication.materialized_actions
     authorization = form_publication_authorization(
         approval_bundle=bundle,
         approval_bundle_reference=bundle_reference,
@@ -3716,6 +3717,9 @@ def _release_form_publication_authorization_command(
             arguments.approval_boundary_sentinel_result
         ),
         governance=fresh,
+        destination_operation_profile_digest=(
+            action.destination_operation_profile_digest
+        ),
         completed_at=completed_at,
         control=arguments.control,
     )

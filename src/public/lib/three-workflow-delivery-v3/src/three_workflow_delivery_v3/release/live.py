@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from three_workflow_delivery_v3.records.artifacts import ArtifactReference
@@ -35,6 +36,7 @@ from three_workflow_delivery_v3.release.eligibility import (
     AdmittedLiveEligibilityDecision,
     GovernanceObservation,
     governance_observation_provenance,
+    require_action_governance,
 )
 from three_workflow_delivery_v3.release.identity import (
     derive_buddy_execution_identity,
@@ -174,6 +176,7 @@ def form_publication_authorization(
     approval_bundle_reference: ArtifactReference,
     approval_boundary_sentinel_result: str,
     governance: GovernanceObservation,
+    destination_operation_profile_digest: str,
     completed_at: str,
     control: str,
 ) -> PublicationAuthorization:
@@ -190,6 +193,11 @@ def form_publication_authorization(
         raise TypeError(
             "Publication Authorization requires fresh Governance proof"
         )
+    require_action_governance(
+        governance.attestation,
+        now=datetime.fromisoformat(completed_at),
+        destination_operation_profile_digest=destination_operation_profile_digest,
+    )
     governance_proof = GovernanceProof(
         provenance=governance_observation_provenance(governance),
         current_main_sha=governance.current_main_sha,

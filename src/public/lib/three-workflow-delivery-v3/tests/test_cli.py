@@ -813,16 +813,11 @@ def test_validate_attestation_command_reports_replacement_disabled_governance(
     assert result == 0
     assert captured.err == ""
     assert output["schema"] == (
-        "workflow-delivery/v3/normal-live-governance-attestation-v1"
+        "workflow-delivery/v3/normal-live-governance-attestation-v2"
     )
     assert output["live_enabled"] is False
     assert output["activation"] == {
         "state": "blocked",
-        "blockers": [
-            "destination-primitive-unproven",
-            "fresh-native-evidence-required",
-            "repository-retention-readback-required",
-        ],
     }
     assert output["release_policy"] == "hcoona-release-smoke-npm"
     assert output["package"] == "@hcoona/hcoona-release-smoke-npm"

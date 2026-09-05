@@ -135,7 +135,6 @@ def observation_case(
     policy: ReleasePolicy,
 ) -> ObservationCase:
     # This existing test-only registry seam is not native acceptance evidence.
-    eligibility_fixtures._admit_test_destination_primitive(monkeypatch)  # noqa: SLF001
     produced = eligibility_fixtures._transport_decision(  # noqa: SLF001
         live_intent, live_admitted_repository_model, policy
     )
@@ -151,6 +150,9 @@ def observation_case(
                 captured_at=getattr(request, "param", attestation.inspected_at),
             ),
         ),
+    )
+    eligibility_fixtures._admit_test_destination_primitive(  # noqa: SLF001
+        monkeypatch, primitive=attestation.activation.destination_primitive
     )
     produced = replace(
         produced,
@@ -867,7 +869,7 @@ def test_absence_cannot_be_recorded_after_eligibility_expiry(
 
 
 @pytest.mark.parametrize(
-    "observation_case", [NOW - timedelta(days=90)], indirect=True
+    "observation_case", [NOW - timedelta(days=90, seconds=1)], indirect=True
 )
 def test_expired_native_acceptance_blocks_absence_not_exact_state(
     observation_case: ObservationCase,
@@ -908,7 +910,7 @@ def test_acceptance_must_remain_fresh_at_action_creation(
         admit_remote_state_observation(
             observation,
             **case.arguments(),
-            action_creation_at=NOW + timedelta(days=1),
+            action_creation_at=NOW + timedelta(days=1, seconds=1),
         )
 
 
