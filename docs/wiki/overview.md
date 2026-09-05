@@ -132,18 +132,17 @@ disabled through
 The replacement design, static-reference foundation, and record-model
 contraction are merged. The disabled Governance/authorization implementation
 and its bounded follow-up contraction are merged. The Publication/Finalizer
-design contraction is complete, independently rereviewed to zero findings, and
-final-shrink clean. PR #652 carries its protected delivery; inspect live Git
-and pull-request state rather than inferring delivery status from this page.
+design contraction is protected-merged through PR #652. Disabled
+implementation starts from
+`main@0b2029b5c5735fa4c7dbf4de3195903770a7df3a`.
 
-The next gates complete protected design delivery if still pending, implement
-and merge the disabled runtime with strict Governance v2, remove the obsolete
-Environment after exact proof, run native profile acceptance, install fresh
-ready Governance evidence including repository retention of at least 45 days,
-merge one small Activation PR, read back protected state, dispatch once
-through the run-ID-returning API, and verify the exact run. There is no
-Preparation PR, `main` freeze, activation SHA/tag, or blind redispatch after an
-ambiguous response.
+The next gates implement and merge the disabled runtime with strict Governance
+v2, remove the obsolete Environment after exact proof, run native profile
+acceptance, install fresh ready Governance evidence including repository
+retention of at least 45 days, merge one small Activation PR, read back
+protected state, dispatch once through the run-ID-returning API, and verify the
+exact run. There is no Preparation PR, `main` freeze, activation SHA/tag, or
+blind redispatch after an ambiguous response.
 
 ## Historical Record Rule
 

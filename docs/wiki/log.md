@@ -3466,3 +3466,27 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - No runtime code, workflow, protected Governance, Environment, package, tag,
   approval, deployment, dispatch, or other external resource changed. Design
   delivery and disabled implementation remain next.
+
+## [2026-09-05] design | Deliver Publication and Finalizer design
+
+- Delivered the dependency-ordered design package through PR #652. Reviewed
+  head `00625f278a646c3a5dcde733900def432b8a62d2` was squash-merged as
+  `0b2029b5c5735fa4c7dbf4de3195903770a7df3a` with exact parent
+  `db5d9f053baf2c16cd32a1e9e9aae38ffb8c2b74`; reviewed and protected trees
+  are identical.
+- Continuous Integration, Workflow Delivery v3 CI, and CodeQL passed on the
+  final PR head. Post-merge Continuous Integration run `33930992351` passed on
+  the protected merge SHA. The documentation-only push correctly created no
+  CodeQL run because `codeql.yml` ignores `**/*.md`; the exact reviewed tree
+  had already passed PR CodeQL.
+- Copilot review candidates were independently adjudicated one issue at a
+  time. True positives corrected run-details dispatch, transitive resource
+  ownership, target/current-state wording, retry posture, embedded
+  Package-Control Proof ownership, and two list defects. Two pre-Snapshot
+  Publisher-start claims were rejected because they violate the required
+  Approval-to-Authorization-to-Snapshot topology. Final rereview generated no
+  comments.
+- Began the disabled implementation phase from exact protected revision
+  `0b2029b5c5735fa4c7dbf4de3195903770a7df3a`. Protected Governance remains v1
+  with `live_enabled: false`; no Environment, package, tag, approval,
+  deployment, dispatch, or other operational external resource changed.
