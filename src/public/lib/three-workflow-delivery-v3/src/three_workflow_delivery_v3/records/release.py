@@ -232,6 +232,24 @@ def _sha(value: object, *, field: str) -> str:
     return accepted
 
 
+def _git_object_id(
+    value: object,
+    *,
+    object_format: str,
+    field: str,
+) -> str:
+    accepted = _string(value, field=field)
+    expected_length = {"sha1": 40, "sha256": 64}.get(object_format)
+    if (
+        expected_length is None
+        or len(accepted) != expected_length
+        or any(character not in "0123456789abcdef" for character in accepted)
+    ):
+        message = f"{field} is malformed"
+        raise ValueError(message)
+    return accepted
+
+
 def _target_control(value: object, *, target: str, field: str) -> str:
     accepted = _string(value, field=field)
     if accepted != f"workflow-delivery-v3:{target}":
@@ -3284,22 +3302,27 @@ class GovernanceProof:
         if {name for name, _ in provenance} != _GOVERNANCE_PROVENANCE_FIELDS:
             message = "Governance proof provenance is incomplete"
             raise ValueError(message)
-        object_format = dict(provenance)["git-object-format"]
-        expected_length = {"sha1": 40, "sha256": 64}.get(object_format)
-        current_main_sha = _string(
+        provenance_map = dict(provenance)
+        object_format = provenance_map["git-object-format"]
+        _git_object_id(
             self.current_main_sha,
+            object_format=object_format,
             field="governance proof.current_main_sha",
         )
-        if (
-            expected_length is None
-            or len(current_main_sha) != expected_length
-            or any(
-                character not in "0123456789abcdef"
-                for character in current_main_sha
-            )
-        ):
-            message = "Governance proof current main SHA is malformed"
-            raise ValueError(message)
+        _git_object_id(
+            provenance_map["eligibility-main-sha"],
+            object_format=object_format,
+            field="governance proof.eligibility_main_sha",
+        )
+        _git_object_id(
+            provenance_map["blob-oid"],
+            object_format=object_format,
+            field="governance proof.blob_oid",
+        )
+        _digest(
+            provenance_map["canonical-content-digest"],
+            field="governance proof.canonical_content_digest",
+        )
         observed_at = _timestamp(
             self.observed_at,
             field="governance proof.observed_at",

@@ -654,8 +654,11 @@ def test_governance_proof_supports_exact_sha1_and_sha256_generations(
 ):
     proof = _governance_proof(object_format=object_format)
     document = proof.to_document()
+    provenance = dict(proof.provenance)
 
-    assert dict(proof.provenance)["git-object-format"] == object_format
+    assert provenance["git-object-format"] == object_format
+    assert len(provenance["eligibility-main-sha"]) == expected_length
+    assert len(provenance["blob-oid"]) == expected_length
     assert len(document["current-main-sha"]) == expected_length
     assert document["provenance"][3] == [
         "git-object-format",
@@ -710,11 +713,41 @@ def test_governance_proof_rejects_malformed_current_main_identity(
     provenance,
     current_main_sha,
 ):
-    with pytest.raises(ValueError, match="current main SHA is malformed"):
+    with pytest.raises(ValueError, match="current_main_sha is malformed"):
         replace(
             _governance_proof(),
             provenance=provenance,
             current_main_sha=current_main_sha,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "replacement"),
+    [
+        ("eligibility-main-sha", "B" * 40),
+        ("eligibility-main-sha", "b" * 39),
+        ("blob-oid", "g" * 40),
+        ("blob-oid", "d" * 41),
+        ("canonical-content-digest", "5" * 64),
+        ("canonical-content-digest", "sha256:" + ("A" * 64)),
+        ("canonical-content-digest", "sha256:" + ("g" * 64)),
+    ],
+)
+def test_transport_rejects_malformed_governance_authority_identity(
+    field_name,
+    replacement,
+):
+    document = _marker().to_document()
+    provenance = document["governance-proof"]["provenance"]
+    for pair in provenance:
+        if pair[0] == field_name:
+            pair[1] = replacement
+            break
+
+    with pytest.raises(ValueError, match=r"malformed|prefixed lowercase"):
+        release_record_from_document(
+            document,
+            expected_type=MutationMayHaveStartedMarker,
         )
 
 
