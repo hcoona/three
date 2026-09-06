@@ -4,7 +4,10 @@
 
 **Status:** replacement low-level design, dated 2026-08-31.
 
-**Runtime state:** merged and disabled by protected Governance with `live_enabled: false`.
+**Implementation boundary:** this revision implements the replacement runtime
+with strict Governance v2 and `live_enabled: false`. Protected delivery and
+operational state must be reconciled through the
+[agent handoff](./agent-handoff.md); local implementation is not activation.
 
 This document replaces the former implementation and rollout chronology. It defines the target first-slice design; current runtime code is useful only for repository naming and tooling conventions when it differs from the normative v3 design.
 
@@ -57,14 +60,18 @@ The desired Buddy coordinate is the exact package plus the frozen native NBGV `n
 
 ### 3.1 Current versus target
 
-At this design date, protected Governance is disabled, was inspected at `2026-08-14T17:19:12Z`, and expires at `2026-11-12T17:19:12Z`. Both `workflow-delivery-v3-buddy-approval` and the legacy `workflow-delivery-v3-buddy-github-packages` Environment exist.
+The implementation uses strict blocked Governance v2, one Approval Environment,
+direct Publication Authorization, active-only Observation, fresh
+exact-satisfied proof, the pinned one-shot npm profile, canonical marker/Result
+transport, and the tagged current-DAG Outcome. Normal-Live records omit
+run-attempt identity. Receipt, ActionResult, and superseded marker and proof
+formats have no aliases.
 
-The merged runtime already uses protected Governance v1, one Approval
-Environment, direct Publication Authorization, current-DAG finalization,
-normal-Live records without run-attempt identity, at-most-one-action
-publication, and the bounded static-reference policy. It remains disabled,
-retains the superseded Receipt/ActionResult publication and Outcome contracts,
-and rejects the unsupported destination mutation primitive.
+Governance remains disabled. Its current inspection and expiry are read from
+the protected document, not a copied date in this design. The exact profile's
+native acceptance, retained-ref compatibility, obsolete-Environment cleanup,
+and activation gates remain outstanding; consult the handoff for operating
+state.
 
 The replacement target has:
 
@@ -774,7 +781,7 @@ The refreshed strict Governance file retains package/policy identity, issuer `hc
 
 Its exact schema is
 `workflow-delivery/v3/normal-live-governance-attestation-v2`, replacing the
-currently merged but disabled
+superseded
 `workflow-delivery/v3/normal-live-governance-attestation-v1`. The new parser
 accepts only v2. This is an intentional compatibility fence so superseded
 selected-ref control fails before any Environment or publisher job.

@@ -26,13 +26,21 @@ requests mechanism extraction and revalidation. Git and the append-only
   first-slice LLD contraction was delivered through PR #652. Its reviewed and
   protected trees are identical, and required PR and post-merge checks passed.
   The append-only log records the exact delivery chronology.
-- Disabled Publication/Finalizer implementation starts from exact
-  `main@0b2029b5c5735fa4c7dbf4de3195903770a7df3a` on branch
-  `workflow-delivery-v3-publication-finalizer-implementation`.
-- The merged runtime and protected document still use v1 and remain disabled
-  through `live_enabled: false`. No protected runtime, workflow,
-  protected-Governance, Environment, package, tag, approval, deployment, or
-  dispatch change has followed the design merge.
+- The dependency-ordered Publication/Finalizer implementation is complete on
+  `workflow-delivery-v3-publication-finalizer-implementation`, based on
+  `main@0b2029b5c5735fa4c7dbf4de3195903770a7df3a`. Component validation,
+  independent OCR rereview, and contraction are complete. Whole-group
+  delivery review and protected Git delivery still require reconciliation.
+- This revision implements strict Governance v2 with state-only blocked
+  activation and `live_enabled: false`, active-only Observation, fresh
+  exact-satisfied proof, profile-bound one-shot publication, immutable
+  marker/Result terminal transport, and the tagged current-DAG Outcome.
+  Receipt, ActionResult, and the superseded marker and proof formats have no
+  runtime aliases.
+- The native-acceptance generation registry remains empty. No native profile
+  acceptance, activation, Environment cleanup, package or tag mutation,
+  approval, deployment, or normal-Live dispatch was performed during this
+  implementation.
 - The current user instruction authorizes end-to-end completion of design
   delivery, disabled implementation, native acceptance, activation, and
   exactly one auditable real dispatch. That authorization does not waive any
@@ -42,8 +50,10 @@ requests mechanism extraction and revalidation. Git and the append-only
 ## Git Inspection and Implementation Scope
 
 Do not trust a recorded branch name, SHA, dirty-state claim, or PR status.
-Inspect current branch, `HEAD`, local `origin/main`, merge base, status,
-untracked paths, and the complete diff before acting.
+Inspect current branch, `HEAD`, local and remote `main`, merge base, status,
+untracked paths, the complete diff, and the implementation PR state before
+acting. Skip delivery steps already completed; a recorded checkpoint does not
+prove that a branch is unpushed, a PR is unopened, or a change is unmerged.
 
 The expected implementation surface is the release record and transport
 model, strict Governance eligibility, GitHub Packages Adapter, Live
@@ -114,12 +124,13 @@ Environment job, and exact no-reference proof is complete.
 Never claim package isolation, reviewer independence, exhaustive grant discovery, universal consumer proof, or
 instantaneous revocation.
 
-Normal Live remains activation-blocked because the Publication/Finalizer
-runtime and Governance v2 migration are not implemented and the exact
-Destination Operation Profile has no fresh native acceptance generation. The
-design deliberately treats a post-Observation tag race as bounded routing
-damage: supported consumers resolve exact `name@version`, and exact version
-bytes, digests, and witness remain authoritative.
+Normal Live remains activation-blocked until the disabled implementation is
+protected-delivered and the exact Destination Operation Profile has a fresh
+native acceptance generation installed through the Activation PR. Local
+scenario results do not substitute for that acceptance. The design deliberately
+treats a post-Observation tag race as bounded routing damage: supported
+consumers resolve exact `name@version`, and exact version bytes, digests, and
+witness remain authoritative.
 
 ## Explicit Authorization Boundary
 
@@ -158,12 +169,13 @@ Do not infer policy from stale runtime behavior or archived designs.
 ## Next Executable Workflow
 
 1. Perform the required Git inspection above.
-2. Implement the bounded surface above in dependency order. Keep protected
-   Governance disabled and perform no package, Environment, approval,
-   deployment, or dispatch mutation.
-3. Run targeted scenarios, the complete v3 suite, root HK and hooks, OCR
+2. Reconcile the complete implementation against the normative contract and
+   synchronize its current-state documentation. Keep Governance disabled and
+   perform no package, Environment, approval, deployment, or dispatch mutation.
+3. Complete whole-group validation and delivery review against the true base:
+   targeted scenarios, the complete v3 suite, root HK and hooks, OCR
    multi-review, independent TP/FP adjudication, clean rereview, and final
-   shrink before protected implementation delivery.
+   shrink.
 4. Deliver the disabled implementation through a protected PR and verify the
    exact merged tree plus post-merge checks.
 5. Prove retained-ref compatibility and remove the obsolete Environment only

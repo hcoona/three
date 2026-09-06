@@ -6,21 +6,22 @@ Workflow Delivery v3 is active and is the only normative Workflow Delivery desig
 
 The user-approved replacement normal-Live baseline is merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
-The static-reference and record-model contractions are merged. The disabled
-Governance/authorization contraction is validated, independently rereviewed,
-implemented, and merged. The Publication/Finalizer design contraction is
-protected-merged through PR #652. Disabled implementation starts from
-`main@0b2029b5c5735fa4c7dbf4de3195903770a7df3a`.
+The disabled implementation now includes active-only Observation, fresh
+exact-satisfied finalization proof, profile-bound one-shot publication,
+immutable marker/Result terminal transport, and a read-only current-DAG
+Finalizer with one tagged predecessor. Its component validation and independent
+rereview are complete; whole-group delivery remains a separate gate.
 
-No Publication/Finalizer runtime, Governance enablement, package access,
-deployment, package mutation, or other external resource has changed. The
-merged runtime and protected document remain disabled through
-`live_enabled: false` and still use the superseded v1 Governance schema until
-the implementation migration.
+This revision uses strict Governance v2 with state-only blocked activation and
+`live_enabled: false`. The native-acceptance generation registry remains empty.
+No native profile acceptance, activation, package access change, deployment,
+package mutation, or other operational external change was performed during
+implementation. Inspect Git and PR state through the handoff rather than
+inferring protected delivery from this page.
 
-Normal Live remains activation-blocked by the unimplemented
-Publication/Finalizer runtime and missing fresh native acceptance for the exact
-Destination Operation Profile. The design admits a pinned standard
+Normal Live remains activation-blocked until protected implementation delivery
+and fresh native acceptance for the exact Destination Operation Profile. The
+design admits a pinned standard
 `npm publish --tag ... --fetch-retries=0` profile only after its native suite
 proves the required creation, conflict, tag-race, and deleted/restorable
 tombstone behavior. Exact package-version bytes, digests, and witness are
@@ -85,13 +86,12 @@ chronology is not current architecture.
 
 ## Delivery Boundary
 
-All authorized design work through the Publication/Finalizer boundary is
-protected-merged. It changed no runtime code, workflows, protected Governance,
-or external resources.
-
-The next dependency-ordered gate is disabled runtime implementation, followed
-by native profile acceptance, Governance v2 activation, and exactly one
-auditable real dispatch.
+Protected implementation delivery requires complete validation, independent
+review, final contraction, exact merged-tree verification, and post-merge
+checks. After that gate, retained-ref compatibility and exact no-reference
+proof precede obsolete-Environment cleanup. Native profile acceptance,
+restoration/readback, ready Governance v2 activation, and exactly one auditable
+real dispatch remain separate operational gates.
 
 ## Historical Source Rule
 

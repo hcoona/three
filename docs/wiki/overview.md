@@ -50,7 +50,8 @@ normative for new work.
 - The first-slice Publication Snapshot contains exactly zero or one action.
 - Exact destination state takes the zero-action `exact-satisfied` path with no
   approval, Publication Authorization, publisher, marker, or Result.
-  It repeats fresh Governance continuity checks before success.
+  It repeats fresh Governance continuity, package-control, and actual
+  exact-version tarball checks before success.
 - Active exact-version absence may take one action only with a fresh admitted
   Package-Control Proof and a Governance-bound Destination Operation Profile
   whose native acceptance remains fresh. The path then uses a pre-wait
@@ -98,19 +99,16 @@ Its detailed chronology belongs in Git and the append-only log.
 
 ## Current Disabled and External State
 
-The merged runtime is superseded by the replacement design but remains
-disabled through
-`.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` with
-`live_enabled: false`.
+This revision implements the replacement runtime and strict Governance v2.
+The governance document at
+`.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` retains
+state-only blocked activation and `live_enabled: false`.
 
-- The disabled replacement implementation is validated and independently
-  rereviewed, and the Governance/authorization unit is merged. Its Git and
-  pull-request state must be inspected rather than inferred from this page.
-- The bounded follow-up contraction uses the fetched protected ref as each
-  Governance read identity, removes redundant repository-wide object
-  scanning, narrows the active disabled publisher to authority-closure
-  validation followed by deterministic rejection, and preserves workflow
-  authority through property tests rather than complete topology snapshots.
+- The dependency-ordered implementation units have completed validation,
+  independent rereview, and contraction. Whole-group delivery and current Git
+  and pull-request state must be inspected rather than inferred from this page.
+- The exact Destination Operation Profile has no admitted native acceptance
+  generation. Local scenarios do not activate publication.
 - Approval Environment `workflow-delivery-v3-buddy-approval`, ID
   `20895030723`, has rule `64124473`, sole reviewer
   `hcoona` / `712433`, self-review permitted, zero wait, no secrets, no
@@ -129,15 +127,12 @@ disabled through
 
 ## Delivery Boundary
 
-The replacement design, static-reference foundation, and record-model
-contraction are merged. The disabled Governance/authorization implementation
-and its bounded follow-up contraction are merged. The Publication/Finalizer
-design contraction is protected-merged through PR #652. Disabled
-implementation starts from
-`main@0b2029b5c5735fa4c7dbf4de3195903770a7df3a`.
+The disabled Publication/Finalizer implementation follows the protected-merged
+replacement design. Complete whole-group review, protected delivery,
+exact-tree verification, and post-merge checks before operational preparation.
 
-The next gates implement and merge the disabled runtime with strict Governance
-v2, remove the obsolete Environment after exact proof, run native profile
+The remaining operational gates remove the obsolete Environment after exact
+retained-ref and no-reference proof, run native profile
 acceptance, install fresh ready Governance evidence including repository
 retention of at least 45 days, merge one small Activation PR, read back
 protected state, dispatch once through the run-ID-returning API, and verify the
