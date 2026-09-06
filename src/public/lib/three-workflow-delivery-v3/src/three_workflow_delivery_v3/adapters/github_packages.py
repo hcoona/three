@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import http.client
 import inspect
-import itertools
 import re
 import stat
 import urllib.error
@@ -394,7 +393,7 @@ class GitHubPackagesTransport(Protocol):
         timeout: float,
         max_bytes: int,
     ) -> GitHubPackagesHttpResponse:
-        """Fetch one bounded response without retaining credentials."""
+        """Fetch bounded data; strip credentials on cross-origin redirects."""
 
 
 class GitHubPackagesHttpTransport:
@@ -2493,17 +2492,9 @@ def _response_policy_ok(
     *,
     requested_url: str,
     stage: str,
-    credentialed: bool,
 ) -> bool:
     chain = (requested_url, *response.redirects, response.url)
-    if not all(_allowed_url(url, stage=stage) for url in chain):
-        return False
-    if credentialed:
-        return all(
-            _origin(source) == _origin(target)
-            for source, target in itertools.pairwise(chain)
-        )
-    return True
+    return all(_allowed_url(url, stage=stage) for url in chain)
 
 
 def _header(
@@ -2676,9 +2667,6 @@ def _active_get(  # noqa: PLR0913
             response,
             requested_url=url,
             stage=stage,
-            credentialed=any(
-                name.lower() == "authorization" for name, _ in headers
-            ),
         )
         or not _identity_encoding(response)
         or (

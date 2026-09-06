@@ -700,3 +700,45 @@ def test_invalid_desired_witness_binding_fails_before_reads(basis):
             observed_at=OBSERVED_AT,
             transport=ScenarioTransport({}),
         )
+
+
+def test_active_readback_accepts_registry_tarball_redirect_without_storage_auth(
+    basis,
+):
+    storage_url = "https://objects.githubusercontent.com/package.tgz"
+    responses = _responses(basis)
+    responses[TARBALL_URL] = _response(
+        TARBALL_URL,
+        status=302,
+        headers=(("Location", storage_url),),
+        body=b"",
+    )
+    responses[storage_url] = _response(storage_url, body=basis.tarball)
+
+    def open_once(request, _timeout, _max_bytes):
+        if request.full_url == TARBALL_URL:
+            assert request.get_header("Authorization") == "Bearer " + TOKEN
+        elif request.full_url == storage_url:
+            assert request.get_header("Authorization") is None
+        return responses[request.full_url]
+
+    result = read_github_packages_active_state(
+        basis.artifact,
+        basis.expectation,
+        token=TOKEN,
+        observed_at=OBSERVED_AT,
+        transport=GitHubPackagesHttpTransport(opener=open_once),
+    )
+
+    assert result.readback.classification == "exact-satisfied"
+    assert (
+        result.readback.content_sha256,
+        result.readback.content_sha512,
+        result.readback.witness_digest,
+        result.readback.witness_target,
+    ) == (
+        "sha256:" + hashlib.sha256(basis.tarball).hexdigest(),
+        "sha512:" + hashlib.sha512(basis.tarball).hexdigest(),
+        "sha256:" + hashlib.sha256(basis.expectation.witness_bytes).hexdigest(),
+        TARGET,
+    )

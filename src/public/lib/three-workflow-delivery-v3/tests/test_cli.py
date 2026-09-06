@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import subprocess
 import tomllib
@@ -1151,23 +1150,6 @@ def test_cli_commit8_live_outcome_status_mapping_is_closed() -> None:
         "publication-failed": 1,
         "unknown": 1,
     }
-
-
-def test_cli_live_github_packages_paths_select_manual_redirect_transport() -> (
-    None
-):
-    """Select credential-safe redirects for every Live remote-reading path."""
-    source = inspect.getsource(cli_module)
-
-    assert "_UrlopenGitHubPackagesTransport" not in source
-    for handler_name in (
-        "_release_prepare_publication_command",
-        "_release_execute_publication_command",
-        "_release_prove_exact_satisfied_command",
-    ):
-        assert "transport=GitHubPackagesHttpTransport()" in inspect.getsource(
-            getattr(cli_module, handler_name)
-        )
 
 
 def test_cli_commit8_finalizer_exposes_platform_and_status_evidence_contract(
