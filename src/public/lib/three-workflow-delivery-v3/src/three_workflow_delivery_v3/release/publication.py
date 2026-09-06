@@ -5,9 +5,7 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import shutil
-import stat
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -25,12 +23,22 @@ from three_workflow_delivery_v3.adapters.node import (
     _load_packed_manifest,
     _read_tarball,
 )
+from three_workflow_delivery_v3.adapters.npm_runtime import (
+    NPM_OUTPUT_LIMIT,
+    NPM_PUBLISH_TIMEOUT,
+    NpmProfileRejectionError,
+    initialize_npm_configuration,
+    match_npm_profile,
+    npm_environment,
+    npm_runtime_paths,
+    validate_npm_runtime,
+    write_private_file,
+)
 from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
     GovernanceProof,
     MutationMayHaveStartedMarker,
-    ProfileMatchEvidence,
     PublicationDiagnostics,
     PublicationResult,
     admit_release_record,
@@ -66,6 +74,7 @@ if TYPE_CHECKING:
     from three_workflow_delivery_v3.records.release import (
         ApprovalBundle,
         DestinationReadback,
+        ProfileMatchEvidence,
         PublicationAuthorization,
         PublicationSnapshot,
         QualificationDecision,
@@ -83,21 +92,6 @@ if TYPE_CHECKING:
         GovernanceSourceClient,
     )
     from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
-
-_QUERY_TIMEOUT = 20.0
-_PUBLISH_TIMEOUT = 120.0
-_OUTPUT_LIMIT = 4096
-_PRIVATE_DIRECTORY_MODE = 0o700
-_PRIVATE_FILE_MODE = 0o600
-_USER_CONFIG = (
-    "@hcoona:registry=https://npm.pkg.github.com\n"
-    "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}\n"
-)
-_LOCAL_MANIFEST = b'{"private":true}\n'
-
-
-class _ProfileRejectionError(ValueError):
-    """Controlled local artifact or nonmutating profile-query rejection."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,68 +213,6 @@ def _instant(now: datetime) -> str:
     return now.isoformat().replace("+00:00", "Z")
 
 
-def _runtime_paths(
-    directory: Path, toolchain: Path, checkout: Path
-) -> tuple[Path, Path]:
-    directory = directory.absolute()
-    toolchain = toolchain.resolve(strict=True)
-    if (
-        directory != directory.resolve()
-        or directory.is_relative_to(checkout.resolve())
-        or toolchain.is_relative_to(checkout.resolve())
-    ):
-        raise ValueError(
-            "Publisher runtime and toolchain must be outside checkout"
-        )
-    return directory, toolchain
-
-
-def _environment(
-    directory: Path, toolchain: Path, token: str
-) -> dict[str, str]:
-    if type(token) is not str or not token or any(c in token for c in "\r\n\0"):
-        raise ValueError("Publisher requires a current repository GITHUB_TOKEN")
-    # Nothing from ambient configuration, including NODE_OPTIONS, is inherited.
-    return {
-        "PATH": os.pathsep.join((str(toolchain), os.defpath)),
-        "HOME": str(directory / "home"),
-        "TMPDIR": str(directory / "scratch"),
-        "GITHUB_TOKEN": token,
-        "NPM_CONFIG_USERCONFIG": str(directory / "user.npmrc"),
-        "NPM_CONFIG_GLOBALCONFIG": str(directory / "global.npmrc"),
-        "NPM_CONFIG_CACHE": str(directory / "cache"),
-        "NPM_CONFIG_LOGS_MAX": "0",
-    }
-
-
-def _private_file(path: Path, content: bytes) -> None:
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descriptor, "wb") as stream:
-        stream.write(content)
-
-
-def _validate_runtime(directory: Path) -> None:
-    if (
-        not stat.S_ISDIR(directory.lstat().st_mode)
-        or stat.S_IMODE(directory.stat().st_mode) != _PRIVATE_DIRECTORY_MODE
-    ):
-        raise ValueError("Publisher runtime is not runner-private")
-    for name, expected in (
-        ("package.json", _LOCAL_MANIFEST),
-        ("user.npmrc", _USER_CONFIG.encode()),
-        ("global.npmrc", b""),
-    ):
-        path = directory / name
-        if (
-            not stat.S_ISREG(path.lstat().st_mode)
-            or stat.S_IMODE(path.stat().st_mode) != _PRIVATE_FILE_MODE
-            or path.read_bytes() != expected
-        ):
-            raise ValueError("Publisher prepared configuration changed")
-    if (directory / ".npmrc").exists():
-        raise ValueError("Publisher project configuration is forbidden")
-
-
 def _profile_match(  # noqa: PLR0913
     inputs: PublicationInputs,
     *,
@@ -291,8 +223,7 @@ def _profile_match(  # noqa: PLR0913
     runner: NpmProcessRunner,
     clock: Callable[[], datetime],
 ) -> ProfileMatchEvidence:
-    _validate_runtime(directory)
-    profile = github_packages_destination_operation_profile()
+    validate_npm_runtime(directory)
     action = inputs.publication_snapshot.materialized_actions[0]
     tarball = directory / inputs.artifact.content.basename
     try:
@@ -303,7 +234,7 @@ def _profile_match(  # noqa: PLR0913
             expanded_tarball_limit_bytes=DEFAULT_EXPANDED_TARBALL_LIMIT_BYTES,
         )
     except ValueError as error:
-        raise _ProfileRejectionError(
+        raise NpmProfileRejectionError(
             "Publisher qualified tarball mismatch"
         ) from error
     entries = _read_tarball(
@@ -312,65 +243,17 @@ def _profile_match(  # noqa: PLR0913
     )
     manifest = _load_packed_manifest(entries["package/package.json"])
     if "publishConfig" in manifest:
-        raise _ProfileRejectionError(
+        raise NpmProfileRejectionError(
             "Publisher forbids packed publishConfig operands"
         )
-    command = tuple(
-        {"{tarball-path}": str(tarball), "{tag}": action.tag}.get(word, word)
-        for word in profile.command_template
-    )
-    environment = _environment(directory, toolchain, token)
-
-    def query(argv: tuple[str, ...]) -> str:
-        outcome = runner.run(
-            argv,
-            cwd=directory,
-            environment=environment,
-            timeout=_QUERY_TIMEOUT,
-            output_limit=_OUTPUT_LIMIT,
-        )
-        if outcome.classification != "definitive-success" or outcome.truncated:
-            raise _ProfileRejectionError(
-                "Publisher toolchain/configuration query failed"
-            )
-        try:
-            return outcome.output.decode("utf-8").strip()
-        except UnicodeError:
-            raise _ProfileRejectionError(
-                "Publisher toolchain/configuration is not UTF-8"
-            ) from None
-
-    node = query(("node", "--version"))
-    npm = query(("npm", "--version"))
-    if node != "v" + profile.node_version or npm != profile.npm_version:
-        raise _ProfileRejectionError("Publisher pinned toolchain mismatch")
-    # The trusted manifest anchors npm's documented local-prefix discovery.
-    # User/global config paths are fixed by the exact environment and checked
-    # files, not npm's intentionally redacted textual rendering of paths.
-    expected = {
-        "@hcoona:registry": profile.registry,
-        # npm's URL-typed registry config serializes the root slash.
-        "registry": profile.registry + "/",
-        "tag": action.tag,
-        "ignore-scripts": "true",
-        "fetch-retries": "0",
-        "access": "null",
-    }
-    actual = {}
-    for key, value in expected.items():
-        observed = query(("npm", "config", "get", key, *command[3:]))
-        if observed != value:
-            raise _ProfileRejectionError(
-                "Publisher effective npm configuration mismatch"
-            )
-        actual[key] = observed
-    return ProfileMatchEvidence(
-        destination_operation_profile_digest=profile.profile_digest,
-        node_version=node.removeprefix("v"),
-        npm_version=npm,
-        command=command,
-        configuration=tuple(sorted(actual.items())),
-        matched_at=_instant(clock()),
+    return match_npm_profile(
+        tarball=tarball,
+        tag=action.tag,
+        directory=directory,
+        toolchain=toolchain,
+        token=token,
+        runner=runner,
+        clock=clock,
     )
 
 
@@ -396,10 +279,10 @@ def prepare_publication(  # noqa: PLR0913
     Execution reconstructs and revalidates it; no local manifest is authority.
     """
     inputs.validate(current=current, run_attempt=run_attempt, now=clock())
-    directory, toolchain = _runtime_paths(
+    directory, toolchain = npm_runtime_paths(
         runtime_directory, toolchain_directory, checkout
     )
-    _environment(directory, toolchain, token)
+    npm_environment(directory, toolchain, token)
     _validate_local_tarball_preconditions(
         tarball=tarball,
         artifact=inputs.artifact,
@@ -409,12 +292,7 @@ def prepare_publication(  # noqa: PLR0913
     directory.mkdir(mode=0o700)
     with ExitStack() as cleanup:
         cleanup.callback(shutil.rmtree, directory)
-        for name in ("home", "scratch", "cache"):
-            (directory / name).mkdir(mode=0o700)
-        _private_file(directory / "package.json", _LOCAL_MANIFEST)
-        _private_file(directory / "user.npmrc", _USER_CONFIG.encode())
-        _private_file(directory / "global.npmrc", b"")
-        _private_file(directory / tarball.name, tarball.read_bytes())
+        initialize_npm_configuration(directory, tarball)
         initial = inputs.eligibility.governance
         fresh = require_fresh_governance_identity(
             inputs.policy.governance,
@@ -583,13 +461,13 @@ def execute_publication(  # noqa: PLR0913
         )
     ):
         raise ValueError("Publication marker authority or freshness mismatch")
-    directory, toolchain = _runtime_paths(
+    directory, toolchain = npm_runtime_paths(
         runtime_directory, toolchain_directory, checkout
     )
-    _validate_runtime(directory)
+    validate_npm_runtime(directory)
     # Claim the local lifecycle before entering its cleanup scope. A competing
     # caller must neither invoke npm nor delete the owner's prepared files.
-    _private_file(directory / "command-started", b"")
+    write_private_file(directory / "command-started", b"")
     try:
         try:
             match = _profile_match(
@@ -618,7 +496,7 @@ def execute_publication(  # noqa: PLR0913
                     match.destination_operation_profile_digest
                 ),
             )
-        except (_ProfileRejectionError, GovernanceFreshnessRejectionError):
+        except (NpmProfileRejectionError, GovernanceFreshnessRejectionError):
             return _publication_result(
                 inputs,
                 durable_marker,
@@ -635,9 +513,9 @@ def execute_publication(  # noqa: PLR0913
         outcome = runner.run(
             match.command,
             cwd=directory,
-            environment=_environment(directory, toolchain, token),
-            timeout=_PUBLISH_TIMEOUT,
-            output_limit=_OUTPUT_LIMIT,
+            environment=npm_environment(directory, toolchain, token),
+            timeout=NPM_PUBLISH_TIMEOUT,
+            output_limit=NPM_OUTPUT_LIMIT,
         )
         state = read_github_packages_active_state(
             inputs.artifact,
