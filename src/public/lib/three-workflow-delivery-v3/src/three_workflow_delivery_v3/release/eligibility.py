@@ -57,7 +57,7 @@ if TYPE_CHECKING:
         RepositoryModelSnapshot,
     )
 ATTESTATION_SCHEMA = (
-    "workflow-delivery/v3/normal-live-governance-attestation-v1"
+    "workflow-delivery/v3/normal-live-governance-attestation-v2"
 )
 LIVE_ELIGIBILITY_DECISION_SCHEMA = (
     "workflow-delivery/v3/live-eligibility-decision"
@@ -73,23 +73,19 @@ _APPROVAL_SENTINEL_VALUE = "workflow-delivery-v3-buddy-approval/v1"
 _ARTIFACT_RETENTION_ENDPOINT = (
     "GET /repos/hcoona/three/actions/permissions/artifact-and-log-retention"
 )
-_DESTINATION_PRIMITIVE_OPERATION = (
-    "conditional-create-npm-version-and-target-tag"
-)
 _DESTINATION_PRIMITIVE_UNPROVEN = "destination-primitive-unproven"
-_ADMITTED_DESTINATION_PRIMITIVE_IDS: frozenset[str] = frozenset()
-_DISABLED_ACTIVATION_BLOCKERS = (
-    _DESTINATION_PRIMITIVE_UNPROVEN,
-    "fresh-native-evidence-required",
-    "repository-retention-readback-required",
-)
+# Target-admitted profile, suite, disposable package, API and contract.
+# Governance, not target code, attests the captured successful generation.
+# No production contract is admitted before its native acceptance.
+_ADMITTED_DESTINATION_PRIMITIVE_IDS: frozenset[
+    tuple[str, str, str, str, str]
+] = frozenset()
 _KNOWN_WIDER_PACKAGE_REACH = (
     "@hcoona/hexo-renderer-asciidoc",
     "disposable-smoke-packages",
 )
 _GIT_OBJECT_ID_LENGTHS = {"sha1": 40, "sha256": 64}
 _MIN_ARTIFACT_RETENTION_DAYS = 45
-_PAIR_SIZE = 2
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 _OBJECT_ID_PATTERN = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
@@ -287,38 +283,115 @@ class ArtifactRetentionAttestation:
 
 
 @dataclass(frozen=True, slots=True)
-class DestinationPrimitiveAttestation:
-    """Admitted conditional destination primitive and race proof."""
+class DisposablePackagePreconditions:
+    """Issuer-attested preconditions for the acceptance-only package."""
 
-    primitive_id: str
-    operation: str
-    captured_at: datetime
-    race_inputs: tuple[tuple[str, str], ...]
-    race_results: tuple[tuple[str, str], ...]
-    evidence_digest: str
+    package: str
+    preexisting_container: bool
+    operator_controlled: bool
+    production_dependency: bool
+
+    def __post_init__(self) -> None:
+        """Reject incomplete or non-passing disposable-package facts."""
+        _exact_string(
+            self.package, context="disposable_package_preconditions.package"
+        )
+        if (
+            self.preexisting_container is not True
+            or self.operator_controlled is not True
+            or self.production_dependency is not False
+        ):
+            message = "disposable_package_preconditions must be passing"
+            raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
-        """Return the normalized primitive and race evidence."""
+        """Return only the closed approved preconditions."""
         return {
-            "primitive_id": self.primitive_id,
-            "operation": self.operation,
-            "captured_at": _format_instant(self.captured_at),
-            "race_inputs": [list(item) for item in self.race_inputs],
-            "race_results": [list(item) for item in self.race_results],
-            "evidence_digest": self.evidence_digest,
+            "package": self.package,
+            "preexisting_container": self.preexisting_container,
+            "operator_controlled": self.operator_controlled,
+            "production_dependency": self.production_dependency,
         }
 
 
 @dataclass(frozen=True, slots=True)
-class DisabledGovernanceActivation:
-    """Explicit unsatisfied activation gates for disabled implementation."""
+class DestinationPrimitiveAttestation:
+    """Identity of one successful native acceptance generation, not its data."""
 
-    blockers: tuple[str, ...]
+    destination_operation_profile_digest: str
+    native_acceptance_suite_version: str
+    disposable_package_preconditions: DisposablePackagePreconditions
+    github_api_version: str
+    lower_layer_contract_revision: str
+    captured_at: datetime
+    evidence_digest: str
+
+    def __post_init__(self) -> None:
+        """Validate the closed successful-acceptance statement."""
+        _sha256(
+            self.destination_operation_profile_digest,
+            context="destination_primitive.destination_operation_profile_digest",
+        )
+        _sha256(
+            self.evidence_digest,
+            context="destination_primitive.evidence_digest",
+        )
+        for field in (
+            "native_acceptance_suite_version",
+            "github_api_version",
+            "lower_layer_contract_revision",
+        ):
+            _exact_string(
+                getattr(self, field), context=f"destination_primitive.{field}"
+            )
+        if (
+            type(self.disposable_package_preconditions)
+            is not DisposablePackagePreconditions
+        ):
+            message = (
+                "destination_primitive requires "
+                "disposable_package_preconditions"
+            )
+            raise TypeError(message)
+        _validate_instant(self.captured_at)
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the exact acceptance identity without privileged inputs."""
+        return {
+            "destination_operation_profile_digest": (
+                self.destination_operation_profile_digest
+            ),
+            "native_acceptance_suite_version": (
+                self.native_acceptance_suite_version
+            ),
+            "disposable_package_preconditions": (
+                self.disposable_package_preconditions.to_document()
+            ),
+            "github_api_version": self.github_api_version,
+            "lower_layer_contract_revision": self.lower_layer_contract_revision,
+            "captured_at": _format_instant(self.captured_at),
+            "evidence_digest": self.evidence_digest,
+        }
+
+    @property
+    def admission_key(self) -> tuple[str, str, str, str, str]:
+        """Return the exact target-code contract, excluding issuer evidence."""
+        return (
+            self.destination_operation_profile_digest,
+            self.native_acceptance_suite_version,
+            self.disposable_package_preconditions.package,
+            self.github_api_version,
+            self.lower_layer_contract_revision,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DisabledGovernanceActivation:
+    """State-only blocked activation, carrying no native evidence."""
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the closed disabled activation state."""
-        blockers: list[JsonValue] = list(self.blockers)
-        return {"state": "blocked", "blockers": blockers}
+        return {"state": "blocked"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +401,23 @@ class EnabledGovernanceActivation:
     approval_environment: ApprovalEnvironmentAttestation
     artifact_retention: ArtifactRetentionAttestation
     destination_primitive: DestinationPrimitiveAttestation
+
+    def __post_init__(self) -> None:
+        """Require complete pass-only native statements, even while disabled."""
+        if (
+            type(self.approval_environment)
+            is not ApprovalEnvironmentAttestation
+            or type(self.artifact_retention) is not ArtifactRetentionAttestation
+            or type(self.destination_primitive)
+            is not DestinationPrimitiveAttestation
+        ):
+            message = "ready activation requires complete native evidence"
+            raise TypeError(message)
+        _approval_environment(self.approval_environment.to_document())
+        _artifact_retention(self.artifact_retention.to_document())
+        for evidence in self.approval_environment.evidence:
+            _validate_instant(evidence.captured_at)
+        _validate_instant(self.artifact_retention.captured_at)
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the closed activation-ready evidence."""
@@ -360,6 +450,65 @@ class GovernanceAttestation:
     limitations: tuple[str, ...]
     activation: GovernanceActivation
     live_enabled: bool
+
+    def __post_init__(self) -> None:
+        """Keep constructor and parser states equally strict."""
+        if type(self.activation) not in (
+            DisabledGovernanceActivation,
+            EnabledGovernanceActivation,
+        ):
+            message = "Governance activation has the wrong runtime type"
+            raise TypeError(message)
+        _boolean(
+            self.live_enabled, context="Governance attestation live_enabled"
+        )
+        if self.live_enabled and isinstance(
+            self.activation, DisabledGovernanceActivation
+        ):
+            message = "Governance activation state and live_enabled disagree"
+            raise ValueError(message)
+        _validate_instant(self.inspected_at)
+        _validate_instant(self.expires_at)
+        lifetime = self.expires_at - self.inspected_at
+        if (
+            not timedelta(0)
+            < lifetime
+            <= timedelta(days=GOVERNANCE_MAX_AGE_DAYS)
+        ):
+            message = "Governance attestation expiry must be within 90 days"
+            raise ValueError(message)
+        if isinstance(self.activation, EnabledGovernanceActivation):
+            evidence_times = (
+                *(
+                    item.captured_at
+                    for item in self.activation.approval_environment.evidence
+                ),
+                self.activation.artifact_retention.captured_at,
+                self.activation.destination_primitive.captured_at,
+            )
+            if any(
+                captured_at > self.inspected_at
+                for captured_at in evidence_times
+            ):
+                message = "Governance evidence was captured after inspection"
+                raise ValueError(message)
+        document = self.to_document()
+        if (
+            self.release_policy != _RELEASE_POLICY_BINDING
+            or self.package != FIRST_SLICE_PACKAGE
+        ):
+            message = "Governance attestation policy/package binding mismatch"
+            raise ValueError(message)
+        if (
+            self.issuer != _ACCEPTED_OPERATOR
+            or self.accepted_publisher != _ACCEPTED_OPERATOR
+        ):
+            message = "Governance attestation issuer/publisher is not hcoona"
+            raise ValueError(message)
+        _writer_inventory(document["accepted_writers"])
+        _access_inventory(document["access_inventory"])
+        _package_principal(document["package_principal"])
+        _strings(document["limitations"], context="limitations")
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return canonical attestation content."""
@@ -398,11 +547,52 @@ def _destination_primitive_is_admitted(
     attestation: GovernanceAttestation,
 ) -> bool:
     activation = attestation.activation
-    return (
-        isinstance(activation, EnabledGovernanceActivation)
-        and activation.destination_primitive.primitive_id
-        in _ADMITTED_DESTINATION_PRIMITIVE_IDS
+    if not isinstance(activation, EnabledGovernanceActivation):
+        return False
+    primitive = activation.destination_primitive
+    if primitive.admission_key not in _ADMITTED_DESTINATION_PRIMITIVE_IDS:
+        return False
+    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
+        github_packages_destination_operation_profile,
     )
+
+    return primitive.destination_operation_profile_digest == (
+        github_packages_destination_operation_profile().profile_digest
+    )
+
+
+def require_action_governance(
+    attestation: GovernanceAttestation,
+    *,
+    now: datetime,
+    destination_operation_profile_digest: str,
+) -> None:
+    """Admit a fresh action, never derive new authority from replay."""
+    observed_at = _utc_now(now)
+    if (
+        not attestation.live_enabled
+        or not attestation.inspected_at <= observed_at < attestation.expires_at
+    ):
+        message = "Action requires fresh enabled Governance"
+        raise GovernanceFreshnessRejectionError(message)
+    activation = attestation.activation
+    if not isinstance(
+        activation, EnabledGovernanceActivation
+    ) or not _destination_primitive_is_admitted(attestation):
+        message = "Action destination primitive is not implemented"
+        raise GovernanceRejectionError(message)
+    primitive = activation.destination_primitive
+    if (
+        primitive.destination_operation_profile_digest
+        != destination_operation_profile_digest
+    ):
+        message = "Action profile differs from current Governance"
+        raise GovernanceRejectionError(message)
+    if observed_at > primitive.captured_at + timedelta(
+        days=GOVERNANCE_MAX_AGE_DAYS
+    ):
+        message = "Action requires unexpired native acceptance"
+        raise GovernanceFreshnessRejectionError(message)
 
 
 class GovernanceSourceClient(Protocol):
@@ -658,6 +848,17 @@ def _format_instant(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _validate_instant(value: datetime) -> None:
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() != timedelta(0)
+        or value.microsecond
+    ):
+        message = "Governance evidence must use UTC second-precision instants"
+        raise ValueError(message)
+
+
 def _live_eligibility_document(
     *,
     context: LiveEligibilityContext,
@@ -843,42 +1044,6 @@ def _strings(
         message = f"{context} must be sorted"
         raise ValueError(message)
     return result
-
-
-def _string_pairs(
-    value: JsonValue,
-    *,
-    context: str,
-) -> tuple[tuple[str, str], ...]:
-    result: list[tuple[str, str]] = []
-    for index, item in enumerate(_array(value, context=context)):
-        values = _array(item, context=f"{context}[{index}]")
-        if len(values) != _PAIR_SIZE:
-            message = f"{context}[{index}] must contain two strings"
-            raise ValueError(message)
-        result.append(
-            (
-                _exact_string(
-                    values[0],
-                    context=f"{context}[{index}][0]",
-                ),
-                _exact_string(
-                    values[1],
-                    context=f"{context}[{index}][1]",
-                ),
-            )
-        )
-    pairs = tuple(result)
-    if not pairs:
-        message = f"{context} must be nonempty"
-        raise ValueError(message)
-    if len({name for name, _ in pairs}) != len(pairs):
-        message = f"{context} contains duplicate names"
-        raise ValueError(message)
-    if pairs != tuple(sorted(pairs)):
-        message = f"{context} must be sorted"
-        raise ValueError(message)
-    return pairs
 
 
 def _package_principal(value: JsonValue) -> PackagePrincipalAttestation:
@@ -1160,50 +1325,77 @@ def _destination_primitive(
         document,
         required=frozenset(
             {
-                "primitive_id",
-                "operation",
+                "destination_operation_profile_digest",
+                "native_acceptance_suite_version",
+                "disposable_package_preconditions",
+                "github_api_version",
+                "lower_layer_contract_revision",
                 "captured_at",
-                "race_inputs",
-                "race_results",
                 "evidence_digest",
             }
         ),
         context="activation.destination_primitive",
     )
-    result = DestinationPrimitiveAttestation(
-        primitive_id=_exact_string(
-            document["primitive_id"],
-            context="destination_primitive.primitive_id",
+    preconditions = _object(
+        document["disposable_package_preconditions"],
+        context="disposable_package_preconditions",
+    )
+    _closed(
+        preconditions,
+        required=frozenset(
+            {
+                "package",
+                "preexisting_container",
+                "operator_controlled",
+                "production_dependency",
+            }
         ),
-        operation=_exact_string(
-            document["operation"],
-            context="destination_primitive.operation",
+        context="disposable_package_preconditions",
+    )
+    return DestinationPrimitiveAttestation(
+        destination_operation_profile_digest=_sha256(
+            document["destination_operation_profile_digest"],
+            context="destination_primitive.destination_operation_profile_digest",
+        ),
+        native_acceptance_suite_version=_exact_string(
+            document["native_acceptance_suite_version"],
+            context="destination_primitive.native_acceptance_suite_version",
+        ),
+        disposable_package_preconditions=DisposablePackagePreconditions(
+            package=_exact_string(
+                preconditions["package"],
+                context="disposable_package_preconditions.package",
+            ),
+            preexisting_container=_boolean(
+                preconditions["preexisting_container"],
+                context="disposable_package_preconditions.preexisting_container",
+            ),
+            operator_controlled=_boolean(
+                preconditions["operator_controlled"],
+                context="disposable_package_preconditions.operator_controlled",
+            ),
+            production_dependency=_boolean(
+                preconditions["production_dependency"],
+                context="disposable_package_preconditions.production_dependency",
+            ),
+        ),
+        github_api_version=_exact_string(
+            document["github_api_version"],
+            context="destination_primitive.github_api_version",
+        ),
+        lower_layer_contract_revision=_exact_string(
+            document["lower_layer_contract_revision"],
+            context="destination_primitive.lower_layer_contract_revision",
         ),
         captured_at=_parse_instant(
             document["captured_at"],
             context="destination_primitive.captured_at",
-        ),
-        race_inputs=_string_pairs(
-            document["race_inputs"],
-            context="destination_primitive.race_inputs",
-        ),
-        race_results=_string_pairs(
-            document["race_results"],
-            context="destination_primitive.race_results",
         ),
         evidence_digest=_sha256(
             document["evidence_digest"],
             context="destination_primitive.evidence_digest",
         ),
     )
-    if result.operation != _DESTINATION_PRIMITIVE_OPERATION or any(
-        value != "pass" for _, value in result.race_results
-    ):
-        message = (
-            "destination_primitive lacks passing conditional race evidence"
-        )
-        raise ValueError(message)
-    return result
 
 
 def _activation(value: JsonValue) -> GovernanceActivation:
@@ -1212,17 +1404,10 @@ def _activation(value: JsonValue) -> GovernanceActivation:
     if state == "blocked":
         _closed(
             document,
-            required=frozenset({"state", "blockers"}),
+            required=frozenset({"state"}),
             context="activation",
         )
-        blockers = _strings(
-            document["blockers"],
-            context="activation.blockers",
-        )
-        if blockers != _DISABLED_ACTIVATION_BLOCKERS:
-            message = "activation blockers are not the exact disabled gates"
-            raise ValueError(message)
-        return DisabledGovernanceActivation(blockers=blockers)
+        return DisabledGovernanceActivation()
     if state == "ready":
         _closed(
             document,
@@ -1322,24 +1507,6 @@ def parse_governance_attestation(
         message = "Governance attestation expiry must be within 90 days"
         raise ValueError(message)
     activation = _activation(document["activation"])
-    if live_enabled != isinstance(
-        activation,
-        EnabledGovernanceActivation,
-    ):
-        message = "Governance activation state and live_enabled disagree"
-        raise ValueError(message)
-    if isinstance(activation, EnabledGovernanceActivation):
-        evidence_times = (
-            *(
-                item.captured_at
-                for item in activation.approval_environment.evidence
-            ),
-            activation.artifact_retention.captured_at,
-            activation.destination_primitive.captured_at,
-        )
-        if any(captured_at > inspected_at for captured_at in evidence_times):
-            message = "Governance evidence was captured after inspection"
-            raise ValueError(message)
     limitations = _strings(
         document["limitations"],
         context="limitations",

@@ -22,49 +22,46 @@ requests mechanism extraction and revalidation. Git and the append-only
   through PR #651 as
   `db5d9f053baf2c16cd32a1e9e9aae38ffb8c2b74`. Its reviewed tree, protected
   merged tree, post-merge Continuous Integration, and CodeQL were verified.
-- Publication/Finalizer design work is isolated on branch
-  `workflow-delivery-v3-publication-finalizer` from exact
-  `main@db5d9f053baf2c16cd32a1e9e9aae38ffb8c2b74`.
 - The Publication/Finalizer requirements, HLD, glossary, MLD, migration, and
-  first-slice LLD contraction is complete. Two disjoint design rereviews
-  reached zero findings after independent TP/FP adjudication, and the final
-  shrink rereview is clean. PR #652 carries the protected design delivery;
-  inspect its current head and live state before acting.
-- The merged runtime and protected document still use v1 and remain disabled
-  through `live_enabled: false`. This design branch has no runtime, workflow,
-  protected-Governance, Environment, package, tag, approval, deployment, or
-  dispatch change.
+  first-slice LLD contraction was delivered through PR #652. Its reviewed and
+  protected trees are identical, and required PR and post-merge checks passed.
+  The append-only log records the exact delivery chronology.
+- The dependency-ordered Publication/Finalizer implementation is complete on
+  `workflow-delivery-v3-publication-finalizer-implementation`, based on
+  `main@0b2029b5c5735fa4c7dbf4de3195903770a7df3a`. Component validation,
+  independent OCR rereview, and contraction are complete. Whole-group
+  delivery review and protected Git delivery still require reconciliation.
+- This revision implements strict Governance v2 with state-only blocked
+  activation and `live_enabled: false`, active-only Observation, fresh
+  exact-satisfied proof, profile-bound one-shot publication, immutable
+  marker/Result terminal transport, and the tagged current-DAG Outcome.
+  Receipt, ActionResult, and the superseded marker and proof formats have no
+  runtime aliases.
+- The native-acceptance generation registry remains empty. No native profile
+  acceptance, activation, Environment cleanup, package or tag mutation,
+  approval, deployment, or normal-Live dispatch was performed during this
+  implementation.
 - The current user instruction authorizes end-to-end completion of design
   delivery, disabled implementation, native acceptance, activation, and
   exactly one auditable real dispatch. That authorization does not waive any
   proof, review, rollback, or readback gate and does not authorize unrelated
   external changes.
 
-## Git Inspection and Design Scope
+## Git Inspection and Implementation Scope
 
 Do not trust a recorded branch name, SHA, dirty-state claim, or PR status.
-Inspect current branch, `HEAD`, local `origin/main`, merge base, status,
-untracked paths, and the complete diff before acting.
+Inspect current branch, `HEAD`, local and remote `main`, merge base, status,
+untracked paths, the complete diff, and the implementation PR state before
+acting. Skip delivery steps already completed; a recorded checkpoint does not
+prove that a branch is unpushed, a PR is unopened, or a change is unmerged.
 
-The coherent design package is confined to these paths:
-
-```text
-docs/wiki/analyses/workflow-delivery/v3/README.md
-docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md
-docs/wiki/analyses/workflow-delivery/v3/architecture-glossary.md
-docs/wiki/analyses/workflow-delivery/v3/ci-qualification-mld.md
-docs/wiki/analyses/workflow-delivery/v3/governance-integration-mld.md
-docs/wiki/analyses/workflow-delivery/v3/hcoona-release-smoke-npm-lld.md
-docs/wiki/analyses/workflow-delivery/v3/high-level-design.md
-docs/wiki/analyses/workflow-delivery/v3/migration-strategy.md
-docs/wiki/analyses/workflow-delivery/v3/release-delivery-mld.md
-docs/wiki/analyses/workflow-delivery/v3/repository-model-release-unit-mld.md
-docs/wiki/analyses/workflow-delivery/v3/requirements.md
-docs/wiki/analyses/workflow-delivery/v3/shared-foundation-mld.md
-docs/wiki/index.md
-docs/wiki/log.md
-docs/wiki/overview.md
-```
+The expected implementation surface is the release record and transport
+model, strict Governance eligibility, GitHub Packages Adapter, Live
+materialization/finalization and CLI wiring, the normal-Live workflows,
+protected blocked Governance v2 document, affected scenario/contract tests,
+and synchronized current-state documentation. Treat that as a bounded purpose,
+not an exhaustive path allowlist; inspect every changed path and reject
+unrelated scope.
 
 When these paths are under review, preserve unrelated worktree changes and do
 not reset or overwrite them.
@@ -127,12 +124,13 @@ Environment job, and exact no-reference proof is complete.
 Never claim package isolation, reviewer independence, exhaustive grant discovery, universal consumer proof, or
 instantaneous revocation.
 
-Normal Live remains activation-blocked because the Publication/Finalizer
-runtime and Governance v2 migration are not implemented and the exact
-Destination Operation Profile has no fresh native acceptance generation. The
-design deliberately treats a post-Observation tag race as bounded routing
-damage: supported consumers resolve exact `name@version`, and exact version
-bytes, digests, and witness remain authoritative.
+Normal Live remains activation-blocked until the disabled implementation is
+protected-delivered and the exact Destination Operation Profile has a fresh
+native acceptance generation installed through the Activation PR. Local
+scenario results do not substitute for that acceptance. The design deliberately
+treats a post-Observation tag race as bounded routing damage: supported
+consumers resolve exact `name@version`, and exact version bytes, digests, and
+witness remain authoritative.
 
 ## Explicit Authorization Boundary
 
@@ -170,21 +168,16 @@ Do not infer policy from stale runtime behavior or archived designs.
 
 ## Next Executable Workflow
 
-1. Reinspect PR #652, its exact head and base, checks, reviews, complete diff,
-   and protected delivery state.
-2. If design delivery remains open, validate the current head, rerun applicable
-   OCR delegation, independently adjudicate any finding, require clean
-   rereview and shrink, merge, and verify the exact protected tree and
-   post-merge checks.
-3. Start the disabled implementation from that protected design revision.
-   Implement record/schema migration, strict state-only blocked Governance v2,
-   Destination Operation Profile, active-only Observation, package-control
-   proof admission, zero/one-action Snapshot, Approval/Authorization/marker/
-   Publication Result lineage, single terminal-reference Finalizer, and
-   workflow permissions/topology.
-4. Run targeted scenarios, the complete v3 suite, root HK and hooks, OCR
+1. Perform the required Git inspection above.
+2. Reconcile the complete implementation against the normative contract and
+   synchronize its current-state documentation. Keep Governance disabled and
+   perform no package, Environment, approval, deployment, or dispatch mutation.
+3. Complete whole-group validation and delivery review against the true base:
+   targeted scenarios, the complete v3 suite, root HK and hooks, OCR
    multi-review, independent TP/FP adjudication, clean rereview, and final
-   shrink before protected implementation delivery.
+   shrink.
+4. Deliver the disabled implementation through a protected PR and verify the
+   exact merged tree plus post-merge checks.
 5. Prove retained-ref compatibility and remove the obsolete Environment only
    after exact no-reference proof. Then execute the acceptance-only native
    suite, restore and verify its disposable tombstone object, and prepare fresh
@@ -196,7 +189,8 @@ Do not infer policy from stale runtime behavior or archived designs.
 
 ## Validation and Review Protocol
 
-- Validate the complete design set, not only README, handoff, overview, and log.
+- Validate the complete affected implementation and design set, not only
+  README, handoff, overview, and log.
 - Check links, headings, requirement references, terminology, precedence, authority ordering, and failure behavior.
 - Run repository-existing Prettier and Markdownlint, applicable documentation/HK gates, hooks when commits are
   prepared, and `git diff --check`.

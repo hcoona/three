@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
@@ -37,6 +38,102 @@ def _digest(value: object, *, field: str, sha512: bool = False) -> str:
         message = f"{field} must be a prefixed lowercase {algorithm}"
         raise ValueError(message)
     return value
+
+
+def _payload_path(value: object, *, field: str) -> str:
+    accepted = _nonempty(value, field=field)
+    path = PurePosixPath(accepted)
+    if (
+        path.is_absolute()
+        or "\\" in accepted
+        or path.as_posix() != accepted
+        or any(part in {".", ".."} for part in path.parts)
+    ):
+        message = f"{field} must be a normalized relative POSIX path"
+        raise ValueError(message)
+    return accepted
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactReference:
+    """Immutable Actions transport reference to one canonical payload."""
+
+    artifact_id: int
+    artifact_digest: str
+    artifact_url: str
+    payload_path: str
+    payload_digest: str
+
+    def __post_init__(self) -> None:
+        """Reject malformed transport identity or payload selection."""
+        _positive_integer(self.artifact_id, field="artifact_id")
+        _digest(self.artifact_digest, field="artifact_digest")
+        url = urlsplit(_nonempty(self.artifact_url, field="artifact_url"))
+        if url.scheme != "https" or not url.netloc:
+            message = "artifact_url must be an absolute HTTPS URL"
+            raise ValueError(message)
+        _payload_path(self.payload_path, field="payload_path")
+        _digest(self.payload_digest, field="payload_digest")
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed Shared Foundation Artifact Reference."""
+        return {
+            "artifact-id": self.artifact_id,
+            "artifact-digest": self.artifact_digest,
+            "artifact-url": self.artifact_url,
+            "payload-path": self.payload_path,
+            "payload-digest": self.payload_digest,
+        }
+
+
+def artifact_reference_from_document(value: JsonValue) -> ArtifactReference:
+    """Parse one closed Shared Foundation Artifact Reference."""
+    if not isinstance(value, dict):
+        message = "artifact reference must be an object"
+        raise TypeError(message)
+    expected = {
+        "artifact-id",
+        "artifact-digest",
+        "artifact-url",
+        "payload-path",
+        "payload-digest",
+    }
+    missing = expected - value.keys()
+    if missing:
+        name = sorted(missing)[0]
+        message = f"artifact reference missing required field: {name}"
+        raise ValueError(message)
+    unknown = value.keys() - expected
+    if unknown:
+        name = sorted(unknown)[0]
+        message = f"artifact reference unknown field: {name}"
+        raise ValueError(message)
+    reference = ArtifactReference(
+        artifact_id=_positive_integer(
+            value["artifact-id"],
+            field="artifact reference.artifact-id",
+        ),
+        artifact_digest=_digest(
+            value["artifact-digest"],
+            field="artifact reference.artifact-digest",
+        ),
+        artifact_url=_nonempty(
+            value["artifact-url"],
+            field="artifact reference.artifact-url",
+        ),
+        payload_path=_payload_path(
+            value["payload-path"],
+            field="artifact reference.payload-path",
+        ),
+        payload_digest=_digest(
+            value["payload-digest"],
+            field="artifact reference.payload-digest",
+        ),
+    )
+    if reference.to_document() != value:
+        message = "artifact reference is not normalized"
+        raise ValueError(message)
+    return reference
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,5 +229,7 @@ class ArtifactContentIdentity:
 
 __all__ = [
     "ArtifactContentIdentity",
+    "ArtifactReference",
     "ArtifactTransportIdentity",
+    "artifact_reference_from_document",
 ]

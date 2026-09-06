@@ -55,7 +55,6 @@ PREPARE_STATIC_REFERENCE_SCRIPT = (
 )
 TARGET = "1" * 40
 DIGEST = "sha256:" + ("a" * 64)
-TEST_DESTINATION_PRIMITIVE_ID = "test/conditional-version-and-tag-v1"
 
 
 def _git(repository: Path, *arguments: str) -> str:
@@ -3758,6 +3757,11 @@ def test_cli_live_evidence_accepts_git_target_only(  # noqa: PLR0915
         eligibility as live,
     )
 
+    from .test_eligibility import (  # noqa: PLC0415
+        _admit_test_destination_primitive,
+        _attestation_content,
+    )
+
     assert cli_module.admit_live_eligibility_decision is (
         live.admit_live_eligibility_decision
     )
@@ -3787,22 +3791,8 @@ def test_cli_live_evidence_accepts_git_target_only(  # noqa: PLR0915
         target=TARGET,
     )
     now = datetime(2026, 9, 1, tzinfo=UTC)
-    governance_attestation = SimpleNamespace(
-        inspected_at=now - timedelta(days=2),
-        expires_at=now + timedelta(days=30),
-        live_enabled=True,
-        activation=live.EnabledGovernanceActivation(
-            approval_environment=SimpleNamespace(),  # type: ignore[arg-type]
-            artifact_retention=SimpleNamespace(),  # type: ignore[arg-type]
-            destination_primitive=live.DestinationPrimitiveAttestation(
-                primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
-                operation="conditional-create-npm-version-and-target-tag",
-                captured_at=now - timedelta(days=2),
-                race_inputs=(("coordinate", "test"),),
-                race_results=(("conditional-race", "pass"),),
-                evidence_digest=DIGEST,
-            ),
-        ),
+    governance_attestation = live.parse_governance_attestation(
+        _attestation_content(live_enabled=True),
     )
     governance = SimpleNamespace(
         source=SimpleNamespace(
@@ -3849,11 +3839,7 @@ def test_cli_live_evidence_accepts_git_target_only(  # noqa: PLR0915
     monkeypatch.setattr(live, "ReleasePolicy", SimpleNamespace)
     monkeypatch.setattr(live, "_validate_live_context", validate_context)
     monkeypatch.setattr(live, "_decision_governance", parse_governance)
-    monkeypatch.setattr(
-        live,
-        "_ADMITTED_DESTINATION_PRIMITIVE_IDS",
-        frozenset({TEST_DESTINATION_PRIMITIVE_ID}),
-    )
+    _admit_test_destination_primitive(monkeypatch)
     monkeypatch.setattr(live, "release_policy_digest", policy_digest)
     monkeypatch.setattr(live, "catalog_digest", lambda: DIGEST)
     monkeypatch.setattr(live, "compile_release_policy", compiled_policy)

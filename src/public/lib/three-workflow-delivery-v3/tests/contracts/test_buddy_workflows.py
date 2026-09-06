@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-# ruff: noqa: D103, E501, ISC004, PLR0917, S607
+# ruff: noqa: D103, E501, S607
 import json
 import re
 from pathlib import Path, PurePosixPath
@@ -180,7 +180,7 @@ def test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact() -> None:
     assert invoke["permissions"] == {
         "contents": "read",
         "actions": "read",
-        "packages": "read",
+        "packages": "write",
     }
     assert invoke["concurrency"]["cancel-in-progress"] is False
     assert invoke["concurrency"]["group"].startswith("wdv3-execution-")
@@ -300,7 +300,7 @@ def test_destination_observer_maps_the_effective_github_token() -> None:
         "Observe exact GitHub Packages state",
     )
 
-    assert caller["permissions"]["packages"] == "read"
+    assert caller["permissions"]["packages"] == "write"
     assert observer_job["permissions"] == {
         "contents": "read",
         "packages": "read",
@@ -357,13 +357,12 @@ def test_blocking_observation_is_retained_before_status_propagation() -> None:
     )
     command = _run(_step(finalizer, "Finalize Attempt Outcome"))
     assert (
-        'add_record observation ".wdv3/input/${{ '
+        'add_reference observation ".wdv3/input/${{ '
         "needs.observe-github-packages.outputs."
         "observation-set-artifact-name }}"
     ) in command
-    assert command.index('if [[ -z "${snapshot_id}" ]]') < command.index(
-        "add_record observation"
-    )
+    assert 'if [[ -z "${snapshot_id}" ]]' not in command
+    assert command.count("add_reference observation ") == 1
 
 
 def test_blocking_observation_shell_names_record_before_failure(
@@ -594,7 +593,7 @@ def test_commit8_final_outcome_and_summary_are_retained_even_on_failure() -> (
         "Upload final Attempt summary",
     }
     for step in uploads:
-        assert step["if"] == "always()"
+        assert step["if"].startswith("always() && steps.finalize.outputs.")
         assert step["with"]["retention-days"] == RETENTION_DAYS
         assert step["with"]["if-no-files-found"] == "error"
 
@@ -649,7 +648,10 @@ def test_user_item13_finalizer_always_retains_outcome_summary_with_exact_contrac
         "--outcome-output .wdv3/final-attempt/attempt-outcome.json" in command
     )
     assert "--summary-output .wdv3/final-attempt/attempt-summary.md" in command
-    assert outcome_upload["if"] == "always()"
+    assert (
+        outcome_upload["if"]
+        == "always() && steps.finalize.outputs.outcome-artifact-name != ''"
+    )
     assert outcome_upload["with"] == {
         "name": "${{ steps.finalize.outputs.outcome-artifact-name }}",
         "path": (
@@ -662,7 +664,10 @@ def test_user_item13_finalizer_always_retains_outcome_summary_with_exact_contrac
         "archive": False,
         "include-hidden-files": True,
     }
-    assert summary_upload["if"] == "always()"
+    assert (
+        summary_upload["if"]
+        == "always() && steps.finalize.outputs.summary-artifact-name != ''"
+    )
     assert summary_upload["with"] == {
         "name": "${{ steps.finalize.outputs.summary-artifact-name }}",
         "path": (
@@ -677,165 +682,7 @@ def test_user_item13_finalizer_always_retains_outcome_summary_with_exact_contrac
     }
 
 
-_PHASE2_FINALIZER_EXPRESSION = re.compile(r"\$\{\{\s*(?P<fact>.*?)\s*\}\}")
-
-
-def _phase2_render_finalizer_run(facts: dict[str, str]) -> str:
-    run = _run(
-        _step(
-            _document(CALLEE)["jobs"]["release-finalizer"],
-            "Finalize Attempt Outcome",
-        )
-    )
-    expressions = {
-        match.group("fact").strip()
-        for match in _PHASE2_FINALIZER_EXPRESSION.finditer(run)
-    }
-    assert expressions == set(facts)
-    rendered = _PHASE2_FINALIZER_EXPRESSION.sub(
-        lambda match: facts[match.group("fact").strip()],
-        run,
-    )
-    assert "${{" not in rendered
-    return rendered
-
-
-def _phase2_execute_finalizer_shell(
-    tmp_path: Path,
-    facts: dict[str, str],
-) -> dict[str, Any]:
-    import os  # noqa: PLC0415
-    import subprocess  # noqa: PLC0415
-
-    run = _phase2_render_finalizer_run(facts)
-    input_directory = tmp_path / ".wdv3/input"
-    input_directory.mkdir(parents=True)
-    for expression, value in facts.items():
-        if expression.endswith("-artifact-name") and value:
-            (input_directory / value).write_text("{}\n", encoding="utf-8")
-
-    bin_directory = tmp_path / "bin"
-    bin_directory.mkdir()
-    invocations = tmp_path / "cli-invocations.jsonl"
-    uv = bin_directory / "uv"
-    uv.write_text(
-        r"""#!/usr/bin/env python3
-import json
-import os
-import pathlib
-import sys
-
-args = sys.argv[1:]
-invocations = pathlib.Path(os.environ["PHASE2_CLI_INVOCATIONS"])
-with invocations.open("a", encoding="utf-8") as handle:
-    handle.write(json.dumps(args) + "\n")
-
-def write_flag(flag, content):
-    path = pathlib.Path(args[args.index(flag) + 1])
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-
-write_flag("--outcome-output", '{"phase":"publication-preparation"}\n')
-write_flag("--summary-output", "# Attempt summary\n")
-github_output = pathlib.Path(args[args.index("--github-output") + 1])
-with github_output.open("a", encoding="utf-8") as handle:
-    handle.write("cli-boundary-invoked=true\n")
-raise SystemExit(int(os.environ.get("PHASE2_CLI_STATUS", "0")))
-""",
-        encoding="utf-8",
-    )
-    uv.chmod(0o755)
-
-    github_output = tmp_path / "github-output.txt"
-    github_summary = tmp_path / "github-step-summary.md"
-    environment = os.environ | {
-        "GITHUB_OUTPUT": str(github_output),
-        "GITHUB_RUN_ATTEMPT": "3",
-        "GITHUB_RUN_ID": "424242",
-        "GITHUB_STEP_SUMMARY": str(github_summary),
-        "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
-        "PHASE2_CLI_INVOCATIONS": str(invocations),
-        "PHASE2_CLI_STATUS": "0",
-        "WDV3_PACKAGE": "three-workflow-delivery-v3",
-    }
-    completed = subprocess.run(  # noqa: S603
-        (
-            "bash",
-            "--noprofile",
-            "--norc",
-            "-euo",
-            "pipefail",
-            "-c",
-            run,
-        ),
-        check=False,
-        cwd=tmp_path,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    invocation_rows = (
-        tuple(
-            tuple(json.loads(line))
-            for line in invocations.read_text(encoding="utf-8").splitlines()
-        )
-        if invocations.exists()
-        else ()
-    )
-    github_output_text = (
-        github_output.read_text(encoding="utf-8")
-        if github_output.exists()
-        else ""
-    )
-    output_values = {
-        key: value
-        for line in github_output_text.splitlines()
-        for key, value in (line.split("=", 1),)
-    }
-    final_attempt = tmp_path / ".wdv3/final-attempt"
-    return {
-        "github_output": github_output_text,
-        "github_summary": github_summary,
-        "invocations": invocation_rows,
-        "outcome": final_attempt
-        / output_values.get("outcome-artifact-name", "missing-outcome"),
-        "output": completed.stdout + completed.stderr,
-        "status": completed.returncode,
-        "summary": final_attempt
-        / output_values.get("summary-artifact-name", "missing-summary"),
-    }
-
-
-def _phase2_assert_successful_finalizer(
-    execution: dict[str, Any],
-) -> tuple[str, ...]:
-    assert execution["status"] == 0, execution["output"]
-    assert len(execution["invocations"]) == 1
-    argv = execution["invocations"][0]
-    assert argv[:8] == (
-        "run",
-        "--python",
-        "3.13",
-        "--package",
-        "three-workflow-delivery-v3",
-        "three-workflow-delivery-v3",
-        "release",
-        "finalize-live",
-    )
-    assert "cli-boundary-invoked=true" in execution["github_output"]
-    assert "finalizer-status=0" in execution["github_output"]
-    assert re.search(
-        r"outcome-artifact-name=wdv3-live-buddy-attempt-outcome-"
-        r"r424242-[0-9a-f]{64}\.json",
-        execution["github_output"],
-    )
-    assert re.search(
-        r"summary-artifact-name=wdv3-live-buddy-attempt-summary-"
-        r"r424242-[0-9a-f]{64}\.md",
-        execution["github_output"],
-    )
-    return argv
+_WORKFLOW_EXPRESSION = re.compile(r"\$\{\{\s*(?P<fact>.*?)\s*\}\}")
 
 
 def _phase3_render_workflow_run(
@@ -844,10 +691,10 @@ def _phase3_render_workflow_run(
 ) -> str:
     expressions = {
         match.group("fact").strip()
-        for match in _PHASE2_FINALIZER_EXPRESSION.finditer(run)
+        for match in _WORKFLOW_EXPRESSION.finditer(run)
     }
     assert expressions == set(facts)
-    rendered = _PHASE2_FINALIZER_EXPRESSION.sub(
+    rendered = _WORKFLOW_EXPRESSION.sub(
         lambda match: facts[match.group("fact").strip()],
         run,
     )
@@ -895,7 +742,6 @@ def test_publication_snapshot_lifecycle_and_transport_identity_are_exact() -> (
 ):
     materializer = _document(CALLEE)["jobs"]["materialize-publication"]
     lifecycle_ids = {
-        "bind",
         "materialize",
         "names",
         "upload-reviewer",
@@ -911,7 +757,6 @@ def test_publication_snapshot_lifecycle_and_transport_identity_are_exact() -> (
         "names",
         "upload-snapshot",
         "upload-reviewer",
-        "bind",
     )
     assert materializer["outputs"]["publication-snapshot-artifact-id"] == (
         "${{ steps.upload-snapshot.outputs.artifact-id }}"
@@ -928,7 +773,9 @@ def test_publication_materializer_binds_selected_ref_to_immutable_intent() -> (
     None
 ):
     materializer = _document(CALLEE)["jobs"]["materialize-publication"]
-    download = _step(materializer, "Download Intent by artifact ID")
+    download = _step(
+        materializer, "Download Intent Model and Eligibility by artifact ID"
+    )
     run = _run(
         _step(
             materializer,
@@ -937,8 +784,13 @@ def test_publication_materializer_binds_selected_ref_to_immutable_intent() -> (
     )
 
     assert download["with"] == {
-        "artifact-ids": "${{ inputs.intent-artifact-id }}",
+        "artifact-ids": (
+            "${{ inputs.intent-artifact-id }},"
+            "${{ inputs.repository-model-artifact-id }},"
+            "${{ inputs.live-eligibility-artifact-id }}"
+        ),
         "path": ".wdv3/input",
+        "merge-multiple": True,
         "skip-decompress": True,
         "digest-mismatch": "error",
     }
@@ -972,31 +824,18 @@ def test_release_finalizer_downloads_snapshot_directly_from_materialization() ->
         "${{ needs.materialize-publication.outputs."
         "publication-snapshot-artifact-id }}"
     )
-    expected_arguments = (
-        (
-            "--publication-snapshot",
-            '".wdv3/input/${{ needs.materialize-publication.outputs.'
-            'publication-snapshot-artifact-name }}"',
-        ),
-        (
-            "--publication-snapshot-digest",
-            '"${{ needs.materialize-publication.outputs.'
-            'publication-snapshot-digest }}"',
-        ),
-        (
-            "--publication-snapshot-artifact-id",
-            '"${{ needs.materialize-publication.outputs.'
-            'publication-snapshot-artifact-id }}"',
-        ),
-        (
-            "--publication-snapshot-artifact-digest",
-            '"${{ needs.materialize-publication.outputs.'
-            'publication-snapshot-artifact-digest }}"',
-        ),
-    )
-    for option, expression in expected_arguments:
-        assert f"{option} {expression}" in run
-        assert f'{option} "${{{{ needs.approval-finalizer.outputs.' not in run
+    assert "add_reference publication-snapshot " in run
+    for fact in (
+        "publication-snapshot-artifact-name",
+        "publication-snapshot-digest",
+        "publication-snapshot-artifact-id",
+        "publication-snapshot-artifact-digest",
+        "publication-snapshot-artifact-url",
+    ):
+        assert f"needs.materialize-publication.outputs.{fact}" in run
+        assert f"needs.approval-finalizer.outputs.{fact}" not in run
+    assert '"--${role}-artifact-url" "${url}"' in run
+    assert '"--${role}-payload-path" "${payload}"' in run
 
 
 @pytest.mark.parametrize(
@@ -1080,7 +919,7 @@ def test_propagation_fails_after_successful_retention(
     )
     assert finalize["continue-on-error"] is True
     for upload in (outcome_upload, summary_upload):
-        assert upload["if"] == "always()"
+        assert upload["if"].startswith("always() && steps.finalize.outputs.")
         assert upload["with"]["archive"] is False
         assert upload["with"]["retention-days"] == RETENTION_DAYS
         assert upload["with"]["if-no-files-found"] == "error"
@@ -1251,17 +1090,17 @@ def test_buddy_target_sha_binding_chain_is_exact(tmp_path: Path) -> None:
         assert invalid_execution["output"] == ""
         assert not invalid_output.exists()
 
-    target_arguments = [
-        target
+    release_commands = [
+        str(step["run"])
         for job in callee_jobs.values()
         for step in _steps(job)
         if "three-workflow-delivery-v3 release " in str(step.get("run", ""))
-        for target in re.findall(
-            r'--target "([^"]+)"',
-            str(step.get("run", "")),
-        )
     ]
-    assert target_arguments == [_CALLEE_TARGET_SHA] * 19
+    assert release_commands
+    assert [
+        re.findall(r'--target "([^"]+)"', command)
+        for command in release_commands
+    ] == [[_CALLEE_TARGET_SHA]] * len(release_commands)
 
     assert (
         callee_jobs["release-finalizer"]["if"]
@@ -1345,12 +1184,6 @@ def test_qualification_routing_preserves_failure_semantics() -> None:
         "needs.qualification-finalizer.outputs.qualification-result "
         "== 'success'" in _condition_conjuncts(jobs["observe-github-packages"])
     )
-
-
-def test_workflow_cancellation_marker_runs_only_on_cancellation() -> None:
-    cancellation = _document(CALLEE)["jobs"]["workflow-cancellation"]
-
-    assert "cancelled()" in _condition_conjuncts(cancellation)
 
 
 def test_approve_publication_is_the_only_environment_job_and_sentinel_is_first() -> (
@@ -1444,11 +1277,7 @@ def test_reviewer_identity_and_approval_bundle_are_durable_before_wait() -> (
     materializer = jobs["materialize-publication"]
     approval = jobs["approve-publication"]
     steps = _steps(materializer)
-    upload_reviewer = _step(materializer, "Upload reviewer artifact")
-    bind_reviewer = _step(
-        materializer,
-        "Bind reviewer artifact transport to exact payloads",
-    )
+    upload_reviewer = _step(materializer, "Upload reviewer summary")
     form_bundle = _step(
         materializer,
         "Form complete pre-wait Approval Bundle",
@@ -1463,7 +1292,6 @@ def test_reviewer_identity_and_approval_bundle_are_durable_before_wait() -> (
     assert _needs(approval) == ("admit", "materialize-publication")
     assert (
         steps.index(upload_reviewer)
-        < steps.index(bind_reviewer)
         < steps.index(form_bundle)
         < steps.index(upload_bundle)
         < steps.index(publish_summary)
@@ -1471,32 +1299,52 @@ def test_reviewer_identity_and_approval_bundle_are_durable_before_wait() -> (
     publish_condition = "steps.materialize.outputs.publish-required == 'true'"
     for step in (
         upload_reviewer,
-        bind_reviewer,
         form_bundle,
         upload_bundle,
     ):
         assert step["if"] == publish_condition
     assert publish_summary["if"] == "steps.upload-bundle.outcome == 'success'"
 
-    bind_command = _run(bind_reviewer)
-    assert "release bind-reviewer-artifact" in bind_command
-    assert "--output .wdv3/reviewer-summary-artifact.json" in bind_command
     bundle_command = _run(form_bundle)
     assert "release form-approval-bundle" in bundle_command
     for option in (
         "--attempt-binding",
         "--qualification-decision",
         "--publication-snapshot",
-        "--reviewer-summary-artifact",
+        "--publication-snapshot-digest",
+        "--publication-snapshot-artifact-id",
+        "--publication-snapshot-artifact-digest",
+        "--publication-snapshot-artifact-url",
+        "--publication-snapshot-payload-path",
+        "--reviewer-summary",
+        "--reviewer-summary-digest",
+        "--reviewer-summary-artifact-id",
         "--reviewer-summary-artifact-digest",
+        "--reviewer-summary-artifact-url",
+        "--reviewer-summary-payload-path",
         "--control",
     ):
         assert bundle_command.count(f"{option} ") == 1
+    assert "bind-reviewer-artifact" not in str(materializer)
+    assert "reviewer-formatter-input" not in str(materializer)
+    assert '--reviewer-summary ".wdv3/reviewer-summary.md"' in bundle_command
+    assert upload_reviewer["with"] == {
+        "name": "reviewer-summary.md",
+        "path": ".wdv3/reviewer-summary.md",
+        "if-no-files-found": "error",
+        "retention-days": RETENTION_DAYS,
+        "overwrite": False,
+        "archive": False,
+        "include-hidden-files": True,
+    }
     assert materializer["outputs"]["approval-bundle-artifact-id"] == (
         "${{ steps.upload-bundle.outputs.artifact-id }}"
     )
     assert materializer["outputs"]["approval-bundle-artifact-digest"] == (
         "${{ steps.upload-bundle.outputs.artifact-digest }}"
+    )
+    assert materializer["outputs"]["approval-bundle-artifact-url"] == (
+        "${{ steps.upload-bundle.outputs.artifact-url }}"
     )
     assert materializer["outputs"]["approval-bundle-artifact-name"] == (
         "${{ steps.form-bundle.outputs.approval-bundle-artifact-name }}"
@@ -1544,7 +1392,19 @@ def test_approve_publication_freshly_admits_governance_and_emits_sole_authorizat
             "${{ inputs.live-eligibility-artifact-id }},"
             "${{ needs.admit.outputs.attempt-artifact-id }},"
             "${{ needs.materialize-publication.outputs."
-            "approval-bundle-artifact-id }}"
+            "qualification-snapshot-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "decision-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "release-artifact-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "observation-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "publication-snapshot-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "approval-bundle-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "reviewer-artifact-id }}"
         ),
         "path": ".wdv3/input",
         "merge-multiple": True,
@@ -1569,13 +1429,55 @@ def test_approve_publication_freshly_admits_governance_and_emits_sole_authorizat
         "--attempt-binding-artifact-id",
         "--attempt-binding-artifact-digest",
         "--approval-bundle",
+        "--approval-bundle-digest",
+        "--approval-bundle-artifact-id",
+        "--approval-bundle-artifact-digest",
+        "--approval-bundle-artifact-url",
+        "--approval-bundle-payload-path",
+        "--qualification-snapshot",
+        "--qualification-snapshot-digest",
+        "--qualification-snapshot-artifact-id",
+        "--qualification-snapshot-artifact-digest",
+        "--qualification-decision",
+        "--release-artifact",
+        "--release-artifact-digest",
+        "--release-artifact-artifact-id",
+        "--release-artifact-artifact-digest",
+        "--publication-snapshot",
+        "--publication-snapshot-digest",
+        "--publication-snapshot-artifact-id",
+        "--publication-snapshot-artifact-digest",
+        "--publication-snapshot-artifact-url",
+        "--publication-snapshot-payload-path",
+        "--reviewer-summary",
+        "--reviewer-summary-digest",
+        "--reviewer-summary-artifact-id",
+        "--reviewer-summary-artifact-digest",
+        "--reviewer-summary-artifact-url",
+        "--reviewer-summary-payload-path",
         "--live-eligibility-decision",
         "--live-eligibility-artifact-id",
         "--live-eligibility-artifact-digest",
         "--live-eligibility-payload-digest",
+        "--approval-boundary-sentinel-result",
         "--control",
     ):
         assert command.count(f"{option} ") == 1
+    assert (
+        "--qualification-snapshot-artifact-id "
+        '"${{ needs.materialize-publication.outputs.'
+        'qualification-snapshot-artifact-id }}"' in command
+    )
+    assert (
+        "--release-artifact-artifact-id "
+        '"${{ needs.materialize-publication.outputs.'
+        'release-artifact-artifact-id }}"' in command
+    )
+    assert '--reviewer-summary ".wdv3/input/reviewer-summary.md"' in command
+    assert (
+        "--approval-boundary-sentinel-result "
+        '"${{ steps.approval-environment-marker.outcome }}"' in command
+    )
     assert "--authorized-at" not in command
     assert "authorized_at=" not in command
     assert "date -u" not in command
@@ -1630,20 +1532,20 @@ def test_normal_live_has_no_retired_authority_or_history_surface() -> None:
     assert "jobs_url" not in raw
     assert "workflow-delivery-v3-buddy-github-packages" not in raw
     assert "upload authorization record" not in raw
-    assert all(
-        job.get("permissions", {}).get("packages") != "write"
-        for job in jobs.values()
-    )
+    assert {
+        name
+        for name, job in jobs.items()
+        if job.get("permissions", {}).get("packages") == "write"
+    } == {"publish-github-packages"}
 
 
-def test_normal_live_pair_has_no_package_write_permission() -> None:
+def test_normal_live_package_write_is_limited_to_publisher_and_caller_ceiling() -> (
+    None
+):
     documents = {
         "caller": _document(CALLER),
         "callee": _document(CALLEE),
     }
-    workflow_text = "".join(
-        path.read_text(encoding="utf-8") for path in (CALLER, CALLEE)
-    ).casefold()
     package_grants = {
         f"{workflow_name}:{job_name}": permissions["packages"]
         for workflow_name, document in (
@@ -1655,15 +1557,15 @@ def test_normal_live_pair_has_no_package_write_permission() -> None:
     }
 
     assert package_grants == {
-        "caller:run-live-attempt": "read",
+        "caller:run-live-attempt": "write",
+        "callee:publish-github-packages": "write",
         "callee:observe-github-packages": "read",
+        "callee:prove-exact-satisfied": "read",
     }
     assert all(
         document.get("permissions", {}).get("packages") != "write"
         for document in documents.values()
     )
-    assert all(permission != "write" for permission in package_grants.values())
-    assert "packages: write" not in workflow_text
 
 
 def test_exact_satisfied_path_has_fresh_proof_without_mutation_authority() -> (
@@ -1676,26 +1578,49 @@ def test_exact_satisfied_path_has_fresh_proof_without_mutation_authority() -> (
         proof_job,
         "Download exact-satisfied closure by artifact ID",
     )
-    prove = _step(proof_job, "Form exact-satisfied Governance proof")
-    upload = _step(proof_job, "Upload exact-satisfied Governance proof")
+    prove = _step(proof_job, "Form exact-satisfied finalization proof")
+    upload = _step(proof_job, "Upload exact-satisfied finalization proof")
 
     assert "environment" not in proof_job
-    assert proof_job["permissions"] == {"contents": "read"}
+    assert proof_job["permissions"] == {"contents": "read", "packages": "read"}
     assert (
         "needs.materialize-publication.outputs.publish-required == 'false'"
         in _condition_conjuncts(proof_job)
     )
-    assert _needs(proof_job) == ("admit", "materialize-publication")
-    assert {
+    assert set(_needs(proof_job)) == {
+        "admit",
+        "plan-qualification",
+        "materialize-publication",
         "approve-publication",
         "publish-github-packages",
-    }.isdisjoint(_transitive_needs(jobs, "prove-exact-satisfied"))
+    }
+    assert (
+        "needs.publish-github-packages.result == 'skipped'"
+        in _condition_conjuncts(proof_job)
+    )
+    assert (
+        "needs.approve-publication.result == 'skipped'"
+        in _condition_conjuncts(proof_job)
+    )
+    assert (
+        '--publisher-conclusion "${{ needs.publish-github-packages.result }}"'
+        in prove["run"]
+    )
     assert download["with"] == {
         "artifact-ids": (
             "${{ inputs.intent-artifact-id }},"
             "${{ inputs.repository-model-artifact-id }},"
             "${{ inputs.live-eligibility-artifact-id }},"
             "${{ needs.admit.outputs.attempt-artifact-id }},"
+            "${{ needs.plan-qualification.outputs.adapter-context-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "qualification-snapshot-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "decision-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "release-artifact-artifact-id }},"
+            "${{ needs.materialize-publication.outputs."
+            "observation-artifact-id }},"
             "${{ needs.materialize-publication.outputs."
             "publication-snapshot-artifact-id }}"
         ),
@@ -1718,6 +1643,12 @@ def test_exact_satisfied_path_has_fresh_proof_without_mutation_authority() -> (
         "--repository-model",
         "--attempt-binding",
         "--publication-snapshot",
+        "--qualification-snapshot",
+        "--qualification-decision",
+        "--qualification-decision-artifact-url",
+        "--qualification-decision-payload-path",
+        "--release-artifact",
+        "--observation",
         "--live-eligibility-decision",
         "--control",
     ):
@@ -1725,89 +1656,137 @@ def test_exact_satisfied_path_has_fresh_proof_without_mutation_authority() -> (
     assert "--proved-at" not in command
     assert "proved_at=" not in command
     assert "date -u" not in command
-    proof_text = str(proof_job).casefold()
+    proof_text = str(steps).casefold()
     for forbidden in (
         "environment",
         "approval-bundle",
         "publication-authorization",
         "approve-publication",
-        "publish-github-packages",
         "reviewer",
     ):
         assert forbidden not in proof_text
+    assert "--publication-snapshot-artifact-url " in command
+    assert "--publication-snapshot-payload-path " in command
+    assert "--adapter-context " in command
     assert steps.index(download) < steps.index(prove) < steps.index(upload)
     assert upload["with"]["archive"] is False
 
 
-def test_action_path_reaches_read_only_fail_closed_publisher_preflight() -> (
-    None
-):
+def test_publisher_terminal_transport_preserves_mutation_order() -> None:
     jobs = _document(CALLEE)["jobs"]
     publisher = jobs["publish-github-packages"]
-    steps = _steps(publisher)
-    download = _step(publisher, "Download publisher closure by artifact ID")
-    preflight = _step(
-        publisher,
-        "Reject unimplemented conditional destination primitive",
-    )
-
-    assert publisher["name"] == ("Reject unsupported GitHub Packages primitive")
-    assert _needs(publisher) == ("approve-publication",)
-    assert {
-        "materialize-publication",
-        "approve-publication",
-    } <= _transitive_needs(jobs, "publish-github-packages")
-    assert publisher["permissions"] == {"contents": "read"}
-    assert "environment" not in publisher
-    assert {
-        "needs.approve-publication.result == 'success'",
-        "needs.approve-publication.outputs.publish-required == 'true'",
-    } <= _condition_conjuncts(publisher)
-    assert publisher["concurrency"] == {
-        "group": (
-            "wdv3-resource-${{ needs.approve-publication.outputs."
-            "resource-concurrency-key }}"
+    assert publisher["outputs"] == {
+        "publication-terminal-reference": (
+            "${{ steps.admit-result.outputs.publication-terminal-reference || "
+            "steps.admit-marker.outputs.publication-terminal-reference || 'null' }}"
         ),
-        "cancel-in-progress": False,
+        "publication-step-outcome": "${{ steps.publish.outcome }}",
     }
-    required_ids = (
-        "${{ needs.approve-publication.outputs."
-        "qualification-snapshot-artifact-id }}",
-        "${{ needs.approve-publication.outputs.decision-artifact-id }}",
-        "${{ needs.approve-publication.outputs.adapter-context-artifact-id }}",
-        "${{ needs.approve-publication.outputs.release-artifact-artifact-id }}",
-        "${{ needs.approve-publication.outputs."
-        "publication-snapshot-artifact-id }}",
-        "${{ needs.approve-publication.outputs."
-        "publication-authorization-artifact-id }}",
+    assert publisher["permissions"] == {"contents": "read", "packages": "write"}
+    assert "environment" not in publisher
+    assert "approve-publication" in _needs(publisher)
+    assert "success()" in publisher["if"]
+    assert "needs.approve-publication.result == 'success'" in publisher["if"]
+    assert publisher["concurrency"]["cancel-in-progress"] is False
+    steps = _steps(publisher)
+    identified = {step["id"]: step for step in steps if "id" in step}
+    ordered_ids = (
+        "prepare",
+        "upload-mutation-marker",
+        "download-mutation-marker",
+        "admit-marker",
+        "publish",
+        "upload-publication-result",
+        "download-publication-result",
+        "admit-result",
     )
-    artifact_ids = download["with"]["artifact-ids"].split(",")
-    assert set(artifact_ids) == set(required_ids)
-    assert download["with"]["path"] == ".wdv3/input"
-    assert download["with"]["merge-multiple"] is True
-    assert download["with"]["skip-decompress"] is True
-    assert download["with"]["digest-mismatch"] == "error"
-    command = _run(preflight)
-    assert "env" not in preflight
-    assert "continue-on-error" not in preflight
-    assert steps.index(download) < steps.index(preflight)
+    positions = [steps.index(identified[identity]) for identity in ordered_ids]
+    assert positions == sorted(positions)
+    for role in ("mutation-marker", "publication-result"):
+        upload = identified["upload-" + role]
+        download = identified["download-" + role]
+        assert upload["uses"] == UPLOAD
+        assert upload["with"]["retention-days"] == RETENTION_DAYS
+        assert upload["with"]["overwrite"] is False
+        assert download["uses"] == DOWNLOAD
+        assert (
+            download["with"]["artifact-ids"]
+            == f"${{{{ steps.upload-{role}.outputs.artifact-id }}}}"
+        )
+        assert download["with"]["digest-mismatch"] == "error"
+    assert identified["upload-publication-result"]["if"] == (
+        "always() && steps.publish.outputs.publication-result-digest != ''"
+    )
+    assert "release prepare-publication" in _run(identified["prepare"])
+    assert "release execute-publication" in _run(identified["publish"])
+    assert "if" not in identified["publish"]
+    assert "publication-terminal-reference" in _run(identified["publish"])
+    cleanup = _step(publisher, "Clean caller-owned prepared runtime")
     assert (
-        "three-workflow-delivery-v3 release preflight-github-packages"
+        cleanup["if"]
+        == "always() && steps.prepare.outputs.runtime-created == 'true'"
+    )
+    toolchain = _step(
+        publisher, "Install exact isolated Node and npm toolchain"
+    )
+    assert toolchain["working-directory"] == "${{ runner.temp }}"
+    manager = _step(
+        publisher, "Install tool manager without target tool installation"
+    )
+    assert manager["with"]["install"] is False
+    assert manager["with"]["working_directory"] == "${{ runner.temp }}"
+    assert "node@24.19.0" in _run(toolchain)
+    assert "npm@11.17.0" in _run(toolchain)
+    assert "env -i PATH=" in _run(toolchain)
+
+
+def test_finalizer_downloads_only_the_explicit_terminal_and_direct_marker() -> (
+    None
+):
+    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
+    assert finalizer["permissions"] == {"contents": "read"}
+    terminal = _step(
+        finalizer, "Download sole publication terminal by immutable ID"
+    )
+    marker = _step(finalizer, "Download Result direct marker by immutable ID")
+    assert (
+        terminal["with"]["artifact-ids"]
+        == "${{ steps.terminal.outputs.terminal-artifact-id }}"
+    )
+    assert (
+        marker["with"]["artifact-ids"]
+        == "${{ steps.marker-lineage.outputs.marker-artifact-id }}"
+    )
+    for step in (terminal, marker):
+        assert step["uses"] == DOWNLOAD
+        assert step["with"]["digest-mismatch"] == "error"
+        assert "name" not in step["with"]
+    resolver = _step(finalizer, "Resolve Result direct marker lineage")
+    assert "--terminal-directory .wdv3/terminal" in _run(resolver)
+    finalize = _step(finalizer, "Finalize Attempt Outcome")
+    assert finalize["env"]["PUBLICATION_STEP_OUTCOME"] == (
+        "${{ needs.publish-github-packages.outputs.publication-step-outcome }}"
+    )
+    assert finalize["env"]["PUBLICATION_TERMINAL_REFERENCE"] == (
+        "${{ needs.publish-github-packages.outputs.publication-terminal-reference }}"
+    )
+    assert finalize["env"]["OBSERVATION_CONCLUSION"] == (
+        "${{ needs.observe-github-packages.result }}"
+    )
+    command = _run(finalize)
+    for obsolete in (
+        "--platform-terminated",
+        "--publication-may-have-started",
+        "--publication-preparation-interrupted",
+        "--action-result",
+    ):
+        assert obsolete not in command
+    assert '--publication-step-outcome "${PUBLICATION_STEP_OUTCOME}"' in command
+    assert (
+        '--publication-terminal-reference "${PUBLICATION_TERMINAL_REFERENCE}"'
         in command
     )
-    assert "--publication-authorization " in command
-    for forbidden in (
-        "--github-token",
-        "--tarball",
-        "--preflight-output",
-        "release publish-github-packages",
-        "npm publish",
-        "mark-github-packages-mutation-start",
-        "mutation-may-have-started",
-        "action-result",
-    ):
-        assert forbidden not in command
-    assert not any(step.get("uses") == UPLOAD for step in steps)
+    assert '--observation-conclusion "${OBSERVATION_CONCLUSION}"' in command
 
 
 def test_finalizer_consumes_current_branch_authorities_only() -> None:
@@ -1822,9 +1801,9 @@ def test_finalizer_consumes_current_branch_authorities_only() -> None:
             "approve-publication",
             "publication-authorization",
         ),
-        "Download exact-satisfied Governance proof by artifact ID": (
+        "Download exact-satisfied finalization proof by artifact ID": (
             "prove-exact-satisfied",
-            "exact-satisfied-governance-proof",
+            "exact-satisfied-finalization-proof",
         ),
     }
 
@@ -1844,14 +1823,24 @@ def test_finalizer_consumes_current_branch_authorities_only() -> None:
 
     command = _run(_step(finalizer, "Finalize Attempt Outcome"))
     for role, producer in (
+        ("publication-snapshot", "materialize-publication"),
         ("approval-bundle", "materialize-publication"),
         ("publication-authorization", "approve-publication"),
-        ("exact-satisfied-governance-proof", "prove-exact-satisfied"),
+        ("exact-satisfied-finalization-proof", "prove-exact-satisfied"),
     ):
         assert (
-            f'add_record {role} ".wdv3/input/${{{{ needs.{producer}.outputs.'
+            f'add_reference {role} ".wdv3/input/${{{{ needs.{producer}.outputs.'
             f'{role}-artifact-name }}}}"'
         ) in command
+    for role in ("publication-snapshot", "approval-bundle"):
+        assert (
+            f"needs.materialize-publication.outputs.{role}-artifact-url"
+            in command
+        )
+        assert (
+            f"needs.materialize-publication.outputs.{role}-artifact-name"
+            in command
+        )
     command_casefold = command.casefold()
     for forbidden in (
         "approval-finalizer",
@@ -1867,34 +1856,109 @@ def test_finalizer_consumes_current_branch_authorities_only() -> None:
 def test_current_authority_uploads_use_raw_transport() -> None:
     document = _document(CALLEE)
     uploads = _artifact_steps(document, UPLOAD)
-    reviewer_output = document["jobs"]["materialize-publication"]["outputs"][
-        "reviewer-artifact-id"
-    ]
-    reviewer_match = re.fullmatch(
-        r"\$\{\{\s*steps\.([^.]+)\.outputs\.artifact-id\s*\}\}",
-        reviewer_output,
-    )
-    assert reviewer_match is not None
-    reviewer_step_id = reviewer_match.group(1)
-    reviewer_uploads = [
-        step for step in uploads if step.get("id") == reviewer_step_id
-    ]
-    authority_uploads = [
-        step for step in uploads if step.get("id") != reviewer_step_id
-    ]
-
-    assert len(reviewer_uploads) == 1
-    reviewer_upload = reviewer_uploads[0]
-    assert reviewer_upload["with"].get("archive", True) is True
-    reviewer_name = document["jobs"]["materialize-publication"]["outputs"][
-        "reviewer-artifact-name"
-    ]
-    assert reviewer_upload["with"]["name"] == reviewer_name
-    assert reviewer_upload["with"]["path"] == f".wdv3/{reviewer_name}"
-    assert authority_uploads
-    for step in authority_uploads:
+    assert uploads
+    raw_names = []
+    for step in uploads:
         assert step["with"]["archive"] is False
-        assert _raw_artifact_name(step["with"]) == step["with"]["name"]
+        raw_names.append(_raw_artifact_name(step["with"]))
+    assert len(raw_names) == len(set(raw_names))
+    materializer = document["jobs"]["materialize-publication"]
+    assert "reviewer-artifact-name" not in materializer["outputs"]
+    reviewer_upload = _step(materializer, "Upload reviewer summary")
+    assert reviewer_upload["with"]["name"] == "reviewer-summary.md"
+
+
+def test_live_observation_authority_closes_every_current_consumer() -> None:
+    jobs = _document(CALLEE)["jobs"]
+    assert jobs["qualification-finalizer"]["outputs"][
+        "decision-artifact-url"
+    ] == ("${{ steps.upload.outputs.artifact-url }}")
+    consumers = (
+        (
+            "observe-github-packages",
+            "Observe exact GitHub Packages state",
+            "qualification-finalizer",
+        ),
+        (
+            "materialize-publication",
+            "Materialize immutable publication and reviewer payload",
+            "observe-github-packages",
+        ),
+        (
+            "approve-publication",
+            "Form sole Publication Authorization",
+            "materialize-publication",
+        ),
+        (
+            "prove-exact-satisfied",
+            "Form exact-satisfied finalization proof",
+            "materialize-publication",
+        ),
+        (
+            "release-finalizer",
+            "Finalize Attempt Outcome",
+            "qualification-finalizer",
+        ),
+    )
+    for name, step_name, producer in consumers:
+        job = jobs[name]
+        command = _run(_step(job, step_name))
+        assert producer in _needs(job)
+        assert "admit" in _needs(job)
+        downloads = [
+            reference
+            for step in _steps(job)
+            if step.get("uses") == DOWNLOAD
+            for reference in step["with"]["artifact-ids"].split(",")
+        ]
+        for role in ("intent", "repository-model", "live-eligibility"):
+            assert downloads.count(f"${{{{ inputs.{role}-artifact-id }}}}") == 1
+        assert (
+            downloads.count("${{ needs.admit.outputs.attempt-artifact-id }}")
+            == 1
+        )
+        assert (
+            downloads.count(
+                f"${{{{ needs.{producer}.outputs.decision-artifact-id }}}}"
+            )
+            == 1
+        )
+        for option, output in (
+            ("artifact-id", "artifact-id"),
+            ("artifact-digest", "artifact-digest"),
+            ("artifact-url", "artifact-url"),
+            ("payload-path", "artifact-name"),
+            ("digest", "digest"),
+        ):
+            assert (
+                f'--qualification-decision-{option} "${{{{ needs.{producer}.outputs.decision-{output} }}}}"'
+            ) in command
+        for option in (
+            "intent",
+            "intent-digest",
+            "intent-artifact-id",
+            "intent-artifact-digest",
+            "repository-model",
+            "repository-model-digest",
+            "repository-model-artifact-id",
+            "repository-model-artifact-digest",
+            "live-eligibility-decision",
+            "live-eligibility-artifact-id",
+            "live-eligibility-artifact-digest",
+            "live-eligibility-payload-digest",
+            "attempt-binding",
+            "attempt-binding-digest",
+            "attempt-binding-artifact-id",
+            "attempt-binding-artifact-digest",
+        ):
+            assert command.count(f"--{option} ") == 1
+    for consumer, producer in (
+        ("observe-github-packages", "qualification-finalizer"),
+        ("materialize-publication", "observe-github-packages"),
+    ):
+        assert jobs[consumer]["outputs"]["decision-artifact-url"] == (
+            f"${{{{ needs.{producer}.outputs.decision-artifact-url }}}}"
+        )
 
 
 def test_current_authority_jobs_install_no_mutating_toolchain() -> None:
@@ -1913,7 +1977,6 @@ def test_current_authority_jobs_install_no_mutating_toolchain() -> None:
     for job_name in (
         "approve-publication",
         "prove-exact-satisfied",
-        "publish-github-packages",
     ):
         assert all(
             step.get("uses") != MISE for step in _steps(callee_jobs[job_name])
@@ -1982,10 +2045,10 @@ def test_completed_pre_wait_bundle_gates_reviewer_summary_link(
 ) -> None:
     materializer = _document(CALLEE)["jobs"]["materialize-publication"]
     steps = _steps(materializer)
-    upload_reviewer = _step(materializer, "Upload reviewer artifact")
-    bind = _step(
+    upload_reviewer = _step(materializer, "Upload reviewer summary")
+    form_bundle = _step(
         materializer,
-        "Bind reviewer artifact transport to exact payloads",
+        "Form complete pre-wait Approval Bundle",
     )
     upload_bundle = _step(materializer, "Upload Approval Bundle")
     summary = _step(
@@ -1995,16 +2058,14 @@ def test_completed_pre_wait_bundle_gates_reviewer_summary_link(
 
     assert (
         steps.index(upload_reviewer)
-        < steps.index(bind)
+        < steps.index(form_bundle)
         < steps.index(upload_bundle)
         < steps.index(summary)
     )
     assert summary["if"] == "steps.upload-bundle.outcome == 'success'"
 
-    reviewer_name = "current-reviewer-payload"
-    reviewer_directory = tmp_path / ".wdv3" / reviewer_name
-    reviewer_directory.mkdir(parents=True)
-    reviewer = reviewer_directory / "reviewer-summary.md"
+    reviewer = tmp_path / ".wdv3" / "reviewer-summary.md"
+    reviewer.parent.mkdir(parents=True)
     reviewer_bytes = b"# Immutable reviewer summary\n\n- Action count: 1\n"
     reviewer.write_bytes(reviewer_bytes)
     artifact_url = (
@@ -2016,10 +2077,7 @@ def test_completed_pre_wait_bundle_gates_reviewer_summary_link(
     execution = _phase3_execute_workflow_run(
         tmp_path,
         _run(summary),
-        {
-            "steps.names.outputs.reviewer-name": reviewer_name,
-            "steps.upload-reviewer.outputs.artifact-url": artifact_url,
-        },
+        {"steps.upload-reviewer.outputs.artifact-url": artifact_url},
         environment={"GITHUB_STEP_SUMMARY": str(github_summary)},
     )
 
@@ -2028,384 +2086,3 @@ def test_completed_pre_wait_bundle_gates_reviewer_summary_link(
     assert reviewer_bytes in summary_bytes
     assert artifact_url.encode() in summary_bytes
     assert artifact_url.encode() not in reviewer.read_bytes()
-
-
-def _current_finalizer_facts(
-    *,
-    authority_path: str,
-) -> dict[str, str]:
-    record_digest = "sha256:" + ("a" * 64)
-    upload_digest = "sha256:" + ("d" * 64)
-    facts = {
-        "inputs.target-sha": "1" * 40,
-        "needs.admit.outputs.attempt-artifact-digest": upload_digest,
-        "needs.admit.outputs.attempt-artifact-id": "101",
-        "needs.admit.outputs.attempt-artifact-name": "attempt-binding.json",
-        "needs.admit.outputs.attempt-digest": record_digest,
-        "needs.materialize-publication.outputs.approval-bundle-artifact-digest": "",
-        "needs.materialize-publication.outputs.approval-bundle-artifact-id": "",
-        "needs.materialize-publication.outputs.approval-bundle-artifact-name": "",
-        "needs.materialize-publication.outputs.approval-bundle-digest": "",
-        "needs.materialize-publication.outputs.publication-snapshot-artifact-digest": upload_digest,
-        "needs.materialize-publication.outputs.publication-snapshot-artifact-id": "731",
-        "needs.materialize-publication.outputs.publication-snapshot-artifact-name": "publication-snapshot.json",
-        "needs.materialize-publication.outputs.publication-snapshot-digest": record_digest,
-        "needs.materialize-publication.result": "success",
-        "needs.observe-github-packages.outputs.observation-set-artifact-digest": upload_digest,
-        "needs.observe-github-packages.outputs.observation-set-artifact-id": "730",
-        "needs.observe-github-packages.outputs.observation-set-artifact-name": "observation.json",
-        "needs.observe-github-packages.outputs.observation-set-digest": record_digest,
-        "needs.observe-github-packages.result": "success",
-        "needs.approve-publication.outputs.publication-authorization-artifact-digest": "",
-        "needs.approve-publication.outputs.publication-authorization-artifact-id": "",
-        "needs.approve-publication.outputs.publication-authorization-artifact-name": "",
-        "needs.approve-publication.outputs.publication-authorization-digest": "",
-        "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-digest": "",
-        "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-id": "",
-        "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-name": "",
-        "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-digest": "",
-        "needs.qualification-finalizer.outputs.qualification-result": "success",
-        "needs.qualification-finalizer.outputs.qualification-snapshot-artifact-digest": upload_digest,
-        "needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id": "107",
-        "needs.qualification-finalizer.outputs.qualification-snapshot-artifact-name": "qualification-snapshot.json",
-        "needs.qualification-finalizer.outputs.qualification-snapshot-digest": record_digest,
-        "needs.qualification-finalizer.outputs.decision-artifact-digest": upload_digest,
-        "needs.qualification-finalizer.outputs.decision-artifact-id": "108",
-        "needs.qualification-finalizer.outputs.decision-artifact-name": "qualification-decision.json",
-        "needs.qualification-finalizer.outputs.decision-digest": record_digest,
-    }
-    for index, role in enumerate(
-        (
-            "build-evidence",
-            "project-test-evidence",
-            "artifact-contents-evidence",
-            "install-import-evidence",
-            "release-artifact",
-        ),
-        start=102,
-    ):
-        facts.update(
-            {
-                f"needs.qualification-finalizer.outputs.{role}-artifact-digest": upload_digest,
-                f"needs.qualification-finalizer.outputs.{role}-artifact-id": str(
-                    index
-                ),
-                f"needs.qualification-finalizer.outputs.{role}-artifact-name": f"{role}.json",
-                f"needs.qualification-finalizer.outputs.{role}-digest": record_digest,
-            }
-        )
-
-    if authority_path == "action":
-        facts.update(
-            {
-                "needs.materialize-publication.outputs.approval-bundle-artifact-digest": upload_digest,
-                "needs.materialize-publication.outputs.approval-bundle-artifact-id": "732",
-                "needs.materialize-publication.outputs.approval-bundle-artifact-name": "approval-bundle.json",
-                "needs.materialize-publication.outputs.approval-bundle-digest": record_digest,
-                "needs.approve-publication.outputs.publication-authorization-artifact-digest": upload_digest,
-                "needs.approve-publication.outputs.publication-authorization-artifact-id": "733",
-                "needs.approve-publication.outputs.publication-authorization-artifact-name": "publication-authorization.json",
-                "needs.approve-publication.outputs.publication-authorization-digest": record_digest,
-            }
-        )
-    else:
-        assert authority_path == "exact-satisfied"
-        facts.update(
-            {
-                "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-digest": upload_digest,
-                "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-id": "734",
-                "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-artifact-name": "exact-satisfied-proof.json",
-                "needs.prove-exact-satisfied.outputs.exact-satisfied-governance-proof-digest": record_digest,
-            }
-        )
-
-    run = _run(
-        _step(
-            _document(CALLEE)["jobs"]["release-finalizer"],
-            "Finalize Attempt Outcome",
-        )
-    )
-    expressions = {
-        match.group("fact").strip()
-        for match in _PHASE2_FINALIZER_EXPRESSION.finditer(run)
-    }
-    assert set(facts) == expressions
-    return facts
-
-
-@pytest.mark.parametrize(
-    ("authority_path", "required_roles", "forbidden_roles"),
-    [
-        pytest.param(
-            "action",
-            ("--approval-bundle", "--publication-authorization"),
-            ("--exact-satisfied-governance-proof", "--observation"),
-            id="action",
-        ),
-        pytest.param(
-            "exact-satisfied",
-            ("--exact-satisfied-governance-proof",),
-            (
-                "--approval-bundle",
-                "--publication-authorization",
-                "--observation",
-            ),
-            id="exact-satisfied",
-        ),
-    ],
-)
-def test_finalizer_shell_selects_only_completed_authority_branch(
-    tmp_path: Path,
-    authority_path: str,
-    required_roles: tuple[str, ...],
-    forbidden_roles: tuple[str, ...],
-) -> None:
-    execution = _phase2_execute_finalizer_shell(
-        tmp_path,
-        _current_finalizer_facts(authority_path=authority_path),
-    )
-
-    argv = _phase2_assert_successful_finalizer(execution)
-    assert argv.count("--publication-snapshot") == 1
-    for role in required_roles:
-        assert argv.count(role) == 1
-    for role in forbidden_roles:
-        assert role not in argv
-
-
-def _current_missing_authority_facts(
-    *,
-    snapshot_shape: str,
-) -> dict[str, str]:
-    source_path = (
-        "action" if snapshot_shape == "action-bearing" else "exact-satisfied"
-    )
-    facts = _current_finalizer_facts(authority_path=source_path)
-    for producer, role in (
-        ("materialize-publication", "approval-bundle"),
-        ("approve-publication", "publication-authorization"),
-        ("prove-exact-satisfied", "exact-satisfied-governance-proof"),
-    ):
-        for suffix in (
-            "artifact-digest",
-            "artifact-id",
-            "artifact-name",
-            "digest",
-        ):
-            facts[f"needs.{producer}.outputs.{role}-{suffix}"] = ""
-    facts[
-        "needs.materialize-publication.outputs."
-        "publication-snapshot-artifact-name"
-    ] = f"{snapshot_shape}-publication-snapshot.json"
-    return facts
-
-
-def _execute_current_missing_authority_finalizer(
-    tmp_path: Path,
-    *,
-    snapshot_shape: str,
-) -> dict[str, Any]:
-    import os  # noqa: PLC0415
-    import subprocess  # noqa: PLC0415
-
-    facts = _current_missing_authority_facts(
-        snapshot_shape=snapshot_shape,
-    )
-    run = _phase2_render_finalizer_run(facts)
-    input_directory = tmp_path / ".wdv3/input"
-    input_directory.mkdir(parents=True)
-    snapshot_name = facts[
-        "needs.materialize-publication.outputs."
-        "publication-snapshot-artifact-name"
-    ]
-    for expression, value in facts.items():
-        if (
-            expression.endswith("-artifact-name")
-            and value
-            and value != snapshot_name
-        ):
-            (input_directory / value).write_text("{}\n", encoding="utf-8")
-    action_count = 1 if snapshot_shape == "action-bearing" else 0
-    (input_directory / snapshot_name).write_text(
-        json.dumps(
-            {
-                "schema": "workflow-delivery/v3/publication-snapshot",
-                "materialized-actions": [
-                    {"action-id": "publish-github-packages"}
-                    for _ in range(action_count)
-                ],
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    bin_directory = tmp_path / "bin"
-    bin_directory.mkdir()
-    invocations = tmp_path / "current-finalizer-invocations.jsonl"
-    uv = bin_directory / "uv"
-    uv.write_text(
-        r"""#!/usr/bin/env python3
-import json
-import os
-import pathlib
-import sys
-
-args = sys.argv[1:]
-invocations = pathlib.Path(os.environ["CURRENT_FINALIZER_INVOCATIONS"])
-with invocations.open("a", encoding="utf-8") as handle:
-    handle.write(json.dumps(args) + "\n")
-
-snapshot_path = pathlib.Path(args[args.index("--publication-snapshot") + 1])
-snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-action_count = len(snapshot["materialized-actions"])
-if action_count:
-    result = "incomplete"
-    phase = "approval-contract"
-    uncertainty = True
-    next_action = "new-attempt"
-else:
-    result = "replayable-no-side-effect"
-    phase = "pre-authorization-termination"
-    uncertainty = False
-    next_action = "replay"
-
-outcome_path = pathlib.Path(args[args.index("--outcome-output") + 1])
-outcome_path.parent.mkdir(parents=True, exist_ok=True)
-outcome_path.write_text(
-    json.dumps(
-        {
-            "terminal-phase": phase,
-            "result": result,
-            "uncertainty": uncertainty,
-            "possibly-mutated": False,
-            "next-action": next_action,
-        },
-        sort_keys=True,
-    )
-    + "\n",
-    encoding="utf-8",
-)
-summary_path = pathlib.Path(args[args.index("--summary-output") + 1])
-summary_path.write_text(
-    f"# Attempt summary\n\n- Result: {result}\n",
-    encoding="utf-8",
-)
-github_output = pathlib.Path(args[args.index("--github-output") + 1])
-with github_output.open("a", encoding="utf-8") as handle:
-    handle.write(f"result={result}\n")
-raise SystemExit(1)
-""",
-        encoding="utf-8",
-    )
-    uv.chmod(0o755)
-
-    github_output = tmp_path / "current-finalizer-output.txt"
-    github_summary = tmp_path / "current-finalizer-summary.md"
-    environment = os.environ | {
-        "CURRENT_FINALIZER_INVOCATIONS": str(invocations),
-        "GITHUB_OUTPUT": str(github_output),
-        "GITHUB_RUN_ATTEMPT": "1",
-        "GITHUB_RUN_ID": "424242",
-        "GITHUB_STEP_SUMMARY": str(github_summary),
-        "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
-        "WDV3_PACKAGE": "three-workflow-delivery-v3",
-    }
-    completed = subprocess.run(  # noqa: S603
-        (
-            "bash",
-            "--noprofile",
-            "--norc",
-            "-euo",
-            "pipefail",
-            "-c",
-            run,
-        ),
-        check=False,
-        cwd=tmp_path,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    output_values = {
-        key: value
-        for line in github_output.read_text(encoding="utf-8").splitlines()
-        for key, value in (line.split("=", 1),)
-    }
-    final_attempt = tmp_path / ".wdv3/final-attempt"
-    return {
-        "github_output": output_values,
-        "invocations": tuple(
-            tuple(json.loads(line))
-            for line in invocations.read_text(encoding="utf-8").splitlines()
-        ),
-        "outcome": final_attempt / output_values["outcome-artifact-name"],
-        "output": completed.stdout + completed.stderr,
-        "status": completed.returncode,
-        "summary": final_attempt / output_values["summary-artifact-name"],
-    }
-
-
-@pytest.mark.parametrize(
-    (
-        "snapshot_shape",
-        "expected_result",
-        "expected_phase",
-        "expected_uncertainty",
-        "expected_next_action",
-    ),
-    [
-        pytest.param(
-            "action-bearing",
-            "incomplete",
-            "approval-contract",
-            True,
-            "new-attempt",
-            id="action-bearing-missing-authority",
-        ),
-        pytest.param(
-            "actionless",
-            "replayable-no-side-effect",
-            "pre-authorization-termination",
-            False,
-            "replay",
-            id="actionless-missing-proof",
-        ),
-    ],
-)
-def test_finalizer_missing_authority_uses_current_safe_result(  # noqa: PLR0913
-    tmp_path: Path,
-    snapshot_shape: str,
-    expected_result: str,
-    expected_phase: str,
-    expected_uncertainty: bool,  # noqa: FBT001
-    expected_next_action: str,
-) -> None:
-    execution = _execute_current_missing_authority_finalizer(
-        tmp_path,
-        snapshot_shape=snapshot_shape,
-    )
-
-    assert execution["status"] == 1, execution["output"]
-    assert len(execution["invocations"]) == 1
-    argv = execution["invocations"][0]
-    assert argv.count("--publication-snapshot") == 1
-    assert {
-        "--approval-bundle",
-        "--publication-authorization",
-        "--exact-satisfied-governance-proof",
-    }.isdisjoint(argv)
-    outcome = json.loads(execution["outcome"].read_text(encoding="utf-8"))
-    assert outcome == {
-        "next-action": expected_next_action,
-        "possibly-mutated": False,
-        "result": expected_result,
-        "terminal-phase": expected_phase,
-        "uncertainty": expected_uncertainty,
-    }
-    assert execution["github_output"]["result"] == expected_result
-    assert execution["github_output"]["finalizer-status"] == "1"
-    assert f"- Result: {expected_result}\n" in execution["summary"].read_text(
-        encoding="utf-8"
-    )

@@ -29,6 +29,8 @@ from three_workflow_delivery_v3.repository.descriptors import (
     GovernanceSource,
 )
 
+from .test_eligibility import _blocked_activation, _ready_activation
+
 COMMIT = "a" * 40
 BLOB = "b" * 40
 NOW = datetime(2026, 8, 13, 23, 0, tzinfo=UTC)
@@ -43,80 +45,10 @@ def _source() -> GovernanceSource:
     )
 
 
-def _ready_activation() -> dict[str, JsonValue]:
-    return {
-        "state": "ready",
-        "approval_environment": {
-            "name": "workflow-delivery-v3-buddy-approval",
-            "environment_id": 20895030723,
-            "required_reviewers": [{"login": "hcoona", "id": 712433}],
-            "prevent_self_review": False,
-            "can_admins_bypass": False,
-            "wait_timer_minutes": 0,
-            "deployment_policy": "all",
-            "secret_count": 0,
-            "variables": [
-                {
-                    "name": "WDV3_APPROVAL_ENVIRONMENT_MARKER",
-                    "value": "workflow-delivery-v3-buddy-approval/v1",
-                    "scope": "environment",
-                }
-            ],
-            "same_name_repository_variable_absent": True,
-            "same_name_organization_variable": "not-applicable-user-owner",
-            "evidence": [
-                {
-                    "endpoint": (
-                        "GET /repos/hcoona/three/environments/"
-                        "workflow-delivery-v3-buddy-approval"
-                    ),
-                    "captured_at": "2026-07-01T00:00:00Z",
-                    "response_digest": "sha256:" + ("1" * 64),
-                }
-            ],
-        },
-        "artifact_retention": {
-            "endpoint": (
-                "GET /repos/hcoona/three/actions/permissions/"
-                "artifact-and-log-retention"
-            ),
-            "captured_at": "2026-07-01T00:00:00Z",
-            "days": 45,
-            "response_digest": "sha256:" + ("2" * 64),
-        },
-        "destination_primitive": {
-            "primitive_id": "github-packages-conditional-create-v1",
-            "operation": ("conditional-create-npm-version-and-target-tag"),
-            "captured_at": "2026-07-01T00:00:00Z",
-            "race_inputs": [
-                ["coordinate", "@hcoona/hcoona-release-smoke-npm"],
-                ["target-tag", "buddy-sha-" + ("a" * 40)],
-                ["version", "1.2.3"],
-            ],
-            "race_results": [
-                ["conflicting-tag-preserved", "pass"],
-                ["target-version-remained-absent", "pass"],
-            ],
-            "evidence_digest": "sha256:" + ("3" * 64),
-        },
-    }
-
-
-def _blocked_activation() -> dict[str, JsonValue]:
-    return {
-        "state": "blocked",
-        "blockers": [
-            "destination-primitive-unproven",
-            "fresh-native-evidence-required",
-            "repository-retention-readback-required",
-        ],
-    }
-
-
 def _document(**updates: JsonValue) -> dict[str, JsonValue]:
     document: dict[str, JsonValue] = {
         "schema": (
-            "workflow-delivery/v3/normal-live-governance-attestation-v1"
+            "workflow-delivery/v3/normal-live-governance-attestation-v2"
         ),
         "release_policy": "hcoona-release-smoke-npm",
         "package": "@hcoona/hcoona-release-smoke-npm",
@@ -145,7 +77,7 @@ def _document(**updates: JsonValue) -> dict[str, JsonValue]:
                 "latency."
             ),
         ],
-        "activation": _ready_activation(),
+        "activation": _ready_activation(captured_at="2026-07-01T00:00:00Z"),
         "live_enabled": True,
     }
     document.update(updates)

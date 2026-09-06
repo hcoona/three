@@ -12,6 +12,7 @@ from three_workflow_delivery_v3.canonical import (
 )
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactContentIdentity,
+    ArtifactReference,
     ArtifactTransportIdentity,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
@@ -69,33 +70,35 @@ OBSERVATION_RESPONSE_FACTS_SCHEMA = (
     "workflow-delivery/v3/observation-response-facts"
 )
 PROJECTION_OBSERVATION_SCHEMA = "workflow-delivery/v3/projection-observation"
+REMOTE_STATE_OBSERVATION_SCHEMA = (
+    "workflow-delivery/v3/remote-state-observation"
+)
 HYPOTHETICAL_ACTION_SCHEMA = "workflow-delivery/v3/hypothetical-action"
+DESTINATION_OPERATION_PROFILE_SCHEMA = (
+    "workflow-delivery/v3/destination-operation-profile"
+)
 PUBLICATION_ACTION_SCHEMA = "workflow-delivery/v3/publication-action"
 PUBLICATION_OBSERVATION_REFERENCE_SCHEMA = (
     "workflow-delivery/v3/publication-observation-reference"
 )
 PUBLICATION_SNAPSHOT_SCHEMA = "workflow-delivery/v3/publication-snapshot"
 RELEASE_ATTEMPT_BINDING_SCHEMA = "workflow-delivery/v3/release-attempt-binding"
-REVIEWER_SUMMARY_ARTIFACT_SCHEMA = (
-    "workflow-delivery/v3/reviewer-summary-artifact"
-)
 APPROVAL_BUNDLE_SCHEMA = "workflow-delivery/v3/approval-bundle"
 PUBLICATION_AUTHORIZATION_SCHEMA = (
     "workflow-delivery/v3/publication-authorization"
 )
-EXACT_SATISFIED_GOVERNANCE_PROOF_SCHEMA = (
-    "workflow-delivery/v3/exact-satisfied-governance-proof"
+EXACT_SATISFIED_FINALIZATION_PROOF_SCHEMA = (
+    "workflow-delivery/v3/exact-satisfied-finalization-proof"
 )
-ACTION_RESULT_SCHEMA = "workflow-delivery/v3/action-result"
-RECEIPT_SCHEMA = "workflow-delivery/v3/receipt"
+MUTATION_MAY_HAVE_STARTED_SCHEMA = (
+    "workflow-delivery/v3/github-packages-mutation-may-have-started"
+)
+PUBLICATION_RESULT_SCHEMA = "workflow-delivery/v3/publication-result"
 ATTEMPT_OUTCOME_SCHEMA = "workflow-delivery/v3/attempt-outcome"
 SIMULATION_OUTCOME_SCHEMA = "workflow-delivery/v3/simulation-outcome"
 NPMJS_OBSERVATION_CONTRACT_ID = "npm/npmjs-public-observation-v1"
 NPMJS_OBSERVER_PRODUCER = "observe-npmjs"
 HYPOTHETICAL_ACTIONS_REPORT_PRODUCER = "materialize-hypothetical-actions"
-PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER = (
-    "governance-recheck-failed-before-runner"
-)
 CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION = (
     "conditional-create-npm-version-and-target-tag"
 )
@@ -128,7 +131,40 @@ _OBSERVATION_CLASSIFICATIONS = frozenset(
 )
 _QUALIFICATION_OUTCOMES = frozenset({"satisfied", "failed", "incomplete"})
 _QUALIFICATION_RESULTS = frozenset({"success", "failure", "incomplete"})
+_COMMAND_CLASSIFICATIONS = frozenset(
+    {
+        "not-initiated",
+        "definitive-success",
+        "definitive-non-success",
+        "ambiguous",
+    }
+)
+_MUTATION_CLASSIFICATIONS = frozenset(
+    {"not-mutated", "possibly-mutated", "mutated"}
+)
+_PUBLICATION_RESULTS = frozenset({"published", "failed"})
+_TAG_STATES = frozenset({"absent", "present", "unreadable"})
+_DIRECT_PREDECESSOR_KINDS = frozenset(
+    {
+        "publication-result",
+        "mutation-marker",
+        "exact-satisfied-finalization-proof",
+        "zero-action-publication-snapshot",
+        "publication-authorization",
+        "approval-bundle",
+        "action-bearing-publication-snapshot",
+        "blocking-observation",
+        "qualification-decision",
+    }
+)
 _PAIR_SIZE = 2
+_PUBLICATION_DIAGNOSTIC_COUNT_LIMIT = 16
+_PUBLICATION_DIAGNOSTIC_ENTRY_LIMIT_BYTES = 2048
+_PUBLICATION_DIAGNOSTIC_TOTAL_LIMIT_BYTES = 8192
+_LIVE_APPROVAL_ENVIRONMENT = "workflow-delivery-v3-buddy-approval"
+_LIVE_APPROVAL_JOB = "approve-publication"
+_LIVE_APPROVAL_SENTINEL_NAME = "WDV3_APPROVAL_ENVIRONMENT_MARKER"
+_LIVE_APPROVAL_SENTINEL_VALUE = "workflow-delivery-v3-buddy-approval/v1"
 _GOVERNANCE_PROVENANCE_FIELDS = frozenset(
     {
         "repository",
@@ -191,6 +227,24 @@ def _sha(value: object, *, field: str) -> str:
     return accepted
 
 
+def _git_object_id(
+    value: object,
+    *,
+    object_format: str,
+    field: str,
+) -> str:
+    accepted = _string(value, field=field)
+    expected_length = {"sha1": 40, "sha256": 64}.get(object_format)
+    if (
+        expected_length is None
+        or len(accepted) != expected_length
+        or any(character not in "0123456789abcdef" for character in accepted)
+    ):
+        message = f"{field} is malformed"
+        raise ValueError(message)
+    return accepted
+
+
 def _target_control(value: object, *, target: str, field: str) -> str:
     accepted = _string(value, field=field)
     if accepted != f"workflow-delivery-v3:{target}":
@@ -245,6 +299,12 @@ def _optional_digest(value: object, *, field: str) -> str | None:
     if value is None:
         return None
     return _digest(value, field=field)
+
+
+def _optional_sha512(value: object, *, field: str) -> str | None:
+    if value is None:
+        return None
+    return _digest(value, field=field, sha512=True)
 
 
 def _nested_string_pairs(
@@ -2047,9 +2107,9 @@ class ObservationResponseFacts:
 
 @dataclass(frozen=True, slots=True)
 class ProjectionObservation:
-    """One admitted Adapter classification for one logical projection."""
+    """One Simulation-only Adapter classification for a logical projection."""
 
-    subject: SimulationIdentity | ReleaseAttemptIdentity
+    subject: SimulationIdentity
     purpose: str
     target: str
     producer: str
@@ -2065,22 +2125,15 @@ class ProjectionObservation:
 
     def __post_init__(self) -> None:
         """Reject substituted projection or request/response bindings."""
-        if type(self.subject) not in {
-            SimulationIdentity,
-            ReleaseAttemptIdentity,
-        }:
-            message = "Projection Observation subject has wrong type"
+        if type(self.subject) is not SimulationIdentity:
+            message = "Projection Observation subject must be Simulation-only"
             raise TypeError(message)
         purpose = _choice(
             self.purpose,
             _PURPOSES,
             field="observation.purpose",
         )
-        expected_purpose = (
-            "release-simulation"
-            if type(self.subject) is SimulationIdentity
-            else "live-release"
-        )
+        expected_purpose = "release-simulation"
         if purpose != expected_purpose:
             message = "Projection Observation purpose binding mismatch"
             raise ValueError(message)
@@ -2253,36 +2306,85 @@ class HypotheticalAction:
         )
 
 
-def publication_action_inputs(
-    projection: DestinationProjection,
-    artifact: ReleaseArtifact,
-) -> tuple[tuple[str, str], ...]:
-    """Return the exact ordered concrete Publication Action inputs."""
-    _exact(
-        projection,
-        DestinationProjection,
-        field="publication action inputs.projection",
-    )
-    _exact(
-        artifact,
-        ReleaseArtifact,
-        field="publication action inputs.artifact",
-    )
-    content_sha512 = artifact.content.content_sha512
-    if content_sha512 is None:
-        message = "Publication Action artifact requires SHA-512"
-        raise ValueError(message)
-    return (
-        ("artifact-content-sha256", artifact.content.content_sha256),
-        ("artifact-content-sha512", content_sha512),
-        ("artifact-digest", artifact.artifact_digest),
-        ("coordinate", canonical_sha256(projection.coordinate.to_document())),
-        ("operation", projection.operation),
-        ("output-id", artifact.output.output_id),
-        ("projection-digest", projection.projection_digest),
-        ("transport-artifact-id", str(artifact.transport.artifact_id)),
-        ("witness-digest", artifact.witness_digest),
-    )
+@dataclass(frozen=True, slots=True)
+class DestinationOperationProfile:
+    """Closed canonical description of one destination mutation primitive."""
+
+    profile_id: str
+    registry: str
+    access_mode: str
+    node_version: str
+    npm_version: str
+    command_template: tuple[str, ...]
+    operand_slots: tuple[tuple[str, str], ...]
+    configuration_precedence: tuple[tuple[str, str], ...]
+    request_generation: tuple[tuple[str, str], ...]
+    mutation_retry: str
+
+    def __post_init__(self) -> None:
+        """Reject incomplete or noncanonical profile definitions."""
+        _string(self.profile_id, field="destination profile.profile_id")
+        _string(self.registry, field="destination profile.registry")
+        _string(self.access_mode, field="destination profile.access_mode")
+        _string(self.node_version, field="destination profile.node_version")
+        _string(self.npm_version, field="destination profile.npm_version")
+        _string_tuple(
+            self.command_template,
+            field="destination profile.command_template",
+            unique=False,
+        )
+        _pairs(
+            self.operand_slots,
+            field="destination profile.operand_slots",
+            sorted_values=False,
+        )
+        if tuple(name for name, _rule in self.operand_slots) != (
+            "package",
+            "version",
+            "tarball-reference",
+            "tag",
+        ):
+            message = "Destination profile operand slots are not exact"
+            raise ValueError(message)
+        _pairs(
+            self.configuration_precedence,
+            field="destination profile.configuration_precedence",
+        )
+        _pairs(
+            self.request_generation,
+            field="destination profile.request_generation",
+        )
+        _string(self.mutation_retry, field="destination profile.mutation_retry")
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the canonical Destination Operation Profile."""
+        return cast(
+            "dict[str, JsonValue]",
+            {
+                "schema": DESTINATION_OPERATION_PROFILE_SCHEMA,
+                "profile-id": self.profile_id,
+                "registry": self.registry,
+                "access-mode": self.access_mode,
+                "node-version": self.node_version,
+                "npm-version": self.npm_version,
+                "command-template": list(self.command_template),
+                "operand-slots": [
+                    [name, rule] for name, rule in self.operand_slots
+                ],
+                "configuration-precedence": [
+                    [name, rule] for name, rule in self.configuration_precedence
+                ],
+                "request-generation": [
+                    [name, rule] for name, rule in self.request_generation
+                ],
+                "mutation-retry": self.mutation_retry,
+            },
+        )
+
+    @property
+    def profile_digest(self) -> str:
+        """Return the canonical Destination Operation Profile digest."""
+        return canonical_sha256(self.to_document())
 
 
 def publication_mutable_resource_keys(
@@ -2335,12 +2437,14 @@ def publication_mutable_resource_keys(
     )
 
 
-def publication_lock_projection(projection: DestinationProjection) -> str:
-    """Return the exact conservative destination/package lock projection."""
+def publication_serialization_projection(
+    projection: DestinationProjection,
+) -> str:
+    """Return the exact conservative destination/package serialization key."""
     _exact(
         projection,
         DestinationProjection,
-        field="publication lock projection.projection",
+        field="publication serialization projection.projection",
     )
     digest = canonical_sha256(
         {
@@ -2350,11 +2454,6 @@ def publication_lock_projection(projection: DestinationProjection) -> str:
         }
     )
     return f"destination-package:{digest.removeprefix('sha256:')}"
-
-
-def publication_lock_group(projection: DestinationProjection) -> str:
-    """Return the exact conservative platform serialization group."""
-    return publication_lock_projection(projection)
 
 
 def publication_capability_requirements(
@@ -2394,153 +2493,79 @@ def publication_mutable_resource_key_basis(
     return ("external-package-coordinate", "npm-dist-tag")
 
 
-def publication_expected_result(projection: DestinationProjection) -> str:
-    """Return the exact expected result contract for a supported action."""
+def publication_tarball_reference(
+    artifact: ReleaseArtifact,
+) -> ArtifactReference:
+    """Return the exact tarball payload reference carried by an action."""
     _exact(
-        projection,
-        DestinationProjection,
-        field="publication expected result.projection",
+        artifact,
+        ReleaseArtifact,
+        field="publication tarball reference.artifact",
     )
-    if projection.operation == "npm-publish-create-only":
-        return "created-or-exact"
-    if projection.operation == CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION:
-        return "created-version-and-target-tag-or-exact"
-    message = "Publication Action expected result is unsupported in commit 6"
-    raise ValueError(message)
+    return ArtifactReference(
+        artifact_id=artifact.transport.artifact_id,
+        artifact_digest=artifact.transport.transport_digest,
+        artifact_url=artifact.transport.artifact_url,
+        payload_path=artifact.content.basename,
+        payload_digest=artifact.content.content_sha256,
+    )
 
 
-def publication_receipt_contract(projection: DestinationProjection) -> str:
-    """Return the exact Receipt contract for a supported action."""
+def publication_target_tag(artifact: ReleaseArtifact) -> str:
+    """Return the exact first-slice target-derived Buddy routing tag."""
     _exact(
-        projection,
-        DestinationProjection,
-        field="publication receipt contract.projection",
+        artifact,
+        ReleaseArtifact,
+        field="publication target tag.artifact",
     )
-    if projection.operation == "npm-publish-create-only":
-        return "npm/package-publication-receipt-v1"
-    if projection.operation == CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION:
-        return "npm/conditional-version-and-target-tag-receipt-v1"
-    message = "Publication Action Receipt is unsupported in commit 6"
-    raise ValueError(message)
+    attempt = artifact.subject
+    if not isinstance(attempt, ReleaseAttemptIdentity):
+        message = "Publication Action requires a live artifact"
+        raise TypeError(message)
+    execution = attempt.execution
+    if type(execution) is not BuddyExecutionIdentity:
+        message = "Publication Action requires Buddy Execution"
+        raise TypeError(message)
+    return f"buddy-sha-{execution.target}"
 
 
 @dataclass(frozen=True, slots=True)
 class PublicationAction:
-    """Live action with exact artifact, key, and Receipt bindings."""
+    """Closed typed instantiation of one destination operation profile."""
 
     action_id: str
-    projection: DestinationProjection
-    operation: str
-    artifact: ReleaseArtifact
-    artifact_digest: str
-    artifact_output: ReleaseOutputIdentity
-    prerequisites: tuple[str, ...]
-    action_inputs: tuple[tuple[str, str], ...]
+    destination_operation_profile_digest: str
+    package: str
+    version: str
+    tarball_reference: ArtifactReference
+    tag: str
     mutable_resource_keys: tuple[str, ...]
-    lock_projection: str
-    lock_group: str
-    capability_requirements: tuple[str, ...]
-    expected_result: str
-    receipt_contract: str
+    serialization_projection: str
 
-    def __post_init__(self) -> None:  # noqa: C901, PLR0915
-        """Reject incomplete or substituted live action bindings."""
+    def __post_init__(self) -> None:
+        """Reject malformed profile-instantiation values."""
         _string(self.action_id, field="publication action.action_id")
-        _exact(
-            self.projection,
-            DestinationProjection,
-            field="publication action.projection",
-        )
-        _string(self.operation, field="publication action.operation")
-        _exact(
-            self.artifact,
-            ReleaseArtifact,
-            field="publication action.artifact",
-        )
         _digest(
-            self.artifact_digest,
-            field="publication action.artifact_digest",
+            self.destination_operation_profile_digest,
+            field="publication action.destination_operation_profile_digest",
         )
+        _string(self.package, field="publication action.package")
+        _string(self.version, field="publication action.version")
         _exact(
-            self.artifact_output,
-            ReleaseOutputIdentity,
-            field="publication action.artifact_output",
+            self.tarball_reference,
+            ArtifactReference,
+            field="publication action.tarball_reference",
         )
-        _string_tuple(
-            self.prerequisites,
-            field="publication action.prerequisites",
-        )
-        _pairs(self.action_inputs, field="publication action.action_inputs")
+        _string(self.tag, field="publication action.tag")
         _string_tuple(
             self.mutable_resource_keys,
             field="publication action.mutable_resource_keys",
+            sorted_values=True,
         )
         _string(
-            self.lock_projection,
-            field="publication action.lock_projection",
+            self.serialization_projection,
+            field="publication action.serialization_projection",
         )
-        _string(self.lock_group, field="publication action.lock_group")
-        _string_tuple(
-            self.capability_requirements,
-            field="publication action.capability_requirements",
-        )
-        _string(
-            self.expected_result,
-            field="publication action.expected_result",
-        )
-        _string(
-            self.receipt_contract,
-            field="publication action.receipt_contract",
-        )
-        if self.projection.potential_action_id != self.action_id:
-            message = "Publication Action action ID binding mismatch"
-            raise ValueError(message)
-        if self.projection.operation != self.operation:
-            message = "Publication Action operation binding mismatch"
-            raise ValueError(message)
-        if self.projection.output != self.artifact_output:
-            message = "Publication Action projection output binding mismatch"
-            raise ValueError(message)
-        if (
-            self.artifact.output != self.artifact_output
-            or self.artifact.artifact_digest != self.artifact_digest
-        ):
-            message = "Publication Action projection/artifact binding mismatch"
-            raise ValueError(message)
-        if self.prerequisites != ():
-            message = "Publication Action prerequisites are not exact"
-            raise ValueError(message)
-        if self.action_inputs != publication_action_inputs(
-            self.projection,
-            self.artifact,
-        ):
-            message = "Publication Action inputs are not exact"
-            raise ValueError(message)
-        if self.mutable_resource_keys != publication_mutable_resource_keys(
-            self.projection,
-            self.artifact,
-        ):
-            message = "Publication Action mutable keys are not exact"
-            raise ValueError(message)
-        if self.lock_projection != publication_lock_projection(self.projection):
-            message = "Publication Action lock projection is not exact"
-            raise ValueError(message)
-        if self.lock_group != publication_lock_group(self.projection):
-            message = "Publication Action lock group is not exact"
-            raise ValueError(message)
-        if self.capability_requirements != publication_capability_requirements(
-            self.projection
-        ):
-            message = "Publication Action capability requirements are not exact"
-            raise ValueError(message)
-        if self.expected_result != publication_expected_result(self.projection):
-            message = "Publication Action expected result is not exact"
-            raise ValueError(message)
-        if self.receipt_contract != publication_receipt_contract(
-            self.projection
-        ):
-            message = "Publication Action Receipt contract is not exact"
-            raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical Publication Action."""
@@ -2549,21 +2574,15 @@ class PublicationAction:
             {
                 "schema": PUBLICATION_ACTION_SCHEMA,
                 "action-id": self.action_id,
-                "projection": self.projection.to_document(),
-                "operation": self.operation,
-                "artifact": self.artifact.to_document(),
-                "artifact-digest": self.artifact_digest,
-                "artifact-output": self.artifact_output.to_document(),
-                "prerequisites": list(self.prerequisites),
-                "action-inputs": [
-                    [name, value] for name, value in self.action_inputs
-                ],
+                "destination-operation-profile-digest": (
+                    self.destination_operation_profile_digest
+                ),
+                "package": self.package,
+                "version": self.version,
+                "tarball-reference": self.tarball_reference.to_document(),
+                "tag": self.tag,
                 "mutable-resource-keys": list(self.mutable_resource_keys),
-                "lock-projection": self.lock_projection,
-                "lock-group": self.lock_group,
-                "capability-requirements": list(self.capability_requirements),
-                "expected-result": self.expected_result,
-                "receipt-contract": self.receipt_contract,
+                "serialization-projection": self.serialization_projection,
             },
         )
 
@@ -2571,6 +2590,82 @@ class PublicationAction:
     def action_digest(self) -> str:
         """Return the canonical Publication Action digest."""
         return canonical_sha256(self.to_document())
+
+
+def form_publication_action(
+    *,
+    destination_operation_profile: DestinationOperationProfile,
+    projection: DestinationProjection,
+    artifact: ReleaseArtifact,
+) -> PublicationAction:
+    """Form the exact action from admitted profile, projection, and artifact."""
+    _exact(
+        destination_operation_profile,
+        DestinationOperationProfile,
+        field="publication action profile",
+    )
+    _exact(
+        projection,
+        DestinationProjection,
+        field="publication action projection",
+    )
+    _exact(
+        artifact,
+        ReleaseArtifact,
+        field="publication action artifact",
+    )
+    if not isinstance(artifact.subject, ReleaseAttemptIdentity):
+        message = "Publication Action requires a live artifact"
+        raise TypeError(message)
+    if artifact.purpose != "live-release":
+        message = "Publication Action requires a live-release artifact"
+        raise ValueError(message)
+    if destination_operation_profile.registry != projection.registry:
+        message = "Publication Action profile/projection registry mismatch"
+        raise ValueError(message)
+    if projection.output != artifact.output:
+        message = "Publication Action projection/artifact output mismatch"
+        raise ValueError(message)
+    return PublicationAction(
+        action_id=projection.potential_action_id,
+        destination_operation_profile_digest=(
+            destination_operation_profile.profile_digest
+        ),
+        package=projection.coordinate.package_name,
+        version=projection.coordinate.native_version,
+        tarball_reference=publication_tarball_reference(artifact),
+        tag=publication_target_tag(artifact),
+        mutable_resource_keys=publication_mutable_resource_keys(
+            projection,
+            artifact,
+        ),
+        serialization_projection=publication_serialization_projection(
+            projection
+        ),
+    )
+
+
+def validate_publication_action_instantiation(
+    action: PublicationAction,
+    *,
+    destination_operation_profile: DestinationOperationProfile,
+    projection: DestinationProjection,
+    artifact: ReleaseArtifact,
+) -> None:
+    """Admit only the exact typed action instantiation for its ancestors."""
+    _exact(
+        action,
+        PublicationAction,
+        field="publication action instantiation.action",
+    )
+    expected = form_publication_action(
+        destination_operation_profile=destination_operation_profile,
+        projection=projection,
+        artifact=artifact,
+    )
+    if action != expected:
+        message = "Publication Action is not an exact profile instantiation"
+        raise ValueError(message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2633,7 +2728,7 @@ class PublicationSnapshot:
     observation_references: tuple[PublicationObservationReference, ...]
     materialized_actions: tuple[PublicationAction, ...]
 
-    def __post_init__(self) -> None:  # noqa: C901
+    def __post_init__(self) -> None:
         """Reject placeholder, incomplete, or simulation second Snapshots."""
         _exact(
             self.attempt, ReleaseAttemptIdentity, field="publication.attempt"
@@ -2696,42 +2791,19 @@ class PublicationSnapshot:
             message = "Publication Snapshot requires complete artifacts"
             raise ValueError(message)
         _validate_materialized_actions(self.materialized_actions)
-        action_projection_ids = tuple(
-            action.projection.projection_id
-            for action in self.materialized_actions
-        )
-        if len(set(action_projection_ids)) != len(action_projection_ids):
-            message = (
-                "Publication Snapshot contains duplicate action projections"
-            )
-            raise ValueError(message)
         action_ids = {action.action_id for action in self.materialized_actions}
         if len(action_ids) != len(self.materialized_actions):
             message = "Publication Snapshot contains duplicate actions"
             raise ValueError(message)
-        if any(
-            projection_id not in projection_ids
-            for projection_id in action_projection_ids
-        ):
-            message = "Publication Snapshot action projection is not planned"
-            raise ValueError(message)
-        absent_projection_ids = {
-            reference.projection_id
+        absent_count = sum(
+            reference.classification == "absent"
             for reference in self.observation_references
-            if reference.classification == "absent"
-        }
-        if set(action_projection_ids) != absent_projection_ids:
+        )
+        if len(self.materialized_actions) != absent_count:
             message = (
-                "Publication Snapshot actions must exactly cover absent "
-                "projections"
+                "Publication Snapshot action count must match absent "
+                "observations"
             )
-            raise ValueError(message)
-        if any(
-            action.artifact_digest not in artifact_digests
-            or action.artifact_output.output_id not in output_ids
-            for action in self.materialized_actions
-        ):
-            message = "Publication Snapshot action artifact is not admitted"
             raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
@@ -2854,167 +2926,68 @@ class ReleaseAttemptBinding:
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewerSummaryArtifact:
-    """Immutable reviewer-summary payload and Actions transport identity."""
+class ApprovalBundle:
+    """Reference-only immutable closure persisted before approval."""
 
     attempt: ReleaseAttemptIdentity
-    transport: ArtifactTransportIdentity
-    snapshot_payload_digest: str
-    summary_payload_digest: str
+    publication_snapshot_reference: ArtifactReference
+    reviewer_summary_reference: ArtifactReference
+    producer: str
+    control: str
+    workflow_run_id: int
 
     def __post_init__(self) -> None:
-        """Reject substituted payload or normal-Live transport identity."""
+        """Reject copied authority or a non-current materialization envelope."""
         _exact(
             self.attempt,
             ReleaseAttemptIdentity,
-            field="reviewer summary.attempt",
+            field="approval bundle.attempt",
         )
         _exact(
-            self.transport,
-            ArtifactTransportIdentity,
-            field="reviewer summary.transport",
+            self.publication_snapshot_reference,
+            ArtifactReference,
+            field="approval bundle.publication_snapshot_reference",
         )
-        _digest(
-            self.snapshot_payload_digest,
-            field="reviewer summary.snapshot_payload_digest",
-        )
-        _digest(
-            self.summary_payload_digest,
-            field="reviewer summary.summary_payload_digest",
+        _exact(
+            self.reviewer_summary_reference,
+            ArtifactReference,
+            field="approval bundle.reviewer_summary_reference",
         )
         if (
-            self.transport.workflow_run_id != self.attempt.workflow_run_id
-            or self.transport.run_attempt is not None
-            or self.transport.producer != "materialize-publication"
+            _string(self.producer, field="approval bundle.producer")
+            != "materialize-publication"
         ):
-            message = "Reviewer summary transport is not exact"
-            raise ValueError(message)
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical reviewer-summary artifact identity."""
-        return {
-            "schema": REVIEWER_SUMMARY_ARTIFACT_SCHEMA,
-            "attempt": self.attempt.to_document(),
-            "transport": self.transport.to_document(),
-            "snapshot-payload-digest": self.snapshot_payload_digest,
-            "summary-payload-digest": self.summary_payload_digest,
-        }
-
-    @property
-    def artifact_digest(self) -> str:
-        """Return the canonical reviewer-summary artifact digest."""
-        return canonical_sha256(self.to_document())
-
-
-@dataclass(frozen=True, slots=True)
-class ApprovalBundle:
-    """Complete immutable one-action closure persisted before approval."""
-
-    attempt_binding: ReleaseAttemptBinding
-    selected_ref: str
-    qualification_decision: QualificationDecision
-    publication_snapshot: PublicationSnapshot
-    reviewer_summary: ReviewerSummaryArtifact
-    environment: str
-    approval_job: str
-    producer: str
-    control: str
-
-    def __post_init__(self) -> None:
-        """Reject incomplete, substituted, or approval-bearing Bundles."""
-        _exact(
-            self.attempt_binding,
-            ReleaseAttemptBinding,
-            field="approval bundle.attempt_binding",
-        )
-        selected_ref = _string(
-            self.selected_ref,
-            field="approval bundle.selected_ref",
-        )
-        if not selected_ref.startswith(_SELECTED_REF_PREFIXES):
-            message = "Approval Bundle selected ref is not a branch or tag"
-            raise ValueError(message)
-        _exact(
-            self.qualification_decision,
-            QualificationDecision,
-            field="approval bundle.qualification_decision",
-        )
-        _exact(
-            self.publication_snapshot,
-            PublicationSnapshot,
-            field="approval bundle.publication_snapshot",
-        )
-        _exact(
-            self.reviewer_summary,
-            ReviewerSummaryArtifact,
-            field="approval bundle.reviewer_summary",
-        )
-        attempt = self.attempt_binding.attempt
-        decision = self.qualification_decision
-        snapshot = self.publication_snapshot
-        if (
-            decision.subject != attempt
-            or snapshot.attempt != attempt
-            or snapshot.qualification_snapshot_digest
-            != decision.qualification_snapshot_digest
-            or snapshot.qualification_decision_digest
-            != canonical_sha256(decision.to_document())
-            or decision.terminal_result != "success"
-            or decision.admitted_artifact_digests != snapshot.artifact_digests
-        ):
-            message = "Approval Bundle qualification closure mismatch"
-            raise ValueError(message)
-        if (
-            len(snapshot.materialized_actions) != 1
-            or self.reviewer_summary.attempt != attempt
-            or self.reviewer_summary.snapshot_payload_digest
-            != snapshot.snapshot_digest
-            or self.reviewer_summary.transport.workflow_run_id
-            != attempt.workflow_run_id
-        ):
-            message = "Approval Bundle action or reviewer closure mismatch"
-            raise ValueError(message)
-        _string(self.environment, field="approval bundle.environment")
-        _string(self.approval_job, field="approval bundle.approval_job")
-        _string(self.producer, field="approval bundle.producer")
-        if (
-            self.environment != "workflow-delivery-v3-buddy-approval"
-            or self.approval_job != "approve-publication"
-            or self.producer != "materialize-publication"
-        ):
-            message = "Approval Bundle approval boundary is not exact"
+            message = "Approval Bundle producer is not exact"
             raise ValueError(message)
         _target_control(
             self.control,
-            target=attempt.execution.target,
+            target=self.attempt.execution.target,
             field="Approval Bundle control",
         )
-
-    @property
-    def attempt(self) -> ReleaseAttemptIdentity:
-        """Return the exact current Attempt."""
-        return self.attempt_binding.attempt
-
-    @property
-    def action(self) -> PublicationAction:
-        """Return the sole exact Publication Action."""
-        return self.publication_snapshot.materialized_actions[0]
+        if (
+            _positive(
+                self.workflow_run_id,
+                field="approval bundle.workflow_run_id",
+            )
+            != self.attempt.workflow_run_id
+        ):
+            message = "Approval Bundle current Attempt binding mismatch"
+            raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical pre-wait Approval Bundle."""
+        """Return the canonical reference-only Approval Bundle."""
         return {
             "schema": APPROVAL_BUNDLE_SCHEMA,
-            "attempt-binding": self.attempt_binding.to_document(),
-            "selected-ref": self.selected_ref,
-            "qualification-decision": (
-                self.qualification_decision.to_document()
+            "attempt": self.attempt.to_document(),
+            "publication-snapshot-reference": (
+                self.publication_snapshot_reference.to_document()
             ),
-            "publication-snapshot": self.publication_snapshot.to_document(),
-            "reviewer-summary": self.reviewer_summary.to_document(),
-            "environment": self.environment,
-            "approval-job": self.approval_job,
+            "reviewer-summary-reference": (
+                self.reviewer_summary_reference.to_document()
+            ),
             "producer": self.producer,
             "control": self.control,
+            "workflow-run-id": self.workflow_run_id,
         }
 
     @property
@@ -3025,150 +2998,97 @@ class ApprovalBundle:
 
 @dataclass(frozen=True, slots=True)
 class PublicationAuthorization:
-    """Sole complete post-wait authorization for one publication action."""
+    """Sole reference-only authority emitted after protected approval."""
 
-    approval_bundle: ApprovalBundle
-    approval_governance_provenance: tuple[tuple[str, str], ...]
-    approval_governance_current_main_sha: str
-    approval_governance_observed_at: str
-    approval_governance_expires_at: str
-    approval_governance_live_enabled: bool
-    environment: str
-    approval_job: str
+    attempt: ReleaseAttemptIdentity
+    approval_bundle_reference: ArtifactReference
+    approval_boundary: ApprovalBoundary
+    governance_proof: GovernanceProof
     completed_at: str
     producer: str
     control: str
-    result: str = "success"
+    workflow_run_id: int
 
     def __post_init__(self) -> None:
-        """Accept only complete fresh successful Approval output."""
+        """Accept only a fresh current-Attempt approval authority."""
         _exact(
-            self.approval_bundle,
-            ApprovalBundle,
-            field="publication authorization.approval_bundle",
+            self.attempt,
+            ReleaseAttemptIdentity,
+            field="publication authorization.attempt",
         )
-        provenance = _pairs(
-            self.approval_governance_provenance,
-            field="publication authorization.approval_governance_provenance",
+        _exact(
+            self.approval_bundle_reference,
+            ArtifactReference,
+            field="publication authorization.approval_bundle_reference",
         )
-        if (
-            {name for name, _ in provenance} != _GOVERNANCE_PROVENANCE_FIELDS
-            or provenance
-            != self.approval_bundle.attempt_binding.attestation_provenance
-        ):
-            message = "Publication Authorization Governance proof mismatch"
-            raise ValueError(message)
-        object_format = dict(provenance)["git-object-format"]
-        expected_length = {"sha1": 40, "sha256": 64}.get(object_format)
-        current_main_sha = _string(
-            self.approval_governance_current_main_sha,
-            field=(
-                "publication authorization.approval_governance_current_main_sha"
-            ),
+        _exact(
+            self.approval_boundary,
+            ApprovalBoundary,
+            field="publication authorization.approval_boundary",
         )
-        if (
-            expected_length is None
-            or len(current_main_sha) != expected_length
-            or any(
-                character not in "0123456789abcdef"
-                for character in current_main_sha
-            )
-        ):
-            message = "Publication Authorization current main SHA is malformed"
-            raise ValueError(message)
-        governance_observed_at = _timestamp(
-            self.approval_governance_observed_at,
-            field=("publication authorization.approval_governance_observed_at"),
-        )
-        governance_expires_at = _timestamp(
-            self.approval_governance_expires_at,
-            field=("publication authorization.approval_governance_expires_at"),
-        )
-        if self.approval_governance_live_enabled is not True:
-            message = "Publication Authorization Governance is not enabled"
-            raise ValueError(message)
-        _string(
-            self.environment,
-            field="publication authorization.environment",
-        )
-        _string(
-            self.approval_job,
-            field="publication authorization.approval_job",
+        _exact(
+            self.governance_proof,
+            GovernanceProof,
+            field="publication authorization.governance_proof",
         )
         completed_at = _timestamp(
             self.completed_at,
             field="publication authorization.completed_at",
         )
         if not (
-            _compare_timestamps(governance_observed_at, completed_at) <= 0
-            and _compare_timestamps(completed_at, governance_expires_at) < 0
+            _compare_timestamps(
+                self.governance_proof.observed_at,
+                completed_at,
+            )
+            <= 0
+            and _compare_timestamps(
+                completed_at,
+                self.governance_proof.expires_at,
+            )
+            < 0
         ):
             message = (
                 "Publication Authorization requires "
-                "approval_governance_observed_at <= completed_at < "
-                "approval_governance_expires_at"
+                "governance observed_at <= completed_at < governance expires_at"
             )
             raise ValueError(message)
-        _string(self.producer, field="publication authorization.producer")
-        bundle = self.approval_bundle
         if (
-            self.environment != bundle.environment
-            or self.approval_job != bundle.approval_job
-            or self.producer != "approve-publication"
-            or self.result != "success"
+            _string(self.producer, field="publication authorization.producer")
+            != "approve-publication"
         ):
-            message = "Publication Authorization approval identity mismatch"
+            message = "Publication Authorization producer is not exact"
             raise ValueError(message)
         _target_control(
             self.control,
-            target=bundle.attempt.execution.target,
+            target=self.attempt.execution.target,
             field="Publication Authorization control",
         )
-        if self.control != bundle.control:
-            message = "Publication Authorization Bundle control mismatch"
+        if (
+            _positive(
+                self.workflow_run_id,
+                field="publication authorization.workflow_run_id",
+            )
+            != self.attempt.workflow_run_id
+        ):
+            message = (
+                "Publication Authorization current Attempt binding mismatch"
+            )
             raise ValueError(message)
-
-    @property
-    def attempt(self) -> ReleaseAttemptIdentity:
-        """Return the exact authorized Attempt."""
-        return self.approval_bundle.attempt
-
-    @property
-    def action(self) -> PublicationAction:
-        """Return the sole authorized Publication Action."""
-        return self.approval_bundle.action
-
-    @property
-    def authorizing(self) -> bool:
-        """Return whether the closed record authorizes publication."""
-        return self.result == "success"
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical Publication Authorization."""
         return {
             "schema": PUBLICATION_AUTHORIZATION_SCHEMA,
-            "approval-bundle": self.approval_bundle.to_document(),
-            "approval-governance-provenance": _json_pairs(
-                self.approval_governance_provenance
+            "attempt": self.attempt.to_document(),
+            "approval-bundle-reference": (
+                self.approval_bundle_reference.to_document()
             ),
-            "approval-governance-current-main-sha": (
-                self.approval_governance_current_main_sha
-            ),
-            "approval-governance-observed-at": (
-                self.approval_governance_observed_at
-            ),
-            "approval-governance-expires-at": (
-                self.approval_governance_expires_at
-            ),
-            "approval-governance-live-enabled": (
-                self.approval_governance_live_enabled
-            ),
-            "environment": self.environment,
-            "approval-job": self.approval_job,
+            "approval-boundary": self.approval_boundary.to_document(),
+            "governance-proof": self.governance_proof.to_document(),
             "completed-at": self.completed_at,
             "producer": self.producer,
             "control": self.control,
-            "result": self.result,
+            "workflow-run-id": self.workflow_run_id,
         }
 
     @property
@@ -3178,379 +3098,832 @@ class PublicationAuthorization:
 
 
 @dataclass(frozen=True, slots=True)
-class ExactSatisfiedGovernanceProof:
-    """Fresh Governance continuity proof for an actionless publication."""
+class ApprovalBoundary:
+    """Exact protected-environment approval boundary and sentinel."""
 
-    attempt: ReleaseAttemptIdentity
-    publication_snapshot: PublicationSnapshot
-    governance_provenance: tuple[tuple[str, str], ...]
-    governance_current_main_sha: str
-    governance_expires_at: str
-    governance_live_enabled: bool
-    governance_observed_at: str
-    proved_at: str
-    producer: str
-    control: str
+    environment: str
+    job: str
+    sentinel_name: str
+    sentinel_value: str
+    sentinel_result: str
 
     def __post_init__(self) -> None:
-        """Reject proof that could authorize an action or stale authority."""
-        _exact(
-            self.attempt,
-            ReleaseAttemptIdentity,
-            field="exact-satisfied proof.attempt",
-        )
-        _exact(
-            self.publication_snapshot,
-            PublicationSnapshot,
-            field="exact-satisfied proof.publication_snapshot",
-        )
-        if (
-            self.publication_snapshot.attempt != self.attempt
-            or self.publication_snapshot.materialized_actions
-            or any(
-                reference.classification != "exact-satisfied"
-                for reference in (
-                    self.publication_snapshot.observation_references
+        """Reject any noncanonical approval-boundary projection."""
+        expected = {
+            "environment": _LIVE_APPROVAL_ENVIRONMENT,
+            "job": _LIVE_APPROVAL_JOB,
+            "sentinel_name": _LIVE_APPROVAL_SENTINEL_NAME,
+            "sentinel_value": _LIVE_APPROVAL_SENTINEL_VALUE,
+            "sentinel_result": "success",
+        }
+        for field_name, expected_value in expected.items():
+            if (
+                _string(
+                    getattr(self, field_name),
+                    field=f"approval boundary.{field_name}",
                 )
-            )
-        ):
-            message = (
-                "Exact-satisfied Governance proof requires an actionless "
-                "exact Publication Snapshot"
-            )
-            raise ValueError(message)
+                != expected_value
+            ):
+                message = f"Approval boundary {field_name} is not exact"
+                raise ValueError(message)
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed approval boundary."""
+        return {
+            "environment": self.environment,
+            "job": self.job,
+            "sentinel-name": self.sentinel_name,
+            "sentinel-value": self.sentinel_value,
+            "sentinel-result": self.sentinel_result,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class GovernanceProof:
+    """Fresh protected-Governance identity at one authority boundary."""
+
+    provenance: tuple[tuple[str, str], ...]
+    current_main_sha: str
+    observed_at: str
+    expires_at: str
+    live_enabled: bool
+
+    def __post_init__(self) -> None:
+        """Reject incomplete, disabled, malformed, or expired-boundary facts."""
         provenance = _pairs(
-            self.governance_provenance,
-            field="exact-satisfied proof.governance_provenance",
+            self.provenance,
+            field="governance proof.provenance",
         )
         if {name for name, _ in provenance} != _GOVERNANCE_PROVENANCE_FIELDS:
-            message = "Exact-satisfied Governance proof is incomplete"
+            message = "Governance proof provenance is incomplete"
             raise ValueError(message)
-        object_format = dict(provenance)["git-object-format"]
-        expected_length = {"sha1": 40, "sha256": 64}.get(object_format)
-        current_main_sha = _string(
-            self.governance_current_main_sha,
-            field="exact-satisfied proof.governance_current_main_sha",
+        provenance_map = dict(provenance)
+        object_format = provenance_map["git-object-format"]
+        _git_object_id(
+            self.current_main_sha,
+            object_format=object_format,
+            field="governance proof.current_main_sha",
         )
+        _git_object_id(
+            provenance_map["eligibility-main-sha"],
+            object_format=object_format,
+            field="governance proof.eligibility_main_sha",
+        )
+        _git_object_id(
+            provenance_map["blob-oid"],
+            object_format=object_format,
+            field="governance proof.blob_oid",
+        )
+        _digest(
+            provenance_map["canonical-content-digest"],
+            field="governance proof.canonical_content_digest",
+        )
+        observed_at = _timestamp(
+            self.observed_at,
+            field="governance proof.observed_at",
+        )
+        expires_at = _timestamp(
+            self.expires_at,
+            field="governance proof.expires_at",
+        )
+        if _compare_timestamps(observed_at, expires_at) >= 0:
+            message = "Governance proof observation must precede expiry"
+            raise ValueError(message)
         if (
-            expected_length is None
-            or len(current_main_sha) != expected_length
-            or any(
-                character not in "0123456789abcdef"
-                for character in current_main_sha
+            _boolean(
+                self.live_enabled,
+                field="governance proof.live_enabled",
             )
+            is not True
         ):
-            message = "Exact-satisfied current main SHA is malformed"
-            raise ValueError(message)
-        governance_expires_at = _timestamp(
-            self.governance_expires_at,
-            field="exact-satisfied proof.governance_expires_at",
-        )
-        _boolean(
-            self.governance_live_enabled,
-            field="exact-satisfied proof.governance_live_enabled",
-        )
-        if not self.governance_live_enabled:
-            message = "Exact-satisfied Governance proof requires Live enabled"
-            raise ValueError(message)
-        governance_observed_at = _timestamp(
-            self.governance_observed_at,
-            field="exact-satisfied proof.governance_observed_at",
-        )
-        proved_at = _timestamp(
-            self.proved_at,
-            field="exact-satisfied proof.proved_at",
-        )
-        if not (
-            _compare_timestamps(governance_observed_at, proved_at) <= 0
-            and _compare_timestamps(proved_at, governance_expires_at) < 0
-        ):
-            message = (
-                "Exact-satisfied Governance proof requires "
-                "governance_observed_at <= proved_at < governance_expires_at"
-            )
-            raise ValueError(message)
-        if self.producer != "prove-exact-satisfied":
-            message = "Exact-satisfied Governance proof producer is invalid"
-            raise ValueError(message)
-        expected_control = (
-            f"workflow-delivery-v3:{self.attempt.execution.target}"
-        )
-        if self.control != expected_control:
-            message = "Exact-satisfied Governance proof control mismatch"
+            message = "Governance proof requires Live enabled"
             raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
-        """Return the complete canonical proof document."""
-        return cast(
-            "dict[str, JsonValue]",
-            {
-                "schema": EXACT_SATISFIED_GOVERNANCE_PROOF_SCHEMA,
-                "attempt": self.attempt.to_document(),
-                "publication-snapshot": (
-                    self.publication_snapshot.to_document()
-                ),
-                "governance-provenance": _json_pairs(
-                    self.governance_provenance
-                ),
-                "governance-current-main-sha": (
-                    self.governance_current_main_sha
-                ),
-                "governance-expires-at": self.governance_expires_at,
-                "governance-live-enabled": self.governance_live_enabled,
-                "governance-observed-at": self.governance_observed_at,
-                "proved-at": self.proved_at,
-                "producer": self.producer,
-                "control": self.control,
-            },
-        )
+        """Return the closed embedded Governance proof."""
+        return {
+            "provenance": _json_pairs(self.provenance),
+            "current-main-sha": self.current_main_sha,
+            "observed-at": self.observed_at,
+            "expires-at": self.expires_at,
+            "live-enabled": self.live_enabled,
+        }
 
     @property
     def proof_digest(self) -> str:
-        """Return the canonical exact-satisfied proof digest."""
+        """Return the canonical embedded Governance proof digest."""
         return canonical_sha256(self.to_document())
 
 
 @dataclass(frozen=True, slots=True)
-class Receipt:
-    """Durable exact create-or-exact package publication proof."""
+class PackageControlSubject:
+    """Exact destination and normalized package controlled by one proof."""
+
+    destination_id: str
+    registry: str
+    normalized_package: str
+
+    def __post_init__(self) -> None:
+        """Reject open or non-normalized package-control identity."""
+        _string(
+            self.destination_id,
+            field="package-control subject.destination_id",
+        )
+        _string(self.registry, field="package-control subject.registry")
+        package = _string(
+            self.normalized_package,
+            field="package-control subject.normalized_package",
+        )
+        if package != package.lower():
+            message = "Package-Control subject package is not normalized"
+            raise ValueError(message)
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed package-control subject."""
+        return {
+            "destination-id": self.destination_id,
+            "registry": self.registry,
+            "normalized-package": self.normalized_package,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PackageControlProof:
+    """Observed package-container facts without expected Governance values.
+
+    Empty exposed-access means the interface exposed no package-grant facts,
+    not that the package has no grants.
+    """
+
+    subject: PackageControlSubject
+    observed_at: str
+    endpoints: tuple[str, ...]
+    facts: tuple[tuple[str, tuple[str, ...]], ...]
+    response_digests: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        """Reject incomplete, open, duplicated, or unbound response facts."""
+        _exact(
+            self.subject,
+            PackageControlSubject,
+            field="package-control proof.subject",
+        )
+        _timestamp(
+            self.observed_at,
+            field="package-control proof.observed_at",
+        )
+        endpoints = _string_tuple(
+            self.endpoints,
+            field="package-control proof.endpoints",
+            sorted_values=True,
+        )
+        if not endpoints:
+            message = "Package-Control proof requires authoritative endpoints"
+            raise ValueError(message)
+        facts = _nested_string_pairs(
+            self.facts,
+            field="package-control proof.facts",
+        )
+        fact_names = {name for name, _ in facts}
+        if fact_names != {
+            "exposed-access",
+            "owner",
+            "repository-association",
+            "visibility",
+        }:
+            message = "Package-Control proof facts are incomplete"
+            raise ValueError(message)
+        fact_map = dict(facts)
+        if (
+            len(fact_map["owner"]) != 1
+            or len(fact_map["visibility"]) != 1
+            or not fact_map["repository-association"]
+        ):
+            message = "Package-Control proof fact cardinality is invalid"
+            raise ValueError(message)
+        response_digests = _pairs(
+            self.response_digests,
+            field="package-control proof.response_digests",
+        )
+        if tuple(name for name, _ in response_digests) != endpoints:
+            message = "Package-Control proof response endpoints mismatch"
+            raise ValueError(message)
+        for index, (_, digest) in enumerate(response_digests):
+            _digest(
+                digest,
+                field=f"package-control proof.response_digests[{index}]",
+            )
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed embedded Package-Control Proof."""
+        return {
+            "subject": self.subject.to_document(),
+            "observed-at": self.observed_at,
+            "endpoints": _json_strings(self.endpoints),
+            "facts": _json_nested_string_pairs(self.facts),
+            "response-digests": _json_pairs(self.response_digests),
+        }
+
+    @property
+    def proof_digest(self) -> str:
+        """Return the canonical embedded Package-Control Proof digest."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileMatchEvidence:
+    """Actual pinned toolchain and effective command-profile match."""
+
+    destination_operation_profile_digest: str
+    node_version: str
+    npm_version: str
+    command: tuple[str, ...]
+    configuration: tuple[tuple[str, str], ...]
+    matched_at: str
+
+    def __post_init__(self) -> None:
+        """Reject incomplete or noncanonical profile-match evidence."""
+        _digest(
+            self.destination_operation_profile_digest,
+            field="profile match.destination_operation_profile_digest",
+        )
+        _string(self.node_version, field="profile match.node_version")
+        _string(self.npm_version, field="profile match.npm_version")
+        command = _string_tuple(
+            self.command,
+            field="profile match.command",
+            unique=False,
+        )
+        if not command:
+            message = "Profile match command cannot be empty"
+            raise ValueError(message)
+        configuration = _pairs(
+            self.configuration,
+            field="profile match.configuration",
+        )
+        if not configuration:
+            message = "Profile match configuration cannot be empty"
+            raise ValueError(message)
+        _timestamp(self.matched_at, field="profile match.matched_at")
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed embedded profile-match evidence."""
+        return {
+            "destination-operation-profile-digest": (
+                self.destination_operation_profile_digest
+            ),
+            "node-version": self.node_version,
+            "npm-version": self.npm_version,
+            "command": _json_strings(self.command),
+            "configuration": _json_pairs(self.configuration),
+            "matched-at": self.matched_at,
+        }
+
+    @property
+    def match_digest(self) -> str:
+        """Return the canonical profile-match evidence digest."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
+class DestinationReadback:
+    """Active exact-version and non-authoritative tag readback."""
+
+    package: str
+    version: str
+    classification: str
+    content_sha256: str | None
+    content_sha512: str | None
+    witness_digest: str | None
+    witness_target: str | None
+    tag: str
+    tag_state: str
+    tag_version: str | None
+    observed_at: str
+    response_digests: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        """Reject contradictory active-version or tag evidence."""
+        package = _string(self.package, field="readback.package")
+        if package != package.lower():
+            message = "Destination readback package is not normalized"
+            raise ValueError(message)
+        _string(self.version, field="readback.version")
+        _choice(
+            self.classification,
+            _OBSERVATION_CLASSIFICATIONS,
+            field="readback.classification",
+        )
+        content_sha256 = _optional_digest(
+            self.content_sha256,
+            field="readback.content_sha256",
+        )
+        content_sha512 = _optional_sha512(
+            self.content_sha512,
+            field="readback.content_sha512",
+        )
+        witness_digest = _optional_digest(
+            self.witness_digest,
+            field="readback.witness_digest",
+        )
+        witness_target = (
+            None
+            if self.witness_target is None
+            else _sha(self.witness_target, field="readback.witness_target")
+        )
+        version_evidence = (
+            content_sha256,
+            content_sha512,
+            witness_digest,
+            witness_target,
+        )
+        if self.classification == "absent" and any(
+            value is not None for value in version_evidence
+        ):
+            message = "Absent destination readback cannot contain version facts"
+            raise ValueError(message)
+        if self.classification in {"exact-satisfied", "conflicting"} and any(
+            value is None for value in version_evidence
+        ):
+            message = (
+                "Conclusive destination readback requires complete version "
+                "facts"
+            )
+            raise ValueError(message)
+        _string(self.tag, field="readback.tag")
+        tag_state = _choice(
+            self.tag_state,
+            _TAG_STATES,
+            field="readback.tag_state",
+        )
+        if tag_state == "present":
+            if self.tag_version is None:
+                message = "Present tag readback requires a version"
+                raise ValueError(message)
+            _string(self.tag_version, field="readback.tag_version")
+        elif self.tag_version is not None:
+            message = "Absent or unreadable tag cannot carry a version"
+            raise ValueError(message)
+        _timestamp(self.observed_at, field="readback.observed_at")
+        response_digests = _pairs(
+            self.response_digests,
+            field="readback.response_digests",
+        )
+        if not response_digests:
+            message = "Destination readback requires response digests"
+            raise ValueError(message)
+        for index, (_, digest) in enumerate(response_digests):
+            _digest(digest, field=f"readback.response_digests[{index}]")
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed destination readback."""
+        return {
+            "package": self.package,
+            "version": self.version,
+            "classification": self.classification,
+            "content-sha256": self.content_sha256,
+            "content-sha512": self.content_sha512,
+            "witness-digest": self.witness_digest,
+            "witness-target": self.witness_target,
+            "tag": self.tag,
+            "tag-state": self.tag_state,
+            "tag-version": self.tag_version,
+            "observed-at": self.observed_at,
+            "response-digests": _json_pairs(self.response_digests),
+        }
+
+    @property
+    def readback_digest(self) -> str:
+        """Return the canonical destination readback digest."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
+class PublicationDiagnostics:
+    """Bounded sanitized diagnostics retained by Observation and Result."""
+
+    entries: tuple[str, ...]
+    truncated: bool
+
+    def __post_init__(self) -> None:
+        """Reject open or unbounded diagnostic retention."""
+        entries = _string_tuple(
+            self.entries,
+            field="publication diagnostics.entries",
+            unique=False,
+        )
+        if len(entries) > _PUBLICATION_DIAGNOSTIC_COUNT_LIMIT:
+            message = "Publication diagnostics contain too many entries"
+            raise ValueError(message)
+        encoded = tuple(entry.encode() for entry in entries)
+        if any(
+            len(entry) > _PUBLICATION_DIAGNOSTIC_ENTRY_LIMIT_BYTES
+            for entry in encoded
+        ):
+            message = "Publication diagnostic entry exceeds the byte limit"
+            raise ValueError(message)
+        if sum(len(entry) for entry in encoded) > (
+            _PUBLICATION_DIAGNOSTIC_TOTAL_LIMIT_BYTES
+        ):
+            message = "Publication diagnostics exceed the total byte limit"
+            raise ValueError(message)
+        _boolean(self.truncated, field="publication diagnostics.truncated")
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the bounded diagnostic projection."""
+        return {
+            "entries": _json_strings(self.entries),
+            "truncated": self.truncated,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RemoteStateObservation:
+    """Active-only observation with direct Qualification Decision authority.
+
+    The Attempt supplies the desired witness target and target-derived tag.
+    Response identity is a nullable selected sanitized response digest, as in
+    Publication Result; embedded evidence retains individual response digests.
+    """
 
     attempt: ReleaseAttemptIdentity
-    publication_snapshot_digest: str
-    action_id: str
-    action_digest: str
-    coordinate: ExternalPackageCoordinate
-    mutable_resource_keys: tuple[str, ...]
-    lock_group: str
-    artifact_transport: ArtifactTransportIdentity
-    artifact_content_sha256: str
-    artifact_content_sha512: str
-    witness_digest: str
-    creation_result: str
-    tag_mapping: tuple[tuple[str, str], ...]
-    response_identity_digest: str
+    qualification_decision_reference: ArtifactReference
+    desired_subject: PackageControlSubject
+    desired_version: str
+    desired_content_sha256: str
+    desired_content_sha512: str
+    desired_witness_digest: str
+    classification: str
+    package_control: PackageControlProof | None
+    active_readback: DestinationReadback | None
+    response_identity: str | None
+    diagnostics: PublicationDiagnostics
     producer: str
     control: str
     workflow_run_id: int
 
     def __post_init__(self) -> None:
-        """Reject incomplete transport, tag, race, or current bindings."""
-        _exact(self.attempt, ReleaseAttemptIdentity, field="receipt.attempt")
-        _digest(
-            self.publication_snapshot_digest,
-            field="receipt.publication_snapshot_digest",
-        )
-        _string(self.action_id, field="receipt.action_id")
-        _digest(self.action_digest, field="receipt.action_digest")
-        _exact(
-            self.coordinate,
-            ExternalPackageCoordinate,
-            field="receipt.coordinate",
-        )
-        keys = _string_tuple(
-            self.mutable_resource_keys,
-            field="receipt.mutable_resource_keys",
-        )
-        if len(keys) != _PAIR_SIZE:
-            message = "Receipt requires complete coordinate-plus-tag keys"
+        """Reject open identity, substituted subjects, or false ready state."""
+        field = "remote-state observation"
+        _exact(self.attempt, ReleaseAttemptIdentity, field=f"{field}.attempt")
+        if (
+            _string(self.producer, field=f"{field}.producer")
+            != "observe-github-packages"
+        ):
+            message = "Remote-State Observation producer is not exact"
             raise ValueError(message)
-        if not keys[0].startswith("external-package-coordinate:") or not keys[
-            1
-        ].startswith("npm-dist-tag:"):
-            message = "Receipt mutable resource keys are not exact"
-            raise ValueError(message)
-        _string(self.lock_group, field="receipt.lock_group")
-        _exact(
-            self.artifact_transport,
-            ArtifactTransportIdentity,
-            field="receipt.artifact_transport",
-        )
-        _digest(
-            self.artifact_content_sha256,
-            field="receipt.artifact_content_sha256",
-        )
-        _digest(
-            self.artifact_content_sha512,
-            field="receipt.artifact_content_sha512",
-            sha512=True,
-        )
-        _digest(self.witness_digest, field="receipt.witness_digest")
-        if self.creation_result not in {"created", "exact-race-accepted"}:
-            message = "Receipt creation result has an invalid closed value"
-            raise ValueError(message)
-        mapping = _pairs(self.tag_mapping, field="receipt.tag_mapping")
-        execution = self.attempt.execution
-        if type(execution) is not BuddyExecutionIdentity:
-            message = "First-slice Receipt requires Buddy Execution"
-            raise TypeError(message)
-        expected_tag = f"buddy-sha-{execution.target}"
-        if mapping != ((expected_tag, self.coordinate.native_version),):
-            message = "Receipt requires the exact target tag mapping"
-            raise ValueError(message)
-        _digest(
-            self.response_identity_digest,
-            field="receipt.response_identity_digest",
-        )
-        _string(self.producer, field="receipt.producer")
         _target_control(
             self.control,
             target=self.attempt.execution.target,
-            field="Receipt control",
+            field=f"{field}.control",
         )
-        if self.producer != "publish-github-packages":
-            message = "Receipt producer is not exact"
-            raise ValueError(message)
         if (
-            self.workflow_run_id != self.attempt.workflow_run_id
-            or self.artifact_transport.workflow_run_id != self.workflow_run_id
-            or self.artifact_transport.run_attempt is not None
+            _positive(self.workflow_run_id, field=f"{field}.workflow_run_id")
+            != self.attempt.workflow_run_id
         ):
-            message = "Receipt current Attempt/transport binding mismatch"
+            message = (
+                "Remote-State Observation current Attempt binding mismatch"
+            )
+            raise ValueError(message)
+        _exact(
+            self.qualification_decision_reference,
+            ArtifactReference,
+            field=f"{field}.qualification_decision_reference",
+        )
+        _exact(
+            self.desired_subject,
+            PackageControlSubject,
+            field=f"{field}.desired_subject",
+        )
+        _string(self.desired_version, field=f"{field}.desired_version")
+        _digest(
+            self.desired_content_sha256,
+            field=f"{field}.desired_content_sha256",
+        )
+        _digest(
+            self.desired_content_sha512,
+            field=f"{field}.desired_content_sha512",
+            sha512=True,
+        )
+        _digest(
+            self.desired_witness_digest,
+            field=f"{field}.desired_witness_digest",
+        )
+        _choice(
+            self.classification,
+            _OBSERVATION_CLASSIFICATIONS,
+            field=f"{field}.classification",
+        )
+        _optional_digest(
+            self.response_identity, field=f"{field}.response_identity"
+        )
+        _exact(
+            self.diagnostics,
+            PublicationDiagnostics,
+            field=f"{field}.diagnostics",
+        )
+        if self.package_control is not None:
+            _exact(
+                self.package_control,
+                PackageControlProof,
+                field=f"{field}.package_control",
+            )
+            if self.package_control.subject != self.desired_subject:
+                message = (
+                    "Remote-State Observation package-control subject mismatch"
+                )
+                raise ValueError(message)
+        readback = self.active_readback
+        if readback is not None:
+            _exact(
+                readback, DestinationReadback, field=f"{field}.active_readback"
+            )
+            if (
+                readback.package != self.desired_subject.normalized_package
+                or readback.version != self.desired_version
+                or readback.tag != f"buddy-sha-{self.attempt.execution.target}"
+            ):
+                message = "Remote-State Observation readback identity mismatch"
+                raise ValueError(message)
+        if self.classification in {"absent", "exact-satisfied"}:
+            if self.package_control is None or readback is None:
+                message = (
+                    "Ready Observation requires package control "
+                    "and active readback"
+                )
+                raise ValueError(message)
+            self._validate_ready_readback(readback)
+
+    def _validate_ready_readback(self, readback: DestinationReadback) -> None:
+        if readback.classification != self.classification:
+            message = "Ready Observation readback classification mismatch"
+            raise ValueError(message)
+        if self.classification == "absent":
+            if readback.tag_state != "absent":
+                message = "Absent Observation requires an observed absent tag"
+                raise ValueError(message)
+        elif (
+            readback.content_sha256,
+            readback.content_sha512,
+            readback.witness_digest,
+            readback.witness_target,
+        ) != (
+            self.desired_content_sha256,
+            self.desired_content_sha512,
+            self.desired_witness_digest,
+            self.attempt.execution.target,
+        ):
+            message = (
+                "Exact Observation readback differs from desired "
+                "bytes or witness"
+            )
             raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical Receipt."""
+        """Return the closed active-only Remote-State Observation."""
         return {
-            "schema": RECEIPT_SCHEMA,
+            "schema": REMOTE_STATE_OBSERVATION_SCHEMA,
             "attempt": self.attempt.to_document(),
-            "publication-snapshot-digest": (self.publication_snapshot_digest),
-            "action-id": self.action_id,
-            "action-digest": self.action_digest,
-            "coordinate": self.coordinate.to_document(),
-            "mutable-resource-keys": _json_strings(self.mutable_resource_keys),
-            "lock-group": self.lock_group,
-            "artifact-transport": self.artifact_transport.to_document(),
-            "artifact-content-sha256": self.artifact_content_sha256,
-            "artifact-content-sha512": self.artifact_content_sha512,
-            "witness-digest": self.witness_digest,
-            "creation-result": self.creation_result,
-            "tag-mapping": _json_pairs(self.tag_mapping),
-            "response-identity-digest": self.response_identity_digest,
+            "qualification-decision-reference": (
+                self.qualification_decision_reference.to_document()
+            ),
+            "desired-subject": self.desired_subject.to_document(),
+            "desired-version": self.desired_version,
+            "desired-content-sha256": self.desired_content_sha256,
+            "desired-content-sha512": self.desired_content_sha512,
+            "desired-witness-digest": self.desired_witness_digest,
+            "classification": self.classification,
+            "package-control": (
+                None
+                if self.package_control is None
+                else self.package_control.to_document()
+            ),
+            "active-readback": (
+                None
+                if self.active_readback is None
+                else self.active_readback.to_document()
+            ),
+            "response-identity": self.response_identity,
+            "diagnostics": self.diagnostics.to_document(),
             "producer": self.producer,
             "control": self.control,
             "workflow-run-id": self.workflow_run_id,
         }
 
     @property
-    def receipt_digest(self) -> str:
-        """Return the canonical Receipt digest."""
+    def observation_digest(self) -> str:
+        """Return the canonical Remote-State Observation digest."""
         return canonical_sha256(self.to_document())
 
 
 @dataclass(frozen=True, slots=True)
-class ActionResult:
-    """One exact action result with an embedded successful Receipt."""
+class MutationMayHaveStartedMarker:
+    """Durable authority boundary immediately before mutation."""
 
     attempt: ReleaseAttemptIdentity
-    publication_snapshot_digest: str
-    action_id: str
-    action_digest: str
-    lock_group: str
-    outcome: str
-    mutation_disposition: str
-    response_identity_digest: str | None
-    receipt: Receipt | None
-    diagnostic_reference: str | None
+    publication_authorization_reference: ArtifactReference
+    governance_proof: GovernanceProof
+    package_control_proof: PackageControlProof
+    profile_match: ProfileMatchEvidence
     producer: str
     control: str
     workflow_run_id: int
 
-    def __post_init__(self) -> None:  # noqa: C901
-        """Reject false success and incomplete current bindings."""
+    def __post_init__(self) -> None:
+        """Reject copied authority, malformed proofs, or wrong publisher."""
         _exact(
-            self.attempt, ReleaseAttemptIdentity, field="action result.attempt"
+            self.attempt,
+            ReleaseAttemptIdentity,
+            field="mutation marker.attempt",
         )
-        _digest(
-            self.publication_snapshot_digest,
-            field="action result.publication_snapshot_digest",
-        )
-        _string(self.action_id, field="action result.action_id")
-        _digest(self.action_digest, field="action result.action_digest")
-        _string(self.lock_group, field="action result.lock_group")
-        if self.outcome not in {"success", "failed", "incomplete"}:
-            message = "Action Result outcome has an invalid closed value"
-            raise ValueError(message)
-        if self.mutation_disposition not in {
-            "created",
-            "exact-race-accepted",
-            "no-side-effect",
-            "possibly-mutated",
-        }:
-            message = "Action Result mutation disposition is invalid"
-            raise ValueError(message)
-        response_digest = _optional_digest(
-            self.response_identity_digest,
-            field="action result.response_identity_digest",
-        )
-        if self.receipt is not None:
-            _exact(self.receipt, Receipt, field="action result.receipt")
-            if (
-                self.receipt.attempt != self.attempt
-                or self.receipt.publication_snapshot_digest
-                != self.publication_snapshot_digest
-                or self.receipt.action_id != self.action_id
-                or self.receipt.action_digest != self.action_digest
-                or self.receipt.lock_group != self.lock_group
-                or self.receipt.response_identity_digest != response_digest
-                or self.receipt.control != self.control
-                or self.receipt.workflow_run_id != self.workflow_run_id
-            ):
-                message = "Action Result embedded Receipt binding mismatch"
-                raise ValueError(message)
-        if self.outcome == "success" and (
-            response_digest is None
-            or self.receipt is None
-            or self.mutation_disposition
-            not in {"created", "exact-race-accepted"}
-        ):
-            message = "Action Result success requires an embedded Receipt"
-            raise ValueError(message)
-        if self.receipt is not None and (
-            self.outcome != "success"
-            or self.receipt.creation_result != self.mutation_disposition
-        ):
-            message = "Only successful Action Results may contain a Receipt"
-            raise ValueError(message)
         if (
-            self.mutation_disposition == "possibly-mutated"
-            and self.outcome != "incomplete"
+            _string(self.producer, field="mutation marker.producer")
+            != "publish-github-packages"
         ):
-            message = "Possible mutation must remain incomplete"
+            message = "Mutation marker producer is not exact"
             raise ValueError(message)
-        if self.diagnostic_reference is not None:
-            _string(
-                self.diagnostic_reference,
-                field="action result.diagnostic_reference",
-            )
-        _string(self.producer, field="action result.producer")
         _target_control(
             self.control,
             target=self.attempt.execution.target,
-            field="Action Result control",
+            field="mutation marker.control",
         )
-        if self.producer != "publish-github-packages":
-            message = "Action Result producer is not exact"
+        if (
+            _positive(
+                self.workflow_run_id,
+                field="mutation marker.workflow_run_id",
+            )
+            != self.attempt.workflow_run_id
+        ):
+            message = "Mutation marker current Attempt binding mismatch"
             raise ValueError(message)
-        if self.workflow_run_id != self.attempt.workflow_run_id:
-            message = "Action Result current Attempt binding mismatch"
+        _exact(
+            self.publication_authorization_reference,
+            ArtifactReference,
+            field="mutation marker.publication_authorization_reference",
+        )
+        _exact(
+            self.governance_proof,
+            GovernanceProof,
+            field="mutation marker.governance_proof",
+        )
+        _exact(
+            self.package_control_proof,
+            PackageControlProof,
+            field="mutation marker.package_control_proof",
+        )
+        _exact(
+            self.profile_match,
+            ProfileMatchEvidence,
+            field="mutation marker.profile_match",
+        )
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the canonical mutation-may-have-started marker."""
+        return {
+            "schema": MUTATION_MAY_HAVE_STARTED_SCHEMA,
+            "attempt": self.attempt.to_document(),
+            "publication-authorization-reference": (
+                self.publication_authorization_reference.to_document()
+            ),
+            "governance-proof": self.governance_proof.to_document(),
+            "package-control-proof": (self.package_control_proof.to_document()),
+            "profile-match": self.profile_match.to_document(),
+            "producer": self.producer,
+            "control": self.control,
+            "workflow-run-id": self.workflow_run_id,
+        }
+
+    @property
+    def marker_digest(self) -> str:
+        """Return the canonical marker digest."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
+class PublicationResult:
+    """Controlled post-marker publication outcome with direct marker lineage."""
+
+    attempt: ReleaseAttemptIdentity
+    mutation_marker_reference: ArtifactReference
+    command_classification: str
+    post_action_readback: DestinationReadback | None
+    result: str
+    mutation_classification: str
+    response_identity: str | None
+    diagnostics: PublicationDiagnostics
+    producer: str
+    control: str
+    workflow_run_id: int
+
+    def __post_init__(self) -> None:
+        """Reject false publication or nonconservative failure state."""
+        _exact(
+            self.attempt,
+            ReleaseAttemptIdentity,
+            field="publication result.attempt",
+        )
+        if (
+            _string(self.producer, field="publication result.producer")
+            != "publish-github-packages"
+        ):
+            message = "Publication Result producer is not exact"
+            raise ValueError(message)
+        _target_control(
+            self.control,
+            target=self.attempt.execution.target,
+            field="publication result.control",
+        )
+        if (
+            _positive(
+                self.workflow_run_id,
+                field="publication result.workflow_run_id",
+            )
+            != self.attempt.workflow_run_id
+        ):
+            message = "Publication Result current Attempt binding mismatch"
+            raise ValueError(message)
+        _exact(
+            self.mutation_marker_reference,
+            ArtifactReference,
+            field="publication result.mutation_marker_reference",
+        )
+        command = _choice(
+            self.command_classification,
+            _COMMAND_CLASSIFICATIONS,
+            field="publication result.command_classification",
+        )
+        if self.post_action_readback is not None:
+            _exact(
+                self.post_action_readback,
+                DestinationReadback,
+                field="publication result.post_action_readback",
+            )
+        result = _choice(
+            self.result,
+            _PUBLICATION_RESULTS,
+            field="publication result.result",
+        )
+        mutation = _choice(
+            self.mutation_classification,
+            _MUTATION_CLASSIFICATIONS,
+            field="publication result.mutation_classification",
+        )
+        _optional_digest(
+            self.response_identity,
+            field="publication result.response_identity",
+        )
+        _exact(
+            self.diagnostics,
+            PublicationDiagnostics,
+            field="publication result.diagnostics",
+        )
+        if result == "published":
+            if (
+                command != "definitive-success"
+                or mutation != "mutated"
+                or self.post_action_readback is None
+                or self.post_action_readback.classification != "exact-satisfied"
+                or self.post_action_readback.witness_target
+                != self.attempt.execution.target
+            ):
+                message = (
+                    "Published Result requires definitive success, mutation, "
+                    "and exact target readback"
+                )
+                raise ValueError(message)
+            return
+        if command == "not-initiated" and (
+            mutation != "not-mutated" or self.response_identity is not None
+        ):
+            message = (
+                "Not-initiated Result requires direct no-mutation evidence"
+            )
+            raise ValueError(message)
+        if command == "ambiguous" and mutation == "not-mutated":
+            message = "Ambiguous Result must remain possibly mutated"
+            raise ValueError(message)
+        if command == "definitive-success" and mutation == "not-mutated":
+            message = "Definitive success cannot be classified not-mutated"
             raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical Action Result."""
+        """Return the canonical Publication Result."""
         return {
-            "schema": ACTION_RESULT_SCHEMA,
+            "schema": PUBLICATION_RESULT_SCHEMA,
             "attempt": self.attempt.to_document(),
-            "publication-snapshot-digest": self.publication_snapshot_digest,
-            "action-id": self.action_id,
-            "action-digest": self.action_digest,
-            "lock-group": self.lock_group,
-            "outcome": self.outcome,
-            "mutation-disposition": self.mutation_disposition,
-            "response-identity-digest": self.response_identity_digest,
-            "receipt": (
-                None if self.receipt is None else self.receipt.to_document()
+            "mutation-marker-reference": (
+                self.mutation_marker_reference.to_document()
             ),
-            "diagnostic-reference": self.diagnostic_reference,
+            "command-classification": self.command_classification,
+            "post-action-readback": (
+                None
+                if self.post_action_readback is None
+                else self.post_action_readback.to_document()
+            ),
+            "result": self.result,
+            "mutation-classification": self.mutation_classification,
+            "response-identity": self.response_identity,
+            "diagnostics": self.diagnostics.to_document(),
             "producer": self.producer,
             "control": self.control,
             "workflow-run-id": self.workflow_run_id,
@@ -3558,262 +3931,284 @@ class ActionResult:
 
     @property
     def result_digest(self) -> str:
-        """Return the canonical Action Result digest."""
+        """Return the canonical Publication Result digest."""
         return canonical_sha256(self.to_document())
 
 
-def _validate_attempt_outcome_lineage_cardinality(
-    action_result_digests: tuple[str, ...],
-) -> None:
-    if len(action_result_digests) > 1:
-        message = (
-            "Attempt Outcome permits at most one direct Action Result lineage"
+@dataclass(frozen=True, slots=True)
+class ExactSatisfiedFinalizationProof:
+    """Fresh zero-action exact-state proof with no mutation authority."""
+
+    attempt: ReleaseAttemptIdentity
+    publication_snapshot_reference: ArtifactReference
+    governance_proof: GovernanceProof
+    package_control_proof: PackageControlProof
+    exact_version_readback: DestinationReadback
+    proved_at: str
+    producer: str
+    control: str
+    workflow_run_id: int
+
+    def __post_init__(self) -> None:
+        """Reject stale, non-exact, or action-authorizing proof state."""
+        field = "exact-satisfied finalization proof"
+        _exact(
+            self.attempt,
+            ReleaseAttemptIdentity,
+            field=f"{field}.attempt",
         )
-        raise ValueError(message)
-
-
-def _validate_successful_attempt_outcome(outcome: AttemptOutcome) -> None:
-    if outcome.result != "success":
-        return
-    if (
-        outcome.publication_snapshot_digest is None
-        or outcome.uncertainty
-        or outcome.possibly_mutated
-    ):
-        message = "Successful Attempt Outcome requires exact publication"
-        raise ValueError(message)
-    if outcome.terminal_phase == "finalized":
         if (
-            outcome.exact_satisfied_governance_proof_digest is not None
-            or outcome.approval_bundle_digest is None
-            or outcome.publication_authorization_digest is None
-            or len(outcome.action_result_digests) != 1
+            _string(self.producer, field=f"{field}.producer")
+            != "prove-exact-satisfied"
         ):
+            message = "Exact-satisfied proof producer is not exact"
+            raise ValueError(message)
+        _target_control(
+            self.control,
+            target=self.attempt.execution.target,
+            field=f"{field}.control",
+        )
+        if (
+            _positive(
+                self.workflow_run_id,
+                field=f"{field}.workflow_run_id",
+            )
+            != self.attempt.workflow_run_id
+        ):
+            message = "Exact-satisfied proof current Attempt binding mismatch"
+            raise ValueError(message)
+        _exact(
+            self.publication_snapshot_reference,
+            ArtifactReference,
+            field=(
+                "exact-satisfied finalization proof."
+                "publication_snapshot_reference"
+            ),
+        )
+        _exact(
+            self.governance_proof,
+            GovernanceProof,
+            field="exact-satisfied finalization proof.governance_proof",
+        )
+        _exact(
+            self.package_control_proof,
+            PackageControlProof,
+            field=("exact-satisfied finalization proof.package_control_proof"),
+        )
+        _exact(
+            self.exact_version_readback,
+            DestinationReadback,
+            field=("exact-satisfied finalization proof.exact_version_readback"),
+        )
+        if self.exact_version_readback.classification != "exact-satisfied":
             message = (
-                "Successful finalized Attempt Outcome requires complete "
-                "Approval, Authorization, and Action Result lineage"
+                "Exact-satisfied finalization proof requires exact readback"
             )
             raise ValueError(message)
-        return
-    if outcome.terminal_phase == "finalized-no-op":
         if (
-            outcome.exact_satisfied_governance_proof_digest is None
-            or outcome.approval_bundle_digest is not None
-            or outcome.publication_authorization_digest is not None
-            or outcome.action_result_digests
+            self.exact_version_readback.witness_target
+            != self.attempt.execution.target
         ):
-            message = (
-                "Successful no-op Attempt Outcome requires the fresh "
-                "Governance proof and no mutation authority"
-            )
+            message = "Exact-satisfied proof readback target mismatch"
             raise ValueError(message)
-        return
-    message = "Successful Attempt Outcome terminal phase is invalid"
-    raise ValueError(message)
+        if (
+            self.package_control_proof.subject.normalized_package
+            != self.exact_version_readback.package
+        ):
+            message = "Exact-satisfied proof package subject mismatch"
+            raise ValueError(message)
+        proved_at = _timestamp(
+            self.proved_at,
+            field="exact-satisfied finalization proof.proved_at",
+        )
+        for observed_at in (
+            self.governance_proof.observed_at,
+            self.package_control_proof.observed_at,
+            self.exact_version_readback.observed_at,
+        ):
+            if _compare_timestamps(observed_at, proved_at) > 0:
+                message = (
+                    "Exact-satisfied proof cannot precede fresh observations"
+                )
+                raise ValueError(message)
+        if (
+            _compare_timestamps(proved_at, self.governance_proof.expires_at)
+            >= 0
+        ):
+            message = "Exact-satisfied proof must precede Governance expiry"
+            raise ValueError(message)
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the canonical exact-satisfied finalization proof."""
+        return {
+            "schema": EXACT_SATISFIED_FINALIZATION_PROOF_SCHEMA,
+            "attempt": self.attempt.to_document(),
+            "publication-snapshot-reference": (
+                self.publication_snapshot_reference.to_document()
+            ),
+            "governance-proof": self.governance_proof.to_document(),
+            "package-control-proof": (self.package_control_proof.to_document()),
+            "exact-version-readback": (
+                self.exact_version_readback.to_document()
+            ),
+            "proved-at": self.proved_at,
+            "producer": self.producer,
+            "control": self.control,
+            "workflow-run-id": self.workflow_run_id,
+        }
+
+    @property
+    def proof_digest(self) -> str:
+        """Return the canonical exact-satisfied finalization-proof digest."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
+class DirectPredecessor:
+    """Exactly one tagged immutable predecessor of Attempt Outcome."""
+
+    kind: str
+    reference: ArtifactReference
+
+    def __post_init__(self) -> None:
+        """Reject open predecessor kinds or malformed references."""
+        _choice(
+            self.kind,
+            _DIRECT_PREDECESSOR_KINDS,
+            field="direct predecessor.kind",
+        )
+        _exact(
+            self.reference,
+            ArtifactReference,
+            field="direct predecessor.reference",
+        )
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed tagged predecessor reference."""
+        return {
+            "kind": self.kind,
+            "reference": self.reference.to_document(),
+        }
 
 
 @dataclass(frozen=True, slots=True)
 class AttemptOutcome:
-    """Append-only terminal Attempt classification."""
+    """Current-Attempt terminal classification with one direct predecessor."""
 
     attempt: ReleaseAttemptIdentity
-    qualification_decision_digest: str
-    publication_snapshot_digest: str | None
-    approval_bundle_digest: str | None
-    publication_authorization_digest: str | None
-    action_result_digests: tuple[str, ...]
-    terminal_phase: str
-    result: str
-    uncertainty: bool
+    disposition: str
     possibly_mutated: bool
-    next_action: str
-    exact_satisfied_governance_proof_digest: str | None = None
-    observation_digests: tuple[str, ...] = ()
+    direct_predecessor: DirectPredecessor
+    producer: str
+    control: str
+    workflow_run_id: int
 
-    def __post_init__(self) -> None:  # noqa: C901, PLR0912, PLR0915
-        """Reject false completion and ambiguous replay classifications."""
+    def __post_init__(self) -> None:
+        """Reject open classifications, copied lineage, and false success."""
         _exact(
             self.attempt,
             ReleaseAttemptIdentity,
             field="attempt outcome.attempt",
         )
-        _digest(
-            self.qualification_decision_digest,
-            field="attempt outcome.qualification_decision_digest",
+        _choice(
+            self.disposition,
+            frozenset(
+                {
+                    "exact-satisfied",
+                    "published",
+                    "failed-before-publication",
+                    "publication-failed",
+                    "unknown",
+                }
+            ),
+            field="attempt outcome.disposition",
         )
-        _optional_digest(
-            self.publication_snapshot_digest,
-            field="attempt outcome.publication_snapshot_digest",
-        )
-        _optional_digest(
-            self.exact_satisfied_governance_proof_digest,
-            field=("attempt outcome.exact_satisfied_governance_proof_digest"),
-        )
-        _optional_digest(
-            self.approval_bundle_digest,
-            field="attempt outcome.approval_bundle_digest",
-        )
-        _optional_digest(
-            self.publication_authorization_digest,
-            field="attempt outcome.publication_authorization_digest",
-        )
-        for field, values in (
-            ("action_result_digests", self.action_result_digests),
-        ):
-            for index, digest in enumerate(
-                _string_tuple(
-                    values,
-                    field=f"attempt outcome.{field}",
-                    sorted_values=True,
-                )
-            ):
-                _digest(digest, field=f"attempt outcome.{field}[{index}]")
-        _validate_attempt_outcome_lineage_cardinality(
-            self.action_result_digests,
-        )
-        _string(self.terminal_phase, field="attempt outcome.terminal_phase")
-        if self.result not in {
-            "success",
-            "failure",
-            "incomplete",
-            "replayable-no-side-effect",
-            "incomplete-possibly-mutated",
-        }:
-            message = "Attempt Outcome result has an invalid closed value"
-            raise ValueError(message)
-        _boolean(self.uncertainty, field="attempt outcome.uncertainty")
         _boolean(
             self.possibly_mutated,
             field="attempt outcome.possibly_mutated",
         )
-        _string(self.next_action, field="attempt outcome.next_action")
-        for index, digest in enumerate(
-            _string_tuple(
-                self.observation_digests,
-                field="attempt outcome.observation_digests",
-                sorted_values=True,
-            )
+        _exact(
+            self.direct_predecessor,
+            DirectPredecessor,
+            field="attempt outcome.direct_predecessor",
+        )
+        if (
+            _string(self.producer, field="attempt outcome.producer")
+            != "finalize-attempt"
         ):
-            _digest(
-                digest,
-                field=f"attempt outcome.observation_digests[{index}]",
-            )
-        _validate_successful_attempt_outcome(self)
-        if self.exact_satisfied_governance_proof_digest is not None and (
-            self.result != "success" or self.terminal_phase != "finalized-no-op"
-        ):
-            message = (
-                "Exact-satisfied Governance proof is only valid for "
-                "successful no-op finalization"
-            )
+            message = "Attempt Outcome producer is not exact"
             raise ValueError(message)
-        if self.result == "incomplete-possibly-mutated" and (
-            not self.uncertainty or not self.possibly_mutated
-        ):
-            message = "Possibly-mutated outcome must preserve uncertainty"
-            raise ValueError(message)
-        if self.result == "replayable-no-side-effect" and (
-            self.terminal_phase != "pre-authorization-termination"
-            or self.uncertainty
-            or self.possibly_mutated
-            or self.next_action != "replay"
-            or self.action_result_digests
-        ):
-            message = "Replayable no-side-effect outcome is not exact"
-            raise ValueError(message)
-        if self.publication_snapshot_digest is None:
-            has_later_records = bool(
-                self.exact_satisfied_governance_proof_digest is not None
-                or self.approval_bundle_digest is not None
-                or self.publication_authorization_digest is not None
-                or self.action_result_digests
+        _target_control(
+            self.control,
+            target=self.attempt.execution.target,
+            field="attempt outcome.control",
+        )
+        if (
+            _positive(
+                self.workflow_run_id, field="attempt outcome.workflow_run_id"
             )
-            if self.terminal_phase == "qualification":
-                expected_next_action = {
-                    "failure": "fix-quality-failure-and-rerun",
-                    "incomplete": "new-attempt",
-                }.get(self.result)
-                if (
-                    self.observation_digests
-                    or has_later_records
-                    or self.result not in {"failure", "incomplete"}
-                    or self.possibly_mutated
-                    or (self.result == "failure" and self.uncertainty)
-                    or (self.result == "incomplete" and not self.uncertainty)
-                    or self.next_action != expected_next_action
-                ):
-                    message = (
-                        "Pre-publication Attempt Outcome is not "
-                        "qualification-only"
+            != self.attempt.workflow_run_id
+        ):
+            message = "Attempt Outcome current Attempt binding mismatch"
+            raise ValueError(message)
+        predecessor = self.direct_predecessor.kind
+        pre_marker = {
+            "publication-authorization",
+            "approval-bundle",
+            "action-bearing-publication-snapshot",
+            "blocking-observation",
+            "qualification-decision",
+        }
+        valid = (
+            (
+                self.disposition == "exact-satisfied"
+                and predecessor == "exact-satisfied-finalization-proof"
+                and not self.possibly_mutated
+            )
+            or (
+                self.disposition == "published"
+                and predecessor == "publication-result"
+                and not self.possibly_mutated
+            )
+            or (
+                self.disposition == "publication-failed"
+                and predecessor == "publication-result"
+            )
+            or (
+                self.disposition == "failed-before-publication"
+                and predecessor in pre_marker
+                and not self.possibly_mutated
+            )
+            or (
+                self.disposition == "unknown"
+                and (
+                    (
+                        predecessor == "zero-action-publication-snapshot"
+                        and not self.possibly_mutated
                     )
-                    raise ValueError(message)
-            elif self.terminal_phase == "publication-preparation":
-                if (
-                    has_later_records
-                    or self.result != "incomplete"
-                    or not self.uncertainty
-                    or self.possibly_mutated
-                    or self.next_action != "new-attempt"
-                ):
-                    message = "Publication preparation Outcome is not exact"
-                    raise ValueError(message)
-            elif self.terminal_phase == "observation":
-                if (
-                    not self.observation_digests
-                    or has_later_records
-                    or self.result not in {"failure", "incomplete"}
-                    or (self.result == "incomplete" and not self.uncertainty)
-                    or (self.result == "failure" and self.uncertainty)
-                    or self.possibly_mutated
-                    or self.next_action != "reconcile"
-                ):
-                    message = "Observation Outcome is not exact"
-                    raise ValueError(message)
-            else:
-                message = (
-                    "Publication-free Attempt Outcome has an invalid "
-                    "terminal phase"
+                    or (
+                        predecessor in pre_marker | {"mutation-marker"}
+                        and self.possibly_mutated
+                    )
                 )
-                raise ValueError(message)
-        elif self.observation_digests:
-            message = (
-                "Publication-bound Attempt Outcome cannot bind direct "
-                "observations"
             )
-            raise ValueError(message)
-        elif self.terminal_phase == "qualification":
-            message = "Qualification-only outcome cannot bind publication"
-            raise ValueError(message)
-        elif self.terminal_phase == "publication-preparation":
-            message = "Publication preparation Outcome cannot bind publication"
+        )
+        if not valid:
+            message = "Attempt Outcome classification and predecessor mismatch"
             raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical Attempt Outcome."""
-        action_result_digests = _json_strings(self.action_result_digests)
-        document: dict[str, JsonValue] = {
+        return {
             "schema": ATTEMPT_OUTCOME_SCHEMA,
             "attempt": self.attempt.to_document(),
-            "qualification-decision-digest": (
-                self.qualification_decision_digest
-            ),
-            "observation-digests": _json_strings(self.observation_digests),
-            "publication-snapshot-digest": self.publication_snapshot_digest,
-            "exact-satisfied-governance-proof-digest": (
-                self.exact_satisfied_governance_proof_digest
-            ),
-            "approval-bundle-digest": self.approval_bundle_digest,
-            "publication-authorization-digest": (
-                self.publication_authorization_digest
-            ),
-            "action-result-digests": action_result_digests,
-            "terminal-phase": self.terminal_phase,
-            "result": self.result,
-            "uncertainty": self.uncertainty,
+            "disposition": self.disposition,
             "possibly-mutated": self.possibly_mutated,
-            "next-action": self.next_action,
+            "direct-predecessor": self.direct_predecessor.to_document(),
+            "producer": self.producer,
+            "control": self.control,
+            "workflow-run-id": self.workflow_run_id,
         }
-        return document
 
     @property
     def outcome_digest(self) -> str:
@@ -3923,14 +4318,15 @@ type ReleaseRecord = (
     | QualificationEvidence
     | QualificationDecision
     | ProjectionObservation
+    | RemoteStateObservation
     | HypotheticalAction
     | PublicationAction
     | PublicationSnapshot
-    | ReviewerSummaryArtifact
     | ApprovalBundle
     | PublicationAuthorization
-    | ExactSatisfiedGovernanceProof
-    | ActionResult
+    | MutationMayHaveStartedMarker
+    | PublicationResult
+    | ExactSatisfiedFinalizationProof
     | AttemptOutcome
     | SimulationOutcome
 )
@@ -3991,29 +4387,38 @@ __all__ = [
     "NPMJS_OBSERVATION_CONTRACT_ID",
     "NPMJS_OBSERVER_PRODUCER",
     "OFFICIAL_SIMULATION_WORKFLOW_PATH",
-    "ActionResult",
+    "REMOTE_STATE_OBSERVATION_SCHEMA",
+    "ApprovalBoundary",
     "ApprovalBundle",
     "ArtifactVariantIdentity",
     "AttemptOutcome",
     "BuddyExecutionIdentity",
     "DestinationProjection",
-    "ExactSatisfiedGovernanceProof",
+    "DestinationReadback",
+    "DirectPredecessor",
+    "ExactSatisfiedFinalizationProof",
     "ExternalPackageCoordinate",
+    "GovernanceProof",
     "HypotheticalAction",
+    "MutationMayHaveStartedMarker",
     "ObligationDisposition",
     "ObservationValue",
     "OfficialExecutionIdentity",
     "OfficialProductIdentity",
+    "PackageControlProof",
+    "PackageControlSubject",
     "PotentialActionContract",
+    "ProfileMatchEvidence",
     "ProjectionObservation",
     "PublicationAction",
     "PublicationAuthorization",
+    "PublicationDiagnostics",
     "PublicationObservationReference",
+    "PublicationResult",
     "PublicationSnapshot",
     "QualificationDecision",
     "QualificationEvidence",
     "QualificationSnapshot",
-    "Receipt",
     "ReleaseArtifact",
     "ReleaseAttemptBinding",
     "ReleaseAttemptIdentity",
@@ -4022,7 +4427,7 @@ __all__ = [
     "ReleaseIntent",
     "ReleaseObligation",
     "ReleaseOutputIdentity",
-    "ReviewerSummaryArtifact",
+    "RemoteStateObservation",
     "SimulationBinding",
     "SimulationIdentity",
     "SimulationOutcome",

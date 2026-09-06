@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from three_workflow_delivery_v3.canonical import canonical_sha256
 from three_workflow_delivery_v3.records.release import (
     NPMJS_OBSERVATION_CONTRACT_ID,
     NPMJS_OBSERVER_PRODUCER,
+    DestinationOperationProfile,
     HypotheticalAction,
     ObligationDisposition,
     ObservationRequestFacts,
@@ -19,17 +22,40 @@ from three_workflow_delivery_v3.records.release import (
     QualificationSnapshot,
     ReleaseArtifact,
     ReleaseAttemptIdentity,
+    RemoteStateObservation,
     SimulationBinding,
     SimulationIdentity,
     SimulationOutcome,
+    form_publication_action,
+)
+from three_workflow_delivery_v3.release.observation import (
+    admit_remote_state_observation,
 )
 from three_workflow_delivery_v3.release.qualification import (
     admit_evidence_for_snapshot,
 )
+from three_workflow_delivery_v3.release.qualification import (
+    validate_qualification_artifacts as _validate_artifacts,
+)
+from three_workflow_delivery_v3.release.qualification import (
+    validate_qualification_decision as _validate_decision,
+)
+from three_workflow_delivery_v3.release.qualification import (
+    validate_qualification_decision_artifacts as _validate_decision_artifacts,
+)
 
+if TYPE_CHECKING:
+    from datetime import datetime
 
-class UnsupportedPublicationPrimitiveError(RuntimeError):
-    """Normal Live cannot materialize an unimplemented destination primitive."""
+    from three_workflow_delivery_v3.records.artifacts import ArtifactReference
+    from three_workflow_delivery_v3.records.release import (
+        ReleaseAttemptBinding,
+        ReleaseIntent,
+    )
+    from three_workflow_delivery_v3.release.eligibility import (
+        AdmittedLiveEligibilityDecision,
+    )
+    from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
 
 
 def _subject(
@@ -38,49 +64,6 @@ def _subject(
     if isinstance(snapshot.subject, SimulationBinding):
         return snapshot.subject.simulation
     return snapshot.subject
-
-
-def _validate_artifacts(
-    snapshot: QualificationSnapshot,
-    artifacts: tuple[ReleaseArtifact, ...],
-) -> tuple[ReleaseArtifact, ...]:
-    if type(artifacts) is not tuple:
-        message = "Release artifacts must be an exact tuple"
-        raise TypeError(message)
-    by_output: dict[str, ReleaseArtifact] = {}
-    record_digests: set[str] = set()
-    expected_subject = _subject(snapshot)
-    for artifact in artifacts:
-        if type(artifact) is not ReleaseArtifact:
-            message = "Release artifact has the wrong runtime type"
-            raise TypeError(message)
-        record_digest = artifact.artifact_digest
-        if record_digest in record_digests:
-            message = "Release artifact set contains a duplicate record"
-            raise ValueError(message)
-        record_digests.add(record_digest)
-        if (
-            artifact.subject != expected_subject
-            or artifact.repository != snapshot.repository
-            or artifact.qualification_snapshot_digest
-            != snapshot.snapshot_digest
-            or artifact.repository_model_digest
-            != snapshot.repository_model_digest
-            or artifact.target != snapshot.target
-            or artifact.output not in snapshot.outputs
-        ):
-            message = "Release artifact does not match the current Snapshot"
-            raise ValueError(message)
-        output_id = artifact.output.output_id
-        if output_id in by_output:
-            message = "Release artifact set substitutes a planned output"
-            raise ValueError(message)
-        by_output[output_id] = artifact
-    return tuple(
-        by_output[output.output_id]
-        for output in snapshot.outputs
-        if output.output_id in by_output
-    )
 
 
 def finalize_qualification(  # noqa: C901, PLR0912, PLR0915
@@ -278,6 +261,9 @@ def _admit_synthetic_projection_observation(
     owner: str | None = None,
 ) -> ProjectionObservation:
     """Form test-only observations without remote interpretation."""
+    if not isinstance(snapshot.subject, SimulationBinding):
+        message = "Synthetic Projection Observation is Simulation-only"
+        raise TypeError(message)
     if classification not in {"absent", "exact-satisfied"}:
         message = "synthetic observation supports only absent or exact state"
         raise ValueError(message)
@@ -341,12 +327,8 @@ def _admit_synthetic_projection_observation(
         }
     )
     return ProjectionObservation(
-        subject=_subject(snapshot),
-        purpose=(
-            snapshot.subject.purpose
-            if isinstance(snapshot.subject, SimulationBinding)
-            else "live-release"
-        ),
+        subject=snapshot.subject.simulation,
+        purpose=snapshot.subject.purpose,
         target=snapshot.target,
         producer=NPMJS_OBSERVER_PRODUCER,
         qualification_snapshot_digest=snapshot.snapshot_digest,
@@ -361,50 +343,6 @@ def _admit_synthetic_projection_observation(
     )
 
 
-def _validate_decision(
-    snapshot: QualificationSnapshot,
-    decision: QualificationDecision,
-) -> None:
-    if type(decision) is not QualificationDecision:
-        message = "finalization requires an exact QualificationDecision"
-        raise TypeError(message)
-    if (
-        decision.subject != _subject(snapshot)
-        or decision.qualification_snapshot_digest != snapshot.snapshot_digest
-        or tuple(
-            disposition.obligation
-            for disposition in decision.obligation_dispositions
-        )
-        != snapshot.obligations
-    ):
-        message = "Qualification Decision does not match the Snapshot"
-        raise ValueError(message)
-    disposition_outcomes = tuple(
-        disposition.outcome for disposition in decision.obligation_dispositions
-    )
-    if decision.terminal_result == "success" and (
-        not disposition_outcomes
-        or any(outcome != "satisfied" for outcome in disposition_outcomes)
-        or len(decision.admitted_evidence_digests)
-        != len(snapshot.expected_evidence_ids)
-        or len(decision.admitted_artifact_digests) != len(snapshot.outputs)
-    ):
-        message = "successful Qualification Decision is not complete"
-        raise ValueError(message)
-
-
-def _validate_decision_artifacts(
-    decision: QualificationDecision,
-    artifacts: tuple[ReleaseArtifact, ...],
-) -> None:
-    if (
-        tuple(artifact.artifact_digest for artifact in artifacts)
-        != decision.admitted_artifact_digests
-    ):
-        message = "Qualification Decision artifact binding mismatch"
-        raise ValueError(message)
-
-
 def _validate_observation_producer(
     observation: ProjectionObservation,
 ) -> None:
@@ -416,12 +354,15 @@ def _validate_observation_producer(
         raise ValueError(message)
 
 
-def validate_projection_observations(
+def validate_projection_observations(  # noqa: C901
     snapshot: QualificationSnapshot,
     observations: tuple[ProjectionObservation, ...],
     artifacts: tuple[ReleaseArtifact, ...],
 ) -> tuple[ProjectionObservation, ...]:
-    """Admit observations against the frozen projection and artifact basis."""
+    """Admit Simulation observations against the frozen artifact basis."""
+    if not isinstance(snapshot.subject, SimulationBinding):
+        message = "Projection Observation admission is Simulation-only"
+        raise TypeError(message)
     if type(observations) is not tuple:
         message = "Projection observations must be an exact tuple"
         raise TypeError(message)
@@ -453,13 +394,8 @@ def validate_projection_observations(
             message = "Projection observation lacks its qualified artifact"
             raise ValueError(message)
         if (
-            observation.subject != _subject(snapshot)
-            or observation.purpose
-            != (
-                snapshot.subject.purpose
-                if isinstance(snapshot.subject, SimulationBinding)
-                else "live-release"
-            )
+            observation.subject != snapshot.subject.simulation
+            or observation.purpose != snapshot.subject.purpose
             or observation.target != snapshot.target
             or observation.qualification_snapshot_digest
             != snapshot.snapshot_digest
@@ -560,13 +496,24 @@ def materialize_hypothetical_actions(
     return tuple(actions)
 
 
-def materialize_publication_snapshot(
+def materialize_publication_snapshot(  # noqa: PLR0913
     snapshot: QualificationSnapshot,
     decision: QualificationDecision,
-    observations: tuple[ProjectionObservation, ...],
+    observations: tuple[RemoteStateObservation, ...],
     artifacts: tuple[ReleaseArtifact, ...],
+    *,
+    intent: ReleaseIntent,
+    attempt_binding: ReleaseAttemptBinding,
+    eligibility: AdmittedLiveEligibilityDecision,
+    policy: ReleasePolicy,
+    decision_reference: ArtifactReference,
+    action_creation_at: datetime,
+    destination_operation_profile: DestinationOperationProfile | None = None,
 ) -> PublicationSnapshot:
     """Materialize the guarded second Snapshot for a live Attempt only."""
+    if action_creation_at is None:
+        message = "Current materialization requires action-creation time"
+        raise TypeError(message)
     if not isinstance(snapshot.subject, ReleaseAttemptIdentity):
         message = "Publication Snapshot cannot be emitted for simulation"
         raise TypeError(message)
@@ -579,29 +526,44 @@ def materialize_publication_snapshot(
         message = "Publication Snapshot requires complete artifacts"
         raise ValueError(message)
     _validate_decision_artifacts(decision, admitted_artifacts)
-    admitted_observations = validate_projection_observations(
-        snapshot,
-        observations,
-        admitted_artifacts,
+    if type(observations) is not tuple or len(observations) != 1:
+        message = "Publication Snapshot requires one Remote-State Observation"
+        raise ValueError(message)
+    (artifact,) = admitted_artifacts
+    observation = admit_remote_state_observation(
+        observations[0],
+        intent=intent,
+        attempt_binding=attempt_binding,
+        eligibility=eligibility,
+        policy=policy,
+        snapshot=snapshot,
+        decision=decision,
+        decision_reference=decision_reference,
+        artifact=artifact,
+        action_creation_at=action_creation_at,
     )
-    for observation in admitted_observations:
-        if observation.value.classification not in {
-            "absent",
-            "exact-satisfied",
-        }:
-            message = "Publication Snapshot observation is not ready"
-            raise ValueError(message)
-    absent_projection_ids = {
-        observation.projection.projection_id
-        for observation in admitted_observations
-        if observation.value.classification == "absent"
-    }
-    if absent_projection_ids:
-        message = (
-            "Normal Live destination primitive is not implemented; "
-            "publication remains activation-blocked"
+    (projection,) = snapshot.destination_projections
+    if observation.classification not in {"absent", "exact-satisfied"}:
+        message = "Publication Snapshot observation is not ready"
+        raise ValueError(message)
+    materialized_actions = ()
+    if observation.classification == "absent":
+        if (
+            type(destination_operation_profile)
+            is not DestinationOperationProfile
+        ):
+            message = (
+                "Publication Action requires an exact Destination Operation "
+                "Profile"
+            )
+            raise TypeError(message)
+        materialized_actions = (
+            form_publication_action(
+                destination_operation_profile=destination_operation_profile,
+                projection=projection,
+                artifact=artifact,
+            ),
         )
-        raise UnsupportedPublicationPrimitiveError(message)
     return PublicationSnapshot(
         attempt=snapshot.subject,
         qualification_snapshot_digest=snapshot.snapshot_digest,
@@ -617,15 +579,14 @@ def materialize_publication_snapshot(
         artifact_output_ids=tuple(
             artifact.output.output_id for artifact in admitted_artifacts
         ),
-        observation_references=tuple(
+        observation_references=(
             PublicationObservationReference(
-                projection_id=observation.projection.projection_id,
+                projection_id=projection.projection_id,
                 observation_digest=observation.observation_digest,
-                classification=observation.value.classification,
-            )
-            for observation in admitted_observations
+                classification=observation.classification,
+            ),
         ),
-        materialized_actions=(),
+        materialized_actions=materialized_actions,
     )
 
 

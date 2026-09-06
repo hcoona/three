@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import inspect
-import itertools
-import os
 import re
 import stat
 import urllib.error
@@ -15,13 +14,13 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
 from time import monotonic
-from typing import TYPE_CHECKING, Never, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from three_workflow_delivery_v3.adapters.node import (
     ArtifactExpectation,
+    _qualify_npm_artifact_entries,
     _read_tarball,
     _validate_artifact_expectation,
-    qualify_npm_artifact_contents,
 )
 from three_workflow_delivery_v3.adapters.npmjs import (
     DEFAULT_EXPANDED_TARBALL_LIMIT_BYTES,
@@ -29,50 +28,39 @@ from three_workflow_delivery_v3.adapters.npmjs import (
 )
 from three_workflow_delivery_v3.canonical import (
     canonical_sha256,
-    canonicalize,
     parse_json_strict,
 )
 from three_workflow_delivery_v3.records.release import (
-    PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER,
-    ActionResult,
     BuddyExecutionIdentity,
+    DestinationOperationProfile,
     DestinationProjection,
-    ExternalPackageCoordinate,
-    ObservationRequestFacts,
-    ObservationResponseFacts,
-    ObservationValue,
-    ProjectionObservation,
+    DestinationReadback,
+    PackageControlProof,
+    PackageControlSubject,
     PublicationAction,
-    PublicationAuthorization,
-    PublicationSnapshot,
+    PublicationDiagnostics,
     QualificationDecision,
     QualificationSnapshot,
-    Receipt,
     ReleaseArtifact,
     ReleaseAttemptIdentity,
-)
-from three_workflow_delivery_v3.release.finalizer import (
-    UnsupportedPublicationPrimitiveError,
-    desired_projection_state_digest,
+    validate_publication_action_instantiation,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from datetime import datetime
 
     from three_workflow_delivery_v3.canonical import JsonValue
-    from three_workflow_delivery_v3.release.eligibility import (
-        GovernanceSourceClient,
-    )
-    from three_workflow_delivery_v3.repository.descriptors import (
-        GovernanceSource,
-    )
 
 GITHUB_PACKAGES_DESTINATION_ID = "npm/github-packages-hcoona-three-v1"
 GITHUB_PACKAGES_REGISTRY = "https://npm.pkg.github.com"
 GITHUB_PACKAGES_PACKAGE = "@hcoona/hcoona-release-smoke-npm"
 GITHUB_PACKAGES_OBSERVATION_CONTRACT_ID = "npm/github-packages-observation-v1"
 GITHUB_PACKAGES_OPERATION = "conditional-create-npm-version-and-target-tag"
+GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE_ID = (
+    "npm/github-packages-hcoona-three-standard-publish-v1"
+)
+GITHUB_PACKAGES_NODE_VERSION = "24.19.0"
+GITHUB_PACKAGES_NPM_VERSION = "11.17.0"
 _ACCEPTANCE_OPERATION = "npm-publish-create-only"
 GITHUB_PACKAGES_OWNER = "hcoona"
 GITHUB_PACKAGES_REPOSITORY = "hcoona/three"
@@ -166,6 +154,89 @@ ACCEPTANCE_COORDINATES = {
 ACCEPTANCE_TAGS = frozenset(
     tag for _scenario, _version, tag in ACCEPTANCE_SCENARIO_SPECS
 )
+
+_GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE = DestinationOperationProfile(
+    profile_id=GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE_ID,
+    registry=GITHUB_PACKAGES_REGISTRY,
+    access_mode="existing-public-package/no-access-mutation",
+    node_version=GITHUB_PACKAGES_NODE_VERSION,
+    npm_version=GITHUB_PACKAGES_NPM_VERSION,
+    command_template=(
+        "npm",
+        "publish",
+        "{tarball-path}",
+        "--registry",
+        GITHUB_PACKAGES_REGISTRY,
+        "--tag",
+        "{tag}",
+        "--ignore-scripts",
+        "--fetch-retries=0",
+    ),
+    operand_slots=(
+        (
+            "package",
+            "npm-package-name/equal-tarball-manifest-name",
+        ),
+        (
+            "version",
+            "npm-version/equal-tarball-manifest-version",
+        ),
+        (
+            "tarball-reference",
+            "artifact-reference/exact-payload-path",
+        ),
+        ("tag", "npm-dist-tag/buddy-sha-target"),
+    ),
+    configuration_precedence=(
+        (
+            "authentication",
+            "temporary-user-config/current-repository-github-token",
+        ),
+        ("fetch-retries", "command-line/0"),
+        ("ignore-scripts", "command-line/true"),
+        ("project-config", "disabled"),
+        ("registry", f"command-line/{GITHUB_PACKAGES_REGISTRY}"),
+        ("tag", "command-line/publication-action"),
+    ),
+    request_generation=(
+        ("client", "pinned-standard-npm"),
+        ("hand-built-publish-request", "forbidden"),
+        ("wrapper-registry-protocol", "forbidden"),
+    ),
+    mutation_retry="forbidden-after-request-initiation",
+)
+
+
+def github_packages_destination_operation_profile() -> (
+    DestinationOperationProfile
+):
+    """Resolve the sole first-slice GitHub Packages mutation profile."""
+    return _GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE
+
+
+def validate_github_packages_publication_action(
+    *,
+    action: PublicationAction,
+    projection: DestinationProjection,
+    artifact: ReleaseArtifact,
+) -> None:
+    """Admit only an exact instance of the first-slice destination profile."""
+    profile = github_packages_destination_operation_profile()
+    if (
+        projection.coordinate.channel != "buddy"
+        or projection.destination_id != GITHUB_PACKAGES_DESTINATION_ID
+        or projection.operation != GITHUB_PACKAGES_OPERATION
+    ):
+        message = "GitHub Packages Publication Action projection is unsupported"
+        raise ValueError(message)
+    validate_publication_action_instantiation(
+        action,
+        destination_operation_profile=profile,
+        projection=projection,
+        artifact=artifact,
+    )
+
+
 ACCEPTANCE_SCENARIOS = frozenset(
     {
         "absent-create-readback",
@@ -227,7 +298,6 @@ DEFAULT_METADATA_LIMIT_BYTES = 1_000_000
 DEFAULT_TARBALL_LIMIT_BYTES = 25_000_000
 DEFAULT_MAX_PAGES = 100
 GITHUB_PAGE_SIZE = 100
-PRIVATE_CONFIG_MODE = 0o600
 PAIR_SIZE = 2
 MAX_REDIRECTS = 5
 HTTP_OK = 200
@@ -323,7 +393,7 @@ class GitHubPackagesTransport(Protocol):
         timeout: float,
         max_bytes: int,
     ) -> GitHubPackagesHttpResponse:
-        """Fetch one bounded response without retaining credentials."""
+        """Fetch bounded data; strip credentials on cross-origin redirects."""
 
 
 class GitHubPackagesHttpTransport:
@@ -363,32 +433,28 @@ class GitHubPackagesHttpTransport:
 
         opener = urllib.request.build_opener(_NoRedirect)
         try:
-            with opener.open(request, timeout=timeout) as response:
+            try:
+                response = opener.open(request, timeout=timeout)
+                status = response.status
+            except urllib.error.HTTPError as error:
+                response = error
+                status = error.code
+            with response:
                 body = response.read(max_bytes + 1)
                 return GitHubPackagesHttpResponse(
-                    status=response.status,
+                    status=status,
                     url=response.geturl(),
                     headers=tuple(response.headers.items()),
                     body=body[:max_bytes],
                     truncated=len(body) > max_bytes,
                     complete=len(body) <= max_bytes,
                 )
-        except urllib.error.HTTPError as error:
-            body = error.read(max_bytes + 1)
-            return GitHubPackagesHttpResponse(
-                status=error.code,
-                url=error.geturl(),
-                headers=tuple(error.headers.items()),
-                body=body[:max_bytes],
-                truncated=len(body) > max_bytes,
-                complete=len(body) <= max_bytes,
-            )
         except TimeoutError as error:
             raise GitHubPackagesTimeoutError(str(error)) from error
-        except OSError as error:
+        except (http.client.HTTPException, OSError) as error:
             raise GitHubPackagesNetworkError(str(error)) from error
 
-    def get(
+    def get(  # noqa: C901
         self,
         url: str,
         *,
@@ -446,7 +512,11 @@ class GitHubPackagesHttpTransport:
             if location is None:
                 message = "redirect location is missing"
                 raise GitHubPackagesPolicyError(message)
-            target_url = urllib.parse.urljoin(current_url, location)
+            try:
+                target_url = urllib.parse.urljoin(current_url, location)
+            except ValueError as error:
+                message = "redirect location is malformed"
+                raise GitHubPackagesPolicyError(message) from error
             if len(redirects) >= self._max_redirects:
                 message = "redirect limit exceeded before credentialed request"
                 raise GitHubPackagesPolicyError(message)
@@ -464,52 +534,6 @@ class GitHubPackagesHttpTransport:
             current_headers = target_headers
         message = "redirect limit exceeded"
         raise GitHubPackagesPolicyError(message)
-
-
-@dataclass(frozen=True, slots=True)
-class PublishCommandResult:
-    """Sanitized result of the one permitted npm publish process."""
-
-    outcome: str
-    exit_code: int | None
-    stdout: str
-    stderr: str
-    command: tuple[str, ...]
-
-
-class PublishRunner(Protocol):
-    """Injectable npm publish process seam."""
-
-    def run(
-        self,
-        argv: tuple[str, ...],
-        *,
-        env: dict[str, str],
-    ) -> object:
-        """Execute one exact process and return bounded result facts."""
-
-
-@dataclass(frozen=True, slots=True)
-class PublishClassification:
-    """Pure first-slice mutation classification."""
-
-    outcome: str
-    mutation_disposition: str
-    receipt_digest: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class ProbeClassification:
-    """Small pure-classification result used by focused scenario tests."""
-
-    value: ObservationValue
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return a closed document without credentials."""
-        return {
-            "schema": "workflow-delivery/v3/github-packages-probe",
-            "value": self.value.to_document(),
-        }
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -1096,120 +1120,6 @@ class FixedAcceptanceSuiteResult:
 
 
 @dataclass(frozen=True, slots=True)
-class PublicationExecutionResult:
-    """Complete current-Attempt publication result."""
-
-    command: PublishCommandResult
-    observation: ProjectionObservation | None
-    action_result: ActionResult
-
-
-@dataclass(frozen=True, slots=True)
-class DeferredPublicationExecutionResult:
-    """Publication facts awaiting immutable Receipt transport binding."""
-
-    command: PublishCommandResult
-    observation: ProjectionObservation | None
-    classification: PublishClassification
-    response_identity_digest: str | None
-    diagnostic_reference: str | None
-    receipt: Receipt | None
-
-
-class PublisherGovernanceRecheckRejectionError(Exception):
-    """Typed terminal rejection after marker admission but before npm."""
-
-    def __init__(self, result: DeferredPublicationExecutionResult) -> None:
-        """Retain the exact closed terminal publication result."""
-        if (
-            type(result) is not DeferredPublicationExecutionResult
-            or result.classification.outcome != "failed"
-            or result.classification.mutation_disposition != "no-side-effect"
-            or result.observation is not None
-            or result.response_identity_digest is not None
-            or result.receipt is not None
-            or result.diagnostic_reference
-            != PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER
-        ):
-            message = "Publisher Governance rejection result is malformed"
-            raise ValueError(message)
-        self.result = result
-        super().__init__(PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER)
-
-
-@dataclass(frozen=True, slots=True)
-class GitHubPackagesPublishPreflight:
-    """Immutable authority, bytes, and npm-configuration admission."""
-
-    attempt: ReleaseAttemptIdentity
-    publication_snapshot_digest: str
-    action_digest: str
-    lock_group: str
-    tarball_sha256: str
-    tarball_sha512: str
-    npm_configuration_digest: str
-    governance_provenance: tuple[tuple[str, str], ...]
-    governance_canonical_content_digest: str
-    governance_expires_at: str
-    governance_live_enabled: bool
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical preflight document."""
-        return {
-            "schema": "workflow-delivery/v3/github-packages-publish-preflight",
-            "attempt": self.attempt.to_document(),
-            "publication-snapshot-digest": self.publication_snapshot_digest,
-            "action-digest": self.action_digest,
-            "lock-group": self.lock_group,
-            "tarball-sha256": self.tarball_sha256,
-            "tarball-sha512": self.tarball_sha512,
-            "npm-configuration-digest": self.npm_configuration_digest,
-            "governance-provenance": [
-                [name, value] for name, value in self.governance_provenance
-            ],
-            "governance-canonical-content-digest": (
-                self.governance_canonical_content_digest
-            ),
-            "governance-expires-at": self.governance_expires_at,
-            "governance-live-enabled": self.governance_live_enabled,
-        }
-
-    @property
-    def preflight_digest(self) -> str:
-        """Return the canonical preflight digest."""
-        return canonical_sha256(self.to_document())
-
-
-@dataclass(frozen=True, slots=True)
-class MutationMayHaveStartedMarker:
-    """Durable action-bound boundary immediately before npm invocation."""
-
-    attempt: ReleaseAttemptIdentity
-    publication_snapshot_digest: str
-    action_digest: str
-    lock_group: str
-    preflight_digest: str
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical mutation-start marker."""
-        return {
-            "schema": (
-                "workflow-delivery/v3/github-packages-mutation-may-have-started"
-            ),
-            "attempt": self.attempt.to_document(),
-            "publication-snapshot-digest": self.publication_snapshot_digest,
-            "action-digest": self.action_digest,
-            "lock-group": self.lock_group,
-            "preflight-digest": self.preflight_digest,
-        }
-
-    @property
-    def marker_digest(self) -> str:
-        """Return the canonical marker digest."""
-        return canonical_sha256(self.to_document())
-
-
-@dataclass(frozen=True, slots=True)
 class _Exchange:
     stage: str
     requested_url: str
@@ -1240,18 +1150,6 @@ class _Exchange:
                 "detail": self.detail,
             },
         )
-
-
-@dataclass(frozen=True, slots=True)
-class _RemoteFacts:
-    rest_version: str | None = None
-    npm_version: str | None = None
-    owner: str | None = None
-    repository: str | None = None
-    tag_version: str | None = None
-    target_tag_present: bool = False
-    content_sha512: str | None = None
-    witness_digest: str | None = None
 
 
 class GitHubPackagesNetworkError(RuntimeError):
@@ -2497,14 +2395,6 @@ def _github_transport_headers(token: str) -> tuple[tuple[str, str], ...]:
     return github_api_headers(token)
 
 
-def _retained_github_headers() -> tuple[tuple[str, str], ...]:
-    return (
-        ("Accept", "application/vnd.github+json"),
-        ("Authorization", _REDACTED),
-        ("X-GitHub-Api-Version", "2022-11-28"),
-    )
-
-
 def _npm_transport_headers(
     token: str,
     *,
@@ -2543,11 +2433,11 @@ def redact_diagnostic(value: str, *, secrets: tuple[str, ...] = ()) -> str:
 
 
 def _origin(url: str) -> tuple[str, str, int]:
-    parsed = urllib.parse.urlparse(url)
     try:
+        parsed = urllib.parse.urlparse(url)
         port = parsed.port
     except ValueError as error:
-        message = "URL has an invalid port"
+        message = "URL is malformed or has an invalid port"
         raise GitHubPackagesPolicyError(message) from error
     if (
         parsed.scheme != "https"
@@ -2602,17 +2492,9 @@ def _response_policy_ok(
     *,
     requested_url: str,
     stage: str,
-    credentialed: bool,
 ) -> bool:
     chain = (requested_url, *response.redirects, response.url)
-    if not all(_allowed_url(url, stage=stage) for url in chain):
-        return False
-    if credentialed:
-        return all(
-            _origin(source) == _origin(target)
-            for source, target in itertools.pairwise(chain)
-        )
-    return True
+    return all(_allowed_url(url, stage=stage) for url in chain)
 
 
 def _header(
@@ -2626,43 +2508,6 @@ def _header(
     return None
 
 
-def _github_link_next_url(
-    response: GitHubPackagesHttpResponse,
-    *,
-    requested_url: str,
-) -> str | None:
-    value = _header(response, "link")
-    if value is None:
-        return None
-    next_url: str | None = None
-    for member in value.split(","):
-        section, *parameters = member.strip().split(";")
-        if not section.startswith("<") or not section.endswith(">"):
-            message = "GitHub REST Link is malformed"
-            raise GitHubPackagesPolicyError(message)
-        rels = {
-            parameter.strip()[5:-1]
-            for parameter in parameters
-            if parameter.strip().startswith('rel="')
-            and parameter.strip().endswith('"')
-        }
-        if "next" not in rels:
-            continue
-        candidate = urllib.parse.urljoin(requested_url, section[1:-1])
-        if next_url is not None:
-            message = "GitHub REST Link has duplicate next relations"
-            raise GitHubPackagesPolicyError(message)
-        if not _allowed_url(candidate, stage="rest") or _origin(
-            candidate
-        ) != _origin(requested_url):
-            message = (
-                "GitHub REST Link next is outside the authoritative origin"
-            )
-            raise GitHubPackagesPolicyError(message)
-        next_url = candidate
-    return next_url
-
-
 def _identity_encoding(response: GitHubPackagesHttpResponse) -> bool:
     encoding = _header(response, "content-encoding")
     return encoding is None or encoding.lower() == "identity"
@@ -2670,9 +2515,11 @@ def _identity_encoding(response: GitHubPackagesHttpResponse) -> bool:
 
 def _selected_headers(
     response: GitHubPackagesHttpResponse,
+    *,
+    secrets: tuple[str, ...] = (),
 ) -> tuple[tuple[str, str], ...]:
     return tuple(
-        (name.lower(), redact_diagnostic(value))
+        (name.lower(), redact_diagnostic(value, secrets=secrets))
         for name, value in sorted(
             response.headers,
             key=lambda item: item[0].lower(),
@@ -2691,14 +2538,18 @@ def _exchange(
     response: GitHubPackagesHttpResponse,
     *,
     detail: str | None = None,
+    secrets: tuple[str, ...] = (),
 ) -> _Exchange:
     return _Exchange(
         stage=stage,
-        requested_url=requested_url,
-        final_url=response.url,
-        redirects=response.redirects,
+        requested_url=redact_diagnostic(requested_url, secrets=secrets),
+        final_url=redact_diagnostic(response.url, secrets=secrets),
+        redirects=tuple(
+            redact_diagnostic(url, secrets=secrets)
+            for url in response.redirects
+        ),
         status=response.status,
-        selected_headers=_selected_headers(response),
+        selected_headers=_selected_headers(response, secrets=secrets),
         truncated=response.truncated,
         complete=response.complete,
         body_sha256=_body_digest(response.body),
@@ -2751,114 +2602,351 @@ def _target_tag(target: str) -> str:
     return f"buddy-sha-{target}"
 
 
-def _probe_value(  # noqa: PLR0913
+@dataclass(frozen=True, slots=True)
+class GitHubPackagesActiveState:
+    """Read-only facts; callers own Governance and desired-state admission."""
+
+    package_control: PackageControlProof | None
+    readback: DestinationReadback
+    response_identity: str
+    diagnostics: PublicationDiagnostics
+
+
+def _active_get(  # noqa: PLR0913
+    url: str,
     *,
-    classification: str,
-    coordinate: ExternalPackageCoordinate,
-    owner: str | None = None,
-    content_sha512: str | None = None,
-    witness_digest: str | None = None,
-    tag_version: str | None = None,
-    target: str,
-) -> ObservationValue:
-    if classification == "absent":
-        return ObservationValue(
-            classification="absent",
-            owner=None,
-            coordinate=None,
-            content_sha512=None,
-            witness_digest=None,
-            routing=(),
+    stage: str,
+    token: str,
+    transport: GitHubPackagesTransport,
+    timeout: int,
+    max_bytes: int,
+) -> tuple[GitHubPackagesHttpResponse | None, _Exchange]:
+    headers = (
+        (
+            *_github_transport_headers(token),
+            ("Accept-Encoding", "identity"),
+            ("Cache-Control", "no-cache"),
         )
-    routing = (
-        ((_target_tag(target), tag_version),) if tag_version is not None else ()
+        if stage == "rest"
+        else _npm_transport_headers(token, tarball=stage == "tarball")
     )
-    if classification == "exact-satisfied":
-        return ObservationValue(
-            classification=classification,
-            owner=owner or f"org:{GITHUB_PACKAGES_OWNER}",
-            coordinate=coordinate,
-            content_sha512=content_sha512,
-            witness_digest=witness_digest,
-            routing=routing,
+    headers = tuple(
+        (name, "Bearer " + token if name == "Authorization" else value)
+        for name, value in headers
+    )
+    headers = redirect_headers(
+        source_url=GITHUB_API_ORIGIN
+        if stage == "rest"
+        else GITHUB_PACKAGES_REGISTRY,
+        target_url=url,
+        headers=headers,
+    )
+    try:
+        response = transport.get(
+            url,
+            headers=headers,
+            timeout=float(timeout),
+            max_bytes=max_bytes,
         )
-    retain_remote = classification in {"partial", "conflicting"}
-    return ObservationValue(
-        classification=classification,
-        owner=(owner if retain_remote else None),
-        coordinate=(coordinate if retain_remote else None),
-        content_sha512=(content_sha512 if retain_remote else None),
-        witness_digest=(witness_digest if retain_remote else None),
-        routing=(routing if retain_remote else ()),
-    )
-
-
-def classify_rest_npm_consistency(
-    *,
-    rest_version: str | None,
-    npm_version: str | None,
-    tag_version: str | None,
-) -> str:
-    """Classify exact cross-surface version/tag facts."""
-    present = [
-        value for value in (rest_version, npm_version) if value is not None
-    ]
-    if len(set(present)) > 1:
-        return "conflicting"
-    if bool(rest_version) != bool(npm_version):
-        return "unknown"
-    if present and tag_version is None:
-        return "partial"
-    if present and tag_version != present[0]:
-        return "conflicting"
-    return "exact-satisfied" if present else "absent"
-
-
-def classify_github_packages_probe(  # noqa: PLR0913
-    *,
-    coordinate: ExternalPackageCoordinate,
-    target: str,
-    rest_state: str,
-    npm_state: str,
-    local_sha512: str,
-    remote_sha512: str | None,
-    local_witness: str,
-    remote_witness: str | None,
-    tag_version: str | None,
-) -> ProbeClassification:
-    """Pure projection-wide classification helper."""
-    target_tag = _target_tag(target)
-    del target_tag
-    if rest_state == "denied" or npm_state in {"denied", "unknown"}:
-        classification = "unprovable" if npm_state == "denied" else "unknown"
-    elif rest_state == npm_state == "absent" and tag_version is None:
-        classification = "absent"
-    elif rest_state != npm_state:
-        classification = "unknown"
-    elif (
-        rest_state != "present"
-        or remote_sha512 is None
-        or remote_witness is None
+    except GitHubPackagesPolicyError:
+        return None, _synthetic_exchange(
+            stage, redact_diagnostic(url, secrets=(token,)), "off-policy"
+        )
+    except (GitHubPackagesNetworkError, OSError):
+        return None, _synthetic_exchange(
+            stage, redact_diagnostic(url, secrets=(token,)), "network-error"
+        )
+    if type(response) is not GitHubPackagesHttpResponse:
+        message = "GitHub Packages transport returned a malformed response"
+        raise TypeError(message)
+    failure = _status_classification(response)
+    if len(response.body) > max_bytes:
+        failure = "unknown"
+    if (
+        not _response_policy_ok(
+            response,
+            requested_url=url,
+            stage=stage,
+        )
+        or not _identity_encoding(response)
+        or (
+            stage != "tarball"
+            and any(hop != url for hop in (*response.redirects, response.url))
+        )
     ):
-        classification = "unprovable"
-    elif remote_sha512 != local_sha512 or remote_witness != local_witness:
-        classification = "conflicting"
-    elif tag_version is None:
-        classification = "partial"
-    elif tag_version != coordinate.native_version:
-        classification = "conflicting"
-    else:
-        classification = "exact-satisfied"
-    return ProbeClassification(
-        _probe_value(
-            classification=classification,
-            coordinate=coordinate,
-            owner=f"org:{GITHUB_PACKAGES_OWNER}",
-            content_sha512=remote_sha512,
-            witness_digest=remote_witness,
-            tag_version=tag_version,
-            target=target,
+        failure = "unprovable"
+    if failure is None and response.status not in {HTTP_OK, HTTP_NOT_FOUND}:
+        failure = "unprovable"
+    exchange = _exchange(stage, url, response, detail=failure, secrets=(token,))
+    return (response if failure is None else None), exchange
+
+
+def _active_metadata(
+    response: GitHubPackagesHttpResponse | None,
+    exchange: _Exchange,
+) -> tuple[dict[str, JsonValue] | None, str]:
+    if response is None:
+        return None, _active_read_failure(exchange)
+    if response.status == HTTP_NOT_FOUND:
+        return None, "absent"
+    try:
+        document = _json(response, field=exchange.stage)
+    except ValueError:
+        return None, "unprovable"
+    if not isinstance(document, dict):
+        return None, "unprovable"
+    return document, "present"
+
+
+def _active_read_failure(exchange: _Exchange) -> str:
+    return (
+        "unknown"
+        if exchange.status == "network-error" or exchange.detail == "unknown"
+        else "unprovable"
+    )
+
+
+def _active_package_control(
+    document: dict[str, JsonValue] | None,
+    *,
+    observed_at: str,
+    exchange: _Exchange,
+    token: str,
+) -> PackageControlProof | None:
+    resource = GITHUB_PACKAGES_PACKAGE.removeprefix(
+        f"@{GITHUB_PACKAGES_OWNER}/"
+    )
+    if (
+        document is None
+        or document.get("package_type") != "npm"
+        or document.get("name") not in (resource, GITHUB_PACKAGES_PACKAGE)
+    ):
+        return None
+    # The USER route establishes ownership when the nullable owner is absent.
+    owner = GITHUB_PACKAGES_OWNER
+    owner_document = document.get("owner")
+    if owner_document is not None:
+        if not isinstance(owner_document, dict):
+            return None
+        owner = owner_document.get("login")
+        if (
+            not isinstance(owner, str)
+            or re.fullmatch(r"[A-Za-z0-9-]+", owner) is None
+            or owner_document.get("type", "User") != "User"
+        ):
+            return None
+    repository = document.get("repository")
+    if not isinstance(repository, dict):
+        return None
+    full_name = repository.get("full_name")
+    visibility = document.get("visibility")
+    if (
+        not isinstance(full_name, str)
+        or re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", full_name) is None
+        or visibility not in ("public", "private", "internal")
+        or any(
+            token in value
+            for value in (owner, full_name, cast("str", visibility))
         )
+    ):
+        return None
+    return PackageControlProof(
+        subject=PackageControlSubject(
+            destination_id=GITHUB_PACKAGES_DESTINATION_ID,
+            registry=GITHUB_PACKAGES_REGISTRY,
+            normalized_package=GITHUB_PACKAGES_PACKAGE,
+        ),
+        observed_at=observed_at,
+        endpoints=(exchange.requested_url,),
+        facts=(
+            ("exposed-access", ()),
+            ("owner", (owner.lower(),)),
+            ("repository-association", (full_name.lower(),)),
+            ("visibility", (cast("str", visibility),)),
+        ),
+        response_digests=(
+            (exchange.requested_url, canonical_sha256(exchange.to_document())),
+        ),
+    )
+
+
+def _active_tag(
+    document: dict[str, JsonValue] | None,
+    classification: str,
+    tag: str,
+    token: str,
+) -> tuple[str, str | None]:
+    if classification == "absent":
+        return "absent", None
+    if document is None or document.get("name") != GITHUB_PACKAGES_PACKAGE:
+        return "unreadable", None
+    tags = document.get("dist-tags")
+    if not isinstance(tags, dict):
+        return "unreadable", None
+    if tag not in tags:
+        return "absent", None
+    version = tags[tag]
+    if not isinstance(version, str) or not version or token in version:
+        return "unreadable", None
+    return "present", version
+
+
+def read_github_packages_active_state(  # noqa: C901, PLR0913, PLR0915
+    artifact: ReleaseArtifact,
+    expectation: ArtifactExpectation,
+    *,
+    token: str,
+    transport: GitHubPackagesTransport,
+    observed_at: str,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    metadata_limit_bytes: int = DEFAULT_METADATA_LIMIT_BYTES,
+    tarball_limit_bytes: int = DEFAULT_TARBALL_LIMIT_BYTES,
+    expanded_tarball_limit_bytes: int = DEFAULT_EXPANDED_TARBALL_LIMIT_BYTES,
+) -> GitHubPackagesActiveState:
+    """Read active package control, exact bytes/witness, and independent tag.
+
+    The caller supplies qualified desired inputs and owns authority admission.
+    Missing control proof is blocking; differing control facts are preserved.
+    No active absence claims anything about deleted or restorable versions.
+    """
+    _token(token)
+    for field, value in (
+        ("timeout", timeout),
+        ("metadata_limit_bytes", metadata_limit_bytes),
+        ("tarball_limit_bytes", tarball_limit_bytes),
+        ("expanded_tarball_limit_bytes", expanded_tarball_limit_bytes),
+    ):
+        _positive_exact_int(value, field=field)
+    witness = _validate_artifact_expectation(expectation)
+    if type(artifact) is not ReleaseArtifact:
+        message = "active readback requires a ReleaseArtifact"
+        raise TypeError(message)
+    if (
+        expectation.package_name != GITHUB_PACKAGES_PACKAGE
+        or artifact.target != witness.target
+        or artifact.witness_digest != _body_digest(expectation.witness_bytes)
+    ):
+        message = "active readback desired artifact/witness binding mismatch"
+        raise ValueError(message)
+
+    def read(
+        url: str, stage: str
+    ) -> tuple[GitHubPackagesHttpResponse | None, _Exchange]:
+        return _active_get(
+            url,
+            stage=stage,
+            token=token,
+            transport=transport,
+            timeout=timeout,
+            max_bytes=tarball_limit_bytes
+            if stage == "tarball"
+            else metadata_limit_bytes,
+        )
+
+    package_url = (
+        f"{GITHUB_API_ORIGIN}/users/{GITHUB_PACKAGES_OWNER}/packages/npm/"
+        "hcoona-release-smoke-npm"
+    )
+    control_response, control_exchange = read(package_url, "rest")
+    control_document, control_class = _active_metadata(
+        control_response, control_exchange
+    )
+    control = _active_package_control(
+        control_document,
+        observed_at=observed_at,
+        exchange=control_exchange,
+        token=token,
+    )
+    diagnostics: list[str] = []
+    if control is None:
+        control_failure = (
+            "unknown" if control_class == "unknown" else "unprovable"
+        )
+        diagnostics.append(f"package-control: {control_failure}")
+
+    exact_url = npm_exact_metadata_url(
+        expectation.package_name, expectation.npm_package_version
+    )
+    exact_response, selected = read(exact_url, "npm-metadata")
+    exact_document, classification = _active_metadata(exact_response, selected)
+    exchanges = [selected]
+    sha256 = sha512 = witness_digest = witness_target = None
+    if exact_document is not None:
+        classification = "unprovable"
+        dist = exact_document.get("dist")
+        tarball_url = dist.get("tarball") if isinstance(dist, dict) else None
+        if (
+            exact_document.get("name") == expectation.package_name
+            and exact_document.get("version") == expectation.npm_package_version
+            and isinstance(tarball_url, str)
+            and _allowed_url(tarball_url, stage="tarball")
+        ):
+            tarball_response, selected = read(tarball_url, "tarball")
+            exchanges.append(selected)
+            if tarball_response is None:
+                classification = _active_read_failure(selected)
+            elif tarball_response.status == HTTP_OK:
+                remote = _remote_tarball_observation(
+                    tarball_response.body,
+                    artifact=artifact,
+                    expectation=expectation,
+                    expanded_limit_bytes=expanded_tarball_limit_bytes,
+                )
+                sha256 = _body_digest(tarball_response.body)
+                sha512 = remote.content_sha512
+                witness_digest = remote.witness_digest
+                witness_target = remote.witness_target
+                classification = remote.classification
+                if witness_digest is None or witness_target is None:
+                    classification = "unprovable"
+                elif classification == "exact-satisfied" and (
+                    sha256 != artifact.content.content_sha256
+                    or sha512 != artifact.content.content_sha512
+                    or remote.byte_size != artifact.content.byte_size
+                    or witness_digest != artifact.witness_digest
+                    or witness_target != artifact.target
+                ):
+                    classification = "conflicting"
+    if classification not in {"absent", "exact-satisfied"}:
+        diagnostics.append(f"exact-version: {classification}")
+
+    tag = _target_tag(artifact.target)
+    tags_response, tags_exchange = read(
+        _npm_package_metadata_url(expectation.package_name), "npm-tags"
+    )
+    exchanges.append(tags_exchange)
+    tags_document, tags_class = _active_metadata(tags_response, tags_exchange)
+    tag_state, tag_version = _active_tag(tags_document, tags_class, tag, token)
+    if tag_state == "unreadable":
+        diagnostics.append("target-tag: unreadable")
+    return GitHubPackagesActiveState(
+        package_control=control,
+        readback=DestinationReadback(
+            package=expectation.package_name,
+            version=expectation.npm_package_version,
+            classification=classification,
+            content_sha256=sha256,
+            content_sha512=sha512,
+            witness_digest=witness_digest,
+            witness_target=witness_target,
+            tag=tag,
+            tag_state=tag_state,
+            tag_version=tag_version,
+            observed_at=observed_at,
+            response_digests=tuple(
+                sorted(
+                    (
+                        exchange.stage,
+                        canonical_sha256(exchange.to_document()),
+                    )
+                    for exchange in exchanges
+                )
+            ),
+        ),
+        response_identity=canonical_sha256(selected.to_document()),
+        diagnostics=PublicationDiagnostics(
+            entries=tuple(diagnostics), truncated=False
+        ),
     )
 
 
@@ -2914,900 +3002,6 @@ def _validate_first_slice_basis(
     return attempt, projection
 
 
-def _repository_from_metadata(document: dict[str, JsonValue]) -> str | None:
-    repository = document.get("repository")
-    candidate: str | None = None
-    if type(repository) is str:
-        candidate = repository
-    elif isinstance(repository, dict) and type(repository.get("url")) is str:
-        candidate = cast("str", repository["url"])
-    if candidate is None:
-        return None
-    normalized = candidate.removesuffix(".git")
-    for prefix in (
-        "git+https://github.com/",
-        "https://github.com/",
-        "git://github.com/",
-        "github:",
-    ):
-        if normalized.startswith(prefix):
-            return normalized.removeprefix(prefix)
-    return "ambiguous"
-
-
-def _rest_owner(version_document: dict[str, JsonValue]) -> str:
-    value = version_document.get("url")
-    if type(value) is not str:
-        return "ambiguous"
-    try:
-        parsed = urllib.parse.urlparse(value)
-        origin = _origin(value)
-        (
-            root,
-            owner_kind,
-            owner,
-            packages_segment,
-            package_type,
-            package_resource,
-            versions_segment,
-            version_id,
-        ) = parsed.path.split("/")
-        version_number = int(version_id)
-    except (GitHubPackagesPolicyError, ValueError):
-        return "ambiguous"
-    resource_name = GITHUB_PACKAGES_PACKAGE.removeprefix(
-        f"@{GITHUB_PACKAGES_OWNER}/"
-    )
-    if (
-        origin != ("https", "api.github.com", 443)
-        or parsed.query
-        or parsed.params
-        or root
-        or owner_kind not in {"users", "orgs"}
-        or not owner
-        or packages_segment != "packages"
-        or package_type != "npm"
-        or package_resource != resource_name
-        or versions_segment != "versions"
-        or not version_id.isdigit()
-        or version_number <= 0
-    ):
-        return "ambiguous"
-    return owner.lower()
-
-
-def _aggregate_response_facts(
-    exchanges: tuple[_Exchange, ...],
-    facts: _RemoteFacts,
-) -> ObservationResponseFacts:
-    encoded = tuple(
-        (
-            f"exchange-{index:03d}",
-            canonicalize(exchange.to_document()).decode("utf-8"),
-        )
-        for index, exchange in enumerate(exchanges)
-    )
-    status = exchanges[-1].status if exchanges else "not-run"
-    return ObservationResponseFacts(
-        stage="synthetic",
-        requested_url=exchanges[0].requested_url if exchanges else "not-run",
-        final_url=exchanges[-1].final_url if exchanges else None,
-        redirects=tuple(
-            redirect
-            for exchange in exchanges
-            for redirect in exchange.redirects
-        ),
-        status=status,
-        selected_headers=encoded,
-        truncated=any(exchange.truncated is True for exchange in exchanges),
-        body_sha256=canonical_sha256(
-            {
-                "schema": "workflow-delivery/v3/github-packages-exchanges",
-                "exchanges": [exchange.to_document() for exchange in exchanges],
-            }
-        ),
-        status_detail="ordered-redacted-canonical-exchanges",
-        metadata_package=(
-            GITHUB_PACKAGES_PACKAGE if facts.npm_version is not None else None
-        ),
-        metadata_version=facts.npm_version,
-        tarball_content_sha512=facts.content_sha512,
-        remote_witness_digest=facts.witness_digest,
-    )
-
-
-def _projection_observation(  # noqa: PLR0913
-    *,
-    snapshot: QualificationSnapshot,
-    artifact: ReleaseArtifact,
-    projection: DestinationProjection,
-    request_facts: ObservationRequestFacts,
-    exchanges: tuple[_Exchange, ...],
-    facts: _RemoteFacts,
-    classification: str,
-) -> ProjectionObservation:
-    del artifact
-    response_facts = _aggregate_response_facts(exchanges, facts)
-    value = _probe_value(
-        classification=classification,
-        coordinate=projection.coordinate,
-        owner=f"org:{GITHUB_PACKAGES_OWNER}",
-        content_sha512=facts.content_sha512,
-        witness_digest=facts.witness_digest,
-        tag_version=facts.tag_version if facts.target_tag_present else None,
-        target=snapshot.target,
-    )
-    request_digest = request_facts.request_digest
-    return ProjectionObservation(
-        subject=cast("ReleaseAttemptIdentity", snapshot.subject),
-        purpose="live-release",
-        target=snapshot.target,
-        producer=GITHUB_PACKAGES_OBSERVER_PRODUCER,
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-        projection=projection,
-        desired_state_digest=request_facts.desired_state_digest,
-        observation_contract_id=GITHUB_PACKAGES_OBSERVATION_CONTRACT_ID,
-        request_facts=request_facts,
-        request_digest=request_digest,
-        response_facts=response_facts,
-        response_digest=canonical_sha256(
-            {
-                "schema": "workflow-delivery/v3/observation-response",
-                "request-digest": request_digest,
-                "facts": response_facts.to_document(),
-                "value": value.to_document(),
-            }
-        ),
-        value=value,
-    )
-
-
-def observe_github_packages_projection(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915
-    snapshot: QualificationSnapshot,
-    decision: QualificationDecision,
-    artifact: ReleaseArtifact,
-    expectation: ArtifactExpectation,
-    *,
-    token: str,
-    transport: GitHubPackagesTransport,
-    timeout: int = DEFAULT_TIMEOUT_SECONDS,
-    metadata_limit_bytes: int = DEFAULT_METADATA_LIMIT_BYTES,
-    tarball_limit_bytes: int = DEFAULT_TARBALL_LIMIT_BYTES,
-    expanded_tarball_limit_bytes: int = DEFAULT_EXPANDED_TARBALL_LIMIT_BYTES,
-    max_pages: int = DEFAULT_MAX_PAGES,
-) -> ProjectionObservation:
-    """Observe exact GitHub Packages state through bounded injectable reads."""
-    validate_observation_bounds(
-        timeout=timeout,
-        max_bytes=metadata_limit_bytes,
-        max_pages=max_pages,
-    )
-    _positive_exact_int(tarball_limit_bytes, field="tarball_limit_bytes")
-    _positive_exact_int(
-        expanded_tarball_limit_bytes,
-        field="expanded_tarball_limit_bytes",
-    )
-    _token(token)
-    _attempt, projection = _validate_first_slice_basis(
-        snapshot,
-        decision,
-        artifact,
-        expectation,
-    )
-    first_url = github_package_versions_url(
-        owner=GITHUB_PACKAGES_OWNER,
-        package_name=GITHUB_PACKAGES_PACKAGE,
-        page=1,
-        per_page=GITHUB_PAGE_SIZE,
-    )
-    request_facts = ObservationRequestFacts(
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-        projection_digest=projection.projection_digest,
-        desired_state_digest=desired_projection_state_digest(
-            snapshot,
-            projection.projection_id,
-            artifact,
-        ),
-        method="GET",
-        url=first_url,
-        headers=_retained_github_headers(),
-    )
-    exchanges: list[_Exchange] = []
-    rest_version: str | None = None
-    rest_owner: str | None = None
-    rest_package_absent = False
-
-    url = first_url
-    for _page_index in range(1, max_pages + 1):
-        try:
-            response = cast(
-                "GitHubPackagesHttpResponse",
-                transport.get(
-                    url,
-                    headers=_github_transport_headers(token),
-                    timeout=float(timeout),
-                    max_bytes=metadata_limit_bytes,
-                ),
-            )
-        except GitHubPackagesPolicyError:
-            exchanges.append(_synthetic_exchange("rest", url, "off-policy"))
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(),
-                classification="unprovable",
-            )
-        except (
-            GitHubPackagesTimeoutError,
-            GitHubPackagesNetworkError,
-            OSError,
-        ):
-            exchanges.append(_synthetic_exchange("rest", url, "network-error"))
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(),
-                classification="unknown",
-            )
-        if type(response) is not GitHubPackagesHttpResponse:
-            message = "GitHub Packages transport returned a malformed response"
-            raise TypeError(message)
-        exchanges.append(_exchange("rest", url, response))
-        status_class = _status_classification(response)
-        if status_class is not None:
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(),
-                classification=status_class,
-            )
-        if not _response_policy_ok(
-            response,
-            requested_url=url,
-            stage="rest",
-            credentialed=True,
-        ):
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(),
-                classification="unprovable",
-            )
-        if response.status == HTTP_NOT_FOUND:
-            rest_package_absent = True
-            break
-        if response.status != HTTP_OK or not _identity_encoding(response):
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(),
-                classification="unprovable",
-            )
-        try:
-            document = _json(response, field="GitHub versions response")
-        except ValueError:
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(),
-                classification="unprovable",
-            )
-        if not isinstance(document, list):
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(),
-                classification="unprovable",
-            )
-        page_versions = document
-        try:
-            next_url = _github_link_next_url(response, requested_url=url)
-        except GitHubPackagesPolicyError:
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(),
-                classification="unprovable",
-            )
-        for item in page_versions:
-            if not isinstance(item, dict) or type(item.get("name")) is not str:
-                return _projection_observation(
-                    snapshot=snapshot,
-                    artifact=artifact,
-                    projection=projection,
-                    request_facts=request_facts,
-                    exchanges=tuple(exchanges),
-                    facts=_RemoteFacts(),
-                    classification="unprovable",
-                )
-            if item["name"] == projection.coordinate.native_version:
-                if rest_version is not None:
-                    return _projection_observation(
-                        snapshot=snapshot,
-                        artifact=artifact,
-                        projection=projection,
-                        request_facts=request_facts,
-                        exchanges=tuple(exchanges),
-                        facts=_RemoteFacts(),
-                        classification="unprovable",
-                    )
-                rest_version = cast("str", item["name"])
-                rest_owner = _rest_owner(item)
-        if next_url is None:
-            break
-        url = next_url
-    else:
-        exchanges.append(
-            _synthetic_exchange("rest", first_url, "pagination-incomplete")
-        )
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=_RemoteFacts(rest_version=rest_version),
-            classification="unknown",
-        )
-
-    package_url = _npm_package_metadata_url(GITHUB_PACKAGES_PACKAGE)
-    exact_url = npm_exact_metadata_url(
-        GITHUB_PACKAGES_PACKAGE,
-        projection.coordinate.native_version,
-    )
-    npm_documents: dict[str, dict[str, JsonValue] | None] = {}
-    for stage, url in (("npm-tags", package_url), ("npm-metadata", exact_url)):
-        try:
-            response = cast(
-                "GitHubPackagesHttpResponse",
-                transport.get(
-                    url,
-                    headers=_npm_transport_headers(token),
-                    timeout=float(timeout),
-                    max_bytes=metadata_limit_bytes,
-                ),
-            )
-        except GitHubPackagesPolicyError:
-            exchanges.append(_synthetic_exchange(stage, url, "off-policy"))
-            classification = "unprovable"
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(rest_version=rest_version),
-                classification=classification,
-            )
-        except (
-            GitHubPackagesTimeoutError,
-            GitHubPackagesNetworkError,
-            OSError,
-        ):
-            exchanges.append(_synthetic_exchange(stage, url, "network-error"))
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(rest_version=rest_version),
-                classification="unknown",
-            )
-        if type(response) is not GitHubPackagesHttpResponse:
-            message = "GitHub Packages transport returned a malformed response"
-            raise TypeError(message)
-        exchanges.append(_exchange(stage, url, response))
-        status_class = _status_classification(response)
-        if status_class is not None:
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(rest_version=rest_version),
-                classification=status_class,
-            )
-        if not _response_policy_ok(
-            response,
-            requested_url=url,
-            stage=stage,
-            credentialed=True,
-        ):
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(rest_version=rest_version),
-                classification="unprovable",
-            )
-        if response.status == HTTP_NOT_FOUND:
-            npm_documents[stage] = None
-            continue
-        if response.status != HTTP_OK or not _identity_encoding(response):
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(rest_version=rest_version),
-                classification="unprovable",
-            )
-        try:
-            document = _json(response, field=stage)
-        except ValueError:
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(rest_version=rest_version),
-                classification="unprovable",
-            )
-        if not isinstance(document, dict):
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(rest_version=rest_version),
-                classification="unprovable",
-            )
-        npm_documents[stage] = document
-
-    package_document = npm_documents["npm-tags"]
-    exact_document = npm_documents["npm-metadata"]
-    tag_version: str | None = None
-    target_tag_present = False
-    if package_document is not None:
-        if package_document.get("name") != GITHUB_PACKAGES_PACKAGE:
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(rest_version=rest_version),
-                classification="conflicting",
-            )
-        tags = package_document.get("dist-tags")
-        if not isinstance(tags, dict):
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(rest_version=rest_version),
-                classification="unprovable",
-            )
-        tag = tags.get(_target_tag(snapshot.target))
-        if tag is not None and type(tag) is not str:
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(rest_version=rest_version),
-                classification="unprovable",
-            )
-        tag_version = cast("str | None", tag)
-        target_tag_present = tag is not None
-
-    npm_version: str | None = None
-    repository: str | None = None
-    if exact_document is not None:
-        name = exact_document.get("name")
-        version = exact_document.get("version")
-        if name != GITHUB_PACKAGES_PACKAGE or type(version) is not str:
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(
-                    rest_version=rest_version,
-                    tag_version=tag_version,
-                    target_tag_present=target_tag_present,
-                ),
-                classification="conflicting",
-            )
-        npm_version = cast("str", version)
-        if npm_version != projection.coordinate.native_version:
-            return _projection_observation(
-                snapshot=snapshot,
-                artifact=artifact,
-                projection=projection,
-                request_facts=request_facts,
-                exchanges=tuple(exchanges),
-                facts=_RemoteFacts(
-                    rest_version=rest_version,
-                    npm_version=npm_version,
-                    tag_version=tag_version,
-                    target_tag_present=target_tag_present,
-                ),
-                classification="conflicting",
-            )
-        repository = _repository_from_metadata(exact_document)
-
-    facts = _RemoteFacts(
-        rest_version=rest_version,
-        npm_version=npm_version,
-        owner=rest_owner,
-        repository=repository,
-        tag_version=tag_version,
-        target_tag_present=target_tag_present,
-    )
-    if rest_owner == "ambiguous" or repository == "ambiguous":
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification="unprovable",
-        )
-    if rest_owner not in {None, GITHUB_PACKAGES_OWNER} or repository not in {
-        None,
-        GITHUB_PACKAGES_REPOSITORY,
-    }:
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification="conflicting",
-        )
-    if bool(rest_version) != bool(npm_version):
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification="unknown",
-        )
-    if rest_version is None:
-        classification = "conflicting" if target_tag_present else "absent"
-        if not rest_package_absent and exact_document is None:
-            classification = "conflicting" if target_tag_present else "absent"
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification=classification,
-        )
-    if exact_document is None:
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification="unknown",
-        )
-    dist = exact_document.get("dist")
-    if not isinstance(dist, dict) or type(dist.get("tarball")) is not str:
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification="unprovable",
-        )
-    tarball_url = cast("str", dist["tarball"])
-    if not _allowed_url(tarball_url, stage="tarball"):
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification="unprovable",
-        )
-    tarball_headers = redirect_headers(
-        source_url=exact_url,
-        target_url=tarball_url,
-        headers=_npm_transport_headers(token, tarball=True),
-    )
-    credentialed_tarball = any(
-        name.lower() == "authorization" for name, _value in tarball_headers
-    )
-    try:
-        tarball_response = cast(
-            "GitHubPackagesHttpResponse",
-            transport.get(
-                tarball_url,
-                headers=tarball_headers,
-                timeout=float(timeout),
-                max_bytes=tarball_limit_bytes,
-            ),
-        )
-    except GitHubPackagesPolicyError:
-        exchanges.append(
-            _synthetic_exchange("tarball", tarball_url, "off-policy")
-        )
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification="unprovable",
-        )
-    except (GitHubPackagesTimeoutError, GitHubPackagesNetworkError, OSError):
-        exchanges.append(
-            _synthetic_exchange("tarball", tarball_url, "network-error")
-        )
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification="unknown",
-        )
-    if type(tarball_response) is not GitHubPackagesHttpResponse:
-        message = "GitHub Packages transport returned a malformed response"
-        raise TypeError(message)
-    exchanges.append(_exchange("tarball", tarball_url, tarball_response))
-    status_class = _status_classification(tarball_response)
-    if status_class is not None:
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification=status_class,
-        )
-    if not _response_policy_ok(
-        tarball_response,
-        requested_url=tarball_url,
-        stage="tarball",
-        credentialed=credentialed_tarball,
-    ):
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification="unprovable",
-        )
-    if tarball_response.status != HTTP_OK or not _identity_encoding(
-        tarball_response
-    ):
-        return _projection_observation(
-            snapshot=snapshot,
-            artifact=artifact,
-            projection=projection,
-            request_facts=request_facts,
-            exchanges=tuple(exchanges),
-            facts=facts,
-            classification="unprovable",
-        )
-    remote = _remote_tarball_observation(
-        tarball_response.body,
-        artifact=artifact,
-        expectation=expectation,
-        expanded_limit_bytes=expanded_tarball_limit_bytes,
-    )
-    facts = _RemoteFacts(
-        rest_version=rest_version,
-        npm_version=npm_version,
-        owner=rest_owner,
-        repository=repository,
-        tag_version=tag_version,
-        target_tag_present=target_tag_present,
-        content_sha512=remote.content_sha512,
-        witness_digest=remote.witness_digest,
-    )
-    if remote.classification != "exact-satisfied":
-        classification = remote.classification
-    elif not target_tag_present:
-        classification = "partial"
-    elif tag_version != projection.coordinate.native_version:
-        classification = "conflicting"
-    else:
-        classification = "exact-satisfied"
-    return _projection_observation(
-        snapshot=snapshot,
-        artifact=artifact,
-        projection=projection,
-        request_facts=request_facts,
-        exchanges=tuple(exchanges),
-        facts=facts,
-        classification=classification,
-    )
-
-
-def _runner_result(
-    raw: object,
-    *,
-    command: tuple[str, ...],
-    token: str,
-) -> PublishCommandResult:
-    if isinstance(raw, PublishCommandResult):
-        exit_code = raw.exit_code
-        stdout = raw.stdout
-        stderr = raw.stderr
-    elif isinstance(raw, dict):
-        exit_code = raw.get("exit_code")
-        stdout = raw.get("stdout", "")
-        stderr = raw.get("stderr", "")
-    else:
-        exit_code = getattr(raw, "exit_code", getattr(raw, "returncode", None))
-        stdout = getattr(raw, "stdout", "")
-        stderr = getattr(raw, "stderr", "")
-    if type(exit_code) is not int:
-        message = "npm publish runner omitted an exact exit code"
-        raise TypeError(message)
-    if type(stdout) is not str or type(stderr) is not str:
-        message = "npm publish runner output must be exact strings"
-        raise TypeError(message)
-    text = f"{stdout}\n{stderr}".lower()
-    if exit_code == 0:
-        outcome = "success"
-    elif any(
-        marker in text
-        for marker in ("e409", "epublishconflict", "cannot publish over")
-    ):
-        outcome = "create-conflict"
-    else:
-        outcome = "failed"
-    return PublishCommandResult(
-        outcome=outcome,
-        exit_code=exit_code,
-        stdout=redact_diagnostic(stdout, secrets=(token,)),
-        stderr=redact_diagnostic(stderr, secrets=(token,)),
-        command=tuple(_REDACTED if item == token else item for item in command),
-    )
-
-
-def _write_private_npm_config(path: Path, token: str) -> None:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    descriptor = os.open(path, flags, stat.S_IRUSR | stat.S_IWUSR)
-    try:
-        with os.fdopen(
-            descriptor,
-            "w",
-            encoding="utf-8",
-            newline="\n",
-        ) as stream:
-            stream.write(
-                f"//npm.pkg.github.com/:_authToken={token}\n"
-                "always-auth=true\n"
-                "registry=https://npm.pkg.github.com\n"
-                "ignore-scripts=true\n"
-            )
-    except BaseException:
-        path.unlink(missing_ok=True)
-        raise
-    if stat.S_IMODE(path.stat().st_mode) != PRIVATE_CONFIG_MODE:
-        path.unlink(missing_ok=True)
-        message = "temporary npm config mode is not 0600"
-        raise PermissionError(message)
-
-
-def _validate_publish_preconditions(  # noqa: PLR0913
-    *,
-    publication_snapshot: PublicationSnapshot,
-    authorization: PublicationAuthorization,
-    action: PublicationAction,
-    qualification_snapshot: QualificationSnapshot,
-    qualification_decision: QualificationDecision,
-    artifact: ReleaseArtifact,
-    expectation: ArtifactExpectation,
-) -> None:
-    if (
-        type(publication_snapshot) is not PublicationSnapshot
-        or type(authorization) is not PublicationAuthorization
-        or type(action) is not PublicationAction
-        or type(qualification_snapshot) is not QualificationSnapshot
-        or type(qualification_decision) is not QualificationDecision
-        or type(artifact) is not ReleaseArtifact
-        or type(expectation) is not ArtifactExpectation
-    ):
-        message = "publication precondition record has the wrong type"
-        raise TypeError(message)
-    attempt = publication_snapshot.attempt
-    expected_control = f"workflow-delivery-v3:{attempt.execution.target}"
-    _validate_artifact_expectation(expectation)
-    actions = publication_snapshot.materialized_actions
-    if (
-        authorization.attempt != attempt
-        or authorization.control != expected_control
-        or authorization.approval_bundle.publication_snapshot
-        != publication_snapshot
-        or authorization.approval_bundle.qualification_decision
-        != qualification_decision
-        or not authorization.authorizing
-        or action not in actions
-        or authorization.action != action
-        or action.projection.destination_id != GITHUB_PACKAGES_DESTINATION_ID
-        or action.operation != GITHUB_PACKAGES_OPERATION
-        or qualification_snapshot.subject != attempt
-        or qualification_snapshot.snapshot_digest
-        != publication_snapshot.qualification_snapshot_digest
-        or qualification_decision.subject != attempt
-        or qualification_decision.qualification_snapshot_digest
-        != qualification_snapshot.snapshot_digest
-        or qualification_decision.decision_digest
-        != publication_snapshot.qualification_decision_digest
-        or qualification_decision.terminal_result != "success"
-        or qualification_decision.admitted_artifact_digests
-        != tuple(
-            candidate.artifact_digest
-            for candidate in publication_snapshot.materialized_actions
-        )
-        or artifact != action.artifact
-        or artifact.qualification_snapshot_digest
-        != qualification_snapshot.snapshot_digest
-        or artifact.artifact_digest != action.artifact_digest
-        or artifact.output != action.artifact_output
-        or action.projection
-        not in qualification_snapshot.destination_projections
-        or action.projection.output not in qualification_snapshot.outputs
-        or expectation.package_name != action.projection.coordinate.package_name
-        or expectation.npm_package_version
-        != action.projection.coordinate.native_version
-        or expectation.lifecycle_scripts != artifact.lifecycle_scripts
-        or expectation.entry_allowlist != artifact.entries
-        or f"sha256:{hashlib.sha256(expectation.witness_bytes).hexdigest()}"
-        != artifact.witness_digest
-    ):
-        message = "publication precondition binding mismatch"
-        raise ValueError(message)
-
-
 def _validate_local_tarball_preconditions(
     *,
     tarball: Path,
@@ -3847,7 +3041,14 @@ def _validate_local_tarball_preconditions(
     ):
         message = "publication tarball SHA-512 binding mismatch"
         raise ValueError(message)
-    manifest = qualify_npm_artifact_contents(content, expectation)
+    manifest = _qualify_npm_artifact_entries(
+        content,
+        _read_tarball(
+            content,
+            max_payload_bytes=expanded_tarball_limit_bytes,
+        ),
+        expectation,
+    )
     if (
         manifest.basename != artifact.content.basename
         or manifest.byte_size != artifact.content.byte_size
@@ -3860,256 +3061,15 @@ def _validate_local_tarball_preconditions(
         raise ValueError(message)
 
 
-def classify_publish_result(
-    *,
-    command_outcome: str,
-    post_observation: str,
-    receipt: Receipt | None,
-) -> PublishClassification:
-    """Apply pure create-only race and uncertainty semantics."""
-    if command_outcome == "created":
-        if post_observation == "exact-satisfied" and receipt is not None:
-            return PublishClassification(
-                "success",
-                "created",
-                receipt.receipt_digest,
-            )
-        return PublishClassification("incomplete", "possibly-mutated", None)
-    if command_outcome == "create-conflict":
-        return PublishClassification("failed", "no-side-effect", None)
-    if command_outcome == "lost-response":
-        return PublishClassification("incomplete", "possibly-mutated", None)
-    return PublishClassification("incomplete", "possibly-mutated", None)
-
-
-def _action_result(  # noqa: PLR0913
-    *,
-    publication_snapshot: PublicationSnapshot,
-    action: PublicationAction,
-    classification: PublishClassification,
-    response_identity_digest: str | None,
-    receipt: Receipt | None,
-    diagnostic_reference: str | None,
-    control: str,
-) -> ActionResult:
-    attempt = publication_snapshot.attempt
-    return ActionResult(
-        attempt=attempt,
-        publication_snapshot_digest=publication_snapshot.snapshot_digest,
-        action_id=action.action_id,
-        action_digest=action.action_digest,
-        lock_group=action.lock_group,
-        outcome=classification.outcome,
-        mutation_disposition=classification.mutation_disposition,
-        response_identity_digest=response_identity_digest,
-        receipt=receipt,
-        diagnostic_reference=diagnostic_reference,
-        producer=GITHUB_PACKAGES_PUBLISHER_PRODUCER,
-        control=control,
-        workflow_run_id=attempt.workflow_run_id,
-    )
-
-
-def _response_identity(
-    command: PublishCommandResult,
-    observation: ProjectionObservation,
-) -> str:
-    return canonical_sha256(
-        {
-            "schema": "workflow-delivery/v3/github-packages-publish-response",
-            "command": {
-                "outcome": command.outcome,
-                "exit-code": command.exit_code,
-                "stdout": command.stdout,
-                "stderr": command.stderr,
-                "argv": list(command.command),
-            },
-            "observation-digest": observation.observation_digest,
-        }
-    )
-
-
-def _npm_configuration_digest(
-    *,
-    action: PublicationAction,
-    target: str,
-) -> str:
-    return canonical_sha256(
-        {
-            "schema": "workflow-delivery/v3/github-packages-npm-config",
-            "registry": GITHUB_PACKAGES_REGISTRY,
-            "tag": _target_tag(target),
-            "ignore-scripts": True,
-            "operation": action.operation,
-            "coordinate": action.projection.coordinate.to_document(),
-        }
-    )
-
-
-def preflight_github_packages_action(  # noqa: PLR0913
-    *,
-    publication_snapshot: PublicationSnapshot,
-    authorization: PublicationAuthorization,
-    action: PublicationAction,
-    qualification_snapshot: QualificationSnapshot,
-    qualification_decision: QualificationDecision,
-    artifact: ReleaseArtifact,
-    expectation: ArtifactExpectation,
-) -> Never:
-    """Validate the authority closure, then reject the missing primitive."""
-    _validate_publish_preconditions(
-        publication_snapshot=publication_snapshot,
-        authorization=authorization,
-        action=action,
-        qualification_snapshot=qualification_snapshot,
-        qualification_decision=qualification_decision,
-        artifact=artifact,
-        expectation=expectation,
-    )
-    message = (
-        "The conditional GitHub Packages version-and-tag primitive is not "
-        "implemented; normal Live remains activation-blocked"
-    )
-    raise UnsupportedPublicationPrimitiveError(message)
-
-
-def form_mutation_may_have_started_marker(
-    *,
-    preflight: GitHubPackagesPublishPreflight,
-) -> MutationMayHaveStartedMarker:
-    """Form the immutable marker persisted before npm may be invoked."""
-    if type(preflight) is not GitHubPackagesPublishPreflight:
-        message = "mutation marker requires an exact preflight"
-        raise TypeError(message)
-    return MutationMayHaveStartedMarker(
-        attempt=preflight.attempt,
-        publication_snapshot_digest=preflight.publication_snapshot_digest,
-        action_digest=preflight.action_digest,
-        lock_group=preflight.lock_group,
-        preflight_digest=preflight.preflight_digest,
-    )
-
-
-def _admit_mutation_marker(  # noqa: PLR0913
-    *,
-    tarball: Path,
-    target: str,
-    publication_snapshot: PublicationSnapshot,
-    action: PublicationAction,
-    preflight: GitHubPackagesPublishPreflight,
-    mutation_marker: MutationMayHaveStartedMarker,
-) -> None:
-    if (
-        type(preflight) is not GitHubPackagesPublishPreflight
-        or type(mutation_marker) is not MutationMayHaveStartedMarker
-        or preflight.attempt != publication_snapshot.attempt
-        or preflight.publication_snapshot_digest
-        != publication_snapshot.snapshot_digest
-        or preflight.action_digest != action.action_digest
-        or preflight.lock_group != action.lock_group
-        or preflight.npm_configuration_digest
-        != _npm_configuration_digest(action=action, target=target)
-        or mutation_marker.attempt != preflight.attempt
-        or mutation_marker.publication_snapshot_digest
-        != preflight.publication_snapshot_digest
-        or mutation_marker.action_digest != preflight.action_digest
-        or mutation_marker.lock_group != preflight.lock_group
-        or mutation_marker.preflight_digest != preflight.preflight_digest
-    ):
-        message = "mutation-start marker admission failed"
-        raise ValueError(message)
-    content = tarball.read_bytes()
-    if (
-        f"sha256:{hashlib.sha256(content).hexdigest()}"
-        != preflight.tarball_sha256
-        or f"sha512:{hashlib.sha512(content).hexdigest()}"
-        != preflight.tarball_sha512
-    ):
-        message = "mutation-start tarball bytes changed after preflight"
-        raise ValueError(message)
-
-
-def publish_github_packages_action(  # noqa: PLR0913
-    *,
-    tarball: Path,
-    target: str,
-    token: str,
-    runner: PublishRunner,
-    temp_root: Path,
-    transport: GitHubPackagesTransport | object = _MISSING,
-    publication_snapshot: PublicationSnapshot | object = _MISSING,
-    authorization: PublicationAuthorization | object = _MISSING,
-    action: PublicationAction | object = _MISSING,
-    qualification_snapshot: QualificationSnapshot | object = _MISSING,
-    qualification_decision: QualificationDecision | object = _MISSING,
-    artifact: ReleaseArtifact | object = _MISSING,
-    expectation: ArtifactExpectation | object = _MISSING,
-    preflight: GitHubPackagesPublishPreflight | object = _MISSING,
-    mutation_marker: MutationMayHaveStartedMarker | object = _MISSING,
-    governance_source: GovernanceSource | object = _MISSING,
-    governance_client: GovernanceSourceClient | object = _MISSING,
-    governance_observed_at: datetime | Callable[[], datetime] | object = (
-        _MISSING
-    ),
-    defer_receipt_binding: bool = False,
-    checkout_root: Path | None = None,
-) -> (
-    PublishCommandResult
-    | PublicationExecutionResult
-    | DeferredPublicationExecutionResult
-):
-    """Reject publication until the conditional primitive is implemented."""
-    _ = (
-        tarball,
-        target,
-        token,
-        runner,
-        temp_root,
-        transport,
-        publication_snapshot,
-        authorization,
-        action,
-        qualification_snapshot,
-        qualification_decision,
-        artifact,
-        expectation,
-        preflight,
-        mutation_marker,
-        governance_source,
-        governance_client,
-        governance_observed_at,
-        defer_receipt_binding,
-        checkout_root,
-    )
-    message = (
-        "The conditional GitHub Packages version-and-tag primitive is not "
-        "implemented; normal Live remains activation-blocked"
-    )
-    raise UnsupportedPublicationPrimitiveError(message)
-
-
-def validate_receipt_response_bindings(
-    *,
-    receipt: Receipt,
-    expected_receipt: Receipt,
-    expected_response_identity_digest: str,
-) -> None:
-    """Reject any Receipt/action/artifact/response substitution."""
-    if receipt != expected_receipt:
-        message = "Receipt binding mismatch"
-        raise ValueError(message)
-    if receipt.response_identity_digest != expected_response_identity_digest:
-        message = "Receipt response identity binding mismatch"
-        raise ValueError(message)
-
-
 __all__ = [  # noqa: RUF022
     "DEFAULT_MAX_PAGES",
     "DEFAULT_METADATA_LIMIT_BYTES",
     "DEFAULT_TARBALL_LIMIT_BYTES",
     "DEFAULT_TIMEOUT_SECONDS",
-    "DeferredPublicationExecutionResult",
     "GITHUB_PACKAGES_DESTINATION_ID",
+    "GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE_ID",
+    "GITHUB_PACKAGES_NODE_VERSION",
+    "GITHUB_PACKAGES_NPM_VERSION",
     "GITHUB_PACKAGES_OBSERVATION_CONTRACT_ID",
     "GITHUB_PACKAGES_OPERATION",
     "GITHUB_PACKAGES_PACKAGE",
@@ -4119,26 +3079,14 @@ __all__ = [  # noqa: RUF022
     "GitHubPackagesPolicyError",
     "GitHubPackagesTimeoutError",
     "GitHubPackagesTransport",
-    "GitHubPackagesPublishPreflight",
-    "MutationMayHaveStartedMarker",
-    "ProbeClassification",
-    "PublicationExecutionResult",
-    "PublisherGovernanceRecheckRejectionError",
-    "PublishClassification",
-    "PublishCommandResult",
-    "PublishRunner",
-    "classify_github_packages_probe",
-    "classify_publish_result",
-    "classify_rest_npm_consistency",
     "github_api_headers",
+    "github_packages_destination_operation_profile",
     "github_package_versions_url",
     "npm_exact_metadata_url",
-    "observe_github_packages_projection",
-    "form_mutation_may_have_started_marker",
-    "preflight_github_packages_action",
-    "publish_github_packages_action",
+    "GitHubPackagesActiveState",
+    "read_github_packages_active_state",
     "redact_diagnostic",
     "redirect_headers",
     "validate_observation_bounds",
-    "validate_receipt_response_bindings",
+    "validate_github_packages_publication_action",
 ]

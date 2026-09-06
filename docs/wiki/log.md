@@ -3466,3 +3466,62 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - No runtime code, workflow, protected Governance, Environment, package, tag,
   approval, deployment, dispatch, or other external resource changed. Design
   delivery and disabled implementation remain next.
+
+## [2026-09-05] design | Deliver Publication and Finalizer design
+
+- Delivered the dependency-ordered design package through PR #652. Reviewed
+  head `00625f278a646c3a5dcde733900def432b8a62d2` was squash-merged as
+  `0b2029b5c5735fa4c7dbf4de3195903770a7df3a` with exact parent
+  `db5d9f053baf2c16cd32a1e9e9aae38ffb8c2b74`; reviewed and protected trees
+  are identical.
+- Continuous Integration, Workflow Delivery v3 CI, and CodeQL passed on the
+  final PR head. Post-merge Continuous Integration run `33930992351` passed on
+  the protected merge SHA. The documentation-only push correctly created no
+  CodeQL run because `codeql.yml` ignores `**/*.md`; the exact reviewed tree
+  had already passed PR CodeQL.
+- Copilot review candidates were independently adjudicated one issue at a
+  time. True positives corrected run-details dispatch, transitive resource
+  ownership, target/current-state wording, retry posture, embedded
+  Package-Control Proof ownership, and two list defects. Two pre-Snapshot
+  Publisher-start claims were rejected because they violate the required
+  Approval-to-Authorization-to-Snapshot topology. Final rereview generated no
+  comments.
+- Began the disabled implementation phase from exact protected revision
+  `0b2029b5c5735fa4c7dbf4de3195903770a7df3a`. Protected Governance remains v1
+  with `live_enabled: false`; no Environment, package, tag, approval,
+  deployment, dispatch, or other operational external resource changed.
+
+## [2026-09-06] query | Complete disabled Publication and Finalizer implementation
+
+- Completed the dependency-ordered implementation through
+  `6ff0008223c60424805a79aeec9c3bdadf05555b`, based on protected design revision
+  `0b2029b5c5735fa4c7dbf4de3195903770a7df3a`.
+- Implemented strict blocked Governance v2, full qualified Observation
+  admission, active-only GitHub Packages readback, fresh exact-satisfied
+  finalization proof, and profile-bound one-shot npm publication.
+- Wired immutable marker and Publication Result persistence, the nullable
+  scalar terminal reference, direct platform publication-step outcome, and the
+  read-only current-DAG Finalizer with one tagged predecessor. Removed Receipt,
+  ActionResult, and superseded marker, proof, and Outcome contracts without
+  compatibility aliases.
+- Each component passed applicable validation, independent OCR review, atomic
+  TP/FP adjudication, clean rereview, and contraction. The last component's
+  complete v3 gate passed 4,192 tests. Whole-group delivery review and protected
+  delivery remain separate gates.
+- Synchronized the README, handoff, overview, index, and first-slice LLD.
+  Current-state pages distinguish implementation from native acceptance and
+  activation and require live Git/PR inspection before delivery actions.
+- Preserved the original Governance inspection facts and dates while migrating
+  its local schema and blocked shape. The live flag remains false and the
+  native-acceptance generation registry remains empty. No operational external
+  mutation or normal-Live dispatch occurred during implementation.
+- Whole-group OCR identified a safe tarball-redirect rejection. Independent
+  reproduction confirmed that the concrete transport removed cross-origin
+  credentials correctly but an upper-layer veto still rejected the response.
+  Removed the redundant veto, retained stage-specific URL admission, and added
+  one real-transport active-readback regression. The original-role rereview
+  closed the finding after the corrected full gate passed 4,193 tests.
+- Final contraction identified one redundant CLI constructor-string test.
+  Independent adjudication confirmed that existing CLI scenarios and the new
+  redirect scenario retain its behavioral coverage; removed that test and its
+  unused import without adding a new abstraction or test matrix.

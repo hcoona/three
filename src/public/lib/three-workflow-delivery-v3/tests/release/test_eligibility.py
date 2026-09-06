@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from three_workflow_delivery_v3.adapters.github_packages import (
+    github_packages_destination_operation_profile,
+)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
@@ -149,7 +152,7 @@ WORKFLOW_RUN_ID = 7101
 PREFIXED_SHA256_LENGTH = 71
 FRESH_SOURCE_CALL_COUNT = 2
 MINIMUM_RETENTION_DAYS = 45
-TEST_DESTINATION_PRIMITIVE_ID = "test/conditional-version-and-tag-v1"
+TEST_DESTINATION_PRIMITIVE_ID = "test/native-acceptance-suite-v2"
 EXPECTED_STATIC_REFERENCE_ERROR_KINDS = (
     "source-acquisition-failed",
     "encoding-rejected",
@@ -388,21 +391,14 @@ def _compiled_snapshot(tmp_path: Path) -> RepositoryModelSnapshot:
 
 
 def _blocked_activation() -> dict[str, JsonValue]:
-    return {
-        "state": "blocked",
-        "blockers": [
-            "destination-primitive-unproven",
-            "fresh-native-evidence-required",
-            "repository-retention-readback-required",
-        ],
-    }
+    return {"state": "blocked"}
 
 
 def _ready_activation(
     *,
     primitive_id: str = TEST_DESTINATION_PRIMITIVE_ID,
+    captured_at: str = "2026-08-01T00:00:00Z",
 ) -> dict[str, JsonValue]:
-    captured_at = "2026-01-01T00:00:00Z"
     return {
         "state": "ready",
         "approval_environment": {
@@ -444,18 +440,19 @@ def _ready_activation(
             "response_digest": "sha256:" + ("2" * 64),
         },
         "destination_primitive": {
-            "primitive_id": primitive_id,
-            "operation": ("conditional-create-npm-version-and-target-tag"),
+            "destination_operation_profile_digest": (
+                github_packages_destination_operation_profile().profile_digest
+            ),
+            "native_acceptance_suite_version": primitive_id,
+            "disposable_package_preconditions": {
+                "package": "@hcoona/test-native-acceptance",
+                "preexisting_container": True,
+                "operator_controlled": True,
+                "production_dependency": False,
+            },
+            "github_api_version": "2026-03-10",
+            "lower_layer_contract_revision": "test/npm-github-contract-v2",
             "captured_at": captured_at,
-            "race_inputs": [
-                ["coordinate", FIRST_SLICE_PACKAGE],
-                ["target-tag", "buddy-sha-" + TARGET],
-                ["version", "1.2.3"],
-            ],
-            "race_results": [
-                ["conflicting-tag-preserved", "pass"],
-                ["target-version-remained-absent", "pass"],
-            ],
             "evidence_digest": "sha256:" + ("3" * 64),
         },
     }
@@ -464,7 +461,7 @@ def _ready_activation(
 def _attestation_document(**updates: JsonValue) -> dict[str, JsonValue]:
     document: dict[str, JsonValue] = {
         "schema": (
-            "workflow-delivery/v3/normal-live-governance-attestation-v1"
+            "workflow-delivery/v3/normal-live-governance-attestation-v2"
         ),
         "release_policy": "hcoona-release-smoke-npm",
         "package": FIRST_SLICE_PACKAGE,
@@ -501,7 +498,9 @@ def _attestation_document(**updates: JsonValue) -> dict[str, JsonValue]:
     }
     document.update(updates)
     if updates.get("live_enabled") is True and "activation" not in updates:
-        document["activation"] = _ready_activation()
+        inspected_at = document["inspected_at"]
+        assert isinstance(inspected_at, str)
+        document["activation"] = _ready_activation(captured_at=inspected_at)
     elif updates.get("live_enabled") is False and "activation" not in updates:
         document["activation"] = _blocked_activation()
     return document
@@ -515,11 +514,23 @@ def _admit_test_destination_primitive(
     monkeypatch: pytest.MonkeyPatch,
     *,
     primitive_id: str = TEST_DESTINATION_PRIMITIVE_ID,
+    primitive: eligibility.DestinationPrimitiveAttestation | None = None,
 ) -> None:
+    if primitive is None:
+        attestation = parse_governance_attestation(
+            _attestation_content(
+                live_enabled=True,
+                activation=_ready_activation(primitive_id=primitive_id),
+            )
+        )
+        assert isinstance(
+            attestation.activation, eligibility.EnabledGovernanceActivation
+        )
+        primitive = attestation.activation.destination_primitive
     monkeypatch.setattr(
         eligibility,
         "_ADMITTED_DESTINATION_PRIMITIVE_IDS",
-        frozenset({primitive_id}),
+        frozenset({primitive.admission_key}),
     )
 
 
@@ -949,7 +960,7 @@ def test_evaluator_output_round_trips_through_strict_live_admission(
     activation = admitted.governance.attestation.activation
     assert isinstance(activation, eligibility.EnabledGovernanceActivation)
     assert (
-        activation.destination_primitive.primitive_id
+        activation.destination_primitive.native_acceptance_suite_version
         == TEST_DESTINATION_PRIMITIVE_ID
     )
     assert admitted.governance.provenance == (
@@ -1733,7 +1744,10 @@ def test_live_eligibility_blocks_enabled_governance_without_local_primitive(
 
     assert decision.result is EligibilityResult.BLOCKED
     assert decision.diagnostics == ("destination-primitive-unproven",)
-    assert primitive["primitive_id"] == TEST_DESTINATION_PRIMITIVE_ID
+    assert (
+        primitive["native_acceptance_suite_version"]
+        == TEST_DESTINATION_PRIMITIVE_ID
+    )
     assert decision.governance.attestation.live_enabled is True
 
 
@@ -1825,7 +1839,7 @@ def test_other_primitive_ids_cannot_pass_when_test_primitive_is_admitted(
     document["result"] = "pass"
     document["diagnostics"] = []
 
-    assert primitive["primitive_id"] == primitive_id
+    assert primitive["native_acceptance_suite_version"] == primitive_id
     assert decision.result is EligibilityResult.BLOCKED
     assert decision.diagnostics == ("destination-primitive-unproven",)
     with pytest.raises(
@@ -3017,7 +3031,7 @@ _HUMAN_EVIDENCE_MESSAGES = {
 }
 _PRESERVED_HUMAN_EVIDENCE_POSITIONS = ("limitations[0]",)
 _FIXED_CANONICAL_VALUES = {
-    "schema": ("workflow-delivery/v3/normal-live-governance-attestation-v1"),
+    "schema": ("workflow-delivery/v3/normal-live-governance-attestation-v2"),
     "release_policy": "hcoona-release-smoke-npm",
     "package": FIRST_SLICE_PACKAGE,
     "accepted_writers[0].role": "Admin",
@@ -3562,6 +3576,276 @@ def test_disabled_attestation_requires_exact_blocked_activation() -> None:
     assert attestation.to_document() == document
 
 
+@pytest.mark.parametrize("live_enabled", [False, True])
+def test_governance_v1_is_not_an_admission_alias(*, live_enabled: bool) -> None:
+    """Reject the superseded schema regardless of otherwise valid v2 facts."""
+    document = _attestation_document(live_enabled=live_enabled)
+    document["schema"] = (
+        "workflow-delivery/v3/normal-live-governance-attestation-v1"
+    )
+    with pytest.raises(ValueError, match="wrong schema"):
+        parse_governance_attestation(canonicalize(document))
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "destination_operation_profile_digest",
+        "native_acceptance_suite_version",
+        "disposable_package_preconditions",
+        "github_api_version",
+        "lower_layer_contract_revision",
+        "captured_at",
+        "evidence_digest",
+    ],
+)
+def test_ready_acceptance_requires_each_identity_field(field: str) -> None:
+    """A ready statement cannot omit any part of its acceptance identity."""
+    document = _attestation_document(live_enabled=True)
+    primitive = _object_member(
+        _object_member(document, "activation"), "destination_primitive"
+    )
+    del primitive[field]
+    with pytest.raises(ValueError, match=f"missing required field: {field}"):
+        parse_governance_attestation(canonicalize(document))
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "primitive_id",
+        "operation",
+        "race_inputs",
+        "race_results",
+        "deleted_versions",
+        "adapter_configuration",
+        "destination_operation_profile",
+    ],
+)
+def test_ready_acceptance_rejects_superseded_or_privileged_fields(
+    field: str,
+) -> None:
+    """Runtime Governance carries neither old races nor acceptance-only data."""
+    document = _attestation_document(live_enabled=True)
+    primitive = _object_member(
+        _object_member(document, "activation"), "destination_primitive"
+    )
+    primitive[field] = {}
+    with pytest.raises(ValueError, match=f"unknown field: {field}"):
+        parse_governance_attestation(canonicalize(document))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("preexisting_container", False),
+        ("operator_controlled", False),
+        ("production_dependency", True),
+        ("preexisting_container", 1),
+    ],
+)
+def test_ready_acceptance_requires_passing_disposable_preconditions(
+    field: str, value: JsonValue
+) -> None:
+    """Do not admit false assertions or integers masquerading as booleans."""
+    document = _attestation_document(live_enabled=True)
+    primitive = _object_member(
+        _object_member(document, "activation"), "destination_primitive"
+    )
+    preconditions = _object_member(
+        primitive, "disposable_package_preconditions"
+    )
+    preconditions[field] = value
+    with pytest.raises((TypeError, ValueError), match="preconditions"):
+        parse_governance_attestation(canonicalize(document))
+
+
+def test_governance_constructors_cannot_form_incompatible_states() -> None:
+    """The public constructor cannot bypass state, evidence, or date rules."""
+    blocked = parse_governance_attestation(_attestation_content())
+    with pytest.raises(ValueError, match="state and live_enabled disagree"):
+        replace(blocked, live_enabled=True)
+    ready = parse_governance_attestation(
+        _attestation_content(live_enabled=True)
+    )
+    assert isinstance(ready.activation, eligibility.EnabledGovernanceActivation)
+    with pytest.raises(TypeError, match="complete native evidence"):
+        replace(ready.activation, artifact_retention=None)
+    with pytest.raises(ValueError, match="captured after inspection"):
+        replace(ready, inspected_at=ready.inspected_at - timedelta(seconds=1))
+
+
+def test_ready_disable_reenable_preserves_evidence_and_rejects_old_fresh_proof(
+    monkeypatch: pytest.MonkeyPatch,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Flag-off blocks fresh authority without erasing historical evidence."""
+    _admit_test_destination_primitive(monkeypatch)
+    decision = _transport_decision(
+        live_intent, live_admitted_repository_model, policy
+    )
+    governance = decision.governance
+    enabled = governance.attestation
+    disabled = replace(enabled, live_enabled=False)
+    assert disabled.activation == enabled.activation
+    assert (
+        parse_governance_attestation(canonicalize(disabled.to_document()))
+        == disabled
+    )
+    client = RecordingGovernanceClient(canonicalize(disabled.to_document()))
+    blocked = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=live_admitted_repository_model.snapshot,
+        policy=policy,
+        context=decision.context,
+    )
+    assert blocked.diagnostics == ("governance-live-disabled",)
+    assert blocked.result is EligibilityResult.BLOCKED
+    with pytest.raises(eligibility.GovernanceFreshnessRejectionError):
+        eligibility.require_fresh_governance_identity(
+            policy.governance,
+            client,
+            now=NOW,
+            expected_provenance=eligibility.governance_observation_provenance(
+                governance
+            ),
+            expected_canonical_content_digest=enabled.content_digest,
+            expected_expires_at=enabled.expires_at.strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            expected_live_enabled=True,
+        )
+    historical_time = enabled.expires_at + timedelta(days=1)
+    replay = admit_live_eligibility_decision(
+        canonicalize(decision.to_document()),
+        intent=live_intent,
+        repository_model=live_admitted_repository_model,
+        policy=policy,
+        expected_digest=decision.decision_digest,
+        admission_mode=LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
+        now=historical_time,
+    )
+    assert replay.governance.attestation == enabled
+    with pytest.raises(ValueError, match="fresh enabled Governance"):
+        eligibility.require_action_governance(
+            replay.governance.attestation,
+            now=historical_time,
+            destination_operation_profile_digest=(
+                github_packages_destination_operation_profile().profile_digest
+            ),
+        )
+    client.content = canonicalize(
+        replace(disabled, live_enabled=True).to_document()
+    )
+    new_dispatch = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=live_admitted_repository_model.snapshot,
+        policy=policy,
+        context=decision.context,
+    )
+    assert new_dispatch.result is EligibilityResult.PASS
+    assert new_dispatch.governance.attestation.activation == disabled.activation
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("destination_operation_profile_digest", "sha256:" + "e" * 64),
+        ("native_acceptance_suite_version", "unadmitted-suite"),
+        ("github_api_version", "unadmitted-api"),
+        ("lower_layer_contract_revision", "unadmitted-contract"),
+        ("package", "@hcoona/unapproved-disposable"),
+    ],
+)
+def test_ready_requires_exact_target_admitted_acceptance_contract(
+    field: str,
+    value: str,
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Syntactically valid issuer evidence cannot admit an unknown contract."""
+    _admit_test_destination_primitive(monkeypatch)
+    document = _attestation_document(live_enabled=True)
+    primitive = _object_member(
+        _object_member(document, "activation"), "destination_primitive"
+    )
+    if field == "package":
+        _object_member(primitive, "disposable_package_preconditions")[field] = (
+            value
+        )
+    else:
+        primitive[field] = value
+    attestation = parse_governance_attestation(canonicalize(document))
+    if field == "destination_operation_profile_digest":
+        assert isinstance(
+            attestation.activation, eligibility.EnabledGovernanceActivation
+        )
+        _admit_test_destination_primitive(
+            monkeypatch, primitive=attestation.activation.destination_primitive
+        )
+    client = RecordingGovernanceClient(canonicalize(document))
+    decision = _evaluate(
+        monkeypatch,
+        client,
+        snapshot=live_admitted_repository_model.snapshot,
+        policy=policy,
+    )
+    assert decision.result is EligibilityResult.BLOCKED
+    assert decision.diagnostics == ("destination-primitive-unproven",)
+    with pytest.raises(ValueError, match="not implemented"):
+        eligibility.require_action_governance(
+            attestation,
+            now=NOW,
+            destination_operation_profile_digest=(
+                github_packages_destination_operation_profile().profile_digest
+            ),
+        )
+
+
+def test_action_acceptance_age_is_inclusive_and_profile_is_current(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Allow at most 90 days; Governance renewal cannot renew acceptance."""
+    _admit_test_destination_primitive(monkeypatch)
+    document = _attestation_document(live_enabled=True)
+    primitive = _object_member(
+        _object_member(document, "activation"), "destination_primitive"
+    )
+    primitive["captured_at"] = (NOW - timedelta(days=90)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    attestation = parse_governance_attestation(canonicalize(document))
+    profile_digest = (
+        github_packages_destination_operation_profile().profile_digest
+    )
+    eligibility.require_action_governance(
+        attestation,
+        now=NOW,
+        destination_operation_profile_digest=profile_digest,
+    )
+    with pytest.raises(ValueError, match="profile differs"):
+        eligibility.require_action_governance(
+            attestation,
+            now=NOW,
+            destination_operation_profile_digest="sha256:" + "e" * 64,
+        )
+    renewed = replace(
+        attestation, inspected_at=NOW, expires_at=NOW + timedelta(days=90)
+    )
+    assert renewed.activation == attestation.activation
+    with pytest.raises(ValueError, match="unexpired native acceptance"):
+        eligibility.require_action_governance(
+            renewed,
+            now=NOW + timedelta(seconds=1),
+            destination_operation_profile_digest=profile_digest,
+        )
+
+
 @pytest.mark.parametrize(
     ("case", "message"),
     [
@@ -3571,14 +3855,9 @@ def test_disabled_attestation_requires_exact_blocked_activation() -> None:
             id="enabled-with-blocked-activation",
         ),
         pytest.param(
-            "disabled-with-ready-activation",
-            "activation state and live_enabled disagree",
-            id="disabled-with-ready-activation",
-        ),
-        pytest.param(
-            "incomplete-disabled-blockers",
-            "blockers are not the exact disabled gates",
-            id="incomplete-disabled-blockers",
+            "disabled-blockers",
+            "activation unknown field: blockers",
+            id="disabled-blockers",
         ),
         pytest.param(
             "disabled-with-native-evidence",
@@ -3595,14 +3874,10 @@ def test_attestation_rejects_invalid_disabled_activation(
     document = _attestation_document()
     if case == "enabled-with-blocked-activation":
         document["live_enabled"] = True
-    elif case == "disabled-with-ready-activation":
-        document["activation"] = _ready_activation()
     else:
         activation = _object_member(document, "activation")
-        if case == "incomplete-disabled-blockers":
-            blockers = activation["blockers"]
-            assert isinstance(blockers, list)
-            activation["blockers"] = blockers[:-1]
+        if case == "disabled-blockers":
+            activation["blockers"] = ["destination-primitive-unproven"]
         else:
             activation["artifact_retention"] = _object_member(
                 _ready_activation(),
@@ -3614,7 +3889,7 @@ def test_attestation_rejects_invalid_disabled_activation(
 
 
 def test_enabled_attestation_admits_complete_ready_activation() -> None:
-    """Admit enabled state only with complete native and race evidence."""
+    """Admit enabled state only with complete native acceptance identity."""
     document = _attestation_document(live_enabled=True)
 
     attestation = parse_governance_attestation(canonicalize(document))
@@ -3636,8 +3911,8 @@ def test_enabled_attestation_admits_complete_ready_activation() -> None:
         }
     ]
     assert retention["days"] == MINIMUM_RETENTION_DAYS
-    assert primitive["operation"] == (
-        "conditional-create-npm-version-and-target-tag"
+    assert primitive["destination_operation_profile_digest"] == (
+        github_packages_destination_operation_profile().profile_digest
     )
     assert attestation.to_document() == document
 
@@ -3661,9 +3936,9 @@ def test_enabled_attestation_admits_complete_ready_activation() -> None:
             id="retention-too-short",
         ),
         pytest.param(
-            "race-failed",
-            "lacks passing conditional race evidence",
-            id="race-failed",
+            "production-dependency",
+            "disposable_package_preconditions must be passing",
+            id="production-dependency",
         ),
         pytest.param(
             "evidence-after-inspection",
@@ -3687,13 +3962,12 @@ def test_enabled_attestation_rejects_incomplete_or_invalid_evidence(
     elif case == "retention-too-short":
         retention = _object_member(activation, "artifact_retention")
         retention["days"] = 44
-    elif case == "race-failed":
+    elif case == "production-dependency":
         primitive = _object_member(activation, "destination_primitive")
-        race_results = primitive["race_results"]
-        assert isinstance(race_results, list)
-        first_result = race_results[0]
-        assert isinstance(first_result, list)
-        first_result[1] = "fail"
+        preconditions = _object_member(
+            primitive, "disposable_package_preconditions"
+        )
+        preconditions["production_dependency"] = True
     else:
         retention = _object_member(activation, "artifact_retention")
         retention["captured_at"] = "2026-08-02T00:00:00Z"

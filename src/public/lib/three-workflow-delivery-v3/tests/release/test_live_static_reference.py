@@ -11,21 +11,11 @@ from typing import cast
 import pytest
 from three_workflow_delivery_v3.release import eligibility
 from three_workflow_delivery_v3.release.eligibility import (
-    AccessGrant,
-    AccessInventory,
-    ApprovalEnvironmentAttestation,
-    ApprovalEnvironmentReviewer,
-    ApprovalEnvironmentVariable,
-    ArtifactRetentionAttestation,
-    DestinationPrimitiveAttestation,
     EligibilityResult,
     EnabledGovernanceActivation,
-    GovernanceAttestation,
     GovernanceObservation,
     LiveEligibilityContext,
-    NativeEvidence,
-    PackagePrincipalAttestation,
-    WriterInventoryEntry,
+    parse_governance_attestation,
 )
 from three_workflow_delivery_v3.release.static_reference_model import (
     STATIC_REFERENCE_ERROR_KINDS,
@@ -39,7 +29,6 @@ from three_workflow_delivery_v3.release.static_reference_policy import (
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
-    FIRST_SLICE_RELEASE_UNIT,
     GOVERNANCE_MAX_AGE_DAYS,
     GOVERNANCE_PATH,
     GOVERNANCE_REF,
@@ -47,11 +36,12 @@ from three_workflow_delivery_v3.repository.descriptors import (
     GovernanceSource,
 )
 
+from .test_eligibility import _attestation_content, _ready_activation
+
 TARGET = "e" * 40
 NOW = datetime(2026, 9, 1, 6, 0, tzinfo=UTC)
 REPOSITORY_ROOT = Path("/controlled/current-run-repository")
 WORKFLOW_RUN_ID = 8101
-TEST_DESTINATION_PRIMITIVE_ID = "test/conditional-version-and-tag-v1"
 COMPLETE_EVENT_COUNT = 3
 REJECTED_EVENT_COUNT = 2
 EXPECTED_OPERATIONAL_ERROR_COUNT = 7
@@ -88,90 +78,21 @@ def _governance() -> GovernanceObservation:
         path=GOVERNANCE_PATH,
         max_age_days=GOVERNANCE_MAX_AGE_DAYS,
     )
-    evidence_time = NOW - timedelta(days=2)
-    activation = EnabledGovernanceActivation(
-        approval_environment=ApprovalEnvironmentAttestation(
-            name="workflow-delivery-v3-buddy-approval",
-            environment_id=20895030723,
-            required_reviewers=(
-                ApprovalEnvironmentReviewer(
-                    login="hcoona",
-                    reviewer_id=712433,
+    attestation = parse_governance_attestation(
+        _attestation_content(
+            inspected_at=(NOW - timedelta(days=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            expires_at=(NOW + timedelta(days=30)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            activation=_ready_activation(
+                captured_at=(NOW - timedelta(days=2)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
                 ),
             ),
-            prevent_self_review=False,
-            can_admins_bypass=False,
-            wait_timer_minutes=0,
-            deployment_policy="all",
-            secret_count=0,
-            variables=(
-                ApprovalEnvironmentVariable(
-                    name="WDV3_APPROVAL_ENVIRONMENT_MARKER",
-                    value="workflow-delivery-v3-buddy-approval/v1",
-                    scope="environment",
-                ),
-            ),
-            same_name_repository_variable_absent=True,
-            same_name_organization_variable="not-applicable-user-owner",
-            evidence=(
-                NativeEvidence(
-                    endpoint=(
-                        "GET /repos/hcoona/three/environments/"
-                        "workflow-delivery-v3-buddy-approval"
-                    ),
-                    captured_at=evidence_time,
-                    response_digest="sha256:" + ("4" * 64),
-                ),
-            ),
-        ),
-        artifact_retention=ArtifactRetentionAttestation(
-            endpoint=(
-                "GET /repos/hcoona/three/actions/permissions/"
-                "artifact-and-log-retention"
-            ),
-            captured_at=evidence_time,
-            days=45,
-            response_digest="sha256:" + ("5" * 64),
-        ),
-        destination_primitive=DestinationPrimitiveAttestation(
-            primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
-            operation="conditional-create-npm-version-and-target-tag",
-            captured_at=evidence_time,
-            race_inputs=(
-                ("coordinate", FIRST_SLICE_PACKAGE),
-                ("target", TARGET),
-            ),
-            race_results=(
-                ("conflicting-tag-preserved", "pass"),
-                ("target-version-remained-absent", "pass"),
-            ),
-            evidence_digest="sha256:" + ("6" * 64),
-        ),
-    )
-    attestation = GovernanceAttestation(
-        release_policy=FIRST_SLICE_RELEASE_UNIT,
-        package=FIRST_SLICE_PACKAGE,
-        issuer="hcoona",
-        inspected_at=NOW - timedelta(days=1),
-        expires_at=NOW + timedelta(days=30),
-        accepted_writers=(WriterInventoryEntry(login="hcoona", role="Admin"),),
-        accepted_publisher="hcoona",
-        access_inventory=AccessInventory(
-            repository=(AccessGrant(subject="hcoona", access="admin"),),
-            package=(AccessGrant(subject="hcoona", access="write"),),
-            manage_actions=(AccessGrant(subject="hcoona", access="allowed"),),
-        ),
-        package_principal=PackagePrincipalAttestation(
-            repository=GOVERNANCE_REPOSITORY,
-            intended_coordinate=FIRST_SLICE_PACKAGE,
-            known_wider_reach=(
-                "@hcoona/hexo-renderer-asciidoc",
-                "disposable-smoke-packages",
-            ),
-        ),
-        limitations=("GitHub Packages does not expose a complete grants API.",),
-        activation=activation,
-        live_enabled=True,
+            live_enabled=True,
+        )
     )
     return GovernanceObservation(
         source=source,
@@ -241,7 +162,14 @@ def _evaluate_with_result(
     monkeypatch.setattr(
         eligibility,
         "_ADMITTED_DESTINATION_PRIMITIVE_IDS",
-        frozenset({TEST_DESTINATION_PRIMITIVE_ID}),
+        frozenset(
+            {
+                cast(
+                    "EnabledGovernanceActivation",
+                    governance.attestation.activation,
+                ).destination_primitive.admission_key
+            }
+        ),
     )
     monkeypatch.setattr(eligibility, "scan_bounded_static_references", scan)
     monkeypatch.setattr(
