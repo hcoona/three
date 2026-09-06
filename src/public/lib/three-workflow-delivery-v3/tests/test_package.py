@@ -27,6 +27,7 @@ APPROVED_RELEASE_MODULES = (
     "live.py",
     "observation.py",
     "planner.py",
+    "publication.py",
     "qualification.py",
     "simulation.py",
     "static_reference_authority.py",

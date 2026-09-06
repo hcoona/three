@@ -20,9 +20,9 @@ from typing import TYPE_CHECKING, Never, Protocol, cast
 
 from three_workflow_delivery_v3.adapters.node import (
     ArtifactExpectation,
+    _qualify_npm_artifact_entries,
     _read_tarball,
     _validate_artifact_expectation,
-    qualify_npm_artifact_contents,
 )
 from three_workflow_delivery_v3.adapters.npmjs import (
     DEFAULT_EXPANDED_TARBALL_LIMIT_BYTES,
@@ -3370,7 +3370,14 @@ def _validate_local_tarball_preconditions(
     ):
         message = "publication tarball SHA-512 binding mismatch"
         raise ValueError(message)
-    manifest = qualify_npm_artifact_contents(content, expectation)
+    manifest = _qualify_npm_artifact_entries(
+        content,
+        _read_tarball(
+            content,
+            max_payload_bytes=expanded_tarball_limit_bytes,
+        ),
+        expectation,
+    )
     if (
         manifest.basename != artifact.content.basename
         or manifest.byte_size != artifact.content.byte_size

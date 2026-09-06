@@ -10,6 +10,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from three_workflow_delivery_v3.adapters.node import _expected_basename
 from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactContentIdentity,
@@ -141,13 +142,18 @@ def observation_case(
     attestation = produced.governance.attestation
     activation = attestation.activation
     assert isinstance(activation, EnabledGovernanceActivation)
+    parameters = getattr(request, "param", attestation.inspected_at)
     attestation = replace(
         attestation,
         activation=replace(
             activation,
             destination_primitive=replace(
                 activation.destination_primitive,
-                captured_at=getattr(request, "param", attestation.inspected_at),
+                captured_at=(
+                    attestation.inspected_at
+                    if isinstance(parameters, dict)
+                    else parameters
+                ),
             ),
         ),
     )
@@ -215,6 +221,7 @@ def observation_case(
                     "workflow-delivery/provenance.json",
                 ],
                 "scripts": {},
+                **(parameters if isinstance(parameters, dict) else {}),
             }
         ),
         "package/workflow-delivery/provenance.json": (
@@ -226,7 +233,10 @@ def observation_case(
         output_id=build_request.output.output_id,
         logical_role=build_request.output.logical_role,
         media_kind=build_request.output.media_kind,
-        basename="hcoona-release-smoke-npm.tgz",
+        basename=_expected_basename(
+            snapshot.destination_projections[0].coordinate.package_name,
+            snapshot.nbgv.npm_package_version,
+        ),
         byte_size=len(tarball),
         content_sha256="sha256:" + hashlib.sha256(tarball).hexdigest(),
         content_sha512="sha512:" + hashlib.sha512(tarball).hexdigest(),

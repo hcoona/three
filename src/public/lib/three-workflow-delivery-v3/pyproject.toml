@@ -13,6 +13,7 @@ artifacts = [
   "src/three_workflow_delivery_v3/release/live.py",
   "src/three_workflow_delivery_v3/release/observation.py",
   "src/three_workflow_delivery_v3/release/planner.py",
+  "src/three_workflow_delivery_v3/release/publication.py",
   "src/three_workflow_delivery_v3/release/qualification.py",
   "src/three_workflow_delivery_v3/release/simulation.py",
   "src/three_workflow_delivery_v3/release/static_reference_authority.py",
