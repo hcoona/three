@@ -3525,3 +3525,35 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   Independent adjudication confirmed that existing CLI scenarios and the new
   redirect scenario retain its behavioral coverage; removed that test and its
   unused import without adding a new abstraction or test matrix.
+
+## [2026-09-06] query | Deliver disabled runtime and remove the legacy Environment
+
+- Delivered the reviewed implementation through PR #653. Head
+  `85448e48f3ff59896181a97f7ee0f1414c612bc9` was squash-merged as
+  `1c0effa8471c58e517cf1c307af65f4ae7b19acb` at `2026-09-06T21:38:35Z`,
+  with exact parent `0b2029b5c5735fa4c7dbf4de3195903770a7df3a`. Reviewed
+  and protected tree `e2158a65079c9806b4f1afa3e0ef279be8850e3d` is identical.
+- Final local HK passed 4,192 tests; staged pre-commit and strict commit-message
+  validation passed. Aggregate OCR, independent adjudication, original-role
+  rereview, and final contraction closed all findings. PR Continuous
+  Integration, CodeQL, and v3 CI passed. Protected post-merge Continuous
+  Integration run `34061696113` and CodeQL run `34061696151` passed.
+- Reconciled all retained remote branches and tags after merge. Only `main`
+  moved and the merged implementation branch disappeared; all other control
+  SHAs were unchanged. The 47 retained refs comprise 15 branches and 32 tags.
+  Every dispatchable Buddy ref either has the one-Environment contract or
+  rejects v2 before any Environment job. The orphan negative fixture at
+  `4af8819bed7c19d3231570351b278a24b268dab8` remains untouched.
+- After fresh exact identity and zero-deployment preflight, deleted only
+  `workflow-delivery-v3-buddy-github-packages`, ID `20895037877`, once at
+  `2026-09-06T21:57:38Z` with HTTP 204. Complete Environment readback confirmed
+  its absence and identical configuration for all retained Environments.
+- Readiness analysis found no current pinned-profile native acceptance suite
+  or Actions orchestration. Legacy fixed-coordinate helpers cannot provide
+  the required evidence. Read-only inventory identified the public
+  `@hcoona/hcoona-release-smoke-npm-dual` container as a candidate, not an
+  approved disposable coordinate or proof of no production dependency.
+- Synchronized current-state pages with the remaining authorization and
+  tooling boundary. Governance remains strict blocked v2 and disabled; no
+  native generation, package mutation, Approval deployment, activation, or
+  normal-Live dispatch has occurred.

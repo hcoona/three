@@ -17,22 +17,9 @@ retry, or rollout sequences.
 The normal-Live implementation is merged and disabled with
 `live_enabled: false`.
 
-Both permanent Environments created during prior provisioning currently exist:
-
-- `workflow-delivery-v3-buddy-approval`; and
-- `workflow-delivery-v3-buddy-github-packages`.
-
-The replacement design retains only
-`workflow-delivery-v3-buddy-approval` as an authority-bearing Environment.
-`workflow-delivery-v3-buddy-github-packages` is inert under that design, but it
-must not be deleted until:
-
-1. the replacement implementation is merged and exact repository inspection
-   proves that no workflow, executable source, schema, policy, formatter,
-   validator, or test treats it as an input or authority; current-state and
-   migration text may still name it solely to inventory and remove it safely;
-   and
-2. separate authorization permits external-resource cleanup.
+For current Environment lifecycle status, see the
+[handoff](./agent-handoff.md#external-state). Cleanup remains subject to
+[Replacement Delivery Order](#replacement-delivery-order), steps 4-5.
 
 The direct v1 Buddy-to-v3 Buddy cutover and destination acceptance are complete
 historical facts. They do not authorize normal Live activation.
@@ -240,8 +227,8 @@ satisfy the lookup in place of the Environment-scoped sentinel. The runtime
 sentinel remains a narrow accidental-creation and misbinding check; it does not
 replace native configuration readback.
 
-The obsolete Capability Environment remains untouched until the ordered cleanup
-gate above is separately authorized.
+The ordered cleanup gate above governs removal of the obsolete Environment;
+consult the handoff for its current state.
 
 ### GitHub Packages Access
 

@@ -26,21 +26,28 @@ requests mechanism extraction and revalidation. Git and the append-only
   first-slice LLD contraction was delivered through PR #652. Its reviewed and
   protected trees are identical, and required PR and post-merge checks passed.
   The append-only log records the exact delivery chronology.
-- The dependency-ordered Publication/Finalizer implementation is complete on
-  `workflow-delivery-v3-publication-finalizer-implementation`, based on
-  `main@0b2029b5c5735fa4c7dbf4de3195903770a7df3a`. Component validation,
-  independent OCR rereview, and contraction are complete. Whole-group
-  delivery review and protected Git delivery still require reconciliation.
+- The dependency-ordered Publication/Finalizer implementation was delivered
+  through PR #653 as `1c0effa8471c58e517cf1c307af65f4ae7b19acb`.
+  Component and whole-group gates, independent OCR rereview, final
+  contraction, exact reviewed/merged-tree comparison, and post-merge
+  Continuous Integration and CodeQL are complete.
 - This revision implements strict Governance v2 with state-only blocked
   activation and `live_enabled: false`, active-only Observation, fresh
   exact-satisfied proof, profile-bound one-shot publication, immutable
   marker/Result terminal transport, and the tagged current-DAG Outcome.
   Receipt, ActionResult, and the superseded marker and proof formats have no
   runtime aliases.
+- Retained-ref compatibility and semantic no-reference proof are complete.
+  The exact legacy Environment was removed after the protected delivery
+  gates; all other Environment configurations were unchanged.
 - The native-acceptance generation registry remains empty. No native profile
-  acceptance, activation, Environment cleanup, package or tag mutation,
-  approval, deployment, or normal-Live dispatch was performed during this
-  implementation.
+  acceptance, activation, package or tag mutation, approval, deployment, or
+  normal-Live dispatch has occurred.
+- Native acceptance is the next gate. Existing acceptance tooling implements
+  a superseded fixed-coordinate protocol, not the current pinned-profile
+  suite. The exact approved disposable package and acceptance-only
+  administrative execution boundary must be established before its mutation
+  steps; see Native Acceptance Readiness below.
 - The current user instruction authorizes end-to-end completion of design
   delivery, disabled implementation, native acceptance, activation, and
   exactly one auditable real dispatch. That authorization does not waive any
@@ -77,20 +84,13 @@ not reset or overwrite them.
 - sentinel `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`; and
 - zero deployments.
 
-### Legacy Capability Environment
+### Removed Legacy Environment
 
-`workflow-delivery-v3-buddy-github-packages` still exists:
-
-- ID `20895037877`; no reviewer or protection rule;
-- zero wait; no secrets; no branch/tag restriction; `can_admins_bypass: false`;
-- legacy marker
-  `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1`; and
-- zero deployments.
-
-It is inert in the merged replacement runtime. Do not alter or delete it until
-exact repository inspection proves every retained dispatchable ref either
-implements the one-Environment contract or rejects Governance v2 before any
-Environment job, and exact no-reference proof is complete.
+`workflow-delivery-v3-buddy-github-packages`, ID `20895037877`, was deleted
+after exact retained-ref and no-authority-reference proof. Its pre-deletion
+deployment inventory was empty. Complete Environment readback confirmed only
+that resource was removed and the retained Approval Environment was unchanged.
+Do not recreate it or repeat the deletion.
 
 ### Packages and Live State
 
@@ -98,8 +98,30 @@ Environment job, and exact no-reference proof is complete.
 - Known reach includes production package `hexo-renderer-asciidoc` and disposable smoke packages.
 - This accepted repository-principal blast radius is not package isolation and is not an exhaustive grant inventory.
 - Package access remains unchanged; protected Governance remains `live_enabled: false`.
-- No normal Live run, Approval deployment, publication, tag change, package mutation, or obsolete-Environment cleanup
-  has occurred.
+- No normal Live run, Approval deployment, publication, tag change, or package
+  mutation has occurred.
+
+### Native Acceptance Readiness
+
+The current profile requires the complete LLD section 18.6 suite. Legacy
+fixed-coordinate/retry-5 helpers do not implement its canonical complete-state
+comparison, active duplicates, distinct-version tag race, or sequential
+deleted/restorable probes and restoration. There is no current acceptance
+workflow supplying the actual Actions-issued repository `GITHUB_TOKEN`.
+
+Read-only inventory found the pre-existing public
+`@hcoona/hcoona-release-smoke-npm-dual` container, ID `12047077`, associated
+with `hcoona/three`. This is a candidate, not authorization or proof that it
+has no production dependency. The current normative documents and recovered
+user instructions do not identify an approved disposable coordinate.
+
+Before package mutation, establish that coordinate and its required
+preconditions and the acceptance-only administrative execution boundary.
+Then design and deliver only the missing bounded suite and orchestration.
+The standard-publish probes must use the real Actions-issued repository token;
+do not relabel a local PAT as `GITHUB_TOKEN`, add secrets or access grants
+implicitly, or send administrative credentials into normal runtime. No
+acceptance generation may be installed before a real passing suite.
 
 ## Accepted Risk and Threat Model
 
@@ -124,9 +146,9 @@ Environment job, and exact no-reference proof is complete.
 Never claim package isolation, reviewer independence, exhaustive grant discovery, universal consumer proof, or
 instantaneous revocation.
 
-Normal Live remains activation-blocked until the disabled implementation is
-protected-delivered and the exact Destination Operation Profile has a fresh
-native acceptance generation installed through the Activation PR. Local
+Normal Live remains activation-blocked until the exact Destination Operation
+Profile has a fresh native acceptance generation installed through the
+Activation PR. Local
 scenario results do not substitute for that acceptance. The design deliberately
 treats a post-Observation tag race as bounded routing damage: supported
 consumers resolve exact `name@version`, and exact version bytes, digests, and
@@ -169,19 +191,18 @@ Do not infer policy from stale runtime behavior or archived designs.
 ## Next Executable Workflow
 
 1. Perform the required Git inspection above.
-2. Reconcile the complete implementation against the normative contract and
-   synchronize its current-state documentation. Keep Governance disabled and
-   perform no package, Environment, approval, deployment, or dispatch mutation.
-3. Complete whole-group validation and delivery review against the true base:
-   targeted scenarios, the complete v3 suite, root HK and hooks, OCR
-   multi-review, independent TP/FP adjudication, clean rereview, and final
-   shrink.
-4. Deliver the disabled implementation through a protected PR and verify the
-   exact merged tree plus post-merge checks.
-5. Prove retained-ref compatibility and remove the obsolete Environment only
-   after exact no-reference proof. Then execute the acceptance-only native
-   suite, restore and verify its disposable tombstone object, and prepare fresh
-   ready Governance v2 evidence.
+2. Confirm the approved disposable coordinate, its preconditions, and the
+   acceptance-only administrative execution boundary. Do not treat package
+   inventory as permission.
+3. Complete the bounded acceptance-suite design and missing orchestration.
+   Deliver it through applicable scenarios, HK/hooks, OCR multi-review,
+   independent TP/FP adjudication, clean rereview, final contraction, and
+   protected delivery while Governance remains disabled.
+4. Execute the real pinned-profile native suite. Preserve complete canonical
+   comparisons and raw evidence, stop on ambiguity, and restore and verify the
+   original disposable tombstone object.
+5. Capture fresh Approval Environment, retention, access, package-control, and
+   passing native-generation evidence for ready Governance v2.
 6. Deliver the small Activation PR, read back protected state, dispatch exactly
    once through the run-ID-returning API, and verify actor, event, workflow,
    actual `main` head, `run_attempt == 1`, current-run records, final Outcome,
