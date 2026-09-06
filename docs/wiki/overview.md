@@ -104,9 +104,9 @@ The governance document at
 `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` retains
 state-only blocked activation and `live_enabled: false`.
 
-- The dependency-ordered implementation units have completed validation,
-  independent rereview, and contraction. Whole-group delivery and current Git
-  and pull-request state must be inspected rather than inferred from this page.
+- The implementation was protected-delivered through PR #653. Whole-group
+  validation, independent rereview, contraction, exact merged-tree comparison,
+  and post-merge checks are complete.
 - The exact Destination Operation Profile has no admitted native acceptance
   generation. Local scenarios do not activate publication.
 - Approval Environment `workflow-delivery-v3-buddy-approval`, ID
@@ -115,25 +115,22 @@ state-only blocked activation and `live_enabled: false`.
   branch/tag restriction, administrator bypass disabled, exact approval
   sentinel, and zero deployments.
 - Legacy Environment `workflow-delivery-v3-buddy-github-packages`, ID
-  `20895037877`, has no reviewer/protection rule, zero wait, no secrets, no
-  branch/tag restriction, administrator bypass disabled, its legacy marker,
-  and zero deployments.
-- The local replacement implementation no longer treats the legacy
-  Environment as runtime input or authority. The external resource must remain
-  until retained refs are proven safe through exact no-reference and
-  compatibility proof.
+  `20895037877`, was deleted after protected delivery, retained-ref
+  compatibility, and exact no-authority-reference proof. It had no deployments;
+  the retained Approval Environment and all other Environments were unchanged.
 - Package access is unchanged. No normal Live dispatch, Approval deployment,
   package publication, tag change, or package mutation has occurred.
 
 ## Delivery Boundary
 
-The disabled Publication/Finalizer implementation follows the protected-merged
-replacement design. Complete whole-group review, protected delivery,
-exact-tree verification, and post-merge checks before operational preparation.
+The disabled runtime is protected-delivered and obsolete-Environment cleanup
+is complete. The current native-acceptance suite and Actions orchestration are
+not yet implemented; old fixed-coordinate acceptance does not satisfy the new
+profile. Establish the exact approved disposable coordinate and bounded
+administrative execution authority before package mutation.
 
-The remaining operational gates remove the obsolete Environment after exact
-retained-ref and no-reference proof, run native profile
-acceptance, install fresh ready Governance evidence including repository
+The remaining gates deliver and run the native suite, restore and verify its
+original disposable object, install fresh ready Governance evidence including repository
 retention of at least 45 days, merge one small Activation PR, read back
 protected state, dispatch once through the run-ID-returning API, and verify the
 exact run. There is no Preparation PR, `main` freeze, activation SHA/tag, or

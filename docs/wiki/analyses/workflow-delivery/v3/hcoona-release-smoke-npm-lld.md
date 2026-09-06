@@ -69,9 +69,9 @@ formats have no aliases.
 
 Governance remains disabled. Its current inspection and expiry are read from
 the protected document, not a copied date in this design. The exact profile's
-native acceptance, retained-ref compatibility, obsolete-Environment cleanup,
-and activation gates remain outstanding; consult the handoff for operating
-state.
+native acceptance and activation gates remain outstanding; retained-ref
+compatibility and obsolete-Environment cleanup are complete. Consult the
+handoff for operating state.
 
 The replacement target has:
 
@@ -87,7 +87,9 @@ The replacement target has:
 - independent `github.run_attempt == 1` job guards and no normal-Live run-attempt record binding; and
 - the bounded static-reference policy in section 6.
 
-The legacy publication Environment remains untouched until replacement runtime references are absent and deletion receives separate authorization. Its continued existence grants no target authority.
+The legacy publication Environment was deleted after no-authority-reference
+and retained-ref compatibility proof under separate authorization. It granted
+no target authority and must not be recreated.
 
 No target code may retain a fallback to any superseded mechanism.
 

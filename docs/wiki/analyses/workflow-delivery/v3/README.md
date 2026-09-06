@@ -9,18 +9,19 @@ requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
 The disabled implementation now includes active-only Observation, fresh
 exact-satisfied finalization proof, profile-bound one-shot publication,
 immutable marker/Result terminal transport, and a read-only current-DAG
-Finalizer with one tagged predecessor. Its component validation and independent
-rereview are complete; whole-group delivery remains a separate gate.
+Finalizer with one tagged predecessor. It was protected-delivered through
+PR #653 with whole-group validation, independent rereview, final contraction,
+exact merged-tree verification, and post-merge checks complete.
 
 This revision uses strict Governance v2 with state-only blocked activation and
 `live_enabled: false`. The native-acceptance generation registry remains empty.
-No native profile acceptance, activation, package access change, deployment,
-package mutation, or other operational external change was performed during
-implementation. Inspect Git and PR state through the handoff rather than
-inferring protected delivery from this page.
+No native profile acceptance, activation, package access change, deployment, or
+package mutation has occurred. Retained-ref proof and obsolete-Environment
+cleanup are complete. Inspect current Git and operational state through the
+handoff before continuing.
 
-Normal Live remains activation-blocked until protected implementation delivery
-and fresh native acceptance for the exact Destination Operation Profile. The
+Normal Live remains activation-blocked until fresh native acceptance for the
+exact Destination Operation Profile is installed through the Activation PR. The
 design admits a pinned standard
 `npm publish --tag ... --fetch-retries=0` profile only after its native suite
 proves the required creation, conflict, tag-race, and deleted/restorable
@@ -70,13 +71,9 @@ chronology is not current architecture.
   no branch/tag restriction, `can_admins_bypass: false`, marker
   `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`,
   and zero deployments.
-- Legacy Environment `workflow-delivery-v3-buddy-github-packages` is ID
-  `20895037877`, with no reviewer or protection rule, zero wait, no secrets,
-  no branch/tag restriction, `can_admins_bypass: false`, legacy marker
-  `WDV3_CAPABILITY_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-github-packages/v1`,
-  and zero deployments. It is inert in the merged replacement runtime but must
-  not be deleted until exact repository inspection proves no retained
-  dispatchable ref can treat it as input or authority.
+- Legacy Environment `workflow-delivery-v3-buddy-github-packages`, ID
+  `20895037877`, was removed after retained-ref compatibility and exact
+  no-authority-reference proof. Other Environment configurations were unchanged.
 - The GitHub Packages credential principal is repository `hcoona/three`.
   Known reach includes production package `hexo-renderer-asciidoc` and
   disposable smoke packages. This accepted repository-principal blast radius
@@ -86,12 +83,11 @@ chronology is not current architecture.
 
 ## Delivery Boundary
 
-Protected implementation delivery requires complete validation, independent
-review, final contraction, exact merged-tree verification, and post-merge
-checks. After that gate, retained-ref compatibility and exact no-reference
-proof precede obsolete-Environment cleanup. Native profile acceptance,
-restoration/readback, ready Governance v2 activation, and exactly one auditable
-real dispatch remain separate operational gates.
+Native profile acceptance is next. The existing fixed-coordinate helpers are
+not the current suite; bounded suite/orchestration work remains. Establish the
+approved disposable coordinate and acceptance-only administrative execution
+boundary before mutation. A passing real suite and restoration/readback must
+precede ready Governance v2 activation and the single auditable real dispatch.
 
 ## Historical Source Rule
 
