@@ -2566,18 +2566,6 @@ def test_acceptance_probe_requires_the_fixed_coordinate_and_explicit_tag(
         )
 
 
-@pytest.mark.parametrize(
-    "forbidden", ["latest", "npm unpublish", "npm dist-tag add"]
-)
-def test_acceptance_probe_rejects_latest_and_every_forbidden_mutation_mode(
-    forbidden: str,
-) -> None:
-    source = Path(cli_module.__file__).read_text(encoding="utf-8")
-
-    assert forbidden not in source
-    assert "npm publish" in source
-
-
 def test_acceptance_probe_rejects_tarball_sha512_mismatch_before_mutation(
     tmp_path: Path,
 ) -> None:

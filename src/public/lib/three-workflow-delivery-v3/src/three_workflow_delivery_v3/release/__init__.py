@@ -1,5 +1,10 @@
 """Release-owned identity, planning, qualification, and eligibility APIs."""
 
+from three_workflow_delivery_v3.release.attempt_finalizer import (
+    FinalizationInputs,
+    finalize_attempt_outcome,
+    parse_publication_terminal_reference,
+)
 from three_workflow_delivery_v3.release.eligibility import (
     LIVE_ELIGIBILITY_DECISION_SCHEMA,
     LIVE_ELIGIBILITY_PRODUCER,
@@ -36,7 +41,6 @@ from three_workflow_delivery_v3.release.eligibility import (
     require_fresh_governance_identity,
 )
 from three_workflow_delivery_v3.release.finalizer import (
-    UnsupportedPublicationPrimitiveError,
     desired_projection_state_digest,
     finalize_qualification,
     finalize_simulation,
@@ -61,7 +65,6 @@ from three_workflow_delivery_v3.release.identity import (
 from three_workflow_delivery_v3.release.live import (
     PublicRevisionCheckout,
     fetch_exact_public_revision,
-    finalize_attempt_outcome,
     form_approval_bundle,
     form_publication_authorization,
     validate_approval_bundle_closure,
@@ -138,6 +141,8 @@ __all__ = [  # noqa: RUF022
     "execute_release_build",
     "fetch_exact_public_revision",
     "finalize_attempt_outcome",
+    "FinalizationInputs",
+    "parse_publication_terminal_reference",
     "finalize_qualification",
     "finalize_simulation",
     "form_approval_bundle",
@@ -186,7 +191,6 @@ __all__ = [  # noqa: RUF022
     "release_policy_digest",
     "ReleaseAdapterContext",
     "render_simulation_summary",
-    "UnsupportedPublicationPrimitiveError",
     "require_fresh_governance_identity",
     "runtime_request",
     "simulation_observation_set_from_bytes",

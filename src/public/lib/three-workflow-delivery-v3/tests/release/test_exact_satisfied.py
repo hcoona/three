@@ -19,7 +19,6 @@ from three_workflow_delivery_v3.records.release import (
     admit_release_record,
 )
 from three_workflow_delivery_v3.release import exact_satisfied
-from three_workflow_delivery_v3.release.live import finalize_attempt_outcome
 
 from ..adapters.test_github_packages_active_state import (
     CONTROL_URL,
@@ -34,7 +33,12 @@ from .observation_fixtures import (
     current_arguments,
     exact_finalization_arguments,
     publication_authority_arguments,
-    uploaded_arguments,
+)
+from .test_attempt_finalizer import (
+    exact_inputs,
+    finalization_cli_arguments,
+    finalize,
+    pair,
 )
 from .test_eligibility import RecordingGovernanceClient
 from .test_observation_admission import NOW
@@ -104,15 +108,12 @@ def test_fresh_exact_proof_requires_download_but_ignores_tag(
         TARBALL_URL,
         TAGS_URL,
     ]
-    assert (
-        finalize_attempt_outcome(
-            **(
-                exact_finalization_arguments(case)
-                | {"exact_satisfied_finalization_proof": proof}
-            )
-        ).result
-        == "success"
+    outcome = finalize(
+        replace(
+            exact_inputs(case), exact_proof=pair(proof, "exact-proof.json", 115)
+        )
     )
+    assert outcome.disposition == "exact-satisfied"
 
 
 @pytest.mark.parametrize(
@@ -176,8 +177,8 @@ def test_readonly_finalizer_rejects_misbound_or_stale_proof(
     monkeypatch,
     substitution,
 ):
-    arguments = exact_finalization_arguments(observation_case)
-    proof = arguments["exact_satisfied_finalization_proof"]
+    inputs = exact_inputs(observation_case)
+    proof = inputs.exact_proof[0]
     if substitution == "snapshot-upload":
         proof = replace(
             proof,
@@ -233,8 +234,8 @@ def test_readonly_finalizer_rejects_misbound_or_stale_proof(
         lambda: pytest.fail("Finalizer constructed remote transport"),
     )
     with pytest.raises(ValueError, match=r"(mismatch|stale|predates)"):
-        finalize_attempt_outcome(
-            **(arguments | {"exact_satisfied_finalization_proof": proof})
+        finalize(
+            replace(inputs, exact_proof=pair(proof, "exact-proof.json", 115))
         )
 
 
@@ -363,27 +364,11 @@ def test_cli_fresh_proof_is_current_artifact_and_finalizer_replays_without_io(
         proof.exact_version_readback.witness_digest
         == case.artifact.witness_digest
     )
-    for option in (
-        "--adapter-context",
-        "--adapter-context-digest",
-        "--adapter-context-artifact-id",
-        "--adapter-context-artifact-digest",
-    ):
-        index = arguments.index(option)
-        del arguments[index : index + 2]
-    names = {
-        "release:build:npm-package": "build_evidence",
-        "release:quality:project-test": "project_test_evidence",
-        "release:quality:npm-artifact-contents": "artifact_contents_evidence",
-        "release:quality:npm-install-import": "install_import_evidence",
-    }
-    for index, evidence in enumerate(case.evidence):
-        name = names[evidence.obligation.obligation_id]
-        arguments += uploaded_arguments(
-            tmp_path, name, evidence.to_document(), 120 + index
-        )
-    arguments += uploaded_arguments(
-        tmp_path, "exact_satisfied_finalization_proof", document, 130
+    inputs = replace(
+        exact_inputs(case), exact_proof=pair(proof, "exact-proof.json", 130)
+    )
+    arguments = finalization_cli_arguments(
+        tmp_path / "finalizer", case, inputs, monkeypatch
     )
 
     class ReplayClock(datetime):
@@ -409,8 +394,11 @@ def test_cli_fresh_proof_is_current_artifact_and_finalizer_replays_without_io(
             [
                 "release",
                 "finalize-live",
-                *current_arguments(case),
                 *arguments,
+                "--publisher-conclusion",
+                "skipped",
+                "--publication-terminal-reference",
+                "null",
                 "--outcome-output",
                 str(outcome_path),
                 "--summary-output",
@@ -424,8 +412,9 @@ def test_cli_fresh_proof_is_current_artifact_and_finalizer_replays_without_io(
         expected_type=AttemptOutcome,
         expected_digest=canonical_sha256(json.loads(outcome_path.read_bytes())),
     )
-    assert outcome.result == "success"
+    assert outcome.disposition == "exact-satisfied"
     assert outcome.possibly_mutated is False
     assert (
-        outcome.exact_satisfied_finalization_proof_digest == proof.proof_digest
+        outcome.direct_predecessor.reference.payload_digest
+        == proof.proof_digest
     )

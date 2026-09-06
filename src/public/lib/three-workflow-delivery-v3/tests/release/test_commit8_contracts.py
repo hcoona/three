@@ -19,7 +19,6 @@ from three_workflow_delivery_v3.platform import github as github_platform
 from three_workflow_delivery_v3.records import release as release_records
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactReference,
-    ArtifactTransportIdentity,
 )
 from three_workflow_delivery_v3.records.bindings import (
     CurrentAuthorityContext,
@@ -27,10 +26,8 @@ from three_workflow_delivery_v3.records.bindings import (
 )
 from three_workflow_delivery_v3.records.release import (
     CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION,
-    ActionResult,
     ApprovalBoundary,
     ApprovalBundle,
-    AttemptOutcome,
     BuddyExecutionIdentity,
     ExactSatisfiedFinalizationProof,
     ExternalPackageCoordinate,
@@ -39,11 +36,9 @@ from three_workflow_delivery_v3.records.release import (
     PublicationAuthorization,
     PublicationObservationReference,
     PublicationSnapshot,
-    Receipt,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
     ReleaseRecord,
-    SimulationBinding,
     form_publication_action,
     publication_capability_requirements,
     publication_mutable_resource_key_basis,
@@ -62,7 +57,6 @@ from three_workflow_delivery_v3.release.identity import (
     normalize_buddy_live_intent,
 )
 from three_workflow_delivery_v3.release.live import (
-    finalize_attempt_outcome,
     form_approval_bundle,
     validate_approval_bundle_closure,
 )
@@ -86,8 +80,6 @@ COMMIT8_RECORD_TYPES = (
     "ApprovalBundle",
     "PublicationAuthorization",
     "ExactSatisfiedFinalizationProof",
-    "ActionResult",
-    "Receipt",
     "AttemptOutcome",
 )
 
@@ -348,141 +340,6 @@ def _attempt_binding() -> ReleaseAttemptBinding:
     )
 
 
-def _receipt() -> Receipt:
-    coordinate = ExternalPackageCoordinate(
-        channel="buddy",
-        destination_id="npm/github-packages-hcoona-three-v1",
-        package_name="@hcoona/hcoona-release-smoke-npm",
-        native_version="1.2.3-gabc123",
-    )
-    transport = ArtifactTransportIdentity(
-        artifact_id=720,
-        artifact_name="release.tgz",
-        artifact_url="https://example.test/artifacts/720",
-        transport_digest="sha256:" + ("8" * 64),
-        producer="build",
-        workflow_run_id=ATTEMPT.workflow_run_id,
-        run_attempt=None,
-    )
-    return Receipt(
-        attempt=ATTEMPT,
-        publication_snapshot_digest="sha256:" + ("1" * 64),
-        action_id="action:publish",
-        action_digest="sha256:" + ("4" * 64),
-        coordinate=coordinate,
-        mutable_resource_keys=(
-            "external-package-coordinate:key",
-            "npm-dist-tag:key",
-        ),
-        lock_group="destination-package:lock",
-        artifact_transport=transport,
-        artifact_content_sha256="sha256:" + ("9" * 64),
-        artifact_content_sha512="sha512:" + ("a" * 128),
-        witness_digest="sha256:" + ("b" * 64),
-        creation_result="created",
-        tag_mapping=(("buddy-sha-" + TARGET, coordinate.native_version),),
-        response_identity_digest="sha256:" + ("c" * 64),
-        producer="publish-github-packages",
-        control=CONTROL,
-        workflow_run_id=ATTEMPT.workflow_run_id,
-    )
-
-
-def _action_result(
-    *,
-    outcome: str = "success",
-    mutation_disposition: str = "created",
-    with_receipt: bool = True,
-) -> ActionResult:
-    receipt = _receipt()
-    return ActionResult(
-        attempt=ATTEMPT,
-        publication_snapshot_digest=receipt.publication_snapshot_digest,
-        action_id=receipt.action_id,
-        action_digest=receipt.action_digest,
-        lock_group=receipt.lock_group,
-        outcome=outcome,
-        mutation_disposition=mutation_disposition,
-        response_identity_digest=(
-            receipt.response_identity_digest if with_receipt else None
-        ),
-        receipt=receipt if with_receipt else None,
-        diagnostic_reference=None if with_receipt else "lost-receipt",
-        producer=receipt.producer,
-        control=CONTROL,
-        workflow_run_id=ATTEMPT.workflow_run_id,
-    )
-
-
-def _attempt_outcome() -> AttemptOutcome:
-    return AttemptOutcome(
-        attempt=ATTEMPT,
-        qualification_decision_digest="sha256:" + ("d" * 64),
-        publication_snapshot_digest="sha256:" + ("1" * 64),
-        exact_satisfied_finalization_proof_digest=None,
-        approval_bundle_digest="sha256:" + ("2" * 64),
-        publication_authorization_digest="sha256:" + ("3" * 64),
-        action_result_digests=(_action_result().result_digest,),
-        terminal_phase="finalized",
-        result="success",
-        uncertainty=False,
-        possibly_mutated=False,
-        next_action="none",
-    )
-
-
-def _qualification_outcome() -> AttemptOutcome:
-    return AttemptOutcome(
-        attempt=ATTEMPT,
-        qualification_decision_digest="sha256:" + ("d" * 64),
-        publication_snapshot_digest=None,
-        exact_satisfied_finalization_proof_digest=None,
-        approval_bundle_digest=None,
-        publication_authorization_digest=None,
-        action_result_digests=(),
-        terminal_phase="qualification",
-        result="incomplete",
-        uncertainty=True,
-        possibly_mutated=False,
-        next_action="new-attempt",
-    )
-
-
-def _publication_preparation_outcome() -> AttemptOutcome:
-    return AttemptOutcome(
-        attempt=ATTEMPT,
-        qualification_decision_digest="sha256:" + ("d" * 64),
-        publication_snapshot_digest=None,
-        exact_satisfied_finalization_proof_digest=None,
-        approval_bundle_digest=None,
-        publication_authorization_digest=None,
-        action_result_digests=(),
-        terminal_phase="publication-preparation",
-        result="incomplete",
-        uncertainty=True,
-        possibly_mutated=False,
-        next_action="new-attempt",
-    )
-
-
-def _observation_outcome() -> AttemptOutcome:
-    return AttemptOutcome(
-        attempt=ATTEMPT,
-        qualification_decision_digest="sha256:" + ("d" * 64),
-        publication_snapshot_digest=None,
-        exact_satisfied_finalization_proof_digest=None,
-        approval_bundle_digest=None,
-        publication_authorization_digest=None,
-        action_result_digests=(),
-        terminal_phase="observation",
-        result="failure",
-        uncertainty=False,
-        possibly_mutated=False,
-        next_action="reconcile",
-        observation_digests=("sha256:" + ("f" * 64),),
-    )
-
-
 @pytest.mark.parametrize(
     "record_name",
     [
@@ -490,12 +347,6 @@ def _observation_outcome() -> AttemptOutcome:
         "approval-bundle",
         "publication-authorization",
         "exact-satisfied-proof",
-        "action-result",
-        "successful-action-outcome",
-        "successful-no-op-outcome",
-        "qualification-outcome",
-        "publication-preparation-outcome",
-        "observation-outcome",
     ],
 )
 def test_commit8_records_round_trip_through_closed_transport(
@@ -886,339 +737,6 @@ def test_exact_satisfied_proof_rejects_action_or_control_substitution(
         )
 
 
-def test_receipt_is_not_a_top_level_transport_record() -> None:
-    with pytest.raises(ValueError, match="unsupported transported Release"):
-        release_record_from_document(
-            _receipt().to_document(),
-            expected_type=Receipt,  # type: ignore[arg-type]
-        )
-
-
-def test_persisted_release_records_require_target_derived_control(
-    qualified_simulation,
-) -> None:
-    wrong_control = f"workflow-delivery-v3:{'0' * 40}"
-    records = _transport_records(qualified_simulation)
-    failed_result = _action_result(
-        outcome="failed",
-        mutation_disposition="no-side-effect",
-        with_receipt=False,
-    )
-
-    with pytest.raises(ValueError, match="control target binding mismatch"):
-        replace(qualified_simulation.binding, control=wrong_control)
-    with pytest.raises(ValueError, match="control target binding mismatch"):
-        replace(_receipt(), control=wrong_control)
-    with pytest.raises(ValueError, match="control target binding mismatch"):
-        replace(failed_result, control=wrong_control)
-    for name in (
-        "approval-bundle",
-        "publication-authorization",
-        "exact-satisfied-proof",
-    ):
-        with pytest.raises(ValueError, match="control"):
-            replace(records[name], control=wrong_control)
-
-    def assert_transport_rejected(
-        record: ReleaseRecord,
-        expected_type: type[ReleaseRecord],
-        message: str = "control target binding mismatch",
-    ) -> None:
-        document = record.to_document()
-        document["control"] = wrong_control
-        with pytest.raises(
-            ValueError,
-            match=message,
-        ):
-            release_record_from_document(
-                document,
-                expected_type=expected_type,
-            )
-
-    assert_transport_rejected(
-        qualified_simulation.binding,
-        SimulationBinding,
-    )
-    for name in (
-        "approval-bundle",
-        "publication-authorization",
-    ):
-        record = records[name]
-        assert_transport_rejected(record, type(record))
-    proof = records["exact-satisfied-proof"]
-    assert_transport_rejected(proof, type(proof), "control.*mismatch")
-    assert_transport_rejected(failed_result, ActionResult)
-
-    action_result_document = _action_result().to_document()
-    receipt_document = action_result_document["receipt"]
-    assert isinstance(receipt_document, dict)
-    receipt_document["control"] = wrong_control
-    with pytest.raises(ValueError, match="control target binding mismatch"):
-        release_record_from_document(
-            action_result_document,
-            expected_type=ActionResult,
-        )
-
-
-@pytest.mark.parametrize(
-    ("record", "field", "replacement", "message"),
-    [
-        (
-            _receipt(),
-            "mutable_resource_keys",
-            ("coordinate:key",),
-            "coordinate-plus-tag",
-        ),
-        (
-            _action_result(),
-            "receipt",
-            None,
-            "embedded Receipt",
-        ),
-        (
-            _attempt_outcome(),
-            "possibly_mutated",
-            True,
-            "Successful Attempt Outcome",
-        ),
-        (
-            _attempt_outcome(),
-            "action_result_digests",
-            (),
-            "Action Result lineage",
-        ),
-        (
-            _qualification_outcome(),
-            "action_result_digests",
-            ("sha256:" + ("e" * 64),),
-            "qualification-only",
-        ),
-        (
-            _qualification_outcome(),
-            "next_action",
-            "observe-destinations",
-            "qualification-only",
-        ),
-        pytest.param(
-            _publication_preparation_outcome(),
-            "uncertainty",
-            False,
-            r"(?i)publication[- ]preparation",
-            id="uncertainty",
-        ),
-        pytest.param(
-            _publication_preparation_outcome(),
-            "exact_satisfied_finalization_proof_digest",
-            "sha256:" + ("f" * 64),
-            "only valid for successful no-op",
-            id="exact-satisfied-finalization-proof-digest",
-        ),
-        pytest.param(
-            _publication_preparation_outcome(),
-            "publication_snapshot_digest",
-            "sha256:" + ("f" * 64),
-            r"(?i)publication[- ]preparation",
-            id="publication-snapshot-digest",
-        ),
-        pytest.param(
-            _publication_preparation_outcome(),
-            "approval_bundle_digest",
-            "sha256:" + ("f" * 64),
-            r"(?i)publication[- ]preparation",
-            id="approval-bundle-digest",
-        ),
-        pytest.param(
-            _publication_preparation_outcome(),
-            "publication_authorization_digest",
-            "sha256:" + ("f" * 64),
-            r"(?i)publication[- ]preparation",
-            id="publication-authorization-digest",
-        ),
-        pytest.param(
-            _publication_preparation_outcome(),
-            "action_result_digests",
-            ("sha256:" + ("f" * 64),),
-            r"(?i)publication[- ]preparation",
-            id="action-result-digests",
-        ),
-        pytest.param(
-            _publication_preparation_outcome(),
-            "result",
-            "failure",
-            r"(?i)publication[- ]preparation",
-            id="result",
-        ),
-        pytest.param(
-            _publication_preparation_outcome(),
-            "possibly_mutated",
-            True,
-            r"(?i)publication[- ]preparation",
-            id="possibly-mutated",
-        ),
-        pytest.param(
-            _publication_preparation_outcome(),
-            "next_action",
-            "none",
-            r"(?i)publication[- ]preparation",
-            id="next-action",
-        ),
-    ],
-)
-def test_commit8_records_reject_independent_binding_substitutions(
-    record,
-    field: str,
-    replacement,
-    message: str,
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        replace(record, **{field: replacement})
-
-
-def test_action_result_rejects_substituted_parent_receipt_binding() -> None:
-    substituted_digest = "sha256:" + ("e" * 64)
-
-    with pytest.raises(ValueError, match="embedded Receipt binding mismatch"):
-        replace(
-            _action_result(),
-            response_identity_digest=substituted_digest,
-        )
-
-    document = _action_result().to_document()
-    document["response-identity-digest"] = substituted_digest
-    with pytest.raises(ValueError, match="embedded Receipt binding mismatch"):
-        release_record_from_document(
-            document,
-            expected_type=ActionResult,
-        )
-
-
-@pytest.mark.parametrize(
-    ("field", "document_field", "value"),
-    [
-        (
-            "approval_bundle_digest",
-            "approval-bundle-digest",
-            None,
-        ),
-        (
-            "publication_authorization_digest",
-            "publication-authorization-digest",
-            None,
-        ),
-        ("action_result_digests", "action-result-digests", ()),
-        (
-            "action_result_digests",
-            "action-result-digests",
-            (
-                "sha256:" + ("e" * 64),
-                "sha256:" + ("f" * 64),
-            ),
-        ),
-    ],
-)
-def test_successful_outcome_requires_exact_direct_lineage(
-    field: str,
-    document_field: str,
-    value: str | tuple[str, ...] | None,
-) -> None:
-    with pytest.raises(ValueError, match="lineage"):
-        replace(_attempt_outcome(), **{field: value})
-
-    document = _attempt_outcome().to_document()
-    document[document_field] = (
-        list(value) if isinstance(value, tuple) else value
-    )
-    with pytest.raises(ValueError, match="lineage"):
-        release_record_from_document(
-            document,
-            expected_type=AttemptOutcome,
-        )
-
-
-@pytest.mark.parametrize(
-    "outcome",
-    [
-        pytest.param(
-            replace(_attempt_outcome(), result="failure"),
-            id="failure",
-        ),
-        pytest.param(
-            replace(
-                _attempt_outcome(),
-                result="incomplete-possibly-mutated",
-                uncertainty=True,
-                possibly_mutated=True,
-                next_action="reobserve-and-replay",
-            ),
-            id="incomplete-possibly-mutated",
-        ),
-    ],
-)
-def test_non_successful_outcome_rejects_multiple_direct_results(
-    outcome: AttemptOutcome,
-) -> None:
-    result_digests = (
-        "sha256:" + ("e" * 64),
-        "sha256:" + ("f" * 64),
-    )
-
-    with pytest.raises(ValueError, match="at most one direct Action Result"):
-        replace(outcome, action_result_digests=result_digests)
-
-    document = outcome.to_document()
-    transport_values = document["action-result-digests"]
-    assert isinstance(transport_values, list)
-    transport_values.clear()
-    transport_values.extend(result_digests)
-    with pytest.raises(ValueError, match="at most one direct Action Result"):
-        release_record_from_document(
-            document,
-            expected_type=AttemptOutcome,
-        )
-
-
-def test_successful_noop_outcome_requires_only_fresh_proof_lineage() -> None:
-    outcome = AttemptOutcome(
-        attempt=ATTEMPT,
-        qualification_decision_digest="sha256:" + ("d" * 64),
-        publication_snapshot_digest="sha256:" + ("1" * 64),
-        exact_satisfied_finalization_proof_digest=("sha256:" + ("2" * 64)),
-        approval_bundle_digest=None,
-        publication_authorization_digest=None,
-        action_result_digests=(),
-        terminal_phase="finalized-no-op",
-        result="success",
-        uncertainty=False,
-        possibly_mutated=False,
-        next_action="none",
-    )
-
-    assert outcome.exact_satisfied_finalization_proof_digest is not None
-    for field, value in (
-        ("exact_satisfied_finalization_proof_digest", None),
-        ("approval_bundle_digest", "sha256:" + ("3" * 64)),
-        (
-            "publication_authorization_digest",
-            "sha256:" + ("4" * 64),
-        ),
-        ("action_result_digests", ("sha256:" + ("5" * 64),)),
-    ):
-        with pytest.raises(ValueError, match="no-op Attempt Outcome"):
-            replace(outcome, **{field: value})
-
-
-def test_lost_receipt_after_possible_mutation_can_never_be_success() -> None:
-    incomplete = _action_result(
-        outcome="incomplete",
-        mutation_disposition="possibly-mutated",
-        with_receipt=False,
-    )
-
-    assert incomplete.outcome == "incomplete"
-    with pytest.raises(ValueError, match="embedded Receipt"):
-        replace(incomplete, outcome="success")
-
-
 def test_buddy_request_normalization_and_execution_derivation_are_strict() -> (
     None
 ):
@@ -1506,71 +1024,14 @@ def _exact_satisfied_proof(
     )
 
 
-def _publication_action_result(
-    publication: PublicationSnapshot,
-    projection,
-    artifact,
-    *,
-    outcome: str = "success",
-    mutation_disposition: str = "created",
-) -> ActionResult:
-    action = publication.materialized_actions[0]
-    assert artifact.content.content_sha512 is not None
-    with_receipt = outcome == "success"
-    receipt = (
-        Receipt(
-            attempt=publication.attempt,
-            publication_snapshot_digest=publication.snapshot_digest,
-            action_id=action.action_id,
-            action_digest=action.action_digest,
-            coordinate=projection.coordinate,
-            mutable_resource_keys=action.mutable_resource_keys,
-            lock_group=action.serialization_projection,
-            artifact_transport=artifact.transport,
-            artifact_content_sha256=artifact.content.content_sha256,
-            artifact_content_sha512=artifact.content.content_sha512,
-            witness_digest=artifact.witness_digest,
-            creation_result=mutation_disposition,
-            tag_mapping=((action.tag, action.version),),
-            response_identity_digest="sha256:" + ("9" * 64),
-            producer="publish-github-packages",
-            control=(
-                f"workflow-delivery-v3:{publication.attempt.execution.target}"
-            ),
-            workflow_run_id=publication.attempt.workflow_run_id,
-        )
-        if with_receipt
-        else None
-    )
-    return ActionResult(
-        attempt=publication.attempt,
-        publication_snapshot_digest=publication.snapshot_digest,
-        action_id=action.action_id,
-        action_digest=action.action_digest,
-        lock_group=action.serialization_projection,
-        outcome=outcome,
-        mutation_disposition=mutation_disposition,
-        response_identity_digest=(
-            None if receipt is None else receipt.response_identity_digest
-        ),
-        receipt=receipt,
-        diagnostic_reference=None if receipt is not None else "publication",
-        producer="publish-github-packages",
-        control=(
-            f"workflow-delivery-v3:{publication.attempt.execution.target}"
-        ),
-        workflow_run_id=publication.attempt.workflow_run_id,
-    )
-
-
 def _transport_records(scenario) -> dict[str, ReleaseRecord]:
     (
         _attempt,
         attempt_binding,
         decision,
         action_publication,
-        action_projection,
-        action_artifact,
+        _action_projection,
+        _action_artifact,
         _action_qualification_snapshot,
     ) = _live_closure_details(scenario, with_action=True)
     bundle = _approval_bundle(
@@ -1579,160 +1040,19 @@ def _transport_records(scenario) -> dict[str, ReleaseRecord]:
         action_publication,
     )
     authorization = _publication_authorization(bundle)
-    action_result = _publication_action_result(
-        action_publication,
-        action_projection,
-        action_artifact,
-    )
     (
         _noop_attempt,
         _noop_binding,
-        noop_decision,
+        _noop_decision,
         noop_publication,
     ) = _live_closure(scenario, with_action=False)
     proof = _exact_satisfied_proof(noop_publication)
-    action_outcome = AttemptOutcome(
-        attempt=action_publication.attempt,
-        qualification_decision_digest=decision.decision_digest,
-        publication_snapshot_digest=action_publication.snapshot_digest,
-        exact_satisfied_finalization_proof_digest=None,
-        approval_bundle_digest=bundle.bundle_digest,
-        publication_authorization_digest=authorization.authorization_digest,
-        action_result_digests=(action_result.result_digest,),
-        terminal_phase="finalized",
-        result="success",
-        uncertainty=False,
-        possibly_mutated=False,
-        next_action="none",
-    )
-    noop_outcome = AttemptOutcome(
-        attempt=noop_publication.attempt,
-        qualification_decision_digest=noop_decision.decision_digest,
-        publication_snapshot_digest=noop_publication.snapshot_digest,
-        exact_satisfied_finalization_proof_digest=proof.proof_digest,
-        approval_bundle_digest=None,
-        publication_authorization_digest=None,
-        action_result_digests=(),
-        terminal_phase="finalized-no-op",
-        result="success",
-        uncertainty=False,
-        possibly_mutated=False,
-        next_action="none",
-    )
     return {
         "attempt-binding": attempt_binding,
         "approval-bundle": bundle,
         "publication-authorization": authorization,
         "exact-satisfied-proof": proof,
-        "action-result": action_result,
-        "successful-action-outcome": action_outcome,
-        "successful-no-op-outcome": noop_outcome,
-        "qualification-outcome": _qualification_outcome(),
-        "publication-preparation-outcome": (_publication_preparation_outcome()),
-        "observation-outcome": _observation_outcome(),
     }
-
-
-def test_exact_preobserved_noop_requires_contextual_proof_authority(
-    qualified_simulation,
-) -> None:
-    attempt, _binding, decision, publication = _live_closure(
-        qualified_simulation,
-        with_action=False,
-    )
-    proof = _exact_satisfied_proof(publication)
-
-    with pytest.raises(ValueError, match="requires full authority"):
-        finalize_attempt_outcome(
-            attempt=attempt,
-            qualification_decision=decision,
-            publication_snapshot=publication,
-            publication_snapshot_reference=proof.publication_snapshot_reference,
-            exact_satisfied_finalization_proof=proof,
-            publisher_conclusion="skipped",
-            approval_bundle=None,
-            publication_authorization=None,
-            action_results=(),
-        )
-    missing_proof = finalize_attempt_outcome(
-        attempt=attempt,
-        qualification_decision=decision,
-        publication_snapshot=publication,
-        publisher_conclusion="skipped",
-        approval_bundle=None,
-        publication_authorization=None,
-        action_results=(),
-    )
-
-    assert missing_proof.terminal_phase == "exact-satisfied-proof-missing"
-    assert missing_proof.result == "incomplete"
-    assert missing_proof.uncertainty is True
-    assert missing_proof.possibly_mutated is False
-    assert missing_proof.next_action == "new-attempt"
-    assert missing_proof.publication_snapshot_digest == (
-        publication.snapshot_digest
-    )
-    assert missing_proof.exact_satisfied_finalization_proof_digest is None
-
-
-def test_exact_noop_rejects_environment_authorization_and_result_lineage(
-    qualified_simulation,
-) -> None:
-    (
-        attempt,
-        noop_binding,
-        decision,
-        publication,
-    ) = _live_closure(qualified_simulation, with_action=False)
-    (
-        _action_attempt,
-        action_binding,
-        action_decision,
-        action_publication,
-        action_projection,
-        action_artifact,
-        _action_qualification_snapshot,
-    ) = _live_closure_details(qualified_simulation, with_action=True)
-    action_bundle = _approval_bundle(
-        action_binding,
-        action_decision,
-        action_publication,
-    )
-    action_authorization = _publication_authorization(action_bundle)
-    action_result = _publication_action_result(
-        action_publication,
-        action_projection,
-        action_artifact,
-    )
-    proof = _exact_satisfied_proof(publication)
-    proof_keys = _nested_document_keys(proof.to_document())
-
-    assert noop_binding.attempt == attempt
-    assert {
-        "environment",
-        "approval-job",
-        "approval-bundle",
-        "publication-authorization",
-        "action-result",
-        "action-result-digests",
-    }.isdisjoint(proof_keys)
-    for downstream in (
-        {"approval_bundle": action_bundle},
-        {"publication_authorization": action_authorization},
-        {"action_results": (action_result,)},
-    ):
-        arguments: dict[str, object] = {
-            "attempt": attempt,
-            "qualification_decision": decision,
-            "publication_snapshot": publication,
-            "exact_satisfied_finalization_proof": proof,
-            "approval_bundle": None,
-            "publication_authorization": None,
-            "action_results": (),
-        }
-        arguments.update(downstream)
-        with pytest.raises(ValueError, match=r"(mismatch|no-op)"):
-            finalize_attempt_outcome(**arguments)  # type: ignore[arg-type]
 
 
 def test_publication_snapshot_action_set_exactly_matches_absent_observations(
@@ -1754,55 +1074,6 @@ def test_publication_snapshot_action_set_exactly_matches_absent_observations(
                 replace(reference, classification="absent"),
             ),
         )
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("terminal_phase", "approval-contract"),
-        ("uncertainty", True),
-        ("possibly_mutated", True),
-        ("next_action", "new-attempt"),
-        ("action_result_digests", ("sha256:" + ("7" * 64),)),
-    ],
-)
-def test_replayable_no_side_effect_outcome_requires_exact_safe_state(
-    qualified_simulation,
-    field: str,
-    value: object,
-) -> None:
-    attempt, _binding, decision, publication = _live_closure(
-        qualified_simulation,
-        with_action=False,
-    )
-    outcome = AttemptOutcome(
-        attempt=attempt,
-        qualification_decision_digest=decision.decision_digest,
-        publication_snapshot_digest=publication.snapshot_digest,
-        exact_satisfied_finalization_proof_digest=None,
-        approval_bundle_digest=None,
-        publication_authorization_digest=None,
-        action_result_digests=(),
-        terminal_phase="pre-authorization-termination",
-        result="replayable-no-side-effect",
-        uncertainty=False,
-        possibly_mutated=False,
-        next_action="replay",
-    )
-
-    assert outcome.result == "replayable-no-side-effect"
-    assert (
-        release_record_from_document(
-            outcome.to_document(),
-            expected_type=AttemptOutcome,
-        )
-        == outcome
-    )
-    with pytest.raises(
-        ValueError,
-        match="Replayable no-side-effect outcome is not exact",
-    ):
-        replace(outcome, **{field: value})  # type: ignore[bad-argument-type]
 
 
 def test_buddy_execution_identity_document_and_concurrency_key_are_exact() -> (

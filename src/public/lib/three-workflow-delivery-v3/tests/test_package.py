@@ -19,6 +19,7 @@ RELEASE_ARCHIVE_PATH = PurePosixPath("three_workflow_delivery_v3/release")
 SDIST_SOURCE_PREFIX = PurePosixPath("src")
 APPROVED_RELEASE_MODULES = (
     "__init__.py",
+    "attempt_finalizer.py",
     "eligibility.py",
     "exact_satisfied.py",
     "finalizer.py",

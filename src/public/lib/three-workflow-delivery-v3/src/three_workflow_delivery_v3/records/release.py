@@ -94,16 +94,11 @@ MUTATION_MAY_HAVE_STARTED_SCHEMA = (
     "workflow-delivery/v3/github-packages-mutation-may-have-started"
 )
 PUBLICATION_RESULT_SCHEMA = "workflow-delivery/v3/publication-result"
-ACTION_RESULT_SCHEMA = "workflow-delivery/v3/action-result"
-RECEIPT_SCHEMA = "workflow-delivery/v3/receipt"
 ATTEMPT_OUTCOME_SCHEMA = "workflow-delivery/v3/attempt-outcome"
 SIMULATION_OUTCOME_SCHEMA = "workflow-delivery/v3/simulation-outcome"
 NPMJS_OBSERVATION_CONTRACT_ID = "npm/npmjs-public-observation-v1"
 NPMJS_OBSERVER_PRODUCER = "observe-npmjs"
 HYPOTHETICAL_ACTIONS_REPORT_PRODUCER = "materialize-hypothetical-actions"
-PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER = (
-    "governance-recheck-failed-before-runner"
-)
 CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION = (
     "conditional-create-npm-version-and-target-tag"
 )
@@ -3806,7 +3801,7 @@ class MutationMayHaveStartedMarker:
 
 @dataclass(frozen=True, slots=True)
 class PublicationResult:
-    """Controlled post-marker publication outcome without a Receipt."""
+    """Controlled post-marker publication outcome with direct marker lineage."""
 
     attempt: ReleaseAttemptIdentity
     mutation_marker_reference: ArtifactReference
@@ -4097,508 +4092,123 @@ class DirectPredecessor:
 
 
 @dataclass(frozen=True, slots=True)
-class Receipt:
-    """Durable exact create-or-exact package publication proof."""
+class AttemptOutcome:
+    """Current-Attempt terminal classification with one direct predecessor."""
 
     attempt: ReleaseAttemptIdentity
-    publication_snapshot_digest: str
-    action_id: str
-    action_digest: str
-    coordinate: ExternalPackageCoordinate
-    mutable_resource_keys: tuple[str, ...]
-    lock_group: str
-    artifact_transport: ArtifactTransportIdentity
-    artifact_content_sha256: str
-    artifact_content_sha512: str
-    witness_digest: str
-    creation_result: str
-    tag_mapping: tuple[tuple[str, str], ...]
-    response_identity_digest: str
+    disposition: str
+    possibly_mutated: bool
+    direct_predecessor: DirectPredecessor
     producer: str
     control: str
     workflow_run_id: int
 
     def __post_init__(self) -> None:
-        """Reject incomplete transport, tag, race, or current bindings."""
-        _exact(self.attempt, ReleaseAttemptIdentity, field="receipt.attempt")
-        _digest(
-            self.publication_snapshot_digest,
-            field="receipt.publication_snapshot_digest",
-        )
-        _string(self.action_id, field="receipt.action_id")
-        _digest(self.action_digest, field="receipt.action_digest")
-        _exact(
-            self.coordinate,
-            ExternalPackageCoordinate,
-            field="receipt.coordinate",
-        )
-        keys = _string_tuple(
-            self.mutable_resource_keys,
-            field="receipt.mutable_resource_keys",
-        )
-        if len(keys) != _PAIR_SIZE:
-            message = "Receipt requires complete coordinate-plus-tag keys"
-            raise ValueError(message)
-        if not keys[0].startswith("external-package-coordinate:") or not keys[
-            1
-        ].startswith("npm-dist-tag:"):
-            message = "Receipt mutable resource keys are not exact"
-            raise ValueError(message)
-        _string(self.lock_group, field="receipt.lock_group")
-        _exact(
-            self.artifact_transport,
-            ArtifactTransportIdentity,
-            field="receipt.artifact_transport",
-        )
-        _digest(
-            self.artifact_content_sha256,
-            field="receipt.artifact_content_sha256",
-        )
-        _digest(
-            self.artifact_content_sha512,
-            field="receipt.artifact_content_sha512",
-            sha512=True,
-        )
-        _digest(self.witness_digest, field="receipt.witness_digest")
-        if self.creation_result not in {"created", "exact-race-accepted"}:
-            message = "Receipt creation result has an invalid closed value"
-            raise ValueError(message)
-        mapping = _pairs(self.tag_mapping, field="receipt.tag_mapping")
-        execution = self.attempt.execution
-        if type(execution) is not BuddyExecutionIdentity:
-            message = "First-slice Receipt requires Buddy Execution"
-            raise TypeError(message)
-        expected_tag = f"buddy-sha-{execution.target}"
-        if mapping != ((expected_tag, self.coordinate.native_version),):
-            message = "Receipt requires the exact target tag mapping"
-            raise ValueError(message)
-        _digest(
-            self.response_identity_digest,
-            field="receipt.response_identity_digest",
-        )
-        _string(self.producer, field="receipt.producer")
-        _target_control(
-            self.control,
-            target=self.attempt.execution.target,
-            field="Receipt control",
-        )
-        if self.producer != "publish-github-packages":
-            message = "Receipt producer is not exact"
-            raise ValueError(message)
-        if (
-            self.workflow_run_id != self.attempt.workflow_run_id
-            or self.artifact_transport.workflow_run_id != self.workflow_run_id
-            or self.artifact_transport.run_attempt is not None
-        ):
-            message = "Receipt current Attempt/transport binding mismatch"
-            raise ValueError(message)
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical Receipt."""
-        return {
-            "schema": RECEIPT_SCHEMA,
-            "attempt": self.attempt.to_document(),
-            "publication-snapshot-digest": (self.publication_snapshot_digest),
-            "action-id": self.action_id,
-            "action-digest": self.action_digest,
-            "coordinate": self.coordinate.to_document(),
-            "mutable-resource-keys": _json_strings(self.mutable_resource_keys),
-            "lock-group": self.lock_group,
-            "artifact-transport": self.artifact_transport.to_document(),
-            "artifact-content-sha256": self.artifact_content_sha256,
-            "artifact-content-sha512": self.artifact_content_sha512,
-            "witness-digest": self.witness_digest,
-            "creation-result": self.creation_result,
-            "tag-mapping": _json_pairs(self.tag_mapping),
-            "response-identity-digest": self.response_identity_digest,
-            "producer": self.producer,
-            "control": self.control,
-            "workflow-run-id": self.workflow_run_id,
-        }
-
-    @property
-    def receipt_digest(self) -> str:
-        """Return the canonical Receipt digest."""
-        return canonical_sha256(self.to_document())
-
-
-@dataclass(frozen=True, slots=True)
-class ActionResult:
-    """One exact action result with an embedded successful Receipt."""
-
-    attempt: ReleaseAttemptIdentity
-    publication_snapshot_digest: str
-    action_id: str
-    action_digest: str
-    lock_group: str
-    outcome: str
-    mutation_disposition: str
-    response_identity_digest: str | None
-    receipt: Receipt | None
-    diagnostic_reference: str | None
-    producer: str
-    control: str
-    workflow_run_id: int
-
-    def __post_init__(self) -> None:  # noqa: C901
-        """Reject false success and incomplete current bindings."""
-        _exact(
-            self.attempt, ReleaseAttemptIdentity, field="action result.attempt"
-        )
-        _digest(
-            self.publication_snapshot_digest,
-            field="action result.publication_snapshot_digest",
-        )
-        _string(self.action_id, field="action result.action_id")
-        _digest(self.action_digest, field="action result.action_digest")
-        _string(self.lock_group, field="action result.lock_group")
-        if self.outcome not in {"success", "failed", "incomplete"}:
-            message = "Action Result outcome has an invalid closed value"
-            raise ValueError(message)
-        if self.mutation_disposition not in {
-            "created",
-            "exact-race-accepted",
-            "no-side-effect",
-            "possibly-mutated",
-        }:
-            message = "Action Result mutation disposition is invalid"
-            raise ValueError(message)
-        response_digest = _optional_digest(
-            self.response_identity_digest,
-            field="action result.response_identity_digest",
-        )
-        if self.receipt is not None:
-            _exact(self.receipt, Receipt, field="action result.receipt")
-            if (
-                self.receipt.attempt != self.attempt
-                or self.receipt.publication_snapshot_digest
-                != self.publication_snapshot_digest
-                or self.receipt.action_id != self.action_id
-                or self.receipt.action_digest != self.action_digest
-                or self.receipt.lock_group != self.lock_group
-                or self.receipt.response_identity_digest != response_digest
-                or self.receipt.control != self.control
-                or self.receipt.workflow_run_id != self.workflow_run_id
-            ):
-                message = "Action Result embedded Receipt binding mismatch"
-                raise ValueError(message)
-        if self.outcome == "success" and (
-            response_digest is None
-            or self.receipt is None
-            or self.mutation_disposition
-            not in {"created", "exact-race-accepted"}
-        ):
-            message = "Action Result success requires an embedded Receipt"
-            raise ValueError(message)
-        if self.receipt is not None and (
-            self.outcome != "success"
-            or self.receipt.creation_result != self.mutation_disposition
-        ):
-            message = "Only successful Action Results may contain a Receipt"
-            raise ValueError(message)
-        if (
-            self.mutation_disposition == "possibly-mutated"
-            and self.outcome != "incomplete"
-        ):
-            message = "Possible mutation must remain incomplete"
-            raise ValueError(message)
-        if self.diagnostic_reference is not None:
-            _string(
-                self.diagnostic_reference,
-                field="action result.diagnostic_reference",
-            )
-        _string(self.producer, field="action result.producer")
-        _target_control(
-            self.control,
-            target=self.attempt.execution.target,
-            field="Action Result control",
-        )
-        if self.producer != "publish-github-packages":
-            message = "Action Result producer is not exact"
-            raise ValueError(message)
-        if self.workflow_run_id != self.attempt.workflow_run_id:
-            message = "Action Result current Attempt binding mismatch"
-            raise ValueError(message)
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical Action Result."""
-        return {
-            "schema": ACTION_RESULT_SCHEMA,
-            "attempt": self.attempt.to_document(),
-            "publication-snapshot-digest": self.publication_snapshot_digest,
-            "action-id": self.action_id,
-            "action-digest": self.action_digest,
-            "lock-group": self.lock_group,
-            "outcome": self.outcome,
-            "mutation-disposition": self.mutation_disposition,
-            "response-identity-digest": self.response_identity_digest,
-            "receipt": (
-                None if self.receipt is None else self.receipt.to_document()
-            ),
-            "diagnostic-reference": self.diagnostic_reference,
-            "producer": self.producer,
-            "control": self.control,
-            "workflow-run-id": self.workflow_run_id,
-        }
-
-    @property
-    def result_digest(self) -> str:
-        """Return the canonical Action Result digest."""
-        return canonical_sha256(self.to_document())
-
-
-def _validate_attempt_outcome_lineage_cardinality(
-    action_result_digests: tuple[str, ...],
-) -> None:
-    if len(action_result_digests) > 1:
-        message = (
-            "Attempt Outcome permits at most one direct Action Result lineage"
-        )
-        raise ValueError(message)
-
-
-def _validate_successful_attempt_outcome(outcome: AttemptOutcome) -> None:
-    if outcome.result != "success":
-        return
-    if (
-        outcome.publication_snapshot_digest is None
-        or outcome.uncertainty
-        or outcome.possibly_mutated
-    ):
-        message = "Successful Attempt Outcome requires exact publication"
-        raise ValueError(message)
-    if outcome.terminal_phase == "finalized":
-        if (
-            outcome.exact_satisfied_finalization_proof_digest is not None
-            or outcome.approval_bundle_digest is None
-            or outcome.publication_authorization_digest is None
-            or len(outcome.action_result_digests) != 1
-        ):
-            message = (
-                "Successful finalized Attempt Outcome requires complete "
-                "Approval, Authorization, and Action Result lineage"
-            )
-            raise ValueError(message)
-        return
-    if outcome.terminal_phase == "finalized-no-op":
-        if (
-            outcome.exact_satisfied_finalization_proof_digest is None
-            or outcome.approval_bundle_digest is not None
-            or outcome.publication_authorization_digest is not None
-            or outcome.action_result_digests
-        ):
-            message = (
-                "Successful no-op Attempt Outcome requires the fresh "
-                "finalization proof and no mutation authority"
-            )
-            raise ValueError(message)
-        return
-    message = "Successful Attempt Outcome terminal phase is invalid"
-    raise ValueError(message)
-
-
-@dataclass(frozen=True, slots=True)
-class AttemptOutcome:
-    """Append-only terminal Attempt classification."""
-
-    attempt: ReleaseAttemptIdentity
-    qualification_decision_digest: str
-    publication_snapshot_digest: str | None
-    approval_bundle_digest: str | None
-    publication_authorization_digest: str | None
-    action_result_digests: tuple[str, ...]
-    terminal_phase: str
-    result: str
-    uncertainty: bool
-    possibly_mutated: bool
-    next_action: str
-    exact_satisfied_finalization_proof_digest: str | None = None
-    observation_digests: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:  # noqa: C901, PLR0912, PLR0915
-        """Reject false completion and ambiguous replay classifications."""
+        """Reject open classifications, copied lineage, and false success."""
         _exact(
             self.attempt,
             ReleaseAttemptIdentity,
             field="attempt outcome.attempt",
         )
-        _digest(
-            self.qualification_decision_digest,
-            field="attempt outcome.qualification_decision_digest",
+        _choice(
+            self.disposition,
+            frozenset(
+                {
+                    "exact-satisfied",
+                    "published",
+                    "failed-before-publication",
+                    "publication-failed",
+                    "unknown",
+                }
+            ),
+            field="attempt outcome.disposition",
         )
-        _optional_digest(
-            self.publication_snapshot_digest,
-            field="attempt outcome.publication_snapshot_digest",
-        )
-        _optional_digest(
-            self.exact_satisfied_finalization_proof_digest,
-            field=("attempt outcome.exact_satisfied_finalization_proof_digest"),
-        )
-        _optional_digest(
-            self.approval_bundle_digest,
-            field="attempt outcome.approval_bundle_digest",
-        )
-        _optional_digest(
-            self.publication_authorization_digest,
-            field="attempt outcome.publication_authorization_digest",
-        )
-        for field, values in (
-            ("action_result_digests", self.action_result_digests),
-        ):
-            for index, digest in enumerate(
-                _string_tuple(
-                    values,
-                    field=f"attempt outcome.{field}",
-                    sorted_values=True,
-                )
-            ):
-                _digest(digest, field=f"attempt outcome.{field}[{index}]")
-        _validate_attempt_outcome_lineage_cardinality(
-            self.action_result_digests,
-        )
-        _string(self.terminal_phase, field="attempt outcome.terminal_phase")
-        if self.result not in {
-            "success",
-            "failure",
-            "incomplete",
-            "replayable-no-side-effect",
-            "incomplete-possibly-mutated",
-        }:
-            message = "Attempt Outcome result has an invalid closed value"
-            raise ValueError(message)
-        _boolean(self.uncertainty, field="attempt outcome.uncertainty")
         _boolean(
             self.possibly_mutated,
             field="attempt outcome.possibly_mutated",
         )
-        _string(self.next_action, field="attempt outcome.next_action")
-        for index, digest in enumerate(
-            _string_tuple(
-                self.observation_digests,
-                field="attempt outcome.observation_digests",
-                sorted_values=True,
-            )
+        _exact(
+            self.direct_predecessor,
+            DirectPredecessor,
+            field="attempt outcome.direct_predecessor",
+        )
+        if (
+            _string(self.producer, field="attempt outcome.producer")
+            != "finalize-attempt"
         ):
-            _digest(
-                digest,
-                field=f"attempt outcome.observation_digests[{index}]",
-            )
-        _validate_successful_attempt_outcome(self)
-        if self.exact_satisfied_finalization_proof_digest is not None and (
-            self.result != "success" or self.terminal_phase != "finalized-no-op"
-        ):
-            message = (
-                "Exact-satisfied finalization proof is only valid for "
-                "successful no-op finalization"
-            )
+            message = "Attempt Outcome producer is not exact"
             raise ValueError(message)
-        if self.result == "incomplete-possibly-mutated" and (
-            not self.uncertainty or not self.possibly_mutated
-        ):
-            message = "Possibly-mutated outcome must preserve uncertainty"
-            raise ValueError(message)
-        if self.result == "replayable-no-side-effect" and (
-            self.terminal_phase != "pre-authorization-termination"
-            or self.uncertainty
-            or self.possibly_mutated
-            or self.next_action != "replay"
-            or self.action_result_digests
-        ):
-            message = "Replayable no-side-effect outcome is not exact"
-            raise ValueError(message)
-        if self.publication_snapshot_digest is None:
-            has_later_records = bool(
-                self.exact_satisfied_finalization_proof_digest is not None
-                or self.approval_bundle_digest is not None
-                or self.publication_authorization_digest is not None
-                or self.action_result_digests
+        _target_control(
+            self.control,
+            target=self.attempt.execution.target,
+            field="attempt outcome.control",
+        )
+        if (
+            _positive(
+                self.workflow_run_id, field="attempt outcome.workflow_run_id"
             )
-            if self.terminal_phase == "qualification":
-                expected_next_action = {
-                    "failure": "fix-quality-failure-and-rerun",
-                    "incomplete": "new-attempt",
-                }.get(self.result)
-                if (
-                    self.observation_digests
-                    or has_later_records
-                    or self.result not in {"failure", "incomplete"}
-                    or self.possibly_mutated
-                    or (self.result == "failure" and self.uncertainty)
-                    or (self.result == "incomplete" and not self.uncertainty)
-                    or self.next_action != expected_next_action
-                ):
-                    message = (
-                        "Pre-publication Attempt Outcome is not "
-                        "qualification-only"
+            != self.attempt.workflow_run_id
+        ):
+            message = "Attempt Outcome current Attempt binding mismatch"
+            raise ValueError(message)
+        predecessor = self.direct_predecessor.kind
+        pre_marker = {
+            "publication-authorization",
+            "approval-bundle",
+            "action-bearing-publication-snapshot",
+            "blocking-observation",
+            "qualification-decision",
+        }
+        valid = (
+            (
+                self.disposition == "exact-satisfied"
+                and predecessor == "exact-satisfied-finalization-proof"
+                and not self.possibly_mutated
+            )
+            or (
+                self.disposition == "published"
+                and predecessor == "publication-result"
+                and not self.possibly_mutated
+            )
+            or (
+                self.disposition == "publication-failed"
+                and predecessor == "publication-result"
+            )
+            or (
+                self.disposition == "failed-before-publication"
+                and predecessor in pre_marker
+                and not self.possibly_mutated
+            )
+            or (
+                self.disposition == "unknown"
+                and (
+                    (
+                        predecessor == "zero-action-publication-snapshot"
+                        and not self.possibly_mutated
                     )
-                    raise ValueError(message)
-            elif self.terminal_phase == "publication-preparation":
-                if (
-                    has_later_records
-                    or self.result != "incomplete"
-                    or not self.uncertainty
-                    or self.possibly_mutated
-                    or self.next_action != "new-attempt"
-                ):
-                    message = "Publication preparation Outcome is not exact"
-                    raise ValueError(message)
-            elif self.terminal_phase == "observation":
-                if (
-                    not self.observation_digests
-                    or has_later_records
-                    or self.result not in {"failure", "incomplete"}
-                    or (self.result == "incomplete" and not self.uncertainty)
-                    or (self.result == "failure" and self.uncertainty)
-                    or self.possibly_mutated
-                    or self.next_action != "reconcile"
-                ):
-                    message = "Observation Outcome is not exact"
-                    raise ValueError(message)
-            else:
-                message = (
-                    "Publication-free Attempt Outcome has an invalid "
-                    "terminal phase"
+                    or (
+                        predecessor in pre_marker | {"mutation-marker"}
+                        and self.possibly_mutated
+                    )
                 )
-                raise ValueError(message)
-        elif self.observation_digests:
-            message = (
-                "Publication-bound Attempt Outcome cannot bind direct "
-                "observations"
             )
-            raise ValueError(message)
-        elif self.terminal_phase == "qualification":
-            message = "Qualification-only outcome cannot bind publication"
-            raise ValueError(message)
-        elif self.terminal_phase == "publication-preparation":
-            message = "Publication preparation Outcome cannot bind publication"
+        )
+        if not valid:
+            message = "Attempt Outcome classification and predecessor mismatch"
             raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical Attempt Outcome."""
-        action_result_digests = _json_strings(self.action_result_digests)
-        document: dict[str, JsonValue] = {
+        return {
             "schema": ATTEMPT_OUTCOME_SCHEMA,
             "attempt": self.attempt.to_document(),
-            "qualification-decision-digest": (
-                self.qualification_decision_digest
-            ),
-            "observation-digests": _json_strings(self.observation_digests),
-            "publication-snapshot-digest": self.publication_snapshot_digest,
-            "exact-satisfied-finalization-proof-digest": (
-                self.exact_satisfied_finalization_proof_digest
-            ),
-            "approval-bundle-digest": self.approval_bundle_digest,
-            "publication-authorization-digest": (
-                self.publication_authorization_digest
-            ),
-            "action-result-digests": action_result_digests,
-            "terminal-phase": self.terminal_phase,
-            "result": self.result,
-            "uncertainty": self.uncertainty,
+            "disposition": self.disposition,
             "possibly-mutated": self.possibly_mutated,
-            "next-action": self.next_action,
+            "direct-predecessor": self.direct_predecessor.to_document(),
+            "producer": self.producer,
+            "control": self.control,
+            "workflow-run-id": self.workflow_run_id,
         }
-        return document
 
     @property
     def outcome_digest(self) -> str:
@@ -4717,7 +4327,6 @@ type ReleaseRecord = (
     | MutationMayHaveStartedMarker
     | PublicationResult
     | ExactSatisfiedFinalizationProof
-    | ActionResult
     | AttemptOutcome
     | SimulationOutcome
 )
@@ -4779,7 +4388,6 @@ __all__ = [
     "NPMJS_OBSERVER_PRODUCER",
     "OFFICIAL_SIMULATION_WORKFLOW_PATH",
     "REMOTE_STATE_OBSERVATION_SCHEMA",
-    "ActionResult",
     "ApprovalBoundary",
     "ApprovalBundle",
     "ArtifactVariantIdentity",
@@ -4811,7 +4419,6 @@ __all__ = [
     "QualificationDecision",
     "QualificationEvidence",
     "QualificationSnapshot",
-    "Receipt",
     "ReleaseArtifact",
     "ReleaseAttemptBinding",
     "ReleaseAttemptIdentity",

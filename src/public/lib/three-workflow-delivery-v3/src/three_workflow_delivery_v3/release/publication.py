@@ -1,4 +1,4 @@
-"""Disabled publisher mechanism; persistence and CLI cutover are external."""
+"""Profile-bound one-shot publication with externally owned persistence."""
 
 # ruff: noqa: EM101, TRY003
 

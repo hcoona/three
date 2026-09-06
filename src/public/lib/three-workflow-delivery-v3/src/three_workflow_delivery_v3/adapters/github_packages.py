@@ -6,7 +6,6 @@ import hashlib
 import http.client
 import inspect
 import itertools
-import os
 import re
 import stat
 import urllib.error
@@ -16,7 +15,7 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
 from time import monotonic
-from typing import TYPE_CHECKING, Never, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from three_workflow_delivery_v3.adapters.node import (
     ArtifactExpectation,
@@ -32,11 +31,7 @@ from three_workflow_delivery_v3.canonical import (
     canonical_sha256,
     parse_json_strict,
 )
-from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
-    PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER,
-    ActionResult,
-    ApprovalBundle,
     BuddyExecutionIdentity,
     DestinationOperationProfile,
     DestinationProjection,
@@ -44,32 +39,18 @@ from three_workflow_delivery_v3.records.release import (
     PackageControlProof,
     PackageControlSubject,
     PublicationAction,
-    PublicationAuthorization,
     PublicationDiagnostics,
-    PublicationSnapshot,
     QualificationDecision,
     QualificationSnapshot,
-    Receipt,
     ReleaseArtifact,
     ReleaseAttemptIdentity,
-    RemoteStateObservation,
     validate_publication_action_instantiation,
-)
-from three_workflow_delivery_v3.release.finalizer import (
-    UnsupportedPublicationPrimitiveError,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from datetime import datetime
 
     from three_workflow_delivery_v3.canonical import JsonValue
-    from three_workflow_delivery_v3.release.eligibility import (
-        GovernanceSourceClient,
-    )
-    from three_workflow_delivery_v3.repository.descriptors import (
-        GovernanceSource,
-    )
 
 GITHUB_PACKAGES_DESTINATION_ID = "npm/github-packages-hcoona-three-v1"
 GITHUB_PACKAGES_REGISTRY = "https://npm.pkg.github.com"
@@ -318,7 +299,6 @@ DEFAULT_METADATA_LIMIT_BYTES = 1_000_000
 DEFAULT_TARBALL_LIMIT_BYTES = 25_000_000
 DEFAULT_MAX_PAGES = 100
 GITHUB_PAGE_SIZE = 100
-PRIVATE_CONFIG_MODE = 0o600
 PAIR_SIZE = 2
 MAX_REDIRECTS = 5
 HTTP_OK = 200
@@ -555,38 +535,6 @@ class GitHubPackagesHttpTransport:
             current_headers = target_headers
         message = "redirect limit exceeded"
         raise GitHubPackagesPolicyError(message)
-
-
-@dataclass(frozen=True, slots=True)
-class PublishCommandResult:
-    """Sanitized result of the one permitted npm publish process."""
-
-    outcome: str
-    exit_code: int | None
-    stdout: str
-    stderr: str
-    command: tuple[str, ...]
-
-
-class PublishRunner(Protocol):
-    """Injectable npm publish process seam."""
-
-    def run(
-        self,
-        argv: tuple[str, ...],
-        *,
-        env: dict[str, str],
-    ) -> object:
-        """Execute one exact process and return bounded result facts."""
-
-
-@dataclass(frozen=True, slots=True)
-class PublishClassification:
-    """Pure first-slice mutation classification."""
-
-    outcome: str
-    mutation_disposition: str
-    receipt_digest: str | None
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -1170,120 +1118,6 @@ class FixedAcceptanceSuiteResult:
         )
         document["record-digest"] = canonical_sha256(document)
         return document
-
-
-@dataclass(frozen=True, slots=True)
-class PublicationExecutionResult:
-    """Complete current-Attempt publication result."""
-
-    command: PublishCommandResult
-    observation: RemoteStateObservation | None
-    action_result: ActionResult
-
-
-@dataclass(frozen=True, slots=True)
-class DeferredPublicationExecutionResult:
-    """Publication facts awaiting immutable Receipt transport binding."""
-
-    command: PublishCommandResult
-    observation: RemoteStateObservation | None
-    classification: PublishClassification
-    response_identity_digest: str | None
-    diagnostic_reference: str | None
-    receipt: Receipt | None
-
-
-class PublisherGovernanceRecheckRejectionError(Exception):
-    """Typed terminal rejection after marker admission but before npm."""
-
-    def __init__(self, result: DeferredPublicationExecutionResult) -> None:
-        """Retain the exact closed terminal publication result."""
-        if (
-            type(result) is not DeferredPublicationExecutionResult
-            or result.classification.outcome != "failed"
-            or result.classification.mutation_disposition != "no-side-effect"
-            or result.observation is not None
-            or result.response_identity_digest is not None
-            or result.receipt is not None
-            or result.diagnostic_reference
-            != PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER
-        ):
-            message = "Publisher Governance rejection result is malformed"
-            raise ValueError(message)
-        self.result = result
-        super().__init__(PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER)
-
-
-@dataclass(frozen=True, slots=True)
-class GitHubPackagesPublishPreflight:
-    """Immutable authority, bytes, and npm-configuration admission."""
-
-    attempt: ReleaseAttemptIdentity
-    publication_snapshot_digest: str
-    action_digest: str
-    lock_group: str
-    tarball_sha256: str
-    tarball_sha512: str
-    npm_configuration_digest: str
-    governance_provenance: tuple[tuple[str, str], ...]
-    governance_canonical_content_digest: str
-    governance_expires_at: str
-    governance_live_enabled: bool
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical preflight document."""
-        return {
-            "schema": "workflow-delivery/v3/github-packages-publish-preflight",
-            "attempt": self.attempt.to_document(),
-            "publication-snapshot-digest": self.publication_snapshot_digest,
-            "action-digest": self.action_digest,
-            "lock-group": self.lock_group,
-            "tarball-sha256": self.tarball_sha256,
-            "tarball-sha512": self.tarball_sha512,
-            "npm-configuration-digest": self.npm_configuration_digest,
-            "governance-provenance": [
-                [name, value] for name, value in self.governance_provenance
-            ],
-            "governance-canonical-content-digest": (
-                self.governance_canonical_content_digest
-            ),
-            "governance-expires-at": self.governance_expires_at,
-            "governance-live-enabled": self.governance_live_enabled,
-        }
-
-    @property
-    def preflight_digest(self) -> str:
-        """Return the canonical preflight digest."""
-        return canonical_sha256(self.to_document())
-
-
-@dataclass(frozen=True, slots=True)
-class MutationMayHaveStartedMarker:
-    """Durable action-bound boundary immediately before npm invocation."""
-
-    attempt: ReleaseAttemptIdentity
-    publication_snapshot_digest: str
-    action_digest: str
-    lock_group: str
-    preflight_digest: str
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical mutation-start marker."""
-        return {
-            "schema": (
-                "workflow-delivery/v3/github-packages-mutation-may-have-started"
-            ),
-            "attempt": self.attempt.to_document(),
-            "publication-snapshot-digest": self.publication_snapshot_digest,
-            "action-digest": self.action_digest,
-            "lock-group": self.lock_group,
-            "preflight-digest": self.preflight_digest,
-        }
-
-    @property
-    def marker_digest(self) -> str:
-        """Return the canonical marker digest."""
-        return canonical_sha256(self.to_document())
 
 
 @dataclass(frozen=True, slots=True)
@@ -3180,157 +3014,6 @@ def _validate_first_slice_basis(
     return attempt, projection
 
 
-def _runner_result(
-    raw: object,
-    *,
-    command: tuple[str, ...],
-    token: str,
-) -> PublishCommandResult:
-    if isinstance(raw, PublishCommandResult):
-        exit_code = raw.exit_code
-        stdout = raw.stdout
-        stderr = raw.stderr
-    elif isinstance(raw, dict):
-        exit_code = raw.get("exit_code")
-        stdout = raw.get("stdout", "")
-        stderr = raw.get("stderr", "")
-    else:
-        exit_code = getattr(raw, "exit_code", getattr(raw, "returncode", None))
-        stdout = getattr(raw, "stdout", "")
-        stderr = getattr(raw, "stderr", "")
-    if type(exit_code) is not int:
-        message = "npm publish runner omitted an exact exit code"
-        raise TypeError(message)
-    if type(stdout) is not str or type(stderr) is not str:
-        message = "npm publish runner output must be exact strings"
-        raise TypeError(message)
-    text = f"{stdout}\n{stderr}".lower()
-    if exit_code == 0:
-        outcome = "success"
-    elif any(
-        marker in text
-        for marker in ("e409", "epublishconflict", "cannot publish over")
-    ):
-        outcome = "create-conflict"
-    else:
-        outcome = "failed"
-    return PublishCommandResult(
-        outcome=outcome,
-        exit_code=exit_code,
-        stdout=redact_diagnostic(stdout, secrets=(token,)),
-        stderr=redact_diagnostic(stderr, secrets=(token,)),
-        command=tuple(_REDACTED if item == token else item for item in command),
-    )
-
-
-def _write_private_npm_config(path: Path, token: str) -> None:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    descriptor = os.open(path, flags, stat.S_IRUSR | stat.S_IWUSR)
-    try:
-        with os.fdopen(
-            descriptor,
-            "w",
-            encoding="utf-8",
-            newline="\n",
-        ) as stream:
-            stream.write(
-                f"//npm.pkg.github.com/:_authToken={token}\n"
-                "always-auth=true\n"
-                "registry=https://npm.pkg.github.com\n"
-                "ignore-scripts=true\n"
-            )
-    except BaseException:
-        path.unlink(missing_ok=True)
-        raise
-    if stat.S_IMODE(path.stat().st_mode) != PRIVATE_CONFIG_MODE:
-        path.unlink(missing_ok=True)
-        message = "temporary npm config mode is not 0600"
-        raise PermissionError(message)
-
-
-def _validate_publish_preconditions(  # noqa: PLR0913
-    *,
-    publication_snapshot: PublicationSnapshot,
-    approval_bundle: ApprovalBundle,
-    reviewer_summary_reference: ArtifactReference,
-    authorization: PublicationAuthorization,
-    action: PublicationAction,
-    qualification_snapshot: QualificationSnapshot,
-    qualification_decision: QualificationDecision,
-    artifact: ReleaseArtifact,
-    expectation: ArtifactExpectation,
-) -> None:
-    if (
-        type(publication_snapshot) is not PublicationSnapshot
-        or type(approval_bundle) is not ApprovalBundle
-        or type(reviewer_summary_reference) is not ArtifactReference
-        or type(authorization) is not PublicationAuthorization
-        or type(action) is not PublicationAction
-        or type(qualification_snapshot) is not QualificationSnapshot
-        or type(qualification_decision) is not QualificationDecision
-        or type(artifact) is not ReleaseArtifact
-        or type(expectation) is not ArtifactExpectation
-    ):
-        message = "publication precondition record has the wrong type"
-        raise TypeError(message)
-    attempt = publication_snapshot.attempt
-    expected_control = f"workflow-delivery-v3:{attempt.execution.target}"
-    _validate_artifact_expectation(expectation)
-    actions = publication_snapshot.materialized_actions
-    if len(qualification_snapshot.destination_projections) != 1:
-        message = "publication precondition requires one destination projection"
-        raise ValueError(message)
-    projection = qualification_snapshot.destination_projections[0]
-    validate_github_packages_publication_action(
-        action=action,
-        projection=projection,
-        artifact=artifact,
-    )
-    if (
-        authorization.attempt != attempt
-        or authorization.control != expected_control
-        or approval_bundle.attempt != attempt
-        or approval_bundle.publication_snapshot_reference.payload_digest
-        != publication_snapshot.snapshot_digest
-        or approval_bundle.reviewer_summary_reference
-        != reviewer_summary_reference
-        or authorization.approval_bundle_reference.payload_digest
-        != approval_bundle.bundle_digest
-        or actions != (action,)
-        or publication_snapshot.projection_ids != (projection.projection_id,)
-        or publication_snapshot.artifact_digests != (artifact.artifact_digest,)
-        or publication_snapshot.artifact_output_ids
-        != (artifact.output.output_id,)
-        or len(publication_snapshot.observation_references) != 1
-        or publication_snapshot.observation_references[0].projection_id
-        != projection.projection_id
-        or publication_snapshot.observation_references[0].classification
-        != "absent"
-        or qualification_snapshot.subject != attempt
-        or qualification_snapshot.snapshot_digest
-        != publication_snapshot.qualification_snapshot_digest
-        or qualification_decision.subject != attempt
-        or qualification_decision.qualification_snapshot_digest
-        != qualification_snapshot.snapshot_digest
-        or qualification_decision.decision_digest
-        != publication_snapshot.qualification_decision_digest
-        or qualification_decision.terminal_result != "success"
-        or qualification_decision.admitted_artifact_digests
-        != (artifact.artifact_digest,)
-        or artifact.qualification_snapshot_digest
-        != qualification_snapshot.snapshot_digest
-        or projection.output not in qualification_snapshot.outputs
-        or expectation.package_name != action.package
-        or expectation.npm_package_version != action.version
-        or expectation.lifecycle_scripts != artifact.lifecycle_scripts
-        or expectation.entry_allowlist != artifact.entries
-        or f"sha256:{hashlib.sha256(expectation.witness_bytes).hexdigest()}"
-        != artifact.witness_digest
-    ):
-        message = "publication precondition binding mismatch"
-        raise ValueError(message)
-
-
 def _validate_local_tarball_preconditions(
     *,
     tarball: Path,
@@ -3390,252 +3073,11 @@ def _validate_local_tarball_preconditions(
         raise ValueError(message)
 
 
-def classify_publish_result(
-    *,
-    command_outcome: str,
-    post_observation: str,
-    receipt: Receipt | None,
-) -> PublishClassification:
-    """Apply pure create-only race and uncertainty semantics."""
-    if command_outcome == "created":
-        if post_observation == "exact-satisfied" and receipt is not None:
-            return PublishClassification(
-                "success",
-                "created",
-                receipt.receipt_digest,
-            )
-        return PublishClassification("incomplete", "possibly-mutated", None)
-    if command_outcome == "create-conflict":
-        return PublishClassification("failed", "no-side-effect", None)
-    if command_outcome == "lost-response":
-        return PublishClassification("incomplete", "possibly-mutated", None)
-    return PublishClassification("incomplete", "possibly-mutated", None)
-
-
-def _action_result(  # noqa: PLR0913
-    *,
-    publication_snapshot: PublicationSnapshot,
-    action: PublicationAction,
-    classification: PublishClassification,
-    response_identity_digest: str | None,
-    receipt: Receipt | None,
-    diagnostic_reference: str | None,
-    control: str,
-) -> ActionResult:
-    attempt = publication_snapshot.attempt
-    return ActionResult(
-        attempt=attempt,
-        publication_snapshot_digest=publication_snapshot.snapshot_digest,
-        action_id=action.action_id,
-        action_digest=action.action_digest,
-        lock_group=action.serialization_projection,
-        outcome=classification.outcome,
-        mutation_disposition=classification.mutation_disposition,
-        response_identity_digest=response_identity_digest,
-        receipt=receipt,
-        diagnostic_reference=diagnostic_reference,
-        producer=GITHUB_PACKAGES_PUBLISHER_PRODUCER,
-        control=control,
-        workflow_run_id=attempt.workflow_run_id,
-    )
-
-
-def _npm_configuration_digest(
-    *,
-    action: PublicationAction,
-    target: str,
-) -> str:
-    profile = github_packages_destination_operation_profile()
-    if (
-        action.destination_operation_profile_digest != profile.profile_digest
-        or action.tag != _target_tag(target)
-    ):
-        message = "Publication Action profile or target tag binding mismatch"
-        raise ValueError(message)
-    return canonical_sha256(
-        {
-            "schema": "workflow-delivery/v3/github-packages-npm-config",
-            "destination-operation-profile-digest": profile.profile_digest,
-            "registry": profile.registry,
-            "tag": action.tag,
-            "ignore-scripts": True,
-            "package": action.package,
-            "version": action.version,
-        }
-    )
-
-
-def preflight_github_packages_action(  # noqa: PLR0913
-    *,
-    publication_snapshot: PublicationSnapshot,
-    approval_bundle: ApprovalBundle,
-    reviewer_summary_reference: ArtifactReference,
-    authorization: PublicationAuthorization,
-    action: PublicationAction,
-    qualification_snapshot: QualificationSnapshot,
-    qualification_decision: QualificationDecision,
-    artifact: ReleaseArtifact,
-    expectation: ArtifactExpectation,
-) -> Never:
-    """Validate the authority closure, then reject the missing primitive."""
-    _validate_publish_preconditions(
-        publication_snapshot=publication_snapshot,
-        approval_bundle=approval_bundle,
-        reviewer_summary_reference=reviewer_summary_reference,
-        authorization=authorization,
-        action=action,
-        qualification_snapshot=qualification_snapshot,
-        qualification_decision=qualification_decision,
-        artifact=artifact,
-        expectation=expectation,
-    )
-    message = (
-        "The conditional GitHub Packages version-and-tag primitive is not "
-        "implemented; normal Live remains activation-blocked"
-    )
-    raise UnsupportedPublicationPrimitiveError(message)
-
-
-def form_mutation_may_have_started_marker(
-    *,
-    preflight: GitHubPackagesPublishPreflight,
-) -> MutationMayHaveStartedMarker:
-    """Form the immutable marker persisted before npm may be invoked."""
-    if type(preflight) is not GitHubPackagesPublishPreflight:
-        message = "mutation marker requires an exact preflight"
-        raise TypeError(message)
-    return MutationMayHaveStartedMarker(
-        attempt=preflight.attempt,
-        publication_snapshot_digest=preflight.publication_snapshot_digest,
-        action_digest=preflight.action_digest,
-        lock_group=preflight.lock_group,
-        preflight_digest=preflight.preflight_digest,
-    )
-
-
-def _admit_mutation_marker(  # noqa: PLR0913
-    *,
-    tarball: Path,
-    target: str,
-    publication_snapshot: PublicationSnapshot,
-    action: PublicationAction,
-    preflight: GitHubPackagesPublishPreflight,
-    mutation_marker: MutationMayHaveStartedMarker,
-) -> None:
-    if (
-        type(preflight) is not GitHubPackagesPublishPreflight
-        or type(mutation_marker) is not MutationMayHaveStartedMarker
-        or preflight.attempt != publication_snapshot.attempt
-        or preflight.publication_snapshot_digest
-        != publication_snapshot.snapshot_digest
-        or preflight.action_digest != action.action_digest
-        or preflight.lock_group != action.serialization_projection
-        or preflight.npm_configuration_digest
-        != _npm_configuration_digest(action=action, target=target)
-        or mutation_marker.attempt != preflight.attempt
-        or mutation_marker.publication_snapshot_digest
-        != preflight.publication_snapshot_digest
-        or mutation_marker.action_digest != preflight.action_digest
-        or mutation_marker.lock_group != preflight.lock_group
-        or mutation_marker.preflight_digest != preflight.preflight_digest
-    ):
-        message = "mutation-start marker admission failed"
-        raise ValueError(message)
-    content = tarball.read_bytes()
-    if (
-        f"sha256:{hashlib.sha256(content).hexdigest()}"
-        != preflight.tarball_sha256
-        or f"sha512:{hashlib.sha512(content).hexdigest()}"
-        != preflight.tarball_sha512
-    ):
-        message = "mutation-start tarball bytes changed after preflight"
-        raise ValueError(message)
-
-
-def publish_github_packages_action(  # noqa: PLR0913
-    *,
-    tarball: Path,
-    target: str,
-    token: str,
-    runner: PublishRunner,
-    temp_root: Path,
-    transport: GitHubPackagesTransport | object = _MISSING,
-    publication_snapshot: PublicationSnapshot | object = _MISSING,
-    approval_bundle: ApprovalBundle | object = _MISSING,
-    reviewer_summary_reference: ArtifactReference | object = _MISSING,
-    authorization: PublicationAuthorization | object = _MISSING,
-    action: PublicationAction | object = _MISSING,
-    qualification_snapshot: QualificationSnapshot | object = _MISSING,
-    qualification_decision: QualificationDecision | object = _MISSING,
-    artifact: ReleaseArtifact | object = _MISSING,
-    expectation: ArtifactExpectation | object = _MISSING,
-    preflight: GitHubPackagesPublishPreflight | object = _MISSING,
-    mutation_marker: MutationMayHaveStartedMarker | object = _MISSING,
-    governance_source: GovernanceSource | object = _MISSING,
-    governance_client: GovernanceSourceClient | object = _MISSING,
-    governance_observed_at: datetime | Callable[[], datetime] | object = (
-        _MISSING
-    ),
-    defer_receipt_binding: bool = False,
-    checkout_root: Path | None = None,
-) -> (
-    PublishCommandResult
-    | PublicationExecutionResult
-    | DeferredPublicationExecutionResult
-):
-    """Reject publication until the conditional primitive is implemented."""
-    _ = (
-        tarball,
-        target,
-        token,
-        runner,
-        temp_root,
-        transport,
-        publication_snapshot,
-        approval_bundle,
-        reviewer_summary_reference,
-        authorization,
-        action,
-        qualification_snapshot,
-        qualification_decision,
-        artifact,
-        expectation,
-        preflight,
-        mutation_marker,
-        governance_source,
-        governance_client,
-        governance_observed_at,
-        defer_receipt_binding,
-        checkout_root,
-    )
-    message = (
-        "The conditional GitHub Packages version-and-tag primitive is not "
-        "implemented; normal Live remains activation-blocked"
-    )
-    raise UnsupportedPublicationPrimitiveError(message)
-
-
-def validate_receipt_response_bindings(
-    *,
-    receipt: Receipt,
-    expected_receipt: Receipt,
-    expected_response_identity_digest: str,
-) -> None:
-    """Reject any Receipt/action/artifact/response substitution."""
-    if receipt != expected_receipt:
-        message = "Receipt binding mismatch"
-        raise ValueError(message)
-    if receipt.response_identity_digest != expected_response_identity_digest:
-        message = "Receipt response identity binding mismatch"
-        raise ValueError(message)
-
-
 __all__ = [  # noqa: RUF022
     "DEFAULT_MAX_PAGES",
     "DEFAULT_METADATA_LIMIT_BYTES",
     "DEFAULT_TARBALL_LIMIT_BYTES",
     "DEFAULT_TIMEOUT_SECONDS",
-    "DeferredPublicationExecutionResult",
     "GITHUB_PACKAGES_DESTINATION_ID",
     "GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE_ID",
     "GITHUB_PACKAGES_NODE_VERSION",
@@ -3649,26 +3091,14 @@ __all__ = [  # noqa: RUF022
     "GitHubPackagesPolicyError",
     "GitHubPackagesTimeoutError",
     "GitHubPackagesTransport",
-    "GitHubPackagesPublishPreflight",
-    "MutationMayHaveStartedMarker",
-    "PublicationExecutionResult",
-    "PublisherGovernanceRecheckRejectionError",
-    "PublishClassification",
-    "PublishCommandResult",
-    "PublishRunner",
-    "classify_publish_result",
     "github_api_headers",
     "github_packages_destination_operation_profile",
     "github_package_versions_url",
     "npm_exact_metadata_url",
     "GitHubPackagesActiveState",
     "read_github_packages_active_state",
-    "form_mutation_may_have_started_marker",
-    "preflight_github_packages_action",
-    "publish_github_packages_action",
     "redact_diagnostic",
     "redirect_headers",
     "validate_observation_bounds",
     "validate_github_packages_publication_action",
-    "validate_receipt_response_bindings",
 ]

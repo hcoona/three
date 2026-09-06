@@ -4,8 +4,6 @@ from __future__ import annotations
 
 # ruff: noqa: D103, PLR2004
 import importlib
-from pathlib import Path
-from typing import Any
 
 import pytest
 from three_workflow_delivery_v3.records.release import (
@@ -51,48 +49,6 @@ class RecordingTransport:
         if isinstance(response, BaseException):
             raise response
         return response
-
-
-class RecordingPublishRunner:
-    """Strict fake that captures private config while it exists."""
-
-    def __init__(
-        self,
-        *,
-        exit_code: int = 0,
-        stdout: str = "",
-        exception: BaseException | None = None,
-    ) -> None:
-        """Configure one deterministic command outcome."""
-        self.exit_code = exit_code
-        self.stdout = stdout
-        self.exception = exception
-        self.calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
-        self.argv: tuple[str, ...] = ()
-        self.config_path: Path | None = None
-        self.config_mode: int | None = None
-        self.config_text: str | None = None
-
-    def run(
-        self,
-        argv: tuple[str, ...],
-        *,
-        env: dict[str, str],
-    ) -> Any:
-        """Capture command/config facts and return the scripted outcome."""
-        self.argv = argv
-        self.calls.append((argv, dict(env)))
-        config_index = argv.index("--userconfig") + 1
-        self.config_path = Path(argv[config_index])
-        self.config_mode = self.config_path.stat().st_mode & 0o777
-        self.config_text = self.config_path.read_text(encoding="utf-8")
-        if self.exception is not None:
-            raise self.exception
-        return {
-            "exit_code": self.exit_code,
-            "stdout": self.stdout,
-            "stderr": "",
-        }
 
 
 def _adapter():
@@ -355,14 +311,11 @@ def test_replacement_adapter_contract_api_is_available() -> None:
         "GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE_ID",
         "GitHubPackagesHttpResponse",
         "GitHubPackagesTransport",
-        "UnsupportedPublicationPrimitiveError",
         "github_api_headers",
         "github_packages_destination_operation_profile",
         "github_package_versions_url",
         "npm_exact_metadata_url",
         "read_github_packages_active_state",
-        "preflight_github_packages_action",
-        "publish_github_packages_action",
         "redact_diagnostic",
         "redirect_headers",
         "validate_observation_bounds",
@@ -411,71 +364,6 @@ def test_normal_live_and_acceptance_operations_remain_distinct() -> None:
         acceptance_document["scenarios"][0]["action"]["operation"]
         != adapter.GITHUB_PACKAGES_OPERATION
     )
-
-
-def test_publish_fails_before_every_mutation_capable_seam(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    adapter = _adapter()
-    runner = RecordingPublishRunner(exit_code=0, stdout="created")
-    transport = RecordingTransport({})
-    forbidden_calls: list[str] = []
-    unavailable = object()
-    tarball = tmp_path / "must-not-be-read.tgz"
-    temp_root = tmp_path / "must-not-be-created"
-
-    def reject_forbidden_call(*_args: object, **_kwargs: object) -> None:
-        forbidden_calls.append("called")
-        message = "mutation-capable publisher seam must not run"
-        raise AssertionError(message)
-
-    for helper in (
-        "_admit_mutation_marker",
-        "_npm_configuration_digest",
-        "_runner_result",
-        "_validate_local_tarball_preconditions",
-        "_validate_publish_preconditions",
-        "_write_private_npm_config",
-        "read_github_packages_active_state",
-        "preflight_github_packages_action",
-    ):
-        monkeypatch.setattr(adapter, helper, reject_forbidden_call)
-
-    with pytest.raises(
-        adapter.UnsupportedPublicationPrimitiveError,
-    ) as raised:
-        adapter.publish_github_packages_action(
-            tarball=tarball,
-            target=TARGET,
-            token=TOKEN,
-            runner=runner,
-            temp_root=temp_root,
-            transport=transport,
-            publication_snapshot=unavailable,
-            authorization=unavailable,
-            action=unavailable,
-            qualification_snapshot=unavailable,
-            qualification_decision=unavailable,
-            artifact=unavailable,
-            expectation=unavailable,
-            preflight=unavailable,
-            mutation_marker=unavailable,
-            governance_source=unavailable,
-            governance_client=unavailable,
-            governance_observed_at=unavailable,
-        )
-
-    assert str(raised.value) == (
-        "The conditional GitHub Packages version-and-tag primitive is not "
-        "implemented; normal Live remains activation-blocked"
-    )
-    assert forbidden_calls == []
-    assert runner.calls == []
-    assert runner.config_path is None
-    assert transport.requests == []
-    assert not tarball.exists()
-    assert not temp_root.exists()
 
 
 def test_conditional_action_keys_remain_exact_and_conservatively_grouped() -> (

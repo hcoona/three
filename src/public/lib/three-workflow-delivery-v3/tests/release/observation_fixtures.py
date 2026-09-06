@@ -335,21 +335,8 @@ def exact_finalization_arguments(case: ObservationCase) -> dict:
         clock=lambda: NOW + timedelta(seconds=1),
     )
     return {
-        "attempt": case.attempt_binding.attempt,
-        "qualification_decision": case.decision,
         "publication_snapshot": publication,
         "publication_snapshot_reference": reference,
         "exact_satisfied_finalization_proof": proof,
-        "approval_bundle": None,
-        "publication_authorization": None,
-        "action_results": (),
-        "publisher_conclusion": "skipped",
-        "qualification_snapshot": case.snapshot,
-        "release_artifact": case.artifact,
         "observations": (observation,),
-        "intent": case.intent,
-        "attempt_binding": case.attempt_binding,
-        "eligibility": case.eligibility,
-        "policy": case.policy,
-        "decision_reference": case.decision_reference,
     }

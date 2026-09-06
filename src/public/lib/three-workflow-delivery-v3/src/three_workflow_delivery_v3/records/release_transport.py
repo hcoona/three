@@ -12,7 +12,6 @@ from three_workflow_delivery_v3.records.artifacts import (
     artifact_reference_from_document,
 )
 from three_workflow_delivery_v3.records.release import (
-    ACTION_RESULT_SCHEMA,
     APPROVAL_BUNDLE_SCHEMA,
     ARTIFACT_VARIANT_IDENTITY_SCHEMA,
     ATTEMPT_OUTCOME_SCHEMA,
@@ -37,7 +36,6 @@ from three_workflow_delivery_v3.records.release import (
     QUALIFICATION_DECISION_SCHEMA,
     QUALIFICATION_EVIDENCE_SCHEMA,
     QUALIFICATION_SNAPSHOT_SCHEMA,
-    RECEIPT_SCHEMA,
     RELEASE_ARTIFACT_SCHEMA,
     RELEASE_ATTEMPT_BINDING_SCHEMA,
     RELEASE_ATTEMPT_IDENTITY_SCHEMA,
@@ -50,7 +48,6 @@ from three_workflow_delivery_v3.records.release import (
     SIMULATION_BINDING_SCHEMA,
     SIMULATION_IDENTITY_SCHEMA,
     SIMULATION_OUTCOME_SCHEMA,
-    ActionResult,
     ApprovalBoundary,
     ApprovalBundle,
     ArtifactVariantIdentity,
@@ -58,6 +55,7 @@ from three_workflow_delivery_v3.records.release import (
     BuddyExecutionIdentity,
     DestinationProjection,
     DestinationReadback,
+    DirectPredecessor,
     ExactSatisfiedFinalizationProof,
     ExternalPackageCoordinate,
     GovernanceProof,
@@ -83,7 +81,6 @@ from three_workflow_delivery_v3.records.release import (
     QualificationDecision,
     QualificationEvidence,
     QualificationSnapshot,
-    Receipt,
     ReleaseArtifact,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
@@ -2458,158 +2455,6 @@ def _exact_satisfied_finalization_proof(
     )
 
 
-def _receipt(value: JsonValue) -> Receipt:
-    document = _closed(
-        value,
-        field="receipt",
-        schema=RECEIPT_SCHEMA,
-        fields=frozenset(
-            {
-                "attempt",
-                "publication-snapshot-digest",
-                "action-id",
-                "action-digest",
-                "coordinate",
-                "mutable-resource-keys",
-                "lock-group",
-                "artifact-transport",
-                "artifact-content-sha256",
-                "artifact-content-sha512",
-                "witness-digest",
-                "creation-result",
-                "tag-mapping",
-                "response-identity-digest",
-                "producer",
-                "control",
-                "workflow-run-id",
-            }
-        ),
-    )
-    return Receipt(
-        attempt=_release_attempt(document["attempt"]),
-        publication_snapshot_digest=_string(
-            document["publication-snapshot-digest"],
-            field="receipt.publication-snapshot-digest",
-        ),
-        action_id=_string(document["action-id"], field="receipt.action-id"),
-        action_digest=_string(
-            document["action-digest"],
-            field="receipt.action-digest",
-        ),
-        coordinate=_coordinate(document["coordinate"]),
-        mutable_resource_keys=_strings(
-            document["mutable-resource-keys"],
-            field="receipt.mutable-resource-keys",
-        ),
-        lock_group=_string(
-            document["lock-group"],
-            field="receipt.lock-group",
-        ),
-        artifact_transport=_transport(
-            document["artifact-transport"],
-            purpose="live-release",
-        ),
-        artifact_content_sha256=_string(
-            document["artifact-content-sha256"],
-            field="receipt.artifact-content-sha256",
-        ),
-        artifact_content_sha512=_string(
-            document["artifact-content-sha512"],
-            field="receipt.artifact-content-sha512",
-        ),
-        witness_digest=_string(
-            document["witness-digest"],
-            field="receipt.witness-digest",
-        ),
-        creation_result=_string(
-            document["creation-result"],
-            field="receipt.creation-result",
-        ),
-        tag_mapping=_pairs(
-            document["tag-mapping"],
-            field="receipt.tag-mapping",
-        ),
-        response_identity_digest=_string(
-            document["response-identity-digest"],
-            field="receipt.response-identity-digest",
-        ),
-        producer=_string(document["producer"], field="receipt.producer"),
-        control=_string(document["control"], field="receipt.control"),
-        workflow_run_id=_integer(
-            document["workflow-run-id"],
-            field="receipt.workflow-run-id",
-        ),
-    )
-
-
-def _action_result(value: JsonValue) -> ActionResult:
-    document = _closed(
-        value,
-        field="action result",
-        schema=ACTION_RESULT_SCHEMA,
-        fields=frozenset(
-            {
-                "attempt",
-                "publication-snapshot-digest",
-                "action-id",
-                "action-digest",
-                "lock-group",
-                "outcome",
-                "mutation-disposition",
-                "response-identity-digest",
-                "receipt",
-                "diagnostic-reference",
-                "producer",
-                "control",
-                "workflow-run-id",
-            }
-        ),
-    )
-    return ActionResult(
-        attempt=_release_attempt(document["attempt"]),
-        publication_snapshot_digest=_string(
-            document["publication-snapshot-digest"],
-            field="action result.publication-snapshot-digest",
-        ),
-        action_id=_string(
-            document["action-id"],
-            field="action result.action-id",
-        ),
-        action_digest=_string(
-            document["action-digest"],
-            field="action result.action-digest",
-        ),
-        lock_group=_string(
-            document["lock-group"],
-            field="action result.lock-group",
-        ),
-        outcome=_string(document["outcome"], field="action result.outcome"),
-        mutation_disposition=_string(
-            document["mutation-disposition"],
-            field="action result.mutation-disposition",
-        ),
-        response_identity_digest=_nullable_string(
-            document["response-identity-digest"],
-            field="action result.response-identity-digest",
-        ),
-        receipt=(
-            None
-            if document["receipt"] is None
-            else _receipt(document["receipt"])
-        ),
-        diagnostic_reference=_nullable_string(
-            document["diagnostic-reference"],
-            field="action result.diagnostic-reference",
-        ),
-        producer=_string(document["producer"], field="action result.producer"),
-        control=_string(document["control"], field="action result.control"),
-        workflow_run_id=_integer(
-            document["workflow-run-id"],
-            field="action result.workflow-run-id",
-        ),
-    )
-
-
 def _attempt_outcome(value: JsonValue) -> AttemptOutcome:
     document = _closed(
         value,
@@ -2618,67 +2463,43 @@ def _attempt_outcome(value: JsonValue) -> AttemptOutcome:
         fields=frozenset(
             {
                 "attempt",
-                "qualification-decision-digest",
-                "observation-digests",
-                "publication-snapshot-digest",
-                "exact-satisfied-finalization-proof-digest",
-                "approval-bundle-digest",
-                "publication-authorization-digest",
-                "action-result-digests",
-                "terminal-phase",
-                "result",
-                "uncertainty",
+                "disposition",
                 "possibly-mutated",
-                "next-action",
+                "direct-predecessor",
+                "producer",
+                "control",
+                "workflow-run-id",
             }
         ),
     )
+    predecessor = document["direct-predecessor"]
+    if type(predecessor) is not dict or set(predecessor) != {
+        "kind",
+        "reference",
+    }:
+        message = "Attempt Outcome requires one closed direct predecessor"
+        raise ValueError(message)
     return AttemptOutcome(
         attempt=_release_attempt(document["attempt"]),
-        qualification_decision_digest=_string(
-            document["qualification-decision-digest"],
-            field="attempt outcome.qualification-decision-digest",
-        ),
-        observation_digests=_strings(
-            document["observation-digests"],
-            field="attempt outcome.observation-digests",
-        ),
-        publication_snapshot_digest=_nullable_string(
-            document["publication-snapshot-digest"],
-            field="attempt outcome.publication-snapshot-digest",
-        ),
-        exact_satisfied_finalization_proof_digest=_nullable_string(
-            document["exact-satisfied-finalization-proof-digest"],
-            field=("attempt outcome.exact-satisfied-finalization-proof-digest"),
-        ),
-        approval_bundle_digest=_nullable_string(
-            document["approval-bundle-digest"],
-            field="attempt outcome.approval-bundle-digest",
-        ),
-        publication_authorization_digest=_nullable_string(
-            document["publication-authorization-digest"],
-            field="attempt outcome.publication-authorization-digest",
-        ),
-        action_result_digests=_strings(
-            document["action-result-digests"],
-            field="attempt outcome.action-result-digests",
-        ),
-        terminal_phase=_string(
-            document["terminal-phase"],
-            field="attempt outcome.terminal-phase",
-        ),
-        result=_string(document["result"], field="attempt outcome.result"),
-        uncertainty=_boolean(
-            document["uncertainty"],
-            field="attempt outcome.uncertainty",
+        disposition=_string(
+            document["disposition"], field="attempt outcome.disposition"
         ),
         possibly_mutated=_boolean(
             document["possibly-mutated"],
             field="attempt outcome.possibly-mutated",
         ),
-        next_action=_string(
-            document["next-action"],
-            field="attempt outcome.next-action",
+        direct_predecessor=DirectPredecessor(
+            kind=_string(predecessor["kind"], field="direct predecessor.kind"),
+            reference=artifact_reference_from_document(
+                predecessor["reference"]
+            ),
+        ),
+        producer=_string(
+            document["producer"], field="attempt outcome.producer"
+        ),
+        control=_string(document["control"], field="attempt outcome.control"),
+        workflow_run_id=_integer(
+            document["workflow-run-id"], field="attempt outcome.workflow-run-id"
         ),
     )
 
@@ -2702,7 +2523,6 @@ _PARSERS: dict[type[object], Callable[[JsonValue], ReleaseRecord]] = {
     MutationMayHaveStartedMarker: _mutation_may_have_started_marker,
     PublicationResult: _publication_result,
     ExactSatisfiedFinalizationProof: _exact_satisfied_finalization_proof,
-    ActionResult: _action_result,
     AttemptOutcome: _attempt_outcome,
 }
 
@@ -2886,21 +2706,13 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
             record.attempt.execution.target,
             record.producer,
         )
-    if isinstance(record, ActionResult):
-        return (
-            "live-release",
-            record.workflow_run_id,
-            None,
-            record.attempt.execution.target,
-            record.producer,
-        )
     if isinstance(record, AttemptOutcome):
         return (
             "live-release",
             record.attempt.workflow_run_id,
             None,
             record.attempt.execution.target,
-            None,
+            record.producer,
         )
     if isinstance(record, SimulationOutcome):
         simulation = record.binding.simulation

@@ -17,12 +17,6 @@ from urllib.request import Request
 
 import pytest
 from three_workflow_delivery_v3 import cli as cli_module
-from three_workflow_delivery_v3.adapters.github_packages import (
-    DeferredPublicationExecutionResult,
-    GitHubPackagesPublishPreflight,
-    PublishClassification,
-    PublishCommandResult,
-)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
@@ -39,8 +33,6 @@ from three_workflow_delivery_v3.records.ci import (
 )
 from three_workflow_delivery_v3.records.release import (
     BuddyExecutionIdentity,
-    PublicationAction,
-    PublicationSnapshot,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
 )
@@ -102,7 +94,6 @@ PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 WORKFLOW_RUN_ID = 8101
 RUN_ATTEMPT = 2
 ARGPARSE_ERROR = 2
-LIVE_GITHUB_PACKAGES_TRANSPORT_SELECTIONS = 3
 NPM_ARTIFACT_ID = 303
 NPM_ARTIFACT_DIGEST = "a" * 64
 GITHUB_API_TIMEOUT_SECONDS = 10
@@ -1052,34 +1043,42 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
             ),
         ),
         (
-            "preflight-github-packages",
+            "prepare-publication",
             (
                 "--publication-snapshot",
                 "--approval-bundle",
                 "--reviewer-summary",
                 "--publication-authorization",
                 "--qualification-snapshot",
+                "--runtime-directory",
+                "--toolchain-directory",
+                "--tarball",
             ),
         ),
         (
-            "mark-github-packages-mutation-start",
-            ("--preflight", "--marker-output", "--publication-snapshot"),
+            "admit-publication-terminal",
+            (
+                "--terminal",
+                "--terminal-artifact-url",
+                "--terminal-payload-path",
+            ),
         ),
         (
-            "publish-github-packages",
+            "execute-publication",
             (
                 "--reviewer-summary",
                 "--publication-authorization",
-                "--mutation-marker-artifact-id",
-                "--execution-state-output",
+                "--publication-terminal-reference",
+                "--terminal-directory",
+                "--output",
             ),
         ),
         (
-            "form-github-packages-result",
+            "resolve-publication-terminal",
             (
-                "--execution-state",
-                "--mutation-marker-artifact-id",
-                "--result-output",
+                "--publication-terminal-reference",
+                "--publisher-conclusion",
+                "--terminal-directory",
             ),
         ),
         (
@@ -1099,8 +1098,8 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
                 "--approval-bundle-payload-path",
                 "--publication-authorization",
                 "--exact-satisfied-finalization-proof",
-                "--action-result",
-                "--publication-preparation-interrupted",
+                "--publication-terminal-reference",
+                "--publication-step-outcome",
                 "--outcome-output",
                 "--summary-output",
                 "--github-output",
@@ -1143,36 +1142,14 @@ def test_cli_authority_completion_timestamps_are_internal(
     assert removed_option not in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(
-    "removed_option",
-    [
-        "--repo-root",
-        "--tarball",
-        "--github-token",
-        "--preflight-output",
-        "--github-output",
-    ],
-)
-def test_cli_unsupported_preflight_omits_unused_capability_inputs(
-    removed_option: str,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Keep the disabled preflight free of unused capability inputs."""
-    with pytest.raises(SystemExit) as error:
-        cli_module.main(["release", "preflight-github-packages", "--help"])
-
-    assert error.value.code == 0
-    assert removed_option not in capsys.readouterr().out
-
-
 def test_cli_commit8_live_outcome_status_mapping_is_closed() -> None:
     """Pin success versus every fail-closed terminal CLI status."""
     assert getattr(cli_module, "LIVE_OUTCOME_EXIT_STATUS", None) == {
-        "success": 0,
-        "failure": 1,
-        "incomplete": 1,
-        "replayable-no-side-effect": 1,
-        "incomplete-possibly-mutated": 1,
+        "exact-satisfied": 0,
+        "published": 0,
+        "failed-before-publication": 1,
+        "publication-failed": 1,
+        "unknown": 1,
     }
 
 
@@ -1183,10 +1160,14 @@ def test_cli_live_github_packages_paths_select_manual_redirect_transport() -> (
     source = inspect.getsource(cli_module)
 
     assert "_UrlopenGitHubPackagesTransport" not in source
-    assert (
-        source.count("transport=GitHubPackagesHttpTransport()")
-        == LIVE_GITHUB_PACKAGES_TRANSPORT_SELECTIONS
-    )
+    for handler_name in (
+        "_release_prepare_publication_command",
+        "_release_execute_publication_command",
+        "_release_prove_exact_satisfied_command",
+    ):
+        assert "transport=GitHubPackagesHttpTransport()" in inspect.getsource(
+            getattr(cli_module, handler_name)
+        )
 
 
 def test_cli_commit8_finalizer_exposes_platform_and_status_evidence_contract(
@@ -1199,8 +1180,9 @@ def test_cli_commit8_finalizer_exposes_platform_and_status_evidence_contract(
     assert error.value.code == 0
     help_text = capsys.readouterr().out
     for option in (
-        "--platform-terminated",
-        "--publication-may-have-started",
+        "--publication-terminal-reference",
+        "--publication-step-outcome",
+        "--publisher-conclusion",
         "--outcome-output",
         "--summary-output",
         "--github-step-summary",
@@ -2685,217 +2667,6 @@ def _publication_authority_references() -> tuple[
     )
 
 
-@pytest.mark.parametrize(
-    "substituted_edge",
-    ["authorization-bundle", "bundle-publication", "bundle-reviewer"],
-)
-def test_preflight_rejects_equal_payload_different_transport(
-    monkeypatch: pytest.MonkeyPatch,
-    substituted_edge: str,
-) -> None:
-    """Reject a current-DAG edge that keeps bytes but changes transport."""
-    (
-        publication_reference,
-        reviewer_reference,
-        bundle_reference,
-    ) = _publication_authority_references()
-    bundle = SimpleNamespace(
-        publication_snapshot_reference=(
-            replace(publication_reference, artifact_id=999)
-            if substituted_edge == "bundle-publication"
-            else publication_reference
-        ),
-        reviewer_summary_reference=(
-            replace(reviewer_reference, artifact_id=999)
-            if substituted_edge == "bundle-reviewer"
-            else reviewer_reference
-        ),
-    )
-    authorization = SimpleNamespace(
-        approval_bundle_reference=(
-            replace(bundle_reference, artifact_id=999)
-            if substituted_edge == "authorization-bundle"
-            else bundle_reference
-        ),
-    )
-    publication = SimpleNamespace(materialized_actions=(object(),))
-    resolved = {
-        "publication_snapshot": publication_reference,
-        "reviewer_summary": reviewer_reference,
-        "approval_bundle": bundle_reference,
-    }
-
-    monkeypatch.setattr(
-        cli_module,
-        "_load_publication_snapshot",
-        lambda _args: publication,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_approval_bundle",
-        lambda _args: bundle,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_publication_authorization",
-        lambda _args: authorization,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_uploaded_payload_reference",
-        lambda _args, *, name: resolved[name],
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "preflight_github_packages_action",
-        lambda **_kwargs: pytest.fail(
-            "Substituted authority reached publisher preflight"
-        ),
-    )
-
-    with pytest.raises(ValueError, match="authority reference mismatch"):
-        cli_module._release_preflight_github_packages_command(  # noqa: SLF001
-            Namespace()
-        )
-
-
-def test_publish_rejects_equal_payload_different_transport(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Keep the dormant publish handler behind the same exact authority gate."""
-    (
-        publication_reference,
-        reviewer_reference,
-        bundle_reference,
-    ) = _publication_authority_references()
-    publication = object()
-    bundle = SimpleNamespace(
-        publication_snapshot_reference=replace(
-            publication_reference,
-            artifact_url="https://example.test/artifacts/999",
-        ),
-        reviewer_summary_reference=reviewer_reference,
-    )
-    authorization = SimpleNamespace(
-        approval_bundle_reference=bundle_reference,
-    )
-    resolved = {
-        "publication_snapshot": publication_reference,
-        "reviewer_summary": reviewer_reference,
-        "approval_bundle": bundle_reference,
-    }
-
-    monkeypatch.setattr(
-        cli_module,
-        "_load_publication_snapshot",
-        lambda _arguments: publication,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_approval_bundle",
-        lambda _arguments: bundle,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_publication_authorization",
-        lambda _arguments: authorization,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_uploaded_payload_reference",
-        lambda _arguments, *, name: resolved[name],
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_github_packages_preflight",
-        lambda *_arguments, **_kwargs: pytest.fail(
-            "Substituted authority passed the publish CLI gate"
-        ),
-    )
-
-    with pytest.raises(
-        ValueError,
-        match=r"^Publication authority reference mismatch$",
-    ):
-        cli_module._release_publish_github_packages_command(  # noqa: SLF001
-            Namespace(
-                preflight="unused",
-                preflight_digest="sha256:" + ("0" * 64),
-            )
-        )
-
-
-def test_result_cli_fails_closed_on_substituted_control(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Discard a terminal state whose control is not target-derived."""
-    target = "b" * 40
-    expected_control = f"workflow-delivery-v3:{target}"
-    attempt = ReleaseAttemptIdentity(
-        execution=BuddyExecutionIdentity(
-            channel="buddy",
-            release_unit="hcoona-release-smoke-npm",
-            target=target,
-        ),
-        workflow_run_id=812,
-    )
-    action = SimpleNamespace(
-        action_id="publish-github-packages",
-        action_digest="sha256:" + ("a" * 64),
-        serialization_projection="npm:@hcoona/hcoona-release-smoke-npm",
-    )
-    publication = SimpleNamespace(
-        attempt=attempt,
-        snapshot_digest="sha256:" + ("1" * 64),
-        materialized_actions=(action,),
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_publication_snapshot",
-        lambda _arguments: publication,
-    )
-    state_path = tmp_path / "execution-state.json"
-    state_path.write_bytes(
-        canonicalize(
-            {
-                "schema": "workflow-delivery/v3/deferred-publication-result",
-                "action-id": action.action_id,
-                "action-digest": action.action_digest,
-                "lock-group": action.serialization_projection,
-                "outcome": "failed",
-                "mutation-disposition": "no-side-effect",
-                "response-identity-digest": None,
-                "receipt": None,
-                "diagnostic-reference": "substituted-state",
-                "control": f"workflow-delivery-v3:{'c' * 40}",
-            }
-        )
-    )
-    result_path = tmp_path / "action-result.json"
-    status = cli_module._release_form_github_packages_result_command(  # noqa: SLF001
-        cast(
-            "argparse.Namespace",
-            SimpleNamespace(
-                execution_state=str(state_path),
-                mutation_marker_artifact_id=None,
-                publish_step_outcome="failure",
-                target=target,
-                result_output=str(result_path),
-                github_output=str(tmp_path / "github-output"),
-            ),
-        )
-    )
-
-    result = json.loads(result_path.read_bytes())
-    assert status == 1
-    assert result["control"] == expected_control
-    assert (
-        result["diagnostic-reference"]
-        == "preflight-failed-before-mutation-start"
-    )
-
-
 def test_acceptance_cli_persists_validated_request_proof(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3354,168 +3125,6 @@ def test_acceptance_cli_does_not_reset_deadline_between_scenarios(
         "differing-race",
         "lost-response",
     ]
-
-
-def _valid_mutation_marker_fixture(
-    tmp_path: Path,
-) -> tuple[
-    Path,
-    PublicationSnapshot,
-    GitHubPackagesPublishPreflight,
-    cli_module.MutationMayHaveStartedMarker,
-]:
-    attempt = ReleaseAttemptIdentity(
-        execution=BuddyExecutionIdentity(
-            channel="buddy",
-            release_unit="hcoona-release-smoke-npm",
-            target="e" * 40,
-        ),
-        workflow_run_id=WORKFLOW_RUN_ID,
-    )
-    action = SimpleNamespace(
-        action_digest="sha256:" + ("c" * 64),
-        serialization_projection="npm:@hcoona/hcoona-release-smoke-npm",
-    )
-    publication = cast(
-        "PublicationSnapshot",
-        SimpleNamespace(
-            attempt=attempt,
-            snapshot_digest="sha256:" + ("b" * 64),
-            materialized_actions=(action,),
-        ),
-    )
-    preflight = GitHubPackagesPublishPreflight(
-        attempt=attempt,
-        publication_snapshot_digest=publication.snapshot_digest,
-        action_digest=action.action_digest,
-        lock_group=action.serialization_projection,
-        tarball_sha256="sha256:" + ("1" * 64),
-        tarball_sha512="sha512:" + ("2" * 128),
-        npm_configuration_digest="sha256:" + ("3" * 64),
-        governance_provenance=(("repository", "hcoona/three"),),
-        governance_canonical_content_digest="sha256:" + ("4" * 64),
-        governance_expires_at="2026-08-19T00:00:00Z",
-        governance_live_enabled=True,
-    )
-    expected = cli_module.MutationMayHaveStartedMarker(
-        attempt=attempt,
-        publication_snapshot_digest=publication.snapshot_digest,
-        action_digest=action.action_digest,
-        lock_group=action.serialization_projection,
-        preflight_digest=preflight.preflight_digest,
-    )
-    path = _write_canonical(
-        tmp_path / "mutation-may-have-started.json",
-        expected.to_document(),
-    )
-    return path, publication, preflight, expected
-
-
-@pytest.mark.parametrize(
-    ("artifact_id", "artifact_digest"),
-    [
-        pytest.param(1, NPM_ARTIFACT_DIGEST, id="v7-native-bare-digest"),
-        pytest.param(
-            NPM_ARTIFACT_ID,
-            f"sha256:{NPM_ARTIFACT_DIGEST}",
-            id="canonical-prefixed-digest",
-        ),
-    ],
-)
-def test_load_mutation_marker_accepts_supported_artifact_digest_forms(
-    tmp_path: Path,
-    artifact_id: int,
-    artifact_digest: str,
-) -> None:
-    """Accept native upload-artifact v7 and canonical digest forms."""
-    path, publication, preflight, expected = _valid_mutation_marker_fixture(
-        tmp_path
-    )
-
-    marker = cli_module._load_mutation_marker(  # noqa: SLF001
-        str(path),
-        expected_digest=expected.marker_digest,
-        artifact_id=artifact_id,
-        artifact_digest=artifact_digest,
-        publication=publication,
-        preflight=preflight,
-    )
-
-    assert marker.to_document() == expected.to_document()
-
-
-@pytest.mark.parametrize(
-    ("artifact_id", "artifact_digest"),
-    [
-        pytest.param(
-            NPM_ARTIFACT_ID,
-            "a" * 63,
-            id="short-bare",
-        ),
-        pytest.param(
-            NPM_ARTIFACT_ID,
-            "A" * 64,
-            id="uppercase-bare",
-        ),
-        pytest.param(
-            NPM_ARTIFACT_ID,
-            "g" * 64,
-            id="lowercase-nonhex-bare",
-        ),
-        pytest.param(
-            NPM_ARTIFACT_ID,
-            "sha256:" + ("g" * 64),
-            id="lowercase-nonhex-prefixed",
-        ),
-        pytest.param(
-            NPM_ARTIFACT_ID,
-            f"sha256:sha256:{NPM_ARTIFACT_DIGEST}",
-            id="duplicate-prefix",
-        ),
-        pytest.param(
-            NPM_ARTIFACT_ID,
-            f"sha512:{NPM_ARTIFACT_DIGEST}",
-            id="wrong-algorithm-prefix",
-        ),
-        pytest.param(
-            NPM_ARTIFACT_ID,
-            f"{NPM_ARTIFACT_DIGEST}\n",
-            id="trailing-whitespace",
-        ),
-        pytest.param(
-            0,
-            NPM_ARTIFACT_DIGEST,
-            id="zero-artifact-id",
-        ),
-        pytest.param(
-            -1,
-            NPM_ARTIFACT_DIGEST,
-            id="negative-artifact-id",
-        ),
-    ],
-)
-def test_load_mutation_marker_rejects_malformed_artifact_transport(
-    tmp_path: Path,
-    artifact_id: int,
-    artifact_digest: str,
-) -> None:
-    """Reject malformed upload transport before returning any marker."""
-    path, publication, preflight, expected = _valid_mutation_marker_fixture(
-        tmp_path
-    )
-
-    with pytest.raises(
-        ValueError,
-        match=r"^mutation-start marker transport is malformed$",
-    ):
-        cli_module._load_mutation_marker(  # noqa: SLF001
-            str(path),
-            expected_digest=expected.marker_digest,
-            artifact_id=artifact_id,
-            artifact_digest=artifact_digest,
-            publication=publication,
-            preflight=preflight,
-        )
 
 
 def _run_compile_live_model_scenario(
@@ -3995,133 +3604,3 @@ def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
     ]
     assert not output_path.exists()
     assert not github_output_path.exists()
-
-
-def test_release_publish_serializes_action_projection_as_lock_group(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Serialize the current Action projection on the compatibility wire."""
-    target = "d" * 40
-    action = PublicationAction(
-        action_id="publish-github-packages",
-        destination_operation_profile_digest="sha256:" + ("1" * 64),
-        package="@hcoona/hcoona-release-smoke-npm",
-        version="1.2.3",
-        tarball_reference=ArtifactReference(
-            artifact_id=7001,
-            artifact_digest="sha256:" + ("2" * 64),
-            artifact_url="https://example.test/artifacts/7001",
-            payload_path="hcoona-release-smoke-npm-1.2.3.tgz",
-            payload_digest="sha256:" + ("3" * 64),
-        ),
-        tag=f"buddy-sha-{target}",
-        mutable_resource_keys=(
-            "external-package-coordinate:" + ("4" * 64),
-            "npm-dist-tag:" + ("5" * 64),
-        ),
-        serialization_projection="destination-package:" + ("6" * 64),
-    )
-    unused = object()
-    publication = SimpleNamespace(
-        attempt=SimpleNamespace(
-            execution=SimpleNamespace(target=target),
-        ),
-        materialized_actions=(action,),
-    )
-    bundle = SimpleNamespace(
-        publication_snapshot_reference=unused,
-        reviewer_summary_reference=unused,
-    )
-    authorization = SimpleNamespace(
-        approval_bundle_reference=unused,
-        control=f"workflow-delivery-v3:{target}",
-    )
-    uploaded_references = {
-        "publication_snapshot": unused,
-        "reviewer_summary": unused,
-        "approval_bundle": unused,
-    }
-    governance_source = SimpleNamespace(repository="hcoona/three")
-    result = DeferredPublicationExecutionResult(
-        command=PublishCommandResult(
-            outcome="create-conflict",
-            exit_code=1,
-            stdout="",
-            stderr="npm error E409",
-            command=(
-                "npm",
-                "publish",
-                "hcoona-release-smoke-npm-1.2.3.tgz",
-            ),
-        ),
-        observation=None,
-        classification=PublishClassification(
-            outcome="failed",
-            mutation_disposition="no-side-effect",
-            receipt_digest=None,
-        ),
-        response_identity_digest=None,
-        diagnostic_reference="npm-publish-create-conflict",
-        receipt=None,
-    )
-    captured_outputs: list[dict[str, JsonValue]] = []
-
-    def capture_output(
-        _path: str,
-        document: dict[str, JsonValue],
-    ) -> None:
-        captured_outputs.append(document)
-
-    patches = {
-        "_load_publication_snapshot": lambda _arguments: publication,
-        "_load_approval_bundle": lambda _arguments: bundle,
-        "_load_publication_authorization": lambda _arguments: authorization,
-        "_uploaded_payload_reference": (
-            lambda _arguments, *, name: uploaded_references[name]
-        ),
-        "_load_github_packages_preflight": (
-            lambda *_arguments, **_keywords: unused
-        ),
-        "_load_mutation_marker": lambda *_arguments, **_keywords: unused,
-        "_load_live_qualification_snapshot": (lambda _arguments: unused),
-        "_load_live_qualification_decision": (lambda _arguments: unused),
-        "_load_release_adapter_context": (lambda _arguments, _snapshot: unused),
-        "_load_live_release_artifact_record": lambda _arguments: unused,
-        "load_first_slice_authoring": (
-            lambda _root, _target: (
-                unused,
-                unused,
-                SimpleNamespace(governance=governance_source),
-            )
-        ),
-        "artifact_expectation": lambda _snapshot, _context, _artifact: unused,
-        "publish_github_packages_action": lambda **_keywords: result,
-        "GitHubGovernanceClient": lambda **_keywords: unused,
-        "_write_output": capture_output,
-        "_record_outputs": lambda *_arguments, **_keywords: None,
-    }
-    for name, replacement in patches.items():
-        monkeypatch.setattr(cli_module, name, replacement)
-
-    status = cli_module._release_publish_github_packages_command(  # noqa: SLF001
-        Namespace(
-            preflight="unused-preflight.json",
-            preflight_digest="sha256:" + ("7" * 64),
-            mutation_marker="unused-mutation-marker.json",
-            mutation_marker_digest="sha256:" + ("8" * 64),
-            mutation_marker_artifact_id=7002,
-            mutation_marker_artifact_digest="sha256:" + ("9" * 64),
-            repo_root=".",
-            target=target,
-            tarball="unused-tarball.tgz",
-            github_token=f"unused-token-{target}",
-            temp_root="unused-temp-root",
-            execution_state_output="unused-execution-state.json",
-            github_output="unused-github-output.txt",
-        )
-    )
-
-    assert status == 1
-    assert len(captured_outputs) == 1
-    assert captured_outputs[0]["lock-group"] == action.serialization_projection
-    assert not hasattr(action, "lock_group")

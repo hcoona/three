@@ -16,6 +16,7 @@ from three_workflow_delivery_v3.adapters.github_packages import (
     github_packages_destination_operation_profile,
 )
 from three_workflow_delivery_v3.canonical import canonical_sha256
+from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
     PublicationSnapshot,
     RemoteStateObservation,
@@ -415,6 +416,17 @@ def test_blocking_remote_facts_persist_and_finalize_with_exact_ancestry(
             200 + len(evidence_arguments),
         )
     outcome = tmp_path / "outcome.json"
+    observation_digest = canonical_sha256(document)
+    observation_reference = ArtifactReference(
+        artifact_id=108,
+        artifact_digest=observation_digest,
+        artifact_url=(
+            "https://github.com/hcoona/three/actions/runs/"
+            f"{case.intent.workflow_run_id}/artifacts/108"
+        ),
+        payload_path="observation.json",
+        payload_digest=observation_digest,
+    )
     finalizer = [
         "release",
         "finalize-live",
@@ -422,17 +434,32 @@ def test_blocking_remote_facts_persist_and_finalize_with_exact_ancestry(
         *authority,
         *qualification,
         *evidence_arguments,
-        *uploaded_arguments(tmp_path, "observation", document, 108),
-        "--publication-preparation-interrupted",
+        *uploaded_arguments(
+            tmp_path,
+            "observation",
+            document,
+            108,
+            reference=observation_reference,
+        ),
+        "--publisher-conclusion",
+        "skipped",
+        "--publication-terminal-reference",
+        "null",
+        "--observation-conclusion",
+        "failure",
         "--outcome-output",
         str(outcome),
         "--summary-output",
         str(tmp_path / "outcome.md"),
     ]
     assert cli.main(finalizer) == 1
-    assert json.loads(outcome.read_bytes())["observation-digests"] == [
-        canonical_sha256(document)
-    ]
+    outcome_document = json.loads(outcome.read_bytes())
+    assert outcome_document["disposition"] == "failed-before-publication"
+    assert outcome_document["possibly-mutated"] is False
+    assert outcome_document["direct-predecessor"] == {
+        "kind": "blocking-observation",
+        "reference": observation_reference.to_document(),
+    }
     if failure == "version-unknown":
         retained_outcome = outcome.read_bytes()
 

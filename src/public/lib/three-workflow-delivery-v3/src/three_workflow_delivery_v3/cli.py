@@ -12,6 +12,7 @@ import http.server
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -29,20 +30,12 @@ from three_workflow_delivery_v3.adapters.github_packages import (
     ACCEPTANCE_PACKAGE_COORDINATE,
     ACCEPTANCE_PACKAGE_NAME,
     ACCEPTANCE_REPOSITORY_URL,
-    DeferredPublicationExecutionResult,
     GitHubPackagesHttpResponse,
     GitHubPackagesHttpTransport,
-    GitHubPackagesPublishPreflight,
-    MutationMayHaveStartedMarker,
-    PublisherGovernanceRecheckRejectionError,
-    PublishRunner,
     ValidatedAcceptanceRequestProof,
     fixed_acceptance_coordinates,
-    form_mutation_may_have_started_marker,
     github_packages_destination_operation_profile,
     inspect_fixed_acceptance_tarball,
-    preflight_github_packages_action,
-    publish_github_packages_action,
     run_fixed_acceptance_suite,
 )
 from three_workflow_delivery_v3.adapters.node import (
@@ -108,22 +101,23 @@ from three_workflow_delivery_v3.records.ci import (
 )
 from three_workflow_delivery_v3.records.release import (
     HYPOTHETICAL_ACTIONS_REPORT_PRODUCER,
+    MUTATION_MAY_HAVE_STARTED_SCHEMA,
     NPMJS_OBSERVER_PRODUCER,
-    PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER,
-    ActionResult,
+    PUBLICATION_RESULT_SCHEMA,
     ApprovalBundle,
     AttemptOutcome,
     ExactSatisfiedFinalizationProof,
+    MutationMayHaveStartedMarker,
     HypotheticalAction,
     ProjectionObservation,
     PublicationAuthorization,
+    PublicationResult,
     PublicationSnapshot,
     QualificationDecision,
     QualificationEvidence,
     QualificationSnapshot,
     ReleaseArtifact,
     ReleaseAttemptBinding,
-    ReleaseAttemptIdentity,
     ReleaseIntent,
     RemoteStateObservation,
     SimulationBinding,
@@ -133,10 +127,10 @@ from three_workflow_delivery_v3.records.release import (
 )
 from three_workflow_delivery_v3.records.release_transport import (
     ReleaseAdmissionBindings,
-    release_record_from_document,
 )
 from three_workflow_delivery_v3.release import (
     AdmittedLiveEligibilityDecision,
+    FinalizationInputs,
     LiveEligibilityAdmissionMode,
     admit_live_eligibility_decision,
     derive_buddy_execution_identity,
@@ -156,6 +150,7 @@ from three_workflow_delivery_v3.release import (
     normalize_buddy_live_intent,
     normalize_official_simulation_intent,
     parse_governance_attestation,
+    parse_publication_terminal_reference,
     plan_live_qualification,
     plan_official_simulation_qualification,
     qualify_release_artifact_contents,
@@ -172,6 +167,14 @@ from three_workflow_delivery_v3.release.eligibility import (
 )
 from three_workflow_delivery_v3.release.observation import (
     observe_remote_state,
+)
+from three_workflow_delivery_v3.release.publication import (
+    PublicationInputs,
+    execute_publication,
+    prepare_publication,
+)
+from three_workflow_delivery_v3.adapters.npm_process import (
+    IsolatedNpmProcessRunner,
 )
 from three_workflow_delivery_v3.release.simulation import (
     HypotheticalActionsReport,
@@ -278,11 +281,11 @@ _NODE_TEST_INPUTS = (
 )
 _GITHUB_PUBLIC_API = "https://api.github.com"
 LIVE_OUTCOME_EXIT_STATUS = {
-    "success": 0,
-    "failure": 1,
-    "incomplete": 1,
-    "replayable-no-side-effect": 1,
-    "incomplete-possibly-mutated": 1,
+    "exact-satisfied": 0,
+    "published": 0,
+    "failed-before-publication": 1,
+    "publication-failed": 1,
+    "unknown": 1,
 }
 
 
@@ -665,29 +668,6 @@ def _record_outputs(
             *extra,
         ),
     )
-
-
-class _SubprocessPublishRunner(PublishRunner):
-    """Exact process seam for the one permitted npm publish command."""
-
-    def run(
-        self,
-        argv: tuple[str, ...],
-        *,
-        env: dict[str, str],
-    ) -> dict[str, object]:
-        completed = subprocess.run(  # noqa: S603
-            argv,
-            check=False,
-            capture_output=True,
-            text=True,
-            env={**os.environ, **env},
-        )
-        return {
-            "exit_code": completed.returncode,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
-        }
 
 
 def _remaining_seconds(deadline: float) -> float:
@@ -2128,7 +2108,8 @@ def _load_release_record(  # noqa: PLR0913
         | ApprovalBundle
         | PublicationAuthorization
         | ExactSatisfiedFinalizationProof
-        | ActionResult
+        | MutationMayHaveStartedMarker
+        | PublicationResult
         | AttemptOutcome
         | SimulationOutcome
     ],
@@ -2151,7 +2132,8 @@ def _load_release_record(  # noqa: PLR0913
     | ApprovalBundle
     | PublicationAuthorization
     | ExactSatisfiedFinalizationProof
-    | ActionResult
+    | MutationMayHaveStartedMarker
+    | PublicationResult
     | AttemptOutcome
     | SimulationOutcome
 ):
@@ -3853,646 +3835,427 @@ def _release_observe_github_packages_command(
     return 1
 
 
-def _release_publish_github_packages_command(
+def _load_publication_inputs(
     arguments: argparse.Namespace,
-) -> int:
-    publication = _load_publication_snapshot(arguments)
-    bundle = _load_approval_bundle(arguments)
-    authorization = _load_publication_authorization(arguments)
-    publication_snapshot_reference = _uploaded_payload_reference(
-        arguments,
-        name="publication_snapshot",
-    )
-    approval_bundle_reference = _uploaded_payload_reference(
-        arguments,
-        name="approval_bundle",
-    )
-    reviewer_summary_reference = _uploaded_payload_reference(
-        arguments,
-        name="reviewer_summary",
-    )
-    if (
-        bundle.publication_snapshot_reference != publication_snapshot_reference
-        or bundle.reviewer_summary_reference != reviewer_summary_reference
-        or authorization.approval_bundle_reference != approval_bundle_reference
-    ):
-        raise ValueError("Publication authority reference mismatch")
-    preflight = _load_github_packages_preflight(
-        arguments.preflight,
-        expected_digest=arguments.preflight_digest,
-        publication=publication,
-    )
-    marker = _load_mutation_marker(
-        arguments.mutation_marker,
-        expected_digest=arguments.mutation_marker_digest,
-        artifact_id=arguments.mutation_marker_artifact_id,
-        artifact_digest=arguments.mutation_marker_artifact_digest,
-        publication=publication,
-        preflight=preflight,
-    )
-    snapshot = _load_live_qualification_snapshot(arguments)
-    decision = _load_live_qualification_decision(arguments)
-    context = _load_release_adapter_context(arguments, snapshot)
-    artifact = _load_live_release_artifact_record(arguments)
-    _descriptor, _quality, policy = load_first_slice_authoring(
-        Path(arguments.repo_root).resolve(),
-        arguments.target,
-    )
-    try:
-        result = publish_github_packages_action(
-            tarball=Path(arguments.tarball),
-            target=publication.attempt.execution.target,
-            token=arguments.github_token,
-            runner=_SubprocessPublishRunner(),
-            temp_root=Path(arguments.temp_root),
-            transport=GitHubPackagesHttpTransport(),
-            publication_snapshot=publication,
-            approval_bundle=bundle,
-            reviewer_summary_reference=reviewer_summary_reference,
-            authorization=authorization,
-            action=publication.materialized_actions[0],
-            qualification_snapshot=snapshot,
-            qualification_decision=decision,
-            artifact=artifact,
-            expectation=artifact_expectation(snapshot, context, artifact),
-            preflight=preflight,
-            mutation_marker=marker,
-            governance_source=policy.governance,
-            governance_client=GitHubGovernanceClient(
-                repository=policy.governance.repository,
-                token=arguments.github_token,
-            ),
-            governance_observed_at=lambda: datetime.now(UTC),
-            defer_receipt_binding=True,
-            checkout_root=Path(arguments.repo_root).resolve(),
-        )
-    except PublisherGovernanceRecheckRejectionError as error:
-        result = error.result
-    if not isinstance(result, DeferredPublicationExecutionResult):
-        message = "GitHub Packages publisher returned a bound result"
-        raise TypeError(message)
-    state: dict[str, JsonValue] = {
-        "schema": "workflow-delivery/v3/deferred-publication-result",
-        "action-id": publication.materialized_actions[0].action_id,
-        "action-digest": publication.materialized_actions[0].action_digest,
-        "lock-group": (
-            publication.materialized_actions[0].serialization_projection
-        ),
-        "outcome": result.classification.outcome,
-        "mutation-disposition": result.classification.mutation_disposition,
-        "response-identity-digest": result.response_identity_digest,
-        "receipt": (
-            None if result.receipt is None else result.receipt.to_document()
-        ),
-        "diagnostic-reference": result.diagnostic_reference,
-        "control": authorization.control,
-    }
-    _write_output(arguments.execution_state_output, state)
-    _record_outputs(
-        arguments.github_output,
-        role="publication-execution",
-        digest=canonical_sha256(state),
-    )
-    return 0 if result.classification.outcome == "success" else 1
-
-
-def _release_preflight_github_packages_command(
-    arguments: argparse.Namespace,
-) -> int:
-    publication = _load_publication_snapshot(arguments)
-    bundle = _load_approval_bundle(arguments)
-    authorization = _load_publication_authorization(arguments)
-    publication_snapshot_reference = _uploaded_payload_reference(
-        arguments,
-        name="publication_snapshot",
-    )
-    approval_bundle_reference = _uploaded_payload_reference(
-        arguments,
-        name="approval_bundle",
-    )
-    reviewer_summary_reference = _uploaded_payload_reference(
-        arguments,
-        name="reviewer_summary",
-    )
-    if (
-        bundle.publication_snapshot_reference != publication_snapshot_reference
-        or bundle.reviewer_summary_reference != reviewer_summary_reference
-        or authorization.approval_bundle_reference != approval_bundle_reference
-    ):
-        raise ValueError("Publication authority reference mismatch")
-    if len(publication.materialized_actions) != 1:
-        raise ValueError("GitHub Packages publisher requires one action")
-    snapshot = _load_live_qualification_snapshot(arguments)
-    decision = _load_live_qualification_decision(arguments)
-    context = _load_release_adapter_context(arguments, snapshot)
-    artifact = _load_live_release_artifact_record(arguments)
-    preflight_github_packages_action(
-        publication_snapshot=publication,
-        approval_bundle=bundle,
-        reviewer_summary_reference=reviewer_summary_reference,
-        authorization=authorization,
-        action=publication.materialized_actions[0],
-        qualification_snapshot=snapshot,
-        qualification_decision=decision,
-        artifact=artifact,
-        expectation=artifact_expectation(snapshot, context, artifact),
-    )
-
-
-def _load_github_packages_preflight(
-    path: str,
-    *,
-    expected_digest: str,
-    publication: PublicationSnapshot,
-) -> GitHubPackagesPublishPreflight:
-    value = json.loads(Path(path).read_bytes())
-    action = publication.materialized_actions[0]
-    if (
-        type(value) is not dict
-        or value.get("schema")
-        != "workflow-delivery/v3/github-packages-publish-preflight"
-        or canonical_sha256(value) != expected_digest
-        or value.get("attempt") != publication.attempt.to_document()
-        or value.get("publication-snapshot-digest")
-        != publication.snapshot_digest
-        or value.get("action-digest") != action.action_digest
-        or value.get("lock-group") != action.serialization_projection
-    ):
-        raise ValueError(
-            "GitHub Packages preflight is malformed or substituted"
-        )
-    governance_value = value.get("governance-provenance")
-    if type(governance_value) is not list or any(
-        type(pair) is not list
-        or len(pair) != _PAIR_FIELD_COUNT
-        or any(type(item) is not str for item in pair)
-        for pair in governance_value
-    ):
-        raise ValueError(
-            "GitHub Packages preflight is malformed or substituted"
-        )
-    governance_provenance = tuple(
-        (cast("str", pair[0]), cast("str", pair[1]))
-        for pair in governance_value
-    )
-    preflight = GitHubPackagesPublishPreflight(
-        attempt=publication.attempt,
-        publication_snapshot_digest=publication.snapshot_digest,
-        action_digest=action.action_digest,
-        lock_group=action.serialization_projection,
-        tarball_sha256=cast("str", value.get("tarball-sha256")),
-        tarball_sha512=cast("str", value.get("tarball-sha512")),
-        npm_configuration_digest=cast(
-            "str",
-            value.get("npm-configuration-digest"),
-        ),
-        governance_provenance=governance_provenance,
-        governance_canonical_content_digest=cast(
-            "str",
-            value.get("governance-canonical-content-digest"),
-        ),
-        governance_expires_at=cast(
-            "str",
-            value.get("governance-expires-at"),
-        ),
-        governance_live_enabled=cast(
-            "bool",
-            value.get("governance-live-enabled"),
-        ),
-    )
-    if preflight.to_document() != value:
-        raise ValueError("GitHub Packages preflight is not canonical")
-    return preflight
-
-
-def _release_mark_github_packages_mutation_command(
-    arguments: argparse.Namespace,
-) -> int:
-    publication = _load_publication_snapshot(arguments)
-    preflight = _load_github_packages_preflight(
-        arguments.preflight,
-        expected_digest=arguments.preflight_digest,
-        publication=publication,
-    )
-    marker = form_mutation_may_have_started_marker(preflight=preflight)
-    _write_output(arguments.marker_output, marker.to_document())
-    _record_outputs(
-        arguments.github_output,
-        role="mutation-may-have-started",
-        digest=marker.marker_digest,
-    )
-    return 0
-
-
-def _load_mutation_marker(  # noqa: PLR0913
-    path: str,
-    *,
-    expected_digest: str,
-    artifact_id: int,
-    artifact_digest: str,
-    publication: PublicationSnapshot,
-    preflight: GitHubPackagesPublishPreflight,
-) -> MutationMayHaveStartedMarker:
-    if artifact_id <= 0:
-        raise ValueError("mutation-start marker transport is malformed")
-    try:
-        _normalized_digest(artifact_digest)
-    except ValueError as error:
-        raise ValueError(
-            "mutation-start marker transport is malformed"
-        ) from error
-    value = json.loads(Path(path).read_bytes())
-    action = publication.materialized_actions[0]
-    if (
-        type(value) is not dict
-        or value.get("schema")
-        != ("workflow-delivery/v3/github-packages-mutation-may-have-started")
-        or canonical_sha256(value) != expected_digest
-        or value.get("attempt") != publication.attempt.to_document()
-        or value.get("publication-snapshot-digest")
-        != publication.snapshot_digest
-        or value.get("action-digest") != action.action_digest
-        or value.get("lock-group") != action.serialization_projection
-        or value.get("preflight-digest") != preflight.preflight_digest
-    ):
-        raise ValueError("mutation-start marker is malformed or substituted")
-    return MutationMayHaveStartedMarker(
-        attempt=publication.attempt,
-        publication_snapshot_digest=publication.snapshot_digest,
-        action_digest=action.action_digest,
-        lock_group=action.serialization_projection,
-        preflight_digest=preflight.preflight_digest,
-    )
-
-
-def _release_form_github_packages_result_command(
-    arguments: argparse.Namespace,
-) -> int:
-    publication = _load_publication_snapshot(arguments)
-    action = publication.materialized_actions[0]
-    marker_present = arguments.mutation_marker_artifact_id is not None
-    expected_control = f"workflow-delivery-v3:{arguments.target}"
-    state_value: dict[str, JsonValue] | None = None
-    if arguments.execution_state is not None:
-        try:
-            loaded_state = json.loads(
-                Path(arguments.execution_state).read_bytes()
-            )
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            loaded_state = None
-        if (
-            type(loaded_state) is dict
-            and loaded_state.get("schema")
-            == "workflow-delivery/v3/deferred-publication-result"
-            and loaded_state.get("action-id") == action.action_id
-            and loaded_state.get("action-digest") == action.action_digest
-            and loaded_state.get("lock-group")
-            == action.serialization_projection
-        ):
-            state_value = cast("dict[str, JsonValue]", loaded_state)
-    if state_value is not None and (
-        state_value.get("outcome") not in {"success", "failed", "incomplete"}
-        or state_value.get("mutation-disposition")
-        not in {
-            "created",
-            "exact-race-accepted",
-            "no-side-effect",
-            "possibly-mutated",
-        }
-        or type(state_value.get("control")) is not str
-        or state_value.get("control") != expected_control
-        or (
-            state_value.get("response-identity-digest") is not None
-            and type(state_value.get("response-identity-digest")) is not str
-        )
-        or (
-            state_value.get("receipt") is not None
-            and type(state_value.get("receipt")) is not dict
-        )
-        or (
-            marker_present
-            and (
-                (
-                    state_value.get("mutation-disposition") == "no-side-effect"
-                    and (
-                        state_value.get("outcome") != "failed"
-                        or state_value.get("diagnostic-reference")
-                        not in {
-                            "create-conflict",
-                            (PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER),
-                        }
-                    )
-                )
-                or (
-                    state_value.get("mutation-disposition")
-                    in {"created", "exact-race-accepted"}
-                    and state_value.get("outcome") != "success"
-                )
-                or (
-                    state_value.get("mutation-disposition")
-                    == "possibly-mutated"
-                    and state_value.get("outcome") != "incomplete"
-                )
-            )
-        )
-    ):
-        state_value = None
-    if state_value is None:
-        state_value = {
-            "schema": "workflow-delivery/v3/deferred-publication-result",
-            "action-id": action.action_id,
-            "action-digest": action.action_digest,
-            "lock-group": action.serialization_projection,
-            "outcome": "incomplete" if marker_present else "failed",
-            "mutation-disposition": (
-                "possibly-mutated" if marker_present else "no-side-effect"
-            ),
-            "response-identity-digest": None,
-            "receipt": None,
-            "diagnostic-reference": (
-                "terminal-state-missing-or-malformed-after-start"
-                if marker_present
-                else "preflight-failed-before-mutation-start"
-            ),
-            "control": expected_control,
-        }
-    elif arguments.publish_step_outcome == "success" and (
-        state_value.get("outcome") != "success"
-    ):
-        raise ValueError("Deferred publication step outcome mismatch")
-    result_document: dict[str, JsonValue] = {
-        "schema": "workflow-delivery/v3/action-result",
-        "attempt": publication.attempt.to_document(),
-        "publication-snapshot-digest": publication.snapshot_digest,
-        "action-id": action.action_id,
-        "action-digest": action.action_digest,
-        "lock-group": action.serialization_projection,
-        "outcome": state_value["outcome"],
-        "mutation-disposition": state_value["mutation-disposition"],
-        "response-identity-digest": state_value["response-identity-digest"],
-        "receipt": state_value["receipt"],
-        "diagnostic-reference": state_value["diagnostic-reference"],
-        "producer": "publish-github-packages",
-        "control": state_value["control"],
-        "workflow-run-id": publication.attempt.workflow_run_id,
-    }
-    result = cast(
-        "ActionResult",
-        release_record_from_document(
-            result_document,
-            expected_type=ActionResult,
-        ),
-    )
-    _write_output(arguments.result_output, result.to_document())
-    _record_outputs(
-        arguments.github_output,
-        role="action-result",
-        digest=result.result_digest,
-        extra=(
-            (
-                "receipt-digest",
-                "" if result.receipt is None else result.receipt.receipt_digest,
-            ),
-        ),
-    )
-    return 0 if result.outcome == "success" else 1
-
-
-def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
-    _validate_optional_uploaded_record_transport(
-        "observation",
-        path=arguments.observation,
-        record_digest=arguments.observation_digest,
-        artifact_id=arguments.observation_artifact_id,
-        artifact_digest=arguments.observation_artifact_digest,
-    )
-    _validate_optional_uploaded_record_transport(
-        "publication_snapshot",
-        path=arguments.publication_snapshot,
-        record_digest=arguments.publication_snapshot_digest,
-        artifact_id=arguments.publication_snapshot_artifact_id,
-        artifact_digest=arguments.publication_snapshot_artifact_digest,
-    )
-    _validate_optional_uploaded_record_transport(
-        "approval_bundle",
-        path=arguments.approval_bundle,
-        record_digest=arguments.approval_bundle_digest,
-        artifact_id=arguments.approval_bundle_artifact_id,
-        artifact_digest=arguments.approval_bundle_artifact_digest,
-    )
-    _validate_optional_uploaded_record_transport(
-        "publication_authorization",
-        path=arguments.publication_authorization,
-        record_digest=arguments.publication_authorization_digest,
-        artifact_id=arguments.publication_authorization_artifact_id,
-        artifact_digest=(arguments.publication_authorization_artifact_digest),
-    )
-    _validate_optional_uploaded_record_transport(
-        "exact_satisfied_finalization_proof",
-        path=arguments.exact_satisfied_finalization_proof,
-        record_digest=arguments.exact_satisfied_finalization_proof_digest,
-        artifact_id=arguments.exact_satisfied_finalization_proof_artifact_id,
-        artifact_digest=(
-            arguments.exact_satisfied_finalization_proof_artifact_digest
-        ),
-    )
-    _validate_optional_uploaded_record_transport(
-        "action_result",
-        path=arguments.action_result,
-        record_digest=arguments.action_result_digest,
-        artifact_id=arguments.action_result_artifact_id,
-        artifact_digest=arguments.action_result_artifact_digest,
-    )
+) -> PublicationInputs:
     intent, binding, eligibility, policy = _load_live_observation_authority(
         arguments,
         admission_mode=LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
     )
-    snapshot = _load_live_qualification_snapshot(arguments)
-    decision = _load_live_qualification_decision(arguments)
-    attempt = binding.attempt
-    if type(decision.subject) is not ReleaseAttemptIdentity:
-        message = "Live finalization Decision has the wrong subject"
-        raise TypeError(message)
-    if (
-        snapshot.subject != attempt
-        or decision.subject != attempt
-        or decision.qualification_snapshot_digest != snapshot.snapshot_digest
-        or snapshot.repository_model_digest != binding.repository_model_digest
-    ):
-        message = "Live finalization Attempt authority binding mismatch"
-        raise ValueError(message)
-    qualification_evidence = tuple(
-        item
-        for item in (
-            _optional_evidence(
-                arguments,
-                prefix="build-evidence",
-                producer="build-tarball",
-                purpose="live-release",
-            ),
-            _optional_evidence(
-                arguments,
-                prefix="project-test-evidence",
-                producer="project-test",
-                purpose="live-release",
-            ),
-            _optional_evidence(
-                arguments,
-                prefix="artifact-contents-evidence",
-                producer="npm-artifact-qualification",
-                purpose="live-release",
-            ),
-            _optional_evidence(
-                arguments,
-                prefix="install-import-evidence",
-                producer="npm-artifact-qualification",
-                purpose="live-release",
-            ),
-        )
-        if item is not None
-    )
-    qualification_artifacts = (
-        ()
-        if arguments.release_artifact is None
-        else (_load_live_release_artifact_record(arguments),)
-    )
-    if (
-        finalize_qualification(
-            snapshot,
-            qualification_evidence,
-            qualification_artifacts,
-        )
-        != decision
-    ):
-        message = "Live finalization Qualification Decision is not exact"
-        raise ValueError(message)
-    observation = None
-    if arguments.observation is not None:
-        observation = _load_remote_state_observation(arguments)
-    publication = (
-        None
-        if arguments.publication_snapshot is None
-        else _load_publication_snapshot(arguments)
-    )
-    if publication is not None and observation is None:
-        raise ValueError(
-            "Live finalization Publication Snapshot requires "
-            "Remote-State Observation"
-        )
-    approval_bundle = (
-        None
-        if arguments.approval_bundle is None
-        else _load_approval_bundle(arguments)
-    )
-    publication_authorization = (
-        None
-        if arguments.publication_authorization is None
-        else _load_publication_authorization(arguments)
-    )
-    if approval_bundle is not None and publication is None:
-        raise ValueError("Approval Bundle requires Publication Snapshot")
-    publication_snapshot_reference = (
-        None
-        if publication is None
-        else _payload_reference(
-            arguments,
-            name="publication_snapshot",
-            payload_digest=publication.snapshot_digest,
-        )
-    )
-    approval_bundle_reference = (
-        None
-        if approval_bundle is None
-        else _payload_reference(
-            arguments,
-            name="approval_bundle",
-            payload_digest=approval_bundle.bundle_digest,
-        )
-    )
-    exact_satisfied_finalization_proof = (
-        None
-        if arguments.exact_satisfied_finalization_proof is None
-        else _load_exact_satisfied_finalization_proof(arguments)
-    )
-    action_result = None
-    if arguments.action_result is not None:
-        action_result = cast(
-            "ActionResult",
-            _load_release_record(
-                arguments.action_result,
-                record_type=ActionResult,
-                expected_digest=arguments.action_result_digest,
-                artifact_id=arguments.action_result_artifact_id,
-                artifact_digest=arguments.action_result_artifact_digest,
-                bindings=_release_bindings(
-                    arguments,
-                    producer="publish-github-packages",
-                    purpose="live-release",
-                ),
-            ),
-        )
-    outcome = finalize_attempt_outcome(
-        attempt=attempt,
-        qualification_decision=decision,
-        publication_snapshot=publication,
-        exact_satisfied_finalization_proof=exact_satisfied_finalization_proof,
-        approval_bundle=approval_bundle,
-        publication_authorization=publication_authorization,
-        action_results=() if action_result is None else (action_result,),
-        qualification_snapshot=snapshot,
-        release_artifact=(
-            qualification_artifacts[0]
-            if len(qualification_artifacts) == 1
-            else None
-        ),
-        destination_operation_profile=(
-            github_packages_destination_operation_profile()
-        ),
-        publication_snapshot_reference=publication_snapshot_reference,
-        approval_bundle_reference=approval_bundle_reference,
-        observations=() if observation is None else (observation,),
+    return PublicationInputs(
         intent=intent,
         attempt_binding=binding,
         eligibility=eligibility,
         policy=policy,
-        decision_reference=_payload_reference(
-            arguments,
-            name="qualification_decision",
-            payload_digest=decision.decision_digest,
+        snapshot=_load_live_qualification_snapshot(arguments),
+        decision=_load_live_qualification_decision(arguments),
+        decision_reference=_uploaded_payload_reference(
+            arguments, name="qualification_decision"
         ),
-        publication_preparation_interrupted=(
-            arguments.publication_preparation_interrupted
+        artifact=_load_live_release_artifact_record(arguments),
+        observation=_load_remote_state_observation(arguments),
+        publication_snapshot=_load_publication_snapshot(arguments),
+        publication_snapshot_reference=_uploaded_payload_reference(
+            arguments, name="publication_snapshot"
         ),
-        platform_terminated=arguments.platform_terminated,
-        publication_may_have_started=(arguments.publication_may_have_started),
+        approval_bundle=_load_approval_bundle(arguments),
+        approval_bundle_reference=_uploaded_payload_reference(
+            arguments, name="approval_bundle"
+        ),
+        reviewer_summary=_verify_uploaded_payload(
+            arguments.reviewer_summary,
+            artifact_id=arguments.reviewer_summary_artifact_id,
+            artifact_digest=arguments.reviewer_summary_artifact_digest,
+        ),
+        reviewer_summary_reference=_uploaded_payload_reference(
+            arguments, name="reviewer_summary"
+        ),
+        authorization=_load_publication_authorization(arguments),
+        authorization_reference=_uploaded_payload_reference(
+            arguments, name="publication_authorization"
+        ),
+    )
+
+
+def _load_publication_terminal(
+    arguments: argparse.Namespace,
+    reference: ArtifactReference,
+    *,
+    directory: str,
+) -> MutationMayHaveStartedMarker | PublicationResult:
+    if _platform_run_attempt(arguments) != 1:
+        raise ValueError("Publication terminal requires platform attempt one")
+    expected_url = (
+        "https://github.com/hcoona/three/actions/runs/"
+        f"{arguments.workflow_run_id}/artifacts/{reference.artifact_id}"
+    )
+    if reference.artifact_url != expected_url:
+        raise ValueError("Publication terminal service URL is not current-run")
+    path = str(Path(directory) / reference.payload_path)
+    content = _verify_uploaded_payload(
+        path,
+        artifact_id=reference.artifact_id,
+        artifact_digest=reference.artifact_digest,
+    )
+    document = parse_canonical_json(content)
+    if type(document) is not dict:
+        raise ValueError(
+            "Publication terminal target must be a canonical record"
+        )
+    schema = document.get("schema")
+    if type(schema) is not str:
+        raise ValueError("Publication terminal target schema is missing")
+    record_type = {
+        MUTATION_MAY_HAVE_STARTED_SCHEMA: MutationMayHaveStartedMarker,
+        PUBLICATION_RESULT_SCHEMA: PublicationResult,
+    }.get(schema)
+    if record_type is None:
+        raise ValueError("Publication terminal target schema is unsupported")
+    return cast(
+        "MutationMayHaveStartedMarker | PublicationResult",
+        admit_release_record(
+            content,
+            expected_type=record_type,
+            expected_digest=reference.payload_digest,
+            expected_bindings=_release_bindings(
+                arguments,
+                producer="publish-github-packages",
+                purpose="live-release",
+            ),
+        ),
+    )
+
+
+def _release_prepare_publication_command(arguments: argparse.Namespace) -> int:
+    inputs = _load_publication_inputs(arguments)
+    context = _load_release_adapter_context(arguments, inputs.snapshot)
+    marker = prepare_publication(
+        inputs,
+        current=_release_bindings(arguments, purpose="live-release"),
+        run_attempt=_platform_run_attempt(arguments),
+        tarball=Path(arguments.tarball),
+        runtime_directory=Path(arguments.runtime_directory),
+        toolchain_directory=Path(arguments.toolchain_directory),
+        checkout=Path(arguments.repo_root),
+        expectation=artifact_expectation(
+            inputs.snapshot, context, inputs.artifact
+        ),
+        runner=IsolatedNpmProcessRunner(),
+        governance_client=GitHubGovernanceClient(
+            repository=inputs.policy.governance.repository,
+            token=arguments.github_token,
+        ),
+        transport=GitHubPackagesHttpTransport(),
+        token=arguments.github_token,
+        clock=lambda: datetime.now(UTC),
+    )
+    try:
+        _write_output(arguments.output, marker.to_document())
+        _record_outputs(
+            arguments.github_output,
+            role="mutation-marker",
+            digest=marker.marker_digest,
+            extra=(("runtime-created", "true"),),
+        )
+    except BaseException:
+        shutil.rmtree(arguments.runtime_directory)
+        raise
+    return 0
+
+
+def _release_execute_publication_command(arguments: argparse.Namespace) -> int:
+    inputs = _load_publication_inputs(arguments)
+    context = _load_release_adapter_context(arguments, inputs.snapshot)
+    reference = parse_publication_terminal_reference(
+        arguments.publication_terminal_reference, publisher_conclusion="success"
+    )
+    if reference is None:
+        raise ValueError("Publication requires a durable mutation marker")
+    marker = _load_publication_terminal(
+        arguments, reference, directory=arguments.terminal_directory
+    )
+    if type(marker) is not MutationMayHaveStartedMarker:
+        raise ValueError("Publication requires the exact marker target")
+    result = execute_publication(
+        inputs,
+        current=_release_bindings(arguments, purpose="live-release"),
+        run_attempt=_platform_run_attempt(arguments),
+        durable_marker=marker,
+        marker_reference=reference,
+        runtime_directory=Path(arguments.runtime_directory),
+        toolchain_directory=Path(arguments.toolchain_directory),
+        checkout=Path(arguments.repo_root),
+        expectation=artifact_expectation(
+            inputs.snapshot, context, inputs.artifact
+        ),
+        runner=IsolatedNpmProcessRunner(),
+        transport=GitHubPackagesHttpTransport(),
+        token=arguments.github_token,
+        clock=lambda: datetime.now(UTC),
+    )
+    _write_output(arguments.output, result.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="publication-result",
+        digest=result.result_digest,
+    )
+    return 0 if result.result == "published" else 1
+
+
+def _release_admit_publication_terminal_command(
+    arguments: argparse.Namespace,
+) -> int:
+    reference = _uploaded_payload_reference(arguments, name="terminal")
+    _load_publication_terminal(
+        arguments, reference, directory=str(Path(arguments.terminal).parent)
+    )
+    _append_outputs(
+        arguments.github_output,
+        (
+            (
+                "publication-terminal-reference",
+                canonicalize(reference.to_document()).decode(),
+            ),
+        ),
+    )
+    return 0
+
+
+def _release_resolve_publication_terminal_command(
+    arguments: argparse.Namespace,
+) -> int:
+    if _platform_run_attempt(arguments) != 1:
+        raise ValueError("Publication terminal requires platform attempt one")
+    reference = parse_publication_terminal_reference(
+        arguments.publication_terminal_reference,
         publisher_conclusion=arguments.publisher_conclusion,
     )
+    if reference is None:
+        if arguments.terminal_directory is not None:
+            raise ValueError("Null terminal cannot select a payload directory")
+        return 0
+    outputs: list[tuple[str, object]] = [
+        ("terminal-artifact-id", reference.artifact_id)
+    ]
+    if arguments.terminal_directory is not None:
+        terminal = _load_publication_terminal(
+            arguments, reference, directory=arguments.terminal_directory
+        )
+        if type(terminal) is PublicationResult:
+            outputs.append(
+                (
+                    "marker-artifact-id",
+                    terminal.mutation_marker_reference.artifact_id,
+                )
+            )
+    _append_outputs(arguments.github_output, tuple(outputs))
+    return 0
+
+
+def _optional_finalization_pair[
+    T: (
+        RemoteStateObservation
+        | PublicationSnapshot
+        | ApprovalBundle
+        | PublicationAuthorization
+        | ExactSatisfiedFinalizationProof
+    )
+](
+    arguments: argparse.Namespace,
+    name: str,
+    record_type: type[T],
+    producer: str | None = None,
+) -> tuple[T, ArtifactReference] | None:
+    values = tuple(
+        getattr(arguments, name + suffix)
+        for suffix in (
+            "",
+            "_digest",
+            "_artifact_id",
+            "_artifact_digest",
+            "_artifact_url",
+            "_payload_path",
+        )
+    )
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise ValueError(f"{name} full Artifact Reference is partial")
+    reference = _uploaded_payload_reference(arguments, name=name)
+    record = _load_release_record(
+        values[0],
+        record_type=record_type,
+        expected_digest=reference.payload_digest,
+        artifact_id=reference.artifact_id,
+        artifact_digest=reference.artifact_digest,
+        bindings=_release_bindings(
+            arguments, producer=producer, purpose="live-release"
+        ),
+    )
+    return cast("T", record), reference
+
+
+def _release_finalize_live_command(arguments: argparse.Namespace) -> int:  # noqa: C901
+    reference = parse_publication_terminal_reference(
+        arguments.publication_terminal_reference,
+        publisher_conclusion=arguments.publisher_conclusion,
+    )
+    terminal = None
+    marker = None
+    if reference is not None:
+        if arguments.terminal_directory is None:
+            raise ValueError("Publication terminal download is missing")
+        record = _load_publication_terminal(
+            arguments, reference, directory=arguments.terminal_directory
+        )
+        terminal = (record, reference)
+        if type(record) is PublicationResult:
+            if arguments.marker_directory is None:
+                raise ValueError("Result direct marker download is missing")
+            marker_record = _load_publication_terminal(
+                arguments,
+                record.mutation_marker_reference,
+                directory=arguments.marker_directory,
+            )
+            if type(marker_record) is not MutationMayHaveStartedMarker:
+                raise ValueError("Result predecessor is not a mutation marker")
+            marker = (marker_record, record.mutation_marker_reference)
+    if (reference is None and arguments.terminal_directory is not None) or (
+        marker is None and arguments.marker_directory is not None
+    ):
+        raise ValueError("Unexpected publication terminal download")
+    intent, binding, eligibility, policy = _load_live_observation_authority(
+        arguments,
+        admission_mode=LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
+    )
+    evidence = tuple(
+        item
+        for item in (
+            _optional_evidence(
+                arguments,
+                prefix=prefix,
+                producer=producer,
+                purpose="live-release",
+            )
+            for prefix, producer in (
+                ("build-evidence", "build-tarball"),
+                ("project-test-evidence", "project-test"),
+                ("artifact-contents-evidence", "npm-artifact-qualification"),
+                ("install-import-evidence", "npm-artifact-qualification"),
+            )
+        )
+        if item is not None
+    )
+    _validate_optional_uploaded_record_transport(
+        "release_artifact",
+        path=arguments.release_artifact,
+        record_digest=arguments.release_artifact_digest,
+        artifact_id=arguments.release_artifact_artifact_id,
+        artifact_digest=arguments.release_artifact_artifact_digest,
+    )
+    observation = _optional_finalization_pair(
+        arguments,
+        "observation",
+        RemoteStateObservation,
+        "observe-github-packages",
+    )
+    reviewer = None
+    reviewer_values = tuple(
+        getattr(arguments, "reviewer_summary" + suffix)
+        for suffix in (
+            "",
+            "_digest",
+            "_artifact_id",
+            "_artifact_digest",
+            "_artifact_url",
+            "_payload_path",
+        )
+    )
+    if any(value is not None for value in reviewer_values):
+        if any(value is None for value in reviewer_values):
+            raise ValueError(
+                "Reviewer summary full Artifact Reference is partial"
+            )
+        reviewer_reference = _uploaded_payload_reference(
+            arguments, name="reviewer_summary"
+        )
+        reviewer = (
+            Path(arguments.reviewer_summary).read_bytes(),
+            reviewer_reference,
+        )
+    inputs = FinalizationInputs(
+        intent=intent,
+        attempt_binding=binding,
+        eligibility=eligibility,
+        policy=policy,
+        snapshot=_load_live_qualification_snapshot(arguments),
+        decision=_load_live_qualification_decision(arguments),
+        decision_reference=_uploaded_payload_reference(
+            arguments, name="qualification_decision"
+        ),
+        evidence=evidence,
+        artifacts=()
+        if arguments.release_artifact is None
+        else (_load_live_release_artifact_record(arguments),),
+        observations=() if observation is None else (observation,),
+        publication=_optional_finalization_pair(
+            arguments, "publication_snapshot", PublicationSnapshot
+        ),
+        bundle=_optional_finalization_pair(
+            arguments,
+            "approval_bundle",
+            ApprovalBundle,
+            "materialize-publication",
+        ),
+        reviewer_summary=reviewer,
+        authorization=_optional_finalization_pair(
+            arguments,
+            "publication_authorization",
+            PublicationAuthorization,
+            "approve-publication",
+        ),
+        exact_proof=_optional_finalization_pair(
+            arguments,
+            "exact_satisfied_finalization_proof",
+            ExactSatisfiedFinalizationProof,
+            "prove-exact-satisfied",
+        ),
+        terminal=terminal,
+        result_marker=marker,
+    )
+    outcome = finalize_attempt_outcome(
+        inputs,
+        current=_release_bindings(arguments, purpose="live-release"),
+        run_attempt=_platform_run_attempt(arguments),
+        publisher_conclusion=arguments.publisher_conclusion,
+        publication_step_outcome=arguments.publication_step_outcome,
+        publication_terminal_reference=arguments.publication_terminal_reference,
+        observation_conclusion=arguments.observation_conclusion,
+    )
+    if outcome is None:
+        return 1
     _write_output(arguments.outcome_output, outcome.to_document())
     summary = (
         "# Workflow Delivery v3 live finalization\n\n"
-        f"- Result: `{outcome.result}`\n"
-        f"- Terminal phase: `{outcome.terminal_phase}`\n"
-        f"- Next action: `{outcome.next_action}`\n"
+        f"- Disposition: `{outcome.disposition}`\n"
+        f"- Possibly mutated: `{str(outcome.possibly_mutated).lower()}`\n"
+        f"- Direct predecessor: `{outcome.direct_predecessor.kind}`\n"
     )
     Path(arguments.summary_output).write_text(
-        summary,
-        encoding="utf-8",
-        newline="\n",
+        summary, encoding="utf-8", newline="\n"
     )
     if arguments.github_step_summary is not None:
         with Path(arguments.github_step_summary).open(
-            "a",
-            encoding="utf-8",
-            newline="\n",
-        ) as github_summary:
-            github_summary.write(summary)
+            "a", encoding="utf-8", newline="\n"
+        ) as stream:
+            stream.write(summary)
     _record_outputs(
         arguments.github_output,
         role="attempt-outcome",
         digest=outcome.outcome_digest,
-        extra=(("terminal-result", outcome.result),),
+        extra=(("disposition", outcome.disposition),),
     )
-    return LIVE_OUTCOME_EXIT_STATUS[outcome.result]
+    return LIVE_OUTCOME_EXIT_STATUS[outcome.disposition]
 
 
 def _object(value: JsonValue, *, context: str) -> dict[str, JsonValue]:
@@ -5696,6 +5459,59 @@ def _add_snapshot_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_publication_commands(commands: argparse._SubParsersAction) -> None:
+    for name, handler in (
+        ("prepare-publication", _release_prepare_publication_command),
+        ("execute-publication", _release_execute_publication_command),
+    ):
+        parser = commands.add_parser(name)
+        _add_current_release_arguments(parser)
+        _add_live_observation_authority_arguments(parser)
+        _add_snapshot_arguments(parser)
+        _add_adapter_context_arguments(parser)
+        _add_release_artifact_arguments(parser)
+        _add_uploaded_record_arguments(parser, name="observation")
+        for role in (
+            "qualification_decision",
+            "publication_snapshot",
+            "approval_bundle",
+            "reviewer_summary",
+            "publication_authorization",
+        ):
+            _add_referenced_uploaded_payload_arguments(parser, name=role)
+        parser.add_argument("--runtime-directory", required=True)
+        parser.add_argument("--toolchain-directory", required=True)
+        parser.add_argument("--github-token", required=True)
+        parser.add_argument("--output", required=True)
+        parser.add_argument("--github-output")
+        if name == "prepare-publication":
+            parser.add_argument("--tarball", required=True)
+        else:
+            parser.add_argument(
+                "--publication-terminal-reference", required=True
+            )
+            parser.add_argument("--terminal-directory", required=True)
+        parser.set_defaults(handler=handler)
+    admit_terminal = commands.add_parser("admit-publication-terminal")
+    _add_current_release_arguments(admit_terminal)
+    _add_referenced_uploaded_payload_arguments(admit_terminal, name="terminal")
+    admit_terminal.add_argument("--github-output", required=True)
+    admit_terminal.set_defaults(
+        handler=_release_admit_publication_terminal_command
+    )
+    resolve = commands.add_parser("resolve-publication-terminal")
+    _add_current_release_arguments(resolve)
+    resolve.add_argument("--publication-terminal-reference", required=True)
+    resolve.add_argument(
+        "--publisher-conclusion",
+        required=True,
+        choices=("success", "failure", "cancelled", "skipped"),
+    )
+    resolve.add_argument("--terminal-directory")
+    resolve.add_argument("--github-output", required=True)
+    resolve.set_defaults(handler=_release_resolve_publication_terminal_command)
+
+
 def _add_adapter_context_arguments(parser: argparse.ArgumentParser) -> None:
     _add_uploaded_record_arguments(parser, name="adapter_context")
 
@@ -6376,106 +6192,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     prove_exact.add_argument("--github-output")
     prove_exact.set_defaults(handler=_release_prove_exact_satisfied_command)
 
-    publish_github = release_commands.add_parser("publish-github-packages")
-    _add_current_release_arguments(publish_github)
-    publish_github.add_argument("--repo-root", default=".")
-    _add_snapshot_arguments(publish_github)
-    _add_decision_arguments(publish_github)
-    _add_adapter_context_arguments(publish_github)
-    _add_release_artifact_arguments(publish_github)
-    _add_referenced_uploaded_payload_arguments(
-        publish_github,
-        name="publication_snapshot",
-    )
-    _add_referenced_uploaded_payload_arguments(
-        publish_github,
-        name="approval_bundle",
-    )
-    _add_referenced_uploaded_payload_arguments(
-        publish_github,
-        name="reviewer_summary",
-    )
-    _add_uploaded_record_arguments(
-        publish_github,
-        name="publication_authorization",
-    )
-    publish_github.add_argument("--tarball", required=True)
-    publish_github.add_argument("--github-token", required=True)
-    publish_github.add_argument("--preflight", required=True)
-    publish_github.add_argument("--preflight-digest", required=True)
-    _add_uploaded_record_arguments(
-        publish_github,
-        name="mutation_marker",
-    )
-    publish_github.add_argument("--temp-root", required=True)
-    publish_github.add_argument("--execution-state-output", required=True)
-    publish_github.add_argument("--github-output")
-    publish_github.set_defaults(
-        handler=_release_publish_github_packages_command
-    )
-
-    preflight_github = release_commands.add_parser("preflight-github-packages")
-    _add_current_release_arguments(preflight_github)
-    _add_snapshot_arguments(preflight_github)
-    _add_decision_arguments(preflight_github)
-    _add_adapter_context_arguments(preflight_github)
-    _add_release_artifact_arguments(preflight_github)
-    _add_referenced_uploaded_payload_arguments(
-        preflight_github,
-        name="publication_snapshot",
-    )
-    _add_referenced_uploaded_payload_arguments(
-        preflight_github,
-        name="approval_bundle",
-    )
-    _add_referenced_uploaded_payload_arguments(
-        preflight_github,
-        name="reviewer_summary",
-    )
-    _add_uploaded_record_arguments(
-        preflight_github,
-        name="publication_authorization",
-    )
-    preflight_github.set_defaults(
-        handler=_release_preflight_github_packages_command
-    )
-
-    mark_mutation = release_commands.add_parser(
-        "mark-github-packages-mutation-start"
-    )
-    _add_current_release_arguments(mark_mutation)
-    _add_uploaded_record_arguments(
-        mark_mutation,
-        name="publication_snapshot",
-    )
-    mark_mutation.add_argument("--preflight", required=True)
-    mark_mutation.add_argument("--preflight-digest", required=True)
-    mark_mutation.add_argument("--marker-output", required=True)
-    mark_mutation.add_argument("--github-output")
-    mark_mutation.set_defaults(
-        handler=_release_mark_github_packages_mutation_command
-    )
-
-    form_github_result = release_commands.add_parser(
-        "form-github-packages-result"
-    )
-    _add_current_release_arguments(form_github_result)
-    _add_uploaded_record_arguments(
-        form_github_result,
-        name="publication_snapshot",
-    )
-    form_github_result.add_argument("--execution-state")
-    form_github_result.add_argument("--mutation-marker")
-    form_github_result.add_argument(
-        "--mutation-marker-artifact-id",
-        type=int,
-    )
-    form_github_result.add_argument("--publish-step-outcome", required=True)
-    form_github_result.add_argument("--result-output", required=True)
-    form_github_result.add_argument("--github-output")
-    form_github_result.set_defaults(
-        handler=_release_form_github_packages_result_command
-    )
+    _add_publication_commands(release_commands)
 
     finalize_live = release_commands.add_parser("finalize-live")
     _add_current_release_arguments(finalize_live)
@@ -6501,7 +6218,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         name="install_import_evidence",
     )
     _add_release_artifact_arguments(finalize_live, required=False)
-    _add_uploaded_record_arguments(
+    _add_referenced_uploaded_payload_arguments(
         finalize_live,
         name="observation",
         required=False,
@@ -6516,37 +6233,40 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         name="approval_bundle",
         required=False,
     )
-    _add_uploaded_record_arguments(
+    _add_referenced_uploaded_payload_arguments(
         finalize_live,
         name="publication_authorization",
         required=False,
     )
-    _add_uploaded_record_arguments(
+    _add_referenced_uploaded_payload_arguments(
         finalize_live,
         name="exact_satisfied_finalization_proof",
         required=False,
     )
-    _add_uploaded_record_arguments(
+    _add_referenced_uploaded_payload_arguments(
         finalize_live,
-        name="action_result",
+        name="reviewer_summary",
         required=False,
     )
     finalize_live.add_argument(
         "--publisher-conclusion",
+        required=True,
         choices=("skipped", "success", "failure", "cancelled"),
     )
     finalize_live.add_argument(
-        "--publication-preparation-interrupted",
-        action="store_true",
+        "--publication-terminal-reference", required=True
     )
     finalize_live.add_argument(
-        "--platform-terminated",
-        action="store_true",
+        "--publication-step-outcome",
+        choices=("", "success", "failure", "cancelled", "skipped"),
     )
     finalize_live.add_argument(
-        "--publication-may-have-started",
-        action="store_true",
+        "--observation-conclusion",
+        choices=("", "success", "failure", "cancelled", "skipped"),
+        help="Direct Observer job result; skipped proves no Observation began",
     )
+    finalize_live.add_argument("--terminal-directory")
+    finalize_live.add_argument("--marker-directory")
     finalize_live.add_argument("--outcome-output", required=True)
     finalize_live.add_argument("--summary-output", required=True)
     finalize_live.add_argument("--github-step-summary")

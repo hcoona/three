@@ -58,10 +58,6 @@ if TYPE_CHECKING:
     from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
 
 
-class UnsupportedPublicationPrimitiveError(RuntimeError):
-    """Normal Live cannot materialize an unimplemented destination primitive."""
-
-
 def _subject(
     snapshot: QualificationSnapshot,
 ) -> SimulationIdentity | ReleaseAttemptIdentity:
