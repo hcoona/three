@@ -85,10 +85,11 @@ chronology is not current architecture.
 
 Native profile acceptance is next. Current components provide shared pinned
 npm mechanics, complete-state comparisons, deterministic fixtures using the
-official npm parsers, and a one-shot probe with a distinct manual Actions
-entry. Complete collection and suite orchestration, protected delivery, and
-real execution remain separate gates; legacy fixed-coordinate evidence is not
-current acceptance.
+official npm parsers, a one-shot probe with a distinct manual Actions entry,
+complete native-state collection, and exact-run audit admission. Fixed-suite
+integration and the concrete local operator are still being completed.
+Protected delivery and real execution remain separate gates; legacy
+fixed-coordinate evidence is not current acceptance.
 
 Establish the approved disposable coordinate and acceptance-only
 administrative execution boundary before mutation. A passing real suite and

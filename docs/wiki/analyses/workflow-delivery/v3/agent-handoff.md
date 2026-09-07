@@ -45,7 +45,8 @@ requests mechanism extraction and revalidation. Git and the append-only
   normal-Live dispatch has occurred.
 - Native acceptance is the next gate. Current tooling adds shared pinned npm
   mechanics, canonical state comparisons, reproducible acceptance fixtures,
-  and a one-shot probe with a distinct Actions entry. Whole-suite
+  a one-shot probe with a distinct Actions entry, complete native-state
+  collection, and exact-run probe-evidence admission. Whole-suite
   orchestration, protected delivery, and actual native evidence remain
   separate gates. The exact approved disposable package and acceptance-only
   administrative execution boundary must be established before its mutation
@@ -124,8 +125,11 @@ facts, and platform context. Those facts are not a native acceptance verdict:
 the operator must collect complete destination state, apply every scenario
 gate in sequence, and verify restoration. Missing evidence, ambiguity, or an
 unexpected delta stops mutation; no probe or workflow failure permits a blind
-retry. Complete collection and suite orchestration remain implementation
-work. The [LLD tooling boundary](./hcoona-release-smoke-npm-lld.md#1861-native-suite-tooling-boundary)
+retry. The collector retains actual complete inventories, scenario bytes, and
+raw native responses; the audit reader binds downloaded probe evidence to its
+exact run, request, and tooling revision. Fixed-suite integration and the
+concrete local operator remain implementation work. The
+[LLD tooling boundary](./hcoona-release-smoke-npm-lld.md#1861-native-suite-tooling-boundary)
 separates these responsibilities.
 
 Read-only inventory found the pre-existing public
