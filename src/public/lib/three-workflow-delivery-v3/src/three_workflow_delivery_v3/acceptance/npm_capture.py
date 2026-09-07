@@ -160,12 +160,13 @@ class CaptureFile:
 
 @dataclass(frozen=True)
 class NpmStateCapture:
-    """Observed state and local provenance, not native PASS or admission."""
+    """Observed state and provenance; active IDs stay outside semantic state."""
 
     state: AcceptanceState
     captured_at: datetime
     original_deletion: OriginalDeletionContext | None
     files: tuple[CaptureFile, ...]
+    active_inventory: tuple[VersionIdentity, ...]
 
 
 class GhCommandRunner(Protocol):
@@ -622,5 +623,5 @@ def capture_npm_state(  # noqa: PLR0913
         ),
     )
     return NpmStateCapture(
-        state, captured_at, original_deletion, tuple(audit.files)
+        state, captured_at, original_deletion, tuple(audit.files), active
     )

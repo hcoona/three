@@ -198,6 +198,10 @@ def test_complete_paginated_capture_preserves_raw_bytes_and_observed_control(
     result = reads.take(audit, scenarios=(OTHER, ABSENT, SPEC))
 
     assert result.state.active_versions == (SPEC.version, OTHER.version)
+    assert result.active_inventory == (
+        VersionIdentity(71, SPEC.version),
+        VersionIdentity(72, OTHER.version),
+    )
     assert result.state.contents == (
         fixtures["original"].content,
         fixtures["other"].content,
