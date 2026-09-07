@@ -279,6 +279,7 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       "conftest.py",
       "eng/scripts/hk_exec.py",
       "eng/scripts/workflow_delivery_v3_hk.py",
+      "eng/scripts/workflow_delivery_v3_native_npm.mjs",
       "eng/scripts/workflow_delivery_v3_prepare_static_reference.py",
       "eng/scripts/workflow_delivery_v3_run_created_epoch.py",
       "eng/scripts/workflow_delivery_v3_static_reference.py",
