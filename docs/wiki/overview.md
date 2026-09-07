@@ -124,10 +124,13 @@ state-only blocked activation and `live_enabled: false`.
 ## Delivery Boundary
 
 The disabled runtime is protected-delivered and obsolete-Environment cleanup
-is complete. The current native-acceptance suite and Actions orchestration are
-not yet implemented; old fixed-coordinate acceptance does not satisfy the new
-profile. Establish the exact approved disposable coordinate and bounded
-administrative execution authority before package mutation.
+is complete. Current native tooling provides canonical comparisons,
+reproducible fixtures, and a one-shot pinned-profile probe with a distinct
+manual Actions entry. Complete collection and suite orchestration remain
+implementation work; protected delivery and actual execution are separate
+gates. Old fixed-coordinate acceptance does not satisfy the new profile.
+Establish the exact approved disposable coordinate and bounded administrative
+execution authority before package mutation.
 
 The remaining gates deliver and run the native suite, restore and verify its
 original disposable object, install fresh ready Governance evidence including repository

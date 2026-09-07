@@ -83,11 +83,18 @@ chronology is not current architecture.
 
 ## Delivery Boundary
 
-Native profile acceptance is next. The existing fixed-coordinate helpers are
-not the current suite; bounded suite/orchestration work remains. Establish the
-approved disposable coordinate and acceptance-only administrative execution
-boundary before mutation. A passing real suite and restoration/readback must
-precede ready Governance v2 activation and the single auditable real dispatch.
+Native profile acceptance is next. Current components provide shared pinned
+npm mechanics, complete-state comparisons, deterministic fixtures using the
+official npm parsers, and a one-shot probe with a distinct manual Actions
+entry. Complete collection and suite orchestration, protected delivery, and
+real execution remain separate gates; legacy fixed-coordinate evidence is not
+current acceptance.
+
+Establish the approved disposable coordinate and acceptance-only
+administrative execution boundary before mutation. A passing real suite and
+restoration/readback must precede ready Governance v2 activation and the single
+auditable real dispatch. Probe artifacts and synthetic scenarios alone do not
+admit a native generation.
 
 ## Historical Source Rule
 

@@ -43,9 +43,11 @@ requests mechanism extraction and revalidation. Git and the append-only
 - The native-acceptance generation registry remains empty. No native profile
   acceptance, activation, package or tag mutation, approval, deployment, or
   normal-Live dispatch has occurred.
-- Native acceptance is the next gate. Existing acceptance tooling implements
-  a superseded fixed-coordinate protocol, not the current pinned-profile
-  suite. The exact approved disposable package and acceptance-only
+- Native acceptance is the next gate. Current tooling adds shared pinned npm
+  mechanics, canonical state comparisons, reproducible acceptance fixtures,
+  and a one-shot probe with a distinct Actions entry. Whole-suite
+  orchestration, protected delivery, and actual native evidence remain
+  separate gates. The exact approved disposable package and acceptance-only
   administrative execution boundary must be established before its mutation
   steps; see Native Acceptance Readiness below.
 - The current user instruction authorizes end-to-end completion of design
@@ -106,8 +108,25 @@ Do not recreate it or repeat the deletion.
 The current profile requires the complete LLD section 18.6 suite. Legacy
 fixed-coordinate/retry-5 helpers do not implement its canonical complete-state
 comparison, active duplicates, distinct-version tag race, or sequential
-deleted/restorable probes and restoration. There is no current acceptance
-workflow supplying the actual Actions-issued repository `GITHUB_TOKEN`.
+deleted/restorable probes and restoration.
+
+Current acceptance-only components live in
+`three_workflow_delivery_v3.acceptance`. The distinct
+`workflow-delivery-v3-native-npm-acceptance.yml` entry invokes one probe with
+the actual Actions-issued repository `GITHUB_TOKEN`. It accepts only an
+explicitly confirmed manual request on protected `main` by the accepted actor
+at attempt one. It does not revive any retired Buddy acceptance identity or
+enter the normal-Live workflow graph. Inspect Git and protected delivery
+before treating the entry as available remotely.
+
+The probe retains immutable request, actual fixture, matched profile, process
+facts, and platform context. Those facts are not a native acceptance verdict:
+the operator must collect complete destination state, apply every scenario
+gate in sequence, and verify restoration. Missing evidence, ambiguity, or an
+unexpected delta stops mutation; no probe or workflow failure permits a blind
+retry. Complete collection and suite orchestration remain implementation
+work. The [LLD tooling boundary](./hcoona-release-smoke-npm-lld.md#1861-native-suite-tooling-boundary)
+separates these responsibilities.
 
 Read-only inventory found the pre-existing public
 `@hcoona/hcoona-release-smoke-npm-dual` container, ID `12047077`, associated

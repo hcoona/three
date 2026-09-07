@@ -1665,6 +1665,53 @@ Redact `GITHUB_TOKEN`, npm auth lines, authorization headers, credential-bearing
   publication. Synthetic tests alone cannot admit GitHub Packages destination
   support.
 
+#### 18.6.1 Native suite tooling boundary
+
+The acceptance tooling has three responsibilities, none of which independently
+certifies the Destination Operation Profile:
+
+- Pure comparisons own the closed semantic shape and scenario-specific
+  permitted deltas. Active duplicate gates require the original scenario
+  content, not merely matching inventories. Deleted duplicate gates retain
+  the original deletion-time anchor while allowing fresh inspection times.
+- A one-shot probe builds deterministic acceptance-only fixtures, validates
+  coordinates with the locked official npm parsers, and uses the same pinned
+  configuration and command mechanics as normal publication. Its witness is
+  not a qualified Release witness. Request preconditions remain explicit
+  issuer assertions, not a source of package approval.
+- Operator-local collection and suite orchestration own complete native
+  observations, sequential process/state gates, and the authorized
+  delete/restore boundary. Administrative credentials and deleted-state facts
+  remain local to acceptance. No component copies desired fixture facts into
+  an observed snapshot or installs a native generation from synthetic results.
+
+The distinct acceptance Actions entry is manual, protected-main-only,
+accepted-actor-only, and attempt-one-only. An explicit confirmation refers to
+prior disposable-package authorization; it does not approve a candidate.
+Trusted pinned setup actions remain within the accepted job trust boundary.
+The npm process receives an isolated environment and the actual repository
+`GITHUB_TOKEN`; no local administrative token is relabeled or passed to it.
+There is no new Environment, secret, grant, normal-Live route, or retry
+protocol.
+
+Each probe retains the canonical request, actual tarball, matched profile,
+local invocation indicator, process result when available, and actual Actions
+context in a bounded immutable artifact. The local private npm configuration
+is excluded. A definitive non-success remains a failed probe execution even
+when its unchanged state satisfies a duplicate or tag-race safety gate.
+The operator binds downloaded evidence to the exact run and tooling revision,
+preserves raw native responses alongside the canonical comparisons, and
+retains it beyond the Actions artifact lifetime when necessary.
+
+The original deletion time is a conservative bound captured before the
+authorized delete, not a later tombstone discovery time. Continued
+restorability is inferred from the documented restoration window and the
+unchanged original namespace/container, never from an invented API flag.
+Ambiguity, incomplete evidence, or an unexpected delta stops further mutation
+for read-only investigation rather than triggering an automatic retry,
+republication, tag repair, or restoration. A passing complete suite still
+requires verified restoration before activation.
+
 ### 18.7 Approval
 
 - Prove Snapshot/summary/Bundle are durable before wait and Environment URL identifies immutable summary.
