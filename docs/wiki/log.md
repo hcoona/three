@@ -3557,3 +3557,29 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   tooling boundary. Governance remains strict blocked v2 and disabled; no
   native generation, package mutation, Approval deployment, activation, or
   normal-Live dispatch has occurred.
+
+## [2026-09-07] query | Build bounded current-profile native acceptance tooling
+
+- Extracted shared pinned npm configuration and command mechanics without
+  moving normal publication authority or lifecycle ownership.
+- Added complete canonical state comparisons, deterministic acceptance-only
+  fixtures with official npm coordinate parsing, and a one-shot probe that
+  retains local command facts without claiming native acceptance.
+- Added a distinct manual protected-main Actions entry with explicit prior
+  authorization confirmation, accepted-actor and attempt-one guards, the real
+  repository token, and immutable bounded evidence. Retired Buddy acceptance
+  identities and their absence contracts remain unchanged.
+- Component gates and OCR identified and closed missing active-content
+  binding, original deletion-time continuity, differing-variant request
+  coverage, and request-before-probe ordering. Independent adjudication
+  rejected a proposed new setup-action token-isolation boundary: trusted
+  pinned actions remain within the accepted job trust model. Narrowed the
+  test wording rather than adding a new job topology.
+- Each completed component passed its full HK gate, independent review,
+  finding adjudication, rereview, and contraction. Complete collection and
+  suite orchestration remain implementation work; whole-group delivery is
+  still separate from native execution and activation.
+- Updated the LLD tooling boundary and current-state pages. The candidate
+  disposable package is not approved, Governance remains disabled, and the
+  native-generation registry remains empty. No package mutation, Approval
+  deployment, activation, or normal-Live dispatch occurred.
