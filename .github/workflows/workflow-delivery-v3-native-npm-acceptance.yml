@@ -1,0 +1,144 @@
+name: Workflow Delivery v3 native npm acceptance probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_json:
+        description: Canonical native-npm-probe-request/v1 JSON for one approved disposable probe
+        type: string
+        required: true
+      authorized_disposable:
+        description: Confirm actual prior approval and disposable preconditions; this does not grant candidate approval
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wdv3-native-npm-acceptance
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' &&
+      github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      inputs.authorized_disposable == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out exact protected tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Retain request bytes and platform context
+        id: request
+        env:
+          WDV3_ACCEPTANCE_DIRECTORY: ${{ runner.temp }}/wdv3-native-npm-${{ github.run_id }}
+          REQUEST_JSON: ${{ inputs.request_json }}
+        run: |
+          umask 077
+          mkdir "${WDV3_ACCEPTANCE_DIRECTORY}"
+          printf '%s' "${REQUEST_JSON}" > "${WDV3_ACCEPTANCE_DIRECTORY}/request.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          context = {
+              "schema": "workflow-delivery-v3/native-npm-actions-context/v1",
+              **{
+                  name.removeprefix("GITHUB_").lower(): os.environ[name]
+                  for name in (
+                      "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_SHA",
+                      "GITHUB_REF", "GITHUB_ACTOR_ID", "GITHUB_WORKFLOW_REF",
+                      "GITHUB_REPOSITORY", "GITHUB_EVENT_NAME",
+                  )
+              },
+          }
+          Path(os.environ["WDV3_ACCEPTANCE_DIRECTORY"], "platform.json").write_text(
+              json.dumps(context, sort_keys=True, separators=(",", ":")), encoding="utf-8"
+          )
+          PY
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.12.7'
+      - name: Install tool manager without repository tool installation
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install exact isolated Node and npm toolchain
+        id: toolchain
+        working-directory: ${{ runner.temp }}
+        run: |
+          mise install --yes node@24.19.0
+          node_root="$(mise where node@24.19.0)"
+          toolchain="${RUNNER_TEMP}/wdv3-toolchain-${GITHUB_RUN_ID}"
+          mkdir -m 700 "${toolchain}"
+          mkdir "${toolchain}/bin" "${toolchain}/home"
+          ln -s "${node_root}/bin/node" "${toolchain}/bin/node"
+          touch "${toolchain}/user.npmrc" "${toolchain}/global.npmrc"
+          isolated=(env -i PATH="${toolchain}/bin:/usr/bin:/bin" HOME="${toolchain}/home"
+            NPM_CONFIG_USERCONFIG="${toolchain}/user.npmrc"
+            NPM_CONFIG_GLOBALCONFIG="${toolchain}/global.npmrc")
+          "${isolated[@]}" \
+            "${node_root}/bin/npm" install --global --prefix "${toolchain}" \
+            --ignore-scripts --registry=https://registry.npmjs.org npm@11.17.0
+          test "$("${isolated[@]}" "${toolchain}/bin/node" --version)" = 'v24.19.0'
+          test "$("${isolated[@]}" "${toolchain}/bin/npm" --version)" = '11.17.0'
+          printf '%s\n' "${toolchain}/bin" >> "${GITHUB_PATH}"
+      - name: Install pinned pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.22.0
+          run_install: false
+      - name: Prepare locked official parsers and Python environment without credentials
+        id: dependencies
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          uv sync --frozen --python 3.13 --package three-workflow-delivery-v3
+      - name: Execute one standard npm probe, not an acceptance verdict
+        id: probe
+        env:
+          WDV3_ACCEPTANCE_DIRECTORY: ${{ runner.temp }}/wdv3-native-npm-${{ github.run_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export PATH="${RUNNER_TEMP}/wdv3-toolchain-${GITHUB_RUN_ID}/bin:${PATH}"
+          uv run --no-sync --python 3.13 --package three-workflow-delivery-v3 \
+            python -m three_workflow_delivery_v3.acceptance probe \
+            --request "${WDV3_ACCEPTANCE_DIRECTORY}/request.json" \
+            --repository-root "${GITHUB_WORKSPACE}" \
+            --runtime-directory "${WDV3_ACCEPTANCE_DIRECTORY}/runtime" \
+            --toolchain-directory "${RUNNER_TEMP}/wdv3-toolchain-${GITHUB_RUN_ID}/bin" \
+            --evidence-directory "${WDV3_ACCEPTANCE_DIRECTORY}/evidence"
+      - name: Retain bounded probe audit, including failures
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-native-npm-probe-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/wdv3-native-npm-${{ github.run_id }}/platform.json
+            ${{ runner.temp }}/wdv3-native-npm-${{ github.run_id }}/evidence/request.json
+            ${{ runner.temp }}/wdv3-native-npm-${{ github.run_id }}/evidence/fixture.tgz
+            ${{ runner.temp }}/wdv3-native-npm-${{ github.run_id }}/evidence/profile-match.json
+            ${{ runner.temp }}/wdv3-native-npm-${{ github.run_id }}/evidence/command-started
+            ${{ runner.temp }}/wdv3-native-npm-${{ github.run_id }}/evidence/result.json
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: true
+          include-hidden-files: false
