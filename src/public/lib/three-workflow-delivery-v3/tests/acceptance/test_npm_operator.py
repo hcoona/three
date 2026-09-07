@@ -250,6 +250,7 @@ class ScriptedGh:
             assert document["ref"] == "main"
             assert document["return_run_details"] is True
             assert document["inputs"]["authorized_disposable"] is True
+            assert document["inputs"]["expected_tooling_sha"] == SHA
             request_bytes = document["inputs"]["request_json"].encode()
             assert (
                 payload.parent / "request.json"

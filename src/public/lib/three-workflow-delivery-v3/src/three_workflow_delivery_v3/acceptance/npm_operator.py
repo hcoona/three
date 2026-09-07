@@ -444,6 +444,7 @@ class OperatorLocalNpmOperations:
                         request.to_document()
                     ).decode(),
                     "authorized_disposable": True,
+                    "expected_tooling_sha": self.tooling_sha,
                 },
             },
         )

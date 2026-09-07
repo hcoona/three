@@ -82,10 +82,17 @@ def test_entry_requires_exact_manual_main_identity_and_confirmation():
     triggers = document.get("on", document.get(True))
     assert set(triggers) == {"workflow_dispatch"}
     inputs = triggers["workflow_dispatch"]["inputs"]
-    assert set(inputs) == {"request_json", "authorized_disposable"}
+    assert set(inputs) == {
+        "request_json",
+        "expected_tooling_sha",
+        "authorized_disposable",
+    }
     assert inputs["request_json"]["type"] == "string"
     assert inputs["request_json"]["required"] is True
     assert "default" not in inputs["request_json"]
+    assert inputs["expected_tooling_sha"]["type"] == "string"
+    assert inputs["expected_tooling_sha"]["required"] is True
+    assert "default" not in inputs["expected_tooling_sha"]
     assert inputs["authorized_disposable"]["type"] == "boolean"
     assert inputs["authorized_disposable"]["required"] is True
     assert inputs["authorized_disposable"]["default"] is False
@@ -98,6 +105,7 @@ def test_entry_requires_exact_manual_main_identity_and_confirmation():
         "github.repository == 'hcoona/three'",
         "github.actor_id == '712433'",
         "github.ref == 'refs/heads/main'",
+        "github.sha == inputs.expected_tooling_sha",
         "github.run_attempt == 1",
         "inputs.authorized_disposable == true",
     }
