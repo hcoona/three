@@ -133,6 +133,8 @@ class ScriptedGh:
         assert environment["GH_TOKEN"] == TOKEN
         assert environment["GITHUB_TOKEN"] == "EXISTING_UNCHANGED"  # noqa: S105
         assert environment["GH_PROMPT_DISABLED"] == "1"
+        assert environment["SSL_CERT_FILE"] == "/synthetic/trusted-ca.pem"
+        assert environment["SSL_CERT_DIR"] == "/synthetic/trusted-certs"
         assert "UNRELATED_APPLICATION_SECRET" not in environment
         assert TOKEN not in repr(argv)
         assert timeout > 0
@@ -551,6 +553,8 @@ def case(tmp_path, monkeypatch, fixtures):
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     monkeypatch.setenv("GH_TOKEN", TOKEN)
     monkeypatch.setenv("GITHUB_TOKEN", "EXISTING_UNCHANGED")
+    monkeypatch.setenv("SSL_CERT_FILE", "/synthetic/trusted-ca.pem")
+    monkeypatch.setenv("SSL_CERT_DIR", "/synthetic/trusted-certs")
     monkeypatch.setenv("UNRELATED_APPLICATION_SECRET", "must not inherit")
     monkeypatch.setattr(npm_operator, "capture_npm_state", script.capture)
     monkeypatch.setattr(
@@ -590,6 +594,7 @@ def test_complete_synthetic_backend_uses_exact_runs_and_retains_bound_manifest(
     assert manifest["schema"] == (
         "workflow-delivery-v3/native-npm-suite-evidence/v1"
     )
+    assert manifest["scenario_verdict"] == "passed"
     profile = github_packages_destination_operation_profile()
     assert manifest["destination_operation_profile_id"] == profile.profile_id
     assert (

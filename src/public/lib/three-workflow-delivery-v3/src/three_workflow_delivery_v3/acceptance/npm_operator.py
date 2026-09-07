@@ -207,6 +207,8 @@ class OperatorLocalNpmOperations:
                 "GH_CONFIG_DIR",
                 "GH_TOKEN",
                 "GITHUB_TOKEN",
+                "SSL_CERT_FILE",
+                "SSL_CERT_DIR",
             }
         }
         self.environment["GH_PROMPT_DISABLED"] = "1"
@@ -637,6 +639,7 @@ class OperatorLocalNpmOperations:
                 )
         return {
             "schema": "workflow-delivery-v3/native-npm-suite-evidence/v1",
+            "scenario_verdict": "passed",
             "native_acceptance_suite_version": NPM_SUITE_VERSION,
             "destination_operation_profile_id": profile.profile_id,
             "destination_operation_profile_digest": profile.profile_digest,

@@ -46,11 +46,11 @@ requests mechanism extraction and revalidation. Git and the append-only
 - Native acceptance is the next gate. Current tooling adds shared pinned npm
   mechanics, canonical state comparisons, reproducible acceptance fixtures,
   a one-shot probe with a distinct Actions entry, complete native-state
-  collection, and exact-run probe-evidence admission. Whole-suite
-  orchestration, protected delivery, and actual native evidence remain
-  separate gates. The exact approved disposable package and acceptance-only
-  administrative execution boundary must be established before its mutation
-  steps; see Native Acceptance Readiness below.
+  collection, exact-run probe-evidence admission, and the fixed-suite local
+  operator. Whole-group review, protected delivery, and actual native
+  execution remain separate gates. The exact approved disposable package and
+  acceptance-only administrative execution boundary must be established
+  before its mutation steps; see Native Acceptance Readiness below.
 - The current user instruction authorizes end-to-end completion of design
   delivery, disabled implementation, native acceptance, activation, and
   exactly one auditable real dispatch. That authorization does not waive any
@@ -127,8 +127,8 @@ gate in sequence, and verify restoration. Missing evidence, ambiguity, or an
 unexpected delta stops mutation; no probe or workflow failure permits a blind
 retry. The collector retains actual complete inventories, scenario bytes, and
 raw native responses; the audit reader binds downloaded probe evidence to its
-exact run, request, and tooling revision. Fixed-suite integration and the
-concrete local operator remain implementation work. The
+exact run, request, and tooling revision. The fixed-suite local operator
+connects those components without a retry or recovery protocol. The
 [LLD tooling boundary](./hcoona-release-smoke-npm-lld.md#1861-native-suite-tooling-boundary)
 separates these responsibilities.
 
@@ -140,11 +140,62 @@ user instructions do not identify an approved disposable coordinate.
 
 Before package mutation, establish that coordinate and its required
 preconditions and the acceptance-only administrative execution boundary.
-Then design and deliver only the missing bounded suite and orchestration.
+Reconcile the complete tooling group with protected delivery; component
+completion alone does not make a remote entry available or authorize a run.
 The standard-publish probes must use the real Actions-issued repository token;
 do not relabel a local PAT as `GITHUB_TOKEN`, add secrets or access grants
 implicitly, or send administrative credentials into normal runtime. No
 acceptance generation may be installed before a real passing suite.
+
+### Local Native Operator
+
+Use a clean POSIX checkout of the exact protected tooling revision, with the
+repository's locked pnpm dependencies and Python 3.13 uv environment prepared.
+Windows operators need a configured POSIX environment such as WSL. Existing
+classic gh authentication must support the documented package operations and
+`gh run watch`. No command installs credentials or expands grants.
+
+The example below is **not executable authorization**. Replace every
+placeholder only after confirming the exact pre-existing, operator-controlled
+disposable package has no production dependency and obtaining bounded
+delete/restore approval. Both flags acknowledge prior approval; they do not
+grant it. Use a fresh lowercase hexadecimal generation and three distinct
+target SHAs whose scenario tags are absent in that package.
+
+```bash
+uv run --no-sync --python 3.13 --package three-workflow-delivery-v3 \
+  python -m three_workflow_delivery_v3.acceptance suite \
+  --package '@hcoona/<approved-disposable-name>' \
+  --generation '<fresh-generation>' \
+  --tooling-sha '<verified-protected-main-sha>' \
+  --creation-target '<creation-target-sha>' \
+  --race-target '<race-target-sha>' \
+  --deleted-target '<deleted-target-sha>' \
+  --repository-root '<absolute-clean-checkout>' \
+  --audit-directory '<new-absolute-directory-outside-checkout>' \
+  --authorized-disposable \
+  --authorized-delete-restore
+```
+
+Use `suite --help` for the input contract. Configure any machine-specific
+trusted CA location in the operator environment; never disable TLS
+verification or add application certificate fallbacks.
+
+The fixed sequence dispatches eight acceptance probes, deletes only the fresh
+scenario D version by its captured ID, and restores that original object only
+after the deleted duplicate gates pass. These are not normal-Live dispatches.
+Any failure stops mutation and preserves partial audit data. Inspect exact
+recorded runs and destination state read-only before deciding an explicitly
+authorized recovery; do not rerun the command against the same audit, dispatch
+again blindly, or assume automatic restoration.
+
+Successful completion writes `suite-evidence.json` and prints its path and
+digest. Its `scenario_verdict: "passed"` records completed supplied-fact gates;
+it is not proof of native provenance or installed admission. Independently
+audit the actual run/artifact references, raw observations, empty deltas, and
+restoration before preparing the Activation PR. Retain the local evidence
+beyond the Actions artifact lifetime when necessary. Never put detailed
+tombstone facts or administrative credentials into Governance.
 
 ## Accepted Risk and Threat Model
 
@@ -217,8 +268,8 @@ Do not infer policy from stale runtime behavior or archived designs.
 2. Confirm the approved disposable coordinate, its preconditions, and the
    acceptance-only administrative execution boundary. Do not treat package
    inventory as permission.
-3. Complete the bounded acceptance-suite design and missing orchestration.
-   Deliver it through applicable scenarios, HK/hooks, OCR multi-review,
+3. Reconcile and deliver the bounded acceptance-tooling group through
+   applicable scenarios, HK/hooks, OCR multi-review,
    independent TP/FP adjudication, clean rereview, final contraction, and
    protected delivery while Governance remains disabled.
 4. Execute the real pinned-profile native suite. Preserve complete canonical
