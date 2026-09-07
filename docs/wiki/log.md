@@ -3583,3 +3583,20 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   disposable package is not approved, Governance remains disabled, and the
   native-generation registry remains empty. No package mutation, Approval
   deployment, activation, or normal-Live dispatch occurred.
+
+## [2026-09-07] query | Complete native state and probe-audit readers
+
+- Added operator-local capture using official gh pagination, the existing
+  bounded registry transport, and independent inspection of actual scenario
+  tarballs. Complete active/deleted inventories, original tombstone identity,
+  restoration-window inference, and raw observations remain acceptance-local.
+- Added exact-run audit admission for downloaded probe evidence. It binds the
+  expected request and protected tooling revision to actual fixture, profile,
+  process, and platform facts while relying on the authenticated caller and
+  standard Actions transport for provenance.
+- The combined gate passed 4,459 tests. Independent production and scenario
+  OCR reviews and final contraction reported no findings. Committed the
+  collector and audit reader separately; fixed-suite integration and the
+  concrete local operator remain in development.
+- No disposable approval, native generation, package mutation, deployment, or
+  normal-Live dispatch was inferred from local component results.

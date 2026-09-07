@@ -125,8 +125,9 @@ state-only blocked activation and `live_enabled: false`.
 
 The disabled runtime is protected-delivered and obsolete-Environment cleanup
 is complete. Current native tooling provides canonical comparisons,
-reproducible fixtures, and a one-shot pinned-profile probe with a distinct
-manual Actions entry. Complete collection and suite orchestration remain
+reproducible fixtures, a one-shot pinned-profile probe with a distinct
+manual Actions entry, complete native-state collection, and exact-run audit
+admission. Fixed-suite integration and the concrete local operator remain
 implementation work; protected delivery and actual execution are separate
 gates. Old fixed-coordinate acceptance does not satisfy the new profile.
 Establish the exact approved disposable coordinate and bounded administrative
