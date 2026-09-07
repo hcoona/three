@@ -7,6 +7,10 @@ on:
         description: Canonical native-npm-probe-request/v1 JSON for one approved disposable probe
         type: string
         required: true
+      expected_tooling_sha:
+        description: Exact protected tooling commit authorized for this probe
+        type: string
+        required: true
       authorized_disposable:
         description: Confirm actual prior approval and disposable preconditions; this does not grant candidate approval
         type: boolean
@@ -27,6 +31,7 @@ jobs:
       github.repository == 'hcoona/three' &&
       github.actor_id == '712433' &&
       github.ref == 'refs/heads/main' &&
+      github.sha == inputs.expected_tooling_sha &&
       github.run_attempt == 1 &&
       inputs.authorized_disposable == true
     runs-on: ubuntu-24.04

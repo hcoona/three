@@ -1688,6 +1688,9 @@ certifies the Destination Operation Profile:
 The distinct acceptance Actions entry is manual, protected-main-only,
 accepted-actor-only, and attempt-one-only. An explicit confirmation refers to
 prior disposable-package authorization; it does not approve a candidate.
+The operator supplies its fixed tooling SHA, and the job requires that SHA
+to match GitHub's dispatch-resolved commit before any probe step. A moved
+`main` therefore fails closed without a branch freeze or a new ref.
 Trusted pinned setup actions remain within the accepted job trust boundary.
 The npm process receives an isolated environment and the actual repository
 `GITHUB_TOKEN`; no local administrative token is relabeled or passed to it.

@@ -116,7 +116,9 @@ Current acceptance-only components live in
 `workflow-delivery-v3-native-npm-acceptance.yml` entry invokes one probe with
 the actual Actions-issued repository `GITHUB_TOKEN`. It accepts only an
 explicitly confirmed manual request on protected `main` by the accepted actor
-at attempt one. It does not revive any retired Buddy acceptance identity or
+at attempt one. Its job compares the GitHub-resolved SHA with the requested
+tooling SHA before any steps, rejecting intervening `main` movement.
+It does not revive any retired Buddy acceptance identity or
 enter the normal-Live workflow graph. Inspect Git and protected delivery
 before treating the entry as available remotely.
 

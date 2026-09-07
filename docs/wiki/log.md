@@ -3625,3 +3625,14 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Final integration review identified dropped operator CA overrides. The
   local command environment now preserves `SSL_CERT_FILE` and `SSL_CERT_DIR`
   without adding certificate defaults, fallbacks, or unrelated variables.
+
+## [2026-09-07] query | Bind native dispatch before probe execution
+
+- PR #655 review identified a tooling-revision race between the local `main`
+  read and dispatch ref resolution. Independent adjudication confirmed the
+  later evidence check could reject a revision only after publication.
+- Added a required expected-tooling-SHA input and job-level comparison with
+  GitHub's resolved SHA. The operator sends its fixed SHA; a moved ref cannot
+  reach a probe step. No branch freeze, new ref, or retry protocol was added.
+- Existing workflow and full-operator scenarios cover both sides of the
+  binding. The native generation registry and blocked Governance are unchanged.
