@@ -1712,6 +1712,17 @@ for read-only investigation rather than triggering an automatic retry,
 republication, tag repair, or restoration. A passing complete suite still
 requires verified restoration before activation.
 
+The implemented suite is `workflow-delivery-v3/native-npm-suite/v1`.
+`wdv3/github-packages-npm-documented-contract/v1` identifies this suite's
+interpretation of the cited lower-layer contracts, not a GitHub-issued
+revision; the GitHub API version is a separate binding. The fixed eight
+acceptance probes are distinct from the single proving normal-Live dispatch.
+A completed manifest records `scenario_verdict: "passed"` for the supplied
+facts and remains candidate evidence until independent native operator audit.
+It neither establishes its own provenance nor installs a Governance
+generation. The [operator runbook](./agent-handoff.md#local-native-operator)
+defines operational prerequisites without granting authorization.
+
 ### 18.7 Approval
 
 - Prove Snapshot/summary/Bundle are durable before wait and Environment URL identifies immutable summary.

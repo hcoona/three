@@ -3600,3 +3600,28 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   concrete local operator remain in development.
 - No disposable approval, native generation, package mutation, deployment, or
   normal-Live dispatch was inferred from local component results.
+
+## [2026-09-07] query | Complete fixed native suite and local operator
+
+- Connected the four explicit scenario versions to eight bounded Actions
+  probes and the original object's exact-ID delete/restore sequence. Added
+  captured active IDs outside the canonical semantic shape so administration
+  does not rediscover a target by name.
+- Implemented the local operator with explicit prior-authorization
+  acknowledgments, clean protected-tooling preflight, exact returned run IDs,
+  immutable audit download, and completion only after verified restoration.
+  No error path performs a retry, automatic restoration, or tag repair.
+- The full gate passed 4,564 tests. OCR and independent adjudication closed
+  manifest-identity and secret-exclusion test gaps; rereview and contraction
+  were clean. Final contract reconciliation made the aggregate scenario
+  verdict explicit without turning candidate evidence into native admission.
+- Added the operating runbook and documented the suite-owned lower-contract
+  interpretation label separately from GitHub's API version. Protected
+  delivery and independently audited real execution remain separate gates.
+- Read-only candidate inspection still identifies public container
+  `12047077`, associated with `hcoona/three`. Disposable preconditions and
+  mutation authorization remain unconfirmed. No package mutation, native
+  generation, activation, deployment, or normal-Live dispatch occurred.
+- Final integration review identified dropped operator CA overrides. The
+  local command environment now preserves `SSL_CERT_FILE` and `SSL_CERT_DIR`
+  without adding certificate defaults, fallbacks, or unrelated variables.

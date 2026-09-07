@@ -86,9 +86,9 @@ chronology is not current architecture.
 Native profile acceptance is next. Current components provide shared pinned
 npm mechanics, complete-state comparisons, deterministic fixtures using the
 official npm parsers, a one-shot probe with a distinct manual Actions entry,
-complete native-state collection, and exact-run audit admission. Fixed-suite
-integration and the concrete local operator are still being completed.
-Protected delivery and real execution remain separate gates; legacy
+complete native-state collection, exact-run audit admission, and the fixed
+local suite operator. Whole-group review, protected delivery, and real
+execution remain separate gates; legacy
 fixed-coordinate evidence is not current acceptance.
 
 Establish the approved disposable coordinate and acceptance-only
@@ -96,6 +96,11 @@ administrative execution boundary before mutation. A passing real suite and
 restoration/readback must precede ready Governance v2 activation and the single
 auditable real dispatch. Probe artifacts and synthetic scenarios alone do not
 admit a native generation.
+
+The [operator runbook](./agent-handoff.md#local-native-operator) describes the
+clean-checkout, credential, approval, and evidence-retention prerequisites.
+The eight acceptance probes are separate from the one final normal-Live
+dispatch; any failed gate stops further mutation without automatic repair.
 
 ## Historical Source Rule
 
