@@ -5,9 +5,9 @@
 **Status:** active-version lifecycle revision, dated 2026-09-08.
 
 **Implementation boundary:** the replacement runtime uses strict Governance v2
-and `live_enabled: false`; the revised acceptance described here is not yet
-implemented. Protected delivery and
-operational state must be reconciled through the
+and `live_enabled: false`; this revision implements the active-only v2
+acceptance tooling. Protected delivery and operational state must be
+reconciled through the
 [agent handoff](./agent-handoff.md); local implementation is not activation.
 
 This document replaces the former implementation and rollout chronology. It defines the target first-slice design; current runtime code is useful only for repository naming and tooling conventions when it differs from the normative v3 design.

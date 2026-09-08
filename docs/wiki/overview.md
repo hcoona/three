@@ -137,11 +137,13 @@ object, including different content, at the same coordinate. Consumer/cache
 disagreement across administrative lifetimes is accepted for the smoke-only,
 sole-writer TCB. No runtime history or administrative compensation is added.
 
-The revised five-probe native suite has no deletion, restoration, or
-deleted-state queries. It still requires protected implementation and fresh
-independently audited acceptance before ready Governance, the protected
-Activation PR, and the single real dispatch. Preserve the failed v1 evidence
-and original D; their recovery remains a separate explicit operator decision.
+The lifecycle design was protected-delivered through PR #658. This revision
+implements the active-only v2 tooling: five probes, three versions, two tags,
+six complete active captures, and no deletion, restoration, or deleted-state
+queries. Verify protected delivery before fresh independently audited native
+acceptance, ready Governance, the protected Activation PR, and the single
+real dispatch. Preserve the failed v1 evidence and original D; their recovery
+remains a separate explicit operator decision.
 
 ## Historical Record Rule
 

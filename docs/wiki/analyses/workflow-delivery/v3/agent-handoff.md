@@ -45,11 +45,12 @@ requests mechanism extraction and revalidation. Git and the append-only
   rejected its v1 reservation contract: publishing the deleted D version again with
   identical bytes succeeded, creating a new version object while the original
   remained deleted.
-- The user approved the active-lifecycle correction: active versions remain
-  non-overwritable, but administrator deletion ends that lifetime and retained
-  deleted records do not reserve coordinates. The revised five-probe
-  acceptance design performs no administrative operation. Its implementation,
-  protected delivery, and fresh native acceptance remain required.
+- The active-lifecycle design was protected-delivered through PR #658:
+  active versions remain non-overwritable, but administrator deletion ends
+  that lifetime and retained deleted records do not reserve coordinates.
+  This revision implements the five-probe active-only v2 acceptance tooling,
+  without administrative operations, deleted-state inputs, or retired aliases.
+  Verify its protected delivery before fresh native acceptance.
 - The native-acceptance generation registry remains empty. Native probes and
   one exact disposable-version deletion occurred, but no original-object
   restoration, passing acceptance, activation, Approval deployment, or
@@ -111,11 +112,11 @@ Do not recreate it or repeat the deletion.
 
 ### Native Acceptance Readiness
 
-The profile requires the revised LLD section 18.6 suite: exact creation, both
-active duplicates, and the bounded distinct-version tag race. The target v2
-suite uses five probes, three versions, and two scenario tags, with no deleted
-state, deletion, or restoration. Neither the current v1 tooling nor legacy
-fixed-coordinate/retry-5 helpers provide this revised suite.
+The profile requires the LLD section 18.6 suite: exact creation, both active
+duplicates, and the bounded distinct-version tag race. The implemented v2
+tooling uses five probes, three versions, two scenario tags, and six complete
+active captures, with no deleted state, deletion, or restoration. The retired
+v1 suite and legacy fixed-coordinate/retry-5 helpers are not alternatives.
 
 Current acceptance-only components live in
 `three_workflow_delivery_v3.acceptance`. The distinct
@@ -170,9 +171,9 @@ acceptance generation may be installed before a real passing suite.
 
 ### Local Native Operator
 
-The following is the target v2 runbook. Do not execute it until the revised
-suite has been implemented and protected-delivered; current v1 tooling is not
-an alternative path.
+The following runbook uses the active-only v2 tooling. Do not execute it
+until its exact revision is protected-delivered and the bounded five-probe
+execution is confirmed. Retired v1 tooling is not an alternative path.
 
 Use a clean POSIX checkout of the exact protected tooling revision, with the
 repository's locked pnpm dependencies and Python 3.13 uv environment prepared.
@@ -300,12 +301,13 @@ Do not infer policy from stale runtime behavior or archived designs.
 ## Next Executable Workflow
 
 1. Perform the required Git inspection above.
-2. Deliver the approved lifecycle revision across requirements, HLD, MLDs,
-   glossary, and LLD before implementation. Preserve historical rejection
-   evidence and the unresolved original-D recovery boundary.
-3. Implement and protected-deliver the active-only v2 suite while Governance
-   remains disabled. Run affected scenarios, full project tests, HK/hooks,
-   OCR multi-review, independent finding adjudication, and final contraction.
+2. Verify protected delivery of the active-only v2 tooling, completing any
+   outstanding delivery gates while Governance remains disabled. The
+   lifecycle design is already protected-delivered; do not repeat it.
+3. Require affected scenarios, full project tests, HK/hooks, OCR multi-review,
+   independent finding adjudication, and final contraction for that exact
+   implementation. Preserve historical rejection evidence and the unresolved
+   original-D recovery boundary.
 4. Confirm the bounded five-probe execution and run one fresh complete v2
    generation. Independently audit native evidence; never import or relabel
    the failed v1 generations. No administrative mutation is part of this step.

@@ -3723,3 +3723,29 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   recovery decision. This model approval authorizes no additional deletion
   or restoration. Governance remains disabled and the final Normal Live
   dispatch remains unused.
+
+## [2026-09-08] query | Implement active-only native acceptance
+
+- The lifecycle design was protected-delivered through PR #658 at
+  `7ef04575b517a59638b4f537f86f84c61fc68745`. Reviewed and protected trees
+  matched; post-merge CI `34275942527` passed on that exact revision.
+  Required PR CodeQL passed; the Markdown-only merge used the existing
+  CodeQL push path exclusion.
+- Implemented the active-only v2 suite, contract interpretation, active-state
+  schema, capture descriptor, and completed-evidence schema. Five sequential
+  probes use three versions, two tags, and six complete active captures.
+  Original-content duplicate checks, bounded W/V outcomes, native run and
+  artifact binding, and stop-before-next-mutation gates remain.
+- Removed scenario D, deleted-state capture and comparison, administrative
+  operator routes and authorization flags, original-deletion context, and
+  restoration fields without compatibility aliases. The standard publish
+  profile and unchanged one-probe schemas retain their identities.
+- Updated the four existing acceptance modules and their corresponding
+  scenario/contract tests. Current-state pages and the runbook now distinguish
+  implemented tooling from protected delivery, fresh native evidence, and
+  installed admission.
+- This implementation performs no additional native operation and admits no
+  generation. Both failed v1 generations and the unresolved original-D
+  recovery boundary remain unchanged. Governance stays disabled; fresh,
+  explicitly bounded five-probe execution and independent audit are still
+  required before activation and the single real Normal Live dispatch.
