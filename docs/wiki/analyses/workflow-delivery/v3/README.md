@@ -78,24 +78,21 @@ chronology is not current architecture.
   Known reach includes production package `hexo-renderer-asciidoc` and
   disposable smoke packages. This accepted repository-principal blast radius
   is neither package isolation nor an exhaustive inventory.
-- Package access remains unchanged. No normal Live dispatch, Approval
-  deployment, publication, tag change, or package mutation has occurred.
+- Package access remains unchanged. One authorized native probe created a
+  disposable scenario version and tag. No normal Live dispatch, Approval
+  deployment, deletion, or restoration has occurred.
 
 ## Delivery Boundary
 
-Native profile acceptance is next. Current components provide shared pinned
-npm mechanics, complete-state comparisons, deterministic fixtures using the
-official npm parsers, a one-shot probe with a distinct manual Actions entry,
-complete native-state collection, exact-run audit admission, and the fixed
-local suite operator. Whole-group review, protected delivery, and real
-execution remain separate gates; legacy
-fixed-coordinate evidence is not current acceptance.
+Native tooling is protected-delivered and the disposable package is approved.
+The first real suite stopped after creating its first scenario version: the
+shared reader omitted GitHub's `pkg-npm.githubusercontent.com` storage host.
+The exact-host correction must be delivered before further mutation. The
+partial generation is not accepted and must not be silently resumed.
 
-Establish the approved disposable coordinate and acceptance-only
-administrative execution boundary before mutation. A passing real suite and
-restoration/readback must precede ready Governance v2 activation and the single
-auditable real dispatch. Probe artifacts and synthetic scenarios alone do not
-admit a native generation.
+A complete passing real suite and verified restoration must precede ready
+Governance v2 activation and the single auditable real dispatch. Probe
+artifacts and synthetic scenarios alone do not admit a native generation.
 
 The [operator runbook](./agent-handoff.md#local-native-operator) describes the
 clean-checkout, credential, approval, and evidence-retention prerequisites.

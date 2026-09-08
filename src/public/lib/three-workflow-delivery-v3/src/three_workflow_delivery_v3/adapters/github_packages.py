@@ -333,6 +333,7 @@ _SELECTED_HEADERS = frozenset(
 _ALLOWED_TARBALL_HOSTS = frozenset(
     {
         "npm.pkg.github.com",
+        "pkg-npm.githubusercontent.com",
         "objects.githubusercontent.com",
         "github-registry-files.githubusercontent.com",
     }

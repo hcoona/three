@@ -3636,3 +3636,28 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   reach a probe step. No branch freeze, new ref, or retry protocol was added.
 - Existing workflow and full-operator scenarios cover both sides of the
   binding. The native generation registry and blocked Governance are unchanged.
+
+## [2026-09-08] query | Diagnose the first authorized native probe
+
+- Native tooling PR #655 merged as
+  `ba5b06121332b116bd4de16cae2cc8904639d48e`; reviewed and merged trees matched,
+  and protected PR and post-merge CI/CodeQL gates passed.
+- The operator confirmed disposable package
+  `@hcoona/hcoona-release-smoke-npm-dual`, container `12047077`, its
+  preconditions, and bounded native administration. Actual local write/delete
+  credential scopes were confirmed before execution.
+- A read-only preflight attempt could not use the desktop keyring from the
+  isolated environment. The supported ephemeral local `GH_TOKEN` resolved
+  that machine boundary without passing administrative credentials to Actions.
+- Generation `7b03a9a8e6dad358af1aed71` ran only creation probe
+  [34259082705](https://github.com/hcoona/three/actions/runs/34259082705), at
+  attempt one on the protected tooling SHA. It created version
+  `0.0.0-native.7b03a9a8e6dad358af1aed71.a`, ID `1224520265`.
+- The next capture stopped because the reader rejected the actual redirect
+  host `pkg-npm.githubusercontent.com`. Read-only investigation returned
+  HTTP 200, 379 complete bytes, and SHA-256
+  `64c2058e0d37f90507ab71d5c54bc9a6b6a6c7cd09ee038774b953c5fa82a007`,
+  matching the retained response. The shared exact-host fix preserves
+  credential stripping and all other response checks.
+- No duplicate probe, deletion, restoration, activation, Approval deployment,
+  or normal-Live dispatch occurred. The partial generation is not accepted.

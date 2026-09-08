@@ -452,11 +452,14 @@ def test_actual_tarball_manifest_and_witness_must_bind_selector(
         reads.take(tmp_path / fixture)
 
 
+@pytest.mark.parametrize(
+    "host", ["objects.githubusercontent.com", "pkg-npm.githubusercontent.com"]
+)
 def test_foreign_tarball_request_strips_credentials_and_signed_audit_url(
-    reads, fixtures, tmp_path
+    reads, fixtures, tmp_path, host
 ):
     """Use existing transport policy; do not store redirected signed URLs."""
-    url = "https://objects.githubusercontent.com/native.tgz?signature=secret"
+    url = f"https://{host}/native.tgz?signature=secret"
     reads.packument["versions"][SPEC.version]["dist"]["tarball"] = url
     reads.responses[METADATA] = replace(
         reads.responses[METADATA], body=_bytes(reads.packument)
@@ -476,7 +479,7 @@ def test_foreign_tarball_request_strips_credentials_and_signed_audit_url(
     )
     descriptor = (audit / "capture.json").read_bytes()
     assert b"signature=" not in descriptor
-    assert b"https://objects.githubusercontent.com/native.tgz" in descriptor
+    assert f"https://{host}/native.tgz".encode() in descriptor
 
 
 def test_active_deleted_refreshed_and_restored_capture_keeps_original_anchor(
