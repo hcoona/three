@@ -35,9 +35,9 @@ therefore performs no deletion, restoration, or deleted-state queries. It does
 not require unavailable version-plus-tag CAS or permanent historical
 coordinate nonreuse, and grants no administrative authority to runtime.
 
-The active-lifecycle revision requires the revised suite and contract
-interpretation to be implemented, protected-delivered, and freshly accepted
-before activation. The old tombstone-reservation suite's failed generations
+The active-only v2 suite and contract interpretation are implemented in this
+revision. Verify their protected delivery and fresh native acceptance before
+activation. The old tombstone-reservation suite's failed generations
 remain failed historical evidence; they are not relabeled as passing.
 Outstanding administrative recovery from those experiments remains a separate
 operator decision, not a new acceptance operation or automatic cleanup.

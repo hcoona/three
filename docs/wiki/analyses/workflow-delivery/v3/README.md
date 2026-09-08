@@ -16,9 +16,10 @@ exact merged-tree verification, and post-merge checks complete.
 This revision uses strict Governance v2 with state-only blocked activation and
 `live_enabled: false`. The native-acceptance generation registry remains empty.
 The v1 reservation contract was rejected by an observed deleted-version
-counterexample. The user has approved active-lifetime non-overwrite instead
-of permanent coordinate reservation; revised acceptance is not yet implemented
-or admitted. Disposable package mutations occurred, but no passing native
+counterexample. The active-lifecycle correction was protected-delivered through
+PR #658. This revision implements the active-only v2 acceptance tooling but
+does not admit a native generation. Disposable package mutations occurred,
+but no passing native
 acceptance, activation, package access change, Approval deployment, or normal
 Live dispatch occurred. Retained-ref proof and obsolete-Environment cleanup
 are complete. Inspect current Git and operational state through the handoff
@@ -101,9 +102,11 @@ The approved lifecycle correction retains active-version non-overwrite and
 accepts possible coordinate reuse after administrator deletion, including
 consumer/cache disagreement across lifetimes. Normal runtime remains
 active-only and performs no administrative or history-compensation operation.
-The revised native suite has five probes and no deletion or restoration.
-It requires implementation, protected delivery, and fresh independently
-audited acceptance before activation and the single real dispatch.
+The implemented v2 tooling has five probes, three versions, two tags, and six
+complete active captures, with no deletion or restoration. Verify its
+protected delivery before a fresh, bounded, independently audited native
+generation. Activation and the single real dispatch still require that
+passing acceptance.
 
 The [operator runbook](./agent-handoff.md#local-native-operator) describes the
 clean-checkout, credential, approval, and evidence-retention prerequisites.
