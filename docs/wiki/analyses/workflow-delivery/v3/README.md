@@ -15,8 +15,10 @@ exact merged-tree verification, and post-merge checks complete.
 
 This revision uses strict Governance v2 with state-only blocked activation and
 `live_enabled: false`. The native-acceptance generation registry remains empty.
-The current native profile is rejected by an observed deleted-version
-counterexample. Disposable package mutations occurred, but no passing native
+The v1 reservation contract was rejected by an observed deleted-version
+counterexample. The user has approved active-lifetime non-overwrite instead
+of permanent coordinate reservation; revised acceptance is not yet implemented
+or admitted. Disposable package mutations occurred, but no passing native
 acceptance, activation, package access change, Approval deployment, or normal
 Live dispatch occurred. Retained-ref proof and obsolete-Environment cleanup
 are complete. Inspect current Git and operational state through the handoff
@@ -26,8 +28,9 @@ Normal Live remains activation-blocked until fresh native acceptance for the
 exact Destination Operation Profile is installed through the Activation PR. The
 design admits a pinned standard
 `npm publish --tag ... --fetch-retries=0` profile only after its native suite
-proves the required creation, conflict, tag-race, and deleted/restorable
-tombstone behavior. Exact package-version bytes, digests, and witness are
+proves the required active creation, duplicate-conflict, and tag-race behavior.
+Administrator deletion ends an active lifetime; retained deleted records do
+not reserve the coordinate. Exact package-version bytes, digests, and witness are
 authoritative; the target-derived tag is a non-authoritative routing side
 effect.
 
@@ -88,22 +91,25 @@ chronology is not current architecture.
 
 ## Delivery Boundary
 
-Native tooling and the exact storage-origin correction are protected-delivered.
-The subsequent real suite rejected the profile because publishing an
+The v1 native tooling and exact storage-origin correction are protected-delivered.
+The subsequent real suite rejected its reservation contract because publishing an
 identical deleted version succeeded and created a replacement object instead
 of leaving the complete state unchanged. This violates the required native
-primitive even though the replacement bytes match.
+v1 primitive even though the replacement bytes match.
 
-Normal Live cannot safely be enabled under this profile. Preserve the
-counterexample and original tombstone; do not retry, automatically repair,
-or admit either incomplete generation. An explicitly approved
-requirements/design decision must resolve the missing destination guarantee
-before further mutation. Complete passing acceptance and verified restoration
-remain prerequisites for activation and the single real dispatch.
+The approved lifecycle correction retains active-version non-overwrite and
+accepts possible coordinate reuse after administrator deletion, including
+consumer/cache disagreement across lifetimes. Normal runtime remains
+active-only and performs no administrative or history-compensation operation.
+The revised native suite has five probes and no deletion or restoration.
+It requires implementation, protected delivery, and fresh independently
+audited acceptance before activation and the single real dispatch.
 
 The [operator runbook](./agent-handoff.md#local-native-operator) describes the
 clean-checkout, credential, approval, and evidence-retention prerequisites.
-The eight acceptance probes are separate from the one final normal-Live
+Preserve both failed v1 generations and the original D; their recovery is a
+separate operator decision, not authorized by this model change.
+The five revised acceptance probes are separate from the one final normal-Live
 dispatch; any failed gate stops further mutation without automatic repair.
 
 ## Historical Source Rule

@@ -804,17 +804,27 @@ isolation are separate authority boundaries and remain unchanged.
   and is not inherently unprovable, but it does not prove the coordinate was
   never published, is not retained as deleted/restorable state, or will accept
   creation. The authoritative package-version effect must use atomic
-  non-overwriting create-only semantics. Pre-observed exact active state
-  produces no action. At mutation linearization, active-absent state may be
-  created; a hidden deleted/restorable reservation or competing creation may
-  instead cause definitive failure. The admitted primitive must not replace,
-  recreate, or alter retained version state. The explicitly authorized
+  non-overwriting creation against the active version namespace. Pre-observed
+  exact active state produces no action. At mutation linearization, the
+  admitted primitive must not replace or alter an active version; competing
+  active creation may cause definitive failure. For first-slice GitHub
+  Packages, administrator deletion ends that active version's lifetime.
+  A retained deleted object is restoration
+  history, not a reservation: the same coordinate may subsequently bind a new
+  object, including different bytes, subject to the current qualified artifact
+  and witness checks. This may make old caches or consumers disagree with a
+  later resolution of the same coordinate; that administrative-lifecycle risk
+  is explicitly accepted for this smoke-only slice and sole-writer TCB.
+  Normal publication does not delete or restore versions or guarantee
+  historical coordinate nonreuse. The explicitly authorized
   non-authoritative tag side effect remains governed by its bounded race
   contract rather than this version-object guarantee.
   Complete proof that the current command made no mutation permits
   `failed/not-mutated`; otherwise the Result remains conservative. Release must
-  never implement creation as read-then-upsert, overwrite, or
-  delete-and-recreate. A later new dispatch may observe exact active state.
+  never implement creation as read-then-upsert, active-version overwrite, or
+  a publisher-owned delete-and-recreate sequence. Creation after an earlier
+  independently authorized administrative deletion is not that sequence.
+  A later new dispatch may observe exact active state.
   Successful durable creation establishes the observable package binding; the
   Attempt creates no reservation before mutation. A manual
   Release Intent may authorize normal read-only Observation; exact pre-observed
@@ -829,9 +839,9 @@ isolation are separate authority boundaries and remain unchanged.
   state or tag-read availability, and normal flow never repairs a tag. An
   active-absent version may form an action only when the target-derived tag is
   successfully observed absent from the active tag mapping, the current
-  Governance-bound native acceptance includes the deleted/restorable
-  same-version scenario, and that acceptance remains valid for action-bearing
-  admission. An already occupied or unprovable tag blocks rather than
+  Governance-bound native acceptance proves active-version non-overwrite
+  and the bounded tag race, and remains valid for action-bearing admission.
+  An already occupied or unprovable tag blocks rather than
   authorizing a known overwrite. The action carries the canonical destination-
   operation-profile digest plus exact tarball, package, version, and explicit
   target-derived tag operands. The resolved profile supplies the fixed
@@ -875,16 +885,15 @@ isolation are separate authority boundaries and remain unchanged.
     identity, complete active version-name inventory, complete dist-tag mapping,
     remote-observed bytes/digests and witness for scenario versions, and
     supported owner, visibility, exposed access, and repository-association
-    facts. For the deleted/restorable scenario only, it additionally includes
-    the complete deleted-version inventory for the disposable package, the
-    targeted deleted version's stable identity and restorable status, and the
-    restored version's original bytes, digests, and witness. It explicitly
-    excludes server-generated timestamps, request identifiers, URLs, and
-    equivalent volatile metadata. Derived counters such as `version_count` must
-    be recomputed from the applicable active or deleted inventory or validated
-    against its expected scenario delta, not silently ignored.
+    facts. Deleted-object inventories, restoration eligibility, and
+    administrative lifecycle operations are outside this publication
+    acceptance. It explicitly excludes server-generated timestamps, request
+    identifiers, URLs, and equivalent volatile metadata. Derived counters such
+    as `version_count` must be recomputed from the complete active version
+    inventory or validated against its expected scenario delta, not silently
+    ignored.
 
-    Acceptance must establish that an existing exact version cannot be replaced;
+    Acceptance must establish that an existing active version cannot be replaced;
     exact bytes and witness can be read back; the projected delta contains only
     the scenario-declared new version and target-tag mapping; unrelated projected
     versions, tags, and package-control facts remain unchanged; and conflict,
@@ -894,30 +903,26 @@ isolation are separate authority boundaries and remain unchanged.
     Identical and differing duplicate publish cases must have an empty projected
     semantic delta.
 
-    Acceptance must also use a fresh unique disposable version to establish the
-    hidden tombstone case. After publishing and verifying that exact version, the
-    acceptance-only operator deletes it with separately authorized package-admin
-    credentials and proves it is absent from active state but present as
-    deleted/restorable state. Identical-byte and differing-byte invocations of the
-    exact pinned publish profile must then run sequentially. Each must produce a
-    definitive non-success and leave the complete active-version inventory,
-    deleted-version inventory and targeted tombstone identity, dist-tag mapping,
-    and package-control facts unchanged; the first empty delta must be proved
-    before the second invocation. Acceptance then restores the original deleted
-    object and verifies its original bytes, digests, and witness. Any success,
-    ambiguous response, projection change, inability to prove continued
-    restorability, or restore/readback failure rejects the profile and keeps Live
-    disabled. These privileged delete/restore credentials and facts exist only in
-    the separately authorized acceptance procedure and never enter runtime
-    Observation or publication. Synthetic tests alone cannot establish
-    destination support.
+    Identical-byte and differing-byte publishes against the active version must
+    run sequentially, each fail definitively, and each leave the complete
+    active comparison shape unchanged. Prove the first empty delta before
+    the second invocation. Any unsupported result, ambiguity, or unexpected
+    delta stops further mutation and rejects that acceptance generation.
+    The suite must not delete or restore versions, enumerate deleted state,
+    or prove that an administrator-deleted coordinate remains reserved.
+    Restoring an archived object is a separately authorized administrative
+    operation subject to native namespace/version availability; it is not
+    publication, compensation, or a native publication-admission condition.
+    Runtime Observation and publication receive no package-admin authority
+    or deleted-state facts. Synthetic tests alone cannot establish destination
+    support.
 
     Protected Governance must reuse its destination-primitive attestation to bind
     the canonical Destination Operation Profile digest, native-acceptance-suite
     version, approved disposable package preconditions, GitHub API version, cited
     lower-layer contract revision, capture time, and canonical evidence digest
     identifying the exact successful acceptance generation.
-    Detailed acceptance inputs, active/deleted projections, tombstone facts, and
+    Detailed acceptance inputs, active projections, process facts, and
     raw results remain only in the separately authorized acceptance evidence and
     do not enter runtime Governance. The reusable profile is the sole owner of
     its stable profile identity, registry, access mode, toolchain, normalized
@@ -1068,8 +1073,8 @@ isolation are separate authority boundaries and remain unchanged.
   operational records expire, the affected operation must fail closed.
   Absence from the active destination projection is sufficient
   initial-publication state when the required lower-layer destination contract
-  and tombstone acceptance are established. No retained Intent or Attempt
-  lineage is required before publication may proceed, and none reserves the
+  and active-version native acceptance are established. No retained Intent or
+  Attempt lineage is required before publication may proceed, and none reserves the
   active-absent coordinate or proves a tombstone absent.
 
 ## Quality Attributes

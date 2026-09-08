@@ -782,7 +782,7 @@ derived coordinate is the same.
 
 A registry coordinate is an external resource address, not a pre-publication
 reservation. No Intent reserves a coordinate absent from the active projection,
-and that absence does not exclude a retained tombstone. Successful durable
+and a retained deleted object does not reserve it either. Successful durable
 destination creation establishes its observable package binding.
 
 ### External Package Coordinate
@@ -793,6 +793,15 @@ version.
 It excludes Release Unit and target. Every live action that may establish or
 mutate the package resource includes this exact coordinate in its
 mutable-resource key set; an Adapter may also require additional keys.
+
+For first-slice GitHub Packages, the address does not identify one permanent
+native object across administrative deletion. Active-version non-overwrite protects the current
+active lifetime; deletion ends that lifetime and may permit a new object at
+the same address. A retained deleted object supports conditional native
+restoration, not coordinate reservation. Different bytes and cached consumer
+views across administrative lifetimes are an explicitly accepted first-slice
+risk. Normal publication still binds the current qualified bytes and witness
+and performs no deletion, restoration, or history compensation.
 
 ### Package Routing Tag
 
@@ -839,24 +848,23 @@ The versioned destination-qualification scenarios and their closed canonical
 before/after comparison shape. For first-slice npm the suite-owned shape
 contains normalized package identity, complete active version-name inventory,
 complete dist-tag mapping, remote-observed bytes/digests and witness for
-scenario versions, and supported package-control facts. The
-deleted/restorable scenario additionally uses separately authorized
-package-admin evidence for the complete disposable-package deleted-version
-inventory, targeted tombstone identity and continued restorability, and
-original bytes/digests/witness after restoration. Runtime Observation never
-receives those credentials or deleted-state facts. The suite explicitly
+scenario versions, and supported package-control facts. The suite performs
+publication probes and active reads, not administrative deletion,
+restoration, or deleted-state queries. It does not test permanent coordinate
+reservation after an administrator ends an active lifetime. The suite
+explicitly
 excludes enumerated server-generated timestamps, request identifiers, URLs,
 and equivalent volatile metadata. Derived counters are recomputed from
 included facts or validated against the scenario's declared delta.
 
 Raw native responses and their digests remain evidence, but pass/fail compares
-the suite-owned canonical shape with the scenario's allowed semantic delta. The
-deleted/restorable case publishes and verifies a fresh disposable version,
-deletes it with acceptance-only package-admin authority, requires sequential
-identical- and differing-byte same-version publishes to fail definitively with
-an empty active-plus-deleted semantic delta, then restores and verifies the
-original bytes and witness. Any ambiguity, delta, lost restorability, or failed
-restoration rejects the profile. Each newly admitted operation profile requires
+the suite-owned canonical shape with the scenario's allowed semantic delta.
+Sequential identical- and differing-byte active duplicates must each fail
+definitively and leave that complete shape unchanged. Any unsupported result,
+ambiguity, or unexpected delta stops mutation and rejects the generation.
+Administrative restoration has its own authorization and native availability
+conditions, not a publication-admission proof. Each newly admitted operation
+profile requires
 acceptance captured after its implementation before initial activation. Later
 Governance may reuse that generation while every bound input remains identical,
 but action-bearing admission expires 90 days after capture. Binding change or
@@ -1169,7 +1177,7 @@ Publication Snapshot. The later Publication Snapshot seals admitted Observation
 Records with the resulting desired state and materialized actions:
 
 - state absent from the active projection may produce a publish action only
-  under current Governance-bound tombstone acceptance;
+  under current Governance-bound active-version acceptance;
 - exact satisfied state produces no side effect;
 - partial, unknown, conflicting, or unprovable state fails closed and requires
   reconciliation.
@@ -1183,14 +1191,18 @@ operational Release lineage is retained and does not require a binding index or
 permanent ledger. It does not prove the version was never published, is not
 retained as deleted/restorable state, or will accept creation. After
 authorization, registry publication relies on the destination's attested
-non-overwriting exact-version behavior. Pre-observed exact active version state
-produces no action and may finalize as `exact-satisfied` success without
+non-overwriting active-version behavior. Administrative deletion may make the
+same coordinate available for a new object; retained deleted records do not
+extend the non-overwrite guarantee beyond that active lifetime.
+Pre-observed exact active version state produces no action and may finalize
+as `exact-satisfied` success without
 approval or publication lineage, regardless of tag state or tag-read
 availability. Differing version bytes fail closed. A duplicate,
-hidden-tombstone, conflict, non-success, or ambiguous response remains failed in
+conflict, non-success, or ambiguous response remains failed in
 the current Attempt even when post-failure readback is exact. A new dispatch
 may reobserve the exact active version and take `exact-satisfied`. It is never
-version overwrite, delete-and-recreate, compensation, or tag repair.
+active-version overwrite, a publisher-owned delete-and-recreate sequence,
+compensation, or tag repair.
 
 Cancellation does not create a separate reconciliation workflow. A later
 manual dispatch performs the same Remote-State Observation before any new
@@ -1198,9 +1210,9 @@ write.
 
 For first-slice npm, a version absent from active state may form an action only
 when the target-derived tag is successfully observed absent and current
-Governance binds unexpired acceptance covering the deleted/restorable
-same-version case. The one approved standard `npm publish --tag` invocation may
-move that declared tag if an authorized external writer races after
+Governance binds unexpired active-version acceptance. The one approved
+standard `npm publish --tag` invocation may move that declared tag if an
+authorized external writer races after
 Observation. The tag remains in the action, reviewer summary, Authorization
 lineage, mutable-resource keys, pre-action Observation, and Publication Result
 post-action diagnostics and readback, but not in exactness, identity,
@@ -1221,8 +1233,8 @@ mechanics, and Delivery Governance grants authority only when an action exists.
 For the first slice, an exact active projection materializes zero actions and
 requests no Capability. A version absent from the active registry projection
 with an observed-absent target-derived tag may materialize one standard npm
-publish action only after bounded native acceptance proves the pinned operation
-safely rejects a deleted/restorable same-version reservation. Active absence
+publish action only after bounded native acceptance proves active-version
+non-overwrite and the bounded tag race. Active absence
 does not claim the version was never published, is not retained as a tombstone,
 or will accept creation. Multiple ordered actions and projection-internal
 partial progression require a future explicit design.

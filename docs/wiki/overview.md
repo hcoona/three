@@ -125,18 +125,23 @@ state-only blocked activation and `live_enabled: false`.
 
 ## Delivery Boundary
 
-The disabled runtime, native tooling, and exact storage-origin correction are
+The disabled runtime, v1 native tooling, and exact storage-origin correction are
 protected-delivered; obsolete-Environment cleanup is complete. The subsequent
-native suite rejected the current profile: an identical deleted-version
+native suite rejected its reservation contract: an identical deleted-version
 publish succeeded, creating a replacement while the original stayed deleted.
 The different-byte deleted probe and explicit restoration were not attempted.
 
-This counterexample blocks activation under the existing requirements.
-Preserve the audit and original tombstone; do not retry or supply an
-application workaround for the missing destination guarantee. A new explicit
-requirements/design decision is necessary before further mutation. The
-existing complete native acceptance, original-object restoration, ready
-Governance, protected Activation PR, and single-dispatch gates are not waived.
+The user approved correcting that lifecycle model. Active versions remain
+non-overwritable; administrator deletion ends a lifetime and may permit a new
+object, including different content, at the same coordinate. Consumer/cache
+disagreement across administrative lifetimes is accepted for the smoke-only,
+sole-writer TCB. No runtime history or administrative compensation is added.
+
+The revised five-probe native suite has no deletion, restoration, or
+deleted-state queries. It still requires protected implementation and fresh
+independently audited acceptance before ready Governance, the protected
+Activation PR, and the single real dispatch. Preserve the failed v1 evidence
+and original D; their recovery remains a separate explicit operator decision.
 
 ## Historical Record Rule
 
