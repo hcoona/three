@@ -277,13 +277,14 @@ Observation. It becomes an admitted normal-Live primitive only when its exact
 pinned Destination Operation Profile passes the bounded
 documented-and-observable native acceptance and protected Governance binds that
 evidence. Runtime Observation proves only active-state absence and never
-receives package-admin or PAT authority. The acceptance procedure therefore
-also uses a fresh disposable version and separately authorized package-admin
-credentials to prove that identical- and differing-byte same-version publishes
-against deleted/restorable state fail definitively with no active or deleted
-semantic delta, after which the original object is restored and its bytes and
-witness are verified. Those privileged credentials authorize only the
-acceptance procedure, not normal publication.
+receives package-admin or PAT authority. The acceptance procedure proves
+active-version non-overwrite with sequential identical- and differing-byte
+duplicates, each failing definitively with an empty complete active delta.
+It performs no administrative deletion, restoration, or deleted-state reads.
+Administrator deletion ends an active lifetime and may permit a new object
+at the same coordinate; retained deleted records do not reserve it. Governance
+accepts this lifecycle risk for the smoke-only, sole-writer TCB rather than
+claiming permanent coordinate immutability or adding runtime compensation.
 
 The bounded static-reference policy reports prohibited direct references in
 its closed supported catalog. A clean result is an eligibility input, not proof
@@ -449,13 +450,12 @@ The non-executable attestation:
 It grants no Publication Capability by itself.
 
 The separately authorized acceptance evidence, not runtime Governance, contains
-the disposable tombstone scenario's detailed active and deleted inventories,
-targeted deleted-version identity and continued restorability, publish
-responses, semantic deltas, and restoration readback. Governance binds the
+the complete active inventories, scenario bytes and witness, publish process
+facts, responses, and semantic deltas. Governance binds the
 canonical digest of that complete successful evidence. The ready activation
 state is the issuer's successful-acceptance attestation. Any missing or
 ambiguous evidence element makes the operation profile inadmissible, but those
-privileged facts do not become runtime inputs.
+raw acceptance facts do not become runtime inputs.
 
 Initial activation of a newly admitted operation profile binds a destination-
 acceptance generation captured after implementation of that exact profile and
@@ -654,9 +654,9 @@ Governance integration fails closed when:
 - the selected destination primitive, exact operation profile, or bound
   lower-layer/API contract has not passed the bounded documented-and-observable
   native acceptance;
-- the acceptance lacks the deleted/restorable same-version scenario, a
-  definitive empty active-plus-deleted delta for either republish attempt, or
-  exact restoration readback;
+- the acceptance lacks definitive failure and an empty complete active-state
+  delta for either active duplicate, exact creation readback, or the bounded
+  tag-race proof;
 - publisher-boundary supported package-control readback no longer matches
   accepted owner, repository association, visibility, or exposed access facts;
 - native acceptance is older than 90 days for an action-bearing admission;

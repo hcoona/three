@@ -499,11 +499,10 @@ digest identifying the successful acceptance generation. The versioned suite own
 that includes package identity, complete active version-name inventory,
 complete tag mapping, scenario-version bytes and witness, and supported
 package-control facts while explicitly excluding enumerated server-generated
-volatile metadata. The deleted/restorable scenario additionally uses
-acceptance-only package-admin evidence for the complete disposable-package
-deleted-version inventory, targeted tombstone identity and continued
-restorability, and exact restored bytes and witness. Exact or deleted versions
-are not replaced, exact bytes and witness can be read back, only the
+volatile metadata. Acceptance performs publication probes and active-state
+reads only, with no administrative deletion, restoration, or deleted-state
+inventory. Active versions are not replaced, exact bytes and witness can be
+read back, only the
 scenario-declared version and target-derived tag change in projected state,
 unrelated projected state remains unchanged, and conflict, non-success, and
 ambiguous mutation responses are not upgraded to same-Attempt success. Initial
@@ -533,7 +532,7 @@ deployment.
 The proving run remains state-driven. Exact destination state takes the
 zero-action `exact-satisfied` path; active-absent state may take the one-action
 `published` path only through the admitted destination primitive and its
-Governance-bound tombstone acceptance. Activation does not manufacture a
+Governance-bound active-version acceptance. Activation does not manufacture a
 mutation merely to exercise the publisher.
 
 Every authoritative normal-Live job independently requires
@@ -886,7 +885,7 @@ Capability.
   future Publication Snapshot; that later Snapshot seals admitted Observation
   Records with resulting desired state and materialized actions.
 - State absent from the active projection may form one action under the current
-  Governance-bound tombstone acceptance.
+  Governance-bound active-version acceptance.
 - Exact satisfied state skips the side effect.
 - Partial, unknown, conflicting, or unprovable projection state fails closed.
 
@@ -894,24 +893,33 @@ An active-absent registry coordinate is not proof that the version was never
 published, is not retained as deleted/restorable state, or will accept
 creation. With or without retained operational lineage, active absence is a
 legitimate action candidate only under an unexpired Governance-bound
-acceptance proving that the pinned operation safely rejects a hidden tombstone.
+acceptance proving active-version non-overwrite and the bounded tag race.
 After qualification and observation, the Destination Adapter uses
-non-overwriting exact-version creation when an action remains. A pre-observed
-exact active version has no action and may finalize as `exact-satisfied`
+non-overwriting creation against the active version namespace when an action
+remains. For first-slice GitHub Packages, administrator deletion ends an
+active lifetime; a retained deleted
+object is restoration history, not a reservation of the coordinate. Later
+publication may create a new object at that coordinate, including different
+bytes, while still requiring the current qualified artifact and witness.
+Cache or consumer disagreement across such administrative lifetimes is an
+accepted smoke-only, sole-writer TCB risk, not a promise of historical
+immutability. Normal publication does not delete, restore, or compensate.
+A pre-observed exact active version has no action and may finalize as `exact-satisfied`
 success without Environment approval or publication lineage, regardless of
-dist-tag state or tag-read availability. Any duplicate, hidden-tombstone,
-conflict, non-success, or ambiguous response remains failed in the current
+dist-tag state or tag-read availability. Any duplicate, conflict, non-success,
+or ambiguous response remains failed in the current
 Attempt even when post-failure readback is exact. A new dispatch may reobserve
-the exact active version and take `exact-satisfied`. Differing version bytes
-fail closed. Release never uses overwrite, delete-and-recreate, or compensation.
+the exact active version and take `exact-satisfied`. Differing active version
+bytes fail closed. Release never uses active-version overwrite, a
+publisher-owned delete-and-recreate sequence, or compensation.
 
 Standard npm publication necessarily assigns a tag. For the dedicated
 first-slice smoke package, the target-derived tag is declared
 non-authoritative routing metadata rather than part of exact destination state.
 If the version is absent from the active projection, the tag must be observed
-absent and current Governance must bind an unexpired acceptance generation
-covering the deleted/restorable same-version case before action formation. A
-present or unprovable tag blocks a known overwrite. The approved single
+absent and current Governance must bind an unexpired active-version acceptance
+generation before action formation. A present or unprovable tag blocks a known
+overwrite. The approved single
 `npm publish --tag` invocation may nevertheless move that declared tag if
 another authorized external writer races after Observation. This bounded
 last-writer-wins risk is accepted under the sole-writer TCB and smoke-only
@@ -934,12 +942,12 @@ outbound request and validates that observed publication does not alter
 Destination Operation Profile, native-acceptance-suite, disposable-package
 precondition, GitHub API version, or relied-on documented contract revision
 change reopens that acceptance boundary.
-Acceptance uses separately authorized package-admin credentials only for its
-disposable deleted/restorable scenario: publish and verify a fresh version,
-delete it, prove the tombstone projection, require sequential identical- and
-differing-byte republish attempts to fail definitively with no active or
-deleted semantic delta, then restore and verify the original bytes and witness.
-Those credentials and deleted-state facts never enter runtime Observation.
+Acceptance requires sequential identical- and differing-byte active duplicate
+probes to fail definitively with an empty complete active-state delta before
+continuing. Administrative deletion and restoration are separate lifecycle
+operations, not publication-acceptance steps. Neither acceptance nor runtime
+adds deleted-state queries, reservations, or history compensation to simulate
+permanent coordinate nonreuse.
 
 Reconciliation is exceptional handling for state that cannot safely proceed.
 Build and qualification receive no destination credential or publication
@@ -949,7 +957,7 @@ destination write authority, PAT, `id-token: write`, Approval Environment, or
 publication capability. Repository-controlled publishers serialize by physical
 destination and package. That does not constrain an external writer and is not
 presented as a registry lock. Live support trusts the destination's documented
-exact-version non-overwrite rule and verifies its concrete GitHub Packages
+active-version non-overwrite rule and verifies its concrete GitHub Packages
 behavior before activation; it does not emulate missing tag CAS through an
 application-level lock, retry, or permanent index.
 

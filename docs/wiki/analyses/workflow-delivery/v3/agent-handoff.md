@@ -42,14 +42,19 @@ requests mechanism extraction and revalidation. Git and the append-only
   gates; all other Environment configurations were unchanged.
 - The native tooling and exact storage-origin correction were
   protected-delivered through PRs #655 and #656. The subsequent native suite
-  rejected the current profile: publishing the deleted D version again with
+  rejected its v1 reservation contract: publishing the deleted D version again with
   identical bytes succeeded, creating a new version object while the original
   remained deleted.
+- The user approved the active-lifecycle correction: active versions remain
+  non-overwritable, but administrator deletion ends that lifetime and retained
+  deleted records do not reserve coordinates. The revised five-probe
+  acceptance design performs no administrative operation. Its implementation,
+  protected delivery, and fresh native acceptance remain required.
 - The native-acceptance generation registry remains empty. Native probes and
   one exact disposable-version deletion occurred, but no original-object
   restoration, passing acceptance, activation, Approval deployment, or
   normal-Live dispatch occurred. Preserve both incomplete generations; do not
-  retry, repair, or admit the rejected profile.
+  retry or repair those generations, or relabel them as passing revised evidence.
 - The current user instruction authorizes end-to-end completion of design
   delivery, disabled implementation, native acceptance, activation, and
   exactly one auditable real dispatch. That authorization does not waive any
@@ -106,10 +111,11 @@ Do not recreate it or repeat the deletion.
 
 ### Native Acceptance Readiness
 
-The current profile requires the complete LLD section 18.6 suite. Legacy
-fixed-coordinate/retry-5 helpers do not implement its canonical complete-state
-comparison, active duplicates, distinct-version tag race, or sequential
-deleted/restorable probes and restoration.
+The profile requires the revised LLD section 18.6 suite: exact creation, both
+active duplicates, and the bounded distinct-version tag race. The target v2
+suite uses five probes, three versions, and two scenario tags, with no deleted
+state, deletion, or restoration. Neither the current v1 tooling nor legacy
+fixed-coordinate/retry-5 helpers provide this revised suite.
 
 Current acceptance-only components live in
 `three_workflow_delivery_v3.acceptance`. The distinct
@@ -124,8 +130,8 @@ before treating the entry as available remotely.
 
 The probe retains immutable request, actual fixture, matched profile, process
 facts, and platform context. Those facts are not a native acceptance verdict:
-the operator must collect complete destination state, apply every scenario
-gate in sequence, and verify restoration. Missing evidence, ambiguity, or an
+the operator must collect complete active destination state and apply every
+scenario gate in sequence. Missing evidence, ambiguity, or an
 unexpected delta stops mutation; no probe or workflow failure permits a blind
 retry. The collector retains actual complete inventories, scenario bytes, and
 raw native responses; the audit reader binds downloaded probe evidence to its
@@ -137,8 +143,10 @@ separates these responsibilities.
 The operator confirmed the pre-existing public
 `@hcoona/hcoona-release-smoke-npm-dual` container, ID `12047077`, associated
 with `hcoona/three`, is operator-controlled and has no production dependency.
-The fixed eight-probe suite and exact deletion/restoration of its fresh D
-version are authorized; unrelated versions, tags, and access changes are not.
+Prior authorization covered the v1 suite and its fresh D deletion/restoration.
+The lifecycle revision does not authorize additional administrative operations.
+Confirm the bounded new five-probe execution before running revised tooling;
+unrelated versions, tags, and access changes remain outside its scope.
 
 The first generation stopped on the now-corrected storage-origin policy.
 Its created version remains untouched. The fresh generation reached the
@@ -146,13 +154,13 @@ deleted/restorable scenario and stopped when the identical duplicate publish
 succeeded instead of failing. Read-only inventory distinguishes the deleted
 original from the new active object; this was not restoration.
 
-This is a native contract counterexample, not another reader defect. The
-current profile is rejected and cannot authorize an Activation PR. The
-different-byte deleted probe and explicit restoration were not attempted.
-Do not delete the replacement, retry restoration, weaken the comparison, or
-install either incomplete generation. Any recovery or alternative profile
-needs a new explicit decision; a local workaround cannot supply the missing
-destination guarantee. See the [native rejection record](../../../log.md#2026-09-08-query--reject-the-native-deleted-version-primitive)
+This remains a valid counterexample to the superseded reservation requirement,
+not another reader defect or a passing revised generation. The different-byte
+deleted probe and explicit restoration were not attempted. Do not delete the
+replacement, retry restoration, or install either incomplete generation.
+Recovery still needs a separate explicit decision. The approved correction
+changes the lifecycle requirement rather than adding runtime history or
+administrative compensation. See the [native rejection record](../../../log.md#2026-09-08-query--reject-the-native-deleted-version-primitive)
 for exact run and object identities.
 
 The standard-publish probes must use the real Actions-issued repository token;
@@ -162,11 +170,16 @@ acceptance generation may be installed before a real passing suite.
 
 ### Local Native Operator
 
+The following is the target v2 runbook. Do not execute it until the revised
+suite has been implemented and protected-delivered; current v1 tooling is not
+an alternative path.
+
 Use a clean POSIX checkout of the exact protected tooling revision, with the
 repository's locked pnpm dependencies and Python 3.13 uv environment prepared.
 Windows operators need a configured POSIX environment such as WSL. Existing
-classic gh authentication must support the documented package operations and
-`gh run watch`. No command installs credentials or expands grants.
+classic gh authentication must support package reads, dispatch, and
+`gh run watch`; the revised suite needs no delete/restore capability.
+No command installs credentials or expands grants.
 If the isolated process cannot access the desktop keyring, provide the same
 credential through the supported process-local `GH_TOKEN` environment
 variable. Never print it, persist it in audit files, or pass it to Actions.
@@ -174,8 +187,8 @@ variable. Never print it, persist it in audit files, or pass it to Actions.
 The example below is **not executable authorization**. Replace every
 placeholder only after confirming the exact pre-existing, operator-controlled
 disposable package has no production dependency and obtaining bounded
-delete/restore approval. Both flags acknowledge prior approval; they do not
-grant it. Use a fresh lowercase hexadecimal generation and three distinct
+five-probe approval. The flag acknowledges prior approval; it does not
+grant it. Use a fresh lowercase hexadecimal generation and two distinct
 target SHAs whose scenario tags are absent in that package.
 
 ```bash
@@ -186,30 +199,29 @@ uv run --no-sync --python 3.13 --package three-workflow-delivery-v3 \
   --tooling-sha '<verified-protected-main-sha>' \
   --creation-target '<creation-target-sha>' \
   --race-target '<race-target-sha>' \
-  --deleted-target '<deleted-target-sha>' \
   --repository-root '<absolute-clean-checkout>' \
   --audit-directory '<new-absolute-directory-outside-checkout>' \
-  --authorized-disposable \
-  --authorized-delete-restore
+  --authorized-disposable
 ```
 
 Use `suite --help` for the input contract. Configure any machine-specific
 trusted CA location in the operator environment; never disable TLS
 verification or add application certificate fallbacks.
 
-The fixed sequence dispatches eight acceptance probes, deletes only the fresh
-scenario D version by its captured ID, and restores that original object only
-after the deleted duplicate gates pass. These are not normal-Live dispatches.
+The fixed sequence dispatches five acceptance probes: create A, identical
+active A duplicate, differing active A duplicate, create W, and candidate V.
+It performs no administrative mutation or deleted-state read. These are not
+normal-Live dispatches.
 Any failure stops mutation and preserves partial audit data. Inspect exact
 recorded runs and destination state read-only before deciding an explicitly
 authorized recovery; do not rerun the command against the same audit, dispatch
-again blindly, or assume automatic restoration.
+again blindly, or use the suite as an administrative recovery command.
 
 Successful completion writes `suite-evidence.json` and prints its path and
 digest. Its `scenario_verdict: "passed"` records completed supplied-fact gates;
 it is not proof of native provenance or installed admission. Independently
 audit the actual run/artifact references, raw observations, empty deltas, and
-restoration before preparing the Activation PR. Retain the local evidence
+creation/tag-race results before preparing the Activation PR. Retain the local evidence
 beyond the Actions artifact lifetime when necessary. Never put detailed
 tombstone facts or administrative credentials into Governance.
 
@@ -244,6 +256,12 @@ treats a post-Observation tag race as bounded routing damage: supported
 consumers resolve exact `name@version`, and exact version bytes, digests, and
 witness remain authoritative.
 
+Active-version non-overwrite is not lifetime-global coordinate immutability.
+Administrator deletion may permit a new object and different content at the
+same coordinate; caches may retain an earlier lifetime's content. This risk
+is accepted only within the smoke-only, sole-writer TCB boundary. Normal
+publication neither performs nor compensates for administrative operations.
+
 ## Explicit Authorization Boundary
 
 The current user instruction authorizes completing the end-to-end objective:
@@ -254,9 +272,10 @@ activation, and exactly one auditable normal-Live dispatch.
 The authorization is contract-bounded. Do not change package or repository
 access, touch unrelated packages or tags, use package-admin authority in
 runtime, weaken review or readback gates, perform a GitHub rerun, or issue more
-than one real dispatch. Acceptance-only deletion must target the approved
-disposable package/version, preserve restorability, and restore and verify the
-original object before activation. Any ambiguous external response stops
+than one real dispatch. Revised native acceptance performs no deletion or
+restoration. Recovery of the original disposable D and its replacement remains
+a separate explicit operator decision, not implied permission from the
+lifecycle correction or a passing revised suite. Any ambiguous external response stops
 mutation and triggers read-only investigation rather than retry.
 
 ## Required Reading Order
@@ -281,16 +300,18 @@ Do not infer policy from stale runtime behavior or archived designs.
 ## Next Executable Workflow
 
 1. Perform the required Git inspection above.
-2. Preserve the native rejection evidence and reconcile any later external
-   changes read-only. Keep Governance disabled and the admission registry
-   empty; original-object restoration is not verified.
-3. Resolve the failed destination assumption through an explicitly approved
-   requirements/design decision before another native mutation or activation
-   change. Do not repeat the suite to obtain a passing result or invent a
-   runtime history, tombstone, or repair mechanism.
-4. Only a newly justified profile with complete passing native acceptance can
-   resume the existing Activation PR and single-dispatch gates. The final
-   objective remains incomplete, not waived.
+2. Deliver the approved lifecycle revision across requirements, HLD, MLDs,
+   glossary, and LLD before implementation. Preserve historical rejection
+   evidence and the unresolved original-D recovery boundary.
+3. Implement and protected-deliver the active-only v2 suite while Governance
+   remains disabled. Run affected scenarios, full project tests, HK/hooks,
+   OCR multi-review, independent finding adjudication, and final contraction.
+4. Confirm the bounded five-probe execution and run one fresh complete v2
+   generation. Independently audit native evidence; never import or relabel
+   the failed v1 generations. No administrative mutation is part of this step.
+5. With passing current acceptance, resume fresh Governance/readback,
+   protected Activation PR, and exactly one auditable real dispatch. Report
+   the separate administrative recovery status without claiming restoration.
 
 ## Validation and Review Protocol
 

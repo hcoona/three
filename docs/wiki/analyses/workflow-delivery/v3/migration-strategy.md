@@ -28,12 +28,19 @@ Normal Live also remains activation-blocked until the pinned standard
 `npm publish --tag ... --fetch-retries=0` operation profile passes the
 documented-and-observable native acceptance suite and fresh protected
 Governance binds that acceptance generation. The gate proves non-overwriting
-creation of the authoritative exact version and characterizes the accepted
-non-authoritative tag race. It also proves, with separately authorized
-acceptance-only package-admin credentials, that the pinned operation cannot
-reuse or alter a deleted/restorable same-version slot and that the original
-object can be restored with exact bytes and witness. It does not require
-unavailable atomic version-plus-tag CAS or grant those credentials to runtime.
+creation in the active version namespace and characterizes the accepted
+non-authoritative tag race. Administrator deletion ends an active lifetime;
+retained deleted records do not reserve coordinates. Publication acceptance
+therefore performs no deletion, restoration, or deleted-state queries. It does
+not require unavailable version-plus-tag CAS or permanent historical
+coordinate nonreuse, and grants no administrative authority to runtime.
+
+The active-lifecycle revision requires the revised suite and contract
+interpretation to be implemented, protected-delivered, and freshly accepted
+before activation. The old tombstone-reservation suite's failed generations
+remain failed historical evidence; they are not relabeled as passing.
+Outstanding administrative recovery from those experiments remains a separate
+operator decision, not a new acceptance operation or automatic cleanup.
 
 ## Why v2 Is Not an Incremental Base
 
@@ -78,12 +85,11 @@ The replacement is delivered in this order:
 6. Before activation, execute the separately authorized native acceptance
    suite against a pre-existing disposable package and prove the pinned
    standard `npm publish --tag ... --fetch-retries=0` profile satisfies the
-   authoritative exact-version non-overwrite contract and the bounded
-   non-authoritative tag-race model. The suite must also publish, delete,
-   republish-test, and restore a fresh disposable version to prove hidden
-   deleted/restorable state cannot be reused or altered and that original bytes
-   and witness survive restoration. A replacement primitive is required only
-   if that acceptance fails.
+   authoritative active-version non-overwrite contract and the bounded
+   non-authoritative tag-race model. Both active duplicates must fail
+   definitively with independently proved empty deltas. The revised suite
+   has no administrative mutation or deleted-state proof. An unsupported
+   required native property keeps activation blocked.
 7. Gather fresh at-most-90-day Governance and native-platform evidence,
    explicitly covering the one Approval Environment, the accepted residual
    package reach, and authenticated repository Actions retention of at least

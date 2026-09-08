@@ -2,10 +2,11 @@
 
 ## 1. Status and Authorization Boundary
 
-**Status:** replacement low-level design, dated 2026-08-31.
+**Status:** active-version lifecycle revision, dated 2026-09-08.
 
-**Implementation boundary:** this revision implements the replacement runtime
-with strict Governance v2 and `live_enabled: false`. Protected delivery and
+**Implementation boundary:** the replacement runtime uses strict Governance v2
+and `live_enabled: false`; the revised acceptance described here is not yet
+implemented. Protected delivery and
 operational state must be reconciled through the
 [agent handoff](./agent-handoff.md); local implementation is not activation.
 
@@ -18,10 +19,10 @@ Implementation must be delivered and validated while `live_enabled` remains `fal
 **Known activation blocker:** the pinned standard
 `npm publish --tag ... --fetch-retries=0` Destination Operation Profile has not
 yet passed the separately authorized native acceptance suite in section 18.
-That suite must prove exact-version non-overwrite, the bounded
-non-authoritative tag race, and safe rejection of deleted/restorable
-same-version state. Live remains disabled until protected Governance binds a
-fresh passing generation.
+The revised suite must prove active-version non-overwrite and the bounded
+non-authoritative tag race. Administrator-deleted records are not coordinate
+reservations. Live remains disabled until the revised implementation is
+protected-delivered and Governance binds a fresh passing generation.
 
 ### 1.1 Normative precedence
 
@@ -105,8 +106,16 @@ Controls retained for outsiders and mistakes include exact same-revision
 bindings, protected Governance, bounded static-reference validation,
 credential-free build and qualification, read-only Observation without
 publication capability, immutable reviewer context, package-write isolation,
-create-only authoritative version publication, complete resource keys, a
+non-overwriting active-version publication, complete resource keys, a
 durable pre-mutation marker, and exact readback.
+
+Administrator deletion ends an active version lifetime. The same coordinate
+may later resolve to a new object, including different bytes; caches and
+consumers may retain a prior lifetime's content. This risk is explicitly
+accepted for the smoke-only, sole-writer TCB boundary. Qualified artifact and
+witness checks remain mandatory for each publication. Normal runtime does not
+delete or restore versions or read history to simulate permanent
+coordinate nonreuse.
 
 ## 4. Target Lifecycle
 
@@ -828,13 +837,13 @@ digest not resolved exactly by target code, an unadmitted suite or contract
 revision, or evidence older than 90 days blocks action-bearing admission.
 Inclusion in the complete `ready` variant is the issuer's successful-acceptance
 attestation. Governance does not carry scenario names, individual
-race/tombstone results, deleted-version facts, or raw endpoint material.
+race results, deleted-version facts, or raw endpoint material.
 
-The detailed acceptance inputs, active/deleted inventories, tombstone identity,
-responses, semantic deltas, and restoration facts remain in the separately
-authorized acceptance evidence. They and the acceptance-only package-admin
-credentials never enter runtime Governance, Observation, Approval, or
-publication.
+Detailed active inventories, scenario bytes, responses, process facts, and
+semantic deltas remain in the separately authorized acceptance evidence.
+Neither the revised acceptance suite nor normal runtime performs administrative
+deletion, restoration, or deleted-state reads. Separate administrative recovery
+facts never enter Governance, Observation, Approval, or publication.
 
 Governance also retains normalized authenticated native readback/attestation
 for `workflow-delivery-v3-buddy-approval`:
@@ -1044,13 +1053,14 @@ command/options, highest-precedence configuration, and retry prohibition.
 Approval and publisher resolve the profile without defaults and validate the
 action as a typed instantiation.
 
-The command provides non-overwriting creation for the authoritative immutable
-version but may move the declared tag after a post-Observation race because
+The command provides non-overwriting creation in the active version namespace
+but may move the declared tag after a post-Observation race because
 GitHub Packages exposes no expected-value condition for the compound request.
 That routing side effect is accepted only for this dedicated smoke package and
 sole-writer TCB after section 18 passes. It is not version-plus-tag CAS and
-does not authorize tag repair. A hidden tombstone may instead make the command
-fail definitively; that failure never becomes same-Attempt `published`.
+does not authorize tag repair. An active-absent coordinate may have a retained
+deleted record and may be created again; that record is not a reservation.
+Any definitive non-success still cannot become same-Attempt `published`.
 
 No separate tag-only, delete, restore, overwrite, visibility, permission, or
 administrator action exists. A destination conflict is not same-Attempt
@@ -1650,20 +1660,15 @@ Redact `GITHUB_TOKEN`, npm auth lines, authorization headers, credential-bearing
   `T`; in either accepted result both immutable versions remain exact and no
   unrelated projected state changes. This is the bounded non-authoritative tag
   race, not CAS.
-- For the deleted/restorable scenario, publish and verify a fresh unique
-  disposable version, delete it with acceptance-only package-admin authority,
-  prove active absence plus the complete deleted inventory, targeted tombstone
-  identity, and continued restorability, then invoke identical- and
-  differing-byte same-version publishes sequentially. Each must fail
-  definitively and leave the complete active/deleted inventories, target
-  tombstone, tag mapping, and package control unchanged; prove the first empty
-  delta before the second invocation. Restore the original object and verify
-  original bytes, digests, and witness. Any success, ambiguity, semantic delta,
-  lost restorability, or restore/readback failure rejects the profile.
-- Prove acceptance-only package-admin credentials and deleted-state facts never
-  enter runtime workflow inputs, records, Governance, Observation, or
-  publication. Synthetic tests alone cannot admit GitHub Packages destination
-  support.
+- Prove the active-lifecycle model permits an absent coordinate even when
+  administrative history contains a deleted object, without reading that
+  history or inferring a permanent reservation. This is a runtime scenario,
+  not a new native administrative experiment.
+- Prove the revised suite has no delete, restore, deleted-inventory read, or
+  automatic repair operation. Administrative recovery remains separately
+  authorized and does not enter runtime workflow inputs, records, Governance,
+  Observation, or publication. Synthetic tests alone cannot admit GitHub
+  Packages destination support.
 
 #### 18.6.1 Native suite tooling boundary
 
@@ -1672,18 +1677,17 @@ certifies the Destination Operation Profile:
 
 - Pure comparisons own the closed semantic shape and scenario-specific
   permitted deltas. Active duplicate gates require the original scenario
-  content, not merely matching inventories. Deleted duplicate gates retain
-  the original deletion-time anchor while allowing fresh inspection times.
+  content, not merely matching inventories.
 - A one-shot probe builds deterministic acceptance-only fixtures, validates
   coordinates with the locked official npm parsers, and uses the same pinned
   configuration and command mechanics as normal publication. Its witness is
   not a qualified Release witness. Request preconditions remain explicit
   issuer assertions, not a source of package approval.
-- Operator-local collection and suite orchestration own complete native
-  observations, sequential process/state gates, and the authorized
-  delete/restore boundary. Administrative credentials and deleted-state facts
-  remain local to acceptance. No component copies desired fixture facts into
-  an observed snapshot or installs a native generation from synthetic results.
+- Operator-local collection and suite orchestration own complete active native
+  observations and sequential process/state gates. The suite has no
+  administrative operations or deleted-state inputs. No component copies
+  desired fixture facts into an observed snapshot or installs a native
+  generation from synthetic results.
 
 The distinct acceptance Actions entry is manual, protected-main-only,
 accepted-actor-only, and attempt-one-only. An explicit confirmation refers to
@@ -1712,32 +1716,44 @@ The operator binds downloaded evidence to the exact run and tooling revision,
 preserves raw native responses alongside the canonical comparisons, and
 retains it beyond the Actions artifact lifetime when necessary.
 
-The original deletion time is a conservative bound captured before the
-authorized delete, not a later tombstone discovery time. Continued
-restorability is inferred from the documented restoration window and the
-unchanged original namespace/container, never from an invented API flag.
+The revised fixed suite uses three distinct versions `A`, `W`, and `V`,
+with one target-derived tag for `A` and a different shared tag for `W`/`V`.
+Its five probes are creation of `A`, identical active `A` duplicate,
+differing active `A` duplicate, creation of `W`, and candidate `V`.
+Capture initial state and complete active state after each probe; each gate
+must pass before the next probe. There is no scenario `D`, administrative
+mutation, deleted inventory, tombstone model, or restoration verdict.
 Ambiguity, incomplete evidence, or an unexpected delta stops further mutation
-for read-only investigation rather than triggering an automatic retry,
-republication, tag repair, or restoration. A passing complete suite still
-requires verified restoration before activation.
+for read-only investigation rather than retry, republication, or tag repair.
 
-The implemented suite is `workflow-delivery-v3/native-npm-suite/v1`.
-`wdv3/github-packages-npm-documented-contract/v1` identifies this suite's
-interpretation of the cited lower-layer contracts, not a GitHub-issued
-revision; the GitHub API version is a separate binding. The fixed eight
-acceptance probes are distinct from the single proving normal-Live dispatch.
+The target suite is `workflow-delivery-v3/native-npm-suite/v2`, with contract
+interpretation `wdv3/github-packages-npm-documented-contract/v2`.
+The contract identifier describes the suite's interpretation, not a
+GitHub-issued revision; the GitHub API version remains a separate binding.
+The standard publish command, Destination Operation Profile identity/digest,
+and unchanged one-probe request/fixture schemas do not acquire new revisions
+merely because acceptance changes.
+
+The active state uses `workflow-delivery-v3/native-npm-state/v2`, its capture
+descriptor uses `workflow-delivery-v3/native-npm-capture/v2`, and the completed
+manifest uses `workflow-delivery-v3/native-npm-suite-evidence/v2`.
+Remove the former tombstone,
+original-deletion context, and restoration-result fields rather than retaining
+null placeholders or aliases. The local operator takes creation and race
+targets, not a deleted target or delete/restore authorization flag.
 A completed manifest records `scenario_verdict: "passed"` for the supplied
 facts and remains candidate evidence until independent native operator audit.
-It neither establishes its own provenance nor installs a Governance
-generation. The [operator runbook](./agent-handoff.md#local-native-operator)
-defines operational prerequisites without granting authorization.
+Fresh execution must follow protected delivery of the revised suite; prior
+v1 evidence is not relabeled, resumed, or imported as a v2 passing generation.
+The [operator runbook](./agent-handoff.md#local-native-operator) states
+prerequisites without granting authorization.
 
 The [2026-09-08 native rejection](../../../log.md#2026-09-08-query--reject-the-native-deleted-version-primitive)
-records an observed counterexample for the current profile: an identical
-deleted-version publish succeeded, creating a new active object while the
-original remained deleted. The required failure and empty delta were not
-met. The profile is not admitted; this finding does not relax the scenario
-contract, authorize repair, or permit Normal Live activation.
+remains the valid result under the superseded reservation requirement and
+the evidence that motivated this approved lifecycle revision. The original
+deleted D and its active replacement remain an unresolved administrative
+recovery decision. Neither this revision nor passing v2 acceptance authorizes
+their deletion or restoration.
 
 ### 18.7 Approval
 
@@ -1821,11 +1837,13 @@ or acceptance-only operation. Repository search proves replacement runtime has
 no reference to `workflow-delivery-v3-buddy-github-packages`.
 
 Before activation, separately authorized native acceptance must pass every
-section 18.6 scenario for the exact implemented profile, including the bounded
-tag race and deleted/restorable same-version sequence. Its package-admin
-credential may mutate only the pre-approved disposable package/version and must
-restore the original tombstoned object; it cannot touch the dedicated smoke
-coordinate. Authenticated repository retention readback must prove
+section 18.6 native scenario for the exact implemented profile, including both
+active duplicates and the bounded tag race. The five probes may publish only
+their declared versions/tags in the pre-approved disposable package; they
+perform no administrative operation and cannot touch the dedicated smoke
+coordinate. Outstanding recovery from the earlier experiment remains a
+separate explicit operator decision. Authenticated repository retention
+readback must prove
 `days >= 45`, and fresh protected Governance must bind the passing acceptance
 generation while remaining disabled until the Activation PR.
 
@@ -1845,15 +1863,15 @@ generation while remaining disabled until the Activation PR.
 5. Obtain separate authorization before deleting that obsolete Environment.
 6. Under separate authorization, execute the complete section 18.6 native
    acceptance suite against the pre-approved disposable package with the exact
-   implemented profile. Capture the bounded tag race, sequential
-   deleted/restorable same-version failures and empty deltas, restoration
-   readback, API/contract revisions, suite version, profile digest, verdict,
+   implemented profile and revised suite. Capture creation readback, the
+   bounded tag race, sequential active duplicate failures and empty deltas,
+   API/contract revisions, suite version, profile digest, verdict,
    capture time, and canonical evidence digest.
 7. Perform fresh authenticated native readback of Approval Environment,
    broader variables, access, package-principal facts, and repository Actions
    artifact retention; require `days >= 45`.
 8. Prepare the exact refreshed Governance v2 attestation from that evidence
-   without copying acceptance-only credentials or detailed tombstone facts and
+   without copying detailed acceptance or administrative recovery facts and
    without merging a separate preparation change.
 9. Create one small Activation PR that applies the refreshed attestation and
    changes `live_enabled: false` to `true`.

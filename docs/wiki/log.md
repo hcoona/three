@@ -3695,3 +3695,31 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   counterexample and original tombstone. A new explicit requirements/design
   decision must resolve the failed destination assumption; do not weaken
   acceptance or introduce a runtime history/admin workaround.
+
+## [2026-09-08] query | Adopt the active-version lifecycle model
+
+- The user approved correcting the lifecycle model after reviewing the native
+  counterexample: active versions remain non-overwritable, but administrator
+  deletion ends that lifetime. Retained deleted objects are restoration
+  history, not coordinate reservations. A later publication may create a new
+  object, including different content, at the same coordinate; consumer/cache
+  disagreement across those lifetimes is an accepted smoke-only, sole-writer
+  TCB risk.
+- Updated requirements, HLD, glossary, Governance and Release MLDs, migration
+  policy, and first-slice LLD before implementation. Normal publication still
+  binds the current qualified bytes and witness and performs no deletion,
+  restoration, history lookup, or compensation.
+- The target native suite is `/v2` with a `/v2` lower-layer contract
+  interpretation. Its five probes cover creation, sequential identical and
+  differing active duplicates, and the W/V tag race. It uses three versions,
+  two target tags, and complete active comparison shapes, with no scenario D,
+  deleted-state model, administrative operation, or restoration verdict.
+  The standard publication profile and unchanged one-probe schemas remain
+  unchanged; active state, capture, and suite-evidence schemas advance to v2.
+- Both v1 generations remain failed historical evidence. No old result is
+  relabeled or imported as passing v2 evidence. Fresh execution follows
+  protected delivery of the revised suite and bounded operator confirmation.
+- The original deleted D and its active replacement remain a separate
+  recovery decision. This model approval authorizes no additional deletion
+  or restoration. Governance remains disabled and the final Normal Live
+  dispatch remains unused.

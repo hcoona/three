@@ -360,8 +360,8 @@ not classify projections, plan actions, or decide recovery.
 
 For a registry destination, the Adapter contract must establish:
 
-- atomic non-overwriting creation of the authoritative exact package-version
-  object;
+- atomic non-overwriting creation against the active package-version
+  namespace;
 - create-only semantics for that authoritative version effect in the
   action-bearing Attempt;
 - durable exact-state observation for coordinate, bytes, and target witness;
@@ -373,6 +373,14 @@ unsupported rather than emulated through a reservation, tag witness, binding
 index, application lock, or permanent ledger. An explicitly authorized
 non-authoritative tag side effect remains governed by its bounded race contract
 and is not misrepresented as part of the version-object guarantee.
+
+For first-slice GitHub Packages, administrator deletion ends an active
+version's lifetime. A retained deleted record is not a namespace reservation,
+and the same coordinate may later bind a new object with different bytes.
+That administrative-lifecycle and consumer-cache risk is accepted for the
+smoke-only, sole-writer TCB boundary. Normal publication still requires current
+qualified bytes and witness, and never performs deletion, restoration, or
+history compensation.
 
 ## Release Flow
 
@@ -554,7 +562,7 @@ Observation and seals its resulting action decision.
 Only:
 
 - `absent`, meaning absent from the active projection and eligible to produce
-  one action only under current tombstone acceptance; and
+  one action only under current active-version native acceptance; and
 - `exact-satisfied`, which produces zero actions
 
 may form a ready first-slice Publication Snapshot. Partial, conflicting,
@@ -569,16 +577,18 @@ Attempt history, but it is not proof that the version was never published, is
 not retained as deleted/restorable state, or will accept creation. Intent
 reserves nothing. Exact pre-observed active version state produces no action
 regardless of dist-tag state or tag-read availability. Differing version bytes
-fail closed. A duplicate, hidden-tombstone, conflict, non-success, or ambiguous
+fail closed. A duplicate, conflict, non-success, or ambiguous
 response remains failed in the current Attempt even when post-failure readback
 is exact. A new dispatch may reobserve the exact active version and take
-`exact-satisfied`. Release never uses version overwrite, delete-and-recreate,
-compensation, or tag repair.
+`exact-satisfied`. Release never uses active-version overwrite, a
+publisher-owned delete-and-recreate sequence, compensation, or tag repair.
+Creation after an independently authorized administrative deletion is a new
+active lifetime, not that forbidden publisher sequence.
 
 When the version is absent from active state, action formation additionally
 requires the target-derived tag to be successfully observed absent and current
-Governance to bind unexpired native acceptance of the deleted/restorable
-same-version case. A present or unprovable tag blocks a known overwrite.
+Governance to bind unexpired active-version native acceptance. A present or
+unprovable tag blocks a known overwrite.
 Standard `npm publish --tag` has no conditional tag write, so an authorized
 external writer may assign the tag after Observation and the approved publish
 may move it. This is an explicit bounded risk for the dedicated smoke-only
@@ -759,9 +769,8 @@ There is no separate normal tag action. If the version is exact, normal flow
 materializes zero actions regardless of whether the tag is absent, points to
 that version, points elsewhere, or cannot be read. No tag repair is permitted.
 If the version is absent from active state, the tag must have been observed
-absent and current Governance must bind unexpired acceptance covering the
-deleted/restorable same-version case; a present or unprovable tag blocks action
-formation.
+absent and current Governance must bind unexpired active-version acceptance;
+a present or unprovable tag blocks action formation.
 
 The action binds the canonical Destination Operation Profile digest plus exact
 tarball, package, version, and explicit tag operands. The resolved profile is
@@ -1333,12 +1342,11 @@ one closed canonical shape containing:
 - supported owner, repository-association, visibility, and exposed-access
   facts.
 
-For the deleted/restorable scenario only, the acceptance procedure uses
-separately authorized package-admin credentials and extends the projection with
-the complete deleted-version inventory for the disposable package, the targeted
-deleted version's stable identity and restorable state, and the original bytes,
-digests, and witness after restoration. Those credentials and facts never enter
-runtime Observation or publication.
+Acceptance uses publication probes and active-state reads only. It does not
+delete or restore versions or enumerate deleted state. Administrative
+restoration is separately authorized and subject to native namespace/version
+availability; it is not a publication-admission condition. No runtime
+Observation or publication receives administrative credentials or facts.
 
 Raw responses and their digests remain evidence. The projection explicitly
 excludes server-generated timestamps, request identifiers, URLs, and equivalent
@@ -1351,8 +1359,9 @@ Acceptance validates:
 1. active-absent version `V` and absent target-derived tag `T` permit exactly
    one `npm publish --tag T --fetch-retries=0`;
 2. downloaded `V` bytes, digests, and embedded witness are exact;
-3. duplicate publishes of `V` with identical or differing bytes cannot replace
-   the existing version or alter `T` or other observed package state;
+3. sequential duplicate publishes of active `V` with identical or differing
+   bytes each fail definitively and leave the complete comparison shape
+   unchanged; prove the first empty delta before the second invocation;
 4. after Observation of absent `V` and `T`, a competing writer may create
    distinct version `W` and map `T` to `W`; the candidate may fail or may create
    exact `V` and move `T`, but both immutable versions must remain exact;
@@ -1362,20 +1371,12 @@ Acceptance validates:
 6. an exact version with absent, mismatched, or unreadable `T` produces the
    zero-action path and no tag repair; and
 7. conflict, non-success, and ambiguous-response cases do not become
-   same-Attempt `published` and do not trigger a second mutating invocation;
-   and
-8. a fresh unique disposable version can be published and verified, deleted
-   into restorable state, and then subjected sequentially to identical- and
-   differing-byte same-version invocations of the exact pinned profile. Each
-   invocation must fail definitively and leave the complete active-version
-   inventory, deleted-version inventory and targeted tombstone identity,
-   dist-tag mapping, and package-control facts unchanged. The first empty delta
-   is proved before the second invocation. The original object is then restored
-   and its original bytes, digests, and witness are verified.
+   same-Attempt `published` and do not trigger a second mutating invocation.
 
-Any success, ambiguous response, projection change, inability to prove
-continued restorability, or restore/readback failure in scenario 8 rejects the
-profile and keeps Live disabled.
+Any unsupported result, ambiguous response, or unexpected projected delta
+stops further mutation and rejects the generation. Active absence does not
+claim never-published or guaranteed creation. A past administrative deletion
+does not itself block a new publication or require hidden-state proof.
 
 The accepted tag race is bounded routing damage, not an atomic tag guarantee.
 Synthetic tests alone cannot establish GitHub Packages behavior.
@@ -1393,7 +1394,7 @@ introduce a second acceptance authority. That subrecord binds:
 
 A change to the resolved profile, suite, disposable-package precondition, API,
 or contract revision reopens acceptance.
-Detailed inputs, active/deleted projections, tombstone facts, and raw results
+Detailed inputs, active projections, process facts, and raw results
 remain in the separately authorized acceptance evidence rather than runtime
 Governance.
 Every Publication Action carries the
@@ -1521,7 +1522,7 @@ Lower-layer design may define:
 - exact current-Attempt artifact names and ID-only transport;
 - exact static-reference and Governance path-touch proof;
 - exact Build and Quality batching;
-- exact destination Observation and atomic non-overwriting create-only
+- exact destination Observation and atomic non-overwriting active-version
   authoritative package-version effects, including the explicit bounded
   exception for non-authoritative tag side effects;
 - exact reviewer summary and Approval Environment integration;
