@@ -118,22 +118,21 @@ state-only blocked activation and `live_enabled: false`.
   `20895037877`, was deleted after protected delivery, retained-ref
   compatibility, and exact no-authority-reference proof. It had no deployments;
   the retained Approval Environment and all other Environments were unchanged.
-- Package access is unchanged. No normal Live dispatch, Approval deployment,
-  package publication, tag change, or package mutation has occurred.
+- Package access is unchanged. One authorized native probe created a
+  disposable scenario version and tag. No normal Live dispatch, Approval
+  deployment, deletion, or restoration has occurred.
 
 ## Delivery Boundary
 
-The disabled runtime is protected-delivered and obsolete-Environment cleanup
-is complete. Current native tooling provides canonical comparisons,
-reproducible fixtures, a one-shot pinned-profile probe with a distinct
-manual Actions entry, complete native-state collection, and exact-run audit
-admission. The fixed local suite operator connects these components;
-whole-group review, protected delivery, and actual execution remain separate
-gates. Old fixed-coordinate acceptance does not satisfy the new profile.
-Establish the exact approved disposable coordinate and bounded administrative
-execution authority before package mutation.
+The disabled runtime and native tooling are protected-delivered, and
+obsolete-Environment cleanup is complete. The disposable package and bounded
+administration are approved. The first native suite stopped after one
+creation because the shared reader omitted GitHub's actual npm storage host.
+The exact-host correction requires protected delivery; the partial generation
+is not accepted and must not be silently resumed.
 
-The remaining gates deliver and run the native suite, restore and verify its
+The remaining gates deliver the correction, run a complete native suite,
+restore and verify its
 original disposable object, install fresh ready Governance evidence including repository
 retention of at least 45 days, merge one small Activation PR, read back
 protected state, dispatch once through the run-ID-returning API, and verify the

@@ -1697,6 +1697,12 @@ The npm process receives an isolated environment and the actual repository
 There is no new Environment, secret, grant, normal-Live route, or retry
 protocol.
 
+Acceptance capture and normal active-state readback share the tarball-origin
+policy. It includes the observed GitHub npm storage host
+`pkg-npm.githubusercontent.com` as an exact hostname, not a suffix wildcard.
+Registry credentials remain restricted to their original origin and are
+stripped before a storage redirect.
+
 Each probe retains the canonical request, actual tarball, matched profile,
 local invocation indicator, process result when available, and actual Actions
 context in a bounded immutable artifact. The local private npm configuration

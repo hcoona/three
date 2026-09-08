@@ -487,6 +487,7 @@ def test_real_tarball_bytes_and_embedded_witness_determine_exactness(
     [
         TARBALL_URL,
         "https://objects.githubusercontent.com/package.tgz",
+        "https://pkg-npm.githubusercontent.com/package.tgz",
     ],
 )
 def test_transport_uses_only_active_gets_with_origin_scoped_auth(
@@ -508,7 +509,7 @@ def test_transport_uses_only_active_gets_with_origin_scoped_auth(
         assert request.get_method() == "GET"
         expected_auth = (
             None
-            if request.full_url.startswith("https://objects.")
+            if request.full_url == tarball_url and tarball_url != TARBALL_URL
             else "Bearer " + TOKEN
         )
         assert request.get_header("Authorization") == expected_auth
@@ -702,10 +703,14 @@ def test_invalid_desired_witness_binding_fails_before_reads(basis):
         )
 
 
+@pytest.mark.parametrize(
+    "host", ["objects.githubusercontent.com", "pkg-npm.githubusercontent.com"]
+)
 def test_active_readback_accepts_registry_tarball_redirect_without_storage_auth(
     basis,
+    host,
 ):
-    storage_url = "https://objects.githubusercontent.com/package.tgz"
+    storage_url = f"https://{host}/package.tgz"
     responses = _responses(basis)
     responses[TARBALL_URL] = _response(
         TARBALL_URL,
