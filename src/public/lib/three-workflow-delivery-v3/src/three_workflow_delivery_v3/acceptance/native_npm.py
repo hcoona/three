@@ -1,6 +1,6 @@
 """Pure WD-OPS-002A / LLD 18.6 native npm state comparisons.
 
-Collectors supply complete active/deleted inventories and tags, observed (not
+Collectors supply complete active inventories and tags, observed (not
 expected) controls, remote SHA-256/SHA-512 and canonical witnesses for active
 scenario versions. Expected fixtures remain separate comparator operands.
 No IO or content hashing occurs here. Witness/target binding, npm parsing,
@@ -8,13 +8,9 @@ completeness, freshness and pre-existing public hcoona admission belong there.
 
 Counters are deliberately RECOMPUTED from inventories. Collectors retain full
 responses, raw counters and volatile timestamps/request IDs/URLs outside this
-canonical shape. Dangling tags remain; contents/target require membership.
-
-Restorability is a documented 30-day INFERENCE, not an API flag or certificate.
-Collectors rederive it at each capture using fresh inspection and a conservative
-bound on the same original authorized deletion, never later discovery. Those
-times stay outside semantic deltas. Raw evidence and native/admin provenance
-remain acceptance-only, never Release or Governance records.
+canonical shape. Dangling tags remain; contents require active membership.
+Raw evidence and native provenance remain acceptance-only, never Release or
+Governance records. Administrative history is outside this active projection.
 
 Comparisons return None only for a shape gate, or reject with ValueError.
 Callers separately enforce authoritative NpmProcessOutcome, probe sequencing,
@@ -25,7 +21,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from three_workflow_delivery_v3.canonical import (
@@ -37,8 +32,7 @@ from three_workflow_delivery_v3.canonical import (
 if TYPE_CHECKING:
     from three_workflow_delivery_v3.canonical import JsonValue
 
-ACCEPTANCE_STATE_SCHEMA = "workflow-delivery-v3/native-npm-state/v1"
-_RESTORE_WINDOW = timedelta(days=30)
+ACCEPTANCE_STATE_SCHEMA = "workflow-delivery-v3/native-npm-state/v2"
 _MAX_JSON_INTEGER = 2**53 - 1
 _TAG_PAIR_SIZE = 2
 
@@ -160,7 +154,7 @@ class ObservedContent:
 
 @dataclass(frozen=True)
 class VersionIdentity:
-    """Stable service version ID and name, including the restored original."""
+    """Stable service version ID and name for active-inventory provenance."""
 
     version_id: int
     name: str
@@ -178,111 +172,13 @@ class VersionIdentity:
 
 
 @dataclass(frozen=True)
-class RestorabilityEvidence:
-    """Local documented-contract inputs, not a caller-provided restorable flag.
-
-    AcceptanceState also checks unchanged control/namespace, original ID/name
-    in the deleted inventory, and active absence. Times are noncanonical.
-    """
-
-    original_control: PackageControl
-    original_version: VersionIdentity
-    deletion_observed_at: datetime
-    inspected_at: datetime
-
-    def __post_init__(self) -> None:
-        """Require a known deletion strictly within the restore window."""
-        _require(
-            type(self.original_control) is PackageControl
-            and type(self.original_version) is VersionIdentity,
-            "restorability requires original control and version identity",
-        )
-        _require(
-            all(
-                type(value) is datetime and value.utcoffset() is not None
-                for value in (self.deletion_observed_at, self.inspected_at)
-            ),
-            "deletion and inspection times must be timezone-aware",
-        )
-        _require(
-            timedelta(0)
-            <= self.inspected_at - self.deletion_observed_at
-            < _RESTORE_WINDOW,
-            "original deletion is outside the documented restore window",
-        )
-
-
-@dataclass(frozen=True)
-class TombstoneState:
-    """Complete deleted inventory plus the scenario's observed target identity.
-
-    Evidence is mandatory while deleted; None means restored-active, NOT unknown
-    restorability. Target ID/name come from current deleted or restored-active
-    readback, not from an expected fixture.
-    """
-
-    deleted_versions: tuple[VersionIdentity, ...]
-    target: VersionIdentity
-    restorability: RestorabilityEvidence | None
-
-    def __post_init__(self) -> None:
-        """Require a canonical inventory and bound targeted evidence."""
-        _require(
-            type(self.deleted_versions) is tuple
-            and all(
-                type(item) is VersionIdentity for item in self.deleted_versions
-            )
-            and type(self.target) is VersionIdentity,
-            "tombstone requires immutable typed version identities",
-        )
-        _require(
-            _names(tuple(item.name for item in self.deleted_versions))
-            and len({item.version_id for item in self.deleted_versions})
-            == len(self.deleted_versions),
-            "deleted inventory must have sorted unique names and unique IDs",
-        )
-        if self.restorability is not None:
-            _require(
-                type(self.restorability) is RestorabilityEvidence
-                and self.restorability.original_version == self.target
-                and self.target in self.deleted_versions,
-                "deleted target requires bound restorability evidence",
-            )
-        else:
-            _require(
-                all(
-                    item.version_id != self.target.version_id
-                    and item.name != self.target.name
-                    for item in self.deleted_versions
-                ),
-                "restored target must be absent from deleted inventory",
-            )
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Project stable tombstone facts, excluding inspection times."""
-        return {
-            "deleted_versions": [
-                item.to_document() for item in self.deleted_versions
-            ],
-            "deleted_version_count": len(self.deleted_versions),
-            "target": self.target.to_document(),
-            "restorability": (
-                "documented-30-day-inference"
-                if self.restorability is not None
-                else None
-            ),
-        }
-
-
-@dataclass(frozen=True)
 class AcceptanceState:
-    """Closed observed shape; deleted facts are tombstone-scenario-only."""
+    """Closed observed shape over the complete active projection."""
 
     control: PackageControl
     active_versions: tuple[str, ...]
     tags: tuple[tuple[str, str], ...]
     contents: tuple[ObservedContent, ...]
-    tombstone: TombstoneState | None = None
 
     def __post_init__(self) -> None:
         """Reject duplicate inventories, mutable shapes, and unbound content."""
@@ -313,30 +209,6 @@ class AcceptanceState:
             ),
             "scenario contents must be sorted unique and observed active",
         )
-        if self.tombstone is not None:
-            self._check_tombstone()
-
-    def _check_tombstone(self) -> None:
-        tombstone = self.tombstone
-        if type(tombstone) is not TombstoneState:
-            message = "invalid tombstone shape"
-            raise ValueError(message)
-        _require(
-            not set(self.active_versions).intersection(
-                item.name for item in tombstone.deleted_versions
-            ),
-            "active and deleted inventories overlap",
-        )
-        if tombstone.restorability is None:
-            _require(
-                tombstone.target.name in self.active_versions,
-                "restored original target must be observed active",
-            )
-        else:
-            _require(
-                tombstone.restorability.original_control == self.control,
-                "original deletion namespace or package control changed",
-            )
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return versioned closed state with explicitly derived counts."""
@@ -349,9 +221,6 @@ class AcceptanceState:
             "active_version_count": len(self.active_versions),
             "tags": tags,
             "contents": [item.to_document() for item in self.contents],
-            "tombstone": (
-                None if self.tombstone is None else self.tombstone.to_document()
-            ),
         }
 
     def digest(self) -> str:
@@ -461,71 +330,3 @@ def require_tag_race_delta(
     tags = dict(before.tags)
     tags[tag] = dict(after.tags)[tag]
     empty_delta(replace(expected, tags=tuple(sorted(tags.items()))), after)
-
-
-def require_deleted_duplicate_delta(
-    before: AcceptanceState, after: AcceptanceState
-) -> None:
-    """Require continued documented restorability and an empty delta."""
-    _, original = _deleted_target(before)
-    _, current = _deleted_target(after)
-    _require(
-        original.deletion_observed_at == current.deletion_observed_at,
-        "deleted duplicate changed the original deletion time",
-    )
-    empty_delta(before, after)
-
-
-def _deleted_target(
-    state: AcceptanceState,
-) -> tuple[TombstoneState, RestorabilityEvidence]:
-    tombstone = state.tombstone
-    if tombstone is None or tombstone.restorability is None:
-        message = "comparison requires a documented-restorable deleted target"
-        raise ValueError(message)
-    return tombstone, tombstone.restorability
-
-
-def require_restoration_delta(
-    before: AcceptanceState,
-    after: AcceptanceState,
-    original: ObservedContent,
-    tag: str,
-) -> None:
-    """Require original ID/content restoration; only the scenario tag may vary.
-
-    The caller binds scenario ownership. GitHub promises no tag restoration:
-    allow actual tag readback or absence, preserving latest and unrelated tags.
-    """
-    _scenario_tag(tag)
-    tombstone, _ = _deleted_target(before)
-    _require(
-        type(original) is ObservedContent
-        and original.version == tombstone.target.name,
-        "expected original content must identify the targeted deleted version",
-    )
-    restored = TombstoneState(
-        deleted_versions=tuple(
-            item
-            for item in tombstone.deleted_versions
-            if item != tombstone.target
-        ),
-        target=tombstone.target,
-        restorability=None,
-    )
-    tags = dict(before.tags)
-    tags.pop(tag, None)
-    if tag in dict(after.tags):
-        tags[tag] = dict(after.tags)[tag]
-    expected = replace(
-        before,
-        active_versions=tuple(
-            sorted((*before.active_versions, original.version))
-        ),
-        contents=tuple(
-            sorted((*before.contents, original), key=lambda item: item.version)
-        ),
-        tags=tuple(sorted(tags.items())),
-        tombstone=restored,
-    )
-    empty_delta(expected, after)

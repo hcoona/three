@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -13,8 +13,6 @@ import pytest
 from three_workflow_delivery_v3.acceptance import npm_capture as capture
 from three_workflow_delivery_v3.acceptance.native_npm import (
     VersionIdentity,
-    require_deleted_duplicate_delta,
-    require_restoration_delta,
 )
 from three_workflow_delivery_v3.acceptance.npm_fixture import (
     NpmFixtureSpec,
@@ -43,7 +41,6 @@ ROOT = Path(__file__).resolve().parents[6]
 PACKAGE = "@hcoona/synthetic-complete-capture"
 ROUTE = "/users/hcoona/packages/npm/synthetic-complete-capture"
 ACTIVE = ROUTE + "/versions?state=active&per_page=100"
-DELETED = ROUTE + "/versions?state=deleted&per_page=100"
 METADATA = "https://npm.pkg.github.com/" + quote(PACKAGE, safe="")
 SPEC = NpmFixtureSpec(PACKAGE, "1.0.0", "a" * 40, "synthetic")
 OTHER = replace(SPEC, version="2.0.0", target="b" * 40)
@@ -118,12 +115,11 @@ class SyntheticReads:
             [[_identity(SPEC.version, 71)], [_identity(OTHER.version, 72)]]
         )
 
-    def set_versions(self, active, deleted=None):
+    def set_versions(self, active):
         """Change observed inventories without changing desired selectors."""
         self.gh_bodies = {
             ROUTE: _bytes(self.package),
             ACTIVE: _bytes(active),
-            DELETED: _bytes([[]] if deleted is None else deleted),
         }
         self.packument = {
             "name": PACKAGE,
@@ -169,7 +165,7 @@ class SyntheticReads:
         self.events.append("clock")
         return NOW
 
-    def take(self, directory, *, scenarios=(SPEC,), context=None, clock=None):
+    def take(self, directory, *, scenarios=(SPEC,), clock=None):
         """Call the public collector API with explicitly synthetic seams."""
         return capture.capture_npm_state(
             approved_disposable_package_preconditions=APPROVED,
@@ -179,7 +175,6 @@ class SyntheticReads:
             audit_directory=directory,
             gh_runner=self,
             transport=self,
-            original_deletion=context,
             clock=self.clock if clock is None else clock,
         )
 
@@ -207,7 +202,6 @@ def test_complete_paginated_capture_preserves_raw_bytes_and_observed_control(
         fixtures["other"].content,
     )
     assert result.state.tags == tuple(sorted(reads.tags.items()))
-    assert result.state.tombstone is None
     assert result.state.control.to_document() == {
         "container_id": 750,
         "full_scoped_name": PACKAGE,
@@ -240,9 +234,27 @@ def test_complete_paginated_capture_preserves_raw_bytes_and_observed_control(
         result.state.to_document()
     )
     descriptor = parse_canonical_json((audit / "capture.json").read_bytes())
+    assert set(descriptor) == {
+        "schema",
+        "captured_at",
+        "github_api_version",
+        "approved_disposable_package_preconditions",
+        "scenario_versions",
+        "state_digest",
+        "raw_responses",
+    }
+    assert descriptor["schema"] == "workflow-delivery-v3/native-npm-capture/v2"
     assert descriptor["captured_at"] == NOW.isoformat()
+    assert descriptor["github_api_version"] == "2026-03-10"
+    assert descriptor["approved_disposable_package_preconditions"] == (
+        APPROVED.to_document()
+    )
+    assert descriptor["scenario_versions"] == [
+        SPEC.version,
+        OTHER.version,
+        ABSENT.version,
+    ]
     assert descriptor["state_digest"] == result.state.digest()
-    assert descriptor["original_deletion"] is None
     raw_responses = descriptor["raw_responses"]
     assert isinstance(raw_responses, list)
     sources = []
@@ -329,7 +341,27 @@ def test_inactive_scenario_has_no_synthetic_content_or_deleted_read(
     assert result.state.active_versions == ()
     assert result.state.contents == ()
     assert dict(result.state.tags)[TAG] == SPEC.version
-    assert result.state.tombstone is None
+    assert set(result.state.to_document()) == {
+        "schema",
+        "control",
+        "active_versions",
+        "active_version_count",
+        "tags",
+        "contents",
+    }
+    assert reads.events == [ROUTE, ACTIVE, METADATA, "clock"]
+    with pytest.raises(TypeError, match="original_deletion"):
+        capture.capture_npm_state(
+            approved_disposable_package_preconditions=APPROVED,
+            scenarios=(SPEC,),
+            token="synthetic-local-read-token",  # noqa: S106
+            repository_root=ROOT,
+            audit_directory=tmp_path / "retired-input",
+            gh_runner=reads,
+            transport=reads,
+            original_deletion=None,  # pyrefly: ignore[unexpected-keyword]
+        )
+    assert not (tmp_path / "retired-input").exists()
     assert reads.events == [ROUTE, ACTIVE, METADATA, "clock"]
 
 
@@ -482,126 +514,17 @@ def test_foreign_tarball_request_strips_credentials_and_signed_audit_url(
     assert f"https://{host}/native.tgz".encode() in descriptor
 
 
-def test_active_deleted_refreshed_and_restored_capture_keeps_original_anchor(
-    reads, fixtures, tmp_path
+def test_capture_clock_requires_timezone_without_completing_evidence(
+    reads, tmp_path
 ):
-    """Refresh inspection time and restore the same ID and actual content."""
-    before = reads.take(tmp_path / "active")
-    context = capture.OriginalDeletionContext(
-        before.state.control,
-        VersionIdentity(71, SPEC.version),
-        NOW - timedelta(minutes=1),
-    )
-    historical = _identity("0.5.0", 50)
-    reads.set_versions(
-        [[_identity(OTHER.version, 72)]],
-        [[historical], [_identity(SPEC.version, 71)]],
-    )
-    deleted = reads.take(tmp_path / "deleted", context=context)
-    refreshed = reads.take(
-        tmp_path / "refreshed",
-        context=context,
-        clock=lambda: NOW + timedelta(minutes=2),
-    )
-    require_deleted_duplicate_delta(deleted.state, refreshed.state)
-    tombstone = deleted.state.tombstone
-    assert tombstone is not None
-    assert tombstone.restorability is not None
-    assert tombstone.target == context.original_version
-    assert tombstone.deleted_versions == (
-        VersionIdentity(50, "0.5.0"),
-        VersionIdentity(71, SPEC.version),
-    )
-    assert tombstone.to_document()["deleted_version_count"] == 2
-    assert tombstone.restorability.deletion_observed_at == (
-        context.deletion_lower_bound_at
-    )
-    assert tombstone.restorability.inspected_at == NOW
-    assert refreshed.state.tombstone.restorability.inspected_at == (
-        NOW + timedelta(minutes=2)
-    )
-    assert deleted.state.to_document() == refreshed.state.to_document()
-    assert deleted.state.active_versions == (OTHER.version,)
-    assert deleted.state.contents == ()
-    assert (
-        tmp_path / "deleted" / "github-deleted-pages.json"
-    ).read_bytes() == (reads.gh_bodies[DELETED])
-    descriptor = json.loads(
-        (tmp_path / "refreshed" / "capture.json").read_bytes()
-    )
-    assert descriptor["original_deletion"] == context.to_document()
-    reads.set_versions(
-        [[_identity(SPEC.version, 71)], [_identity(OTHER.version, 72)]],
-        [[historical]],
-    )
-    restored = reads.take(tmp_path / "restored", context=context)
-    require_restoration_delta(
-        deleted.state, restored.state, fixtures["original"].content, TAG
-    )
-    assert restored.state.tombstone.target == context.original_version
-    assert restored.state.tombstone.restorability is None
-    assert restored.state.contents == before.state.contents
-
-
-@pytest.mark.parametrize(
-    "case",
-    [
-        "neither",
-        "both",
-        "changed-id",
-        "changed-name",
-        "cross-state-id",
-        "restored-wrong-id",
-        "missing-deleted",
-        "new-container",
-    ],
-)
-def test_unknown_or_conflicting_tombstone_fails_closed(reads, tmp_path, case):
-    """Never substitute unknown restorability with restored-active None."""
-    before = reads.take(tmp_path / "before")
-    context = capture.OriginalDeletionContext(
-        before.state.control,
-        VersionIdentity(71, SPEC.version),
-        NOW - timedelta(minutes=1),
-    )
-    active = [[_identity(OTHER.version, 72)]]
-    deleted = [[_identity(SPEC.version, 71)]]
-    if case == "neither":
-        deleted = [[]]
-    elif case == "both":
-        active[0].append(_identity(SPEC.version, 71))
-    elif case == "changed-id":
-        deleted[0][0]["id"] = 999
-    elif case == "changed-name":
-        deleted[0][0]["name"] = "4.0.0"
-    elif case == "cross-state-id":
-        deleted[0][0]["id"] = 72
-    elif case == "restored-wrong-id":
-        active[0].append(_identity(SPEC.version, 999))
-        deleted = [[]]
-    elif case == "new-container":
-        reads.package["id"] = 999
-    reads.set_versions(active, deleted)
-    if case == "missing-deleted":
-        reads.gh_bodies[DELETED] = b"[]"
-    audit = tmp_path / case
-    with pytest.raises(ValueError, match=r"unprovable|overlap|missing|control"):
-        reads.take(audit, context=context)
+    """An unaware inspection time cannot complete an otherwise valid read."""
+    audit = tmp_path / "unaware"
+    with pytest.raises(
+        ValueError, match="capture clock must be timezone-aware"
+    ):
+        reads.take(audit, clock=lambda: NOW.replace(tzinfo=None))
+    assert not (audit / "state.json").exists()
     assert not (audit / "capture.json").exists()
-
-
-@pytest.mark.parametrize("age", [timedelta(days=30), -timedelta(seconds=1)])
-def test_original_deletion_time_cannot_be_refreshed_or_future_dated(
-    reads, tmp_path, age
-):
-    """The inference window uses the original lower bound, not discovery."""
-    before = reads.take(tmp_path / "before")
-    context = capture.OriginalDeletionContext(
-        before.state.control, VersionIdentity(71, SPEC.version), NOW - age
-    )
-    reads.set_versions([[]], [[_identity(SPEC.version, 71)]])
-    with pytest.raises(ValueError, match=r"restore window|precedes"):
-        reads.take(tmp_path / "expired", context=context)
 
 
 def test_audit_is_fresh_and_unknown_read_errors_propagate(reads, tmp_path):

@@ -8,7 +8,7 @@ Reads are sequential, not an atomic destination snapshot.
 
 Fresh private audit directories retain raw successful gh output and HTTP bodies.
 Failures leave partial evidence, never a completed capture or automatic retry.
-Deleted facts and the documented restoration inference stay acceptance-local.
+Only active state is read; administrative history is outside this capture.
 """
 
 from __future__ import annotations
@@ -24,8 +24,6 @@ from three_workflow_delivery_v3.acceptance.native_npm import (
     AcceptanceState,
     ObservedContent,
     PackageControl,
-    RestorabilityEvidence,
-    TombstoneState,
     VersionIdentity,
 )
 from three_workflow_delivery_v3.acceptance.npm_fixture import (
@@ -110,40 +108,8 @@ def _integer(value: JsonValue) -> int:
 def _aware(value: datetime) -> None:
     _require(
         type(value) is datetime and value.utcoffset() is not None,
-        "capture clock and original deletion bound must be timezone-aware",
+        "capture clock must be timezone-aware",
     )
-
-
-@dataclass(frozen=True)
-class OriginalDeletionContext:
-    """Original identity plus a bound recorded BEFORE authorized delete.
-
-    Later discovery cannot refresh this anchor. This class authorizes nothing;
-    the caller preserves it across deleted duplicate and restored captures.
-    """
-
-    original_control: PackageControl
-    original_version: VersionIdentity
-    deletion_lower_bound_at: datetime
-
-    def __post_init__(self) -> None:
-        """Reject untyped identities and an unaware original time."""
-        _require(
-            type(self.original_control) is PackageControl
-            and type(self.original_version) is VersionIdentity,
-            "original deletion requires typed original identities",
-        )
-        _aware(self.deletion_lower_bound_at)
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Retain original provenance outside the canonical semantic state."""
-        return {
-            "original_control": self.original_control.to_document(),
-            "original_version": self.original_version.to_document(),
-            "deletion_lower_bound_at": (
-                self.deletion_lower_bound_at.isoformat()
-            ),
-        }
 
 
 @dataclass(frozen=True)
@@ -164,7 +130,6 @@ class NpmStateCapture:
 
     state: AcceptanceState
     captured_at: datetime
-    original_deletion: OriginalDeletionContext | None
     files: tuple[CaptureFile, ...]
     active_inventory: tuple[VersionIdentity, ...]
 
@@ -413,50 +378,6 @@ def _registry_read(  # noqa: PLR0913
     return response.body
 
 
-def _tombstone(
-    context: OriginalDeletionContext,
-    control: PackageControl,
-    active: tuple[VersionIdentity, ...],
-    deleted: tuple[VersionIdentity, ...],
-    captured_at: datetime,
-) -> TombstoneState:
-    _require(
-        control == context.original_control,
-        "original package control or namespace changed",
-    )
-    _require(
-        not {item.name for item in active} & {item.name for item in deleted}
-        and not {item.version_id for item in active}
-        & {item.version_id for item in deleted},
-        "active and deleted identities overlap",
-    )
-    original = context.original_version
-    matches = tuple(
-        item
-        for item in (*active, *deleted)
-        if item.name == original.name or item.version_id == original.version_id
-    )
-    _require(matches == (original,), "original target identity is unprovable")
-    _require(
-        captured_at >= context.deletion_lower_bound_at,
-        "inspection precedes the original deletion bound",
-    )
-    return TombstoneState(
-        deleted_versions=deleted,
-        target=matches[0],
-        restorability=(
-            RestorabilityEvidence(
-                context.original_control,
-                context.original_version,
-                context.deletion_lower_bound_at,
-                captured_at,
-            )
-            if original in deleted
-            else None
-        ),
-    )
-
-
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -470,7 +391,6 @@ def capture_npm_state(  # noqa: PLR0913
     audit_directory: Path,
     gh_runner: GhCommandRunner | None = None,
     transport: GitHubPackagesTransport | None = None,
-    original_deletion: OriginalDeletionContext | None = None,
     clock: Callable[[], datetime] = _now,
 ) -> NpmStateCapture:
     """Capture complete inventories and actual active scenario fixture bytes.
@@ -478,7 +398,6 @@ def capture_npm_state(  # noqa: PLR0913
     Scenario specs select versions, not expected presence, target or content.
     Each selected active version is independently inspected. Inactive selectors
     have no content operand. The caller applies comparison/presence gates.
-    Only explicit original deletion context enables deleted-state reads.
     """
     _require(type(token) is str and bool(token), "local read token is required")
     _require(
@@ -493,14 +412,6 @@ def capture_npm_state(  # noqa: PLR0913
         _validate_npm_coordinates(spec, repository_root)
     package = approved_disposable_package_preconditions.package
     _require(package.startswith("@hcoona/"), "capture requires the USER owner")
-    if original_deletion is not None:
-        _require(
-            type(original_deletion) is OriginalDeletionContext
-            and original_deletion.original_control.full_scoped_name == package
-            and original_deletion.original_version.name
-            in {spec.version for spec in scenarios},
-            "original deletion must bind this package and a selected version",
-        )
     audit = _Audit(audit_directory)
     runner = (
         gh_runner
@@ -519,18 +430,6 @@ def capture_npm_state(  # noqa: PLR0913
             route + "/versions?state=active&per_page=100",
             inventory="active",
         )
-    )
-    deleted = (
-        _inventory(
-            _gh_read(
-                runner,
-                audit,
-                route + "/versions?state=deleted&per_page=100",
-                inventory="deleted",
-            )
-        )
-        if original_deletion is not None
-        else ()
     )
     packument = _object(
         parse_json_strict(
@@ -592,9 +491,6 @@ def capture_npm_state(  # noqa: PLR0913
         tuple(item.name for item in active),
         tags,
         tuple(contents),
-        _tombstone(original_deletion, control, active, deleted, captured_at)
-        if original_deletion is not None
-        else None,
     )
     audit.write("state.json", canonicalize(state.to_document()))
     scenario_versions: list[JsonValue] = [
@@ -605,23 +501,16 @@ def capture_npm_state(  # noqa: PLR0913
         "capture.json",
         canonicalize(
             {
-                "schema": "workflow-delivery-v3/native-npm-capture/v1",
+                "schema": "workflow-delivery-v3/native-npm-capture/v2",
                 "captured_at": captured_at.isoformat(),
                 "github_api_version": GITHUB_API_VERSION,
                 "approved_disposable_package_preconditions": (
                     approved_disposable_package_preconditions.to_document()
                 ),
                 "scenario_versions": scenario_versions,
-                "original_deletion": (
-                    original_deletion.to_document()
-                    if original_deletion is not None
-                    else None
-                ),
                 "state_digest": state.digest(),
                 "raw_responses": audit.sources,
             }
         ),
     )
-    return NpmStateCapture(
-        state, captured_at, original_deletion, tuple(audit.files), active
-    )
+    return NpmStateCapture(state, captured_at, tuple(audit.files), active)

@@ -12,14 +12,11 @@ import pytest
 from three_workflow_delivery_v3.acceptance.native_npm import (
     AcceptanceState,
     PackageControl,
-    RestorabilityEvidence,
-    TombstoneState,
     VersionIdentity,
 )
 from three_workflow_delivery_v3.acceptance.npm_capture import (
     CaptureFile,
     NpmStateCapture,
-    OriginalDeletionContext,
 )
 from three_workflow_delivery_v3.acceptance.npm_evidence import NpmProbeEvidence
 from three_workflow_delivery_v3.acceptance.npm_fixture import (
@@ -30,6 +27,7 @@ from three_workflow_delivery_v3.acceptance.npm_fixture import (
 )
 from three_workflow_delivery_v3.acceptance.npm_probe import NpmProbeRequest
 from three_workflow_delivery_v3.acceptance.npm_suite import (
+    NativeSuiteOperations,
     NpmSuitePlan,
     run_npm_suite,
 )
@@ -63,17 +61,13 @@ PLAN = NpmSuitePlan(
     creation=_request("1.0.0", "a" * 40),
     race_existing=_request("2.0.0", "b" * 40),
     race_candidate=_request("3.0.0", "b" * 40),
-    deleted_original=_request("4.0.0", "d" * 40),
 )
 A = VersionIdentity(101, "1.0.0")
 W = VersionIdentity(202, "2.0.0")
 V = VersionIdentity(303, "3.0.0")
-D = VersionIdentity(404, "4.0.0")
 UNRELATED = VersionIdentity(17, "0.9.0")
-OLD_DELETED = VersionIdentity(88, "0.1.0")
 TAG_A = "buddy-sha-" + "a" * 40
 TAG_RACE = "buddy-sha-" + "b" * 40
-TAG_D = "buddy-sha-" + "d" * 40
 CONTROL = PackageControl(
     700,
     PACKAGE,
@@ -84,16 +78,12 @@ CONTROL = PackageControl(
 )
 BASE_TAGS = {"latest": "0.9.0", "stable": "0.9.0", "dangling": "0.0.9"}
 NOW = datetime(2026, 9, 7, tzinfo=UTC)
-CONTEXT = OriginalDeletionContext(CONTROL, D, NOW + timedelta(minutes=7))
 PROBE_LABELS = (
     "create-a",
     "duplicate-a-identical",
     "duplicate-a-different",
     "create-w",
     "candidate-v",
-    "create-d",
-    "duplicate-d-identical",
-    "duplicate-d-different",
 )
 CAPTURE_LABELS = (
     "initial",
@@ -102,11 +92,6 @@ CAPTURE_LABELS = (
     "after-duplicate-a-different",
     "after-create-w",
     "after-candidate-v",
-    "after-create-d",
-    "after-delete-d",
-    "after-duplicate-d-identical",
-    "after-duplicate-d-different",
-    "after-restore-d",
 )
 EXPECTED_EVENTS = (
     "capture:initial",
@@ -120,16 +105,6 @@ EXPECTED_EVENTS = (
     "capture:after-create-w",
     "probe:candidate-v",
     "capture:after-candidate-v",
-    "probe:create-d",
-    "capture:after-create-d",
-    "delete",
-    "capture:after-delete-d",
-    "probe:duplicate-d-identical",
-    "capture:after-duplicate-d-identical",
-    "probe:duplicate-d-different",
-    "capture:after-duplicate-d-different",
-    "restore",
-    "capture:after-restore-d",
 )
 
 
@@ -201,24 +176,6 @@ def _evidence(label, request, fixture, process):
 
 def _capture(label, fixtures, identities, tags):
     captured_at = NOW + timedelta(minutes=CAPTURE_LABELS.index(label))
-    context = CONTEXT if CAPTURE_LABELS.index(label) >= 7 else None
-    tombstone = None
-    if context is not None:
-        tombstone = TombstoneState(
-            deleted_versions=(
-                (OLD_DELETED,)
-                if label == "after-restore-d"
-                else (OLD_DELETED, D)
-            ),
-            target=D,
-            restorability=(
-                None
-                if label == "after-restore-d"
-                else RestorabilityEvidence(
-                    CONTROL, D, CONTEXT.deletion_lower_bound_at, captured_at
-                )
-            ),
-        )
     inventory = tuple(sorted(identities, key=lambda item: item.name))
     contents = tuple(
         fixtures[item.name, "original"].content
@@ -231,10 +188,8 @@ def _capture(label, fixtures, identities, tags):
             tuple(item.name for item in inventory),
             tuple(sorted(tags.items())),
             contents,
-            tombstone,
         ),
         captured_at=captured_at,
-        original_deletion=context,
         files=(
             CaptureFile(label + "/SYNTHETIC-state.json", "sha256:" + "e" * 64),
             CaptureFile(label + "/SYNTHETIC-raw.json", "sha256:" + "f" * 64),
@@ -251,11 +206,8 @@ class SyntheticOperations:
         self.events = []
         self.requests = []
         self.capture_arguments = []
-        self.deleted = []
-        self.restored = []
         self.denied = False
         self.failures = {}
-        self.context = CONTEXT
         self.probes = {}
         for label, request in (
             ("create-a", PLAN.creation),
@@ -269,17 +221,6 @@ class SyntheticOperations:
             ),
             ("create-w", PLAN.race_existing),
             ("candidate-v", PLAN.race_candidate),
-            ("create-d", PLAN.deleted_original),
-            ("duplicate-d-identical", PLAN.deleted_original),
-            (
-                "duplicate-d-different",
-                replace(
-                    PLAN.deleted_original,
-                    fixture=replace(
-                        PLAN.deleted_original.fixture, variant="different"
-                    ),
-                ),
-            ),
         ):
             process = (
                 NpmProcessOutcome("definitive-non-success", returncode=1)
@@ -304,15 +245,6 @@ class SyntheticOperations:
                 ("after-duplicate-a-different", (UNRELATED, A), tags_a),
                 ("after-create-w", (UNRELATED, A, W), tags_w),
                 ("after-candidate-v", (UNRELATED, A, W, V), tags_v),
-                (
-                    "after-create-d",
-                    (UNRELATED, A, W, V, D),
-                    {**tags_v, TAG_D: D.name},
-                ),
-                ("after-delete-d", (UNRELATED, A, W, V), tags_v),
-                ("after-duplicate-d-identical", (UNRELATED, A, W, V), tags_v),
-                ("after-duplicate-d-different", (UNRELATED, A, W, V), tags_v),
-                ("after-restore-d", (UNRELATED, A, W, V, D), tags_v),
             )
         }
 
@@ -321,10 +253,10 @@ class SyntheticOperations:
         if event in self.failures:
             raise self.failures[event]
 
-    def capture(self, label, *, plan, original_deletion=None):
+    def capture(self, label, *, plan):
         """Return observed selectors, not reconstructed expected fixtures."""
         self._record("capture:" + label)
-        self.capture_arguments.append((plan, original_deletion))
+        self.capture_arguments.append(plan)
         if self.denied:
             message = "SYNTHETIC backend: no separate disposable approval"
             raise PermissionError(message)
@@ -335,17 +267,6 @@ class SyntheticOperations:
         self._record("probe:" + label)
         self.requests.append(request)
         return self.probes[label]
-
-    def delete_exact(self, original_control, original):
-        """Record the exact caller operands without any external mutation."""
-        self._record("delete")
-        self.deleted.append((original_control, original))
-        return self.context
-
-    def restore_exact(self, context):
-        """Record one requested restoration without any external mutation."""
-        self._record("restore")
-        self.restored.append(context)
 
 
 @pytest.fixture
@@ -382,7 +303,7 @@ def _stop_at(ops, event):
     )
 
 
-def test_complete_fixed_sequence_retains_actual_bytes_ids_and_final_restore(
+def test_complete_fixed_sequence_retains_actual_bytes_ids_and_active_readback(
     ops, fixtures
 ):
     result = run_npm_suite(PLAN, ops)
@@ -390,36 +311,50 @@ def test_complete_fixed_sequence_retains_actual_bytes_ids_and_final_restore(
     assert ops.events == list(EXPECTED_EVENTS)
     assert result.probes == tuple(ops.probes[label] for label in PROBE_LABELS)
     assert tuple(item.run_id for item in result.probes) == tuple(
-        range(1001, 1009)
+        range(1001, 1006)
     )
     assert result.captures == tuple(
         ops.captures[label] for label in CAPTURE_LABELS
     )
     assert all(capture.files for capture in result.captures)
-    assert result.original_deletion == CONTEXT
-    assert ops.deleted == [(CONTROL, D)]
-    assert ops.restored == [CONTEXT]
-    assert ops.capture_arguments == [(PLAN, None)] * 7 + [(PLAN, CONTEXT)] * 4
+    assert len(result.probes) == 5
+    assert len(result.captures) == 6
+    assert ops.capture_arguments == [PLAN] * 6
+    assert PLAN.requests == (
+        PLAN.creation,
+        PLAN.race_existing,
+        PLAN.race_candidate,
+    )
+    assert {request.fixture.version for request in PLAN.requests} == {
+        A.name,
+        W.name,
+        V.name,
+    }
+    assert {request.fixture.target for request in PLAN.requests} == {
+        "a" * 40,
+        "b" * 40,
+    }
+    assert not hasattr(result, "original_deletion")
+    for route in ("delete_exact", "restore_exact"):
+        assert not hasattr(NativeSuiteOperations, route)
     assert [request.fixture.variant for request in ops.requests] == [
         "original",
         "original",
         "different",
         "original",
         "original",
-        "original",
-        "original",
-        "different",
     ]
     final = result.captures[-1]
-    assert final.active_inventory == (UNRELATED, A, W, V, D)
-    assert final.state.tombstone == TombstoneState((OLD_DELETED,), D, None)
-    assert fixtures[D.name, "original"].content in final.state.contents
+    assert final.active_inventory == (UNRELATED, A, W, V)
+    assert final.state.contents == tuple(
+        fixtures[identity.name, "original"].content for identity in (A, W, V)
+    )
     assert dict(final.state.tags) == {
         **BASE_TAGS,
         TAG_A: A.name,
         TAG_RACE: V.name,
     }
-    for request in (PLAN.creation, PLAN.deleted_original):
+    for request in PLAN.requests:
         reconstructed = build_npm_fixture(request.fixture, repository_root=ROOT)
         assert (
             fixtures[request.fixture.version, "original"].tarball
@@ -477,7 +412,7 @@ def test_candidate_failure_safety_passes_without_upgrading_process(
         assert candidate.fixture.content in observed.contents
 
 
-def test_candidate_success_without_creation_stops_before_d(ops):
+def test_candidate_success_without_creation_cannot_complete_suite(ops):
     before = ops.captures["after-create-w"]
     ops.captures["after-candidate-v"] = replace(
         ops.captures["after-candidate-v"],
@@ -494,7 +429,6 @@ def test_candidate_success_without_creation_stops_before_d(ops):
     [
         ("after-create-a", A.name),
         ("after-create-w", W.name),
-        ("after-create-d", D.name),
     ],
 )
 def test_successful_creation_requires_actual_artifact_content(
@@ -513,7 +447,6 @@ def test_successful_creation_requires_actual_artifact_content(
     with pytest.raises(ValueError, match="delta changed: contents"):
         run_npm_suite(PLAN, ops)
     _stop_at(ops, "capture:" + label)
-    assert ops.deleted == []
 
 
 @pytest.mark.parametrize("version", [W.name, V.name])
@@ -535,7 +468,6 @@ def test_race_failure_with_creation_requires_both_versions_exact(
     with pytest.raises(ValueError, match="delta changed: contents"):
         run_npm_suite(PLAN, ops)
     _stop_at(ops, "capture:" + label)
-    assert ops.deleted == []
 
 
 def test_race_cannot_change_unrelated_tag(ops):
@@ -553,14 +485,9 @@ def test_race_cannot_change_unrelated_tag(ops):
     [
         ("duplicate-a-identical", "ambiguous"),
         ("duplicate-a-different", "definitive-success"),
-        ("duplicate-d-identical", "definitive-success"),
-        ("duplicate-d-identical", "ambiguous"),
-        ("duplicate-d-different", "definitive-success"),
-        ("duplicate-d-different", "ambiguous"),
         ("candidate-v", "ambiguous"),
         ("create-a", "not-initiated"),
         ("create-w", "definitive-non-success"),
-        ("create-d", "definitive-non-success"),
     ],
 )
 def test_unacceptable_process_stops_all_later_mutation(
@@ -570,7 +497,6 @@ def test_unacceptable_process_stops_all_later_mutation(
     with pytest.raises(ValueError, match="process classification"):
         run_npm_suite(PLAN, ops)
     _stop_at(ops, "probe:" + label)
-    assert ops.restored == []
 
 
 @pytest.mark.parametrize(
@@ -578,20 +504,46 @@ def test_unacceptable_process_stops_all_later_mutation(
     [
         "after-duplicate-a-identical",
         "after-duplicate-a-different",
-        "after-duplicate-d-identical",
-        "after-duplicate-d-different",
     ],
 )
-def test_duplicate_semantic_delta_stops_before_next_probe_or_restore(
-    ops, label
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [
+        ("latest", "delta changed: tags"),
+        ("control", "delta changed: control"),
+        ("unrelated-version", "delta changed: active_versions"),
+        ("missing-original", "incomplete selected content"),
+        ("different-original", "requires exact original content"),
+    ],
+)
+def test_duplicate_semantic_delta_stops_before_next_probe(
+    ops, fixtures, label, damage, message
 ):
-    tags = dict(ops.captures[label].state.tags)
-    tags["latest"] = A.name
-    _state(ops, label, tags=tuple(sorted(tags.items())))
-    with pytest.raises(ValueError, match="delta changed: tags"):
+    capture = ops.captures[label]
+    if damage == "latest":
+        tags = dict(capture.state.tags)
+        tags["latest"] = A.name
+        _state(ops, label, tags=tuple(sorted(tags.items())))
+    elif damage == "control":
+        _state(ops, label, control=replace(CONTROL, container_id=701))
+    elif damage == "unrelated-version":
+        _state(ops, label, active_versions=(A.name,))
+        ops.captures[label] = replace(
+            ops.captures[label], active_inventory=(A,)
+        )
+    else:
+        _state(
+            ops,
+            label,
+            contents=(
+                ()
+                if damage == "missing-original"
+                else (fixtures[A.name, "different"].content,)
+            ),
+        )
+    with pytest.raises(ValueError, match=message):
         run_npm_suite(PLAN, ops)
     _stop_at(ops, "capture:" + label)
-    assert ops.restored == []
 
 
 @pytest.mark.parametrize(
@@ -599,8 +551,6 @@ def test_duplicate_semantic_delta_stops_before_next_probe_or_restore(
     [
         ("duplicate-a-identical", "different"),
         ("duplicate-a-different", "original"),
-        ("duplicate-d-identical", "different"),
-        ("duplicate-d-different", "original"),
     ],
 )
 def test_duplicate_artifact_bytes_must_match_same_version_variant(
@@ -621,7 +571,7 @@ def test_initial_existing_version_stops_before_any_probe(
     ops, fixtures, requested
 ):
     identity = next(
-        item for item in (A, W, V, D) if item.name == requested.fixture.version
+        item for item in (A, W, V) if item.name == requested.fixture.version
     )
     ops.captures["initial"] = _capture(
         "initial", fixtures, (UNRELATED, identity), BASE_TAGS
@@ -631,7 +581,7 @@ def test_initial_existing_version_stops_before_any_probe(
     assert ops.events == ["capture:initial"]
 
 
-@pytest.mark.parametrize("tag", [TAG_A, TAG_RACE, TAG_D])
+@pytest.mark.parametrize("tag", [TAG_A, TAG_RACE])
 def test_initial_existing_tag_stops_before_any_probe(ops, tag):
     _state(
         ops, "initial", tags=tuple(sorted({**BASE_TAGS, tag: "0.0.9"}.items()))
@@ -646,9 +596,8 @@ def test_initial_existing_tag_stops_before_any_probe(ops, tag):
     [
         ("race_candidate", {"version": W.name}),
         ("race_candidate", {"target": "e" * 40}),
-        ("deleted_original", {"target": "a" * 40}),
         ("creation", {"target": "b" * 40}),
-        ("deleted_original", {"generation": "another-generation"}),
+        ("race_existing", {"generation": "another-generation"}),
         ("creation", {"variant": "different"}),
     ],
 )
@@ -670,6 +619,11 @@ def test_plan_rejects_collisions_mixed_generation_and_nonoriginals(
 def test_plan_requires_all_requests_one_package_and_no_implicit_approval(ops):
     with pytest.raises(TypeError):
         NpmSuitePlan()  # pyrefly: ignore[missing-argument]
+    with pytest.raises(TypeError, match="deleted_original"):
+        NpmSuitePlan(
+            *PLAN.requests,
+            deleted_original=PLAN.creation,  # pyrefly: ignore[unexpected-keyword]
+        )
     with pytest.raises(ValueError, match="explicit typed original"):
         replace(PLAN, creation=None)  # pyrefly: ignore[bad-argument-type]
     other = "@hcoona/another-synthetic-package"
@@ -689,196 +643,11 @@ def test_plan_requires_all_requests_one_package_and_no_implicit_approval(ops):
     ):
         run_npm_suite(PLAN, ops)
     assert ops.events == ["capture:initial"]
-    assert ops.deleted == []
-    assert ops.restored == []
-
-
-@pytest.mark.parametrize("tag", ["latest", "stable", "dangling"])
-def test_delete_side_effect_on_unrelated_tag_stops_deleted_probes(ops, tag):
-    tags = dict(ops.captures["after-delete-d"].state.tags)
-    del tags[tag]
-    _state(ops, "after-delete-d", tags=tuple(sorted(tags.items())))
-    with pytest.raises(ValueError, match="delta changed: tags"):
-        run_npm_suite(PLAN, ops)
-    _stop_at(ops, "capture:after-delete-d")
-    assert ops.deleted == [(CONTROL, D)]
-    assert ops.restored == []
-
-
-@pytest.mark.parametrize("damage", ["unrelated-version", "original-a-content"])
-def test_delete_must_preserve_other_versions_and_content(ops, fixtures, damage):
-    label = "after-delete-d"
-    captured = ops.captures[label]
-    if damage == "unrelated-version":
-        _state(
-            ops,
-            label,
-            active_versions=tuple(
-                name
-                for name in captured.state.active_versions
-                if name != UNRELATED.name
-            ),
-        )
-        ops.captures[label] = replace(
-            ops.captures[label],
-            active_inventory=(A, W, V),
-        )
-    else:
-        _state(
-            ops,
-            label,
-            contents=tuple(
-                fixtures[A.name, "different"].content
-                if item.version == A.name
-                else item
-                for item in captured.state.contents
-            ),
-        )
-    with pytest.raises(ValueError, match="delta changed:"):
-        run_npm_suite(PLAN, ops)
-    _stop_at(ops, "capture:" + label)
-    assert ops.restored == []
-
-
-@pytest.mark.parametrize("tag_target", [D.name, A.name])
-def test_delete_allows_actual_scenario_tag_readback_without_repair(
-    ops, tag_target
-):
-    for label in CAPTURE_LABELS[7:]:
-        tags = dict(ops.captures[label].state.tags)
-        tags[TAG_D] = tag_target
-        _state(ops, label, tags=tuple(sorted(tags.items())))
-
-    result = run_npm_suite(PLAN, ops)
-
-    assert ops.events == list(EXPECTED_EVENTS)
-    assert dict(result.captures[-1].state.tags)[TAG_D] == tag_target
-    assert ops.restored == [CONTEXT]
-
-
-def test_delete_success_without_deleted_readback_stops(ops):
-    before = ops.captures["after-create-d"]
-    tombstone = TombstoneState((OLD_DELETED,), D, None)
-    ops.captures["after-delete-d"] = replace(
-        ops.captures["after-delete-d"],
-        state=replace(before.state, tombstone=tombstone),
-        active_inventory=before.active_inventory,
-    )
-    with pytest.raises(ValueError, match="deleted/restorable"):
-        run_npm_suite(PLAN, ops)
-    _stop_at(ops, "capture:after-delete-d")
-
-
-def test_delete_context_must_bind_exact_captured_original_id(ops):
-    ops.context = replace(
-        CONTEXT, original_version=VersionIdentity(405, D.name)
-    )
-    with pytest.raises(ValueError, match="captured original control and ID"):
-        run_npm_suite(PLAN, ops)
-    _stop_at(ops, "delete")
-    assert ops.deleted == [(CONTROL, D)]
-
-
-def test_first_deleted_capture_cannot_refresh_original_deletion_time(ops):
-    label = "after-duplicate-d-identical"
-    observed = ops.captures[label]
-    evidence = RestorabilityEvidence(
-        CONTROL,
-        D,
-        CONTEXT.deletion_lower_bound_at + timedelta(seconds=1),
-        observed.captured_at,
-    )
-    _state(
-        ops,
-        label,
-        tombstone=TombstoneState((OLD_DELETED, D), D, evidence),
-    )
-    with pytest.raises(ValueError, match="original deletion time"):
-        run_npm_suite(PLAN, ops)
-    _stop_at(ops, "capture:" + label)
-    assert ops.restored == []
-
-
-def test_first_deleted_empty_delta_includes_unrelated_deleted_inventory(ops):
-    label = "after-duplicate-d-identical"
-    captured = ops.captures[label]
-    tombstone = captured.state.tombstone
-    assert tombstone is not None
-    _state(
-        ops,
-        label,
-        tombstone=replace(tombstone, deleted_versions=(D,)),
-    )
-    with pytest.raises(ValueError, match="delta changed: tombstone"):
-        run_npm_suite(PLAN, ops)
-    _stop_at(ops, "capture:" + label)
-    assert "probe:duplicate-d-different" not in ops.events
-    assert ops.restored == []
-
-
-def test_premature_restoration_blocks_second_deleted_probe(ops):
-    label = "after-duplicate-d-identical"
-    restored = ops.captures["after-restore-d"]
-    ops.captures[label] = replace(
-        ops.captures[label],
-        state=restored.state,
-        active_inventory=restored.active_inventory,
-    )
-    with pytest.raises(
-        ValueError, match="documented-restorable deleted target"
-    ):
-        run_npm_suite(PLAN, ops)
-    _stop_at(ops, "capture:" + label)
-    assert ops.restored == []
-
-
-@pytest.mark.parametrize(
-    "damage", ["wrong-id", "wrong-content", "still-deleted"]
-)
-def test_restore_readback_rejects_wrong_original_without_second_restore(
-    ops, fixtures, damage
-):
-    label = "after-restore-d"
-    captured = ops.captures[label]
-    if damage == "wrong-id":
-        wrong_id = VersionIdentity(405, D.name)
-        _state(
-            ops, label, tombstone=TombstoneState((OLD_DELETED,), wrong_id, None)
-        )
-        ops.captures[label] = replace(
-            ops.captures[label],
-            active_inventory=(UNRELATED, A, W, V, wrong_id),
-        )
-    elif damage == "wrong-content":
-        _state(
-            ops,
-            label,
-            contents=tuple(
-                fixtures[D.name, "different"].content
-                if item.version == D.name
-                else item
-                for item in captured.state.contents
-            ),
-        )
-    else:
-        ops.captures[label] = ops.captures["after-duplicate-d-different"]
-
-    with pytest.raises(ValueError, match=r"identity mismatch|delta changed"):
-        run_npm_suite(PLAN, ops)
-    assert ops.events == list(EXPECTED_EVENTS)
-    assert ops.restored == [CONTEXT]
 
 
 @pytest.mark.parametrize(
     "event",
-    [
-        "probe:duplicate-a-identical",
-        "delete",
-        "capture:after-delete-d",
-        "capture:after-duplicate-d-identical",
-        "restore",
-        "capture:after-restore-d",
-    ],
+    EXPECTED_EVENTS,
 )
 def test_operation_exception_preserves_audit_and_never_mutates_again(
     ops, event
@@ -889,7 +658,7 @@ def test_operation_exception_preserves_audit_and_never_mutates_again(
         run_npm_suite(PLAN, ops)
     assert raised.value is error
     _stop_at(ops, event)
-    assert ops.events.count("restore") <= 1
+    assert len(ops.events) == len(set(ops.events))
 
 
 @pytest.mark.parametrize("damage", ["request", "run", "artifact"])
