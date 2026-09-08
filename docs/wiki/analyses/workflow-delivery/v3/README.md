@@ -15,10 +15,12 @@ exact merged-tree verification, and post-merge checks complete.
 
 This revision uses strict Governance v2 with state-only blocked activation and
 `live_enabled: false`. The native-acceptance generation registry remains empty.
-No native profile acceptance, activation, package access change, deployment, or
-package mutation has occurred. Retained-ref proof and obsolete-Environment
-cleanup are complete. Inspect current Git and operational state through the
-handoff before continuing.
+The current native profile is rejected by an observed deleted-version
+counterexample. Disposable package mutations occurred, but no passing native
+acceptance, activation, package access change, Approval deployment, or normal
+Live dispatch occurred. Retained-ref proof and obsolete-Environment cleanup
+are complete. Inspect current Git and operational state through the handoff
+before continuing.
 
 Normal Live remains activation-blocked until fresh native acceptance for the
 exact Destination Operation Profile is installed through the Activation PR. The
@@ -78,21 +80,26 @@ chronology is not current architecture.
   Known reach includes production package `hexo-renderer-asciidoc` and
   disposable smoke packages. This accepted repository-principal blast radius
   is neither package isolation nor an exhaustive inventory.
-- Package access remains unchanged. One authorized native probe created a
-  disposable scenario version and tag. No normal Live dispatch, Approval
-  deployment, deletion, or restoration has occurred.
+- Package access remains unchanged. Authorized native probes created
+  disposable versions and tags, and one original scenario version was
+  deleted. A duplicate publish created a new same-version object; the original
+  remains deleted. No normal Live dispatch, Approval deployment, or explicit
+  restoration occurred.
 
 ## Delivery Boundary
 
-Native tooling is protected-delivered and the disposable package is approved.
-The first real suite stopped after creating its first scenario version: the
-shared reader omitted GitHub's `pkg-npm.githubusercontent.com` storage host.
-The exact-host correction must be delivered before further mutation. The
-partial generation is not accepted and must not be silently resumed.
+Native tooling and the exact storage-origin correction are protected-delivered.
+The subsequent real suite rejected the profile because publishing an
+identical deleted version succeeded and created a replacement object instead
+of leaving the complete state unchanged. This violates the required native
+primitive even though the replacement bytes match.
 
-A complete passing real suite and verified restoration must precede ready
-Governance v2 activation and the single auditable real dispatch. Probe
-artifacts and synthetic scenarios alone do not admit a native generation.
+Normal Live cannot safely be enabled under this profile. Preserve the
+counterexample and original tombstone; do not retry, automatically repair,
+or admit either incomplete generation. An explicitly approved
+requirements/design decision must resolve the missing destination guarantee
+before further mutation. Complete passing acceptance and verified restoration
+remain prerequisites for activation and the single real dispatch.
 
 The [operator runbook](./agent-handoff.md#local-native-operator) describes the
 clean-checkout, credential, approval, and evidence-retention prerequisites.

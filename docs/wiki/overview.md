@@ -118,26 +118,25 @@ state-only blocked activation and `live_enabled: false`.
   `20895037877`, was deleted after protected delivery, retained-ref
   compatibility, and exact no-authority-reference proof. It had no deployments;
   the retained Approval Environment and all other Environments were unchanged.
-- Package access is unchanged. One authorized native probe created a
-  disposable scenario version and tag. No normal Live dispatch, Approval
-  deployment, deletion, or restoration has occurred.
+- Package access is unchanged. Authorized native probes and one exact
+  disposable-version deletion occurred. The original is still deleted while
+  a new same-version object is active. No normal Live dispatch, Approval
+  deployment, or explicit restoration occurred.
 
 ## Delivery Boundary
 
-The disabled runtime and native tooling are protected-delivered, and
-obsolete-Environment cleanup is complete. The disposable package and bounded
-administration are approved. The first native suite stopped after one
-creation because the shared reader omitted GitHub's actual npm storage host.
-The exact-host correction requires protected delivery; the partial generation
-is not accepted and must not be silently resumed.
+The disabled runtime, native tooling, and exact storage-origin correction are
+protected-delivered; obsolete-Environment cleanup is complete. The subsequent
+native suite rejected the current profile: an identical deleted-version
+publish succeeded, creating a replacement while the original stayed deleted.
+The different-byte deleted probe and explicit restoration were not attempted.
 
-The remaining gates deliver the correction, run a complete native suite,
-restore and verify its
-original disposable object, install fresh ready Governance evidence including repository
-retention of at least 45 days, merge one small Activation PR, read back
-protected state, dispatch once through the run-ID-returning API, and verify the
-exact run. There is no Preparation PR, `main` freeze, activation SHA/tag, or
-blind redispatch after an ambiguous response.
+This counterexample blocks activation under the existing requirements.
+Preserve the audit and original tombstone; do not retry or supply an
+application workaround for the missing destination guarantee. A new explicit
+requirements/design decision is necessary before further mutation. The
+existing complete native acceptance, original-object restoration, ready
+Governance, protected Activation PR, and single-dispatch gates are not waived.
 
 ## Historical Record Rule
 
