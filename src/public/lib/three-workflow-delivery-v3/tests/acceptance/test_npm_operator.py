@@ -19,13 +19,10 @@ from three_workflow_delivery_v3.acceptance import (
 from three_workflow_delivery_v3.acceptance.native_npm import (
     AcceptanceState,
     PackageControl,
-    RestorabilityEvidence,
-    TombstoneState,
     VersionIdentity,
 )
 from three_workflow_delivery_v3.acceptance.npm_capture import (
     NpmStateCapture,
-    OriginalDeletionContext,
 )
 from three_workflow_delivery_v3.acceptance.npm_fixture import (
     NpmFixtureSpec,
@@ -83,10 +80,10 @@ PLAN = NpmSuitePlan(
             ),
             PRECONDITIONS,
         )
-        for suffix, target in zip("awvd", "abbd", strict=True)
+        for suffix, target in zip("awv", "abb", strict=True)
     )
 )
-RUN_IDS = (91817, 20003, 77447, 40307, 33289, 85009, 66293, 50923)
+RUN_IDS = (91817, 20003, 77447, 40307, 33289)
 
 
 def _success(output=b""):
@@ -117,14 +114,11 @@ class ScriptedGh:
         self.calls = []
         self.active = {}
         self.tags = {}
-        self.deleted = {}
         self.runs = {}
         self.latest = 0
         self.fault = ""
         self.main_reads = 0
         self.capture_reads = 0
-        self.restores = 0
-        self.delete_attempts = 0
 
     def run(self, argv, *, cwd, environment, timeout, output_limit):  # noqa: PLR0911
         """Never delegate any unknown argv to a real process."""
@@ -210,7 +204,7 @@ class ScriptedGh:
         )
         return self._api(argv[5], argv[10], argv[11:])
 
-    def _api(self, method, route, options):  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def _api(self, method, route, options):  # noqa: C901, PLR0911, PLR0912
         if route == "/user":
             assert method == "GET"
             assert not options
@@ -258,7 +252,7 @@ class ScriptedGh:
             requested = parse_request(request_bytes)
             self.latest = RUN_IDS[len(self.runs)]
             version = requested.fixture.version
-            duplicate = version in self.active or version in self.deleted
+            duplicate = version in self.active
             if not duplicate:
                 self.active[version] = self.fixtures[
                     version, "original"
@@ -318,53 +312,6 @@ class ScriptedGh:
             assert method == "GET"
             assert not options
             return _success(self._artifact())
-        d_version = PLAN.deleted_original.fixture.version
-        d_id = 404
-        exact = (
-            "/users/hcoona/packages/npm/synthetic-local-operator"
-            f"/versions/{d_id}"
-        )
-        if method == "DELETE":
-            assert route == exact
-            assert not options
-            self.delete_attempts += 1
-            context = json.loads(
-                (self.audit / "delete-d/original-context.json").read_bytes()
-            )
-            assert context["original_control"] == CONTROL.to_document()
-            assert context["original_version"] == {
-                "version_id": d_id,
-                "name": d_version,
-            }
-            assert context["deletion_lower_bound_at"] == NOW.isoformat()
-            self.deleted[d_version] = self.active.pop(d_version)
-            self.tags.pop("buddy-sha-" + PLAN.deleted_original.fixture.target)
-            if self.fault == "delete-nonzero":
-                return NpmProcessOutcome(
-                    "definitive-non-success", TOKEN.encode(), returncode=1
-                )
-            if self.fault == "delete-timeout":
-                return NpmProcessOutcome("ambiguous", TOKEN.encode())
-            return _success(
-                b"unexpected" if self.fault == "delete-body" else b""
-            )
-        if method == "POST":
-            assert route == exact + "/restore"
-            assert not options
-            self.restores += 1
-            assert (
-                self.audit / "restore-d/original-context.json"
-            ).read_bytes() == (
-                self.audit / "delete-d/original-context.json"
-            ).read_bytes()
-            if self.fault == "restore-nonzero":
-                return NpmProcessOutcome(
-                    "definitive-non-success", TOKEN.encode(), returncode=1
-                )
-            self.active[d_version] = self.deleted.pop(d_version)
-            if self.fault == "restore-body":
-                return _success(TOKEN.encode())
-            return _success()
         pytest.fail(f"unrecognized synthetic command: {method} {route}")
 
     def _artifact(self):
@@ -496,50 +443,38 @@ class ScriptedGh:
         )
         assert json.loads(raw) == {"SYNTHETIC": "capture-adapter-read"}
         self.capture_reads += 1
-        context = kwargs["original_deletion"]
+        assert set(kwargs) == {
+            "approved_disposable_package_preconditions",
+            "scenarios",
+            "token",
+            "repository_root",
+            "audit_directory",
+            "gh_runner",
+            "clock",
+        }
         identities = {
             request.fixture.version: VersionIdentity(
                 index * 101, request.fixture.version
             )
             for index, request in enumerate(PLAN.requests, 1)
         }
-        tombstone = None
-        if context is not None:
-            assert (
-                context.original_version
-                == identities[PLAN.deleted_original.fixture.version]
-            )
-            tombstone = TombstoneState(
-                tuple(identities[name] for name in sorted(self.deleted)),
-                context.original_version,
-                RestorabilityEvidence(
-                    CONTROL,
-                    context.original_version,
-                    context.deletion_lower_bound_at,
-                    NOW,
-                )
-                if self.deleted
-                else None,
-            )
         state = AcceptanceState(
             CONTROL,
             tuple(sorted(self.active)),
             tuple(sorted(self.tags.items())),
             tuple(self.active[name] for name in sorted(self.active)),
-            tombstone,
         )
         directory = kwargs["audit_directory"]
         directory.mkdir(mode=0o700)
         (directory / "SYNTHETIC-state.json").write_bytes(
             canonicalize(state.to_document())
         )
-        if self.fault == "deleted-capture" and context is not None:
-            message = "synthetic post-delete capture failed"
+        if self.fault == "capture" and self.capture_reads == 2:
+            message = "synthetic post-probe capture failed"
             raise ValueError(message)
         return NpmStateCapture(
             state,
             NOW,
-            context,
             (),
             tuple(identities[name] for name in sorted(self.active)),
         )
@@ -577,7 +512,6 @@ def case(tmp_path, monkeypatch, fixtures):
         "repository_root": checkout,
         "audit_directory": audit,
         "authorized_disposable": True,
-        "authorized_delete_restore": True,
         "runner": script,
         "clock": lambda: NOW,
     }
@@ -593,28 +527,54 @@ def test_complete_synthetic_backend_uses_exact_runs_and_retains_bound_manifest(
     assert canonicalize(manifest) == path.read_bytes()
     assert digest == "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
     assert manifest["schema"] == (
-        "workflow-delivery-v3/native-npm-suite-evidence/v1"
+        "workflow-delivery-v3/native-npm-suite-evidence/v2"
     )
+    assert set(manifest) == {
+        "schema",
+        "scenario_verdict",
+        "native_acceptance_suite_version",
+        "destination_operation_profile_id",
+        "destination_operation_profile_digest",
+        "github_api_version",
+        "lower_layer_contract_revision",
+        "lower_layer_contract_sources",
+        "disposable_package_preconditions",
+        "generation",
+        "tooling_sha",
+        "captured_at",
+        "probes",
+        "files",
+        "admission",
+    }
     assert manifest["scenario_verdict"] == "passed"
     profile = github_packages_destination_operation_profile()
-    assert manifest["destination_operation_profile_id"] == profile.profile_id
+    assert (
+        manifest["destination_operation_profile_id"]
+        == profile.profile_id
+        == "npm/github-packages-hcoona-three-standard-publish-v1"
+    )
     assert (
         manifest["destination_operation_profile_digest"]
         == profile.profile_digest
+        == (
+            "sha256:"
+            "e36373d3f7230f3186f76e7aba9e8bebcec6c7259fec725d6932d874f2b849b1"
+        )
     )
     assert (
         manifest["native_acceptance_suite_version"]
         == npm_operator.NPM_SUITE_VERSION
+        == "workflow-delivery-v3/native-npm-suite/v2"
     )
     assert manifest["github_api_version"] == "2026-03-10"
     assert (
         manifest["lower_layer_contract_revision"]
         == npm_operator.LOWER_LAYER_CONTRACT_REVISION
-        == "wdv3/github-packages-npm-documented-contract/v1"
+        == "wdv3/github-packages-npm-documented-contract/v2"
     )
     assert (
         "https://docs.github.com/en/rest/packages/packages"
-        "#restore-package-version-for-a-user"
+        "#list-package-versions-for-a-package-owned-by-a-user"
         in manifest["lower_layer_contract_sources"]
     )
     assert (
@@ -624,7 +584,6 @@ def test_complete_synthetic_backend_uses_exact_runs_and_retains_bound_manifest(
     assert manifest["generation"] == "synthetic"
     assert manifest["tooling_sha"] == SHA
     assert manifest["captured_at"] == NOW.isoformat()
-    assert manifest["original_restoration_verified"] is True
     assert [probe["run_id"] for probe in manifest["probes"]] == list(RUN_IDS)
     assert [probe["classification"] for probe in manifest["probes"]] == [
         "definitive-success",
@@ -632,15 +591,30 @@ def test_complete_synthetic_backend_uses_exact_runs_and_retains_bound_manifest(
         "definitive-non-success",
         "definitive-success",
         "definitive-success",
-        "definitive-success",
-        "definitive-non-success",
-        "definitive-non-success",
     ]
-    assert script.capture_reads == 11
-    assert script.delete_attempts == script.restores == 1
-    assert script.main_reads == 9
-    assert not script.deleted
-    assert len(script.active) == 4
+    assert script.capture_reads == 6
+    assert script.main_reads == 6
+    assert set(script.active) == {
+        "0.0.0-native.synthetic.a",
+        "0.0.0-native.synthetic.w",
+        "0.0.0-native.synthetic.v",
+    }
+    assert script.tags == {
+        "buddy-sha-" + "a" * 40: "0.0.0-native.synthetic.a",
+        "buddy-sha-" + "b" * 40: "0.0.0-native.synthetic.v",
+    }
+    mutations = [
+        call
+        for call in script.calls
+        if call[:2] == ("gh", "api") and call[5] != "GET"
+    ]
+    assert len(mutations) == 5
+    assert all(
+        call[5] == "POST" and call[10] == WORKFLOW_API + "/dispatches"
+        for call in mutations
+    )
+    for route in ("delete_exact", "restore_exact"):
+        assert not hasattr(operator, route)
     assert case["audit_directory"].stat().st_mode & 0o777 == 0o700
     retained = {item["filename"] for item in manifest["files"]}
     actual = {
@@ -695,12 +669,15 @@ def test_successful_json_with_local_secret_is_rejected_without_retention(
             assert b"EXISTING_UNCHANGED" not in body
 
 
-@pytest.mark.parametrize(
-    "flag", ["authorized_disposable", "authorized_delete_restore"]
-)
-def test_missing_authorization_stops_before_any_calls_or_files(case, flag):
-    case[flag] = False
+def test_missing_authorization_stops_before_any_calls_or_files(case):
+    case["authorized_disposable"] = False
     with pytest.raises(ValueError, match="explicit prior"):
+        npm_operator.OperatorLocalNpmOperations(**case)
+    assert case["runner"].calls == []
+    assert not case["audit_directory"].exists()
+    case["authorized_disposable"] = True
+    case["authorized_delete_restore"] = True
+    with pytest.raises(TypeError, match="authorized_delete_restore"):
         npm_operator.OperatorLocalNpmOperations(**case)
     assert case["runner"].calls == []
     assert not case["audit_directory"].exists()
@@ -731,7 +708,6 @@ def test_failed_preflight_never_dispatches_or_reads_credentials(
     with pytest.raises(ValueError, match=error):
         npm_operator.OperatorLocalNpmOperations(**case)
     assert not case["runner"].runs
-    assert case["runner"].delete_attempts == case["runner"].restores == 0
     assert not any(
         call[:3] == ("gh", "auth", "token") for call in case["runner"].calls
     )
@@ -743,7 +719,6 @@ def test_main_moving_between_dispatches_stops_without_second_mutation(case):
     with pytest.raises(ValueError, match="protected main moved"):
         operator.execute()
     assert list(case["runner"].runs) == [RUN_IDS[0]]
-    assert case["runner"].restores == 0
     assert not (case["audit_directory"] / "suite-evidence.json").exists()
 
 
@@ -775,7 +750,6 @@ def test_ambiguous_dispatch_or_artifact_never_scans_history_or_retries(
     ):
         operator.execute()
     assert list(case["runner"].runs) == [RUN_IDS[0]]
-    assert case["runner"].restores == 0
     assert not (case["audit_directory"] / "suite-evidence.json").exists()
     assert not any(
         call[:3] == ("gh", "run", "download") for call in case["runner"].calls
@@ -785,34 +759,18 @@ def test_ambiguous_dispatch_or_artifact_never_scans_history_or_retries(
             assert TOKEN.encode() not in path.read_bytes()
 
 
-@pytest.mark.parametrize(
-    "fault",
-    [
-        "delete-nonzero",
-        "delete-timeout",
-        "delete-body",
-        "deleted-capture",
-        "restore-nonzero",
-        "restore-body",
-    ],
-)
-def test_admin_failure_preserves_context_without_repair_or_completed_manifest(
-    case, fault
-):
-    case["runner"].fault = fault
+def test_post_probe_capture_failure_preserves_audit_without_repair(case):
+    case["runner"].fault = "capture"
     operator = npm_operator.OperatorLocalNpmOperations(**case)
     with pytest.raises(
         ValueError,
-        match=(
-            r"operator command failed|unexpected mutation response body|"
-            r"synthetic post-delete capture failed"
-        ),
+        match="synthetic post-probe capture failed",
     ):
         operator.execute()
-    script = case["runner"]
-    assert script.delete_attempts == 1
-    assert script.restores == (1 if fault.startswith("restore-") else 0)
-    assert (case["audit_directory"] / "delete-d/original-context.json").exists()
+    assert list(case["runner"].runs) == [RUN_IDS[0]]
+    assert (
+        case["audit_directory"] / "probe-create-a/bundle/evidence/result.json"
+    ).exists()
     assert not (case["audit_directory"] / "suite-evidence.json").exists()
     for path in case["audit_directory"].rglob("*"):
         if path.is_file():
@@ -838,31 +796,10 @@ def test_credential_wait_or_evidence_failure_stops_without_completion(
     with pytest.raises(ValueError, match=error):
         operator.execute()
     assert len(case["runner"].runs) == dispatches
-    assert case["runner"].restores == case["runner"].delete_attempts == 0
     assert not (case["audit_directory"] / "suite-evidence.json").exists()
     for path in case["audit_directory"].rglob("*"):
         if path.is_file():
             assert TOKEN.encode() not in path.read_bytes()
-
-
-def test_delete_rejects_wrong_identity_and_restore_rejects_foreign_context(
-    case,
-):
-    operator = npm_operator.OperatorLocalNpmOperations(**case)
-    operator.capture("initial", plan=PLAN)
-    with pytest.raises(ValueError, match="captured original"):
-        operator.delete_exact(
-            CONTROL, VersionIdentity(404, PLAN.deleted_original.fixture.version)
-        )
-    with pytest.raises(ValueError, match="original deletion context"):
-        operator.restore_exact(
-            OriginalDeletionContext(
-                CONTROL,
-                VersionIdentity(404, PLAN.deleted_original.fixture.version),
-                NOW,
-            )
-        )
-    assert case["runner"].delete_attempts == case["runner"].restores == 0
 
 
 def test_fresh_audit_and_operation_names_prevent_reinvocation(case):
@@ -897,7 +834,7 @@ def test_generation_requires_official_semver_without_sanitizing(
                     version=f"0.0.0-native.{generation}.{suffix}",
                 ),
             )
-            for item, suffix in zip(PLAN.requests, "awvd", strict=True)
+            for item, suffix in zip(PLAN.requests, "awv", strict=True)
         )
     )
     with pytest.raises(ValueError, match="official npm"):
@@ -924,8 +861,11 @@ def test_probe_and_suite_help_preserve_authorization_boundary(
     assert result.value.code == 0
     help_text = capsys.readouterr().out
     assert "--authorized-disposable" in help_text
-    assert "--authorized-delete-restore" in help_text
-    assert "flags do not" in help_text
+    assert "--authorized-delete-restore" not in help_text
+    assert "--deleted-target" not in help_text
+    assert "--creation-target" in help_text
+    assert "--race-target" in help_text
+    assert "it does not" in help_text
     assert "grant approval" in help_text
     assert "production dependency" in help_text
 
@@ -936,7 +876,6 @@ def test_cli_has_no_package_generation_or_target_defaults(case, capsys):
             [
                 "suite",
                 "--authorized-disposable",
-                "--authorized-delete-restore",
             ]
         )
     assert result.value.code == 2
@@ -965,8 +904,6 @@ def test_cli_explicit_plan_and_success_output_only(case, monkeypatch, capsys):
         "a" * 40,
         "--race-target",
         "b" * 40,
-        "--deleted-target",
-        "d" * 40,
         "--repository-root",
         str(case["repository_root"]),
         "--audit-directory",
@@ -976,13 +913,25 @@ def test_cli_explicit_plan_and_success_output_only(case, monkeypatch, capsys):
         npm_operator.main(arguments)
     assert not script.calls
     assert capsys.readouterr().out == ""
+    for retired in (
+        ["--authorized-delete-restore"],
+        ["--deleted-target", "d" * 40],
+    ):
+        with pytest.raises(SystemExit) as result:
+            npm_operator.main([*arguments, "--authorized-disposable", *retired])
+        assert result.value.code == 2
+        output = capsys.readouterr()
+        assert output.out == ""
+        assert "unrecognized arguments: " + retired[0] in output.err
+        assert not script.calls
+        assert not case["audit_directory"].exists()
     operator_class = npm_operator.OperatorLocalNpmOperations
     monkeypatch.setattr(
         npm_operator,
         "OperatorLocalNpmOperations",
         lambda **kwargs: operator_class(**kwargs, clock=lambda: NOW),
     )
-    arguments.extend(["--authorized-disposable", "--authorized-delete-restore"])
+    arguments.append("--authorized-disposable")
     assert npm_operator.main(arguments) == 0
     output = json.loads(capsys.readouterr().out)
     path = Path(output["path"])

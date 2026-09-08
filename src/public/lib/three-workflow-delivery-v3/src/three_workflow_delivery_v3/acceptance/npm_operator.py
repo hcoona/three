@@ -1,14 +1,14 @@
-"""Acceptance-only local administrator; never normal Live or approval.
+"""Acceptance-only local operator; never normal Live or approval.
 
 The operator supplies prior exact disposable approval and existing classic gh
-authentication with the documented package read/delete/restore permissions.
+authentication for package reads, workflow dispatch and evidence collection.
 No credential, grant, package isolation or independent approval is created.
 Publishing remains in the trusted Actions job with its actual GITHUB_TOKEN.
-The eight dispatches are acceptance probes only; the separate single final
+The five dispatches are acceptance probes only; the separate single final
 normal-Live dispatch is never part of this operator.
 
 Every command is attempted once. Failures retain a private partial audit, not
-a completed manifest, and never trigger restoration, retry or repair. Retain
+a completed manifest, and never trigger retry or repair. Retain
 this local audit beyond Actions' 45 days when needed. A completed digest is
 only candidate Governance evidence after independent native operator audit;
 synthetic execution cannot establish origin and nothing installs a generation.
@@ -25,12 +25,10 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
-from urllib.parse import quote
 
 from three_workflow_delivery_v3.acceptance.npm_capture import (
     GITHUB_API_VERSION,
     NpmStateCapture,
-    OriginalDeletionContext,
     capture_npm_state,
 )
 from three_workflow_delivery_v3.acceptance.npm_evidence import (
@@ -64,24 +62,21 @@ from three_workflow_delivery_v3.release.eligibility import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from three_workflow_delivery_v3.acceptance.native_npm import (
-        PackageControl,
-        VersionIdentity,
-    )
     from three_workflow_delivery_v3.adapters.npm_process import NpmProcessRunner
     from three_workflow_delivery_v3.canonical import JsonValue
 
-NPM_SUITE_VERSION = "workflow-delivery-v3/native-npm-suite/v1"
+NPM_SUITE_VERSION = "workflow-delivery-v3/native-npm-suite/v2"
 LOWER_LAYER_CONTRACT_REVISION = (
-    "wdv3/github-packages-npm-documented-contract/v1"
+    "wdv3/github-packages-npm-documented-contract/v2"
 )
 # Suite-owned interpretation of the official contracts below, reviewed
-# 2026-09-07. Not a GitHub-issued revision or an API restorability flag.
+# 2026-09-08. Not a GitHub-issued revision.
 # The requested GitHub REST API version is recorded separately.
 _CONTRACT_SOURCES = (
     "https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event",
-    "https://docs.github.com/en/rest/packages/packages#delete-package-version-for-a-user",
-    "https://docs.github.com/en/rest/packages/packages#restore-package-version-for-a-user",
+    "https://docs.github.com/en/rest/packages/packages#get-a-package-for-a-user",
+    "https://docs.github.com/en/rest/packages/packages#list-package-versions-for-a-package-owned-by-a-user",
+    "https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry",
     "https://cli.github.com/manual/gh_run_download",
 )
 _REPOSITORY = "hcoona/three"
@@ -111,14 +106,14 @@ def _positive_id(value: JsonValue) -> int:
     return value
 
 
-def _authorize(*, disposable: bool, delete_restore: bool) -> None:
+def _authorize(*, disposable: bool) -> None:
     _require(
-        disposable is True and delete_restore is True,
-        "both explicit prior disposable and delete/restore approvals required",
+        disposable is True,
+        "explicit prior disposable approval required",
     )
     _require(
         os.environ.get("GITHUB_ACTIONS", "").lower() != "true",
-        "suite administration is operator-local only, never GitHub Actions",
+        "suite is operator-local only, never GitHub Actions",
     )
 
 
@@ -164,15 +159,11 @@ class OperatorLocalNpmOperations:
         repository_root: Path,
         audit_directory: Path,
         authorized_disposable: bool = False,
-        authorized_delete_restore: bool = False,
         runner: NpmProcessRunner | None = None,
         clock: Callable[[], datetime] = _now,
     ) -> None:
         """Perform read-only preflight before allowing any suite operation."""
-        _authorize(
-            disposable=authorized_disposable,
-            delete_restore=authorized_delete_restore,
-        )
+        _authorize(disposable=authorized_disposable)
         _require(type(plan) is NpmSuitePlan, "operator requires one suite plan")
         _require(
             re.fullmatch(r"[0-9a-f]{40}", expected_tooling_sha) is not None,
@@ -212,9 +203,6 @@ class OperatorLocalNpmOperations:
             }
         }
         self.environment["GH_PROMPT_DISABLED"] = "1"
-        self._last_capture: NpmStateCapture | None = None
-        self._original_control: PackageControl | None = None
-        self._deletion: OriginalDeletionContext | None = None
         self._preflight()
 
     def command(  # noqa: PLR0913
@@ -223,7 +211,7 @@ class OperatorLocalNpmOperations:
         name: str,
         argv: tuple[str, ...],
         *,
-        category: Literal["json", "empty", "text", "ignored"] = "json",
+        category: Literal["json", "text", "ignored"] = "json",
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         output_limit: int = DEFAULT_METADATA_LIMIT_BYTES,
     ) -> bytes:
@@ -246,12 +234,7 @@ class OperatorLocalNpmOperations:
             for key in ("GH_TOKEN", "GITHUB_TOKEN")
             if self.environment.get(key)
         )
-        retained = (
-            successful
-            and category != "ignored"
-            and not secret_output
-            and (category != "empty" or outcome.output == b"")
-        )
+        retained = successful and category != "ignored" and not secret_output
         _write(
             directory / f"{name}.process.json",
             {
@@ -271,9 +254,6 @@ class OperatorLocalNpmOperations:
         )
         if category == "json":
             parse_json_strict(outcome.output)
-        elif category == "empty":
-            # gh exit success plus empty body, NOT an observed HTTP status.
-            _require(outcome.output == b"", "unexpected mutation response body")
         return outcome.output
 
     def _api(
@@ -283,7 +263,6 @@ class OperatorLocalNpmOperations:
         route: str,
         *options: str,
         method: str = "GET",
-        category: Literal["json", "empty"] = "json",
     ) -> bytes:
         return self.command(
             directory,
@@ -302,7 +281,6 @@ class OperatorLocalNpmOperations:
                 route,
                 *options,
             ),
-            category=category,
         )
 
     def _main(self, directory: Path) -> None:
@@ -333,7 +311,7 @@ class OperatorLocalNpmOperations:
             category="text",
         )
         _require(clean == b"", "local tracked/untracked worktree must be clean")
-        for suffix, request in zip("awvd", self.plan.requests, strict=True):
+        for suffix, request in zip("awv", self.plan.requests, strict=True):
             spec = request.fixture
             _require(
                 spec.package.startswith("@hcoona/")
@@ -380,13 +358,9 @@ class OperatorLocalNpmOperations:
         label: str,
         *,
         plan: NpmSuitePlan,
-        original_deletion: OriginalDeletionContext | None = None,
     ) -> NpmStateCapture:
-        """Read all four selectors using an ephemeral local gh read token."""
+        """Read all three selectors using an ephemeral local gh read token."""
         _require(plan == self.plan, "capture plan mismatch")
-        _require(
-            original_deletion == self._deletion, "deletion context mismatch"
-        )
         directory = self._step("capture-" + label)
         # Secret-only: no output file, diagnostic or command log.
         outcome = self.runner.run(
@@ -406,7 +380,7 @@ class OperatorLocalNpmOperations:
             bool(token) and not any(c.isspace() for c in token),
             "invalid local gh credential response",
         )
-        captured = capture_npm_state(
+        return capture_npm_state(
             approved_disposable_package_preconditions=(
                 self.plan.creation.disposable_package_preconditions
             ),
@@ -415,13 +389,8 @@ class OperatorLocalNpmOperations:
             repository_root=self.root,
             audit_directory=directory / "state",
             gh_runner=_CaptureGhRunner(self, directory),
-            original_deletion=original_deletion,
             clock=self.clock,
         )
-        if self._original_control is None:
-            self._original_control = captured.state.control
-        self._last_capture = captured
-        return captured
 
     def probe(self, label: str, request: NpmProbeRequest) -> NpmProbeEvidence:
         """Dispatch once, wait for that run, then read its unique artifact."""
@@ -554,66 +523,8 @@ class OperatorLocalNpmOperations:
             repository_root=self.root,
         )
 
-    def _version_route(self, context: OriginalDeletionContext) -> str:
-        package = quote(
-            self.plan.creation.fixture.package.removeprefix("@hcoona/"), safe=""
-        )
-        return (
-            f"/users/hcoona/packages/npm/{package}/versions/"
-            f"{context.original_version.version_id}"
-        )
-
-    def delete_exact(
-        self,
-        original_control: PackageControl,
-        original: VersionIdentity,
-    ) -> OriginalDeletionContext:
-        """Persist the original context before one exact USER version delete."""
-        captured = self._last_capture
-        _require(
-            captured is not None
-            and original_control
-            == captured.state.control
-            == self._original_control
-            and original_control.full_scoped_name
-            == self.plan.creation.fixture.package
-            and original in captured.active_inventory
-            and original.name == self.plan.deleted_original.fixture.version,
-            "delete must bind captured original control and planned D identity",
-        )
-        directory = self._step("delete-d")
-        context = OriginalDeletionContext(
-            original_control, original, self.clock()
-        )
-        _write(directory / "original-context.json", context.to_document())
-        self._api(
-            directory,
-            "delete",
-            self._version_route(context),
-            method="DELETE",
-            category="empty",
-        )
-        self._deletion = context
-        return context
-
-    def restore_exact(self, context: OriginalDeletionContext) -> None:
-        """Restore only the original captured ID, never compensate a failure."""
-        _require(
-            self._deletion is not None and context == self._deletion,
-            "restore requires this operator's original deletion context",
-        )
-        directory = self._step("restore-d")
-        _write(directory / "original-context.json", context.to_document())
-        self._api(
-            directory,
-            "restore",
-            self._version_route(context) + "/restore",
-            method="POST",
-            category="empty",
-        )
-
     def execute(self) -> tuple[Path, str]:
-        """Write completion only after all gates and restored readback."""
+        """Write completion after five probes and all active-state gates."""
         result = run_npm_suite(self.plan, self)
         document = self._manifest(result)
         pending = self.audit / ".suite-evidence.pending"
@@ -639,7 +550,7 @@ class OperatorLocalNpmOperations:
                     }
                 )
         return {
-            "schema": "workflow-delivery-v3/native-npm-suite-evidence/v1",
+            "schema": "workflow-delivery-v3/native-npm-suite-evidence/v2",
             "scenario_verdict": "passed",
             "native_acceptance_suite_version": NPM_SUITE_VERSION,
             "destination_operation_profile_id": profile.profile_id,
@@ -653,8 +564,6 @@ class OperatorLocalNpmOperations:
             "generation": self.plan.creation.fixture.generation,
             "tooling_sha": self.tooling_sha,
             "captured_at": result.captures[-1].captured_at.isoformat(),
-            "original_restoration_verified": True,
-            "original_deletion": result.original_deletion.to_document(),
             "probes": [
                 {
                     "run_id": item.run_id,
@@ -680,8 +589,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         description=(
             "Requires prior approval of an exact preexisting, "
             "operator-controlled "
-            "disposable container with no production dependency. Both flags "
-            "assert those facts and delete/restore authorization; flags do not "
+            "disposable container with no production dependency. The flag "
+            "acknowledges prior five-probe authorization; it does not "
             "grant approval. Local classic gh authentication stays local."
         ),
     )
@@ -691,23 +600,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "tooling-sha",
         "creation-target",
         "race-target",
-        "deleted-target",
     ):
         suite.add_argument("--" + name, required=True)
     for name in ("audit-directory", "repository-root"):
         suite.add_argument("--" + name, type=Path, required=True)
-    for name in ("authorized-disposable", "authorized-delete-restore"):
-        suite.add_argument(
-            "--" + name,
-            action="store_true",
-            default=False,
-            help="Acknowledge prior explicit approval; grants nothing.",
-        )
-    arguments = parser.parse_args(argv)
-    _authorize(
-        disposable=arguments.authorized_disposable,
-        delete_restore=arguments.authorized_delete_restore,
+    suite.add_argument(
+        "--authorized-disposable",
+        action="store_true",
+        default=False,
+        help="Acknowledge prior explicit approval; grants nothing.",
     )
+    arguments = parser.parse_args(argv)
+    _authorize(disposable=arguments.authorized_disposable)
     preconditions = DisposablePackagePreconditions(
         arguments.package,
         preexisting_container=True,
@@ -725,12 +629,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             preconditions,
         )
         for suffix, target in zip(
-            "awvd",
+            "awv",
             (
                 arguments.creation_target,
                 arguments.race_target,
                 arguments.race_target,
-                arguments.deleted_target,
             ),
             strict=True,
         )
@@ -741,7 +644,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         repository_root=arguments.repository_root,
         audit_directory=arguments.audit_directory,
         authorized_disposable=arguments.authorized_disposable,
-        authorized_delete_restore=arguments.authorized_delete_restore,
     )
     path, digest = operator.execute()
     sys.stdout.write(
