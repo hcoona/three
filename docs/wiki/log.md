@@ -3661,3 +3661,37 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   credential stripping and all other response checks.
 - No duplicate probe, deletion, restoration, activation, Approval deployment,
   or normal-Live dispatch occurred. The partial generation is not accepted.
+
+## [2026-09-08] query | Reject the native deleted-version primitive
+
+- The exact storage-origin correction was protected-delivered through
+  PR #656 at `fd4d6f30069e6dd746a25ed3fe2d0876782fffbc`.
+  Reviewed and merged trees matched; post-merge CI `34262341822` and
+  CodeQL `34262341842` passed on that exact revision.
+- Fresh generation `64346c1f6fe372e2d6940644` used that protected tooling
+  and the approved disposable container `12047077`. Creation, both active
+  duplicate empty-delta gates, and the distinct-version tag race passed.
+  The prior generation's A and unrelated state were retained.
+- Original D, version `0.0.0-native.64346c1f6fe372e2d6940644.d`,
+  was created by run `34264792626` as native object `1224723835`.
+  One exact delete was followed by complete active/deleted and
+  deleted/restorable readback before the next probe.
+- [Run 34264888244](https://github.com/hcoona/three/actions/runs/34264888244)
+  published the identical D fixture again at attempt one and returned
+  definitive success. The suite stopped immediately; the different-byte
+  deleted probe and explicit restoration were not attempted.
+- Read-only reconciliation found replacement D `1224727284` active while
+  original D `1224723835` remained in the complete deleted inventory.
+  Actual replacement bytes have SHA-256
+  `19baeaa7a317622cf7908983d2de546fbd198b0d513eaf22cf42fe1f30b92165`
+  and retain the original fixture witness. This is not original-object
+  restoration, definitive failure, or an empty state delta.
+- The current profile is rejected. There is no passing manifest or installed
+  native generation. Across both incomplete generations, eight native probes
+  and one exact delete occurred; no explicit restore, Approval deployment,
+  activation, or normal-Live dispatch occurred. No replacement deletion or
+  further publication was used as repair.
+- Governance remains blocked with `live_enabled: false`. Preserve the
+  counterexample and original tombstone. A new explicit requirements/design
+  decision must resolve the failed destination assumption; do not weaken
+  acceptance or introduce a runtime history/admin workaround.

@@ -40,14 +40,16 @@ requests mechanism extraction and revalidation. Git and the append-only
 - Retained-ref compatibility and semantic no-reference proof are complete.
   The exact legacy Environment was removed after the protected delivery
   gates; all other Environment configurations were unchanged.
-- The native tooling was protected-delivered through PR #655. The approved
-  disposable-package suite started, but stopped after creating its first
-  version because the reader omitted GitHub's actual npm storage hostname.
-  The narrow shared-reader correction still requires protected delivery.
-- The native-acceptance generation registry remains empty. No passing native
-  acceptance, activation, deletion, restoration, Approval deployment, or
-  normal-Live dispatch has occurred. Preserve the partial audit; do not
-  restart the same coordinates or infer suite acceptance from one publish.
+- The native tooling and exact storage-origin correction were
+  protected-delivered through PRs #655 and #656. The subsequent native suite
+  rejected the current profile: publishing the deleted D version again with
+  identical bytes succeeded, creating a new version object while the original
+  remained deleted.
+- The native-acceptance generation registry remains empty. Native probes and
+  one exact disposable-version deletion occurred, but no original-object
+  restoration, passing acceptance, activation, Approval deployment, or
+  normal-Live dispatch occurred. Preserve both incomplete generations; do not
+  retry, repair, or admit the rejected profile.
 - The current user instruction authorizes end-to-end completion of design
   delivery, disabled implementation, native acceptance, activation, and
   exactly one auditable real dispatch. That authorization does not waive any
@@ -98,9 +100,9 @@ Do not recreate it or repeat the deletion.
 - Known reach includes production package `hexo-renderer-asciidoc` and disposable smoke packages.
 - This accepted repository-principal blast radius is not package isolation and is not an exhaustive grant inventory.
 - Package access remains unchanged; protected Governance remains `live_enabled: false`.
-- One authorized native probe created its scenario version and tag in the
-  disposable package. No normal Live run, Approval deployment, deletion, or
-  restoration has occurred.
+- Authorized native probes created disposable scenario versions and tags.
+  The original D is deleted and a new same-version object is active.
+  No normal Live run, Approval deployment, or explicit restoration occurred.
 
 ### Native Acceptance Readiness
 
@@ -138,12 +140,21 @@ with `hcoona/three`, is operator-controlled and has no production dependency.
 The fixed eight-probe suite and exact deletion/restoration of its fresh D
 version are authorized; unrelated versions, tags, and access changes are not.
 
-The first generation stopped after creation because the shared reader's
-tarball origin policy omitted `pkg-npm.githubusercontent.com`. Read-only
-investigation found a complete response with the same retained bytes. Admit
-only that exact storage hostname, without forwarding registry credentials.
-Deliver and validate the correction before any further mutation. The stopped
-generation is incomplete and must not be installed or silently resumed.
+The first generation stopped on the now-corrected storage-origin policy.
+Its created version remains untouched. The fresh generation reached the
+deleted/restorable scenario and stopped when the identical duplicate publish
+succeeded instead of failing. Read-only inventory distinguishes the deleted
+original from the new active object; this was not restoration.
+
+This is a native contract counterexample, not another reader defect. The
+current profile is rejected and cannot authorize an Activation PR. The
+different-byte deleted probe and explicit restoration were not attempted.
+Do not delete the replacement, retry restoration, weaken the comparison, or
+install either incomplete generation. Any recovery or alternative profile
+needs a new explicit decision; a local workaround cannot supply the missing
+destination guarantee. See the [native rejection record](../../../log.md#2026-09-08-query--reject-the-native-deleted-version-primitive)
+for exact run and object identities.
+
 The standard-publish probes must use the real Actions-issued repository token;
 do not relabel a local PAT as `GITHUB_TOKEN`, add secrets or access grants
 implicitly, or send administrative credentials into normal runtime. No
@@ -270,22 +281,16 @@ Do not infer policy from stale runtime behavior or archived designs.
 ## Next Executable Workflow
 
 1. Perform the required Git inspection above.
-2. Reconcile the approved disposable coordinate and partial native audit;
-   stop on any unexplained mutation. Approval is established, but fresh
-   package and credential readback remain necessary.
-3. Deliver the narrow native-storage-origin correction through
-   applicable scenarios, HK/hooks, OCR multi-review,
-   independent TP/FP adjudication, clean rereview, final contraction, and
-   protected delivery while Governance remains disabled.
-4. Execute the real pinned-profile native suite. Preserve complete canonical
-   comparisons and raw evidence, stop on ambiguity, and restore and verify the
-   original disposable tombstone object.
-5. Capture fresh Approval Environment, retention, access, package-control, and
-   passing native-generation evidence for ready Governance v2.
-6. Deliver the small Activation PR, read back protected state, dispatch exactly
-   once through the run-ID-returning API, and verify actor, event, workflow,
-   actual `main` head, `run_attempt == 1`, current-run records, final Outcome,
-   and authoritative destination state.
+2. Preserve the native rejection evidence and reconcile any later external
+   changes read-only. Keep Governance disabled and the admission registry
+   empty; original-object restoration is not verified.
+3. Resolve the failed destination assumption through an explicitly approved
+   requirements/design decision before another native mutation or activation
+   change. Do not repeat the suite to obtain a passing result or invent a
+   runtime history, tombstone, or repair mechanism.
+4. Only a newly justified profile with complete passing native acceptance can
+   resume the existing Activation PR and single-dispatch gates. The final
+   objective remains incomplete, not waived.
 
 ## Validation and Review Protocol
 

@@ -1732,6 +1732,13 @@ It neither establishes its own provenance nor installs a Governance
 generation. The [operator runbook](./agent-handoff.md#local-native-operator)
 defines operational prerequisites without granting authorization.
 
+The [2026-09-08 native rejection](../../../log.md#2026-09-08-query--reject-the-native-deleted-version-primitive)
+records an observed counterexample for the current profile: an identical
+deleted-version publish succeeded, creating a new active object while the
+original remained deleted. The required failure and empty delta were not
+met. The profile is not admitted; this finding does not relax the scenario
+contract, authorize repair, or permit Normal Live activation.
+
 ### 18.7 Approval
 
 - Prove Snapshot/summary/Bundle are durable before wait and Environment URL identifies immutable summary.
