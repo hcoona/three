@@ -16,8 +16,8 @@ It realizes the
 [High-Level Design](./high-level-design.md), and
 [Architecture Glossary](./architecture-glossary.md).
 
-The normal Live implementation is delivered but remains disabled through
-protected Governance with `live_enabled: false`.
+Current first-slice activation, protected delivery, and proving status are
+maintained in the [operating handoff](./agent-handoff.md).
 
 ## Scope
 

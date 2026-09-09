@@ -23,8 +23,8 @@ It realizes the
 Exact record schemas, descriptor syntax, workflow YAML, commands, and
 destination API mappings remain lower-layer decisions.
 
-The normal Live implementation remains delivered but disabled through
-protected Governance with `live_enabled: false`.
+Current first-slice activation, protected delivery, and proving status are
+maintained in the [operating handoff](./agent-handoff.md).
 
 ## Scope
 

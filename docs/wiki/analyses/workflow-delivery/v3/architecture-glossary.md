@@ -8,7 +8,8 @@ This is the normative glossary for the clean v3 implementation line. It records
 the approved current architecture rather than completed rollout or retry
 ceremony.
 
-The current implementation remains disabled with `live_enabled: false`.
+Current first-slice activation, protected delivery, and proving status are
+maintained in the [operating handoff](./agent-handoff.md).
 
 Confirmed entries should remain stable. Any unresolved term is identified
 inline and must not be treated as settled architecture.

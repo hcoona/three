@@ -15,8 +15,9 @@ not inherit the v1 or v2 control-plane architecture.
 Normative terminology is maintained in the
 [Architecture Glossary](./architecture-glossary.md).
 
-The current implementation remains delivered but disabled with
-`live_enabled: false`. Completed acceptance, provisioning, and retry ceremony
+Current first-slice activation, protected delivery, and proving status are
+maintained in the [operating handoff](./agent-handoff.md).
+Completed acceptance, provisioning, and retry ceremony
 belongs to Git history and the append-only log rather than this current
 architecture.
 
