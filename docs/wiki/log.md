@@ -3831,3 +3831,67 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   performed. The publication profile and admitted native evidence are unchanged.
   The correction still requires validation, review, and protected delivery
   before the one proving dispatch.
+
+## [2026-09-09] query | Correct the real publisher's tarball staging boundary
+
+- PR #661 protected-rebase merged as
+  `7eef6cc48e6b9e7d6897cfc0182ae5ad81adb786`, with reviewed/merged tree
+  `29da0927476cf02adfd1c8d2f7d7deb9885484cc`. All 26 PR checks passed;
+  original OCR reviewers and final contraction were clean. Server review
+  covered 15/15 files, recommended approval, and had formal state `COMMENTED`.
+  Post-merge CI `34319301774` and CodeQL `34319301782` passed.
+- Fresh platform readback and neutral exact-target NBGV preflight passed.
+  One actual REST dispatch returned run
+  [34320726590](https://github.com/hcoona/three/actions/runs/34320726590),
+  bound to workflow `340952169`, protected `main` at that exact target,
+  actor `hcoona`, and attempt one. Its version was
+  `1.0.0-beta.253.g7eef6cc`, `PublicRelease: false`.
+- All four actual Qualification obligations passed. The operator reviewed
+  the actual current-run Publication Snapshot, Bundle, summary, Qualification,
+  Observation, and archive/witness before one Approval submission created
+  deployment `6344271579` in Environment `20895030723`.
+- The run failed in `prepare-publication` with
+  `publication tarball basename binding mismatch`. The actual download used
+  its unique `wdv3-live-primary-package-...tgz` transport name, whereas the
+  logical basename was
+  `hcoona-hcoona-release-smoke-npm-1.0.0-beta.253.g7eef6cc.tgz`.
+  Its 1,145 bytes matched SHA-256
+  `40348bbe1e3e12e02c64334f253df257f009262b5c6c9d19543ba81a16f9c94f`.
+- The authoritative Outcome artifact `10092118658`, digest
+  `sha256:c875149b54ed6d57cc006d4a52b64956dd8c1be26e5a3d539d10f06dfad0ef6f`,
+  is `failed-before-publication`, `possibly-mutated: false`. Its direct
+  predecessor is Authorization artifact `10092080965`, digest
+  `sha256:7623d4b5aa910c38654135afcf2e93c0e9c4cec101042184cb5b77f0f3fdb305`.
+  There is no mutation marker or Publication Result, and the publication step
+  was skipped. All 21 actual current-run artifact bodies are retained with
+  authenticated service digests; independent failure/readback audit is pending.
+- The bounded correction validates downloaded bytes independently of the
+  transport filename, then stages those unchanged bytes under the already
+  validated logical basename. Packed identity, size, SHA-256/SHA-512, witness,
+  private runtime, profile, marker, and Finalizer bindings remain intact.
+  Native fixture staging retains its existing default filename. No workflow,
+  profile, Governance, schema, credential, or permission change is introduced.
+- The initial one-dispatch authorization is spent. The user explicitly
+  approved one additional new dispatch only after this correction's tests,
+  OCR, contraction, and protected delivery: two total, one used and one
+  conditional remaining. A new Snapshot must be reviewed before any new
+  Approval. No GitHub rerun, old artifact/Approval adoption, third dispatch,
+  native rerun, administrative operation, or grant change is authorized.
+  The first failed run, thirteen native probes, and separately unresolved
+  original-D recovery remain preserved.
+- Independent audit subsequently verified all 21 service-bound artifact
+  payloads, canonical/current-run lineage, the actual skipped publication
+  step, and the `failed-before-publication` / `possibly-mutated: false` Outcome.
+  An authenticated complete package-level read at `07:57:42Z` found the desired
+  version/tag absent and all nine active versions and nine tags unchanged.
+  The entire 9,802-byte metadata body matched preflight SHA-256
+  `500b7c86ef77c0cc3a1bff28af1644ceb2d98c82164ce4ad621850bbb1398f3f`.
+  All 53 original proof files were preserved. This establishes the observed
+  supported projection and skipped invocation, not interval-wide events,
+  universal cache behavior, grant completeness, or administrative history.
+- OCR found a remaining obsolete one-dispatch ceiling in the handoff's
+  explicit authorization section. Independent adjudication confirmed it
+  contradicted the already recorded spent first run and separately approved
+  additional new dispatch. The section now consistently limits the total to
+  two, forbids a third run and prior-run authority reuse, and preserves every
+  native, administrative, access, review, and readback boundary.

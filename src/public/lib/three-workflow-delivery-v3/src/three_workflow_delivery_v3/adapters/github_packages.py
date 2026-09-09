@@ -3024,9 +3024,6 @@ def _validate_local_tarball_preconditions(
         expanded_tarball_limit_bytes,
         field="expanded_tarball_limit_bytes",
     )
-    if tarball.name != artifact.content.basename:
-        message = "publication tarball basename binding mismatch"
-        raise ValueError(message)
     try:
         status = tarball.lstat()
     except OSError as error:

@@ -5,6 +5,7 @@
 import hashlib
 from dataclasses import replace
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from three_workflow_delivery_v3 import cli
@@ -380,6 +381,7 @@ def test_only_skipped_boundary_maps_absent_output_to_null(wire):
         "wrong-readback",
         "different-authorization",
         "profile",
+        "transport-basename",
         "duplicate-observation",
         "foreign-attempt",
     ],
@@ -419,10 +421,25 @@ def test_malformed_or_conflicting_chain_forms_no_outcome(
         inputs = replace(
             inputs, result_marker=pair(changed, "mutation-marker.json", 114)
         )
-    elif change == "profile":
+    elif change in {"profile", "transport-basename"}:
+        profile = marker[0].profile_match
+        if change == "profile":
+            profile = replace(profile, npm_version="1.0.0")
+        else:
+            operand = Path(profile.command[2]).with_name(
+                observation_case.artifact.transport.artifact_name
+            )
+            profile = replace(
+                profile,
+                command=(
+                    *profile.command[:2],
+                    str(operand),
+                    *profile.command[3:],
+                ),
+            )
         changed = replace(
             marker[0],
-            profile_match=replace(marker[0].profile_match, npm_version="1.0.0"),
+            profile_match=profile,
         )
         changed_pair = pair(changed, "mutation-marker.json", 114)
         result = replace(result, mutation_marker_reference=changed_pair[1])
@@ -838,6 +855,10 @@ def test_cli_preparation_persistence_admission_and_execution_order(  # noqa: PLR
 ):
     case = observation_case
     _prepared, common, preparation = publisher
+    downloaded = preparation["tarball"]
+    assert downloaded.name == case.artifact.transport.artifact_name
+    assert downloaded.name != case.artifact.content.basename
+    staged = common["runtime_directory"] / case.artifact.content.basename
     inputs = action_inputs(case, publisher)
     finalizer_args = finalization_cli_arguments(
         tmp_path / "inputs", case, inputs, monkeypatch
@@ -910,6 +931,7 @@ def test_cli_preparation_persistence_admission_and_execution_order(  # noqa: PLR
         == 0
     )
     assert common["runtime_directory"].is_dir()
+    assert staged.read_bytes() == case.tarball
     assert not any(
         call[0][:2] == ("npm", "publish") for call in common["runner"].calls
     )
@@ -921,6 +943,7 @@ def test_cli_preparation_persistence_admission_and_execution_order(  # noqa: PLR
         expected_bindings=common["current"],
     )
     marker_reference = pair(marker, marker_path.name, 114)[1]
+    assert marker.profile_match.command[2] == str(staged)
     terminal_output = tmp_path / "terminal-output"
     terminal_args = uploaded_arguments(
         tmp_path,
@@ -946,6 +969,21 @@ def test_cli_preparation_persistence_admission_and_execution_order(  # noqa: PLR
     assert wire == canonicalize(marker_reference.to_document()).decode()
     result_path = tmp_path / "result.json"
     result_outputs = tmp_path / "result-output"
+
+    def inspect_publish_operand():
+        (command, cwd, *_rest) = common["runner"].publications[0]
+        assert command[2] == str(staged)
+        assert cwd == staged.parent
+        content = Path(command[2]).read_bytes()
+        assert content == case.tarball
+        assert "sha256:" + hashlib.sha256(content).hexdigest() == (
+            case.artifact.content.content_sha256
+        )
+        assert "sha512:" + hashlib.sha512(content).hexdigest() == (
+            case.artifact.content.content_sha512
+        )
+
+    common["runner"].after_publish = inspect_publish_operand
     assert cli.main(
         [
             "release",
@@ -975,12 +1013,16 @@ def test_cli_preparation_persistence_admission_and_execution_order(  # noqa: PLR
         "definitive-success" if published else "definitive-non-success"
     )
     assert result.mutation_marker_reference == marker_reference
+    assert result.post_action_readback.witness_digest == (
+        case.artifact.witness_digest
+    )
     emitted = dict(
         line.split("=", 1) for line in result_outputs.read_text().splitlines()
     )
     assert emitted["publication-result-digest"] == result_digest
     assert len(common["runner"].publications) == 1
     assert not common["runtime_directory"].exists()
+    assert downloaded.read_bytes() == case.tarball
 
     result_reference = ArtifactReference(
         artifact_id=116,

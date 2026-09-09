@@ -103,8 +103,11 @@ Evidence-backed ready Governance v2 is protected-delivered through PR #660.
 The governance document at
 `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` binds the
 independently audited native v2 generation and sets `live_enabled: true`.
-Post-merge checks and platform readback passed. The still-unused proving
-dispatch awaits the supported package-metadata read-path correction.
+Post-merge checks and platform readback passed. PR #661 delivered the supported
+package-metadata reader. The first real run passed Qualification and received
+Approval but failed before publication on a transport/logical-basename mismatch.
+Its authoritative Outcome is `failed-before-publication`,
+`possibly-mutated: false`; successful proving remains incomplete.
 
 - The implementation was protected-delivered through PR #653. Whole-group
   validation, independent rereview, contraction, exact merged-tree comparison,
@@ -116,15 +119,16 @@ dispatch awaits the supported package-metadata read-path correction.
   `20895030723`, has rule `64124473`, sole reviewer
   `hcoona` / `712433`, self-review permitted, zero wait, no secrets, no
   branch/tag restriction, administrator bypass disabled, exact approval
-  sentinel, and zero deployments.
+  sentinel, and the first-run deployment recorded in the handoff.
 - Legacy Environment `workflow-delivery-v3-buddy-github-packages`, ID
   `20895037877`, was deleted after protected delivery, retained-ref
   compatibility, and exact no-authority-reference proof. It had no deployments;
   the retained Approval Environment and all other Environments were unchanged.
 - Package access is unchanged. Authorized native probes and one exact
   disposable-version deletion occurred. Original-D recovery remains unresolved
-  and the active replacement is retained. No normal Live dispatch, Approval
-  deployment, or explicit restoration occurred.
+  and the active replacement is retained. One normal-Live run and its Approval
+  occurred, but preparation failed before publication. No explicit restoration
+  occurred.
 
 ## Delivery Boundary
 
@@ -143,12 +147,13 @@ sole-writer TCB. No runtime history or administrative compensation is added.
 The lifecycle design and v2 tooling were protected-delivered through PRs #658
 and #659. Five native probes and six complete active captures passed
 independent audit, without deletion, restoration, or deleted-state queries.
-Activation and its post-merge readback are complete. Pre-dispatch inspection
-found that GitHub npm rejects per-version metadata GETs with `405` while the
-package-level metadata endpoint succeeds. Complete the bounded reader
-correction and protected delivery before the single proving dispatch; do not
-repeat native acceptance. Preserve the failed v1
-evidence and separately unresolved original-D recovery.
+Activation and the supported metadata-reader correction are complete. Complete
+the transport-to-logical-basename staging correction, validation, review, and
+protected delivery before the one separately authorized additional new
+dispatch. Its Snapshot and Approval must be new; no GitHub rerun or prior-run
+authority reuse is permitted. Do not repeat native acceptance. Preserve the
+first failed real run, failed v1 evidence, and separately unresolved original-D
+recovery.
 
 ## Historical Record Rule
 

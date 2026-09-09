@@ -17,9 +17,13 @@ retry, or rollout sequences.
 The normal-Live implementation and active-only v2 tooling are merged. A fresh
 native v2 generation passed independent audit. Its admitted contract and ready
 Governance with `live_enabled: true` are protected-delivered through PR #660;
-post-merge checks and platform readback passed. A pre-dispatch inspection
-identified an unsupported per-version npm metadata route. Complete the bounded
-package-level read-path correction before the still-unused proving dispatch.
+post-merge checks and platform readback passed. PR #661 delivered the supported
+package-level metadata reader. The first real run passed Qualification and
+received Approval but failed before publication on a transport/logical-basename
+mismatch. Complete the bounded staging correction and its protected delivery
+before the one separately authorized additional new dispatch. The
+[handoff](./agent-handoff.md#current-checkpoint) records its authorization;
+the failed run is not rerun or reused as authority.
 
 For current Environment lifecycle status, see the
 [handoff](./agent-handoff.md#external-state). Cleanup remains subject to

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 from three_workflow_delivery_v3.adapters.github_packages import (
+    DEFAULT_EXPANDED_TARBALL_LIMIT_BYTES,
     GitHubPackagesTimeoutError,
     _validate_local_tarball_preconditions,
     github_packages_destination_operation_profile,
@@ -24,7 +25,7 @@ from three_workflow_delivery_v3.adapters.npm_process import (
     IsolatedNpmProcessRunner,
     NpmProcessOutcome,
 )
-from three_workflow_delivery_v3.canonical import canonicalize
+from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
     ApprovalBundle,
@@ -202,7 +203,7 @@ def publisher(observation_case, tmp_path, monkeypatch):
     )
     toolchain = tmp_path / "trusted-toolchain"
     toolchain.mkdir()
-    tarball = checkout / case.artifact.content.basename
+    tarball = checkout / case.artifact.transport.artifact_name
     tarball.write_bytes(case.tarball)
     common = {
         "current": ReleaseAdmissionBindings(
@@ -856,6 +857,107 @@ def test_local_tarball_admission_enforces_its_expansion_bound(publisher):
             expanded_tarball_limit_bytes=1,
         )
     assert not common["runner"].calls
+
+
+@pytest.mark.parametrize("invalid", ["symlink", "directory", "changed-bytes"])
+def test_downloaded_tarball_is_checked_before_preparation_io(
+    publisher, invalid
+):
+    inputs, common, preparation = publisher
+    tarball = preparation["tarball"]
+    if invalid == "symlink":
+        link = tarball.with_suffix(".link")
+        link.symlink_to(tarball)
+        preparation["tarball"] = link
+    elif invalid == "directory":
+        directory = tarball.parent / "not-an-archive"
+        directory.mkdir()
+        preparation["tarball"] = directory
+    else:
+        content = tarball.read_bytes()
+        tarball.write_bytes(bytes([content[0] ^ 1]) + content[1:])
+    expected = (
+        "SHA-256 binding mismatch"
+        if invalid == "changed-bytes"
+        else "safe ordinary file"
+    )
+    with pytest.raises(ValueError, match=expected):
+        publication.prepare_publication(inputs, **common, **preparation)
+    assert common["runner"].calls == []
+    assert common["transport"].requests == []
+    assert preparation["governance_client"].calls == []
+    assert not common["runtime_directory"].exists()
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        "logical-basename",
+        "witness-digest",
+        "packed-name",
+        "packed-version",
+        "packed-witness",
+    ],
+)
+def test_transport_filename_does_not_replace_logical_archive_identity(
+    publisher, identity
+):
+    inputs, common, preparation = publisher
+    artifact = inputs.artifact
+    content_identity = artifact.content
+    witness_digest = artifact.witness_digest
+    if identity == "logical-basename":
+        content_identity = replace(
+            content_identity, basename=artifact.transport.artifact_name
+        )
+    elif identity == "witness-digest":
+        witness_digest = "sha256:" + "0" * 64
+    else:
+        tarball = preparation["tarball"]
+        with tarfile.open(fileobj=io.BytesIO(tarball.read_bytes())) as archive:
+            entries = {
+                member.name: archive.extractfile(member).read()
+                for member in archive.getmembers()
+            }
+        if identity == "packed-witness":
+            witness_path = "package/workflow-delivery/provenance.json"
+            witness = json.loads(entries[witness_path])
+            witness["target"] = "f" * 40
+            witness["nbgv"]["canonical"]["gitCommitId"] = "f" * 40
+            entries[witness_path] = canonicalize(witness)
+        else:
+            manifest = json.loads(entries["package/package.json"])
+            field = identity.removeprefix("packed-")
+            manifest[field] = "@hcoona/other" if field == "name" else "9.9.9"
+            entries["package/package.json"] = canonicalize(manifest)
+        content = _make_tarball(entries)
+        tarball.write_bytes(content)
+        # Keep byte metadata consistent so rejection exercises packed identity,
+        # rather than stopping at the earlier size or hash guard.
+        content_identity = replace(
+            content_identity,
+            byte_size=len(content),
+            content_sha256="sha256:" + hashlib.sha256(content).hexdigest(),
+            content_sha512="sha512:" + hashlib.sha512(content).hexdigest(),
+        )
+    provenance = artifact.provenance_document()
+    provenance["content"] = content_identity.to_document()
+    provenance["witness-digest"] = witness_digest
+    artifact = replace(
+        artifact,
+        content=content_identity,
+        witness_digest=witness_digest,
+        provenance_digest=canonical_sha256(provenance),
+    )
+    with pytest.raises(ValueError, match=r"packed .*mismatch"):
+        _validate_local_tarball_preconditions(
+            tarball=preparation["tarball"],
+            artifact=artifact,
+            expectation=common["expectation"],
+            expanded_tarball_limit_bytes=DEFAULT_EXPANDED_TARBALL_LIMIT_BYTES,
+        )
+    assert common["runner"].calls == []
+    assert not common["runtime_directory"].exists()
 
 
 @pytest.mark.parametrize(
