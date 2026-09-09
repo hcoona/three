@@ -4,6 +4,7 @@
 
 - [Bootstrap](governance/bootstrap.md): migration principles, review, and lifecycle.
 - [Current Delivery Wave](delivery-wave.md): current bounded migration-work authorization.
+- [Migration Design](governance/migration-design.md): ownership inventory, proposed destinations, and bounded preparation.
 
 ## Docs Wiki
 
