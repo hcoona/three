@@ -2,28 +2,28 @@
 
 ## 1. Status and Authorization Boundary
 
-**Status:** evidence-backed normal-Live activation, dated 2026-09-09.
+**Status:** normal-Live metadata read-path correction, dated 2026-09-09.
 
 **Implementation boundary:** the active-only v2 tooling is protected-delivered
-and its fresh native generation passed independent audit. This revision
-installs ready Governance v2, its admitted native contract, and
-`live_enabled: true`. Protected Activation delivery and operational state must be
-reconciled through the
-[agent handoff](./agent-handoff.md); local implementation is not activation.
+and its fresh native generation passed independent audit. Ready Governance v2,
+its admitted native contract, and `live_enabled: true` are protected-delivered.
+This revision corrects the supported metadata read path without changing the
+publication profile. Reconcile protected delivery and the still-unused proving
+dispatch through the [agent handoff](./agent-handoff.md).
 
 This document replaces the former implementation and rollout chronology. It defines the target first-slice design; current runtime code is useful only for repository naming and tooling conventions when it differs from the normative v3 design.
 
 This document does **not** authorize changes to workflows, Python, schemas, tests, descriptors, policy or Governance files, Environments, access, packages, versions, tags, runs, or external state. It does not authorize a commit, activation, dispatch, publication, remediation, or deletion of the legacy publication Environment.
 
-Implementation must be delivered and validated while `live_enabled` remains `false`. Obsolete Environment cleanup, fresh native evidence, Governance refresh, activation, and the first proving dispatch are later and separately controlled.
+The initial replacement implementation must be delivered and validated while `live_enabled` remains `false`. Obsolete Environment cleanup, fresh native evidence, Governance refresh, activation, and the first proving dispatch are later and separately controlled.
 
 **Remaining proving boundary:** the pinned standard
 `npm publish --tag ... --fetch-retries=0` profile passed the separately
 authorized native v2 suite and independent audit. Active-version non-overwrite
 and the bounded non-authoritative tag race were established within that
 contract; administrator-deleted records are not coordinate reservations.
-Protected Activation delivery, fresh post-merge readback, and one verified
-normal-Live Outcome remain required.
+Protected delivery of the read-path correction, refreshed platform readback,
+and one verified normal-Live Outcome remain required.
 
 ### 1.1 Normative precedence
 
@@ -69,8 +69,8 @@ transport, and the tagged current-DAG Outcome. Normal-Live records omit
 run-attempt identity. Receipt, ActionResult, and superseded marker and proof
 formats have no aliases.
 
-This revision installs ready Governance and enables the admitted native
-contract. Its current inspection and expiry are read from the protected
+Protected Governance is ready and enables the admitted native contract.
+Its current inspection and expiry are read from the protected
 document, not a copied date in this design. Native acceptance, retained-ref
 compatibility, and obsolete-Environment cleanup are complete. Consult the
 handoff for protected delivery, post-merge readback, and proving-dispatch state.
@@ -1014,6 +1014,13 @@ embedded witness, tag mapping when readable, response status, selected
 non-secret headers, and bounded diagnostics. It uses public APIs or minimum
 read-only authority and receives no PAT, package-admin credential, destination
 write, Environment, or deleted-version facts.
+
+GitHub npm reads use the supported package-level metadata document and select
+the literal desired key in `versions`; tags and version ranges do not select
+the artifact. Active absence requires a complete successful response with the
+expected package identity and a valid `versions` mapping that lacks that key.
+A package-level `404` or an unsupported per-version route is not absence proof.
+The same document can supply the independent, non-authoritative tag projection.
 
 Exact state requires downloaded remote bytes and the exact in-package witness.
 A local sidecar, registry integrity field, or matching version string is

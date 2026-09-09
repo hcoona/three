@@ -99,17 +99,18 @@ Its detailed chronology belongs in Git and the append-only log.
 
 ## Current Activation and External State
 
-This revision installs evidence-backed ready Governance v2.
+Evidence-backed ready Governance v2 is protected-delivered through PR #660.
 The governance document at
 `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` binds the
 independently audited native v2 generation and sets `live_enabled: true`.
-Verify protected Activation delivery and post-merge readback before use.
+Post-merge checks and platform readback passed. The still-unused proving
+dispatch awaits the supported package-metadata read-path correction.
 
 - The implementation was protected-delivered through PR #653. Whole-group
   validation, independent rereview, contraction, exact merged-tree comparison,
   and post-merge checks are complete.
-- A fresh five-probe native v2 generation passed independent audit. This
-  revision installs its exact admitted contract; local scenarios alone do not
+- A fresh five-probe native v2 generation passed independent audit. Protected
+  Governance binds its exact admitted contract; local scenarios alone do not
   authorize publication.
 - Approval Environment `workflow-delivery-v3-buddy-approval`, ID
   `20895030723`, has rule `64124473`, sole reviewer
@@ -142,9 +143,11 @@ sole-writer TCB. No runtime history or administrative compensation is added.
 The lifecycle design and v2 tooling were protected-delivered through PRs #658
 and #659. Five native probes and six complete active captures passed
 independent audit, without deletion, restoration, or deleted-state queries.
-This revision installs the accepted contract and ready Governance. Complete
-protected Activation delivery and fresh post-merge readback before the single
-proving dispatch; do not repeat native acceptance. Preserve the failed v1
+Activation and its post-merge readback are complete. Pre-dispatch inspection
+found that GitHub npm rejects per-version metadata GETs with `405` while the
+package-level metadata endpoint succeeds. Complete the bounded reader
+correction and protected delivery before the single proving dispatch; do not
+repeat native acceptance. Preserve the failed v1
 evidence and separately unresolved original-D recovery.
 
 ## Historical Record Rule
