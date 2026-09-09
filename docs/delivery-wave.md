@@ -40,6 +40,18 @@ proposal does not authorize any work it would add before merge.
   Identify current consumers, preserve evidence and identifiers, and validate the
   necessary path, namespace, generated-interface, and HK adaptations. Record
   unresolved content or ownership decisions for the repository owner.
+- **Execution mode:** An existing Codex session may act as orchestrator for this
+  advancement, assigning bounded subwork to persisted `codex exec --json`
+  sessions in separate Git worktrees. Independent subwork may run concurrently;
+  dependent work and conflicting changes to shared authorities remain ordered.
+  The orchestrator owns coordination and integration, while independent reviewers
+  and the repository owner retain their review and acceptance responsibilities.
+  Apply the design's [recovery requirements](governance/migration-design.md#recoverable-coordination-requirements):
+  associate sessions with the work carrier, inspect runtime and Git state before
+  resuming or replacing a worker, and validate outputs before integration. A
+  worker may act only within this entry and its assigned boundary. Stop affected
+  work when authority, worker ownership, or a prerequisite is unresolved; a retry
+  or replacement cannot enlarge scope or repeat an unverified external effect.
 - **Bounded outcome:** One reviewable candidate commit for the repository control
   surfaces and two selected cases, with relevant check and independent review
   evidence and a concrete list of remaining preparation boundaries. The candidate
@@ -55,15 +67,17 @@ proposal does not authorize any work it would add before merge.
   activating replacement policies, routing, or new controls on `main`; changing
   source principles, product behavior, project contracts, support claims, or build
   and release runtime behavior; changing protected v3 Governance bytes or path;
-  deleting existing human-source material or Git history; implementing or running
-  a coordinator; and package publication, authentication experiments, deployment,
+  deleting existing human-source material or Git history; building or deploying
+  a standalone coordination service or orchestration framework; and package
+  publication, authentication experiments, deployment,
   dispatch, or credential/access/Environment changes. Project evidence may be
   relocated in the candidate only with its provenance and current consumers intact.
 - **External effects:** Public-source retrieval and normal Git, Issue,
-  pull-request, review, repository-record, and local candidate-check operations.
+  pull-request, review, repository-record, local worktree, delegated Codex
+  execution, and local candidate-check operations within this entry.
   Existing checks and bounded record-control validation may inspect the candidate;
   new product/runtime experiments require separate accepted authorization and
-  protocol. No release or external-system mutation is permitted.
+  protocol. No release or product external-system mutation is permitted.
 
 The [source and license](governance/bootstrap.md#source-and-adaptations) are
 recorded in the bootstrap.
