@@ -256,6 +256,17 @@ self-confirmation against mistakes, not independent review or a security
 boundary. Any effective writer, reviewer, role, team, or relevant access change
 requires `live_enabled: false` and a new Governance decision.
 
+### NuGet Second Slice
+
+The separately confirmed `Hcoona.ReleaseSmoke.GithubPackages` Buddy slice,
+governed by `WD-NUGET-*`. It uses a single `net10.0` marker library, one
+`.nupkg`, protected-main and reviewed same-revision control, and isolated
+MSBuild evaluation/build. The sole trusted writer and reviewer may self-approve;
+repository-token package-grant reach is explicitly accepted. It does not
+inherit the npm arbitrary-ref waiver, native evidence, routing tags, or
+administrative-lifecycle conclusions. Design, native admission, and a verified
+real publication are distinct evidence levels.
+
 ### Official
 
 A Release Delivery policy channel for authoritative production publication.
@@ -617,7 +628,7 @@ independent malicious-writer boundary.
 
 ### Package Target Witness
 
-Canonical `workflow-delivery/provenance.json` embedded inside the npm tarball
+Canonical `workflow-delivery/provenance.json` embedded inside the package
 and therefore covered by its bytes and digest. It binds target commit, Release
 Unit, canonical and native NBGV facts, Build Definition, catalog and control
 digests, purpose, and schema. It excludes run and Attempt identities so builds
@@ -625,7 +636,10 @@ of one target remain reproducible across attempts. For first-slice npm,
 immutable remote exactness requires the matching normalized package/version
 coordinate, tarball bytes and digests, and embedded witness. Ownership,
 repository association, visibility, and access are validated separately through
-Package-Control Proof; a sidecar is not a substitute.
+Package-Control Proof; a sidecar is not a substitute. The NuGet slice embeds
+the same logical witness inside its `.nupkg`, with its own native version and
+Build Definition. NuGet repository metadata alone is not this witness, and a
+valid witness does not replace verification of the entire package's bytes.
 
 ## Build and Quality Terms
 

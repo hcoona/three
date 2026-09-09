@@ -4084,3 +4084,97 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   the previously pending OCR/contraction gates for that revision, not
   protected delivery or merge. Review of this narrow chronology closure
   remains in PR #666 rather than recursively adding review-status markers.
+
+## [2026-09-09] query | Begin NuGet slice requirements confirmation
+
+- GET-only inspection confirmed PR #666 merged as
+  `f38d9f8d5c8ce0bcdf3d11d285f8edc1700d5550`; protected `main` and the clean
+  starting checkout were both `d4c30ceba97190f4771141bc0200e5326ac3fce7`.
+  The completed research delivery was not repeated.
+- The user selected `Hcoona.ReleaseSmoke.GithubPackages` and confirmed that
+  its existing container is operator-controlled, dedicated to smoke use,
+  and has no production dependency or existing consumers requiring
+  compatibility. This records operator intent, not an exhaustive consumer
+  or grant audit. Follow-up GETs returned public NuGet container `12024661`,
+  owned by `hcoona`, associated with `hcoona/three`, and the same two active
+  version IDs recorded above. No package bytes were downloaded or executed.
+- The user set the objective to complete slice validation. Scope, trust,
+  and acceptance questions remain unanswered. The handoff now records those
+  proposals separately from the confirmed product selection; implementation,
+  native probes, and publication remain unauthorized.
+- Current-source inspection reconfirmed Node Provider admission,
+  `build-tarball` Release Artifact admission, and npm publication imports.
+  Existing implementation or test success cannot establish a NuGet release
+  capability. The historical marker returns
+  `hcoona-release-smoke-github-packages`.
+- Updated the handoff and navigation as a requirements-confirmation draft.
+  No product, test, workflow, dependency, Governance, credential, package
+  access, or external resource was changed. Documentation validation, review,
+  and protected delivery are not claimed complete by this entry.
+
+## [2026-09-09] query | Confirm NuGet scope and prepare the design
+
+- The user confirmed the complete scope, NuGet-specific trust boundary, and
+  acceptance objective. Added `WD-NUGET-001` through `WD-NUGET-008` as the
+  canonical requirements, then drafted HLD ownership, the five MLD extensions,
+  glossary/migration alignment, and the brief NuGet LLD. Implementation,
+  native probes, and publication remain subject to subsequent authorization.
+- Two bounded workers contributed nonoverlapping MLD updates; source-only
+  Microsoft documentation and pinned-toolchain inspection informed the LLD.
+  NBGV `3.10.94` source at `dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb`
+  has no frozen-version replay switch. The selected project-local Build mode
+  excludes its assets through native NuGet metadata, uses separate restore
+  intermediates, and supplies frozen SDK package/assembly properties. Actual
+  restore/build/pack evidence is still an implementation gate.
+- SDK `10.0.300` bundles NuGet `7.6.0-rc.23102`; the helper's CPM `7.9.0`
+  is not that client. Exact bundled source at dotnet/dotnet commit
+  `caa81fa4971f74880cdab61990cb1b11420939ec` confirms ordinary push defaults
+  to three total attempts. The LLD selects one standard-protocol HTTP PUT,
+  requiring source/configuration and fault-scenario evidence for no replay,
+  rather than an undocumented CLI retry switch or testing-only injection.
+- The proposed minimum native generation has three invocations and no
+  administrative operation. It is not authorized for execution. Sequential
+  creation/duplicate evidence cannot alone establish concurrent atomic
+  creation; sufficient service-owned assurance remains an activation gate.
+  Existing npm evidence, authority, and completed operation remain unchanged.
+- The earlier requirements-confirmation draft passed applicable root HK
+  checks, 103 local-link/anchor checks, and exact preservation of the original
+  240,161 log bytes. The expanded design requires fresh validation,
+  independent review/adjudication, contraction, and protected delivery.
+- The complete 16-path design passed applicable root HK checks, 152 local
+  Markdown link/anchor checks, log-prefix verification, and commit hooks before
+  independent OCR. OCR preview excluded Markdown, so explicit rule resolution
+  and the complete Git manifest kept every changed path in review scope.
+- At head `e9b721f259060e0f7ac35dda46a23942108e8173`, the source/contract
+  reviewer reported zero material findings. The integration reviewer found
+  one stale handoff sentence treating confirmed intended use and trust as
+  open. A separate adjudicator classified it as a true positive. The fix
+  retains unresolved native/platform evidence while preserving the confirmed
+  requirements. Current-state wording was also contracted to remove transient
+  review-stage labels; review and delivery chronology remain in Git and the PR.
+  Original-reviewer rereview follows this correction.
+- Both original reviewers completed rereview at
+  `2cfa271c337a0fbe51d7fe6f8a0ff401984db03b`; the stale-decision finding was
+  closed, with zero remaining material findings across the full 16-path scope.
+- A fresh-context handoff probe at that revision passed every takeover task
+  with repository, historical Git, and GET-only package references. It found
+  no material takeover gap and correctly retained the separate implementation,
+  native, and publication authorization gates. No product or registry
+  operation was performed.
+- Contraction after the second review iteration and complete review found no
+  further design changes necessary: scope remains one NuGet slice, current
+  v3 authority is reused, and source-supported design remains distinct from
+  native evidence. This final append records completed checks; protected
+  delivery and merged-tree verification remain subsequent gates.
+- PR #669's Copilot review found three stale takeover directions in the main
+  handoff, NuGet handoff, and overview. An independent adjudicator classified
+  each as a true positive. The correction routes agents to the existing design
+  package, actual Git/PR delivery state, and separately authorized disabled
+  implementation; it does not claim a pending merge is complete. Current LLD
+  reading lists and navigation now include the applicable NuGet design while
+  retaining the historical npm baseline's specificity.
+- A new fresh-context probe of the corrected entries passed all takeover tasks
+  with repository, Git, PR, and GET-only package evidence. It identified no
+  material gap and correctly distinguished outstanding design-delivery gates
+  from post-delivery implementation authorization. The correction's 155 local
+  Markdown path/anchor checks passed. No product or native execution occurred.

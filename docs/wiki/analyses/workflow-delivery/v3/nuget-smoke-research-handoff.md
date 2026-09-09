@@ -2,18 +2,24 @@
 
 ## Status and Authorization
 
-This is a research and operating handoff, not an approved second-slice
-specification or implementation plan. The user authorized read-only research,
-this documentary delivery, a fresh-context handoff probe, review, and protected
-merge. The user explicitly prohibited implementation.
+This is an operating handoff. The research delivery and interactive
+requirements confirmation are complete. The canonical confirmed product,
+trust, and acceptance requirements are `WD-NUGET-*` in
+[Requirements](./requirements.md#nuget-second-slice). The design extends the
+HLD, five MLDs, and brief LLD in that order toward validation of this slice.
+Do not repeat the completed research delivery.
 
-The proposed next slice is a small .NET/NuGet library delivered to GitHub
-Packages as Buddy. Its requirements and destination-specific trust decision
-are not yet confirmed. Finding an old project or an existing package does not
-authorize restoring it, publishing to it, or adopting its old policy.
+The user selected `Hcoona.ReleaseSmoke.GithubPackages` and confirmed that its
+existing container is operator-controlled, dedicated to smoke use, and has no
+production dependency or existing consumers requiring compatibility. This is
+an operator statement of intended use, not an exhaustive consumer or access
+audit. Product shape, channel scope, destination-specific trust, and acceptance
+criteria are confirmed in `WD-NUGET-*`. Design delivery does not authorize
+restoration, implementation, native acceptance, publication, or adoption of
+historical delivery policy.
 
 Do not change product code, tests, descriptors, workflows, dependencies,
-Governance, Environments, credentials, or package access for this research.
+Governance, Environments, credentials, or package access during design.
 Do not dispatch, rerun, approve a deployment, publish a package, execute a
 native acceptance probe, delete, restore, or repair anything. A subsequent user
 request must authorize further work; this handoff grants no standing mutation
@@ -40,15 +46,20 @@ merged before repeating any documentary delivery.
 
 Keep these facts in the working context:
 
-- Research only; no implementation or external mutation is authorized.
+- Requirements are confirmed and the design package is present. Verify its
+  protected delivery in Git and the PR, completing only outstanding delivery
+  gates. After delivery, disabled implementation is the next separately
+  authorized phase. Targeted read-only inspection remains permitted;
+  implementation and native or publication operations are not authorized.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
-- The GitHub Packages-named project is the better initial reuse candidate,
-  not a selected or restored v3 Release Unit.
+- The GitHub Packages-named project is selected for the next slice, but has
+  not been restored or admitted as a v3 Release Unit.
 - Current release execution remains npm-specific; the NuGet static-reference
   helper is not a .NET Release Provider or publisher.
-- Requirements, trust, version authority, artifact scope, and native
-  acceptance remain decisions to close before implementation.
+- Scope and trust are confirmed. The LLD identifies local and platform
+  capability gates; concrete native acceptance and publication requests must
+  be closed before their respective execution authorizations.
 - Preserve the waterfall, validation-before-OCR, independent adjudication,
   contraction, and protected-delivery gates below.
 
@@ -98,7 +109,7 @@ Packages-named descriptor selected GitHub Packages for Official. Commit
 latter's Buddy profile. After
 `7a55d760c17e8fa79897fcb8aaa4e1f30b40b5c5`, both final pre-removal descriptors
 selected only `github-release/public` for both profiles. They declared a
-`.nupkg` and a `.snupkg`, not the proposed single-artifact scope.
+`.nupkg` and a `.snupkg`, rather than the confirmed single-artifact scope.
 
 Those `three.release/v1alpha1` descriptors are historical inventory, not v3
 authoring. Do not restore them, their old locks, workflows, or control plane
@@ -171,8 +182,8 @@ Python paths below are relative to
 | `release/publication.py`, `records/release.py`                                                         | Publication imports Node/npm mechanisms; Release Artifact admission includes the exact `build-tarball` producer. Inspect the concrete seams before claiming a drop-in adapter change.                       |
 | `src/private/app/workflow-delivery-v3-nuget-authority/Program.cs`                                      | This existing C# helper admits `nuget-lock` and `nuget-packages-config` static-reference facts. It does not evaluate a Release Unit, freeze NBGV, build a package, publish, or observe a NuGet destination. |
 
-The next design should identify only the representation and adapter extensions
-required by the concrete second case. `WD-NFR-003` expects ecosystem additions
+The HLD, MLD extensions, and NuGet LLD identify the representation and adapter
+changes required by the concrete second case. `WD-NFR-003` expects ecosystem additions
 without changing cross-system authority semantics; it does not authorize a
 universal plugin framework or speculative Environment Profiles.
 
@@ -195,14 +206,15 @@ acceptance evidence:
 | Non-overwrite            | The [generic NuGet publication protocol](https://learn.microsoft.com/en-us/nuget/api/package-publish-resource) explicitly distinguishes nuget.org's duplicate rejection from other feeds that may replace a package. The reviewed GitHub guide does not establish a GitHub-specific active-version non-overwrite or upload-byte-preservation contract. This is a required capability gate, not evidence that GitHub actually permits overwrite.                                                     |
 | Administrative lifecycle | [GitHub deletion/restoration](https://docs.github.com/en/packages/learn-github-packages/deleting-and-restoring-a-package) differs from nuget.org unlisting; the generic NuGet delete operation is server-dependent. Do not transfer npm tombstone conclusions, tag-race scenarios, or administrative authorization.                                                                                                                                                                                 |
 
-The next design must establish a sufficient destination contract and bounded
+The NuGet design requires a sufficient destination contract and bounded
 native acceptance for required creation, active duplicates, actual bytes,
 provenance, and clean consumption. Documentation alone has not established
 those GitHub-specific guarantees. Do not weaken v3 content or witness
 requirements to metadata-only or semantic-only success because a service
-guarantee is missing. Native-equivalent version collisions, the evaluated
-toolchain/pack inputs, current package grants and intended use, and the
-destination-specific threat/cost decision remain open.
+guarantee is missing. Native-equivalent collision behavior, evaluated
+toolchain/pack inputs, and current package grants still need evidence.
+Intended use and the destination-specific threat/cost decision are confirmed
+in `WD-NUGET-*`; those decisions do not establish platform or native facts.
 
 Missing required platform guarantees block the corresponding capability;
 they do not justify a runtime history service, administrator compensation,
@@ -210,36 +222,47 @@ unbounded retry, or a success-shaped fallback. Any later native acceptance
 must have its own approved contract, disposable scope, bounded operations,
 stop conditions, retained evidence, and independent audit.
 
-## Proposed Requirements Packet
+## Confirmed Requirements
 
-The first subsequent interaction should present this bounded packet to the
-user, not start coding:
+The user accepted the complete packet. The normative requirements are
+[WD-NUGET-001 through WD-NUGET-008](./requirements.md#nuget-second-slice);
+this summary routes the next agent to that authority.
 
-| Decision needing confirmation | Research recommendation or unresolved boundary                                                                                                                                                                                                                                                        |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product identity              | Consider the historical GitHub Packages-named smoke and its small marker API; choose identity only after confirming the existing container's intended use. Keep the NuGet-named project as an alternative, not a second simultaneous smoke.                                                           |
-| Initial product shape         | One managed C# library, one selected TFM, one primary `.nupkg`, built on Windows with repository-native tooling. Explicitly reconcile symbol defaults without changing global policy incidentally.                                                                                                    |
-| Destination and channel       | GitHub Packages Buddy only. nuget.org Official, GitHub Release assets, symbols, multi-RID, executables, installers, signing work, and another ecosystem are outside this proposed slice.                                                                                                              |
-| Success condition             | Build/package validation plus a clean exact-version consumer that restores, builds, and invokes the marker API; eventually one separately authorized, auditable real publication. Neither that publication nor an acceptance probe is authorized now.                                                 |
-| Trust and authority           | Make a new explicit threat/cost decision covering eligible refs, target-controlled MSBuild evaluation, trusted publication execution, Approval, repository-token reach, and package access. Until explicitly changed, ordinary v3 requirements apply; npm-specific risk acceptance does not transfer. |
-| Native contract               | Establish required creation, active duplicate, actual-byte/provenance, and observation behavior for the selected NuGet service/profile. Select only scenarios that matter to this destination; no invented npm-equivalent tag mechanism.                                                              |
-| Reuse and delivery size       | Revalidate the tiny historical product behavior, not its old delivery stack. Identify dependency-ordered, human-reviewable design and implementation units only after the requirements boundary is confirmed.                                                                                         |
+| Confirmed concern        | Requirement and next evidence boundary                                                                                                                                                                                                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product and scope        | `WD-NUGET-001`: the selected marker library, `net10.0`, Windows, one `.nupkg`, no separate `.snupkg`, GitHub Packages Buddy only.                                                                                                                                    |
+| Native facts and version | `WD-NUGET-002`: official evaluation at the exact target, complete history, and a frozen native NBGV NuGet projection. Actual evaluated facts are still future evidence.                                                                                              |
+| Trust and authority      | `WD-NUGET-003` and `WD-NUGET-004`: reviewed protected-main control, isolated target evaluation/build, build-free publication, self-approval by the sole trusted writer, and explicitly accepted repository-token reach. Platform configuration still needs readback. |
+| Qualification            | `WD-NUGET-005`: distinct package-content and clean exact-version restore/build/marker evidence for the Release-owned artifact.                                                                                                                                       |
+| Destination acceptance   | `WD-NUGET-006`: independently establish the required active creation, duplicate, actual-byte, witness, and observation behavior for the NuGet profile.                                                                                                               |
+| Completion               | `WD-NUGET-007`: local/package evidence, an audited native suite, and one audited real publication with its own current-run authority and actual destination bytes.                                                                                                   |
+| Execution boundaries     | `WD-NUGET-008`: ordered design, subsequent implementation authorization, and separate concrete native and real-publication authorization.                                                                                                                            |
 
-This packet is not a claim that the full next slice is a small patch.
-Provider/compiler, artifact representation, Build/Quality, destination
-observation/publication, and authority integration all need concrete design
-assessment. Do not simultaneously restore both historical projects or switch
-the existing production CI/Official release line.
+The next implementation still requires separate authorization. A descriptor alone cannot enable
+NuGet: Provider/compiler, artifact representation, Build/Quality, destination
+observation/publication, and authority integration need bounded extensions.
+The [HLD extension](./high-level-design.md#nuget-second-slice-extension)
+assigns ownership. Local tests or historical package versions cannot supply
+missing native or real-publication evidence. No implementation or external
+operation is authorized by the confirmed completion objective alone.
+
+The [NuGet LLD](./hcoona-release-smoke-github-packages-lld.md) follows the five
+MLD extensions. It selects a project-local frozen NBGV Build mode and a
+one-shot standard-protocol HTTP publisher, with explicit local and native
+admission gates. Review and protected-delivery evidence belong in Git, the
+PR, and the append-only log. A passing three-invocation sequential suite alone does
+not establish the required service-owned atomic-creation guarantee.
 
 ## Workflow and Discipline
 
 These gates remain binding after the research is handed off:
 
-1. **Requirements before design.** Interactively confirm the second-slice
-   scope and threat/cost decision. Then reconcile the affected HLD, MLDs, and
-   brief LLD in that order. Existing general v3 approval does not approve a
-   new slice-specific exception. Implementation follows those gates and a
-   subsequent authorization, not this research request.
+1. **Requirements before design.** Preserve the confirmed `WD-NUGET-*`
+   scope and threat/cost decision. Any new scope or risk change requires
+   confirmation before the affected HLD, MLD, and brief LLD reconciliation,
+   in that order. Existing general v3 approval does not approve a new
+   slice-specific exception. Implementation follows design delivery and
+   subsequent authorization.
 2. **Bounded work ownership.** The user-facing agent owns scope and external
    authorization; the orchestrator decomposes substantial work into bounded
    worker tasks. A worker reports a need for further decomposition instead of
@@ -295,8 +318,9 @@ not implied permission to finish the original task.
 The handoff is usable only if a new subagent, given the checkout and this entry
 path without the preceding conversation or research summary, can:
 
-- distinguish completed npm work from the unapproved NuGet proposal and name
-  the next permitted action without restoring or publishing anything;
+- distinguish completed npm work, confirmed NuGet requirements, and the
+  unimplemented NuGet design, and name the next permitted action without
+  restoring or publishing anything;
 - find both historical projects, their intentional removal, retained
   containers, and the difference between old descriptors and current v3;
 - identify native-evaluation and current implementation gaps without treating

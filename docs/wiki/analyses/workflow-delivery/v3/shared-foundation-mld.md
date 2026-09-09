@@ -7,6 +7,9 @@ Architecture version: **v3**.
 Review state: **Confirmed; approved normal Live baseline incorporated on
 2026-08-31**.
 
+The NuGet extension below realizes separately confirmed `WD-NUGET-*`
+requirements and defines the mechanisms required by this slice. It does not claim implemented support or native acceptance.
+
 This middle-level design defines the reusable mechanism layer used by CI
 Qualification and Release Delivery. It covers canonical records and digests,
 Artifact References, Repository Model compilation, ecosystem Providers,
@@ -509,6 +512,80 @@ It does not decide whether the Definition applies, whether it is required,
 which channel selects it, which Release Unit is delivered, whether a
 Publication Action is authorized, or how a failure affects the business
 verdict.
+
+## NuGet Mechanism Extension
+
+This extension realizes the mechanisms required by `WD-NUGET-001` through
+`WD-NUGET-005` and the
+[NuGet Repository Model](./repository-model-release-unit-mld.md#nuget-second-slice-model).
+Destination guarantees and acceptance remain Release-owned obligations under
+`WD-NUGET-006` and `WD-NUGET-007`.
+
+### Bounded Provider and Artifact Admission
+
+The existing `workflow-delivery-v3-nuget-authority` helper reads static
+`nuget-lock` and `nuget-packages-config` reference facts. It is not the .NET
+Release Provider. The new Provider must satisfy the target-evaluating mode and
+complete Fact Bundle contract below, including exact-target native NBGV
+resolution. Reusing official NuGet libraries or source-binding mechanisms
+does not reuse that helper's result as a Release Provider Result.
+
+The second ecosystem requires explicit .NET and Node cases in the existing
+same-revision contracts and static catalogs, not a universal plugin interface.
+The closed Provider Request Manifest identifies the expected ecosystem,
+Provider implementation, request, and producer. Compilation rejects a Node
+Result offered for a .NET request and rejects missing, duplicate, or
+unexpected results before forming a ready Snapshot.
+
+Artifact admission similarly selects the exact Build Definition, output role,
+and producer for the chosen ecosystem. Replacing an npm-only representation
+must not turn the current `build-tarball` check into acceptance of any producer.
+NuGet packages and npm tarballs retain distinct admitted shapes and producers;
+matching target or digest cannot overcome ecosystem, request, purpose, or
+producer mismatch. Existing normal-Live, CI, and simulation binding rules
+remain unchanged.
+
+### Windows Build and Package Mechanisms
+
+The .NET Build Adapter consumes the closed Build Request and admitted native
+facts. It runs on Windows with the repository-pinned toolchain and no
+publication authority, applies the frozen native version, and produces the
+single declared `.nupkg`. Its native invocation must preserve that frozen
+selection through imported build/pack targets rather than resolve a new NBGV
+version. A generated separate `.snupkg`, an extra primary package, or an
+unexpected framework fails output admission. The project-local symbol
+override does not change repository-wide defaults.
+
+NuGet-native readers expose package identity, native version comparison, and
+package content to content checks. They read artifact data; Decision and
+Side-Effect processes do not evaluate a project, run MSBuild, load product
+assemblies, or repack the archive. Package and clean-consumer Quality Adapters
+remain separate mechanical invocations; their owning context selects and
+admits the obligations and Evidence.
+
+### Archive Bytes and Provenance
+
+The Build Adapter constructs the in-package target witness before packing and
+returns the original archive's content digest, size, logical output identity,
+and producer facts. Internal provenance binds the Build Request, exact frozen
+native version, context, purpose, target, definition, toolchain, and immutable
+transport through the existing provenance contract. Optional NuGet repository
+metadata alone cannot replace the required witness.
+
+Transport naming does not rename the logical package or authorize rebuilding
+it. Consumers retrieve the immutable artifact by ID, verify the exact archive
+bytes and admitted provenance, and inspect the same archive. Build, Quality,
+publication, and actual destination readback preserve that byte identity;
+semantic assembly equivalence is insufficient. Adapter acceptance proves
+compiled-byte reuse by construction rather than adding routine comparison of
+build outputs with unpacked binaries.
+
+LLD defines the concrete .NET producer identities, closed record cases, native
+invocations, and witness encoding. Conformance must cover accepted .NET facts
+and packages, cross-ecosystem and cross-purpose rejection, frozen-version
+enforcement, and unexpected symbol/output rejection. None of these local
+mechanisms proves the GitHub NuGet service's creation, duplicate, or
+upload-byte-preservation contract.
 
 ## Provider Model
 

@@ -228,6 +228,42 @@ Providers provide normalized facts. Adapters execute closed mechanical
 operations. Neither decides business scope, downgrades obligations, authorizes
 publication, or reinterprets verdicts.
 
+## NuGet Second-Slice Extension
+
+`WD-NUGET-*` adds one protected-main Buddy Release Unit and one NuGet
+destination. The existing context ownership, purpose separation, Snapshot
+lineage, Approval, Publication Result, and Outcome contracts remain shared.
+The extension does not create a second release protocol or a general plugin
+framework. These design changes require review and protected delivery before
+implementation; they do not claim a passing native contract.
+
+| Responsibility                     | Owning element and bounded extension                                                                                                                                                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native project and version facts   | Repository Model: a target-evaluating .NET Provider emits an admitted Fact Bundle using MSBuild and NBGV, including the frozen NuGet projection and complete selected output scope.                                                   |
+| Package production and inspection  | Shared Foundation: a Windows Build Adapter produces one `.nupkg`; NuGet-native package readers and content/provenance primitives preserve logical bytes and separate producer identity from transport naming.                         |
+| Package and consumer qualification | CI Qualification and Release qualification each select content and clean-consumer obligations for their own artifact and purpose. Release never adopts CI Evidence.                                                                   |
+| Eligibility and authority          | Delivery Governance: protected-main and reviewed same-revision control, unprivileged evaluation/build/quality, a fresh action-bound Approval, and a trusted build-free publisher with the separately accepted repository-token reach. |
+| Registry behavior and publication  | Release Delivery: a NuGet-specific destination projection, exact native-coordinate observation, zero-or-one action, a pinned one-shot profile, actual-byte readback, and the existing terminal evidence and finalization model.       |
+| Activation and validation          | A separate NuGet admission binds independently audited native evidence and fresh platform configuration. Native and real-publication operations require their own bounded authorization.                                              |
+
+The .NET evaluator executes target-controlled project imports only in the
+Build and Qualification Zone. Decision and Side-Effect zones use verified
+data rather than loading a project or invoking pack. The selected protected
+target also supplies the reviewed control code; no alternate branch-control
+exception or independently selected publisher revision is introduced.
+
+Artifact and Provider records gain only the explicit ecosystem distinctions
+required by the Node and .NET cases. NuGet admission must reject npm artifact
+producers, operation profiles, and native acceptance, and vice versa. Removing
+an npm-only representation assumption must not weaken exact producer, purpose,
+target, version, or integrity validation for the completed first slice.
+
+The single existing Approval Environment can serve the same human-approval
+semantics. NuGet has separate protected eligibility and destination admission;
+sharing the Environment never shares a prior Approval, Authorization, or
+native verdict. A second Environment or generic Environment Profile is not
+needed unless a concrete policy difference requires it.
+
 ## Governance and Trust
 
 ### Context-Owned Planning and Finalization
@@ -1237,6 +1273,7 @@ marker before mutation.
 | `WD-RET-*`        | Platform-aware records, durable destination identities, fail-closed expiration                                                                                                                                  |
 | `WD-SLICE-*`      | Same-revision Buddy control, accepted writer TCB and repository-principal blast radius, static-reference policy, one Approval Environment, Publication Authorization, publisher ordering, and one-PR activation |
 | `WD-NFR-*`        | Context separation, adapter extension model, explanation contract, CI objective                                                                                                                                 |
+| `WD-NUGET-*`      | NuGet second-slice Provider, package and consumer qualification, protected-main Governance, destination contract, and independently authorized validation gates                                                 |
 
 ## Middle-Layer Design Decomposition
 
