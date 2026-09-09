@@ -50,9 +50,9 @@ The [NuGet second-slice handoff](./nuget-smoke-research-handoff.md) retains the
 completed research and current requirements packet. The user selected
 `Hcoona.ReleaseSmoke.GithubPackages` and confirmed its operator-controlled
 smoke use. Scope, trust, and acceptance are confirmed in `WD-NUGET-*`;
-the HLD and affected MLDs are reconciled in the proposed design, followed by
-the [NuGet LLD](./hcoona-release-smoke-github-packages-lld.md). Independent
-review and protected design delivery remain gates. No implementation, native
+the HLD and affected MLDs define the design, followed by
+the [NuGet LLD](./hcoona-release-smoke-github-packages-lld.md) and its local
+and native admission gates. No implementation, native
 probe, or publication is authorized.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.

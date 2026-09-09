@@ -8,8 +8,7 @@ Review state: **Confirmed; approved normal Live baseline incorporated on
 2026-08-31**.
 
 The NuGet extension below realizes separately confirmed `WD-NUGET-*`
-requirements and remains a design proposal pending review and protected
-delivery. It does not claim implemented support or native acceptance.
+requirements and defines the mechanisms required by this slice. It does not claim implemented support or native acceptance.
 
 This middle-level design defines the reusable mechanism layer used by CI
 Qualification and Release Delivery. It covers canonical records and digests,

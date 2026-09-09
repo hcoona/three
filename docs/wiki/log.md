@@ -4141,3 +4141,15 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   checks, 103 local-link/anchor checks, and exact preservation of the original
   240,161 log bytes. The expanded design requires fresh validation,
   independent review/adjudication, contraction, and protected delivery.
+- The complete 16-path design passed applicable root HK checks, 152 local
+  Markdown link/anchor checks, log-prefix verification, and commit hooks before
+  independent OCR. OCR preview excluded Markdown, so explicit rule resolution
+  and the complete Git manifest kept every changed path in review scope.
+- At head `e9b721f259060e0f7ac35dda46a23942108e8173`, the source/contract
+  reviewer reported zero material findings. The integration reviewer found
+  one stale handoff sentence treating confirmed intended use and trust as
+  open. A separate adjudicator classified it as a true positive. The fix
+  retains unresolved native/platform evidence while preserving the confirmed
+  requirements. Current-state wording was also contracted to remove transient
+  review-stage labels; review and delivery chronology remain in Git and the PR.
+  Original-reviewer rereview follows this correction.

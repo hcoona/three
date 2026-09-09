@@ -7,8 +7,8 @@ Architecture version: **v3**.
 Review state: **Confirmed; approved normal Live baseline incorporated on
 2026-08-31**.
 
-The NuGet second-slice extension below is a design proposal following
-`WD-NUGET-*` requirements confirmation. It preserves the completed npm
+The NuGet second-slice extension below realizes the confirmed
+`WD-NUGET-*` requirements. It preserves the completed npm
 protocol and does not claim admitted NuGet native behavior.
 
 This middle-level design defines how Release Delivery accepts a manual Release

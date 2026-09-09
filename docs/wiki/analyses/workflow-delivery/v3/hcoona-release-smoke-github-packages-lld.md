@@ -4,8 +4,8 @@
 
 This design realizes the confirmed `WD-NUGET-*` [requirements](./requirements.md#nuget-second-slice),
 the [HLD extension](./high-level-design.md#nuget-second-slice-extension), and
-the five current MLDs. It is a design proposal pending independent review and
-protected delivery. No implementation, native probe, activation, or publication
+the five current MLDs. It specifies the design and its remaining admission
+gates. No implementation, native probe, activation, or publication
 is authorized by this document. The [handoff](./nuget-smoke-research-handoff.md)
 owns current operating status.
 

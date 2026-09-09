@@ -8,8 +8,7 @@ Review state: **Confirmed; approved normal Live baseline incorporated on
 2026-08-31**.
 
 The NuGet extension below realizes separately confirmed `WD-NUGET-*`
-requirements and remains a design proposal pending review and protected
-delivery. It is not implementation or native acceptance evidence.
+requirements and defines the mechanisms required by this slice. It is not implementation or native acceptance evidence.
 
 This middle-level design defines how Workflow Delivery discovers technical
 repository facts, authors Release Units, resolves build semantics, and compiles

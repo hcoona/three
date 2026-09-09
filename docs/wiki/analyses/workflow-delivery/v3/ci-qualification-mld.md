@@ -7,8 +7,8 @@ Architecture version: **v3**.
 Review state: **Confirmed; approved normal Live baseline incorporated on
 2026-08-31**.
 
-The NuGet second-slice extension below is a design proposal following
-`WD-NUGET-*` requirements confirmation. Existing npm qualification semantics
+The NuGet second-slice extension below realizes the confirmed
+`WD-NUGET-*` requirements. Existing npm qualification semantics
 remain unchanged.
 
 This middle-level design defines how CI Qualification identifies an immutable

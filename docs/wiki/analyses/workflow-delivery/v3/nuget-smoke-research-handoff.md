@@ -5,8 +5,8 @@
 This is an operating handoff. The research delivery and interactive
 requirements confirmation are complete. The canonical confirmed product,
 trust, and acceptance requirements are `WD-NUGET-*` in
-[Requirements](./requirements.md#nuget-second-slice). Current work reconciles
-HLD, MLDs, and a brief LLD in that order toward validation of this slice.
+[Requirements](./requirements.md#nuget-second-slice). The design extends the
+HLD, five MLDs, and brief LLD in that order toward validation of this slice.
 Do not repeat the completed research delivery.
 
 The user selected `Hcoona.ReleaseSmoke.GithubPackages` and confirmed that its
@@ -106,7 +106,7 @@ Packages-named descriptor selected GitHub Packages for Official. Commit
 latter's Buddy profile. After
 `7a55d760c17e8fa79897fcb8aaa4e1f30b40b5c5`, both final pre-removal descriptors
 selected only `github-release/public` for both profiles. They declared a
-`.nupkg` and a `.snupkg`, not the proposed single-artifact scope.
+`.nupkg` and a `.snupkg`, rather than the confirmed single-artifact scope.
 
 Those `three.release/v1alpha1` descriptors are historical inventory, not v3
 authoring. Do not restore them, their old locks, workflows, or control plane
@@ -203,14 +203,15 @@ acceptance evidence:
 | Non-overwrite            | The [generic NuGet publication protocol](https://learn.microsoft.com/en-us/nuget/api/package-publish-resource) explicitly distinguishes nuget.org's duplicate rejection from other feeds that may replace a package. The reviewed GitHub guide does not establish a GitHub-specific active-version non-overwrite or upload-byte-preservation contract. This is a required capability gate, not evidence that GitHub actually permits overwrite.                                                     |
 | Administrative lifecycle | [GitHub deletion/restoration](https://docs.github.com/en/packages/learn-github-packages/deleting-and-restoring-a-package) differs from nuget.org unlisting; the generic NuGet delete operation is server-dependent. Do not transfer npm tombstone conclusions, tag-race scenarios, or administrative authorization.                                                                                                                                                                                 |
 
-The next design must establish a sufficient destination contract and bounded
+The NuGet design requires a sufficient destination contract and bounded
 native acceptance for required creation, active duplicates, actual bytes,
 provenance, and clean consumption. Documentation alone has not established
 those GitHub-specific guarantees. Do not weaken v3 content or witness
 requirements to metadata-only or semantic-only success because a service
-guarantee is missing. Native-equivalent version collisions, the evaluated
-toolchain/pack inputs, current package grants and intended use, and the
-destination-specific threat/cost decision remain open.
+guarantee is missing. Native-equivalent collision behavior, evaluated
+toolchain/pack inputs, and current package grants still need evidence.
+Intended use and the destination-specific threat/cost decision are confirmed
+in `WD-NUGET-*`; those decisions do not establish platform or native facts.
 
 Missing required platform guarantees block the corresponding capability;
 they do not justify a runtime history service, administrator compensation,
@@ -234,7 +235,7 @@ this summary routes the next agent to that authority.
 | Completion               | `WD-NUGET-007`: local/package evidence, an audited native suite, and one audited real publication with its own current-run authority and actual destination bytes.                                                                                                   |
 | Execution boundaries     | `WD-NUGET-008`: ordered design, subsequent implementation authorization, and separate concrete native and real-publication authorization.                                                                                                                            |
 
-The next work is design reconciliation. A descriptor alone cannot enable
+The next implementation still requires separate authorization. A descriptor alone cannot enable
 NuGet: Provider/compiler, artifact representation, Build/Quality, destination
 observation/publication, and authority integration need bounded extensions.
 The [HLD extension](./high-level-design.md#nuget-second-slice-extension)
@@ -245,19 +246,20 @@ operation is authorized by the confirmed completion objective alone.
 The [NuGet LLD](./hcoona-release-smoke-github-packages-lld.md) follows the five
 MLD extensions. It selects a project-local frozen NBGV Build mode and a
 one-shot standard-protocol HTTP publisher, with explicit local and native
-admission gates. The design remains subject to independent review and
-protected delivery. A passing three-invocation sequential suite alone does
+admission gates. Review and protected-delivery evidence belong in Git, the
+PR, and the append-only log. A passing three-invocation sequential suite alone does
 not establish the required service-owned atomic-creation guarantee.
 
 ## Workflow and Discipline
 
 These gates remain binding after the research is handed off:
 
-1. **Requirements before design.** Interactively confirm the second-slice
-   scope and threat/cost decision. Then reconcile the affected HLD, MLDs, and
-   brief LLD in that order. Existing general v3 approval does not approve a
-   new slice-specific exception. Implementation follows those gates and a
-   subsequent authorization, not this research request.
+1. **Requirements before design.** Preserve the confirmed `WD-NUGET-*`
+   scope and threat/cost decision. Any new scope or risk change requires
+   confirmation before the affected HLD, MLD, and brief LLD reconciliation,
+   in that order. Existing general v3 approval does not approve a new
+   slice-specific exception. Implementation follows design delivery and
+   subsequent authorization.
 2. **Bounded work ownership.** The user-facing agent owns scope and external
    authorization; the orchestrator decomposes substantial work into bounded
    worker tasks. A worker reports a need for further decomposition instead of
@@ -313,8 +315,9 @@ not implied permission to finish the original task.
 The handoff is usable only if a new subagent, given the checkout and this entry
 path without the preceding conversation or research summary, can:
 
-- distinguish completed npm work from the unapproved NuGet proposal and name
-  the next permitted action without restoring or publishing anything;
+- distinguish completed npm work, confirmed NuGet requirements, and the
+  unimplemented NuGet design, and name the next permitted action without
+  restoring or publishing anything;
 - find both historical projects, their intentional removal, retained
   containers, and the difference between old descriptors and current v3;
 - identify native-evaluation and current implementation gaps without treating
