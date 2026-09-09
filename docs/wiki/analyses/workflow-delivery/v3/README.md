@@ -44,7 +44,7 @@ effect.
 Before planning or editing v3 work, read the [Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md). It is
 operating guidance, not a second normative specification.
 
-## NuGet Design Preparation
+## NuGet Second-Slice Design
 
 The [NuGet second-slice handoff](./nuget-smoke-research-handoff.md) retains the
 completed research and current requirements packet. The user selected
@@ -71,7 +71,8 @@ Read the current v3 documents in this order:
     - [Release Delivery](./release-delivery-mld.md)
     - [Shared Foundation](./shared-foundation-mld.md)
 5. [Migration and Document Policy](./migration-strategy.md)
-6. [`hcoona-release-smoke-npm` LLD](./hcoona-release-smoke-npm-lld.md)
+6. Applicable slice LLD: [npm](./hcoona-release-smoke-npm-lld.md) or
+   [NuGet](./hcoona-release-smoke-github-packages-lld.md)
 
 Higher layers constrain lower ones, and the current set must be reconciled if a conflict appears. v1 and v2 may supply
 a mechanism only when a v3 document explicitly requires extraction and revalidation.

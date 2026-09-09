@@ -155,16 +155,18 @@ no GitHub rerun or prior-run authority reuse is permitted. Do not repeat native
 acceptance. Preserve the first failed run, failed v1 evidence, and separately
 unresolved original-D recovery.
 
-## NuGet Design Preparation
+## NuGet Second-Slice Design
 
 The NuGet research delivery is complete. The user selected
 `Hcoona.ReleaseSmoke.GithubPackages` and confirmed its operator-controlled
 smoke use without production dependencies or existing compatibility
 obligations. The project remains absent from the active tree. The
 [handoff](./analyses/workflow-delivery/v3/nuget-smoke-research-handoff.md)
-routes to the confirmed `WD-NUGET-*` scope, trust, and acceptance requirements
-toward slice validation. HLD, MLD, and brief LLD reconciliation may continue
-in order; implementation, native probes, and publication are not authorized.
+routes to the confirmed `WD-NUGET-*` requirements and the HLD, five MLD
+extensions, and brief LLD. Verify protected design delivery in Git and the PR
+and complete only outstanding delivery gates. After delivery, the next phase
+is separately authorized disabled implementation. Implementation, native
+probes, and publication are not currently authorized.
 
 ## Historical Record Rule
 

@@ -46,17 +46,20 @@ merged before repeating any documentary delivery.
 
 Keep these facts in the working context:
 
-- Requirements are confirmed; design reconciliation and targeted read-only
-  inspection are authorized. Implementation and external mutation are not.
+- Requirements are confirmed and the design package is present. Verify its
+  protected delivery in Git and the PR, completing only outstanding delivery
+  gates. After delivery, disabled implementation is the next separately
+  authorized phase. Targeted read-only inspection remains permitted;
+  implementation and native or publication operations are not authorized.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
 - The GitHub Packages-named project is selected for the next slice, but has
   not been restored or admitted as a v3 Release Unit.
 - Current release execution remains npm-specific; the NuGet static-reference
   helper is not a .NET Release Provider or publisher.
-- Scope and trust are confirmed. Concrete design, platform capability gates,
-  and bounded native acceptance must be resolved before their respective
-  implementation and execution authorizations.
+- Scope and trust are confirmed. The LLD identifies local and platform
+  capability gates; concrete native acceptance and publication requests must
+  be closed before their respective execution authorizations.
 - Preserve the waterfall, validation-before-OCR, independent adjudication,
   contraction, and protected-delivery gates below.
 
@@ -179,8 +182,8 @@ Python paths below are relative to
 | `release/publication.py`, `records/release.py`                                                         | Publication imports Node/npm mechanisms; Release Artifact admission includes the exact `build-tarball` producer. Inspect the concrete seams before claiming a drop-in adapter change.                       |
 | `src/private/app/workflow-delivery-v3-nuget-authority/Program.cs`                                      | This existing C# helper admits `nuget-lock` and `nuget-packages-config` static-reference facts. It does not evaluate a Release Unit, freeze NBGV, build a package, publish, or observe a NuGet destination. |
 
-The next design should identify only the representation and adapter extensions
-required by the concrete second case. `WD-NFR-003` expects ecosystem additions
+The HLD, MLD extensions, and NuGet LLD identify the representation and adapter
+changes required by the concrete second case. `WD-NFR-003` expects ecosystem additions
 without changing cross-system authority semantics; it does not authorize a
 universal plugin framework or speculative Environment Profiles.
 

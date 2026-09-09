@@ -7,8 +7,9 @@ Read this page before acting on Workflow Delivery v3.
 This is an operating handoff, not a second specification. The current
 [requirements](./requirements.md), [HLD](./high-level-design.md),
 [glossary](./architecture-glossary.md), five MLDs,
-[migration policy](./migration-strategy.md), and first-slice
-[LLD](./hcoona-release-smoke-npm-lld.md) are authoritative.
+[migration policy](./migration-strategy.md), and applicable slice LLD
+([npm](./hcoona-release-smoke-npm-lld.md) or
+[NuGet](./hcoona-release-smoke-github-packages-lld.md)) are authoritative.
 
 v3 is the only normative line. Use v1 or v2 only when a v3 document explicitly
 requests mechanism extraction and revalidation. Git and the append-only
@@ -77,17 +78,20 @@ requests mechanism extraction and revalidation. Git and the append-only
   Both incomplete v1 generations and separately unresolved original-D recovery
   remain unchanged. Exact evidence belongs in the append-only log.
 
-## NuGet Design Preparation
+## NuGet Second-Slice Design
 
 The NuGet research delivery is complete. The user has selected
 `Hcoona.ReleaseSmoke.GithubPackages` and confirmed its operator-controlled,
 smoke-only use without production dependencies or existing compatibility
 obligations. Scope, trust, and acceptance are now confirmed as `WD-NUGET-*`.
-Continue design reconciliation through the
-[NuGet handoff](./nuget-smoke-research-handoff.md), in requirements, HLD, MLD,
-and brief LLD order. Implementation, native probes, and publication are not
-authorized. The confirmed validation objective does not adopt npm risk
-exceptions, authority, evidence, or external operations.
+The HLD, five MLD extensions, and brief NuGet LLD define the design. The
+[NuGet handoff](./nuget-smoke-research-handoff.md) routes its admission gates.
+Verify design delivery in Git and the PR, complete only outstanding delivery
+gates, and skip completed stages. After protected design delivery, the next
+phase is separately authorized disabled implementation. Implementation,
+native probes, and publication are not currently authorized. The confirmed
+validation objective does not adopt npm risk exceptions, authority, evidence,
+or external operations.
 
 ## Git Inspection and Implementation Scope
 
@@ -105,9 +109,11 @@ and synchronized current-state documentation. Treat that as a bounded purpose,
 not an exhaustive path allowlist; inspect every changed path and reject
 unrelated scope.
 
-That inventory is not authorization to reopen implementation. The subsequent
-NuGet request changes only research/handoff documentation and its navigation
-and log; a future implementation requires a new authorized scope.
+That inventory is not authorization to reopen npm implementation. The NuGet
+design delivery covers requirements, HLD, five MLD extensions, glossary,
+migration policy, brief LLD, and synchronized handoff, navigation, and log.
+It changes no runtime or product files. Subsequent implementation requires a
+new authorized scope.
 
 When these paths are under review, preserve unrelated worktree changes and do
 not reset or overwrite them.
@@ -343,7 +349,9 @@ NuGet specification:
 8. [Release Delivery MLD](./release-delivery-mld.md);
 9. [Shared Foundation MLD](./shared-foundation-mld.md);
 10. [Migration and Document Policy](./migration-strategy.md);
-11. [`hcoona-release-smoke-npm` LLD](./hcoona-release-smoke-npm-lld.md); and
+11. the applicable slice LLD:
+    [npm](./hcoona-release-smoke-npm-lld.md) or
+    [NuGet](./hcoona-release-smoke-github-packages-lld.md); and
 12. current repository code only for implementation facts.
 
 Do not infer policy from stale runtime behavior or archived designs.
@@ -359,9 +367,10 @@ provisioning, acceptance, either dispatch, or either Approval. Original-D
 recovery and any future mutation require separate explicit authorization.
 This completed task authorizes no third proving dispatch.
 
-The NuGet slice follows its linked handoff. Requirements are confirmed;
-design reconciliation and delivery precede subsequent implementation and
-external-operation authorization.
+The NuGet slice follows its linked handoff and existing design package.
+Verify protected design delivery before proceeding to separately authorized
+disabled implementation. Do not repeat completed design stages or infer
+native-operation or publication authorization.
 
 ## Validation and Review Protocol
 

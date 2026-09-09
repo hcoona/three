@@ -4166,3 +4166,15 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   v3 authority is reused, and source-supported design remains distinct from
   native evidence. This final append records completed checks; protected
   delivery and merged-tree verification remain subsequent gates.
+- PR #669's Copilot review found three stale takeover directions in the main
+  handoff, NuGet handoff, and overview. An independent adjudicator classified
+  each as a true positive. The correction routes agents to the existing design
+  package, actual Git/PR delivery state, and separately authorized disabled
+  implementation; it does not claim a pending merge is complete. Current LLD
+  reading lists and navigation now include the applicable NuGet design while
+  retaining the historical npm baseline's specificity.
+- A new fresh-context probe of the corrected entries passed all takeover tasks
+  with repository, Git, PR, and GET-only package evidence. It identified no
+  material gap and correctly distinguished outstanding design-delivery gates
+  from post-delivery implementation authorization. The correction's 155 local
+  Markdown path/anchor checks passed. No product or native execution occurred.
