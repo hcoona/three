@@ -202,12 +202,15 @@ item, with the PR/Issue as its durable work carrier. A controller session can
 end and be replaced. A worker can also be replaced without its conversation
 being the only copy of a requirement, decision, diff, or review result.
 
-Use ordinary persisted `codex exec --json` jobs as the initial candidate for a
-later execution experiment. An app-server client is appropriate when actual
-work requires interactive steering, approval handling, or enumerating threads.
-The Codex SDK can provide bindings if needed; an additional Agents SDK project
-is not required by this contract. No executor or coordinator is implemented or
-run by this design change.
+Use an existing Codex session as orchestrator and ordinary persisted
+`codex exec --json` sessions in separate worktrees for bounded subwork when the
+accepted [Wave](../delivery-wave.md) grants that execution mode. The orchestrator
+coordinates dependencies, integration, review, and recovery; independent work
+may proceed concurrently under the requirements below. This uses existing
+Codex capabilities and does not require a standalone coordinator program.
+An app-server client or Codex SDK integration remains an option for a later
+accepted need, such as interactive steering or thread enumeration. This design
+does not itself grant execution or implement an orchestration framework.
 
 | Decision to recover                  | Required source and behavior                                                                                                                                                                                                                                                 |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -272,9 +275,10 @@ make its policies effective. Wave entries remain grants, without checkpoints,
 session IDs, results, or historical status. Do not create repository commits
 merely to report session activity.
 
-A later coordinator experiment, if needed, gets its own accepted protocol,
-scope, effects, and stop conditions. Record migration need not depend on
-building that tool.
+New coordinator software or execution experiments beyond ordinary delegated
+repository work require their own accepted scope, effects, and, for experiments,
+protocol and stop conditions. Using an existing Codex session to coordinate
+authorized workers does not depend on building such a tool.
 
 ## Final Acceptance Evidence
 
