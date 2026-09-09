@@ -15,10 +15,11 @@ retry, or rollout sequences.
 ## Current State
 
 The normal-Live implementation and active-only v2 tooling are merged. A fresh
-native v2 generation passed independent audit. This revision installs its
-admitted contract and ready Governance with `live_enabled: true`; verify
-protected Activation delivery and post-merge readback before the first
-proving dispatch.
+native v2 generation passed independent audit. Its admitted contract and ready
+Governance with `live_enabled: true` are protected-delivered through PR #660;
+post-merge checks and platform readback passed. A pre-dispatch inspection
+identified an unsupported per-version npm metadata route. Complete the bounded
+package-level read-path correction before the still-unused proving dispatch.
 
 For current Environment lifecycle status, see the
 [handoff](./agent-handoff.md#external-state). Cleanup remains subject to

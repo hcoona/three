@@ -3803,3 +3803,31 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Disabled-first delivery, flag-off revocation, and conditional disablement
   requirements remain unchanged. Protected delivery, post-merge readback, and
   the single proving dispatch remain pending.
+
+## [2026-09-09] query | Correct the supported npm metadata read path before proving
+
+- PR #660 protected-rebase merged as
+  `2360c205dea8c789280448c2cae8252f33cc9583`; its complete reviewed/merged
+  tree was identical. All 26 PR checks passed. Final server review covered
+  17/17 files with no new comments and recommended approval; its formal state
+  was `COMMENTED`. Both original OCR reviewers and final contraction were clean.
+- Post-merge CI `34313049428` and CodeQL `34313049407` passed. Authenticated
+  readback matched ready Governance
+  `sha256:26ac42c7536b433193930864032722122ad1ea5ccfe99df9ed4aabee1d1be84b`,
+  the exact Approval controls, unchanged accepted access facts, zero Approval
+  deployments, and 90-day retention.
+- Official NBGV in a detached exact-target clone, with CI/ref context stripped,
+  produced `1.0.0-beta.253.g2360c20` and `PublicRelease: false`.
+  Before dispatch, the registry returned `405` with an empty body for the
+  per-version route, both for that absent version and known active
+  `0.0.0-wdv3-acceptance.1`. The supported package-level GET returned `200`
+  with nine active versions and ten tags.
+- The correction selects the literal desired version from a complete
+  package-level metadata document and reuses it for the independent tag
+  projection. Inaccessible or malformed package metadata cannot prove active
+  absence. Actual tarball bytes, digests, witness, package control, and
+  fail-closed behavior remain authoritative.
+- No dispatch, package mutation, Approval, grant change, or native rerun was
+  performed. The publication profile and admitted native evidence are unchanged.
+  The correction still requires validation, review, and protected delivery
+  before the one proving dispatch.

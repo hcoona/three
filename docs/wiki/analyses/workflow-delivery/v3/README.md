@@ -6,17 +6,18 @@ Workflow Delivery v3 is active and is the only normative Workflow Delivery desig
 
 The user-approved replacement normal-Live baseline is merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
-The disabled implementation now includes active-only Observation, fresh
+The implementation includes active-only Observation, fresh
 exact-satisfied finalization proof, profile-bound one-shot publication,
 immutable marker/Result terminal transport, and a read-only current-DAG
 Finalizer with one tagged predecessor. It was protected-delivered through
-PR #653 with whole-group validation, independent rereview, final contraction,
+PR #653 with Live disabled, whole-group validation, independent rereview, final contraction,
 exact merged-tree verification, and post-merge checks complete.
 
-This revision installs strict ready Governance v2, `live_enabled: true`, and
-the exact contract supported by a fresh independently audited native v2 suite.
-Protected Activation delivery and post-merge readback remain required before
-the single proving dispatch.
+PR #660 protected-delivered strict ready Governance v2, `live_enabled: true`,
+and the exact independently audited native v2 contract. Post-merge checks and
+platform readback passed. The still-unused proving dispatch awaits a bounded
+metadata read-path correction: GitHub npm serves package-level metadata but
+rejects the reader's per-version route with `405`.
 The v1 reservation contract was rejected by an observed deleted-version
 counterexample. The active-lifecycle correction was protected-delivered through
 PR #658, and its tooling through PR #659. The new native generation passed

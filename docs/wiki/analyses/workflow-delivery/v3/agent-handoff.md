@@ -50,10 +50,16 @@ requests mechanism extraction and revalidation. Git and the append-only
   that lifetime and retained deleted records do not reserve coordinates.
   The active-only v2 tooling was protected-delivered through PR #659.
 - One explicitly authorized fresh v2 generation completed all five native
-  probes and six active captures and passed independent audit. This revision
-  installs its exact admitted contract and fresh `ready` Governance with
-  `live_enabled: true`. Verify protected Activation delivery and post-merge
-  readback before the single proving dispatch.
+  probes and six active captures and passed independent audit. PR #660
+  protected-delivered its exact admitted contract and fresh `ready` Governance
+  with `live_enabled: true`. Reviewed/merged trees, post-merge CI and CodeQL,
+  and authenticated platform readback were verified.
+- Pre-dispatch version inspection found that GitHub npm returns `405` for
+  the normal reader's per-version metadata route, for both an absent and a
+  known active version. The supported package-level document succeeds.
+  Complete the bounded read-path correction and its protected delivery before
+  spending the still-unused proving dispatch. The publication profile and
+  accepted native generation are unchanged.
 - No normal-Live dispatch or Approval deployment has occurred. Preserve both
   incomplete v1 generations and the separately unresolved original-D recovery;
   do not relabel old evidence, repeat the completed v2 suite, or perform repair.
@@ -106,8 +112,9 @@ Do not recreate it or repeat the deletion.
 - The credential principal is repository `hcoona/three`.
 - Known reach includes production package `hexo-renderer-asciidoc` and disposable smoke packages.
 - This accepted repository-principal blast radius is not package isolation and is not an exhaustive grant inventory.
-- Package access remains unchanged. This revision sets ready Governance and
-  `live_enabled: true`; inspect protected delivery before treating it as active.
+- Package access remains unchanged. Protected Governance is ready with
+  `live_enabled: true`; the pre-dispatch metadata read-path correction remains
+  an operating prerequisite.
 - Authorized native probes created disposable scenario versions and tags.
   Original-D recovery remains unresolved; the active replacement is retained.
   No normal Live run, Approval deployment, or explicit restoration occurred.
@@ -311,11 +318,12 @@ Do not infer policy from stale runtime behavior or archived designs.
 ## Next Executable Workflow
 
 1. Perform the required Git inspection above.
-2. Complete any outstanding Activation validation, OCR review, independent
-   adjudication, contraction, and protected delivery. Design, v2 tooling, and
-   independently audited native acceptance are complete; do not repeat them.
-3. Verify the protected ready Governance, admitted contract, exact reviewed
-   tree, post-merge checks, and fresh native-platform/retention readback.
+2. Complete the supported package-metadata read-path correction, validation,
+   OCR review, independent adjudication, contraction, and protected delivery.
+   Design, v2 tooling, native acceptance, and Activation are complete; do not
+   repeat their execution or provisioning.
+3. Verify the correction's exact reviewed/merged tree and post-merge checks.
+   Recheck protected ready Governance and fresh platform/retention facts.
 4. Recompute the actual protected target's NBGV coordinate and destination
    preflight, then follow LLD section 19.1 for exactly one proving dispatch.
    Review the bound Snapshot before Approval if it contains an action.
