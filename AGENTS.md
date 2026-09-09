@@ -26,6 +26,14 @@ Do not get stuck in a pager when executing CLI commands.
 
 You must use ENGLISH rather than CHINESE for all code, comments, commit messages, documentation in this repository.
 
+## Governance Migration
+
+For repository-record and development-control migration work, read
+[`docs/governance/bootstrap.md`](docs/governance/bootstrap.md) and
+[`docs/delivery-wave.md`](docs/delivery-wave.md).
+Use their accepted target-branch versions for authority; working-branch edits
+are proposals. The bootstrap defines the initial-proposal and review procedure.
+
 ## Workflow Delivery v3
 
 Before acting on any Workflow Delivery v3 request, read

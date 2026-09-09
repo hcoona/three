@@ -1,5 +1,13 @@
 # Docs LLM Wiki Agent Contract
 
+## Governance Migration
+
+Repository-record and development-control migration follows the accepted
+[bootstrap](governance/bootstrap.md) and [Delivery Wave](delivery-wave.md).
+Those records are maintained at their canonical paths, outside the wiki.
+The workflows below govern wiki maintenance; they do not create duplicate
+migration policies, authorization records, or session-progress logs.
+
 ## Mission
 
 Maintain `docs/` as a persistent, compounding knowledge base.
