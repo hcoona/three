@@ -44,6 +44,16 @@ effect.
 Before planning or editing v3 work, read the [Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md). It is
 operating guidance, not a second normative specification.
 
+## Subsequent Research
+
+The [NuGet second-slice research handoff](./nuget-smoke-research-handoff.md)
+locates the historical .NET smoke projects and retained GitHub Packages
+containers, distinguishes reusable product behavior from obsolete delivery
+assets, and records open requirements and takeover discipline.
+The user authorized research and documentary delivery only, not implementation
+or another publication. A future destination needs its own explicit
+threat/cost decision and cannot inherit the npm slice's exceptions or evidence.
+
 ## Normative Hierarchy
 
 Read the current v3 documents in this order:

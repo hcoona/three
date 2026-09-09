@@ -155,6 +155,16 @@ no GitHub rerun or prior-run authority reuse is permitted. Do not repeat native
 acceptance. Preserve the first failed run, failed v1 evidence, and separately
 unresolved original-D recovery.
 
+## Subsequent Research
+
+The user has limited the next work to research and a documentary handoff for
+a possible .NET/NuGet-to-GitHub-Packages slice. Both remembered .NET smoke
+projects were intentionally removed from the active tree; their public NuGet
+containers remain. The [research handoff](./analyses/workflow-delivery/v3/nuget-smoke-research-handoff.md)
+records the verified reuse candidates, current runtime gaps, open requirements,
+and workflow/discipline needed by a fresh agent. No second-slice implementation,
+trust exception, native acceptance, or publication is authorized.
+
 ## Historical Record Rule
 
 Current-state pages describe current truth. Git history and the append-only

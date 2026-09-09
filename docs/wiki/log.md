@@ -3994,3 +3994,85 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   confirmed the contradiction with protected ready Governance. Removing only
   that adjective preserves the scope and historical disabled-first delivery
   requirements without changing Governance or runtime authority.
+
+## [2026-09-09] query | Research the NuGet second-slice handoff
+
+- The user explicitly limited the new task to research, a handoff document,
+  a fresh-context subagent takeover probe covering both work and discipline,
+  review, and merge. No implementation or external mutation was authorized.
+  The npm proving objective remains complete and its two dispatches spent.
+- Read-only inspection used protected baseline
+  `d87b83b8a63652455c4cb72d4ca4b2ecde2650ee`. The active tree contains the npm
+  smoke, not either remembered .NET smoke. Both
+  `hcoona-release-smoke-github-packages` and `hcoona-release-smoke-nuget` were
+  introduced in `ac1659d92e2d80b2a6687af657193abf75ee322d` and deliberately
+  removed as obsolete fixtures in clean-scope commit
+  `50e4463a8d355e28ad23d3fca944182fd04efe0d`. Their final pre-removal files
+  remain inspectable at `21de27b796b376c6e086e7c63664cf23f94cbc89`.
+- Both historical libraries targeted `net8.0` and exposed `Smoke.ProjectId`.
+  Their old descriptors declared `.nupkg` and `.snupkg`; although earlier
+  revisions selected native NuGet destinations, their final descriptors
+  selected only GitHub Release assets. No historical source, descriptor,
+  workflow, dependency lock, or control-plane implementation was restored.
+- Authenticated paginated GET inventory started at `2026-09-09T16:25:31Z`
+  using `/users/hcoona/packages?package_type=nuget`, filtered to association
+  with `hcoona/three`, followed by each named container's active-version GET.
+  Public `Hcoona.ReleaseSmoke.GithubPackages`, container `12024661`, retained
+  version `851754773` (`1.0.0-beta.253.gc1837dc`, created May 9 at `01:14:30Z`)
+  and `851978655` (`1.0.0-beta.254.g9fa9b96`, created May 9 at `05:24:34Z`).
+  Public `Hcoona.ReleaseSmoke.Nuget`, container `12026442`, retained version
+  `851978628` (`1.0.0-beta.254.g9fa9b96`, created May 9 at `05:24:33Z`).
+  These observations do not prove current grants, consumer absence,
+  disposability, byte identity, or native publication semantics. No package
+  content was downloaded or executed and no native acceptance was performed.
+- Current source inspection found a pinned .NET 10 SDK, inherited symbol
+  package defaults, root-default `GitVersionBaseDirectory`, and root version
+  path filters requiring future native evaluation. v3 Provider admission,
+  descriptors, artifact producers, and publication remain npm-bound.
+  The existing C# NuGet helper supplies static-reference facts, not a Release
+  Provider or publisher. No product build or test campaign was run.
+- Added a portable research handoff and synchronized its main handoff,
+  README, overview, and index entry. The candidate scope and trust decision
+  remain unconfirmed; old npm authority and evidence cannot transfer.
+  Fresh-context probing, documentary validation, OCR closure, contraction,
+  and protected delivery are subsequent gates, not claimed complete here.
+- Follow-up inspection of the complete ancestor property chain qualified the
+  initial root-default version observation: `src/public/Directory.Build.props`
+  overrides `GitVersionBaseDirectory` with the nearest `version.json` above the
+  project directory. A project-local file can therefore select its own base,
+  and both historical smoke files used `inherit=false`. The handoff now
+  explicitly warns against changing root path filters merely because the old
+  smoke names are absent; future native evaluation must use the whole chain.
+- Independent official-source research confirmed Actions-token versus local
+  PAT-classic authentication, granular package relationships, native NuGet
+  normalization and NBGV projection, service discovery, actual-package
+  download, and the limited HTTP-409 meaning of `--skip-duplicate`. The
+  reviewed GitHub documentation did not establish a GitHub-specific active
+  non-overwrite or upload-byte-preservation contract; the generic NuGet
+  protocol expressly permits different behavior on other feeds.
+  These remain capability/acceptance gates, not evidence of a GitHub defect
+  or permission to weaken v3 artifact and witness requirements. The returned
+  research and import-chain correction are retained as
+  `nuget-second-slice-platform-research.txt`, SHA-256
+  `b917ae4df7d7a565753720794520c1e574501c8b8cab9e1f3087a5f59bcba3d2`.
+- Initial staged documentation/HK validation passed, including the existing
+  static-reference gate; the full v3 product suite was correctly unselected.
+  The hook prepared its existing NuGet authority tool but did not build a
+  smoke product. The original 233,759 log bytes were preserved exactly.
+  OCR preview classified all six Markdown paths as unsupported extensions;
+  explicit rule resolution and the complete Git manifest retain all six in
+  the review scope rather than silently treating that empty preview as clean.
+- The fresh-context takeover probe passed with no blocking gaps. The new
+  agent received only the checkout, entry path, and read-only probe task.
+  Without parent session history or research reports, it independently
+  recovered the historical projects and deletion, final descriptors, retained
+  containers, native property chain, and current implementation seams. It
+  reconstructed the requirements gate, exhausted npm authority, waterfall,
+  validation-before-OCR, independent finding adjudication, contraction
+  cadence, and protected delivery. All fourteen local linked paths/anchors
+  resolved, and the original log prefix remained unchanged.
+- That probe also detected protected `main` moving to `a33e71eb` while the
+  local tracking ref was stale. Follow-up fetch and inspection confirmed the
+  new bootstrap and Delivery Wave govern repository-record/control migration,
+  not this product research or runtime release authority. This handoff does
+  not create a parallel migration policy, Wave, or authorization record.
