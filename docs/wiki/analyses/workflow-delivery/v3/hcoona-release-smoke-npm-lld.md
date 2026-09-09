@@ -62,7 +62,7 @@ The desired Buddy coordinate is the exact package plus the frozen native NBGV `n
 
 ### 3.1 Current versus target
 
-The implementation uses strict blocked Governance v2, one Approval Environment,
+The implementation uses strict Governance v2, one Approval Environment,
 direct Publication Authorization, active-only Observation, fresh
 exact-satisfied proof, the pinned one-shot npm profile, canonical marker/Result
 transport, and the tagged current-DAG Outcome. Normal-Live records omit

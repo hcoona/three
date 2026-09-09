@@ -3791,3 +3791,15 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   are now thirteen; both failed v1 generations and the separately unresolved
   original-D recovery remain preserved. No normal-Live dispatch or Approval
   deployment has occurred. The proving objective is not yet complete.
+
+## [2026-09-09] lint | Reconcile activation status across normative documents
+
+- PR #660 server review identified stale current-state disablement claims in
+  the requirements, HLD, glossary, Governance MLD, Release MLD, and LLD.
+  Independent adjudication confirmed the contradiction in the candidate tree.
+- The higher-level documents now refer to the operating handoff for current
+  activation, protected delivery, and proving status instead of duplicating
+  rollout flags. The LLD no longer labels the current schema as blocked.
+- Disabled-first delivery, flag-off revocation, and conditional disablement
+  requirements remain unchanged. Protected delivery, post-merge readback, and
+  the single proving dispatch remain pending.

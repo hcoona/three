@@ -19,8 +19,9 @@ Requirement identifiers are stable traceability anchors. Later design and
 acceptance artifacts may refine a requirement, but they must not silently
 weaken or reinterpret it.
 
-The current implementation remains delivered but disabled with
-`live_enabled: false`. Completed acceptance, provisioning, and retry ceremony
+Current first-slice activation, protected delivery, and proving status are
+maintained in the [operating handoff](./agent-handoff.md).
+Completed acceptance, provisioning, and retry ceremony
 is historical evidence in Git and the append-only log, not evergreen
 requirements prose.
 
