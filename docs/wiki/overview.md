@@ -104,10 +104,11 @@ The governance document at
 `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` binds the
 independently audited native v2 generation and sets `live_enabled: true`.
 Post-merge checks and platform readback passed. PR #661 delivered the supported
-package-metadata reader. The first real run passed Qualification and received
-Approval but failed before publication on a transport/logical-basename mismatch.
-Its authoritative Outcome is `failed-before-publication`,
-`possibly-mutated: false`; successful proving remains incomplete.
+package-metadata reader, and PR #662 delivered the transport-basename correction.
+The second real run emitted an authoritative `published` Outcome with
+`possibly-mutated: false` and exact post-action readback. Independent final audit
+verified actual native bytes/witness and only the intended version/tag delta;
+auditable proving is complete. The first run remains an audited pre-publication failure.
 
 - The implementation was protected-delivered through PR #653. Whole-group
   validation, independent rereview, contraction, exact merged-tree comparison,
@@ -119,16 +120,16 @@ Its authoritative Outcome is `failed-before-publication`,
   `20895030723`, has rule `64124473`, sole reviewer
   `hcoona` / `712433`, self-review permitted, zero wait, no secrets, no
   branch/tag restriction, administrator bypass disabled, exact approval
-  sentinel, and the first-run deployment recorded in the handoff.
+  sentinel, and the two deployments recorded in the handoff.
 - Legacy Environment `workflow-delivery-v3-buddy-github-packages`, ID
   `20895037877`, was deleted after protected delivery, retained-ref
   compatibility, and exact no-authority-reference proof. It had no deployments;
   the retained Approval Environment and all other Environments were unchanged.
 - Package access is unchanged. Authorized native probes and one exact
   disposable-version deletion occurred. Original-D recovery remains unresolved
-  and the active replacement is retained. One normal-Live run and its Approval
-  occurred, but preparation failed before publication. No explicit restoration
-  occurred.
+  and the active replacement is retained. Two separately authorized normal-Live
+  runs used their own Snapshots and Approvals: the first failed before
+  publication, and the second published. No explicit restoration occurred.
 
 ## Delivery Boundary
 
@@ -147,13 +148,12 @@ sole-writer TCB. No runtime history or administrative compensation is added.
 The lifecycle design and v2 tooling were protected-delivered through PRs #658
 and #659. Five native probes and six complete active captures passed
 independent audit, without deletion, restoration, or deleted-state queries.
-Activation and the supported metadata-reader correction are complete. Complete
-the transport-to-logical-basename staging correction, validation, review, and
-protected delivery before the one separately authorized additional new
-dispatch. Its Snapshot and Approval must be new; no GitHub rerun or prior-run
-authority reuse is permitted. Do not repeat native acceptance. Preserve the
-first failed real run, failed v1 evidence, and separately unresolved original-D
-recovery.
+Activation, both bounded runtime corrections, and the real publication are
+complete, and independent final audit passed. No further runtime or proving
+action remains. Both dispatch authorizations are spent;
+no GitHub rerun or prior-run authority reuse is permitted. Do not repeat native
+acceptance. Preserve the first failed run, failed v1 evidence, and separately
+unresolved original-D recovery.
 
 ## Historical Record Rule
 

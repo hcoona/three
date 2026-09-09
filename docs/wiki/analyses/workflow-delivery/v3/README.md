@@ -16,16 +16,17 @@ exact merged-tree verification, and post-merge checks complete.
 PR #660 protected-delivered strict ready Governance v2, `live_enabled: true`,
 and the exact independently audited native v2 contract. Post-merge checks and
 platform readback passed. PR #661 delivered the supported package-level npm
-metadata reader. The first real run passed Qualification and received Approval
-but failed before publication because preparation confused the transport
-filename with the logical tarball basename. Complete the bounded staging
-correction and protected delivery before the one separately authorized
-additional new dispatch. No successful proving Outcome exists yet.
+metadata reader, and PR #662 delivered the transport-basename correction.
+The separately authorized second real run emitted an authoritative `published`
+Outcome with `possibly-mutated: false` and exact post-action readback.
+Independent audit verified exact native bytes/witness and only the intended
+version/tag delta; auditable proving is complete. Both dispatch authorizations are spent;
+the first failed run is preserved rather than relabeled.
 The v1 reservation contract was rejected by an observed deleted-version
 counterexample. The active-lifecycle correction was protected-delivered through
 PR #658, and its tooling through PR #659. The new native generation passed
 without deletion, restoration, or deleted-state reads. Package access is
-unchanged; the first normal-Live run created one Approval deployment.
+unchanged; each normal-Live run used its own Snapshot and Approval.
 Retained-ref proof and obsolete-Environment cleanup
 are complete. Inspect current Git and operational state through the handoff
 before continuing.
@@ -81,7 +82,7 @@ chronology is not current architecture.
   `hcoona` / `712433`, `prevent_self_review: false`, zero wait, no secrets,
   no branch/tag restriction, `can_admins_bypass: false`, marker
   `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`,
-  and the recorded first-run deployment listed in the handoff.
+  and the two recorded deployments listed in the handoff.
 - Legacy Environment `workflow-delivery-v3-buddy-github-packages`, ID
   `20895037877`, was removed after retained-ref compatibility and exact
   no-authority-reference proof. Other Environment configurations were unchanged.
@@ -92,8 +93,8 @@ chronology is not current architecture.
 - Package access remains unchanged. Authorized native probes created
   disposable versions and tags, and one original scenario version was
   deleted. A duplicate publish created a new same-version object; the original
-  remains deleted. The first normal-Live run failed before publication after
-  Approval. No explicit restoration occurred.
+  remains deleted. The first normal-Live run failed before publication, and
+  the second published. No explicit restoration occurred.
 
 ## Delivery Boundary
 
@@ -110,9 +111,11 @@ active-only and performs no administrative or history-compensation operation.
 The protected v2 tooling completed five probes, three versions, two tags, and
 six complete active captures. Independent audit confirmed actual native
 provenance, both empty duplicate deltas, and the bounded W/V tag race.
-Its admission and ready Governance are protected-delivered. Verify the
-transport-basename correction's protected delivery and fresh readback before
-the additional new dispatch. Do not repeat the completed native suite.
+Its admission, ready Governance, and publisher correction are protected-delivered.
+The real publisher used the qualified logical basename and emitted a `published`
+Outcome. Independent final audit passed, including fresh actual destination
+bytes and current-run lineage. No further runtime or proving action remains;
+do not repeat the completed native suite or either real run.
 
 The [operator runbook](./agent-handoff.md#local-native-operator) describes the
 clean-checkout, credential, approval, and evidence-retention prerequisites.
@@ -120,7 +123,7 @@ Preserve both failed v1 generations and the original D; their recovery is a
 separate operator decision, not authorized by this model change.
 The five revised acceptance probes are separate from normal-Live dispatches;
 any failed gate stops further mutation without automatic repair. The handoff
-records the exact remaining dispatch authorization.
+records the exhausted dispatch authorization and separate recovery boundary.
 
 ## Historical Source Rule
 
