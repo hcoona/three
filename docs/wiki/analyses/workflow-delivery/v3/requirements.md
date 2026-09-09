@@ -740,6 +740,84 @@ isolation are separate authority boundaries and remain unchanged.
   retained dispatchable ref either implements the one-Environment contract or
   rejects the active schema before any Environment job or deployment.
 
+### NuGet Second Slice
+
+The following requirements record the separately confirmed NuGet scope and
+trust decision. They do not extend the npm-only `WD-SLICE-*` exceptions or
+establish native platform acceptance.
+
+- **WD-NUGET-001:** The second slice is
+  `Hcoona.ReleaseSmoke.GithubPackages`, a smoke-only managed C# library with
+  `Smoke.ProjectId` returning `hcoona-release-smoke-github-packages`. It targets
+  `net10.0`, builds on Windows with the repository-pinned toolchain, and
+  produces one primary `.nupkg`. It generates and publishes no separate
+  `.snupkg`; any symbol-package override is project-local. Its only channel
+  and destination are Buddy and GitHub Packages. nuget.org Official, GitHub
+  Release assets, multiple TFMs or RIDs, executables, installers, signing,
+  production CI migration, and restoration of the other historical smoke
+  project are outside this slice.
+- **WD-NUGET-002:** The Provider must obtain canonical NBGV facts and the
+  native NuGet package version from the exact target and complete history,
+  using official MSBuild/NuGet/NBGV mechanisms. Plans freeze that native
+  projection; Build applies it without recomputation or fallback. NuGet's
+  native identity comparison governs equivalent coordinates and collisions.
+  Native facts must include evaluated package identity, framework, packability,
+  relevant configuration, and output scope; unevaluated project XML is not
+  an authority substitute.
+- **WD-NUGET-003:** Live targets must use protected `refs/heads/main` and
+  owner-reviewed same-revision control code. Decision code must consume
+  admitted facts without evaluating target-defined MSBuild or product code.
+  Provider evaluation, Build, and Quality execute without publication
+  authority. The trusted publisher executes no target-defined product or
+  build code and consumes only verified immutable artifacts and an exact
+  authorized publication description. Arbitrary-ref and unreviewed-control
+  eligibility are not admitted by this slice.
+- **WD-NUGET-004:** `hcoona` is the sole accepted writer and Approval reviewer.
+  Self-approval is explicit operator confirmation, not independent security
+  review. Only the publisher may receive effective `packages: write` through
+  a short-lived Actions-issued repository `GITHUB_TOKEN`; no PAT fallback or
+  `id-token: write` is admitted. Its effective reach includes every package
+  granting Actions access to `hcoona/three`. This repository-principal reach
+  is explicitly accepted for this slice; intended-coordinate validation is
+  not package isolation or protection against a malicious accepted writer.
+  Relevant access, actor, or reviewer changes require a new trust decision
+  before further live eligibility. Current authority and native platform
+  configuration must be verified before activation and publication.
+- **WD-NUGET-005:** Qualification must separately establish package-content
+  correctness and clean exact-version consumption. The consumer must restore,
+  build, and invoke the marker API from the qualified package, without a
+  project-reference substitute or a previously populated package cache.
+  Release builds and qualifies its own artifact; CI results and historical
+  packages are not Release Evidence. The accepted source, version, content,
+  and in-package witness must remain bound through publication and readback.
+- **WD-NUGET-006:** GitHub's NuGet service and the selected publication profile
+  must satisfy atomic active-version creation without replacement, definitive
+  active duplicate handling, observable actual package bytes, and sufficient
+  target-witness and provenance bindings. Identical-byte and different-byte
+  active duplicates, including native-equivalent coordinates, must not alter
+  existing active content. Missing guarantees block the affected capability;
+  a push exit code, HTTP 409, metadata-only match, or semantic assembly
+  equivalence is not proof of exact satisfaction. No npm tag mechanism,
+  deleted-version conclusion, administrative operation, application ledger,
+  or compensating mutation supplies the missing guarantee.
+- **WD-NUGET-007:** Slice completion requires package and consumer evidence,
+  an independently audited bounded native acceptance suite, and one
+  independently audited real publication. That publication must retain its
+  own qualification, Snapshot, Approval and Authorization, publication
+  terminal evidence, authoritative Outcome, and actual destination bytes and
+  witness. The existing v3 authority and zero-or-one-action semantics remain
+  in force. Neither npm native evidence nor a previous run's artifacts or
+  Approval may satisfy these obligations.
+- **WD-NUGET-008:** Requirements confirmation precedes HLD, MLD, and brief LLD
+  reconciliation. Implementation requires subsequent authorization and must
+  remain disabled until its native and Governance gates pass. Native
+  acceptance requires a concrete, separately authorized operation budget,
+  disposable scope, fresh coordinates, stop conditions, retained evidence,
+  and independent audit. The real publication requires a separate concrete
+  request and its own Approval. An ambiguous external outcome stops mutation
+  and permits read-only investigation, not a blind retry. Existing npm
+  operation, evidence, permissions, and spent authorizations remain unchanged.
+
 ### Evidence, Decisions, and Explanation
 
 - **WD-EVD-001:** Evidence Admission must verify exact ownership, target,
