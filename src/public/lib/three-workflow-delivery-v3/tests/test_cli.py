@@ -2451,9 +2451,7 @@ def test_observation_authority_uses_fresh_governance_and_post_read_time(
     )
     document = json.loads(output.read_bytes())
     timestamp = "completed-at" if action else "proved-at"
-    assert document[timestamp] == (
-        "2026-08-06T12:00:02Z" if action else "2026-08-06T12:00:06Z"
-    )
+    assert datetime.fromisoformat(document[timestamp]) == instant[0]
     governance_observed_at = document["governance-proof"]["observed-at"]
     assert governance_observed_at == "2026-08-06T12:00:01Z"
     assert client.calls == [

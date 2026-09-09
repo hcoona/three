@@ -47,7 +47,7 @@ from three_workflow_delivery_v3.release.live import (
 
 from ..adapters.test_github_packages_active_state import (
     CONTROL_URL,
-    TAGS_URL,
+    PACKAGE_URL,
     TARBALL_URL,
     _control,
     _response,
@@ -636,31 +636,25 @@ def test_success_requires_actual_bytes_but_ignores_tag_races(publisher, tag):
     now = [NOW + timedelta(seconds=2)]
     common["clock"] = lambda: now[0]
     transport = common["transport"]
-    exact_url = TAGS_URL + "/" + common["expectation"].npm_package_version
-    exact_response = transport.responses[exact_url]
-    transport.responses[exact_url] = _response(exact_url, status=404)
+    version = common["expectation"].npm_package_version
+    document = json.loads(transport.responses[PACKAGE_URL].body)
+    exact_manifest = document["versions"].pop(version)
     if tag == "changed":
-        common["transport"].responses[TAGS_URL] = _response(
-            TAGS_URL,
-            {
-                "name": common["expectation"].package_name,
-                "dist-tags": {
-                    inputs.publication_snapshot.materialized_actions[
-                        0
-                    ].tag: "a-racing-version"
-                },
-            },
-        )
+        document["dist-tags"][
+            inputs.publication_snapshot.materialized_actions[0].tag
+        ] = "a-racing-version"
     elif tag == "unreadable":
-        common["transport"].responses[TAGS_URL] = GitHubPackagesTimeoutError(
-            "unreadable tag"
-        )
+        document["dist-tags"][
+            inputs.publication_snapshot.materialized_actions[0].tag
+        ] = None
+    transport.responses[PACKAGE_URL] = _response(PACKAGE_URL, document)
     marker, reference = _prepare(publisher)
     requests_before = len(transport.requests)
 
     def publish_exact_version():
         assert len(transport.requests) == requests_before
-        transport.responses[exact_url] = exact_response
+        document["versions"][version] = exact_manifest
+        transport.responses[PACKAGE_URL] = _response(PACKAGE_URL, document)
         now[0] = NOW + timedelta(seconds=3)
 
     common["runner"].after_publish = publish_exact_version
@@ -672,7 +666,7 @@ def test_success_requires_actual_bytes_but_ignores_tag_races(publisher, tag):
         NOW + timedelta(seconds=3)
     ).isoformat().replace("+00:00", "Z")
     post_action_urls = [url for url, *_ in transport.requests[requests_before:]]
-    assert exact_url in post_action_urls
+    assert PACKAGE_URL in post_action_urls
     assert TARBALL_URL in post_action_urls
     assert result.post_action_readback.content_sha256 == (
         inputs.artifact.content.content_sha256
@@ -734,14 +728,27 @@ def test_non_success_exact_remote_state_remains_failed_without_retry(
 
 
 @pytest.mark.parametrize(
-    "readback", ["different-bytes", "different-witness", "unknown"]
+    "readback",
+    [
+        "different-bytes",
+        "different-witness",
+        "invalid-witness",
+        "unknown",
+        "package-404",
+        "package-405",
+    ],
 )
 def test_success_cannot_substitute_local_expectations_for_readback(
     publisher, readback, observation_case
 ):
     _, common, _ = publisher
     marker, reference = _prepare(publisher)
-    if readback == "unknown":
+    if readback.startswith("package-"):
+        common["transport"].responses[PACKAGE_URL] = _response(
+            PACKAGE_URL, status=int(readback.removeprefix("package-")), body=b""
+        )
+        response = common["transport"].responses[TARBALL_URL]
+    elif readback == "unknown":
         response = GitHubPackagesTimeoutError("no authoritative readback")
     else:
         with tarfile.open(
@@ -757,6 +764,8 @@ def test_success_cannot_substitute_local_expectations_for_readback(
             witness_path = "package/workflow-delivery/provenance.json"
             witness = json.loads(entries[witness_path])
             witness["target"] = "f" * 40
+            if readback == "different-witness":
+                witness["nbgv"]["canonical"]["gitCommitId"] = "f" * 40
             entries[witness_path] = canonicalize(witness)
         response = _response(TARBALL_URL, body=_make_tarball(entries))
     common["transport"].responses[TARBALL_URL] = response
@@ -764,7 +773,19 @@ def test_success_cannot_substitute_local_expectations_for_readback(
     assert result.result == "failed"
     assert result.command_classification == "definitive-success"
     assert result.mutation_classification == "possibly-mutated"
-    assert result.post_action_readback.classification != "exact-satisfied"
+    assert result.post_action_readback.classification == (
+        "unprovable"
+        if readback.startswith("package-") or readback == "invalid-witness"
+        else "unknown"
+        if readback == "unknown"
+        else "conflicting"
+    )
+    if readback.startswith("package-"):
+        assert result.post_action_readback.content_sha256 is None
+        assert result.post_action_readback.witness_digest is None
+        assert result.post_action_readback.tag_state == "unreadable"
+    else:
+        assert TARBALL_URL in [url for url, *_ in common["transport"].requests]
     assert len(common["runner"].publications) == 1
 
 

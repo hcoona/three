@@ -272,33 +272,25 @@ def active_transport(case: ObservationCase):
     """Serve actual qualified bytes through the read-only adapter contract."""
     from ..adapters.test_github_packages_active_state import (  # noqa: PLC0415
         CONTROL_URL,
-        TAGS_URL,
+        PACKAGE_URL,
         TARBALL_URL,
         ScenarioTransport,
         _control,
+        _packument,
         _response,
     )
 
-    exact_url = TAGS_URL + "/" + case.expectation.npm_package_version
     return ScenarioTransport(
         {
             CONTROL_URL: _response(CONTROL_URL, _control()),
-            exact_url: _response(
-                exact_url,
-                {
-                    "name": case.expectation.package_name,
-                    "version": case.expectation.npm_package_version,
-                    "dist": {"tarball": TARBALL_URL},
-                },
+            PACKAGE_URL: _response(
+                PACKAGE_URL,
+                _packument(
+                    package=case.expectation.package_name,
+                    version=case.expectation.npm_package_version,
+                ),
             ),
             TARBALL_URL: _response(TARBALL_URL, body=case.tarball),
-            TAGS_URL: _response(
-                TAGS_URL,
-                {
-                    "name": case.expectation.package_name,
-                    "dist-tags": {},
-                },
-            ),
         }
     )
 

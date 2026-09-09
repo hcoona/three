@@ -145,13 +145,10 @@ def test_github_packages_requests_exact_escaped_endpoints_headers_and_pages() ->
         "https://api.github.com/users/hcoona/packages/npm/"
         "hcoona-release-smoke-npm/versions?per_page=100&page=2"
     )
-    assert adapter.npm_exact_metadata_url(
-        "@hcoona/hcoona-release-smoke-npm", VERSION
-    ) == (
-        "https://npm.pkg.github.com/"
-        "@hcoona%2Fhcoona-release-smoke-npm/"
-        "1.2.3-beta.42.ge123456"
-    )
+    assert adapter.npm_package_metadata_url(
+        "@hcoona/hcoona-release-smoke-npm"
+    ) == ("https://npm.pkg.github.com/@hcoona%2Fhcoona-release-smoke-npm")
+    assert not hasattr(adapter, "npm_exact_metadata_url")
     assert adapter.github_api_headers(TOKEN) == (
         ("Accept", "application/vnd.github+json"),
         ("Authorization", f"Bearer {TOKEN}"),
@@ -314,7 +311,7 @@ def test_replacement_adapter_contract_api_is_available() -> None:
         "github_api_headers",
         "github_packages_destination_operation_profile",
         "github_package_versions_url",
-        "npm_exact_metadata_url",
+        "npm_package_metadata_url",
         "read_github_packages_active_state",
         "redact_diagnostic",
         "redirect_headers",
@@ -324,6 +321,8 @@ def test_replacement_adapter_contract_api_is_available() -> None:
     missing = tuple(name for name in expected_api if not hasattr(adapter, name))
 
     assert missing == (), f"missing replacement adapter API: {missing}"
+    assert "npm_package_metadata_url" in adapter.__all__
+    assert "npm_exact_metadata_url" not in adapter.__all__
     assert not hasattr(adapter, "AuthorizationRecord")
     assert not hasattr(adapter, "CapabilityAdmissionDecision")
 

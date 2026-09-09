@@ -27,6 +27,10 @@ from three_workflow_delivery_v3.release.finalizer import (
 )
 from three_workflow_delivery_v3.release.observation import observe_remote_state
 
+from ..adapters.test_github_packages_active_state import (
+    PACKAGE_URL,
+    _packument,
+)
 from .observation_fixtures import (
     authority_arguments,
     current_arguments,
@@ -43,7 +47,6 @@ from .test_observation_admission import (
 )
 
 TOKEN = "observation-test-only-token"  # noqa: S105
-TAGS_URL = "https://npm.pkg.github.com/@hcoona%2Fhcoona-release-smoke-npm"
 TARBALL_URL = (
     "https://npm.pkg.github.com/@hcoona/hcoona-release-smoke-npm/-/package.tgz"
 )
@@ -79,7 +82,6 @@ def response(url, document=None, *, status=200, body=None):
 
 
 def responses(case, *, version_state="exact-satisfied", tag_state="absent"):
-    exact_url = TAGS_URL + "/" + case.snapshot.nbgv.npm_package_version
     tags = {}
     if tag_state in {"desired", "other"}:
         tags[f"buddy-sha-{case.intent.target}"] = (
@@ -87,6 +89,8 @@ def responses(case, *, version_state="exact-satisfied", tag_state="absent"):
             if tag_state == "desired"
             else "9.9.9"
         )
+    elif tag_state == "unreadable":
+        tags[f"buddy-sha-{case.intent.target}"] = None
     return {
         ENDPOINT: response(
             ENDPOINT,
@@ -101,27 +105,16 @@ def responses(case, *, version_state="exact-satisfied", tag_state="absent"):
                 },
             },
         ),
-        exact_url: (
-            response(exact_url, status=404)
-            if version_state == "absent"
-            else response(
-                exact_url,
-                {
-                    "name": case.expectation.package_name,
-                    "version": case.expectation.npm_package_version,
-                    "dist": {"tarball": TARBALL_URL},
-                },
-            )
+        PACKAGE_URL: response(
+            PACKAGE_URL,
+            _packument(
+                package=case.expectation.package_name,
+                version=case.expectation.npm_package_version,
+                present=version_state != "absent",
+                tags=tags,
+            ),
         ),
         TARBALL_URL: response(TARBALL_URL, body=case.tarball),
-        TAGS_URL: (
-            GitHubPackagesNetworkError("unreadable target-tag")
-            if tag_state == "unreadable"
-            else response(
-                TAGS_URL,
-                {"name": case.expectation.package_name, "dist-tags": tags},
-            )
-        ),
     }
 
 
@@ -221,12 +214,16 @@ def test_live_cli_observes_exact_bytes_then_materializes_zero_actions(
         == case.artifact.witness_digest
     )
     assert dict(observation.package_control.facts)["exposed-access"] == ()
-    assert transport.requests == [
-        ENDPOINT,
-        TAGS_URL + "/" + case.expectation.npm_package_version,
-        TARBALL_URL,
-        TAGS_URL,
-    ]
+    assert set(transport.requests) == {ENDPOINT, PACKAGE_URL, TARBALL_URL}
+    assert (
+        observation.active_readback.tag_state
+        == {
+            "absent": "absent",
+            "desired": "present",
+            "other": "present",
+            "unreadable": "unreadable",
+        }[tag_state]
+    )
     assert TOKEN not in observation_path.read_text()
     publication_path = tmp_path / "publication.json"
     summary = tmp_path / "reviewer-summary.md"
@@ -268,10 +265,15 @@ def test_live_cli_observes_exact_bytes_then_materializes_zero_actions(
 
 def test_live_absence_creates_only_current_profile_action(observation_case):
     case = observation_case
-    observation = observe(
-        case, Transport(responses(case, version_state="absent"))
-    )
+    remote = responses(case, version_state="absent")
+    del remote[TARBALL_URL]
+    transport = Transport(remote)
+    observation = observe(case, transport)
     assert observation.classification == "absent"
+    assert observation.active_readback.classification == "absent"
+    assert observation.active_readback.content_sha256 is None
+    assert observation.active_readback.witness_digest is None
+    assert set(transport.requests) == {ENDPOINT, PACKAGE_URL}
     publication = materialize_publication_snapshot(
         case.snapshot,
         case.decision,
@@ -343,6 +345,10 @@ def test_expired_native_acceptance_is_blocking_evidence_not_lost_observation(
         ("version-unknown", "unknown"),
         ("control-conflict", "conflicting"),
         ("mixed-blockers", "unprovable"),
+        ("package-404", "unprovable"),
+        ("package-405", "unprovable"),
+        ("package-missing-versions", "unprovable"),
+        ("package-partial", "unknown"),
     ],
 )
 def test_blocking_remote_facts_persist_and_finalize_with_exact_ancestry(
@@ -359,9 +365,21 @@ def test_blocking_remote_facts_persist_and_finalize_with_exact_ancestry(
         else "absent",
     )
     if failure in {"version-unknown", "mixed-blockers"}:
-        remote[TAGS_URL + "/" + case.expectation.npm_package_version] = (
-            GitHubPackagesNetworkError("exact version unavailable")
+        remote[PACKAGE_URL] = GitHubPackagesNetworkError(
+            "package metadata unavailable"
         )
+    elif failure in {"package-404", "package-405"}:
+        remote[PACKAGE_URL] = response(
+            PACKAGE_URL,
+            status=int(failure.removeprefix("package-")),
+            body=b"",
+        )
+    elif failure == "package-missing-versions":
+        document = json.loads(remote[PACKAGE_URL].body)
+        del document["versions"]
+        remote[PACKAGE_URL] = response(PACKAGE_URL, document)
+    elif failure == "package-partial":
+        remote[PACKAGE_URL] = replace(remote[PACKAGE_URL], complete=False)
     if failure in {"control-conflict", "mixed-blockers"}:
         remote[ENDPOINT] = response(
             ENDPOINT,
