@@ -16,51 +16,54 @@ proposal does not authorize any work it would add before merge.
 
 ## Authorized Advancements
 
-### Establish the Migration Inventory and Bounded Design
+### Prepare the Reference-Aligned Two-Case Migration Candidate
 
-- **Work carrier:** The pull request proposing this bounded outcome. Use a separate
-  Issue if the work requires coordination across multiple pull requests or contributors.
-- **Prerequisite:** The bootstrap and this entry are accepted on `main`. If a
-  prerequisite or relied-on authority changes materially, pause the affected work
-  and refresh its scope, validation, and review.
-- **Accepted inputs:** Three's current repository instructions, documentation,
-  project manifests, controls, and related Git and pull-request evidence; the
-  pinned source records linked by the bootstrap; and public OpenAI documentation
-  solely to define requirements for recoverable Codex coordination. Later Issue
-  edits, comments, or session instructions cannot enlarge this entry.
-- **Accepted migration dispositions:** Establish one repository control plane and
-  separate document roots for individual projects. Keep the source governance
-  principles; identify any proposed principle amendment for an explicit owner
-  decision. Keep authorization in the Wave, coordination and progress in the work
-  carrier, and execution context in sessions. Prepare bounded changes and one
-  final authority switch without retaining parallel control systems.
-- **Authorized advancement:** Inspect current record and control responsibilities;
-  identify project boundaries, canonical authorities, consumers, and conflicts;
-  and propose their repository-level or project-level destinations. Select a small
-  representative project and a cross-project case for later migration validation.
-  Define the minimum coordination contract for recovering a next action from the
-  accepted bootstrap and Wave, work carriers, session associations, and actual
-  Git state without requiring the original session to remain usable.
-- **Bounded outcome:** One reviewable inventory and migration proposal identifying
-  record ownership, necessary adaptations, unresolved owner decisions, a bounded
-  preparation sequence, and acceptance evidence for the final switch. Include
-  the coordination requirements and proposed next authorization; do not create
-  a second task-status ledger or duplicate project requirements.
-- **Acceptance condition:** The proposal is accepted on `main` after applicable
-  checks, independent record-system review, material-finding triage, and owner
-  disposition. Every proposed retained concern has an owner and consumer; source
-  principle differences are explicit; future work remains bounded by its own
-  accepted inputs and authorization.
-- **Excluded:** Performing the repository-wide migration or final authority
-  switch; implementing or running a coordinator or new control framework;
-  changing product behavior, project contracts, support claims, or source
-  principles; deleting existing source material or history; and modifying
-  release, credential, access, or deployment state. New execution experiments
-  require their own accepted authorization and protocol.
+- **Work carrier:** The candidate pull request. Use an Issue when its preparation
+  and acceptance require coordination across multiple pull requests or contributors.
+- **Prerequisite:** The bootstrap, [migration design](governance/migration-design.md),
+  and this entry are accepted on `main`. The existing repository authorities remain
+  effective. If a prerequisite or relied-on authority changes materially, pause
+  affected work and refresh its scope, validation, and review.
+- **Accepted inputs:** The source commit pinned by the bootstrap; Three's accepted
+  migration design, instructions, records, code, manifests, controls, and related
+  Git and pull-request evidence. Public-source retrieval may verify existing
+  citations but cannot enlarge product scope or supply runtime evidence.
+- **Accepted migration dispositions:** Keep one repository control plane and
+  separate project document roots. Preserve the source principles and current
+  product/domain semantics. Prepare one final atomic replacement through bounded
+  reviews; candidate records remain unmerged proposals until that replacement.
+- **Authorized advancement:** Prepare an unmerged candidate adapting the source
+  governance and record policies, family/control catalog and checker contracts,
+  human/agent routing, and applicable review procedures for the monorepo. Prepare
+  exact record transformations for `nbgv-python` with its sample references and
+  for Workflow Delivery v3 with the `hcoona-release-smoke-npm` cross-project case.
+  Identify current consumers, preserve evidence and identifiers, and validate the
+  necessary path, namespace, generated-interface, and HK adaptations. Record
+  unresolved content or ownership decisions for the repository owner.
+- **Bounded outcome:** One reviewable candidate commit for the repository control
+  surfaces and two selected cases, with relevant check and independent review
+  evidence and a concrete list of remaining preparation boundaries. The candidate
+  is not a completed repository-wide migration and must not merge as the final
+  replacement under this entry.
+- **Acceptance condition:** The owner accepts the bounded preparation outcome
+  through a merged Wave transition whose pull request links the reviewed candidate
+  commit, applicable checks, independent record and domain reviews, material-finding
+  triage, and owner dispositions. That transition ends this grant and does not
+  accept the candidate's policies as effective. Further preparation or final
+  replacement requires its own accepted grant.
+- **Excluded:** Migrating other project record sets; merging the candidate or
+  activating replacement policies, routing, or new controls on `main`; changing
+  source principles, product behavior, project contracts, support claims, or build
+  and release runtime behavior; changing protected v3 Governance bytes or path;
+  deleting existing human-source material or Git history; implementing or running
+  a coordinator; and package publication, authentication experiments, deployment,
+  dispatch, or credential/access/Environment changes. Project evidence may be
+  relocated in the candidate only with its provenance and current consumers intact.
 - **External effects:** Public-source retrieval and normal Git, Issue,
-  pull-request, review, and repository-record operations only. Existing
-  repository checks may validate the proposal. No package publication,
-  deployment, authentication experiment, or access-policy change is permitted.
+  pull-request, review, repository-record, and local candidate-check operations.
+  Existing checks and bounded record-control validation may inspect the candidate;
+  new product/runtime experiments require separate accepted authorization and
+  protocol. No release or external-system mutation is permitted.
 
 The [source and license](governance/bootstrap.md#source-and-adaptations) are
 recorded in the bootstrap.
