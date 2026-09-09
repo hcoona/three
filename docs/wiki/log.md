@@ -4084,3 +4084,60 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   the previously pending OCR/contraction gates for that revision, not
   protected delivery or merge. Review of this narrow chronology closure
   remains in PR #666 rather than recursively adding review-status markers.
+
+## [2026-09-09] query | Begin NuGet slice requirements confirmation
+
+- GET-only inspection confirmed PR #666 merged as
+  `f38d9f8d5c8ce0bcdf3d11d285f8edc1700d5550`; protected `main` and the clean
+  starting checkout were both `d4c30ceba97190f4771141bc0200e5326ac3fce7`.
+  The completed research delivery was not repeated.
+- The user selected `Hcoona.ReleaseSmoke.GithubPackages` and confirmed that
+  its existing container is operator-controlled, dedicated to smoke use,
+  and has no production dependency or existing consumers requiring
+  compatibility. This records operator intent, not an exhaustive consumer
+  or grant audit. Follow-up GETs returned public NuGet container `12024661`,
+  owned by `hcoona`, associated with `hcoona/three`, and the same two active
+  version IDs recorded above. No package bytes were downloaded or executed.
+- The user set the objective to complete slice validation. Scope, trust,
+  and acceptance questions remain unanswered. The handoff now records those
+  proposals separately from the confirmed product selection; implementation,
+  native probes, and publication remain unauthorized.
+- Current-source inspection reconfirmed Node Provider admission,
+  `build-tarball` Release Artifact admission, and npm publication imports.
+  Existing implementation or test success cannot establish a NuGet release
+  capability. The historical marker returns
+  `hcoona-release-smoke-github-packages`.
+- Updated the handoff and navigation as a requirements-confirmation draft.
+  No product, test, workflow, dependency, Governance, credential, package
+  access, or external resource was changed. Documentation validation, review,
+  and protected delivery are not claimed complete by this entry.
+
+## [2026-09-09] query | Confirm NuGet scope and prepare the design
+
+- The user confirmed the complete scope, NuGet-specific trust boundary, and
+  acceptance objective. Added `WD-NUGET-001` through `WD-NUGET-008` as the
+  canonical requirements, then drafted HLD ownership, the five MLD extensions,
+  glossary/migration alignment, and the brief NuGet LLD. Implementation,
+  native probes, and publication remain subject to subsequent authorization.
+- Two bounded workers contributed nonoverlapping MLD updates; source-only
+  Microsoft documentation and pinned-toolchain inspection informed the LLD.
+  NBGV `3.10.94` source at `dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb`
+  has no frozen-version replay switch. The selected project-local Build mode
+  excludes its assets through native NuGet metadata, uses separate restore
+  intermediates, and supplies frozen SDK package/assembly properties. Actual
+  restore/build/pack evidence is still an implementation gate.
+- SDK `10.0.300` bundles NuGet `7.6.0-rc.23102`; the helper's CPM `7.9.0`
+  is not that client. Exact bundled source at dotnet/dotnet commit
+  `caa81fa4971f74880cdab61990cb1b11420939ec` confirms ordinary push defaults
+  to three total attempts. The LLD selects one standard-protocol HTTP PUT,
+  requiring source/configuration and fault-scenario evidence for no replay,
+  rather than an undocumented CLI retry switch or testing-only injection.
+- The proposed minimum native generation has three invocations and no
+  administrative operation. It is not authorized for execution. Sequential
+  creation/duplicate evidence cannot alone establish concurrent atomic
+  creation; sufficient service-owned assurance remains an activation gate.
+  Existing npm evidence, authority, and completed operation remain unchanged.
+- The earlier requirements-confirmation draft passed applicable root HK
+  checks, 103 local-link/anchor checks, and exact preservation of the original
+  240,161 log bytes. The expanded design requires fresh validation,
+  independent review/adjudication, contraction, and protected delivery.

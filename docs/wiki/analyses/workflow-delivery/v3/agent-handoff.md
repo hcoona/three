@@ -77,15 +77,17 @@ requests mechanism extraction and revalidation. Git and the append-only
   Both incomplete v1 generations and separately unresolved original-D recovery
   remain unchanged. Exact evidence belongs in the append-only log.
 
-## Subsequent Research-Only Request
+## NuGet Design Preparation
 
-The user authorized research and a protected documentary handoff for a
-possible .NET/NuGet second slice, explicitly excluding implementation.
-Continue through the [NuGet research handoff](./nuget-smoke-research-handoff.md).
-It records the intentionally removed historical smoke projects, retained
-package containers, current implementation gaps, unconfirmed requirements,
-and fresh-context takeover gates. It is not a second-slice specification or
-permission to reuse npm risk exceptions, authority, or external operations.
+The NuGet research delivery is complete. The user has selected
+`Hcoona.ReleaseSmoke.GithubPackages` and confirmed its operator-controlled,
+smoke-only use without production dependencies or existing compatibility
+obligations. Scope, trust, and acceptance are now confirmed as `WD-NUGET-*`.
+Continue design reconciliation through the
+[NuGet handoff](./nuget-smoke-research-handoff.md), in requirements, HLD, MLD,
+and brief LLD order. Implementation, native probes, and publication are not
+authorized. The confirmed validation objective does not adopt npm risk
+exceptions, authority, evidence, or external operations.
 
 ## Git Inspection and Implementation Scope
 
@@ -357,8 +359,9 @@ provisioning, acceptance, either dispatch, or either Approval. Original-D
 recovery and any future mutation require separate explicit authorization.
 This completed task authorizes no third proving dispatch.
 
-The separate NuGet research request follows its linked handoff. Its next
-product gate is requirements confirmation, not implementation or Live.
+The NuGet slice follows its linked handoff. Requirements are confirmed;
+design reconciliation and delivery precede subsequent implementation and
+external-operation authorization.
 
 ## Validation and Review Protocol
 

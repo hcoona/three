@@ -44,15 +44,18 @@ effect.
 Before planning or editing v3 work, read the [Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md). It is
 operating guidance, not a second normative specification.
 
-## Subsequent Research
+## NuGet Design Preparation
 
-The [NuGet second-slice research handoff](./nuget-smoke-research-handoff.md)
-locates the historical .NET smoke projects and retained GitHub Packages
-containers, distinguishes reusable product behavior from obsolete delivery
-assets, and records open requirements and takeover discipline.
-The user authorized research and documentary delivery only, not implementation
-or another publication. A future destination needs its own explicit
-threat/cost decision and cannot inherit the npm slice's exceptions or evidence.
+The [NuGet second-slice handoff](./nuget-smoke-research-handoff.md) retains the
+completed research and current requirements packet. The user selected
+`Hcoona.ReleaseSmoke.GithubPackages` and confirmed its operator-controlled
+smoke use. Scope, trust, and acceptance are confirmed in `WD-NUGET-*`;
+the HLD and affected MLDs are reconciled in the proposed design, followed by
+the [NuGet LLD](./hcoona-release-smoke-github-packages-lld.md). Independent
+review and protected design delivery remain gates. No implementation, native
+probe, or publication is authorized.
+This destination has its own explicit threat/cost decision and cannot inherit
+the npm slice's exceptions or evidence.
 
 ## Normative Hierarchy
 

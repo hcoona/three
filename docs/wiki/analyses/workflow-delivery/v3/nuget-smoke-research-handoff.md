@@ -2,18 +2,24 @@
 
 ## Status and Authorization
 
-This is a research and operating handoff, not an approved second-slice
-specification or implementation plan. The user authorized read-only research,
-this documentary delivery, a fresh-context handoff probe, review, and protected
-merge. The user explicitly prohibited implementation.
+This is an operating handoff. The research delivery and interactive
+requirements confirmation are complete. The canonical confirmed product,
+trust, and acceptance requirements are `WD-NUGET-*` in
+[Requirements](./requirements.md#nuget-second-slice). Current work reconciles
+HLD, MLDs, and a brief LLD in that order toward validation of this slice.
+Do not repeat the completed research delivery.
 
-The proposed next slice is a small .NET/NuGet library delivered to GitHub
-Packages as Buddy. Its requirements and destination-specific trust decision
-are not yet confirmed. Finding an old project or an existing package does not
-authorize restoring it, publishing to it, or adopting its old policy.
+The user selected `Hcoona.ReleaseSmoke.GithubPackages` and confirmed that its
+existing container is operator-controlled, dedicated to smoke use, and has no
+production dependency or existing consumers requiring compatibility. This is
+an operator statement of intended use, not an exhaustive consumer or access
+audit. Product shape, channel scope, destination-specific trust, and acceptance
+criteria are confirmed in `WD-NUGET-*`. Design delivery does not authorize
+restoration, implementation, native acceptance, publication, or adoption of
+historical delivery policy.
 
 Do not change product code, tests, descriptors, workflows, dependencies,
-Governance, Environments, credentials, or package access for this research.
+Governance, Environments, credentials, or package access during design.
 Do not dispatch, rerun, approve a deployment, publish a package, execute a
 native acceptance probe, delete, restore, or repair anything. A subsequent user
 request must authorize further work; this handoff grants no standing mutation
@@ -40,15 +46,17 @@ merged before repeating any documentary delivery.
 
 Keep these facts in the working context:
 
-- Research only; no implementation or external mutation is authorized.
+- Requirements are confirmed; design reconciliation and targeted read-only
+  inspection are authorized. Implementation and external mutation are not.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
-- The GitHub Packages-named project is the better initial reuse candidate,
-  not a selected or restored v3 Release Unit.
+- The GitHub Packages-named project is selected for the next slice, but has
+  not been restored or admitted as a v3 Release Unit.
 - Current release execution remains npm-specific; the NuGet static-reference
   helper is not a .NET Release Provider or publisher.
-- Requirements, trust, version authority, artifact scope, and native
-  acceptance remain decisions to close before implementation.
+- Scope and trust are confirmed. Concrete design, platform capability gates,
+  and bounded native acceptance must be resolved before their respective
+  implementation and execution authorizations.
 - Preserve the waterfall, validation-before-OCR, independent adjudication,
   contraction, and protected-delivery gates below.
 
@@ -210,26 +218,36 @@ unbounded retry, or a success-shaped fallback. Any later native acceptance
 must have its own approved contract, disposable scope, bounded operations,
 stop conditions, retained evidence, and independent audit.
 
-## Proposed Requirements Packet
+## Confirmed Requirements
 
-The first subsequent interaction should present this bounded packet to the
-user, not start coding:
+The user accepted the complete packet. The normative requirements are
+[WD-NUGET-001 through WD-NUGET-008](./requirements.md#nuget-second-slice);
+this summary routes the next agent to that authority.
 
-| Decision needing confirmation | Research recommendation or unresolved boundary                                                                                                                                                                                                                                                        |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product identity              | Consider the historical GitHub Packages-named smoke and its small marker API; choose identity only after confirming the existing container's intended use. Keep the NuGet-named project as an alternative, not a second simultaneous smoke.                                                           |
-| Initial product shape         | One managed C# library, one selected TFM, one primary `.nupkg`, built on Windows with repository-native tooling. Explicitly reconcile symbol defaults without changing global policy incidentally.                                                                                                    |
-| Destination and channel       | GitHub Packages Buddy only. nuget.org Official, GitHub Release assets, symbols, multi-RID, executables, installers, signing work, and another ecosystem are outside this proposed slice.                                                                                                              |
-| Success condition             | Build/package validation plus a clean exact-version consumer that restores, builds, and invokes the marker API; eventually one separately authorized, auditable real publication. Neither that publication nor an acceptance probe is authorized now.                                                 |
-| Trust and authority           | Make a new explicit threat/cost decision covering eligible refs, target-controlled MSBuild evaluation, trusted publication execution, Approval, repository-token reach, and package access. Until explicitly changed, ordinary v3 requirements apply; npm-specific risk acceptance does not transfer. |
-| Native contract               | Establish required creation, active duplicate, actual-byte/provenance, and observation behavior for the selected NuGet service/profile. Select only scenarios that matter to this destination; no invented npm-equivalent tag mechanism.                                                              |
-| Reuse and delivery size       | Revalidate the tiny historical product behavior, not its old delivery stack. Identify dependency-ordered, human-reviewable design and implementation units only after the requirements boundary is confirmed.                                                                                         |
+| Confirmed concern        | Requirement and next evidence boundary                                                                                                                                                                                                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product and scope        | `WD-NUGET-001`: the selected marker library, `net10.0`, Windows, one `.nupkg`, no separate `.snupkg`, GitHub Packages Buddy only.                                                                                                                                    |
+| Native facts and version | `WD-NUGET-002`: official evaluation at the exact target, complete history, and a frozen native NBGV NuGet projection. Actual evaluated facts are still future evidence.                                                                                              |
+| Trust and authority      | `WD-NUGET-003` and `WD-NUGET-004`: reviewed protected-main control, isolated target evaluation/build, build-free publication, self-approval by the sole trusted writer, and explicitly accepted repository-token reach. Platform configuration still needs readback. |
+| Qualification            | `WD-NUGET-005`: distinct package-content and clean exact-version restore/build/marker evidence for the Release-owned artifact.                                                                                                                                       |
+| Destination acceptance   | `WD-NUGET-006`: independently establish the required active creation, duplicate, actual-byte, witness, and observation behavior for the NuGet profile.                                                                                                               |
+| Completion               | `WD-NUGET-007`: local/package evidence, an audited native suite, and one audited real publication with its own current-run authority and actual destination bytes.                                                                                                   |
+| Execution boundaries     | `WD-NUGET-008`: ordered design, subsequent implementation authorization, and separate concrete native and real-publication authorization.                                                                                                                            |
 
-This packet is not a claim that the full next slice is a small patch.
-Provider/compiler, artifact representation, Build/Quality, destination
-observation/publication, and authority integration all need concrete design
-assessment. Do not simultaneously restore both historical projects or switch
-the existing production CI/Official release line.
+The next work is design reconciliation. A descriptor alone cannot enable
+NuGet: Provider/compiler, artifact representation, Build/Quality, destination
+observation/publication, and authority integration need bounded extensions.
+The [HLD extension](./high-level-design.md#nuget-second-slice-extension)
+assigns ownership. Local tests or historical package versions cannot supply
+missing native or real-publication evidence. No implementation or external
+operation is authorized by the confirmed completion objective alone.
+
+The [NuGet LLD](./hcoona-release-smoke-github-packages-lld.md) follows the five
+MLD extensions. It selects a project-local frozen NBGV Build mode and a
+one-shot standard-protocol HTTP publisher, with explicit local and native
+admission gates. The design remains subject to independent review and
+protected delivery. A passing three-invocation sequential suite alone does
+not establish the required service-owned atomic-creation guarantee.
 
 ## Workflow and Discipline
 
