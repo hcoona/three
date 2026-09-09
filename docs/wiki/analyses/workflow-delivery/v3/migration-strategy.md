@@ -14,8 +14,11 @@ retry, or rollout sequences.
 
 ## Current State
 
-The normal-Live implementation is merged and disabled with
-`live_enabled: false`.
+The normal-Live implementation and active-only v2 tooling are merged. A fresh
+native v2 generation passed independent audit. This revision installs its
+admitted contract and ready Governance with `live_enabled: true`; verify
+protected Activation delivery and post-merge readback before the first
+proving dispatch.
 
 For current Environment lifecycle status, see the
 [handoff](./agent-handoff.md#external-state). Cleanup remains subject to
@@ -24,10 +27,10 @@ For current Environment lifecycle status, see the
 The direct v1 Buddy-to-v3 Buddy cutover and destination acceptance are complete
 historical facts. They do not authorize normal Live activation.
 
-Normal Live also remains activation-blocked until the pinned standard
-`npm publish --tag ... --fetch-retries=0` operation profile passes the
-documented-and-observable native acceptance suite and fresh protected
-Governance binds that acceptance generation. The gate proves non-overwriting
+Normal Live requires the pinned standard
+`npm publish --tag ... --fetch-retries=0` operation profile's passing native
+acceptance and fresh protected Governance binding that generation. The
+completed v2 gate proves non-overwriting
 creation in the active version namespace and characterizes the accepted
 non-authoritative tag race. Administrator deletion ends an active lifetime;
 retained deleted records do not reserve coordinates. Publication acceptance
@@ -35,9 +38,9 @@ therefore performs no deletion, restoration, or deleted-state queries. It does
 not require unavailable version-plus-tag CAS or permanent historical
 coordinate nonreuse, and grants no administrative authority to runtime.
 
-The active-only v2 suite and contract interpretation are implemented in this
-revision. Verify their protected delivery and fresh native acceptance before
-activation. The old tombstone-reservation suite's failed generations
+The active-only v2 suite is protected-delivered and independently accepted.
+Do not repeat its completed execution when delivering activation.
+The old tombstone-reservation suite's failed generations
 remain failed historical evidence; they are not relabeled as passing.
 Outstanding administrative recovery from those experiments remains a separate
 operator decision, not a new acceptance operation or automatic cleanup.

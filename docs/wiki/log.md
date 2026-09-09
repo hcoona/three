@@ -3749,3 +3749,45 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   recovery boundary remain unchanged. Governance stays disabled; fresh,
   explicitly bounded five-probe execution and independent audit are still
   required before activation and the single real Normal Live dispatch.
+
+## [2026-09-09] query | Prepare Normal Live activation from audited native evidence
+
+- The active-only v2 tooling was protected-delivered through PR #659 at
+  `ed8844d403fc437cb05582fc283137ce9fd35bec`. Reviewed and merged trees
+  matched; exact post-merge CI `34282282771` and CodeQL `34282282786` passed.
+- The user explicitly authorized one fresh five-probe generation,
+  `3d967836100f13fd957462e7`, on the previously approved disposable
+  `@hcoona/hcoona-release-smoke-npm-dual`, container `12047077`.
+  Runs `34307278853`, `34307333354`, `34307395994`, `34307453159`, and
+  `34307510055` returned success, definitive non-success, definitive
+  non-success, success, and success. The duplicate failures were expected
+  safety results, not successful native executions.
+- Independent audit verified all 225 manifest-listed file hashes, five
+  authenticated exact-run/artifact bindings, six reconstructed complete
+  active captures, 26 raw-response hashes, and actual registry bytes.
+  Both active duplicates had empty deltas with original A intact; candidate V
+  moved only the shared tag from W to V while both versions remained exact.
+  Created native IDs were A `1226110417`, W `1226115591`, and V `1226117397`.
+- The passing canonical evidence has digest
+  `sha256:f1ca6d8c74068416a64488e51008cd9e96c19ebb0cf5eb9a3a4119791820c060`
+  and final capture `2026-09-09T03:33:13.454323Z`. It binds native suite v2,
+  contract interpretation v2, API `2026-03-10`, and the unchanged standard
+  publish profile. Governance uses its required UTC second precision.
+  Artifact ZIP digests rely on authenticated service metadata and trusted
+  immutable downloads; complete wire headers were not retained. Captures are
+  sequential, and unrelated-version equality is not universal byte proof.
+- Fresh authenticated readback confirmed the sole accepted administrator,
+  exact Approval Environment/reviewer/sentinel, no broader sentinel, zero
+  secrets and deployments, and repository retention of 90 days. Package
+  ownership/association was read without changing access; it is not an
+  exhaustive package-side Actions-grant inventory.
+- This revision installs the exact admitted v2 contract and canonical ready
+  Governance with `live_enabled: true`. Existing actor, package-principal,
+  Approval, freshness, and revocation boundaries remain. Removed the stale
+  LLD exception that still associated native acceptance with delete/restore.
+  Protected Activation delivery and post-merge readback precede the one
+  proving dispatch.
+- The new suite performed no administrative operation. Total native probes
+  are now thirteen; both failed v1 generations and the separately unresolved
+  original-D recovery remain preserved. No normal-Live dispatch or Approval
+  deployment has occurred. The proving objective is not yet complete.

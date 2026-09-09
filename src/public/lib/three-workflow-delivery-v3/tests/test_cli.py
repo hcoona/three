@@ -783,13 +783,14 @@ def test_provider_command_propagates_fail_closed_checkout_error(
     assert "npmPackageVersion" not in captured.err
 
 
-def test_validate_attestation_command_reports_replacement_disabled_governance(
+def test_validate_attestation_command_reports_current_protected_governance(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Validate protected replacement Governance without activation state."""
+    """Report the current protected contract without freezing its live flag."""
     governance_path = REPO_ROOT / (
         ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json"
     )
+    expected = json.loads(governance_path.read_bytes())
     result = cli_module.main(
         [
             "release",
@@ -806,10 +807,8 @@ def test_validate_attestation_command_reports_replacement_disabled_governance(
     assert output["schema"] == (
         "workflow-delivery/v3/normal-live-governance-attestation-v2"
     )
-    assert output["live_enabled"] is False
-    assert output["activation"] == {
-        "state": "blocked",
-    }
+    assert output["live_enabled"] is expected["live_enabled"]
+    assert output["activation"] == expected["activation"]
     assert output["release_policy"] == "hcoona-release-smoke-npm"
     assert output["package"] == "@hcoona/hcoona-release-smoke-npm"
     assert output["accepted_publisher"] == "hcoona"

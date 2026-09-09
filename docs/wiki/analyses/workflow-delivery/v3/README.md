@@ -13,20 +13,21 @@ Finalizer with one tagged predecessor. It was protected-delivered through
 PR #653 with whole-group validation, independent rereview, final contraction,
 exact merged-tree verification, and post-merge checks complete.
 
-This revision uses strict Governance v2 with state-only blocked activation and
-`live_enabled: false`. The native-acceptance generation registry remains empty.
+This revision installs strict ready Governance v2, `live_enabled: true`, and
+the exact contract supported by a fresh independently audited native v2 suite.
+Protected Activation delivery and post-merge readback remain required before
+the single proving dispatch.
 The v1 reservation contract was rejected by an observed deleted-version
 counterexample. The active-lifecycle correction was protected-delivered through
-PR #658. This revision implements the active-only v2 acceptance tooling but
-does not admit a native generation. Disposable package mutations occurred,
-but no passing native
-acceptance, activation, package access change, Approval deployment, or normal
-Live dispatch occurred. Retained-ref proof and obsolete-Environment cleanup
+PR #658, and its tooling through PR #659. The new native generation passed
+without deletion, restoration, or deleted-state reads. No package access
+change, Approval deployment, or normal-Live dispatch occurred.
+Retained-ref proof and obsolete-Environment cleanup
 are complete. Inspect current Git and operational state through the handoff
 before continuing.
 
-Normal Live remains activation-blocked until fresh native acceptance for the
-exact Destination Operation Profile is installed through the Activation PR. The
+Normal Live requires the admitted native contract and fresh protected ready
+Governance. Native acceptance is not a proving Live outcome. The
 design admits a pinned standard
 `npm publish --tag ... --fetch-retries=0` profile only after its native suite
 proves the required active creation, duplicate-conflict, and tag-race behavior.
@@ -102,11 +103,12 @@ The approved lifecycle correction retains active-version non-overwrite and
 accepts possible coordinate reuse after administrator deletion, including
 consumer/cache disagreement across lifetimes. Normal runtime remains
 active-only and performs no administrative or history-compensation operation.
-The implemented v2 tooling has five probes, three versions, two tags, and six
-complete active captures, with no deletion or restoration. Verify its
-protected delivery before a fresh, bounded, independently audited native
-generation. Activation and the single real dispatch still require that
-passing acceptance.
+The protected v2 tooling completed five probes, three versions, two tags, and
+six complete active captures. Independent audit confirmed actual native
+provenance, both empty duplicate deltas, and the bounded W/V tag race.
+This revision installs the resulting admission and ready Governance; verify
+protected delivery and fresh post-merge readback before the single real
+dispatch. Do not repeat the completed native suite.
 
 The [operator runbook](./agent-handoff.md#local-native-operator) describes the
 clean-checkout, credential, approval, and evidence-retention prerequisites.

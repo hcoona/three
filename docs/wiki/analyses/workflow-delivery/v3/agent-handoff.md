@@ -31,8 +31,8 @@ requests mechanism extraction and revalidation. Git and the append-only
   Component and whole-group gates, independent OCR rereview, final
   contraction, exact reviewed/merged-tree comparison, and post-merge
   Continuous Integration and CodeQL are complete.
-- This revision implements strict Governance v2 with state-only blocked
-  activation and `live_enabled: false`, active-only Observation, fresh
+- The replacement runtime implements strict Governance v2, active-only
+  Observation, fresh
   exact-satisfied proof, profile-bound one-shot publication, immutable
   marker/Result terminal transport, and the tagged current-DAG Outcome.
   Receipt, ActionResult, and the superseded marker and proof formats have no
@@ -48,14 +48,15 @@ requests mechanism extraction and revalidation. Git and the append-only
 - The active-lifecycle design was protected-delivered through PR #658:
   active versions remain non-overwritable, but administrator deletion ends
   that lifetime and retained deleted records do not reserve coordinates.
-  This revision implements the five-probe active-only v2 acceptance tooling,
-  without administrative operations, deleted-state inputs, or retired aliases.
-  Verify its protected delivery before fresh native acceptance.
-- The native-acceptance generation registry remains empty. Native probes and
-  one exact disposable-version deletion occurred, but no original-object
-  restoration, passing acceptance, activation, Approval deployment, or
-  normal-Live dispatch occurred. Preserve both incomplete generations; do not
-  retry or repair those generations, or relabel them as passing revised evidence.
+  The active-only v2 tooling was protected-delivered through PR #659.
+- One explicitly authorized fresh v2 generation completed all five native
+  probes and six active captures and passed independent audit. This revision
+  installs its exact admitted contract and fresh `ready` Governance with
+  `live_enabled: true`. Verify protected Activation delivery and post-merge
+  readback before the single proving dispatch.
+- No normal-Live dispatch or Approval deployment has occurred. Preserve both
+  incomplete v1 generations and the separately unresolved original-D recovery;
+  do not relabel old evidence, repeat the completed v2 suite, or perform repair.
 - The current user instruction authorizes end-to-end completion of design
   delivery, disabled implementation, native acceptance, activation, and
   exactly one auditable real dispatch. That authorization does not waive any
@@ -105,18 +106,25 @@ Do not recreate it or repeat the deletion.
 - The credential principal is repository `hcoona/three`.
 - Known reach includes production package `hexo-renderer-asciidoc` and disposable smoke packages.
 - This accepted repository-principal blast radius is not package isolation and is not an exhaustive grant inventory.
-- Package access remains unchanged; protected Governance remains `live_enabled: false`.
+- Package access remains unchanged. This revision sets ready Governance and
+  `live_enabled: true`; inspect protected delivery before treating it as active.
 - Authorized native probes created disposable scenario versions and tags.
-  The original D is deleted and a new same-version object is active.
+  Original-D recovery remains unresolved; the active replacement is retained.
   No normal Live run, Approval deployment, or explicit restoration occurred.
 
-### Native Acceptance Readiness
+### Native Acceptance Evidence
 
 The profile requires the LLD section 18.6 suite: exact creation, both active
 duplicates, and the bounded distinct-version tag race. The implemented v2
 tooling uses five probes, three versions, two scenario tags, and six complete
 active captures, with no deleted state, deletion, or restoration. The retired
 v1 suite and legacy fixed-coordinate/retry-5 helpers are not alternatives.
+
+The fresh v2 suite completed and passed independent native audit. Its exact
+generation, run identities, byte and state digests, and provenance limits are
+recorded in the [activation evidence log](../../../log.md#2026-09-09-query--prepare-normal-live-activation-from-audited-native-evidence).
+The admitted identity in Governance binds that canonical evidence, not the
+failed v1 interpretation.
 
 Current acceptance-only components live in
 `three_workflow_delivery_v3.acceptance`. The distinct
@@ -144,13 +152,13 @@ separates these responsibilities.
 The operator confirmed the pre-existing public
 `@hcoona/hcoona-release-smoke-npm-dual` container, ID `12047077`, associated
 with `hcoona/three`, is operator-controlled and has no production dependency.
-Prior authorization covered the v1 suite and its fresh D deletion/restoration.
-The lifecycle revision does not authorize additional administrative operations.
-Confirm the bounded new five-probe execution before running revised tooling;
-unrelated versions, tags, and access changes remain outside its scope.
+The separately approved five-probe v2 execution is complete. No further native
+generation is authorized. The lifecycle revision and passing suite authorize
+no additional administrative operation; unrelated versions, tags, and access
+changes remain outside their scope.
 
 The first generation stopped on the now-corrected storage-origin policy.
-Its created version remains untouched. The fresh generation reached the
+Its created version remains untouched. The second v1 generation reached the
 deleted/restorable scenario and stopped when the identical duplicate publish
 succeeded instead of failing. Read-only inventory distinguishes the deleted
 original from the new active object; this was not restoration.
@@ -171,9 +179,10 @@ acceptance generation may be installed before a real passing suite.
 
 ### Local Native Operator
 
-The following runbook uses the active-only v2 tooling. Do not execute it
-until its exact revision is protected-delivered and the bounded five-probe
-execution is confirmed. Retired v1 tooling is not an alternative path.
+The following runbook is for a future separately authorized v2 generation,
+not a request to repeat the completed acceptance. Its exact tooling revision
+must be protected-delivered and its bounded five-probe execution confirmed.
+Retired v1 tooling is not an alternative path.
 
 Use a clean POSIX checkout of the exact protected tooling revision, with the
 repository's locked pnpm dependencies and Python 3.13 uv environment prepared.
@@ -249,10 +258,9 @@ tombstone facts or administrative credentials into Governance.
 Never claim package isolation, reviewer independence, exhaustive grant discovery, universal consumer proof, or
 instantaneous revocation.
 
-Normal Live remains activation-blocked until the exact Destination Operation
-Profile has a fresh native acceptance generation installed through the
-Activation PR. Local
-scenario results do not substitute for that acceptance. The design deliberately
+Normal Live requires the exact admitted native contract, fresh ready
+Governance, and protected Activation delivery. The completed native evidence
+does not waive post-merge readback or prove a normal-Live outcome. The design deliberately
 treats a post-Observation tag race as bounded routing damage: supported
 consumers resolve exact `name@version`, and exact version bytes, digests, and
 witness remain authoritative.
@@ -273,7 +281,9 @@ activation, and exactly one auditable normal-Live dispatch.
 The authorization is contract-bounded. Do not change package or repository
 access, touch unrelated packages or tags, use package-admin authority in
 runtime, weaken review or readback gates, perform a GitHub rerun, or issue more
-than one real dispatch. Revised native acceptance performs no deletion or
+than one real proving dispatch. The separately approved native v2 generation
+is complete; another generation requires new authorization.
+Revised native acceptance performs no deletion or
 restoration. Recovery of the original disposable D and its replacement remains
 a separate explicit operator decision, not implied permission from the
 lifecycle correction or a passing revised suite. Any ambiguous external response stops
@@ -301,19 +311,17 @@ Do not infer policy from stale runtime behavior or archived designs.
 ## Next Executable Workflow
 
 1. Perform the required Git inspection above.
-2. Verify protected delivery of the active-only v2 tooling, completing any
-   outstanding delivery gates while Governance remains disabled. The
-   lifecycle design is already protected-delivered; do not repeat it.
-3. Require affected scenarios, full project tests, HK/hooks, OCR multi-review,
-   independent finding adjudication, and final contraction for that exact
-   implementation. Preserve historical rejection evidence and the unresolved
-   original-D recovery boundary.
-4. Confirm the bounded five-probe execution and run one fresh complete v2
-   generation. Independently audit native evidence; never import or relabel
-   the failed v1 generations. No administrative mutation is part of this step.
-5. With passing current acceptance, resume fresh Governance/readback,
-   protected Activation PR, and exactly one auditable real dispatch. Report
-   the separate administrative recovery status without claiming restoration.
+2. Complete any outstanding Activation validation, OCR review, independent
+   adjudication, contraction, and protected delivery. Design, v2 tooling, and
+   independently audited native acceptance are complete; do not repeat them.
+3. Verify the protected ready Governance, admitted contract, exact reviewed
+   tree, post-merge checks, and fresh native-platform/retention readback.
+4. Recompute the actual protected target's NBGV coordinate and destination
+   preflight, then follow LLD section 19.1 for exactly one proving dispatch.
+   Review the bound Snapshot before Approval if it contains an action.
+5. Require the exact current-run Outcome and authoritative destination proof
+   before declaring completion. Preserve failed v1 evidence and report
+   original-D recovery separately without claiming restoration.
 
 ## Validation and Review Protocol
 
