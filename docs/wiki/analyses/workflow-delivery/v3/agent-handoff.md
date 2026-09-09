@@ -77,6 +77,16 @@ requests mechanism extraction and revalidation. Git and the append-only
   Both incomplete v1 generations and separately unresolved original-D recovery
   remain unchanged. Exact evidence belongs in the append-only log.
 
+## Subsequent Research-Only Request
+
+The user authorized research and a protected documentary handoff for a
+possible .NET/NuGet second slice, explicitly excluding implementation.
+Continue through the [NuGet research handoff](./nuget-smoke-research-handoff.md).
+It records the intentionally removed historical smoke projects, retained
+package containers, current implementation gaps, unconfirmed requirements,
+and fresh-context takeover gates. It is not a second-slice specification or
+permission to reuse npm risk exceptions, authority, or external operations.
+
 ## Git Inspection and Implementation Scope
 
 Do not trust a recorded branch name, SHA, dirty-state claim, or PR status.
@@ -85,13 +95,17 @@ untracked paths, the complete diff, and the implementation PR state before
 acting. Skip delivery steps already completed; a recorded checkpoint does not
 prove that a branch is unpushed, a PR is unopened, or a change is unmerged.
 
-The expected implementation surface is the release record and transport
+For the completed npm objective, the implementation surface was the release record and transport
 model, strict Governance eligibility, GitHub Packages Adapter, Live
 materialization/finalization and CLI wiring, the normal-Live workflows,
 protected Governance v2 document, affected scenario/contract tests,
 and synchronized current-state documentation. Treat that as a bounded purpose,
 not an exhaustive path allowlist; inspect every changed path and reject
 unrelated scope.
+
+That inventory is not authorization to reopen implementation. The subsequent
+NuGet request changes only research/handoff documentation and its navigation
+and log; a future implementation requires a new authorized scope.
 
 When these paths are under review, preserve unrelated worktree changes and do
 not reset or overwrite them.
@@ -312,7 +326,10 @@ mutation and triggers read-only investigation rather than retry.
 
 ## Required Reading Order
 
-After the initial Git inspection, read:
+After the initial Git inspection, use this authority order for relevant
+decisions. The NuGet research handoff provides decision-specific starting
+sections; do not preload every historical appendix or treat the npm LLD as a
+NuGet specification:
 
 1. this handoff and the [v3 entry point](./README.md);
 2. [Requirements](./requirements.md);
@@ -340,6 +357,9 @@ provisioning, acceptance, either dispatch, or either Approval. Original-D
 recovery and any future mutation require separate explicit authorization.
 This completed task authorizes no third proving dispatch.
 
+The separate NuGet research request follows its linked handoff. Its next
+product gate is requirements confirmation, not implementation or Live.
+
 ## Validation and Review Protocol
 
 - Validate the complete affected implementation and design set, not only
@@ -357,6 +377,10 @@ This completed task authorizes no third proving dispatch.
 - An unresolved contradiction blocks commits; do not hide it or choose policy from implementation.
 - Review follows green local validation. Each finding is atomic, independently adjudicated, fixed if true, and returned
   to the original reviewer until zero findings.
+- Use the `open-code-review-delegate` skill for multi-agent review, including
+  the complete Git path manifest when OCR filtering omits documentation.
+- Insert contraction after every two review iterations, after all changes and
+  reviews, and before creating a PR.
 - Do not claim validation, review, delivery, or merge before persistent evidence exists.
 
 For later runtime work, complete affected tests, root HK, and hooks before multi-review. Documentation work uses the
@@ -366,7 +390,8 @@ applicable documentation and repository gates but keeps the same validate-before
 
 ### Architecture and Design
 
-- Preserve the waterfall gates: requirements, HLD, MLDs, brief LLD, development, then test and review.
+- Preserve the waterfall gates: interactive requirements confirmation, HLD,
+  MLDs, brief LLD, development, then test and review.
 - Keep design contract-bounded; do not silently infer policy or expand channels, destinations, credentials, services,
   authority, abstractions, or external resources.
 - CI Qualification and Release Delivery remain peer contexts; Shared Foundation owns mechanisms, not business policy.
@@ -392,4 +417,6 @@ applicable documentation and repository gates but keeps the same validate-before
   mechanisms in current-state pages.
 - Use Git and the append-only log for chronology; never alter existing log bytes.
 - Make commits dependency-ordered and human-reviewable.
+- Synchronize the handoff, v3 README, overview, index, and append-only log as
+  applicable when phase or slice status changes.
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
