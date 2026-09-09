@@ -97,18 +97,20 @@ Prior retry-5 destination acceptance is complete historical evidence. Exact
 `.17` through `.20` versions and tags remain retained and must not be reused.
 Its detailed chronology belongs in Git and the append-only log.
 
-## Current Disabled and External State
+## Current Activation and External State
 
-This revision implements the replacement runtime and strict Governance v2.
+This revision installs evidence-backed ready Governance v2.
 The governance document at
-`.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` retains
-state-only blocked activation and `live_enabled: false`.
+`.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` binds the
+independently audited native v2 generation and sets `live_enabled: true`.
+Verify protected Activation delivery and post-merge readback before use.
 
 - The implementation was protected-delivered through PR #653. Whole-group
   validation, independent rereview, contraction, exact merged-tree comparison,
   and post-merge checks are complete.
-- The exact Destination Operation Profile has no admitted native acceptance
-  generation. Local scenarios do not activate publication.
+- A fresh five-probe native v2 generation passed independent audit. This
+  revision installs its exact admitted contract; local scenarios alone do not
+  authorize publication.
 - Approval Environment `workflow-delivery-v3-buddy-approval`, ID
   `20895030723`, has rule `64124473`, sole reviewer
   `hcoona` / `712433`, self-review permitted, zero wait, no secrets, no
@@ -119,8 +121,8 @@ state-only blocked activation and `live_enabled: false`.
   compatibility, and exact no-authority-reference proof. It had no deployments;
   the retained Approval Environment and all other Environments were unchanged.
 - Package access is unchanged. Authorized native probes and one exact
-  disposable-version deletion occurred. The original is still deleted while
-  a new same-version object is active. No normal Live dispatch, Approval
+  disposable-version deletion occurred. Original-D recovery remains unresolved
+  and the active replacement is retained. No normal Live dispatch, Approval
   deployment, or explicit restoration occurred.
 
 ## Delivery Boundary
@@ -137,13 +139,13 @@ object, including different content, at the same coordinate. Consumer/cache
 disagreement across administrative lifetimes is accepted for the smoke-only,
 sole-writer TCB. No runtime history or administrative compensation is added.
 
-The lifecycle design was protected-delivered through PR #658. This revision
-implements the active-only v2 tooling: five probes, three versions, two tags,
-six complete active captures, and no deletion, restoration, or deleted-state
-queries. Verify protected delivery before fresh independently audited native
-acceptance, ready Governance, the protected Activation PR, and the single
-real dispatch. Preserve the failed v1 evidence and original D; their recovery
-remains a separate explicit operator decision.
+The lifecycle design and v2 tooling were protected-delivered through PRs #658
+and #659. Five native probes and six complete active captures passed
+independent audit, without deletion, restoration, or deleted-state queries.
+This revision installs the accepted contract and ready Governance. Complete
+protected Activation delivery and fresh post-merge readback before the single
+proving dispatch; do not repeat native acceptance. Preserve the failed v1
+evidence and separately unresolved original-D recovery.
 
 ## Historical Record Rule
 

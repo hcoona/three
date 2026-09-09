@@ -2,11 +2,12 @@
 
 ## 1. Status and Authorization Boundary
 
-**Status:** active-version lifecycle revision, dated 2026-09-08.
+**Status:** evidence-backed normal-Live activation, dated 2026-09-09.
 
-**Implementation boundary:** the replacement runtime uses strict Governance v2
-and `live_enabled: false`; this revision implements the active-only v2
-acceptance tooling. Protected delivery and operational state must be
+**Implementation boundary:** the active-only v2 tooling is protected-delivered
+and its fresh native generation passed independent audit. This revision
+installs ready Governance v2, its admitted native contract, and
+`live_enabled: true`. Protected Activation delivery and operational state must be
 reconciled through the
 [agent handoff](./agent-handoff.md); local implementation is not activation.
 
@@ -16,13 +17,13 @@ This document does **not** authorize changes to workflows, Python, schemas, test
 
 Implementation must be delivered and validated while `live_enabled` remains `false`. Obsolete Environment cleanup, fresh native evidence, Governance refresh, activation, and the first proving dispatch are later and separately controlled.
 
-**Known activation blocker:** the pinned standard
-`npm publish --tag ... --fetch-retries=0` Destination Operation Profile has not
-yet passed the separately authorized native acceptance suite in section 18.
-The revised suite must prove active-version non-overwrite and the bounded
-non-authoritative tag race. Administrator-deleted records are not coordinate
-reservations. Live remains disabled until the revised implementation is
-protected-delivered and Governance binds a fresh passing generation.
+**Remaining proving boundary:** the pinned standard
+`npm publish --tag ... --fetch-retries=0` profile passed the separately
+authorized native v2 suite and independent audit. Active-version non-overwrite
+and the bounded non-authoritative tag race were established within that
+contract; administrator-deleted records are not coordinate reservations.
+Protected Activation delivery, fresh post-merge readback, and one verified
+normal-Live Outcome remain required.
 
 ### 1.1 Normative precedence
 
@@ -68,11 +69,11 @@ transport, and the tagged current-DAG Outcome. Normal-Live records omit
 run-attempt identity. Receipt, ActionResult, and superseded marker and proof
 formats have no aliases.
 
-Governance remains disabled. Its current inspection and expiry are read from
-the protected document, not a copied date in this design. The exact profile's
-native acceptance and activation gates remain outstanding; retained-ref
-compatibility and obsolete-Environment cleanup are complete. Consult the
-handoff for operating state.
+This revision installs ready Governance and enables the admitted native
+contract. Its current inspection and expiry are read from the protected
+document, not a copied date in this design. Native acceptance, retained-ref
+compatibility, and obsolete-Environment cleanup are complete. Consult the
+handoff for protected delivery, post-merge readback, and proving-dispatch state.
 
 The replacement target has:
 
@@ -1917,7 +1918,7 @@ remediation redesign; simulation rerun changes; finalization watchdogs;
 unauthorized obsolete-Environment deletion; activation/dispatch/package
 mutation through this document; and release pipelines for other projects.
 
-The separately authorized native acceptance suite is the sole exception for
-disposable-package delete/restore operations. It grants no runtime capability.
+Administrative recovery requires separate explicit authorization and is not
+part of the active-only native publication acceptance suite.
 
 These items are bounded unsupported capabilities, not unresolved first-slice decisions.

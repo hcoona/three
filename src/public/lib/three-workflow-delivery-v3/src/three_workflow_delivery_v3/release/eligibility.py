@@ -79,7 +79,17 @@ _DESTINATION_PRIMITIVE_UNPROVEN = "destination-primitive-unproven"
 # No production contract is admitted before its native acceptance.
 _ADMITTED_DESTINATION_PRIMITIVE_IDS: frozenset[
     tuple[str, str, str, str, str]
-] = frozenset()
+] = frozenset(
+    {
+        (
+            "sha256:e36373d3f7230f3186f76e7aba9e8bebcec6c7259fec725d6932d874f2b849b1",
+            "workflow-delivery-v3/native-npm-suite/v2",
+            "@hcoona/hcoona-release-smoke-npm-dual",
+            "2026-03-10",
+            "wdv3/github-packages-npm-documented-contract/v2",
+        ),
+    }
+)
 _KNOWN_WIDER_PACKAGE_REACH = (
     "@hcoona/hexo-renderer-asciidoc",
     "disposable-smoke-packages",

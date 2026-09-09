@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 # ruff: noqa: D103, E501, S607
-import json
 import re
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
@@ -132,7 +131,7 @@ def _artifact_steps(
     ]
 
 
-def test_buddy_workflow_files_are_the_disabled_commit8_pair_only() -> None:
+def test_buddy_workflow_files_are_the_manual_normal_pair_only() -> None:
     assert CALLER.is_file()
     assert CALLEE.is_file()
     assert (
@@ -150,9 +149,6 @@ def test_buddy_workflow_files_are_the_disabled_commit8_pair_only() -> None:
     assert "live_enabled: true" not in raw
     assert "schedule:" not in raw
     assert "push:" not in raw
-    if GOVERNANCE.exists():
-        governance = json.loads(GOVERNANCE.read_text(encoding="utf-8"))
-        assert governance["live_enabled"] is False
 
 
 def test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact() -> None:
@@ -1114,7 +1110,7 @@ def test_buddy_target_sha_binding_chain_is_exact(tmp_path: Path) -> None:
     )
 
 
-def test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy() -> (
+def test_temporary_acceptance_workflows_are_absent_with_manual_normal_buddy() -> (
     None
 ):
     workflows = REPO_ROOT / ".github/workflows"
@@ -1155,8 +1151,6 @@ def test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy() 
     assert "live_enabled: true" not in raw
     assert "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml" not in raw
     assert GOVERNANCE.is_file()
-    governance = json.loads(GOVERNANCE.read_text(encoding="utf-8"))
-    assert governance["live_enabled"] is False
 
 
 def test_current_authoritative_buddy_jobs_each_guard_attempt_one() -> None:

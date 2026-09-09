@@ -1,13 +1,17 @@
-"""Commit-10 contracts for the actual protected disabled attestation."""
+"""Current protected Governance and revocation contracts."""
 
 from __future__ import annotations
 
 # ruff: noqa: D103, E501
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
 
+import pytest
+from three_workflow_delivery_v3.adapters.github_packages import (
+    github_packages_destination_operation_profile,
+)
 from three_workflow_delivery_v3.canonical import (
     canonicalize,
     parse_canonical_json,
@@ -34,9 +38,6 @@ from three_workflow_delivery_v3.repository.descriptors import (
     GOVERNANCE_REPOSITORY,
 )
 
-if TYPE_CHECKING:
-    import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[6]
 ACTUAL_ATTESTATION = REPO_ROOT / GOVERNANCE_PATH
 NORMAL_BUDDY = (
@@ -60,7 +61,7 @@ LIVE_STATIC_REFERENCE_IMPLEMENTATIONS = (
 
 def _content() -> bytes:
     assert ACTUAL_ATTESTATION.is_file(), (
-        "commit-10 protected disabled attestation is missing"
+        "protected Governance attestation is missing"
     )
     return ACTUAL_ATTESTATION.read_bytes()
 
@@ -99,9 +100,7 @@ class _RecordingGovernanceClient:
         )
 
 
-def test_actual_protected_attestation_is_canonical_disabled_and_exactly_bound() -> (
-    None
-):
+def test_actual_protected_attestation_is_canonical_and_exactly_bound() -> None:
     content = _content()
     document = parse_canonical_json(content)
     attestation = parse_governance_attestation(content)
@@ -114,7 +113,6 @@ def test_actual_protected_attestation_is_canonical_disabled_and_exactly_bound() 
     )
     assert attestation.release_policy == "hcoona-release-smoke-npm"
     assert attestation.package == FIRST_SLICE_PACKAGE
-    assert attestation.live_enabled is False
     assert timedelta(0) < lifetime <= timedelta(days=GOVERNANCE_MAX_AGE_DAYS)
     assert (GOVERNANCE_REPOSITORY, GOVERNANCE_REF, GOVERNANCE_PATH) == (
         "hcoona/three",
@@ -155,7 +153,11 @@ def test_actual_attestation_accepts_only_hcoona_admin_and_exact_access() -> (
 def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    content = _content()
+    content = canonicalize(
+        replace(
+            parse_governance_attestation(_content()), live_enabled=False
+        ).to_document()
+    )
     attestation = parse_governance_attestation(content)
     client = _RecordingGovernanceClient(content)
     source = SimpleNamespace(
@@ -223,31 +225,32 @@ def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
     assert decision.result.value != "admitted"
 
 
-def test_commit10_attestation_is_governance_only_and_never_acceptance_activation() -> (
+def test_actual_attestation_excludes_raw_acceptance_and_executable_privileges() -> (
     None
 ):
-    document = parse_canonical_json(_content())
     serialized = _content().decode("utf-8")
 
-    assert document["live_enabled"] is False
     assert "workflow-delivery-v3-buddy-smoke-acceptance" not in serialized
     assert "packages: write" not in serialized
     assert "mutation-classification" not in serialized
 
 
-def test_commit10_attestation_binds_disabled_normal_live_without_acceptance_evidence() -> (
+def test_actual_attestation_requires_live_flag_and_admitted_native_evidence() -> (
     None
 ):
-    document = parse_canonical_json(_content())
+    attestation = parse_governance_attestation(_content())
+    profile = github_packages_destination_operation_profile()
 
-    assert document["live_enabled"] is False
-    assert document["activation"] == {
-        "state": "blocked",
-    }
-    assert document["release_policy"] == "hcoona-release-smoke-npm"
-    assert "governance-acceptance-evidence" not in document
-    activation = document["activation"]
-    assert isinstance(activation, dict)
-    assert "approval_environment" not in activation
-    assert "artifact_retention" not in activation
-    assert "destination_primitive" not in activation
+    if attestation.live_enabled:
+        eligibility.require_action_governance(
+            attestation,
+            now=attestation.inspected_at,
+            destination_operation_profile_digest=profile.profile_digest,
+        )
+    else:
+        with pytest.raises(eligibility.GovernanceFreshnessRejectionError):
+            eligibility.require_action_governance(
+                attestation,
+                now=attestation.inspected_at,
+                destination_operation_profile_digest=profile.profile_digest,
+            )
