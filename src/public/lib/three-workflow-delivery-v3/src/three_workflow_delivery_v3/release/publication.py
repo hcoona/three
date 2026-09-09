@@ -292,7 +292,11 @@ def prepare_publication(  # noqa: PLR0913
     directory.mkdir(mode=0o700)
     with ExitStack() as cleanup:
         cleanup.callback(shutil.rmtree, directory)
-        initialize_npm_configuration(directory, tarball)
+        initialize_npm_configuration(
+            directory,
+            tarball,
+            tarball_basename=inputs.artifact.content.basename,
+        )
         initial = inputs.eligibility.governance
         fresh = require_fresh_governance_identity(
             inputs.policy.governance,

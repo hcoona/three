@@ -2,14 +2,15 @@
 
 ## 1. Status and Authorization Boundary
 
-**Status:** normal-Live metadata read-path correction, dated 2026-09-09.
+**Status:** normal-Live transport-basename correction, dated 2026-09-09.
 
 **Implementation boundary:** the active-only v2 tooling is protected-delivered
 and its fresh native generation passed independent audit. Ready Governance v2,
 its admitted native contract, and `live_enabled: true` are protected-delivered.
-This revision corrects the supported metadata read path without changing the
-publication profile. Reconcile protected delivery and the still-unused proving
-dispatch through the [agent handoff](./agent-handoff.md).
+The supported metadata reader is also protected-delivered. This revision
+clarifies transport-to-logical-basename staging without changing the publication
+profile. Reconcile the failed first run, correction delivery, and separately
+authorized additional dispatch through the [agent handoff](./agent-handoff.md).
 
 This document replaces the former implementation and rollout chronology. It defines the target first-slice design; current runtime code is useful only for repository naming and tooling conventions when it differs from the normative v3 design.
 
@@ -22,8 +23,8 @@ The initial replacement implementation must be delivered and validated while `li
 authorized native v2 suite and independent audit. Active-version non-overwrite
 and the bounded non-authoritative tag race were established within that
 contract; administrator-deleted records are not coordinate reservations.
-Protected delivery of the read-path correction, refreshed platform readback,
-and one verified normal-Live Outcome remain required.
+Protected delivery of the staging correction, refreshed platform readback,
+and one successful authoritative normal-Live Outcome remain required.
 
 ### 1.1 Normative precedence
 
@@ -748,6 +749,13 @@ wdv3-live-<role>-<workflow-run-id>-<payload-digest-prefix>
 ```
 
 Consumers download only current-run artifacts by immutable ID and validate service digest, payload path, schema, producer, run, target, purpose, payload identity, and canonical digest. Name fallback, latest selection, and history lookup are forbidden.
+
+For a raw tarball upload, the downloaded transport filename may differ from
+the logical `content.basename` and payload path. Publisher validates the
+downloaded ordinary file's bytes and packed identity, then stages those
+unchanged bytes under the validated logical basename in its private runtime.
+Profile matching and the marker/Finalizer command binding use that canonical
+private path; a transport filename is not a competing artifact identity.
 
 Downstream records bind the producer-returned transport tuple:
 

@@ -15,14 +15,17 @@ exact merged-tree verification, and post-merge checks complete.
 
 PR #660 protected-delivered strict ready Governance v2, `live_enabled: true`,
 and the exact independently audited native v2 contract. Post-merge checks and
-platform readback passed. The still-unused proving dispatch awaits a bounded
-metadata read-path correction: GitHub npm serves package-level metadata but
-rejects the reader's per-version route with `405`.
+platform readback passed. PR #661 delivered the supported package-level npm
+metadata reader. The first real run passed Qualification and received Approval
+but failed before publication because preparation confused the transport
+filename with the logical tarball basename. Complete the bounded staging
+correction and protected delivery before the one separately authorized
+additional new dispatch. No successful proving Outcome exists yet.
 The v1 reservation contract was rejected by an observed deleted-version
 counterexample. The active-lifecycle correction was protected-delivered through
 PR #658, and its tooling through PR #659. The new native generation passed
-without deletion, restoration, or deleted-state reads. No package access
-change, Approval deployment, or normal-Live dispatch occurred.
+without deletion, restoration, or deleted-state reads. Package access is
+unchanged; the first normal-Live run created one Approval deployment.
 Retained-ref proof and obsolete-Environment cleanup
 are complete. Inspect current Git and operational state through the handoff
 before continuing.
@@ -78,7 +81,7 @@ chronology is not current architecture.
   `hcoona` / `712433`, `prevent_self_review: false`, zero wait, no secrets,
   no branch/tag restriction, `can_admins_bypass: false`, marker
   `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`,
-  and zero deployments.
+  and the recorded first-run deployment listed in the handoff.
 - Legacy Environment `workflow-delivery-v3-buddy-github-packages`, ID
   `20895037877`, was removed after retained-ref compatibility and exact
   no-authority-reference proof. Other Environment configurations were unchanged.
@@ -89,8 +92,8 @@ chronology is not current architecture.
 - Package access remains unchanged. Authorized native probes created
   disposable versions and tags, and one original scenario version was
   deleted. A duplicate publish created a new same-version object; the original
-  remains deleted. No normal Live dispatch, Approval deployment, or explicit
-  restoration occurred.
+  remains deleted. The first normal-Live run failed before publication after
+  Approval. No explicit restoration occurred.
 
 ## Delivery Boundary
 
@@ -107,16 +110,17 @@ active-only and performs no administrative or history-compensation operation.
 The protected v2 tooling completed five probes, three versions, two tags, and
 six complete active captures. Independent audit confirmed actual native
 provenance, both empty duplicate deltas, and the bounded W/V tag race.
-This revision installs the resulting admission and ready Governance; verify
-protected delivery and fresh post-merge readback before the single real
-dispatch. Do not repeat the completed native suite.
+Its admission and ready Governance are protected-delivered. Verify the
+transport-basename correction's protected delivery and fresh readback before
+the additional new dispatch. Do not repeat the completed native suite.
 
 The [operator runbook](./agent-handoff.md#local-native-operator) describes the
 clean-checkout, credential, approval, and evidence-retention prerequisites.
 Preserve both failed v1 generations and the original D; their recovery is a
 separate operator decision, not authorized by this model change.
-The five revised acceptance probes are separate from the one final normal-Live
-dispatch; any failed gate stops further mutation without automatic repair.
+The five revised acceptance probes are separate from normal-Live dispatches;
+any failed gate stops further mutation without automatic repair. The handoff
+records the exact remaining dispatch authorization.
 
 ## Historical Source Rule
 

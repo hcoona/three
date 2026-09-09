@@ -79,14 +79,17 @@ def write_private_file(path: Path, content: bytes) -> None:
         stream.write(content)
 
 
-def initialize_npm_configuration(directory: Path, tarball: Path) -> None:
-    """Populate a caller-owned fresh directory without owning its cleanup."""
+def initialize_npm_configuration(
+    directory: Path, tarball: Path, *, tarball_basename: str | None = None
+) -> None:
+    """Populate a fresh directory using the caller-validated target basename."""
     for name in ("home", "scratch", "cache"):
         (directory / name).mkdir(mode=0o700)
     write_private_file(directory / "package.json", _LOCAL_MANIFEST)
     write_private_file(directory / "user.npmrc", _USER_CONFIG.encode())
     write_private_file(directory / "global.npmrc", b"")
-    write_private_file(directory / tarball.name, tarball.read_bytes())
+    basename = tarball.name if tarball_basename is None else tarball_basename
+    write_private_file(directory / basename, tarball.read_bytes())
 
 
 def validate_npm_runtime(directory: Path) -> None:
