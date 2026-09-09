@@ -7,6 +7,10 @@ Architecture version: **v3**.
 Review state: **Confirmed; approved normal Live baseline incorporated on
 2026-08-31**.
 
+The NuGet second-slice extension below is a design proposal following
+`WD-NUGET-*` requirements confirmation. It preserves the completed npm
+protocol and does not claim admitted NuGet native behavior.
+
 This middle-level design defines how Release Delivery accepts a manual Release
 Intent, derives channel-specific identity, independently builds and qualifies a
 complete Release Unit, observes destination state, obtains authorization when
@@ -80,6 +84,102 @@ This MLD does not own:
 12. GitHub concurrency reduces duplicate or overlapping repository-controlled
     work but is not a distributed correctness lock.
 13. Break-Glass Remediation is separate authority, not a force option.
+
+## NuGet Second-Slice Delivery
+
+`Hcoona.ReleaseSmoke.GithubPackages` uses the existing Release Intent,
+current-Attempt lineage, Snapshots, Approval, Authorization, terminal evidence,
+and Outcome contracts. Its only channel and destination are Buddy and GitHub
+Packages. Unlike the npm selected-ref exception, NuGet Live accepts only the
+owner-reviewed immutable revision resolved from protected `refs/heads/main`.
+The [NuGet Governance boundary](./governance-integration-mld.md#nuget-second-slice-governance)
+governs authority and activation.
+
+### Artifact and Native Identity
+
+Release builds one Windows `net10.0` library package and separately qualifies
+its contents and clean exact-version consumption under `WD-NUGET-005`.
+Mechanical reuse of the
+[qualification definitions](./ci-qualification-mld.md#nuget-second-slice-qualification)
+does not reuse CI Evidence. The Qualification Snapshot binds the target-bound
+native NBGV projection before Build; Build applies it without recomputation or
+fallback and produces no separate `.snupkg`.
+
+NuGet-native package ID and version comparison define the destination
+coordinate, including equivalent spellings and versions. The projection
+retains the frozen version and its native comparison identity, rather than
+using npm normalization or treating different textual spellings as distinct
+resources. Native-equivalent coordinates must share conflict and concurrency
+identity. Different targets can still address the same destination coordinate;
+Release Execution identity does not resolve that conflict.
+
+Artifact admission binds the actual logical `.nupkg` bytes and an in-package
+source/target witness to the exact qualified artifact. Transport names do not
+replace package identity. Destination readback must obtain and inspect actual
+`.nupkg` bytes; registry metadata, matching assemblies, a push response, or a
+matching filename is insufficient proof of equality or provenance.
+
+### Observation and Zero-or-One Action
+
+The NuGet Adapter implements only these destination outcomes:
+
+| Authoritative current observation                                           | Publication Snapshot result                                                   |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Exact native coordinate absent under the admitted creation contract         | One create-only action for the qualified `.nupkg`.                            |
+| Existing active coordinate has the exact qualified bytes and target witness | Zero actions, subject to the shared fresh exact-satisfied finalization proof. |
+| Existing active coordinate has different bytes or witness                   | Conflict; no action.                                                          |
+| State, bytes, witness, or native identity cannot be established             | Blocked observation; no publication authority.                                |
+
+There is no NuGet tag action or npm tag-race assumption. Native duplicate
+behavior, byte retrieval, and provenance must be independently established
+for this NuGet service and pinned operation profile. An identical-byte or
+different-byte push to an existing active native-equivalent coordinate must
+not alter that active content. No HTTP status or client exit code establishes
+this guarantee by itself. Missing service guarantees block the affected
+capability; no ledger, reservation, deletion, restoration, or compensating
+mutation substitutes for them. npm deleted-version conclusions and lifecycle
+risk acceptance do not transfer.
+
+### One-Shot Publication and Terminal Evidence
+
+One action binds the NuGet destination, native coordinate, artifact reference,
+expected bytes and witness, resource identity, and pinned operation profile
+through the Publication Snapshot and current-Attempt Authorization. The
+profile must close the actual toolchain, executable invocation, retry behavior,
+and allowed effect to one create attempt; it must not silently skip duplicate
+failures, overwrite, or fall back to another source or identity.
+
+The trusted publisher admits the exact immutable artifact without loading a
+target project or running build/pack, repeats fresh Governance and supported
+package-control checks, and durably records the mutation marker before the
+one-shot invocation. Controlled post-marker termination emits one Publication
+Result and initiates its persistence. Success requires definitive invocation
+facts plus actual destination bytes and the extracted witness matching the
+authorized artifact. A marker without a valid durable Result remains unknown
+under the existing Finalizer contract; an ambiguous result permits read-only
+investigation, not another push.
+
+Zero-action finalization repeats authoritative exact-coordinate, byte, witness,
+and Governance observation without an Approval or publisher. The shared
+tagged current-DAG Outcome and terminal-reference rules remain authoritative
+for both paths. A new dispatch creates its own build, qualification, Snapshot,
+and authority; it never adopts a prior run's artifact or Approval.
+
+### NuGet Acceptance Gate
+
+The brief LLD closes the NuGet observation APIs, native identity reader,
+operation profile, artifact/witness binding, and evidence admission. Native
+acceptance must cover fresh creation, both active duplicate cases, actual-byte
+readback, and sufficient provenance, including native-equivalent coordinates.
+Its concrete operation budget, disposable scope, fresh coordinates, stop
+conditions, retained evidence, and independent audit require separate
+authorization. No fixed probe count or service guarantee is inferred from the
+completed npm suite.
+
+Completion additionally requires one separately authorized and independently
+audited real publication with its own full current-run lineage and actual
+destination-byte evidence. Design completion, local qualification, and
+historical NuGet packages cannot satisfy those external gates.
 
 ## Domain Model
 

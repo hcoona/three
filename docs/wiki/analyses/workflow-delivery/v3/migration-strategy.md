@@ -51,6 +51,36 @@ remain failed historical evidence; they are not relabeled as passing.
 Outstanding administrative recovery from those experiments remains a separate
 operator decision, not a new acceptance operation or automatic cleanup.
 
+## NuGet Second-Slice Delivery
+
+The independently confirmed `WD-NUGET-*` requirements govern the next slice.
+Its [handoff](./nuget-smoke-research-handoff.md) retains current design and
+execution boundaries. Revalidate the selected historical marker behavior;
+author current v3 descriptors, locks, and policy only after implementation is
+authorized. Do not restore the historical delivery stack or the unselected
+NuGet-named project.
+
+The ordered units are requirements and HLD, affected MLDs and brief LLD,
+disabled implementation, native acceptance tooling and its bounded authorized
+execution, fresh protected NuGet activation, and a separately authorized real
+publication and independent audit. Each implementation unit must be
+dependency-ordered and human-reviewable; related units may share a PR.
+Documentation validation and independent review precede design delivery.
+Implementation requires subsequent authorization, and neither design delivery
+nor a green local test grants external mutation authority.
+
+The new NuGet Provider, artifact representation, and destination profile may
+extend shared v3 mechanisms. Cross-ecosystem admission must remain strict,
+and affected npm scenarios must remain green. Existing npm Governance bytes,
+native admission, publication evidence, permissions, and completed operating
+state are outside this change. No npm redispatch or reproving is required.
+
+NuGet activation remains blocked until its own exact profile, actual native
+evidence, and current authority are admitted. Missing service guarantees must
+not be replaced by a runtime ledger, administrator compensation, or weaker
+success criteria. Use the existing review, adjudication, contraction, and
+protected-delivery discipline for each future delivery group.
+
 ## Why v2 Is Not an Incremental Base
 
 v2 and v3 differ at architectural boundaries:

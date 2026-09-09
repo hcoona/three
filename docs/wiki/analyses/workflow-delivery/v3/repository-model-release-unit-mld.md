@@ -7,6 +7,10 @@ Architecture version: **v3**.
 Review state: **Confirmed; approved normal Live baseline incorporated on
 2026-08-31**.
 
+The NuGet extension below realizes separately confirmed `WD-NUGET-*`
+requirements and remains a design proposal pending review and protected
+delivery. It is not implementation or native acceptance evidence.
+
 This middle-level design defines how Workflow Delivery discovers technical
 repository facts, authors Release Units, resolves build semantics, and compiles
 an immutable Repository Model Snapshot.
@@ -386,8 +390,9 @@ The Repository Model Compiler:
 
 The ecosystem-native NBGV projections are authoritative published product
 versions, not downstream derivations. Required projections include
-`npmPackageVersion` for this npm slice. Release uses that frozen value
-unchanged. Channel, Release Intent, request, workflow, run, and Attempt
+`npmPackageVersion` for the npm slice and NBGV's native `NuGetPackageVersion`
+for the NuGet slice. Release uses the selected frozen value unchanged.
+Channel, Release Intent, request, workflow, run, and Attempt
 identities must not append or otherwise derive additional published version
 components.
 
@@ -405,6 +410,71 @@ ecosystem adapter for the repository version authority, not a second authority.
 
 Conflicting lineages, incompatible manifest versions, or an unresolvable NBGV
 version block model compilation.
+
+## NuGet Second-Slice Model
+
+This extension realizes `WD-NUGET-001`, `WD-NUGET-002`, `WD-NUGET-003`, and
+`WD-NUGET-005` through the existing model boundaries and the
+[NuGet HLD extension](./high-level-design.md#nuget-second-slice-extension).
+It selects one Build Definition for `Hcoona.ReleaseSmoke.GithubPackages`:
+one managed library, `net10.0`, Windows, and one primary `.nupkg`. The project
+owns the native package identity, framework, and project-local suppression of
+separate symbol-package generation. The descriptor selects the entry point
+and complete build contract without duplicating those native facts.
+
+### Native .NET Fact Closure
+
+The .NET Release Provider is target-evaluating. Its closed request selects the
+entry point, configuration, Windows toolchain, and modeled output scope.
+Official MSBuild evaluation and graph facilities resolve effective imports,
+Project References, framework, packability, package identity, and relevant
+pack properties. NBGV facts require the appropriate native target or API
+surface, not an unevaluated XML value or a property read before the relevant
+target runs. The Provider records the actual toolchain and effective inputs;
+repository source inspection is not evidence that evaluation succeeded.
+
+NBGV resolution uses the exact target, complete history and tags, and neutral
+target-bound version evaluation rather than the dispatch ref. The resulting
+Fact Bundle carries canonical lineage and version facts, the exact native
+NuGet projection, and the evaluated facts needed to close the selected build
+and artifact scope. Missing or conflicting facts block the Snapshot. The
+Decision Zone admits this immutable data without loading target-defined
+MSBuild projects, imports, tasks, or product assemblies.
+
+Native NuGet APIs establish package identity and version equivalence. The
+model preserves the original native NBGV projection for the frozen Build
+Request while retaining enough native identity information for collision
+checks. Normalization does not authorize a replacement version, and build
+metadata cannot distinguish otherwise equivalent NuGet coordinates. The
+Release-owned destination projection consumes these facts; this model does
+not infer service non-overwrite guarantees from NuGet comparison rules.
+
+### Frozen Package Build Contract
+
+The normalized Build Definition closes the selected configuration, inherited
+and project-local pack settings, toolchain, declared inputs, and one-package
+output set. A separate `.snupkg` is outside that set; suppressing symbol
+publication alone does not satisfy the no-generation requirement. Additional
+TFMs, RIDs, or package outputs require a new scope decision.
+
+The Build Request freezes the admitted native NuGet version. The Windows
+Adapter applies and verifies that value through the native build/pack path;
+it cannot choose another NBGV projection, recompute a version from ambient
+Git state, or accept a package whose native identity conflicts with the
+Snapshot. Native project dependency and packaging rules remain authoritative;
+the descriptor does not invent project membership or implicit assembly
+embedding.
+
+The `.nupkg` contains the marker API and an immutable in-package target witness.
+The witness binds target, Release Unit, canonical and native version facts,
+Build Definition, catalog/control identities, and purpose. Run-specific
+transport and producer bindings remain in internal provenance rather than
+changing that package witness. Build and package materialization preserve the
+same logical compiled bytes by construction; qualification and destination
+readback bind the exact archive bytes. The
+[Foundation extension](./shared-foundation-mld.md#nuget-mechanism-extension)
+owns these mechanisms. Exact invocation, witness representation, and record
+field names belong to the NuGet LLD.
 
 ## Repository Model Compilation
 

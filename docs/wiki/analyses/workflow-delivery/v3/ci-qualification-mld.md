@@ -7,6 +7,10 @@ Architecture version: **v3**.
 Review state: **Confirmed; approved normal Live baseline incorporated on
 2026-08-31**.
 
+The NuGet second-slice extension below is a design proposal following
+`WD-NUGET-*` requirements confirmation. Existing npm qualification semantics
+remain unchanged.
+
 This middle-level design defines how CI Qualification identifies an immutable
 candidate, derives affected scope, resolves project-selected quality policy,
 closes a qualification Plan, executes required and advisory work, admits
@@ -579,6 +583,40 @@ native operation produces one indivisible aggregate result, the Provider
 models one aggregate target or dimension set instead.
 
 Workflow YAML does not create additional semantic matrix cells.
+
+## NuGet Second-Slice Qualification
+
+For `Hcoona.ReleaseSmoke.GithubPackages`, the affected-system Plan resolves
+Windows and `net10.0` from admitted .NET facts and the confirmed slice policy.
+It binds the repository-pinned toolchain, exact candidate, frozen native NBGV
+NuGet version, and one primary `.nupkg`. Provider evaluation and execution
+receive no publication authority; the Planner consumes admitted facts without
+evaluating project imports.
+
+Two separately decidable required obligations qualify that artifact:
+
+| Obligation                   | Required evidence                                                                                                                                                                                                                                                                                           |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Package content              | NuGet-native inspection confirms package identity and native-equivalent version, `net10.0` library payload, complete declared output scope, and the in-package source/target witness. Artifact integrity binds the retained logical `.nupkg` bytes. The selected output set contains no separate `.snupkg`. |
+| Clean exact-version consumer | A fresh consumer restores the exact qualified package version from a controlled source containing that retained artifact, builds, and invokes `Smoke.ProjectId`, obtaining `hcoona-release-smoke-github-packages`. It uses neither a project reference nor a previously populated package cache.            |
+
+The consumer may execute restored product code only in the unprivileged Build
+and Qualification Zone. Package identity, source selection, native version,
+resolved artifact, consumer result, and current candidate/purpose must remain
+bound in Evidence. A build exit code or matching API result alone does not
+prove that the consumer used the qualified package. A package-content pass
+cannot discharge the consumer obligation, and a consumer pass cannot replace
+package-content or provenance inspection.
+
+The two definitions can serve both CI and Release qualification mechanically,
+but each purpose creates its own Plan-bound obligations and Evidence. Release
+builds and qualifies its own artifact; CI records, historical packages, and
+prior-run consumer results are inadmissible substitutes. Neither obligation
+proves destination creation, active duplicate behavior, or a real publication.
+
+The brief LLD identifies concrete definition and Evidence bindings, cache and
+source isolation, and the consumer invocation. This extension does not migrate
+the production CI line or require a general .NET policy framework.
 
 ## CI Qualification Plan
 

@@ -7,6 +7,10 @@ Architecture version: **v3**.
 Review state: **Confirmed; approved normal Live baseline incorporated on
 2026-08-31**.
 
+The NuGet second-slice extension below is a design proposal following
+`WD-NUGET-*` requirements confirmation. It does not activate NuGet publication
+or change the completed npm slice's admission or evidence.
+
 This middle-level design defines how CI Qualification and Release Delivery use
 GitHub and destination platforms for review, protected execution, identity, and
 publication authority.
@@ -290,6 +294,73 @@ The bounded static-reference policy reports prohibited direct references in
 its closed supported catalog. A clean result is an eligibility input, not proof
 that no runtime consumer exists and not evidence that the repository token can
 reach only the smoke package.
+
+## NuGet Second-Slice Governance
+
+This section applies `WD-NUGET-003`, `WD-NUGET-004`, and `WD-NUGET-008` to
+`Hcoona.ReleaseSmoke.GithubPackages`. It supplies the NuGet-specific bindings
+for the shared authority model; the npm-only selected-ref and native-lifecycle
+exceptions remain confined to the first slice.
+
+### Protected Target and Trusted Execution
+
+Live entry accepts only protected `refs/heads/main`. Its resolved immutable
+target supplies the owner-reviewed workflow, decision code, Providers,
+Adapters, and publisher. There is no independently selected control revision
+or eligibility for arbitrary same-repository refs. Protection and review are
+platform facts requiring current verification, not claims inferred from a ref
+name or a local checkout.
+
+`hcoona` is the sole accepted writer and Approval reviewer. Self-approval
+records explicit operator confirmation; it is not independent security review.
+The accepted repository `GITHUB_TOKEN` reach includes every package granting
+Actions access to `hcoona/three`. Intended-coordinate checks constrain the
+normal operation but do not provide package isolation or protection from a
+malicious accepted writer. Relevant actor, reviewer, or access changes require
+a new trust decision before further live eligibility.
+
+| Execution responsibility                          | NuGet authority boundary                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider evaluation                               | Target-controlled MSBuild imports execute only in the Build and Qualification Zone, with no effective `packages: write`, PAT, or `id-token: write`. Admitted native facts cross into decision code as data.                                                                                                |
+| Build and Quality                                 | Pack, package inspection, and the clean consumer receive no effective `packages: write`, PAT, or `id-token: write`.                                                                                                                                                                                        |
+| Planning, Observation, Approval, and Finalization | These jobs use only the read authority required for admitted inputs and platform facts; they never evaluate target-controlled project or build code.                                                                                                                                                       |
+| Publisher                                         | Only this step-running job receives effective `packages: write`, through the short-lived Actions-issued repository token. It executes reviewed control code against verified immutable artifacts and an exact Authorization, without project evaluation, build, pack, or target-defined product execution. |
+
+There is no PAT or OIDC fallback. Any reusable-workflow permission ceiling
+remains non-elevating and cannot give evaluator or build jobs publication
+authority.
+
+### Approval and Separate Protected Admission
+
+The existing literal `workflow-delivery-v3-buddy-approval` Environment can
+serve the same human-approval semantics for NuGet. Reuse does not require a
+second Environment or a general Environment Profile abstraction. It does
+require fresh verification of the existing Environment's required properties;
+this design proposes no configuration change.
+
+NuGet eligibility and destination admission are separate from npm admission.
+Protected Governance must bind the selected NuGet policy, package,
+reviewed-control requirement, operation profile, and independently audited
+NuGet native evidence.
+An npm `ready` attestation or admitted npm acceptance generation cannot enable
+NuGet. The existing freshness, protected-path continuity, disablement, and
+current-Attempt checks apply to the NuGet source identified by the LLD.
+
+One action requires a new current-Attempt Approval Bundle, Environment
+Approval, and Authorization. Sharing the Environment never adopts an npm
+Approval or another run's authority. Zero actions use fresh read-only exact
+finalization and obtain no publication authority.
+
+### Activation Gates
+
+Implementation remains disabled until the NuGet native contract and current
+platform configuration are proven and protected admission binds that evidence.
+The native suite and real publication each require their separately authorized
+concrete scope. Missing protection, review, permission, Environment, or native
+evidence blocks activation; this design is not evidence of existing settings.
+The LLD must identify the protected NuGet admission source and exact evidence
+bindings without changing npm Governance bytes or inheriting its spent
+authorizations.
 
 ## Runtime Permission and Authority Model
 
