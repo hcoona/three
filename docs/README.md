@@ -1,4 +1,11 @@
-# Docs Wiki
+# Documentation
+
+## Governance Migration
+
+- [Bootstrap](governance/bootstrap.md): migration principles, review, and lifecycle.
+- [Current Delivery Wave](delivery-wave.md): current bounded migration-work authorization.
+
+## Docs Wiki
 
 This directory is a starter LLM Wiki workspace.
 
