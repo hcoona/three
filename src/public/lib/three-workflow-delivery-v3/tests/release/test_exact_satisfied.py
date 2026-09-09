@@ -22,7 +22,7 @@ from three_workflow_delivery_v3.release import exact_satisfied
 
 from ..adapters.test_github_packages_active_state import (
     CONTROL_URL,
-    TAGS_URL,
+    PACKAGE_URL,
     TARBALL_URL,
     _control,
     _response,
@@ -77,16 +77,12 @@ def test_fresh_exact_proof_requires_download_but_ignores_tag(
     case = observation_case
     arguments = _proving_arguments(case)
     transport = arguments["transport"]
+    document = json.loads(transport.responses[PACKAGE_URL].body)
     if tag_state == "elsewhere":
-        transport.responses[TAGS_URL] = _response(
-            TAGS_URL,
-            {
-                "name": case.expectation.package_name,
-                "dist-tags": {f"buddy-sha-{case.intent.target}": "9.9.9"},
-            },
-        )
+        document["dist-tags"][f"buddy-sha-{case.intent.target}"] = "9.9.9"
     elif tag_state == "unreadable":
-        transport.responses[TAGS_URL] = _response(TAGS_URL, status=503)
+        document["dist-tags"][f"buddy-sha-{case.intent.target}"] = None
+    transport.responses[PACKAGE_URL] = _response(PACKAGE_URL, document)
     proof = exact_satisfied.prove_exact_satisfied(**arguments)
     assert isinstance(proof, ExactSatisfiedFinalizationProof)
     assert (
@@ -102,12 +98,19 @@ def test_fresh_exact_proof_requires_download_but_ignores_tag(
         == case.artifact.witness_digest
     )
     assert proof.exact_version_readback.witness_target == case.intent.target
-    assert [request[0] for request in transport.requests] == [
+    assert {request[0] for request in transport.requests} == {
         CONTROL_URL,
-        TAGS_URL + "/" + case.expectation.npm_package_version,
+        PACKAGE_URL,
         TARBALL_URL,
-        TAGS_URL,
-    ]
+    }
+    assert (
+        proof.exact_version_readback.tag_state
+        == {
+            "absent": "absent",
+            "elsewhere": "present",
+            "unreadable": "unreadable",
+        }[tag_state]
+    )
     outcome = finalize(
         replace(
             exact_inputs(case), exact_proof=pair(proof, "exact-proof.json", 115)
@@ -117,7 +120,14 @@ def test_fresh_exact_proof_requires_download_but_ignores_tag(
 
 
 @pytest.mark.parametrize(
-    "change", ["bytes", "witness", "package-control", "download-unreadable"]
+    "change",
+    [
+        "bytes",
+        "witness",
+        "invalid-witness",
+        "package-control",
+        "download-unreadable",
+    ],
 )
 def test_fresh_nonexact_remote_state_cannot_form_success_proof(
     observation_case,
@@ -126,7 +136,7 @@ def test_fresh_nonexact_remote_state_cannot_form_success_proof(
     case = observation_case
     arguments = _proving_arguments(case)
     transport = arguments["transport"]
-    if change in {"bytes", "witness"}:
+    if change in {"bytes", "witness", "invalid-witness"}:
         with tarfile.open(
             fileobj=io.BytesIO(case.tarball), mode="r:gz"
         ) as archive:
@@ -141,6 +151,8 @@ def test_fresh_nonexact_remote_state_cannot_form_success_proof(
             witness_path = "package/workflow-delivery/provenance.json"
             witness = json.loads(files[witness_path])
             witness["target"] = "f" * 40
+            if change == "witness":
+                witness["nbgv"]["canonical"]["gitCommitId"] = "f" * 40
             files[witness_path] = canonicalize(witness)
         transport.responses[TARBALL_URL] = _response(
             TARBALL_URL, body=_make_tarball(files)
@@ -151,15 +163,51 @@ def test_fresh_nonexact_remote_state_cannot_form_success_proof(
         )
     else:
         transport.responses[TARBALL_URL] = _response(TARBALL_URL, status=503)
-        exact_url = TAGS_URL + "/" + case.expectation.npm_package_version
         # Even an authoritative-looking registry integrity field is not bytes.
-        document = json.loads(transport.responses[exact_url].body)
-        document["dist"]["shasum"] = case.artifact.content.content_sha256
-        document["dist"]["integrity"] = case.artifact.content.content_sha512
-        transport.responses[exact_url] = _response(exact_url, document)
+        document = json.loads(transport.responses[PACKAGE_URL].body)
+        manifest = document["versions"][case.expectation.npm_package_version]
+        manifest["dist"]["shasum"] = case.artifact.content.content_sha256
+        manifest["dist"]["integrity"] = case.artifact.content.content_sha512
+        transport.responses[PACKAGE_URL] = _response(PACKAGE_URL, document)
     with pytest.raises(ValueError, match="Fresh exact-satisfied state"):
         exact_satisfied.prove_exact_satisfied(**arguments)
     assert TARBALL_URL in [request[0] for request in transport.requests]
+
+
+@pytest.mark.parametrize(
+    "metadata_state",
+    ["absent", "package-404", "package-405", "missing-versions", "partial"],
+)
+def test_fresh_proof_rejects_missing_or_unusable_package_metadata(
+    observation_case, metadata_state
+):
+    case = observation_case
+    arguments = _proving_arguments(case)
+    transport = arguments["transport"]
+    document = json.loads(transport.responses[PACKAGE_URL].body)
+    # A desired target-tag cannot stand in for a missing literal version.
+    document["dist-tags"][f"buddy-sha-{case.intent.target}"] = (
+        case.expectation.npm_package_version
+    )
+    if metadata_state == "absent":
+        del document["versions"][case.expectation.npm_package_version]
+    elif metadata_state == "missing-versions":
+        del document["versions"]
+    metadata = _response(PACKAGE_URL, document)
+    if metadata_state.startswith("package-"):
+        metadata = _response(
+            PACKAGE_URL,
+            status=int(metadata_state.removeprefix("package-")),
+            body=b"",
+        )
+    elif metadata_state == "partial":
+        metadata = replace(metadata, complete=False)
+    transport.responses[PACKAGE_URL] = metadata
+    del transport.responses[TARBALL_URL]
+    with pytest.raises(ValueError, match="Fresh exact-satisfied state"):
+        exact_satisfied.prove_exact_satisfied(**arguments)
+    assert {url for url, *_ in transport.requests} == {CONTROL_URL, PACKAGE_URL}
+    assert arguments["governance_client"].calls
 
 
 @pytest.mark.parametrize(

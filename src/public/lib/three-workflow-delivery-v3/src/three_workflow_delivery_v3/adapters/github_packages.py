@@ -2371,14 +2371,8 @@ def _npm_package_path(package_name: str) -> str:
     return urllib.parse.quote(package_name, safe="@")
 
 
-def npm_exact_metadata_url(package_name: str, version: str) -> str:
-    """Return the exact escaped GitHub Packages npm version metadata URL."""
-    encoded_package = _npm_package_path(package_name)
-    encoded_version = urllib.parse.quote(version, safe="")
-    return f"{GITHUB_PACKAGES_REGISTRY}/{encoded_package}/{encoded_version}"
-
-
-def _npm_package_metadata_url(package_name: str) -> str:
+def npm_package_metadata_url(package_name: str) -> str:
+    """Return the supported GitHub Packages npm package metadata URL."""
     return f"{GITHUB_PACKAGES_REGISTRY}/{_npm_package_path(package_name)}"
 
 
@@ -2771,14 +2765,31 @@ def _active_package_control(
     )
 
 
-def _active_tag(
+def _active_version_metadata(
     document: dict[str, JsonValue] | None,
     classification: str,
+    version: str,
+) -> tuple[dict[str, JsonValue] | None, str]:
+    if document is None:
+        return None, "unknown" if classification == "unknown" else "unprovable"
+    versions = document.get("versions")
+    if document.get("name") != GITHUB_PACKAGES_PACKAGE or not isinstance(
+        versions, dict
+    ):
+        return None, "unprovable"
+    if version not in versions:
+        return None, "absent"
+    manifest = versions[version]
+    if not isinstance(manifest, dict):
+        return None, "unprovable"
+    return manifest, "present"
+
+
+def _active_tag(
+    document: dict[str, JsonValue] | None,
     tag: str,
     token: str,
 ) -> tuple[str, str | None]:
-    if classification == "absent":
-        return "absent", None
     if document is None or document.get("name") != GITHUB_PACKAGES_PACKAGE:
         return "unreadable", None
     tags = document.get("dist-tags")
@@ -2792,7 +2803,7 @@ def _active_tag(
     return "present", version
 
 
-def read_github_packages_active_state(  # noqa: C901, PLR0913, PLR0915
+def read_github_packages_active_state(  # noqa: C901, PLR0913
     artifact: ReleaseArtifact,
     expectation: ArtifactExpectation,
     *,
@@ -2865,11 +2876,15 @@ def read_github_packages_active_state(  # noqa: C901, PLR0913, PLR0915
         )
         diagnostics.append(f"package-control: {control_failure}")
 
-    exact_url = npm_exact_metadata_url(
-        expectation.package_name, expectation.npm_package_version
+    metadata_response, selected = read(
+        npm_package_metadata_url(expectation.package_name), "npm-metadata"
     )
-    exact_response, selected = read(exact_url, "npm-metadata")
-    exact_document, classification = _active_metadata(exact_response, selected)
+    package_document, metadata_class = _active_metadata(
+        metadata_response, selected
+    )
+    exact_document, classification = _active_version_metadata(
+        package_document, metadata_class, expectation.npm_package_version
+    )
     exchanges = [selected]
     sha256 = sha512 = witness_digest = witness_target = None
     if exact_document is not None:
@@ -2912,12 +2927,7 @@ def read_github_packages_active_state(  # noqa: C901, PLR0913, PLR0915
         diagnostics.append(f"exact-version: {classification}")
 
     tag = _target_tag(artifact.target)
-    tags_response, tags_exchange = read(
-        _npm_package_metadata_url(expectation.package_name), "npm-tags"
-    )
-    exchanges.append(tags_exchange)
-    tags_document, tags_class = _active_metadata(tags_response, tags_exchange)
-    tag_state, tag_version = _active_tag(tags_document, tags_class, tag, token)
+    tag_state, tag_version = _active_tag(package_document, tag, token)
     if tag_state == "unreadable":
         diagnostics.append("target-tag: unreadable")
     return GitHubPackagesActiveState(
@@ -3083,7 +3093,7 @@ __all__ = [  # noqa: RUF022
     "github_api_headers",
     "github_packages_destination_operation_profile",
     "github_package_versions_url",
-    "npm_exact_metadata_url",
+    "npm_package_metadata_url",
     "GitHubPackagesActiveState",
     "read_github_packages_active_state",
     "redact_diagnostic",
