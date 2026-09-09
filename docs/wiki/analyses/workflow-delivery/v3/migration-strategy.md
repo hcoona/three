@@ -18,12 +18,13 @@ The normal-Live implementation and active-only v2 tooling are merged. A fresh
 native v2 generation passed independent audit. Its admitted contract and ready
 Governance with `live_enabled: true` are protected-delivered through PR #660;
 post-merge checks and platform readback passed. PR #661 delivered the supported
-package-level metadata reader. The first real run passed Qualification and
-received Approval but failed before publication on a transport/logical-basename
-mismatch. Complete the bounded staging correction and its protected delivery
-before the one separately authorized additional new dispatch. The
-[handoff](./agent-handoff.md#current-checkpoint) records its authorization;
-the failed run is not rerun or reused as authority.
+package-level metadata reader, and PR #662 delivered the transport-basename
+correction. The separately authorized second real run emitted an authoritative
+`published` Outcome with exact post-action readback. Independent final audit
+verified native bytes/witness and the intended version/tag delta. Auditable
+proving is complete. Both dispatch authorizations are spent;
+the first failed run is preserved and was not reused as authority. The
+[handoff](./agent-handoff.md#current-checkpoint) records the operating boundary.
 
 For current Environment lifecycle status, see the
 [handoff](./agent-handoff.md#external-state). Cleanup remains subject to

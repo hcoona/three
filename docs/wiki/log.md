@@ -3895,3 +3895,102 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   additional new dispatch. The section now consistently limits the total to
   two, forbids a third run and prior-run authority reuse, and preserves every
   native, administrative, access, review, and readback boundary.
+
+## [2026-09-09] query | Record the real Normal Live publication
+
+- PR #662 protected-rebase merged as
+  `6325e9304a1939bd6c2734a93d9b8593389b171f` at `08:41:07Z`.
+  Its reviewed/merged tree was exactly
+  `91e204d9cc529bd8e775cbf99fed30e6f77490ea`. The full HK gate passed
+  4,553 tests, including installed-npm configuration integration; source
+  type/style and documentation gates passed. One authorization-text finding
+  was independently adjudicated true positive and closed. Both original OCR
+  reviewers, after-two-rounds contraction, and final/pre-PR contraction were
+  clean.
+- All 26 PR checks passed. Server review covered 12/12 files, generated zero
+  comments, and recommended approval with formal state `COMMENTED`.
+  Post-merge CI `34330474574` and CodeQL `34330474559` passed. Fresh authenticated
+  readback at `08:58:15Z` confirmed unchanged ready Governance
+  `sha256:26ac42c7536b433193930864032722122ad1ea5ccfe99df9ed4aabee1d1be84b`,
+  expected platform controls, 90-day retention, and the known first Approval
+  deployment only.
+- Fresh neutral exact-target NBGV preflight at `08:58:18Z` produced
+  `1.0.0-beta.253.g6325e93`, `PublicRelease: false`; the exact version and
+  target tag were absent. The separately authorized second REST dispatch
+  returned [run 34332094944](https://github.com/hcoona/three/actions/runs/34332094944),
+  with exact repository, workflow `340952169`, actor `hcoona`, protected target,
+  `main`, `workflow_dispatch`, and attempt-one bindings.
+- All four new Qualification obligations passed. The operator reviewed the
+  actual new Snapshot, Bundle, summary, Decision, Observation, Provider,
+  adapter context, and archive/witness at `09:08:03.940345Z`. All 18
+  pre-Approval artifact bodies matched authenticated service digests; their
+  16 JSON records were canonical and their nested references were current-run.
+  One fresh Approval POST returned `200`, creating deployment `6346279889`
+  in Environment `20895030723`. No first-run authority was adopted.
+- The approved Snapshot is artifact `10096396210`, digest
+  `sha256:08e6382b1d3c3e2deab0f5ae42339f8e2c9f762c738bf5a5ff3bc553dae4e052`.
+  Its summary is `10096396747`,
+  `sha256:5f61ee8ef29143fb6c173432fef7151c2b1f6fc5cfa7f42ac66498c5c81ba130`;
+  its Bundle is `10096397427`,
+  `sha256:8598a027fd6787bc3332aca0925bed8a9215178e4104acec8ab9e693df7d76c9`.
+- The actual approved tarball, artifact `10096308410`, contains 1,148 bytes:
+  SHA-256
+  `1d9da73461f0f021602f4d970b831e04f821ab7ddffd6c95a95daecd36acd54e`,
+  SHA-512
+  `1d567b9520ad15321d1afa53100cfdd68623e2a7e0b57e96ed930cc000e4ec9aeb703b61bfc2b52f3cc5b3614f7fc96a05dfae6dd3771a6a94dcbafdc6ac2aed`,
+  and embedded witness digest
+  `sha256:66e824d10244a538520617ffb0b8480194d502bd49972994940823dc2a4802e7`.
+  The real publisher used the canonical private logical basename rather
+  than the distinct transport filename, with the unchanged pinned profile.
+- The completed run succeeded and retained 23 service-hash-verified artifacts.
+  The authoritative Outcome, `10096602777`,
+  `sha256:cd926624f4cc973e30646c92fc0c31860edefcb7c22a98eb30d54c8b7462d7bb`,
+  is `published`, `possibly-mutated: false`. Its direct predecessor is Result
+  `10096577081`,
+  `sha256:88a615ab91ca190811a77d552354c0b0bb476bd4eaf7deab20c0f9ae7f00acad`,
+  which records `definitive-success`, `mutated`, and exact post-action version
+  bytes/witness at `09:09:50.959449Z`; the intended target tag resolves correctly.
+  Marker `10096574726`,
+  `sha256:3916ee5f76ca35f46c9a9b946dc9159c06bfdb38ffea9c2611c62fac741e178c`,
+  binds Authorization `10096550204`,
+  `sha256:9cd55c6ebd99ca9bf75e8176fb025982c6fc5146bf9c775d4e0308d9fe0aab14`.
+- Final independent current-run lineage and fresh destination-byte audit is
+  pending. Both authorized dispatches are spent; no third dispatch, GitHub
+  rerun, native probe, administrative operation, or grant change is authorized.
+  The first failed real run, thirteen native probes, one historical D deletion,
+  zero restorations, and separately unresolved original-D recovery are preserved.
+- Independent final audit subsequently passed. It verified all 23 raw
+  service-bound payloads, 20 canonical JSON records, strict current-run lineage,
+  eight nested Artifact References, and the new Approval. Fresh platform
+  timestamps establish marker admission before the one successful invocation,
+  then Result and Outcome formation. All 55 original proof files were preserved.
+- Fresh supported metadata at `09:17:55.883762Z` and the actual destination
+  tarball at `09:17:56.106391Z` confirmed byte-for-byte equality with the approved
+  1,148-byte archive, both hashes, and the embedded target witness. Complete
+  active-only REST inventory identifies native version `1227103825`, created
+  at `09:09:50Z` within the invocation step. Exactly one intended version and
+  target tag were added, taking each count from nine to ten. Existing versions,
+  tags, and nonvolatile root metadata were unchanged;
+  `latest` remains `1.0.0-beta.255.g9fa9b96`.
+- The canonical package/version/tag projection changed from
+  `sha256:161e07c3a8fdf91179206062afd5f2ae9e7b5d812f94dc4141437cd5a7322739`
+  to `sha256:243d647566cc7316fe5c35b8310163cfa9fe7c71861994a475e63e4ee3b8c3bb`.
+  Eleven new audit files retain raw metadata, actual tarball, active inventory,
+  authenticated run/artifact/job facts, comparisons, and verification results.
+  The operator retains them under
+  `normal-live-proof-6325e930/independent-final-audit/`, alongside the original
+  proof and report `normal-live-34332094944-final-audit.txt`, whose SHA-256 is
+  `5d5657623c75b486b7ee7e647a16877e0897a86da250813fa4edf874b885fe29`.
+- The independently supported disposition is **published**; auditable Normal
+  Live proving is complete. `possibly-mutated: false` does not mean no mutation:
+  this Result explicitly records successful known mutation. These time-bounded
+  observations and protected producer facts do not prove universal cache
+  behavior, every intervening event, lifetime-global immutability, exhaustive
+  grants, administrative history, or independence from the accepted writer TCB.
+  The audit performed only GETs and local inspection, created no new authority,
+  and preserved the first failure and every prior native/recovery boundary.
+- Final checkpoint OCR identified the stale adjective `blocked` in the
+  handoff's present-tense implementation scope. Independent adjudication
+  confirmed the contradiction with protected ready Governance. Removing only
+  that adjective preserves the scope and historical disabled-first delivery
+  requirements without changing Governance or runtime authority.

@@ -57,22 +57,25 @@ requests mechanism extraction and revalidation. Git and the append-only
 - PR #661 protected-delivered the supported package-level npm metadata reader.
   Its reviewed/merged tree, post-merge CI, CodeQL, and fresh platform readback
   passed. The publication profile and admitted native generation are unchanged.
-- The first real normal-Live run, `34320726590`, passed Qualification and
-  received Approval after its actual bound Snapshot and archive were reviewed.
-  Publisher preparation then confused the downloaded transport filename with
-  the logical tarball basename. Its authoritative Outcome is
-  `failed-before-publication`, `possibly-mutated: false`; no marker or
-  Publication Result was produced and the publication step was skipped.
-- Complete the transport-to-logical-basename staging correction and protected
-  delivery before further dispatch. The user separately authorized one
-  additional **new** dispatch after those gates: two total, one spent and one
-  conditional remaining. A new action-bearing Snapshot requires fresh review
-  and Approval. This permits no GitHub rerun, prior-run artifact or Approval
-  adoption, automatic retry, additional native probe, administrative operation,
-  or grant change.
-- Preserve the failed real run, both incomplete v1 generations, and separately
-  unresolved original-D recovery. No successful proving Outcome exists yet.
-  Authorization waives no proof, review, contraction, or readback gate.
+- PR #662 protected-delivered the transport-to-logical-basename correction.
+  Its exact reviewed/merged tree, post-merge CI and CodeQL, and fresh platform
+  and neutral NBGV preflight passed.
+- The separately authorized second run, `34332094944`, rebuilt and qualified
+  its own artifact, received Approval after its new Snapshot and archive were
+  reviewed, and emitted an authoritative `published` Outcome with
+  `possibly-mutated: false`. Its Publication Result records a successful
+  invocation and exact destination bytes/witness. All 23 current-run artifact
+  bodies are retained. Independent lineage and fresh destination-byte audit
+  passed: native version `1227103825` is byte-identical to the approved archive,
+  and only the intended version and target tag were added. The auditable
+  normal-Live proving objective is complete.
+- Both authorized dispatches are spent. No third dispatch, GitHub rerun,
+  prior-run artifact or Approval adoption, automatic retry, additional native
+  probe, administrative operation, or grant change is authorized.
+- Preserve the first run, `34320726590`, as independently audited
+  `failed-before-publication`, `possibly-mutated: false`, with no invocation.
+  Both incomplete v1 generations and separately unresolved original-D recovery
+  remain unchanged. Exact evidence belongs in the append-only log.
 
 ## Git Inspection and Implementation Scope
 
@@ -85,7 +88,7 @@ prove that a branch is unpushed, a PR is unopened, or a change is unmerged.
 The expected implementation surface is the release record and transport
 model, strict Governance eligibility, GitHub Packages Adapter, Live
 materialization/finalization and CLI wiring, the normal-Live workflows,
-protected blocked Governance v2 document, affected scenario/contract tests,
+protected Governance v2 document, affected scenario/contract tests,
 and synchronized current-state documentation. Treat that as a bounded purpose,
 not an exhaustive path allowlist; inspect every changed path and reject
 unrelated scope.
@@ -102,7 +105,7 @@ not reset or overwrite them.
 - ID `20895030723`; reviewer rule `64124473`; sole reviewer `hcoona` / `712433`;
 - `prevent_self_review: false`; zero wait; no secrets; no branch/tag restriction; `can_admins_bypass: false`;
 - sentinel `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`; and
-- one recorded deployment, `6344271579`, from the first real run's Approval.
+- recorded deployments `6344271579` and `6346279889` from the two real runs.
   This is an observed checkpoint, not a zero-deployment Governance requirement.
 
 ### Removed Legacy Environment
@@ -119,12 +122,12 @@ Do not recreate it or repeat the deletion.
 - Known reach includes production package `hexo-renderer-asciidoc` and disposable smoke packages.
 - This accepted repository-principal blast radius is not package isolation and is not an exhaustive grant inventory.
 - Package access remains unchanged. Protected Governance is ready with
-  `live_enabled: true`; the transport-basename correction remains a prerequisite
-  to the separately authorized additional dispatch.
+  `live_enabled: true`; the corrected publisher has emitted a real `published`
+  Outcome for `1.0.0-beta.253.g6325e93`.
 - Authorized native probes created disposable scenario versions and tags.
   Original-D recovery remains unresolved; the active replacement is retained.
-  The first normal-Live run failed before publication after one Approval.
-  No explicit restoration occurred.
+  The first normal-Live run failed before publication; the second published
+  after its own Approval. No explicit restoration occurred.
 
 ### Native Acceptance Evidence
 
@@ -287,13 +290,13 @@ publication neither performs nor compensates for administrative operations.
 
 ## Explicit Authorization Boundary
 
-The current user instruction authorizes completing the end-to-end objective:
+The end-to-end authorization covered:
 design delivery, disabled implementation and protected merge, bounded native
 acceptance, obsolete-Environment cleanup after proof, ready Governance v2
 activation, and auditable normal-Live proving. The failed first run consumed
-the initial dispatch authorization. Exactly one additional new dispatch is
-conditionally authorized after the correction's delivery gates: at most two
-in total, with one remaining.
+the initial dispatch authorization. The separately authorized second new run
+has also completed. Both dispatch authorizations are spent; this checkpoint
+grants no standing permission for another run.
 
 The authorization is contract-bounded. Do not change package or repository
 access, touch unrelated packages or tags, use package-admin authority in
@@ -328,22 +331,14 @@ Do not infer policy from stale runtime behavior or archived designs.
 
 ## Next Executable Workflow
 
-1. Perform the required Git inspection above.
-2. Complete the transport-to-logical-basename correction, validation,
-   OCR review, independent adjudication, contraction, and protected delivery.
-   Design, v2 tooling, native acceptance, Activation, and metadata-reader
-   correction are complete; do not repeat their execution or provisioning.
-3. Verify the correction's exact reviewed/merged tree and post-merge checks.
-   Recheck protected ready Governance and fresh platform/retention facts,
-   accounting for the known first-run Approval deployment.
-4. Recompute the actual protected target's NBGV coordinate and destination
-   preflight, then follow LLD section 19.1 for the one separately authorized
-   additional new dispatch. Review its new bound Snapshot before Approval if
-   it contains an action. Never reuse the failed run's artifacts or Approval.
-5. Require the exact current-run Outcome and authoritative destination proof
-   before declaring completion. An unexpected result stops; no third dispatch
-   is authorized. Preserve the first failed run and failed v1 evidence and
-   report original-D recovery separately without claiming restoration.
+The implementation, activation, real publication, and independent proving audit
+are complete. No further runtime or proving action is needed for this objective.
+
+Perform the required Git inspection before using this documentary checkpoint.
+Preserve both actual runs and the retained native evidence; do not repeat
+provisioning, acceptance, either dispatch, or either Approval. Original-D
+recovery and any future mutation require separate explicit authorization.
+This completed task authorizes no third proving dispatch.
 
 ## Validation and Review Protocol
 

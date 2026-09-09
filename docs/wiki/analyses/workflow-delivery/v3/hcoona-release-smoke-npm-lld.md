@@ -2,15 +2,15 @@
 
 ## 1. Status and Authorization Boundary
 
-**Status:** normal-Live transport-basename correction, dated 2026-09-09.
+**Status:** real normal-Live publication and independent proving audit completed, dated 2026-09-09.
 
 **Implementation boundary:** the active-only v2 tooling is protected-delivered
 and its fresh native generation passed independent audit. Ready Governance v2,
 its admitted native contract, and `live_enabled: true` are protected-delivered.
-The supported metadata reader is also protected-delivered. This revision
-clarifies transport-to-logical-basename staging without changing the publication
-profile. Reconcile the failed first run, correction delivery, and separately
-authorized additional dispatch through the [agent handoff](./agent-handoff.md).
+The supported metadata reader and transport-basename correction are also
+protected-delivered. A real run emitted a `published` Outcome using the unchanged
+profile and newly qualified artifact. Consult the [agent handoff](./agent-handoff.md)
+for the audited proving checkpoint and exhausted dispatch authorization.
 
 This document replaces the former implementation and rollout chronology. It defines the target first-slice design; current runtime code is useful only for repository naming and tooling conventions when it differs from the normative v3 design.
 
@@ -18,13 +18,15 @@ This document does **not** authorize changes to workflows, Python, schemas, test
 
 The initial replacement implementation must be delivered and validated while `live_enabled` remains `false`. Obsolete Environment cleanup, fresh native evidence, Governance refresh, activation, and the first proving dispatch are later and separately controlled.
 
-**Remaining proving boundary:** the pinned standard
+**Completed proving boundary:** the pinned standard
 `npm publish --tag ... --fetch-retries=0` profile passed the separately
 authorized native v2 suite and independent audit. Active-version non-overwrite
 and the bounded non-authoritative tag race were established within that
 contract; administrator-deleted records are not coordinate reservations.
-Protected delivery of the staging correction, refreshed platform readback,
-and one successful authoritative normal-Live Outcome remain required.
+The staging correction, refreshed platform readback, and a successful
+authoritative normal-Live Outcome are complete. Independent final audit
+confirmed actual native bytes/witness and current-run lineage. This is one
+audited real publication, not standing authorization for another run.
 
 ### 1.1 Normative precedence
 
