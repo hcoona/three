@@ -1146,7 +1146,7 @@ class NugetReleaseBuildRequest:
             "definition-digest": self.definition_digest,
             "nuget-package-version": self.nuget_package_version,
             "witness-digest": self.witness_digest,
-            "declared-inputs": list(self.declared_inputs),
+            "declared-inputs": _json_strings(self.declared_inputs),
             "source-input-manifest": [
                 list(item) for item in self.source_input_manifest
             ],
@@ -1391,7 +1391,7 @@ class QualificationSnapshot:
         _sha(self.target, field="qualification.target")
         _choice(self.channel, _CHANNELS, field="qualification.channel")
         _string(self.release_unit, field="qualification.release_unit")
-        if type(self.nbgv) is DotnetNbgvFacts:
+        if isinstance(self.nbgv, DotnetNbgvFacts):
             validate_dotnet_nbgv_facts(self.nbgv, target=self.target)
         else:
             validate_nbgv_facts(self.nbgv, target=self.target)
@@ -1470,7 +1470,7 @@ class QualificationSnapshot:
             raise ValueError(message)
         native_version = (
             self.nbgv.nuget_package_version
-            if type(self.nbgv) is DotnetNbgvFacts
+            if isinstance(self.nbgv, DotnetNbgvFacts)
             else self.nbgv.npm_package_version
         )
         if any(
@@ -1757,7 +1757,7 @@ class NugetReleaseArtifact:
         """Serialize the NuGet variant without lifecycle-script placeholders."""
         document = self.provenance_document()
         document["schema"] = RELEASE_ARTIFACT_SCHEMA
-        document["entries"] = list(self.entries)
+        document["entries"] = _json_strings(self.entries)
         document["provenance-digest"] = self.provenance_digest
         return document
 

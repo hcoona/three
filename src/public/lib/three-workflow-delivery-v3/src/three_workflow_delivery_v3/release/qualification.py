@@ -1,4 +1,4 @@
-"""Release qualification mechanics wrapping the unprivileged Node Adapters."""
+"""Shared qualification admission and unprivileged Node mechanics."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from three_workflow_delivery_v3.records.release import (
     QualificationSnapshot,
     ReleaseArtifact,
     ReleaseAttemptIdentity,
+    ReleaseBuildRequest,
     ReleaseObligation,
     ReleaseOutputIdentity,
     SimulationBinding,
@@ -198,15 +199,17 @@ def _subject(
     return snapshot.subject
 
 
-def validate_qualification_artifacts(
+def validate_qualification_artifacts[
+    ArtifactT: ReleaseArtifact | NugetReleaseArtifact
+](
     snapshot: QualificationSnapshot,
-    artifacts: tuple[ReleaseArtifact | NugetReleaseArtifact, ...],
-) -> tuple[ReleaseArtifact | NugetReleaseArtifact, ...]:
+    artifacts: tuple[ArtifactT, ...],
+) -> tuple[ArtifactT, ...]:
     """Bind supplied artifacts to current planned outputs, in plan order."""
     if type(artifacts) is not tuple:
         message = "Release artifacts must be an exact tuple"
         raise TypeError(message)
-    by_output: dict[str, ReleaseArtifact | NugetReleaseArtifact] = {}
+    by_output: dict[str, ArtifactT] = {}
     record_digests: set[str] = set()
     expected_subject = _subject(snapshot)
     for artifact in artifacts:
@@ -441,6 +444,9 @@ def _validate_node_build_request(
     request: node_adapter.BuildRequest,
 ) -> None:
     contract = snapshot.build_requests[0]
+    if type(contract) is not ReleaseBuildRequest:
+        message = "Node Build requires an npm Release Build Request"
+        raise TypeError(message)
     if type(request) is not node_adapter.BuildRequest:
         message = "Release build requires an exact Node BuildRequest"
         raise TypeError(message)

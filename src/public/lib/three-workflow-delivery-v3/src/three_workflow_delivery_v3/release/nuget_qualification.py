@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3.adapters import dotnet as native
 from three_workflow_delivery_v3.canonical import (
@@ -190,6 +190,8 @@ def form_uploaded_nuget_release_artifact(
     result = mechanics.result
     manifest = result.manifest
     output = contract.output
+    # _contract above requires this exact live subject.
+    subject = cast("ReleaseAttemptIdentity", snapshot.subject)
     content = ArtifactContentIdentity(
         output.output_id,
         output.logical_role,
@@ -200,7 +202,7 @@ def form_uploaded_nuget_release_artifact(
         manifest.sha512,
     )
     provenance = _provenance_document(
-        subject=snapshot.subject,
+        subject=subject,
         repository=snapshot.repository,
         snapshot=snapshot,
         output_document=output.to_document(),
@@ -214,7 +216,7 @@ def form_uploaded_nuget_release_artifact(
     identity = _identity(snapshot)
     provenance["nuget-identity"] = identity.to_document()
     artifact = NugetReleaseArtifact(
-        subject=snapshot.subject,
+        subject=subject,
         repository=snapshot.repository,
         qualification_snapshot_digest=snapshot.snapshot_digest,
         repository_model_digest=snapshot.repository_model_digest,

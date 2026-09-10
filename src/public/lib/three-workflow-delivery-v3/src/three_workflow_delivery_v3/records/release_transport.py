@@ -1147,6 +1147,10 @@ def _coordinate(
 ) -> ExternalPackageCoordinate | NugetExternalPackageCoordinate:
     if "nuget-identity" in _object(value, field="coordinate"):
         return _nuget_coordinate(value)
+    return _npm_coordinate(value)
+
+
+def _npm_coordinate(value: JsonValue) -> ExternalPackageCoordinate:
     document = _closed(
         value,
         field="ExternalPackageCoordinate",
@@ -1797,7 +1801,7 @@ def _observation_value(value: JsonValue) -> ObservationValue:
     )
     coordinate_value = document["coordinate"]
     coordinate = (
-        None if coordinate_value is None else _coordinate(coordinate_value)
+        None if coordinate_value is None else _npm_coordinate(coordinate_value)
     )
     return ObservationValue(
         classification=_string(
@@ -2805,7 +2809,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
             record.target,
             None,
         )
-    if type(record) in {ReleaseArtifact, NugetReleaseArtifact}:
+    if type(record) is ReleaseArtifact or type(record) is NugetReleaseArtifact:
         return (
             record.purpose,
             record.transport.workflow_run_id,

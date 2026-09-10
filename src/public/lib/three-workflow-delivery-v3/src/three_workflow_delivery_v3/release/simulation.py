@@ -29,6 +29,7 @@ from three_workflow_delivery_v3.records.release_transport import (
     release_record_from_document,
     simulation_identity_from_document,
 )
+from three_workflow_delivery_v3.repository.node_provider import NbgvFacts
 
 if TYPE_CHECKING:
     from three_workflow_delivery_v3.canonical import JsonValue
@@ -738,6 +739,9 @@ def render_simulation_summary(
     outcome_document: dict[str, JsonValue],
 ) -> str:
     """Render a deterministic human summary for the commit-7 simulation."""
+    if type(snapshot.nbgv) is not NbgvFacts:
+        message = "Official npm simulation requires npm version facts"
+        raise TypeError(message)
     if not isinstance(snapshot.subject, SimulationBinding):
         message = "Simulation summary requires simulation Snapshot"
         raise TypeError(message)

@@ -21,6 +21,7 @@ from three_workflow_delivery_v3.records.release import (
     QualificationSnapshot,
     ReleaseArtifact,
     ReleaseAttemptIdentity,
+    ReleaseBuildRequest,
     SimulationBinding,
     SimulationIdentity,
 )
@@ -30,6 +31,7 @@ from three_workflow_delivery_v3.release.qualification import (
 from three_workflow_delivery_v3.release.simulation import (
     ReleaseAdapterContext,
 )
+from three_workflow_delivery_v3.repository.node_provider import NbgvFacts
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -73,6 +75,9 @@ def form_release_adapter_context(  # noqa: PLR0913
     npm_version: str,
 ) -> ReleaseAdapterContext:
     """Freeze the exact Node Adapter inputs selected by the Release Plan."""
+    if type(snapshot.nbgv) is not NbgvFacts:
+        message = "Node Adapter context requires npm version facts"
+        raise TypeError(message)
     subject = _subject(snapshot)
     purpose = _purpose(subject)
     model = repository_model.snapshot
@@ -132,6 +137,9 @@ def node_build_request(
     """Materialize the exact Node Build Request selected by the Snapshot."""
     _validate_context(snapshot, context)
     contract = snapshot.build_requests[0]
+    if type(contract) is not ReleaseBuildRequest:
+        message = "Node Build requires an npm Release Build Request"
+        raise TypeError(message)
     return BuildRequest(
         source_root=repository_root / context.project_path,
         declared_inputs=contract.declared_inputs,
@@ -175,7 +183,7 @@ def artifact_expectation(
         package_name=(
             snapshot.destination_projections[0].coordinate.package_name
         ),
-        npm_package_version=snapshot.nbgv.npm_package_version,
+        npm_package_version=context.witness.nbgv.npm_package_version,
         files_allowlist=_FILES_ALLOWLIST,
         lifecycle_scripts=artifact.lifecycle_scripts,
         entry_allowlist=artifact.entries,
