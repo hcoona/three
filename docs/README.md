@@ -6,19 +6,20 @@ project, and a README is sufficient when it serves the actual reader.
 
 ## Repository Governance
 
-| Reader need                                            | Record                                                                                                                                                   |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Creation, amendment and retirement of rules            | [Governance system](governance/governance-system.md)                                                                                                     |
-| Authority, admission, lifecycle and project namespaces | [Repository record system](governance/record-system.md)                                                                                                  |
-| Current bounded work authorization                     | [Delivery Wave](delivery-wave.md)                                                                                                                        |
-| Canonical record routing                               | [Family catalog](governance/record-families.yaml)                                                                                                        |
-| Policy-backed checks and reviews                       | [Control catalog](governance/controls.yaml)                                                                                                              |
-| Validation inputs, reference checks and coverage       | [Checker contract](governance/checker-contract.md)                                                                                                       |
-| Catalog machine contracts                              | [Family schema](../schemas/governance/record-families.schema.json), [control schema](../schemas/governance/controls.schema.json)                         |
-| Human contribution and review                          | [Contributing](../CONTRIBUTING.md), [PR template](../.github/pull_request_template.md)                                                                   |
-| Agent routing                                          | [Repository instructions](../AGENTS.md), [documentation instructions](AGENTS.md)                                                                         |
-| Independent review procedures                          | [Record-system review](../.github/skills/record-system-review/SKILL.md), [research-evidence review](../.github/skills/research-evidence-review/SKILL.md) |
-| Source attribution                                     | [Retained copyright and license](governance/reference-license.txt), [repository provenance](../README.md)                                                |
+| Reader need                                                    | Record                                                                                                                                                   |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Creation, amendment and retirement of rules                    | [Governance system](governance/governance-system.md)                                                                                                     |
+| Authority, admission, lifecycle and project namespaces         | [Repository record system](governance/record-system.md)                                                                                                  |
+| User goals, story admission and requirement/validation routing | [User Stories](governance/record-system.md#user-stories)                                                                                                 |
+| Current bounded work authorization                             | [Delivery Wave](delivery-wave.md)                                                                                                                        |
+| Canonical record routing                                       | [Family catalog](governance/record-families.yaml)                                                                                                        |
+| Policy-backed checks and reviews                               | [Control catalog](governance/controls.yaml)                                                                                                              |
+| Validation inputs, reference checks and coverage               | [Checker contract](governance/checker-contract.md)                                                                                                       |
+| Catalog machine contracts                                      | [Family schema](../schemas/governance/record-families.schema.json), [control schema](../schemas/governance/controls.schema.json)                         |
+| Human contribution and review                                  | [Contributing](../CONTRIBUTING.md), [PR template](../.github/pull_request_template.md)                                                                   |
+| Agent routing                                                  | [Repository instructions](../AGENTS.md), [documentation instructions](AGENTS.md)                                                                         |
+| Independent review procedures                                  | [Record-system review](../.github/skills/record-system-review/SKILL.md), [research-evidence review](../.github/skills/research-evidence-review/SKILL.md) |
+| Source attribution                                             | [Retained copyright and license](governance/reference-license.txt), [repository provenance](../README.md)                                                |
 
 The review procedures link to their evaluation cases. Git retains former
 policies and deleted records; Issues and PRs retain work discussion and results.
