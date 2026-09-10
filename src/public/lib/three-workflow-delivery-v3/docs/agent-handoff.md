@@ -124,10 +124,21 @@ publication compares the actual profile before its one-shot invocation.
 Initial protected-main control evidence and later protected-path freshness
 remain distinct. The native Eligibility Decision carries no npm static-reference
 placeholder. Modeled service/admission scenarios establish local contracts only.
-Inspect current Git/PR state before claiming this unit is protected-delivered.
+PR #680 completed protected destination-runtime delivery.
 
-Workflow/CLI entry delivery, native acceptance tooling, activation, and real
-publication remain subsequent work. Existing publisher entries remain npm-only.
+The native control entry adds `repository provide-dotnet` and the separate
+`release nuget` commands for Intent normalization, immutable Provider import,
+Model compilation, Eligibility, and current-Attempt binding/admission. Control
+consumers do not reevaluate the target. Minimal Live platform collection reuses
+actual protected-main/run/merged-tree checks and retains raw review carriers;
+the comprehensive operator collector remains separate. Disabled Governance
+performs no native profile collection. Attempt admission selects current
+freshness or authorization replay explicitly. Inspect current Git/PR state
+before claiming this control-entry unit is protected-delivered.
+
+Workflow execution, Build/Qualification/publisher CLI orchestration, native
+acceptance tooling, activation, and real publication remain subsequent work.
+Existing publisher entries remain npm-only.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
 stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an
 activation gate; sequential duplicate tests cannot supply it.

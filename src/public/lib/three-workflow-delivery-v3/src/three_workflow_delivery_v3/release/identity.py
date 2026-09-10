@@ -191,6 +191,44 @@ def normalize_buddy_live_intent(
     )
 
 
+def normalize_nuget_buddy_live_intent(
+    *,
+    repository: str,
+    selected_ref: str,
+    target: str,
+    actor: str,
+    workflow_run_id: int,
+) -> ReleaseIntent:
+    """Normalize only the selected native protected-main Buddy request."""
+    if (
+        repository != "hcoona/three"
+        or selected_ref != "refs/heads/main"
+        or actor != "hcoona"
+    ):
+        message = (
+            "NuGet Buddy request requires its accepted actor and protected main"
+        )
+        raise ValueError(message)
+    return ReleaseIntent(
+        repository=repository,
+        workflow_path=BUDDY_LIVE_WORKFLOW_PATH,
+        workflow_ref=selected_ref,
+        workflow_sha=target,
+        request_id=_request_id(
+            repository, BUDDY_LIVE_WORKFLOW_PATH, workflow_run_id
+        ),
+        actor=actor,
+        workflow_run_id=workflow_run_id,
+        event_kind="workflow_dispatch",
+        selected_ref=selected_ref,
+        target=target,
+        channel="buddy",
+        mode="live",
+        purpose="live-release",
+        release_unit=NUGET_RELEASE_UNIT,
+    )
+
+
 def derive_buddy_execution_identity(
     intent: ReleaseIntent,
 ) -> BuddyExecutionIdentity:

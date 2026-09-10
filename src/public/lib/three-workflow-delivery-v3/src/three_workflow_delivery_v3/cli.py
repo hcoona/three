@@ -19,6 +19,7 @@ import tarfile
 import tempfile
 import threading
 from datetime import UTC, datetime
+from http import HTTPStatus
 from pathlib import Path
 from time import monotonic, time
 from typing import TYPE_CHECKING, Protocol, Self, cast
@@ -120,6 +121,7 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseAttemptBinding,
     ReleaseIntent,
     RemoteStateObservation,
+    NugetDestinationOperationProfile,
     SimulationBinding,
     SimulationOutcome,
     admit_release_record,
@@ -217,6 +219,30 @@ from three_workflow_delivery_v3.repository.node_provider import (
     ProviderBinding,
     validate_nbgv_facts,
     validate_node_provider_result,
+)
+
+from three_workflow_delivery_v3.adapters import (
+    nuget_github_packages as nuget_adapter,
+)
+from three_workflow_delivery_v3.release.identity import (
+    normalize_nuget_buddy_live_intent,
+)
+from three_workflow_delivery_v3.release.nuget_eligibility import (
+    AdmittedNugetLiveEligibilityDecision,
+    admit_nuget_live_eligibility_decision,
+    evaluate_nuget_live_eligibility,
+)
+from three_workflow_delivery_v3.release.nuget_governance import (
+    read_nuget_live_control_facts,
+)
+from three_workflow_delivery_v3.repository import dotnet_provider
+from three_workflow_delivery_v3.repository.compiler import (
+    admit_dotnet_provider_fact_bundle,
+    compile_dotnet_repository_model,
+    nuget_provider_manifest,
+)
+from three_workflow_delivery_v3.repository.descriptors import (
+    load_nuget_authoring,
 )
 
 if TYPE_CHECKING:
@@ -3017,6 +3043,390 @@ def _release_finalize_simulation_command(
     return 0 if outcome.terminal_result == "success" else 1
 
 
+def _require_nuget_initial_attempt(arguments: argparse.Namespace) -> None:
+    if _platform_run_attempt(arguments) != 1:
+        raise ValueError("NuGet Live entry rejects GitHub reruns")
+
+
+def _provide_dotnet_command(arguments: argparse.Namespace) -> int:
+    _require_nuget_initial_attempt(arguments)
+    context = _compilation_context(arguments)
+    manifest = nuget_provider_manifest(
+        context, provider_producer=arguments.provider_producer
+    )
+    result = dotnet_provider.provide_dotnet_repository_facts(
+        Path(arguments.repo_root).resolve(),
+        provider_binding(manifest, "dotnet-nuget-slice"),
+        CheckoutMaterialization(
+            fetch_depth=arguments.fetch_depth,
+            credentials_persisted=not arguments.no_persist_credentials,
+        ),
+        helper=dotnet_provider.NativeNuGetHelper(
+            Path(arguments.helper_dll).resolve()
+        ),
+        evidence_directory=Path(arguments.evidence_directory).resolve(),
+    )
+    document = result.to_document()
+    document["provider-request-manifest-digest"] = manifest.manifest_digest
+    document["result-digest"] = result.result_digest
+    _write_output(arguments.output, document)
+    return 0
+
+
+def _release_normalize_nuget_live_request_command(
+    arguments: argparse.Namespace,
+) -> int:
+    _require_nuget_initial_attempt(arguments)
+    intent = normalize_nuget_buddy_live_intent(
+        repository=arguments.repository,
+        selected_ref=arguments.selected_ref,
+        target=arguments.target,
+        actor=arguments.actor,
+        workflow_run_id=arguments.workflow_run_id,
+    )
+    _write_output(arguments.output, intent.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="intent",
+        digest=intent.intent_digest,
+        extra=(("request-id", intent.request_id),),
+    )
+    return 0
+
+
+def _load_nuget_live_intent(arguments: argparse.Namespace) -> ReleaseIntent:
+    _require_nuget_initial_attempt(arguments)
+    intent = _load_live_intent(arguments)
+    if intent != normalize_nuget_buddy_live_intent(
+        repository=intent.repository,
+        selected_ref=intent.selected_ref,
+        target=intent.target,
+        actor=intent.actor,
+        workflow_run_id=intent.workflow_run_id,
+    ):
+        raise ValueError("NuGet entry requires its exact native Buddy Intent")
+    return intent
+
+
+def _load_dotnet_provider_result(
+    path: str,
+    *,
+    expected_binding: ProviderBinding,
+    expected_manifest_digest: str,
+) -> dotnet_provider.DotnetProviderResult:
+    _, document = _read_object(path, context=".NET Provider Result")
+    try:
+        manifest_digest = document.pop("provider-request-manifest-digest")
+        result_digest = document.pop("result-digest")
+        result = dotnet_provider.dotnet_provider_result_from_document(document)
+    except KeyError as error:
+        raise ValueError(".NET Provider Result is incomplete") from error
+    if manifest_digest != expected_manifest_digest:
+        raise ValueError(".NET Provider Result manifest mismatch")
+    if result.binding != expected_binding:
+        raise ValueError(".NET Provider Result binding mismatch")
+    if result.result_digest != result_digest:
+        raise ValueError(".NET Provider Result digest mismatch")
+    return result
+
+
+def _release_compile_nuget_live_model_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent = _load_nuget_live_intent(arguments)
+    context = _live_model_context(intent)
+    manifest = nuget_provider_manifest(
+        context, provider_producer="discover-dotnet"
+    )
+    _verify_uploaded_payload(
+        arguments.provider_result,
+        artifact_id=arguments.provider_artifact_id,
+        artifact_digest=arguments.provider_artifact_digest,
+    )
+    result = _load_dotnet_provider_result(
+        arguments.provider_result,
+        expected_binding=provider_binding(manifest, "dotnet-nuget-slice"),
+        expected_manifest_digest=manifest.manifest_digest,
+    )
+    bundle = dotnet_provider.create_dotnet_provider_fact_bundle(
+        result,
+        manifest_digest=manifest.manifest_digest,
+        manifest_entry_id=manifest.requests[0].entry_id,
+        request_artifact_id=arguments.intent_artifact_id,
+        request_artifact_digest=_normalized_digest(
+            arguments.intent_artifact_digest
+        ),
+        transport_id=arguments.provider_artifact_id,
+        transport_digest=_normalized_digest(arguments.provider_artifact_digest),
+    )
+    admitted = admit_dotnet_provider_fact_bundle(
+        bundle,
+        context=context,
+        manifest=manifest,
+        admission=FactBundleAdmissionContext(
+            request_artifact_id=bundle.request_artifact_id,
+            request_artifact_digest=bundle.request_artifact_digest,
+            transport_id=bundle.transport_id,
+            transport_digest=bundle.transport_digest,
+            bundle_digest=bundle.bundle_digest,
+        ),
+    )
+    snapshot = compile_dotnet_repository_model(
+        Path(arguments.repo_root).resolve(), context, manifest, [admitted]
+    )
+    model = admit_repository_model_snapshot(
+        canonicalize(snapshot.to_document()),
+        expected_context=context,
+        expected_digest=snapshot.snapshot_digest,
+    )
+    _write_output(arguments.output, model.snapshot.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="repository-model",
+        digest=model.canonical_digest,
+        extra=(
+            (
+                "execution-concurrency-key",
+                canonical_sha256(
+                    derive_buddy_execution_identity(intent).to_document()
+                ).removeprefix("sha256:"),
+            ),
+        ),
+    )
+    return 0
+
+
+def _nuget_live_profile(
+    arguments: argparse.Namespace,
+) -> NugetDestinationOperationProfile:
+    """Read the feed resources and collect the actual HTTP profile."""
+    response = nuget_adapter.NuGetHttpTransport().get(
+        nuget_adapter.NUGET_SERVICE_INDEX,
+        headers=nuget_adapter._headers(arguments.github_token),  # noqa: SLF001
+        timeout=60,
+        max_bytes=nuget_adapter._METADATA_LIMIT,  # noqa: SLF001
+    )
+    if (
+        response.url != nuget_adapter.NUGET_SERVICE_INDEX
+        or response.status != HTTPStatus.OK
+    ):
+        raise ValueError("NuGet service index readback failed or redirected")
+    nuget_adapter._validate_response_body(  # noqa: SLF001
+        response,
+        max_bytes=nuget_adapter._METADATA_LIMIT,  # noqa: SLF001
+    )
+    resources = nuget_adapter.discover_nuget_resources(
+        dotnet_provider.NativeNuGetHelper(Path(arguments.helper_dll).resolve()),
+        response.body,
+    )
+    return NugetDestinationOperationProfile(
+        canonicalize(nuget_adapter.nuget_operation_profile(resources))
+    )
+
+
+def _release_evaluate_nuget_live_eligibility_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent = _load_nuget_live_intent(arguments)
+    model = _load_live_model(arguments, intent)
+    _descriptor, _quality, policy = load_nuget_authoring(
+        Path(arguments.repo_root).resolve(), arguments.target
+    )
+    client = GitHubGovernanceClient(
+        repository=policy.governance.repository, token=arguments.github_token
+    )
+    context = LiveEligibilityContext(
+        purpose="live-release",
+        request_id=intent.request_id,
+        workflow_run_id=intent.workflow_run_id,
+        selected_ref=intent.selected_ref,
+        target=intent.target,
+        repository_model_digest=model.canonical_digest,
+        producer="evaluate-live-eligibility",
+        control=model.snapshot.context.control,
+        release_policy_digest=release_policy_digest(policy),
+        catalog_digest=catalog_digest(),
+    )
+    decision = evaluate_nuget_live_eligibility(
+        context,
+        intent=intent,
+        repository_model=model,
+        policy=policy,
+        client=client,
+        now=datetime.now(UTC),
+    )
+    # Disabled or unadmitted source cannot request native collection.
+    if (
+        decision.governance.attestation.live_enabled
+        and decision.governance.eligibility_main_sha == intent.target
+    ):
+        platform = read_nuget_live_control_facts(
+            transport=nuget_adapter.NuGetHttpTransport(),
+            token=arguments.github_token,
+            selected_ref=intent.selected_ref,
+            target=intent.target,
+            control_sha=model.snapshot.context.control.removeprefix(
+                "workflow-delivery-v3:"
+            ),
+            workflow_sha=intent.workflow_sha,
+            workflow_run_id=intent.workflow_run_id,
+            workflow_path=intent.workflow_path,
+            now=datetime.now(UTC),
+        )
+        profile = _nuget_live_profile(arguments)
+        # Reobserve the source after collection; flag-off still wins.
+        decision = evaluate_nuget_live_eligibility(
+            context,
+            intent=intent,
+            repository_model=model,
+            policy=policy,
+            client=client,
+            now=datetime.now(UTC),
+            platform=platform,
+            profile=profile,
+        )
+    _write_output(arguments.output, decision.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="live-eligibility",
+        digest=decision.decision_digest,
+        extra=(
+            (
+                "live-result",
+                "admitted" if decision.result == "pass" else "blocked",
+            ),
+        ),
+    )
+    return 0 if decision.result == "pass" else 1
+
+
+def _admitted_nuget_live_eligibility_decision(
+    arguments: argparse.Namespace,
+    intent: ReleaseIntent,
+    model: AdmittedRepositoryModelSnapshot,
+    *,
+    admission_mode: LiveEligibilityAdmissionMode,
+    attempt_binding: ReleaseAttemptBinding | None = None,
+) -> AdmittedNugetLiveEligibilityDecision:
+    if attempt_binding is not None and (
+        arguments.live_eligibility_artifact_id,
+        _normalized_digest(arguments.live_eligibility_artifact_digest),
+        _normalized_digest(arguments.live_eligibility_payload_digest),
+    ) != (
+        attempt_binding.live_eligibility_artifact_id,
+        attempt_binding.live_eligibility_artifact_digest,
+        attempt_binding.live_eligibility_payload_digest,
+    ):
+        raise ValueError(
+            "NuGet Eligibility transport differs from Attempt binding"
+        )
+    content = _verify_uploaded_payload(
+        arguments.live_eligibility_decision,
+        artifact_id=arguments.live_eligibility_artifact_id,
+        artifact_digest=arguments.live_eligibility_artifact_digest,
+    )
+    _descriptor, _quality, policy = load_nuget_authoring(
+        Path(arguments.repo_root).resolve(), arguments.target
+    )
+    admitted = admit_nuget_live_eligibility_decision(
+        content,
+        intent=intent,
+        repository_model=model,
+        policy=policy,
+        expected_digest=_normalized_digest(
+            arguments.live_eligibility_payload_digest
+        ),
+        admission_mode=admission_mode,
+        now=datetime.now(UTC),
+    )
+    if (
+        attempt_binding is not None
+        and attempt_binding
+        != _nuget_attempt_binding(arguments, intent, model, admitted)
+    ):
+        raise ValueError(
+            "NuGet Eligibility authority differs from Attempt binding"
+        )
+    return admitted
+
+
+def _nuget_attempt_binding(
+    arguments: argparse.Namespace,
+    intent: ReleaseIntent,
+    model: AdmittedRepositoryModelSnapshot,
+    eligibility: AdmittedNugetLiveEligibilityDecision,
+) -> ReleaseAttemptBinding:
+    return derive_release_attempt_binding(
+        intent=intent,
+        execution=derive_buddy_execution_identity(intent),
+        repository_model_digest=model.canonical_digest,
+        live_eligibility_artifact_id=arguments.live_eligibility_artifact_id,
+        live_eligibility_artifact_digest=_normalized_digest(
+            arguments.live_eligibility_artifact_digest
+        ),
+        live_eligibility_payload_digest=eligibility.canonical_digest,
+        attestation_provenance=eligibility.governance.provenance,
+    )
+
+
+def _release_admit_nuget_live_eligibility_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent = _load_nuget_live_intent(arguments)
+    model = _load_live_model(arguments, intent)
+    admitted = _admitted_nuget_live_eligibility_decision(
+        arguments,
+        intent,
+        model,
+        admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+    )
+    _write_output(arguments.output, admitted.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="live-eligibility-decision",
+        digest=admitted.canonical_digest,
+    )
+    return 0
+
+
+def _release_bind_nuget_live_attempt_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent = _load_nuget_live_intent(arguments)
+    model = _load_live_model(arguments, intent)
+    eligibility = _admitted_nuget_live_eligibility_decision(
+        arguments,
+        intent,
+        model,
+        admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+    )
+    binding = _nuget_attempt_binding(arguments, intent, model, eligibility)
+    _write_output(arguments.output, binding.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="attempt-binding",
+        digest=binding.binding_digest,
+        extra=(("workflow-run-id", binding.attempt.workflow_run_id),),
+    )
+    return 0
+
+
+def _release_admit_nuget_live_attempt_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent = _load_nuget_live_intent(arguments)
+    model = _load_live_model(arguments, intent)
+    binding = _load_attempt_binding(arguments)
+    _admitted_nuget_live_eligibility_decision(
+        arguments,
+        intent,
+        model,
+        admission_mode=LiveEligibilityAdmissionMode(arguments.admission_mode),
+        attempt_binding=binding,
+    )
+    return 0
+
+
 def _release_normalize_live_request_command(
     arguments: argparse.Namespace,
 ) -> int:
@@ -5576,6 +5986,74 @@ def _add_optional_evidence_arguments(
     _add_uploaded_record_arguments(parser, name=name, required=False)
 
 
+def _add_nuget_release_commands(
+    release_commands: argparse._SubParsersAction,
+) -> None:
+    nuget = release_commands.add_parser("nuget")
+    commands = nuget.add_subparsers(dest="nuget_command", required=True)
+    normalize = commands.add_parser("normalize-live-request")
+    _add_current_release_arguments(normalize)
+    for name in ("repository", "selected-ref", "actor", "output"):
+        normalize.add_argument("--" + name, required=True)
+    normalize.add_argument("--github-output")
+    normalize.set_defaults(
+        handler=_release_normalize_nuget_live_request_command
+    )
+
+    for name, handler in (
+        ("compile-live-model", _release_compile_nuget_live_model_command),
+        (
+            "evaluate-live-eligibility",
+            _release_evaluate_nuget_live_eligibility_command,
+        ),
+        (
+            "admit-live-eligibility",
+            _release_admit_nuget_live_eligibility_command,
+        ),
+        ("bind-live-attempt", _release_bind_nuget_live_attempt_command),
+        ("admit-live-attempt", _release_admit_nuget_live_attempt_command),
+    ):
+        command = commands.add_parser(name)
+        command.add_argument("--repo-root", default=".")
+        _add_current_release_arguments(command)
+        _add_uploaded_record_arguments(command, name="intent")
+        if name == "compile-live-model":
+            command.add_argument("--provider-result", required=True)
+            command.add_argument(
+                "--provider-artifact-id", required=True, type=int
+            )
+            command.add_argument("--provider-artifact-digest", required=True)
+        else:
+            _add_uploaded_record_arguments(command, name="repository_model")
+            if name == "evaluate-live-eligibility":
+                command.add_argument("--github-token", required=True)
+                command.add_argument("--helper-dll", required=True)
+            else:
+                command.add_argument(
+                    "--live-eligibility-decision", required=True
+                )
+                command.add_argument(
+                    "--live-eligibility-artifact-id", required=True, type=int
+                )
+                command.add_argument(
+                    "--live-eligibility-artifact-digest", required=True
+                )
+                command.add_argument(
+                    "--live-eligibility-payload-digest", required=True
+                )
+        if name == "admit-live-attempt":
+            _add_uploaded_record_arguments(command, name="attempt_binding")
+            command.add_argument(
+                "--admission-mode",
+                choices=tuple(LiveEligibilityAdmissionMode),
+                required=True,
+            )
+        else:
+            command.add_argument("--output", required=True)
+            command.add_argument("--github-output")
+        command.set_defaults(handler=handler)
+
+
 def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="context", required=True)
@@ -5597,6 +6075,28 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     _add_provider_arguments(provide)
     provide.add_argument("--output")
     provide.set_defaults(handler=_provide_node_command)
+
+    provide_dotnet = repository_commands.add_parser("provide-dotnet")
+    provide_dotnet.add_argument("--repo-root", default=".")
+    _add_current_release_arguments(provide_dotnet)
+    for name in (
+        "request-id",
+        "compiler-producer",
+        "provider-producer",
+        "control",
+        "helper-dll",
+        "evidence-directory",
+        "output",
+    ):
+        provide_dotnet.add_argument("--" + name, required=True)
+    provide_dotnet.add_argument(
+        "--purpose", choices=("live-release",), required=True
+    )
+    provide_dotnet.add_argument("--fetch-depth", required=True, type=int)
+    provide_dotnet.add_argument(
+        "--no-persist-credentials", action="store_true", required=True
+    )
+    provide_dotnet.set_defaults(handler=_provide_dotnet_command)
 
     compile_parser = repository_commands.add_parser("compile")
     _add_provider_arguments(compile_parser)
@@ -5948,6 +6448,8 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     finalize_simulation.set_defaults(
         handler=_release_finalize_simulation_command
     )
+
+    _add_nuget_release_commands(release_commands)
 
     normalize_live = release_commands.add_parser("normalize-live-request")
     normalize_live.add_argument("--repository", required=True)
@@ -6398,6 +6900,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         TypeError,
         ValueError,
         json.JSONDecodeError,
+        nuget_adapter.NuGetTransportError,
     ) as error:
         sys.stderr.write(f"{error}\n")
         return 1

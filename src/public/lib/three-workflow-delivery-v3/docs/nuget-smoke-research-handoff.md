@@ -61,9 +61,14 @@ Keep these facts in the working context:
   artifact/qualification integration are delivered. Disabled destination
   integration now connects distinct NuGet eligibility, supported active readback,
   original-archive publication, and shared current-Attempt terminal authority.
-  Inspect current Git/PR state before claiming this unit is protected-delivered.
-  Workflow entry delivery, native acceptance tooling, activation, and real
-  publication remain subsequent work; NuGet Governance and admission stay disabled.
+  PR #680 completed protected destination-runtime delivery. The native control
+  CLI now imports immutable Provider facts, compiles the Model without target
+  reevaluation, and binds/adopts Eligibility and the current Attempt under the
+  selected freshness phase. Inspect current Git/PR state before claiming this
+  control-entry unit is protected-delivered. Workflow execution, remaining
+  Build/Qualification/publisher commands, native acceptance tooling, activation,
+  and real publication remain subsequent work; NuGet Governance and admission
+  stay disabled.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
 - The selected GitHub Packages marker project has independent v3 authoring;
