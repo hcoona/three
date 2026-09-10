@@ -1,13 +1,16 @@
 # Markdown-Aware Translation Implementation Plan
 
-Status: **Ready for staged implementation**
-
 ## Audience and Intent
 
 This document is written for AI agents acting as senior software engineers. It
 turns the frozen Markdown-aware translation requirements and the high-level
 design into an implementation workflow for the existing
 `document-translator` C# CLI.
+
+The component contracts and product-specific validation obligations below remain
+design guidance. Phase and workstream labels describe dependencies, not current
+progress or authorization. Use the [capability map](../README.md) to recover the
+baseline relationship and repository work/review authorities.
 
 Do not reinterpret the requirements while implementing this plan. The v1 feature
 adds a Markdown-aware route for `.md` and `.markdown` files, keeps the baseline
@@ -738,9 +741,10 @@ Test hygiene rules:
 
 ## 14. Agent Assignment Model
 
-Use independent implementation agents only when their scopes do not overlap.
-Each agent must receive the requirements, high-level design, this plan, and the
-current code paths for its workstream.
+The groups below identify component handoffs. Whether work is assigned to agents
+or people, coordination follows the repository record system linked in the
+[capability map](../README.md). Each implementer needs the requirements,
+high-level design, this plan, and current code for the relevant component.
 
 Recommended groups:
 
@@ -790,12 +794,10 @@ Use these review gates before implementation is accepted:
    professional tone, precise engineering language, and actionable instructions
    for senior AI coding agents.
 
-Review iteration rule:
-
-1. Address all blocking and non-blocking review comments that improve
-   correctness, safety, traceability, sequencing, or clarity.
-2. Re-run the independent reviews after each material revision.
-3. Stop iterating only when reviewers have no remaining actionable comments.
+Finding classification, disposition, and review evidence follow the
+[repository record system](../../../../../../docs/governance/record-system.md).
+The checks above retain their product-specific purpose; this plan does not
+define a separate review-iteration or acceptance policy.
 
 ## 16. Risk Register
 

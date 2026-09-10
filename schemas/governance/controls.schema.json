@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hcoona/three/schemas/governance/controls.schema.json",
+  "title": "Control Catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "controls"],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "controls": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/control"
+      }
+    }
+  },
+  "$defs": {
+    "activation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trigger", "evaluator", "action", "fallback_review"],
+      "properties": {
+        "trigger": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evaluator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fallback_review": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "hkStepList": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]*$"
+      },
+      "uniqueItems": true
+    },
+    "hkStepsImplementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "steps"],
+      "properties": {
+        "kind": {
+          "const": "hk-steps"
+        },
+        "steps": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "local-fast": {
+              "$ref": "#/$defs/hkStepList"
+            },
+            "ci": {
+              "$ref": "#/$defs/hkStepList"
+            }
+          }
+        }
+      }
+    },
+    "nonHkImplementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": {
+          "enum": ["repository-path", "review-procedure", "evidence-carrier"]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "implementation": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/hkStepsImplementation"
+        },
+        {
+          "$ref": "#/$defs/nonHkImplementation"
+        }
+      ]
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "class",
+        "enforcement",
+        "producer",
+        "maintainer",
+        "consumers",
+        "governing_rules",
+        "invariant",
+        "runner",
+        "implementation",
+        "execution_points",
+        "failure_mode"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "state": {
+          "enum": ["current", "scheduled"]
+        },
+        "class": {
+          "enum": ["mechanical", "procedural-review", "owner-decision", "hybrid"]
+        },
+        "enforcement": {
+          "enum": ["advisory", "blocking", "review-required", "owner-disposition"]
+        },
+        "producer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maintainer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "governing_rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "invariant": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runner": {
+          "enum": ["hk", "agent-skill", "human-owner", "github-platform", "local-tool"]
+        },
+        "implementation": {
+          "$ref": "#/$defs/implementation"
+        },
+        "execution_points": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "local-fast",
+              "ci",
+              "pull-request-review",
+              "recheck-trigger",
+              "issue-closure",
+              "pull-request-merge",
+              "release",
+              "local-validation"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "failure_mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "activation": {
+          "$ref": "#/$defs/activation"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "scheduled"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "required": ["activation"]
+          },
+          "else": {
+            "not": {
+              "required": ["activation"]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "runner": {
+                "const": "hk"
+              }
+            },
+            "required": ["runner"]
+          },
+          "then": {
+            "properties": {
+              "class": {
+                "const": "mechanical"
+              },
+              "implementation": {
+                "$ref": "#/$defs/hkStepsImplementation"
+              },
+              "execution_points": {
+                "items": {
+                  "enum": ["local-fast", "ci"]
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "implementation": {
+                "$ref": "#/$defs/nonHkImplementation"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$comment": "Derived from hcoona/microsoft-authentication-cli at 1a02498589769c38bc16eefc2efc5f9eca6e6994; copyright and MIT notice: docs/governance/reference-license.txt. Version 2 adapts repository/project routing and control execution. Coverage and acceptance evidence belong in the proposing PR, not catalog run metadata."
+}

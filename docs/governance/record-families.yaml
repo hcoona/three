@@ -1,0 +1,1138 @@
+# Repository record families; scope and execution are defined by the linked policies.
+# Derived from hcoona/microsoft-authentication-cli at 1a02498589769c38bc16eefc2efc5f9eca6e6994.
+# Source copyright and MIT notice: docs/governance/reference-license.txt.
+schema_version: 2
+families:
+  - id: public-landing
+    state: current
+    concern: Repository identity, provenance and public navigation
+    carrier: repository-file
+    path: README.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Readers locating repository layout, project interfaces, existing setup guidance, and imported-source provenance
+    creation_trigger: The repository is presented as a distinct public project.
+    failure_mode: Readers cannot locate current identity, purpose, scope, or release authorities.
+    review_point: Pull requests that change public navigation or required notices
+    namespace: repository
+  - id: human-record-portal
+    state: current
+    concern: Human navigation to canonical project records
+    carrier: repository-file
+    path: docs/README.md
+    format: markdown
+    producer: Record-system maintainer
+    maintainer: Repository owner
+    consumers:
+      - Contributors locating the authority for a concern
+    creation_trigger: Canonical concerns span more than the public landing page.
+    failure_mode: Contributors rely on stale or duplicate records.
+    review_point: Pull requests that add, move, or remove canonical records
+    namespace: repository
+  - id: agent-interface
+    state: current
+    concern: AI-agent repository behavior and stop conditions
+    carrier: repository-file
+    path: AGENTS.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - AI agents before repository work
+    creation_trigger: AI agents are permitted to act on the repository.
+    failure_mode: Agents infer authority, expose sensitive data, or expand scope.
+    review_point: Pull requests that change agent-relevant policy or workflow
+    namespace: repository
+  - id: contributor-interface
+    state: current
+    concern: Human contribution workflow
+    carrier: repository-file
+    path: CONTRIBUTING.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Human contributors preparing changes
+    creation_trigger: The repository accepts reviewable contributions.
+    failure_mode: Contributions bypass required records, checks, or review.
+    review_point: Pull requests that change contribution workflow
+    namespace: repository
+  - id: pull-request-interface
+    state: current
+    concern: Non-authoritative pull-request prompts for scope, evidence, and record impact
+    carrier: repository-file
+    path: .github/pull_request_template.md
+    format: markdown
+    producer: Record-system maintainer
+    maintainer: Repository owner
+    consumers:
+      - Contributors preparing a pull request
+    creation_trigger: Pull requests need consistent prompts for existing governance obligations.
+    failure_mode: Review begins without the scope, evidence, or record impact needed by current policies.
+    review_point: Pull requests that change contribution or review workflow
+    namespace: repository
+  - id: delivery-wave
+    state: current
+    concern: Current bounded positive work authorization across the repository
+    carrier: repository-file
+    path: docs/delivery-wave.md
+    format: markdown
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Contributors and agents before executing work or accepting a prerequisite-dependent change
+      - Repository owner and reviewers when adding, changing, deleting, or replacing authorized advancements
+    creation_trigger: Current work must be explicitly selected without allowing an Issue, Milestone, branch, or pull
+      request to authorize itself.
+    failure_mode:
+      Work begins without a current bounded grant, or progress and historical status become a second authorization
+      ledger.
+    review_point: Every pull request that adds, changes, deletes, or replaces a Delivery Wave entry
+    namespace: repository
+  - id: record-family-catalog
+    state: current
+    concern: Active and scheduled record-family routing
+    carrier: repository-file
+    path: docs/governance/record-families.yaml
+    format: yaml
+    schema: schemas/governance/record-families.schema.json
+    producer: Record-system maintainer
+    maintainer: Repository owner
+    consumers:
+      - Record authors and reviewers locating record namespaces and coverage gaps
+    creation_trigger: Record families require consistent paths and review procedures.
+    failure_mode: Records become orphaned or receive the wrong checks and reviews.
+    review_point: Pull requests that add, retire, or change a record family
+    namespace: repository
+  - id: control-catalog
+    state: current
+    concern: Controls that implement declared policies and invariants
+    carrier: repository-file
+    path: docs/governance/controls.yaml
+    format: yaml
+    schema: schemas/governance/controls.schema.json
+    producer: Control maintainer
+    maintainer: Repository owner
+    consumers:
+      - Control authors and reviewers comparing policy with actual execution
+    creation_trigger: More than one control class must be routed consistently.
+    failure_mode: Controls drift from policy or execute at the wrong gate.
+    review_point: Pull requests that add, retire, or change a control
+    namespace: repository
+  - id: structured-record-schemas
+    state: current
+    concern: Machine contracts for structured repository records
+    carrier: repository-files
+    path: schemas/governance/*.schema.json
+    format: json-schema
+    producer: Structured-record maintainer
+    maintainer: Repository owner
+    consumers:
+      - Catalog authors and reviewers validating the two catalogs locally
+    creation_trigger: A structured record needs deterministic validation.
+    failure_mode: Structured records become ambiguous or silently incompatible with consumers.
+    review_point: Pull requests that add or change a structured record
+    namespace: repository
+  - id: governance-policy
+    state: current
+    namespace: repository
+    concern: Repository rules for maintaining rules
+    carrier: repository-file
+    path: docs/governance/governance-system.md
+    format: markdown
+    producer: Repository owner and record authors
+    maintainer: Repository owner
+    consumers:
+      - Rule authors and reviewers evaluating the replacement
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Controls or interfaces silently redefine policy.
+    review_point: Changes to this concern, its policy, or its consumers
+  - id: record-policy
+    state: current
+    namespace: repository
+    concern: Authority, admission, lifecycle, namespaces, and record gate
+    carrier: repository-file
+    path: docs/governance/record-system.md
+    format: markdown
+    producer: Repository owner and record authors
+    maintainer: Repository owner
+    consumers:
+      - Record authors and reviewers evaluating the replacement
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Project records become duplicate repository authorities.
+    review_point: Changes to this concern, its policy, or its consumers
+  - id: checker-contract
+    state: current
+    namespace: repository
+    concern: Record validation inputs, coverage, references and execution boundaries
+    carrier: repository-file
+    path: docs/governance/checker-contract.md
+    format: markdown
+    producer: Repository owner and record authors
+    maintainer: Repository owner
+    consumers:
+      - Control maintainers and reviewers checking completeness and activation claims
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Source checker assumptions are installed without Three validation.
+    review_point: Changes to this concern, its policy, or its consumers
+  - id: docs-agent-interface
+    state: current
+    namespace: repository
+    concern: Agent routing for repository documentation
+    carrier: repository-file
+    path: docs/AGENTS.md
+    format: markdown
+    producer: Repository owner and record authors
+    maintainer: Repository owner
+    consumers:
+      - Agents working in repository docs
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Agents follow retired documentation instructions or cannot locate current record authorities.
+    review_point: Changes to this concern, its policy, or its consumers
+  - id: reference-license
+    state: current
+    namespace: repository
+    concern: Required source copyright and license notice
+    carrier: repository-file
+    path: docs/governance/reference-license.txt
+    format: text
+    producer: Repository owner and record authors
+    maintainer: Repository owner
+    consumers:
+      - Readers and maintainers of source-derived governance material
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Source-derived material loses required attribution.
+    review_point: Changes to this concern, its policy, or its consumers
+  - id: record-system-review-source
+    state: current
+    namespace: repository
+    concern: Canonical procedure for record-system-review
+    carrier: repository-file
+    path: .github/skills/record-system-review/SKILL.md
+    format: markdown
+    producer: Repository owner and record authors
+    maintainer: Repository owner
+    consumers:
+      - Independent evaluators reading the procedure by path
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: A generated or unavailable interface is mistaken for the review authority.
+    review_point: Changes to this concern, its policy, or its consumers
+  - id: record-system-review-evaluations
+    state: current
+    namespace: repository
+    concern: Bounded evaluation cases for record-system-review
+    carrier: repository-files
+    path: .github/skills/record-system-review/evals/*.md
+    format: markdown
+    producer: Repository owner and record authors
+    maintainer: Repository owner
+    consumers:
+      - Maintainers and independent reviewers evaluating procedure behavior
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: A procedure change silently weakens authority, finding triage, or evidence limits.
+    review_point: Changes to this concern, its policy, or its consumers
+  - id: research-evidence-review-source
+    state: current
+    namespace: repository
+    concern: Canonical procedure for research-evidence-review
+    carrier: repository-file
+    path: .github/skills/research-evidence-review/SKILL.md
+    format: markdown
+    producer: Repository owner and record authors
+    maintainer: Repository owner
+    consumers:
+      - Independent evaluators reading the procedure by path
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: A generated or unavailable interface is mistaken for the review authority.
+    review_point: Changes to this concern, its policy, or its consumers
+  - id: research-evidence-review-evaluations
+    state: current
+    namespace: repository
+    concern: Bounded evaluation cases for research-evidence-review
+    carrier: repository-files
+    path: .github/skills/research-evidence-review/evals/*.md
+    format: markdown
+    producer: Repository owner and record authors
+    maintainer: Repository owner
+    consumers:
+      - Maintainers and independent reviewers evaluating procedure behavior
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: A procedure change silently weakens authority, finding triage, or evidence limits.
+    review_point: Changes to this concern, its policy, or its consumers
+  - id: nbgv-python-records
+    state: current
+    namespace: src/public/lib/nbgv-python
+    concern: Project-local concern records and portal for nbgv-python
+    carrier: repository-files
+    path: src/public/lib/nbgv-python/docs/**/*.md
+    format: markdown
+    producer: Repository owner and record authors
+    maintainer: Repository owner
+    consumers:
+      - Project authors, implementers, and domain reviewers following each record and its consumers
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Relocation loses project authority, stable identifiers, or current evidence.
+    review_point: Changes to this concern, its policy, or its consumers
+  - id: three-workflow-delivery-v3-records
+    state: current
+    namespace: src/public/lib/three-workflow-delivery-v3
+    concern: Project-local concern records and portal for three-workflow-delivery-v3
+    carrier: repository-files
+    path: src/public/lib/three-workflow-delivery-v3/docs/**/*.md
+    format: markdown
+    producer: Repository owner and record authors
+    maintainer: Repository owner
+    consumers:
+      - Project authors, implementers, and domain reviewers following each record and its consumers
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Relocation loses project authority, stable identifiers, or current evidence.
+    review_point: Changes to this concern, its policy, or its consumers
+  - id: nbgv-python-package-interface
+    state: current
+    namespace: src/public/lib/nbgv-python
+    concern: Library usage and package-reader interface
+    carrier: repository-file
+    path: src/public/lib/nbgv-python/README.md
+    format: markdown
+    producer: Project maintainers
+    maintainer: Repository owner
+    consumers:
+      - Package readers using the existing packaged README
+      - Contributors locating project architecture and the separate sample
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Package readers lose the existing usage interface or follow stale internal record paths.
+    review_point: Changes to this interface or its owning project records
+  - id: nbgv-python-changelog
+    state: current
+    namespace: src/public/lib/nbgv-python
+    concern: Published library change history and release-note input
+    carrier: repository-file
+    path: src/public/lib/nbgv-python/CHANGELOG.md
+    format: markdown
+    producer: Project maintainers
+    maintainer: Repository owner
+    consumers:
+      - Package users comparing released versions
+      - Existing release-resolve and release-prepare-release-notes workflows reading CHANGELOG.md
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Release-note consumers lose version identifiers, anchors, or their expected source path.
+    review_point: Changes to this interface or its owning project records
+  - id: nbgv-hatch-demo-interface
+    state: current
+    namespace: src/sample/nbgv-hatch-demo
+    concern: Separate sample usage and its library dependency
+    carrier: repository-file
+    path: src/sample/nbgv-hatch-demo/README.md
+    format: markdown
+    producer: Project maintainers
+    maintainer: Repository owner
+    consumers:
+      - Sample users running the documented recipe and consulting the library authority
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Sample limitations or usage are confused with library product promises.
+    review_point: Changes to this interface or its owning project records
+  - id: three-workflow-delivery-v3-interface
+    state: current
+    namespace: src/public/lib/three-workflow-delivery-v3
+    concern: Entry point for the v3 engineering concern
+    carrier: repository-file
+    path: src/public/lib/three-workflow-delivery-v3/README.md
+    format: markdown
+    producer: Project maintainers
+    maintainer: Repository owner
+    consumers:
+      - V3 contributors locating normative records and the independent smoke-package purpose
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Readers infer scope from package topology or cannot locate domain authority.
+    review_point: Changes to this interface or its owning project records
+  - id: three-workflow-delivery-v3-nuget-helper-interface
+    state: current
+    namespace: src/public/lib/three-workflow-delivery-v3
+    concern: Routing from the NuGet authority helper to its v3 engineering owner
+    carrier: repository-file
+    path: src/private/app/workflow-delivery-v3-nuget-authority/README.md
+    format: markdown
+    producer: Project maintainers
+    maintainer: Repository owner
+    consumers:
+      - Helper maintainers locating the owning v3 authority and applicable admission and authorization boundaries
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: The helper becomes a competing project or implies authorized NuGet release implementation.
+    review_point: Changes to this interface or its owning project records
+  - id: hcoona-release-smoke-npm-package-interface
+    state: current
+    namespace: src/public/lib/hcoona-release-smoke-npm
+    concern: Independent smoke-package purpose and frozen package-reader interface
+    carrier: repository-file
+    path: src/public/lib/hcoona-release-smoke-npm/README.md
+    format: markdown
+    producer: Project maintainers
+    maintainer: Repository owner
+    consumers:
+      - Package readers and v3 reviewers confirming the separate smoke-product purpose
+      - Existing frozen npm artifact qualification consuming the packaged README bytes
+    creation_trigger: The named consumers need the retained concern at its review or use point.
+    failure_mode: Documentation routing changes alter the frozen package artifact or mix proving authority into its
+      product purpose.
+    review_point: Changes to this interface or its owning project records
+  - id: shared-engineering
+    state: current
+    namespace: repository
+    concern: Shared workspace, compatibility, HK and bounded agent execution guidance
+    carrier: repository-files
+    path: docs/engineering/*.md
+    format: markdown
+    producer: Repository contributors
+    maintainer: Repository owner
+    consumers:
+      - Contributors setting up tools and preserving shared build exceptions
+      - Agents coordinating recoverable work and rechecking mutable execution interfaces
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Shared setup and execution assumptions drift or project details become repository policy.
+    review_point: Changes to the retained concern or its consumers
+  - id: legacy-workflow-retirement-interface
+    state: current
+    namespace: src/public/lib/three-workflow-delivery-v3
+    concern: Retained retirement interface at the path consumed by workflow diagnostics
+    carrier: repository-file
+    path: .github/workflows/REFACTOR_PLAN.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - V3 legacy-boundary diagnostics and retirement checks
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: A required diagnostic interface disappears or the legacy workflow is treated as current authority.
+    review_point: Changes to the retained concern or its consumers
+  - id: legacy-workflow-compatibility-interfaces
+    state: current
+    namespace: src/public/lib/three-workflow-delivery-v3
+    concern: Retained compatibility and retirement interfaces under original diagnostic paths
+    carrier: repository-files
+    path: .github/workflows/docs/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - V3 maintainers following the current legacy-boundary evidence
+      - Existing workflow diagnostics and retirement checks
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Old design authority is revived or current diagnostic consumers lose their path.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-oxforddictextractor-interfaces
+    state: current
+    namespace: src/private/app/OxfordDictExtractor
+    concern: Oxford dictionary extraction usage
+    carrier: repository-files
+    path: src/private/app/OxfordDictExtractor/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-git-commit-heatmap-interfaces
+    state: current
+    namespace: src/private/app/git-commit-heatmap
+    concern: Git history visualization usage
+    carrier: repository-files
+    path: src/private/app/git-commit-heatmap/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-html-sm-processor-interfaces
+    state: current
+    namespace: src/private/app/html-sm-processor
+    concern: HTML processing for SuperMemo usage
+    carrier: repository-files
+    path: src/private/app/html-sm-processor/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-llm-text-splitter-interfaces
+    state: current
+    namespace: src/private/app/llm-text-splitter
+    concern: Text splitting usage
+    carrier: repository-files
+    path: src/private/app/llm-text-splitter/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-music-flash-card-generator-interfaces
+    state: current
+    namespace: src/private/app/music-flash-card-generator
+    concern: Music flashcard generation usage
+    carrier: repository-files
+    path: src/private/app/music-flash-card-generator/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-rag-postgresql-openai-interfaces
+    state: current
+    namespace: src/private/app/rag-postgresql-openai
+    concern: Retrieval and ingestion example usage
+    carrier: repository-files
+    path: src/private/app/rag-postgresql-openai/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-transcribe-interfaces
+    state: current
+    namespace: src/private/app/transcribe
+    concern: Transcription usage
+    carrier: repository-files
+    path: src/private/app/transcribe/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-factorio-cycle-calculator-interfaces
+    state: current
+    namespace: src/private/app/factorio-cycle-calculator
+    concern: Factorio planner usage
+    carrier: repository-files
+    path: src/private/app/factorio-cycle-calculator/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-qidian-novel-downloader-interfaces
+    state: current
+    namespace: src/private/app/qidian-novel-downloader
+    concern: Qidian application usage
+    carrier: repository-files
+    path: src/private/app/qidian-novel-downloader/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-supermemo-mcp-interfaces
+    state: current
+    namespace: src/private/app/supermemo-mcp
+    concern: SuperMemo automation observations and usage
+    carrier: repository-files
+    path: src/private/app/supermemo-mcp/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-vscode-copilot-telegram-hook-interfaces
+    state: current
+    namespace: src/private/app/vscode-copilot-telegram-hook
+    concern: Copilot Telegram installation and operations
+    carrier: repository-files
+    path: src/private/app/vscode-copilot-telegram-hook/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-app-imageocclusioneditor-interfaces
+    state: current
+    namespace: src/public/app/ImageOcclusionEditor
+    concern: Image occlusion usage, attribution and packaging navigation
+    carrier: repository-files
+    path: src/public/app/ImageOcclusionEditor/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-app-phifailuredetector-console-interfaces
+    state: current
+    namespace: src/public/app/PhiFailureDetector.Console
+    concern: Console-source reader interface and library routing
+    carrier: repository-files
+    path: src/public/app/PhiFailureDetector.Console/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-app-markdown-hybrid-search-mcp-interfaces
+    state: current
+    namespace: src/public/app/markdown-hybrid-search-mcp
+    concern: Search scaffold purpose and design routing
+    carrier: repository-files
+    path: src/public/app/markdown-hybrid-search-mcp/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-lab-azure-document-intelligence-lab-interfaces
+    state: current
+    namespace: src/lab/azure-document-intelligence-lab
+    concern: Document Intelligence experiment guidance
+    carrier: repository-files
+    path: src/lab/azure-document-intelligence-lab/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-lab-qidian-novel-downloader-interfaces
+    state: current
+    namespace: src/lab/qidian-novel-downloader
+    concern: Qidian lab guidance independent of application support
+    carrier: repository-files
+    path: src/lab/qidian-novel-downloader/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-circularlist-interfaces
+    state: current
+    namespace: src/public/lib/CircularList
+    concern: Circular-list package usage and release notes
+    carrier: repository-files
+    path: src/public/lib/CircularList/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-hjg-pngcs-interfaces
+    state: current
+    namespace: src/public/lib/Hjg.Pngcs
+    concern: PNGCS package usage and change history
+    carrier: repository-files
+    path: src/public/lib/Hjg.Pngcs/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-memoization-interfaces
+    state: current
+    namespace: src/public/lib/Memoization
+    concern: Memoization package usage and release notes; generator is a build component
+    carrier: repository-files
+    path: src/public/lib/Memoization/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-microsoftextensions-logging-mstest-interfaces
+    state: current
+    namespace: src/public/lib/MicrosoftExtensions.Logging.MSTest
+    concern: MSTest logging package usage and release notes
+    carrier: repository-files
+    path: src/public/lib/MicrosoftExtensions.Logging.MSTest/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-microsoftextensions-logging-xunit-interfaces
+    state: current
+    namespace: src/public/lib/MicrosoftExtensions.Logging.Xunit
+    concern: xUnit logging package usage and release notes
+    carrier: repository-files
+    path: src/public/lib/MicrosoftExtensions.Logging.Xunit/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-microsoftextensions-options-dedupchangeextensions-interfaces
+    state: current
+    namespace: src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions
+    concern: Options-change package usage and release notes
+    carrier: repository-files
+    path: src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-phifailuredetector-interfaces
+    state: current
+    namespace: src/public/lib/PhiFailureDetector
+    concern: Phi library package usage and release notes
+    carrier: repository-files
+    path: src/public/lib/PhiFailureDetector/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-webhdfs-extensions-fileproviders-interfaces
+    state: current
+    namespace: src/public/lib/WebHdfs.Extensions.FileProviders
+    concern: WebHDFS provider package usage and release notes
+    carrier: repository-files
+    path: src/public/lib/WebHdfs.Extensions.FileProviders/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-asciidoctor-latexmath-interfaces
+    state: current
+    namespace: src/public/lib/asciidoctor-latexmath
+    concern: LaTeX renderer package usage and release notes
+    carrier: repository-files
+    path: src/public/lib/asciidoctor-latexmath/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-hexo-renderer-asciidoc-interfaces
+    state: current
+    namespace: src/public/lib/hexo-renderer-asciidoc
+    concern: Hexo renderer contributor/package interfaces and release notes
+    carrier: repository-files
+    path: src/public/lib/hexo-renderer-asciidoc/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-steam-account-history-to-csv-interfaces
+    state: current
+    namespace: src/public/lib/steam-account-history-to-csv
+    concern: Steam export user/developer interfaces, privacy and change history
+    carrier: repository-files
+    path: src/public/lib/steam-account-history-to-csv/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-lib-enterprise-translation-team-interfaces
+    state: current
+    namespace: src/private/lib/enterprise-translation-team
+    concern: Translation plugin installation, evaluation and source routing
+    carrier: repository-files
+    path: src/private/lib/enterprise-translation-team/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-lib-scan-restoration-interfaces
+    state: current
+    namespace: src/private/lib/scan-restoration
+    concern: Scan restoration plugin installation, source ownership and validation
+    carrier: repository-files
+    path: src/private/lib/scan-restoration/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-lib-scholarly-publication-interfaces
+    state: current
+    namespace: src/private/lib/scholarly-publication
+    concern: Scholarly publication plugin installation, source ownership and validation
+    carrier: repository-files
+    path: src/private/lib/scholarly-publication/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project readers using the existing README and any separate user/package interface
+      - Maintainers and existing package/release consumers of change history where present
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers lose project-local usage, source attribution, release-note inputs or current evidence boundaries.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-azureauth-credprovider-records
+    state: current
+    namespace: src/private/app/azureauth-credprovider
+    concern: One product requirement, design, contract, decision and evidence namespace across C# and Python
+    carrier: repository-files
+    path: src/private/app/azureauth-credprovider/docs/**/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project implementers and independent domain reviewers following the local portal and retained authorities
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned
+      or mixed with another project.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-cf-ddns-updater-records
+    state: current
+    namespace: src/private/app/cf-ddns-updater
+    concern: Dynamic DNS requirements and high/low-level designs
+    carrier: repository-files
+    path: src/private/app/cf-ddns-updater/docs/**/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project implementers and independent domain reviewers following the local portal and retained authorities
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned
+      or mixed with another project.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-document-translator-cli-records
+    state: current
+    namespace: src/private/app/document-translator-cli
+    concern: Translation capability requirements, architecture and implementation rationale
+    carrier: repository-files
+    path: src/private/app/document-translator-cli/docs/**/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project implementers and independent domain reviewers following the local portal and retained authorities
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned
+      or mixed with another project.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-factorio-cycle-calculator-records
+    state: current
+    namespace: src/private/app/factorio-cycle-calculator
+    concern: Planner architecture and source research with unresolved future scope retained
+    carrier: repository-files
+    path: src/private/app/factorio-cycle-calculator/docs/**/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project implementers and independent domain reviewers following the local portal and retained authorities
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned
+      or mixed with another project.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-im-acp-gateway-records
+    state: current
+    namespace: src/private/app/im-acp-gateway
+    concern: Gateway source inputs, research and verification evidence
+    carrier: repository-files
+    path: src/private/app/im-acp-gateway/docs/**/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project implementers and independent domain reviewers following the local portal and retained authorities
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned
+      or mixed with another project.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-qidian-novel-downloader-records
+    state: current
+    namespace: src/private/app/qidian-novel-downloader
+    concern: Normative application requirements and informative technical notes
+    carrier: repository-files
+    path: src/private/app/qidian-novel-downloader/docs/**/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project implementers and independent domain reviewers following the local portal and retained authorities
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned
+      or mixed with another project.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-private-app-vscode-copilot-telegram-hook-records
+    state: current
+    namespace: src/private/app/vscode-copilot-telegram-hook
+    concern: Human-source requirement lineage, behavior requirements and research
+    carrier: repository-files
+    path: src/private/app/vscode-copilot-telegram-hook/docs/**/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project implementers and independent domain reviewers following the local portal and retained authorities
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned
+      or mixed with another project.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-app-markdown-hybrid-search-mcp-records
+    state: current
+    namespace: src/public/app/markdown-hybrid-search-mcp
+    concern: Search design, source provenance and unresolved design questions
+    carrier: repository-files
+    path: src/public/app/markdown-hybrid-search-mcp/docs/**/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project implementers and independent domain reviewers following the local portal and retained authorities
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned
+      or mixed with another project.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-app-imageocclusioneditor-records
+    state: current
+    namespace: src/public/app/ImageOcclusionEditor
+    concern: Existing publish and installer responsibilities for local maintainers
+    carrier: repository-files
+    path: src/public/app/ImageOcclusionEditor/docs/**/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project implementers and independent domain reviewers following the local portal and retained authorities
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned
+      or mixed with another project.
+    review_point: Changes to the retained concern or its consumers
+  - id: src-public-lib-asciidoctor-latexmath-records
+    state: current
+    namespace: src/public/lib/asciidoctor-latexmath
+    concern: Renderer architecture, quality constraints and source research
+    carrier: repository-files
+    path: src/public/lib/asciidoctor-latexmath/docs/**/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Project implementers and independent domain reviewers following the local portal and retained authorities
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned
+      or mixed with another project.
+    review_point: Changes to the retained concern or its consumers
+  - id: azureauth-python-interface
+    state: current
+    namespace: src/private/app/azureauth-credprovider
+    concern: Python package-reader interface within the shared AzureAuth product
+    carrier: repository-file
+    path: src/private/app/azureauth-credprovider/python/README.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Python package users and adapter maintainers
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: The adapter acquires a conflicting product boundary or loses its usage interface.
+    review_point: Changes to the retained concern or its consumers
+  - id: im-acp-proof-interfaces
+    state: current
+    namespace: src/private/app/im-acp-gateway
+    concern: Bounded proof-of-concept instructions and evidence limits
+    carrier: repository-files
+    path: src/private/app/im-acp-gateway/poc/*/README.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Gateway researchers reproducing each separately scoped proof
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: A proof recipe is lost or mistaken for a product support commitment.
+    review_point: Changes to the retained concern or its consumers
+  - id: supermemo-knowledge
+    state: current
+    namespace: src/private/app/supermemo-mcp
+    concern: Retained Windows observations and captured source context
+    carrier: repository-files
+    path: src/private/app/supermemo-mcp/knowledge_base/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - SuperMemo automation investigators interpreting window and menu evidence
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Unverified advice or captured data is lost or recast as an implemented guarantee.
+    review_point: Changes to the retained concern or its consumers
+  - id: supermemo-script-records
+    state: current
+    namespace: src/private/app/supermemo-mcp
+    concern: Diagnostic script usage and attributed investigation discussion
+    carrier: repository-files
+    path: src/private/app/supermemo-mcp/scripts/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Maintainers interpreting menu diagnostics and source advice
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Diagnostic use loses provenance or suggestions become verified behavior.
+    review_point: Changes to the retained concern or its consumers
+  - id: search-clarification-inputs
+    state: current
+    namespace: src/public/app/markdown-hybrid-search-mcp
+    concern: Immutable supplied design answers retained under their original input paths
+    carrier: repository-files
+    path: src/public/app/markdown-hybrid-search-mcp/.AGENTS/DESIGN/CLARIFY*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Design reviewers tracing decisions and open questions to supplied answers
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: A synthesis replaces its human-source evidence or fabricates an unanswered decision.
+    review_point: Changes to the retained concern or its consumers
+  - id: latexmath-contracts-and-evidence
+    state: current
+    namespace: src/public/lib/asciidoctor-latexmath
+    concern: Retained requirements, contracts, rationale, historical validation and audit inputs
+    carrier: repository-files
+    path: src/public/lib/asciidoctor-latexmath/specs/**/*.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Renderer implementers and reviewers
+      - Existing governance audit and coverage tests reading spec.md and tasks.md
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Stable FR/task references or consumed audit inputs disappear, or historical evidence grants new
+      work.
+    review_point: Changes to the retained concern or its consumers
+  - id: hexo-example-interface
+    state: current
+    namespace: src/public/lib/hexo-renderer-asciidoc
+    concern: Runnable renderer example instructions
+    carrier: repository-file
+    path: src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md
+    format: markdown
+    producer: Project authors
+    maintainer: Repository owner
+    consumers:
+      - Users running the bundled Hexo example
+    creation_trigger: The named consumers require this existing concern at its use or review point.
+    failure_mode: Readers cannot reproduce the package example or confuse it with a separate supported product.
+    review_point: Changes to the retained concern or its consumers
+
+  - id: latexmath-processor-selection-input
+    state: current
+    namespace: src/public/lib/asciidoctor-latexmath
+    concern: Original human questions and assistant discussion consumed by processor and attribute research
+    carrier: repository-file
+    path: src/public/lib/asciidoctor-latexmath/docs/research/processor-selection-input.txt
+    format: text
+    producer: Original user and ChatGPT exchange, retained by project authors
+    maintainer: Repository owner
+    consumers:
+      - Project researchers and reviewers tracing processor selection and attribute-snapshot rationale to supplied input
+    creation_trigger: The retained upstream-rendering notes consume this supplied exchange as source input.
+    failure_mode: Direct human input is lost or unverified assistant advice becomes a competing product authority.
+    review_point: Changes to research relying on this input or its retention route; preserve source bytes and attribution

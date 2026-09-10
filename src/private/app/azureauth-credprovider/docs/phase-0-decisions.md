@@ -10,6 +10,12 @@ This record closes only the Phase 0 program-definition work package from `projec
 
 This record does not implement source code, freeze adapter contracts, choose identity-flow support, choose AzureAuth versus direct MSAL, lock package layouts, or close technical gates that require source inspection or prototypes.
 
+Read this dated baseline with the [current product records and domain gates](project-breakdown.md).
+Later identity and platform decisions retain their explicit scopes; the original
+unselected alternatives below do not override those decisions. Generic work
+coordination follows the repository policy linked below. The
+[original Phase 0 record][original-phase-0] remains recoverable in Git.
+
 ## Decision Summary
 
 | Area              | Decision                                                                                                                                            |
@@ -20,8 +26,8 @@ This record does not implement source code, freeze adapter contracts, choose ide
 | Release train     | Ship one coordinated product train, not independent ecosystem products.                                                                             |
 | Package integrity | Require artifact integrity evidence before release readiness closes.                                                                                |
 | Package signing   | Require signing where approved signing infrastructure exists; record explicit release waivers otherwise.                                            |
-| Tracker           | Use this document in `src/private/app/azureauth-credprovider/docs/` as the Phase 0 system-of-record entry.                                          |
-| Decision format   | Use the required gate-decision fields from `project-breakdown.md`.                                                                                  |
+| Tracker           | Keep the product decisions here; use repository work carriers for coordination and gate-review evidence.                                            |
+| Decision format   | Use the domain gate-decision fields below, with repository policy governing work authorization.                                                     |
 | Gate governance   | Mandatory evidence-gate failures stop dependent work and enter Phase 1R.                                                                            |
 
 ## Product-Name Placeholder Policy
@@ -74,7 +80,7 @@ Packaging-specific runtime identifiers, minimum OS versions, and artifact split 
 
 The project uses one coordinated release train for the unified product. Ecosystem adapters may have separate package artifacts only where host tools require different package shapes, but they do not become independent credential products or independent release trains.
 
-Release readiness follows the waterfall phase order in `project-breakdown.md`. Public release approval cannot occur until Phase 16 closes. Earlier artifacts may be used for internal validation only when their scope, unsupported status, and open gates are explicit.
+Release readiness requires the applicable [product gates and release acceptance](project-breakdown.md#release-acceptance). Public release approval cannot occur until Phase 16 closes. Earlier artifacts may be used for internal validation only when their scope, unsupported status, and open gates are explicit.
 
 A release candidate must include the shared core, the human CLI, accepted adapter surfaces, diagnostics, configuration ownership behavior, package integrity evidence, and signing evidence or waivers required by this record.
 
@@ -102,32 +108,33 @@ Prototype, spike, and internal validation artifacts must be clearly marked as no
 
 ## Tracker Location and System of Record
 
-The Phase 0 system-of-record entry is this document:
+This document remains the product's Phase 0 decision baseline. Durable product
+requirements, contracts, decisions, and evidence stay in this project document
+root, with [project-breakdown.md](project-breakdown.md) routing their consumers.
 
-```text
-src/private/app/azureauth-credprovider/docs/phase-0-decisions.md
-```
-
-This location follows the user-selected docs-folder location for this session. `project-breakdown.md` says no repository planning document is required, but the selected repository documentation location is authoritative for this Phase 0 decision record.
-
-Until an external tracker is selected, future gate decisions should be recorded in the same documentation area using the decision-record format below. If an external tracker is later selected, the external tracker may become the active gate tracker, but it must link back to this Phase 0 record or preserve its decisions.
+The [repository record policy](../../../../../docs/governance/record-system.md)
+owns Issue/PR coordination, review carriers, and record lifecycle. The accepted
+[Delivery Wave](../../../../../docs/delivery-wave.md) owns positive work
+authorization. Gate-review evidence in a work carrier links to the affected
+project decision and preserves the domain evidence fields below; neither a
+tracker entry nor a product gate result grants additional work.
 
 ## Decision-Record Format
 
 Each future gate or scope decision must include these fields:
 
-| Field                      | Required content                                                                    |
-| -------------------------- | ----------------------------------------------------------------------------------- |
-| Decision ID                | Stable identifier, such as `phase-1.1-nuget-evidence`.                              |
-| Gate name                  | The phase or gate name from `project-breakdown.md`.                                 |
-| Owner                      | Accountable role, such as PL, ARCH, ID, CONFIG, PLATFORM, or adapter lead.          |
-| Date                       | Decision date.                                                                      |
-| Status                     | Proposed, accepted, rejected, superseded, or blocked.                               |
-| Evidence links             | Source-inspection notes, prototype results, tests, logs, or external tracker links. |
-| Decision                   | The accepted outcome, including pass, fail, accept, defer, remove, or re-scope.     |
-| Affected requirements      | Requirements, design sections, or phase exit criteria affected by the decision.     |
-| Follow-up actions          | Required work, owners, and dependency effects.                                      |
-| Implementation may proceed | Explicit yes or no for dependent work.                                              |
+| Field                      | Required content                                                                                      |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Decision ID                | Stable identifier, such as `phase-1.1-nuget-evidence`.                                                |
+| Gate name                  | The product gate name; original phase names remain recoverable through `project-breakdown.md`.        |
+| Owner                      | Accountable role, such as PL, ARCH, ID, CONFIG, PLATFORM, or adapter lead.                            |
+| Date                       | Decision date.                                                                                        |
+| Status                     | Proposed, accepted, rejected, superseded, or blocked.                                                 |
+| Evidence links             | Source-inspection notes, prototype results, tests, logs, or external tracker links.                   |
+| Decision                   | The accepted outcome, including pass, fail, accept, defer, remove, or re-scope.                       |
+| Affected requirements      | Requirements, design sections, or phase exit criteria affected by the decision.                       |
+| Follow-up actions          | Required work, owners, and dependency effects.                                                        |
+| Implementation may proceed | Whether the domain prerequisite is satisfied; separate accepted Wave authorization is still required. |
 
 Decision records must distinguish evidence-backed conclusions from provisional recommendations.
 
@@ -173,3 +180,5 @@ This record does not close any gate that requires source inspection, protocol pr
 - Platform secure-store behavior and no-plaintext fallback policy.
 - MVP identity-flow selection.
 - Core deployment boundary and final artifact layout.
+
+[original-phase-0]: https://github.com/hcoona/three/blob/b673ee27aab8553a4ee259bcaca87a197178463c/src/private/app/azureauth-credprovider/docs/phase-0-decisions.md

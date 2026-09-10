@@ -1,6 +1,6 @@
 ImageOcclusionEditor Licensing Overview
 
-This project is licensed under the GPL-3.0+ License. See LICENSE.GPL3.txt.txt for full license text.
+This project is licensed under the GPL-3.0+ License. See LICENSE.GPL3.txt for full license text.
 
 Some files in ImageOcclusionEditorWinUI3 contain code derived from the original "ImageOcclusionEditor" project by the SuperMemo Community, which is licensed under the MIT License. Such files include in-file notices like:
 

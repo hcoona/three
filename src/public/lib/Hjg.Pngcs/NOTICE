@@ -9,7 +9,8 @@ This project is distributed under the terms of the
 GNU General Public License v3.0 or (at your option)
 any later version ("GPL v3+").
 
-See LICENSE.GPL.txt for the full text of the license.
+See https://github.com/hcoona/three/blob/main/COPYING
+for the full text of the license.
 
 Portions of this project are derived from works originally licensed under
 the Apache License, Version 2.0, copyright by Hernán J. González.
@@ -23,7 +24,9 @@ Exception:
 The library built from sources is licensed under the
 GNU Lesser General Public License, version 3 or any later version
 (LGPL-3.0-or-later), with an additional linking exception. See
-LICENSE.LGPLv3-linking-exception.txt for details.
+https://github.com/hcoona/three/blob/main/COPYING.LESSER and
+https://github.com/hcoona/three/blob/main/LICENSES/LGPL-3.0-linking-exception.txt
+for the license and exception texts.
 
 ## Original Copyright Notice
 

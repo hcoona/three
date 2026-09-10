@@ -95,3 +95,8 @@ Licensing and notices:
 - Aggregated third-party notices: see `THIRD-PARTY-NOTICES.TXT`.
 
 If you believe a required notice is missing or incomplete, please open an issue so we can correct it.
+
+## Packaging Maintenance
+
+See [publish and installer responsibilities](docs/packaging.md) for the existing
+script boundaries and their source observations.

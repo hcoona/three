@@ -6,7 +6,7 @@ This repository is designed to manage polyglot projects in a monorepo structure.
 2. Python: Managed by UV workspaces.
 3. JavaScript/TypeScript: Managed by PNPM workspaces.
 
-The current status of the repository is that active projects now follow the canonical root monorepo layout under `src/`, `src/lab/`, and `tests/`. The former `OneDotNet/` subtree has been migrated into those canonical roots, and we have not yet set up the release pipelines for each project.
+The current status of the repository is that active projects now follow the canonical root monorepo layout under `src/`, `src/lab/`, and `tests/`. The former `OneDotNet/` subtree has been migrated into those canonical roots. Project release scope and readiness follow the accepted project authorities.
 
 The versioning of the projects is managed by NBGV (Nerdbank.GitVersioning). We write a hatching plugin (`nbgv-python`) to adapt NBGV for our Python projects.
 
@@ -26,19 +26,43 @@ Do not get stuck in a pager when executing CLI commands.
 
 You must use ENGLISH rather than CHINESE for all code, comments, commit messages, documentation in this repository.
 
-## Governance Migration
+## Repository Governance
 
-For repository-record and development-control migration work, read
-[`docs/governance/bootstrap.md`](docs/governance/bootstrap.md) and
-[`docs/delivery-wave.md`](docs/delivery-wave.md).
-Use their accepted target-branch versions for authority; working-branch edits
-are proposals. The bootstrap defines the initial-proposal and review procedure.
+Before work, read the accepted target-branch
+[governance policy](docs/governance/governance-system.md),
+[record policy](docs/governance/record-system.md), and
+[Delivery Wave](docs/delivery-wave.md). Proposed changes cannot authorize
+themselves or weaken their accepted review obligations.
+
+Use the [documentation portal](docs/README.md) and
+[family catalog](docs/governance/record-families.yaml) to find project authorities.
+Keep project records separate and use path-qualified cross-project references.
+A README is sufficient when no distinct record has a current consumer.
+
+For record-system changes, invoke
+[record-system review](.github/skills/record-system-review/SKILL.md) directly.
+For research/evidence changes and every merged Wave change, invoke
+[research-evidence review](.github/skills/research-evidence-review/SKILL.md)
+directly, retaining applicable domain reviews. Authors and implementers cannot
+satisfy their own independent review or solely adjudicate material findings.
+These canonical paths are the invocation interface; no implicit skill discovery
+is assumed. Do not edit generated `.agents/skills/` or `.github/agents/` outputs
+by hand. For delegated execution, follow
+[agent execution and recovery](docs/engineering/agent-execution.md).
+
+Read root or current-directory `AGENTS.local.md` after tracked instructions when
+present. It is private, machine-specific, gitignored, and must not be committed.
 
 ## Workflow Delivery v3
 
 Before acting on any Workflow Delivery v3 request, read
-`docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md`.
+`src/public/lib/three-workflow-delivery-v3/docs/agent-handoff.md`.
 
 Workflow Delivery v3 is the only normative source for new workflow delivery
 work. Do not use v1 or v2 to fill a v3 decision gap unless the v3 documents
 explicitly require mechanism extraction and revalidation.
+
+The handoff's domain gates, including separate NuGet implementation, native-operation,
+and publication authorization, survive the move. Repository governance does not
+reopen the completed npm proving work or supply permission for publication,
+dispatch, authentication, or access changes.

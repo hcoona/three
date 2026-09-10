@@ -183,6 +183,11 @@ The CLI also provides:
 
 ## Logging and troubleshooting
 
+At runtime, the VS Code hook resolves the active workspace from the hook input
+payload's `cwd`, independently of the installed binary location. This keeps
+`.copilot/notifications/sessions/<safe-session-id>/` protocol files scoped to
+the actual workspace after a user-level installation.
+
 The runtime now writes owner-only diagnostic logs where the operating system
 supports Unix file modes:
 
@@ -334,8 +339,9 @@ Use these documents as the authoritative sources:
   implementation-language comparison for PowerShell, Python, and C# based on
   the documented product scope and official platform behavior.
 
-In short, the current product target is a user-level VS Code GitHub Copilot
-hook that attempts Telegram delivery for each completed-turn `Stop` event and
-includes a concise task summary when available, preferring Chinese on a
-best-effort basis, continuing across multiple Telegram messages when needed to
-stay within Telegram limits.
+Completion notifications follow the accepted root-agent boundary in
+[H-009](docs/h-009-human-confirmation-2026-07-25-root-lifecycle-notifications.md).
+The VS Code managed-hook flow and Copilot CLI extension use their respective
+lifecycle inputs described above; a subagent's completion is not a root-agent
+completion notification. Summaries prefer Chinese on a best-effort basis and
+continue across Telegram messages when needed to stay within its limits.

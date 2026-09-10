@@ -11,7 +11,7 @@ It will feed the text to LLM with the prompt inspired by the paper _Uncovering t
 
 ## Getting Started
 
-Fill the `packages/llm-text-splitter/.env` file with
+Fill the `src/private/app/llm-text-splitter/.env` file with
 
 1. `LITELLM_API_BASE`
 2. `LITELLM_API_KEY`
@@ -19,7 +19,7 @@ Fill the `packages/llm-text-splitter/.env` file with
 Launch web browser to ask the agent do segmentation task:
 
 ```bash
-uv run --package llm-text-splitter streamlit run packages/llm-text-splitter/app2.py
+uv run --package llm-text-splitter streamlit run src/private/app/llm-text-splitter/app2.py
 ```
 
 ## Notes

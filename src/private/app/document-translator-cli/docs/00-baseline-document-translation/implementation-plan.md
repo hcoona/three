@@ -1,10 +1,13 @@
 # Document Translator CLI MVP Implementation Plan
 
-Status: **Ready for implementation**
-
 ## Audience and Intent
 
-This document is written for an AI agent acting as a senior software engineer. It translates the frozen MVP requirements and high-level design into an implementation plan for the currently empty `src/private/app/document-translator-cli` project.
+This document retains the baseline capability's implementation design for
+`src/private/app/document-translator-cli`. Its original construction steps are
+design context; the project now contains implementation code. Read the
+[capability map](../README.md) with the requirements and high-level design.
+Current work authorization and review procedure come from the repository
+records linked there, not from this plan.
 
 Do not expand the MVP scope while implementing this plan. The first implementation must remain a small C# command-line application that translates exactly one supported local document to exactly one local output path by using Azure AI Translator Document Translation's single-document service operation. The Azure service operation is the synchronous document translation workflow, but the .NET SDK should still be invoked through its cancellation-friendly async API.
 

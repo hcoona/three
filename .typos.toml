@@ -5,7 +5,6 @@ extend-exclude = [
   '.github/lsp.json',
   '.github/mcp.json',
   '.vscode/mcp.json',
-  '.testagent/status.md',
   'apm.lock.yaml',
   '**/apm.lock.yaml',
   'packages.lock.json',

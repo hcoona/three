@@ -1,4 +1,11 @@
-# Phi Failure Detector
+# Phi Failure Detector Console
+
+This source directory contains the [console program](Program.cs) that exercises
+the [PhiFailureDetector library](../../lib/PhiFailureDetector/README.md).
+The library owns its package and API interface; this README retains the
+console reader's existing algorithm notes and source citations below. The
+console project and library remain separate source roots. Build properties
+alone do not establish a separate distribution or support commitment.
 
 This is a C# implementation of the [Phi Accrual Failure Detector](http://ieeexplore.ieee.org/abstract/document/1353004/) (PDF version available in [this research paper](https://dspace.jaist.ac.jp/dspace/bitstream/10119/4784/1/IS-RR-2004-010.pdf)).
 
