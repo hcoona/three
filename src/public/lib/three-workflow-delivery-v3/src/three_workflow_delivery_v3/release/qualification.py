@@ -1,4 +1,4 @@
-"""Release qualification mechanics wrapping the unprivileged Node Adapters."""
+"""Shared qualification admission and unprivileged Node mechanics."""
 
 from __future__ import annotations
 
@@ -15,15 +15,27 @@ from three_workflow_delivery_v3.records.artifacts import (
     ArtifactTransportIdentity,
 )
 from three_workflow_delivery_v3.records.release import (
+    NugetExternalPackageCoordinate,
+    NugetReleaseArtifact,
+    NugetReleaseBuildRequest,
     QualificationDecision,
     QualificationEvidence,
     QualificationSnapshot,
     ReleaseArtifact,
     ReleaseAttemptIdentity,
+    ReleaseBuildRequest,
     ReleaseObligation,
     ReleaseOutputIdentity,
     SimulationBinding,
     SimulationIdentity,
+)
+from three_workflow_delivery_v3.release.nuget_planner import (
+    NUGET_BUILD_OBLIGATION,
+    NUGET_CONSUMER_OBLIGATION,
+    NUGET_CONTENTS_OBLIGATION,
+)
+from three_workflow_delivery_v3.repository.dotnet_provider import (
+    DOTNET_TOOLCHAIN,
 )
 
 if TYPE_CHECKING:
@@ -187,19 +199,21 @@ def _subject(
     return snapshot.subject
 
 
-def validate_qualification_artifacts(
+def validate_qualification_artifacts[
+    ArtifactT: ReleaseArtifact | NugetReleaseArtifact
+](
     snapshot: QualificationSnapshot,
-    artifacts: tuple[ReleaseArtifact, ...],
-) -> tuple[ReleaseArtifact, ...]:
+    artifacts: tuple[ArtifactT, ...],
+) -> tuple[ArtifactT, ...]:
     """Bind supplied artifacts to current planned outputs, in plan order."""
     if type(artifacts) is not tuple:
         message = "Release artifacts must be an exact tuple"
         raise TypeError(message)
-    by_output: dict[str, ReleaseArtifact] = {}
+    by_output: dict[str, ArtifactT] = {}
     record_digests: set[str] = set()
     expected_subject = _subject(snapshot)
     for artifact in artifacts:
-        if type(artifact) is not ReleaseArtifact:
+        if type(artifact) not in {ReleaseArtifact, NugetReleaseArtifact}:
             message = "Release artifact has the wrong runtime type"
             raise TypeError(message)
         record_digest = artifact.artifact_digest
@@ -218,6 +232,29 @@ def validate_qualification_artifacts(
             or artifact.output not in snapshot.outputs
         ):
             message = "Release artifact does not match the current Snapshot"
+            raise ValueError(message)
+        if (
+            len(snapshot.build_requests) == 1
+            and type(snapshot.build_requests[0]) is NugetReleaseBuildRequest
+        ):
+            request = snapshot.build_requests[0]
+            coordinate = snapshot.destination_projections[0].coordinate
+            if (
+                type(artifact) is not NugetReleaseArtifact
+                or type(coordinate) is not NugetExternalPackageCoordinate
+                or artifact.identity != coordinate.identity
+                or artifact.build_request_digest != request.request_digest
+                or artifact.witness_digest != request.witness_digest
+                or artifact.source_input_manifest
+                != request.source_input_manifest
+                or artifact.toolchain != DOTNET_TOOLCHAIN
+            ):
+                message = (
+                    "NuGet artifact does not match the frozen native request"
+                )
+                raise ValueError(message)
+        elif type(artifact) is not ReleaseArtifact:
+            message = "NuGet artifact cannot satisfy an npm Build Request"
             raise ValueError(message)
         output_id = artifact.output.output_id
         if output_id in by_output:
@@ -266,7 +303,7 @@ def validate_qualification_decision(
 
 def validate_qualification_decision_artifacts(
     decision: QualificationDecision,
-    artifacts: tuple[ReleaseArtifact, ...],
+    artifacts: tuple[ReleaseArtifact | NugetReleaseArtifact, ...],
 ) -> None:
     """Require the exact artifact identities admitted by the Decision."""
     if (
@@ -303,6 +340,9 @@ def _producer(obligation_id: str) -> str:
         _PROJECT_TEST_OBLIGATION: "project-test",
         _CONTENTS_OBLIGATION: "npm-artifact-qualification",
         _INSTALL_OBLIGATION: "npm-artifact-qualification",
+        NUGET_BUILD_OBLIGATION: "build-nuget-package",
+        NUGET_CONTENTS_OBLIGATION: "nuget-artifact-qualification",
+        NUGET_CONSUMER_OBLIGATION: "nuget-artifact-qualification",
     }[obligation_id]
 
 
@@ -367,7 +407,10 @@ def admit_evidence_for_snapshot(  # noqa: C901
     ):
         message = "Qualification Evidence does not match the current Snapshot"
         raise ValueError(message)
-    if planned.obligation_id == _BUILD_OBLIGATION:
+    if planned.obligation_id in {
+        _BUILD_OBLIGATION,
+        NUGET_BUILD_OBLIGATION,
+    }:
         if evidence.normalized_outcome == "satisfied":
             if len(evidence.artifact_digests) != 1:
                 message = "satisfied build Evidence requires one artifact"
@@ -375,7 +418,12 @@ def admit_evidence_for_snapshot(  # noqa: C901
         elif evidence.artifact_digests:
             message = "unsatisfied build Evidence cannot claim an artifact"
             raise ValueError(message)
-    elif planned.obligation_id in {_CONTENTS_OBLIGATION, _INSTALL_OBLIGATION}:
+    elif planned.obligation_id in {
+        _CONTENTS_OBLIGATION,
+        _INSTALL_OBLIGATION,
+        NUGET_CONTENTS_OBLIGATION,
+        NUGET_CONSUMER_OBLIGATION,
+    }:
         if evidence.normalized_outcome == "incomplete":
             if evidence.artifact_digests:
                 message = (
@@ -396,6 +444,9 @@ def _validate_node_build_request(
     request: node_adapter.BuildRequest,
 ) -> None:
     contract = snapshot.build_requests[0]
+    if type(contract) is not ReleaseBuildRequest:
+        message = "Node Build requires an npm Release Build Request"
+        raise TypeError(message)
     if type(request) is not node_adapter.BuildRequest:
         message = "Release build requires an exact Node BuildRequest"
         raise TypeError(message)

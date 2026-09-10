@@ -15,6 +15,10 @@ from three_workflow_delivery_v3.records.artifacts import (
     ArtifactReference,
     ArtifactTransportIdentity,
 )
+from three_workflow_delivery_v3.repository.dotnet_provider import (
+    DotnetNbgvFacts,
+    validate_dotnet_nbgv_facts,
+)
 from three_workflow_delivery_v3.repository.node_provider import (
     NbgvFacts,
     validate_nbgv_facts,
@@ -772,6 +776,84 @@ class ExternalPackageCoordinate:
 
 
 @dataclass(frozen=True, slots=True, order=True)
+class NugetPackageIdentity:
+    """Display and comparison identity supplied by official NuGet facts."""
+
+    package_name: str
+    native_version: str
+    normalized_package_id: str
+    normalized_version: str
+
+    def __post_init__(self) -> None:
+        """Validate representation without implementing NuGet normalization."""
+        for name in (
+            "package_name",
+            "native_version",
+            "normalized_package_id",
+            "normalized_version",
+        ):
+            _string(getattr(self, name), field=f"NuGet identity.{name}")
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Retain display values separately from native comparison facts."""
+        return {
+            "package-name": self.package_name,
+            "native-version": self.native_version,
+            "normalized-package-id": self.normalized_package_id,
+            "normalized-version": self.normalized_version,
+        }
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class NugetExternalPackageCoordinate:
+    """The concrete Buddy NuGet address and its native-equivalent resource."""
+
+    channel: str
+    destination_id: str
+    identity: NugetPackageIdentity
+
+    def __post_init__(self) -> None:
+        """Reject another destination or a substituted native identity type."""
+        _exact(self.identity, NugetPackageIdentity, field="coordinate.identity")
+        if (
+            self.channel != "buddy"
+            or self.destination_id != "nuget/github-packages-hcoona-three-v1"
+        ):
+            message = (
+                "NuGet coordinate is outside the selected Buddy destination"
+            )
+            raise ValueError(message)
+
+    @property
+    def package_name(self) -> str:
+        """Return the preserved native display package name."""
+        return self.identity.package_name
+
+    @property
+    def native_version(self) -> str:
+        """Return the frozen native display version."""
+        return self.identity.native_version
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Serialize the closed native coordinate variant."""
+        return {
+            "schema": EXTERNAL_PACKAGE_COORDINATE_SCHEMA,
+            "channel": self.channel,
+            "destination-id": self.destination_id,
+            "nuget-identity": self.identity.to_document(),
+        }
+
+    def resource_document(self) -> dict[str, JsonValue]:
+        """Use only official comparison facts for coordinate serialization."""
+        return {
+            "schema": "workflow-delivery/v3/nuget-coordinate-resource",
+            "destination-id": self.destination_id,
+            "package-id": self.identity.normalized_package_id,
+            "version": self.identity.normalized_version,
+        }
+
+
+@dataclass(frozen=True, slots=True, order=True)
 class ReleaseBuildIdentity:
     """One selected Release Unit build identity."""
 
@@ -898,6 +980,7 @@ def release_artifact_transport_name(  # noqa: PLR0913
         "workflow-run-id": run_id,
     }
     snapshot_digest = qualification_snapshot_digest.removeprefix("sha256:")
+    extension = "nupkg" if output.media_kind == "nuget-package" else "tgz"
     if purpose_value == "live-release":
         if run_attempt is not None:
             message = "live artifact name cannot bind run_attempt"
@@ -905,14 +988,14 @@ def release_artifact_transport_name(  # noqa: PLR0913
         name_digest = canonical_sha256(name_basis)
         return (
             f"wdv3-live-{output.logical_role}-{run_id}-"
-            f"{snapshot_digest[:16]}-{name_digest.removeprefix('sha256:')}.tgz"
+            f"{snapshot_digest[:16]}-{name_digest.removeprefix('sha256:')}.{extension}"
         )
     attempt = _positive(run_attempt, field="artifact name.run_attempt")
     name_basis["run-attempt"] = attempt
     name_digest = canonical_sha256(name_basis)
     return (
         f"wdv3-{purpose_value}-{output.logical_role}-ra{attempt}-"
-        f"{snapshot_digest[:16]}-{name_digest.removeprefix('sha256:')}.tgz"
+        f"{snapshot_digest[:16]}-{name_digest.removeprefix('sha256:')}.{extension}"
     )
 
 
@@ -996,6 +1079,87 @@ class ReleaseBuildRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class NugetReleaseBuildRequest:
+    """Snapshot-bound NuGet Build input with no npm projection placeholder."""
+
+    build: ReleaseBuildIdentity
+    variant: ArtifactVariantIdentity
+    output: ReleaseOutputIdentity
+    repository_model_digest: str
+    definition_digest: str
+    nuget_package_version: str
+    witness_digest: str
+    declared_inputs: tuple[str, ...]
+    source_input_manifest: tuple[tuple[str, str], ...]
+    adapter_id: str
+
+    def __post_init__(self) -> None:
+        """Close the concrete native build, output, and input identities."""
+        _exact(self.build, ReleaseBuildIdentity, field="NuGet request.build")
+        _exact(
+            self.variant, ArtifactVariantIdentity, field="NuGet request.variant"
+        )
+        _exact(self.output, ReleaseOutputIdentity, field="NuGet request.output")
+        if (
+            self.variant.build != self.build
+            or self.output.variant != self.variant
+            or self.build.definition_id != "dotnet/nuget-package-v1"
+            or self.adapter_id != "dotnet/nuget-package-v1"
+            or self.output.media_kind != "nuget-package"
+            or self.output.output_id != "nuget-package"
+            or self.output.logical_role != "primary-package"
+        ):
+            message = "NuGet Build Request identity chain is inconsistent"
+            raise ValueError(message)
+        for name in (
+            "repository_model_digest",
+            "definition_digest",
+            "witness_digest",
+        ):
+            _digest(getattr(self, name), field=f"NuGet request.{name}")
+        _string(
+            self.nuget_package_version, field="NuGet request.native version"
+        )
+        _string_tuple(
+            self.declared_inputs,
+            field="NuGet request.declared_inputs",
+            sorted_values=True,
+        )
+        manifest = _pairs(
+            self.source_input_manifest,
+            field="NuGet request.source_input_manifest",
+        )
+        if tuple(path for path, _ in manifest) != self.declared_inputs:
+            message = "NuGet Build Request source manifest is not closed"
+            raise ValueError(message)
+        for _, digest in manifest:
+            _digest(digest, field="NuGet request.source digest")
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Serialize the distinct native request without npm-only fields."""
+        return {
+            "schema": RELEASE_BUILD_REQUEST_SCHEMA,
+            "build": self.build.to_document(),
+            "variant": self.variant.to_document(),
+            "output": self.output.to_document(),
+            "repository-model-digest": self.repository_model_digest,
+            "definition-digest": self.definition_digest,
+            "nuget-package-version": self.nuget_package_version,
+            "witness-digest": self.witness_digest,
+            "declared-inputs": _json_strings(self.declared_inputs),
+            "source-input-manifest": [
+                list(item) for item in self.source_input_manifest
+            ],
+            "adapter-id": self.adapter_id,
+        }
+
+    @property
+    def request_digest(self) -> str:
+        """Return the canonical native Build Request digest."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
 class ReleaseObligation:
     """One required definition, target, and dimensional qualification."""
 
@@ -1067,7 +1231,7 @@ class DestinationProjection:
     projection_id: str
     destination_id: str
     registry: str
-    coordinate: ExternalPackageCoordinate
+    coordinate: ExternalPackageCoordinate | NugetExternalPackageCoordinate
     output: ReleaseOutputIdentity
     operation: str
     observation_contract_id: str
@@ -1081,11 +1245,12 @@ class DestinationProjection:
         if not registry.startswith("https://"):
             message = "projection.registry must be HTTPS"
             raise ValueError(message)
-        _exact(
-            self.coordinate,
+        if type(self.coordinate) not in {
             ExternalPackageCoordinate,
-            field="projection.coordinate",
-        )
+            NugetExternalPackageCoordinate,
+        }:
+            message = "Destination Projection coordinate has the wrong type"
+            raise TypeError(message)
         _exact(self.output, ReleaseOutputIdentity, field="projection.output")
         _string(self.operation, field="projection.operation")
         _string(
@@ -1188,11 +1353,11 @@ class QualificationSnapshot:
     target: str
     channel: str
     release_unit: str
-    nbgv: NbgvFacts
+    nbgv: NbgvFacts | DotnetNbgvFacts
     builds: tuple[ReleaseBuildIdentity, ...]
     variants: tuple[ArtifactVariantIdentity, ...]
     outputs: tuple[ReleaseOutputIdentity, ...]
-    build_requests: tuple[ReleaseBuildRequest, ...]
+    build_requests: tuple[ReleaseBuildRequest | NugetReleaseBuildRequest, ...]
     destination_projections: tuple[DestinationProjection, ...]
     potential_actions: tuple[PotentialActionContract, ...]
     obligations: tuple[ReleaseObligation, ...]
@@ -1226,7 +1391,10 @@ class QualificationSnapshot:
         _sha(self.target, field="qualification.target")
         _choice(self.channel, _CHANNELS, field="qualification.channel")
         _string(self.release_unit, field="qualification.release_unit")
-        validate_nbgv_facts(self.nbgv, target=self.target)
+        if isinstance(self.nbgv, DotnetNbgvFacts):
+            validate_dotnet_nbgv_facts(self.nbgv, target=self.target)
+        else:
+            validate_nbgv_facts(self.nbgv, target=self.target)
         _exact(self.builds, tuple, field="qualification.builds")
         _exact(self.variants, tuple, field="qualification.variants")
         _exact(self.outputs, tuple, field="qualification.outputs")
@@ -1300,12 +1468,40 @@ class QualificationSnapshot:
         ):
             message = "Qualification Snapshot projection channel is not closed"
             raise ValueError(message)
+        native_version = (
+            self.nbgv.nuget_package_version
+            if isinstance(self.nbgv, DotnetNbgvFacts)
+            else self.nbgv.npm_package_version
+        )
         if any(
-            projection.coordinate.native_version
-            != self.nbgv.npm_package_version
+            projection.coordinate.native_version != native_version
             for projection in self.destination_projections
         ):
             message = "Qualification Snapshot projection version is not closed"
+            raise ValueError(message)
+        if type(self.nbgv) is DotnetNbgvFacts:
+            if (
+                self.release_unit != "hcoona-release-smoke-github-packages"
+                or self.channel != "buddy"
+                or len(self.build_requests) != 1
+                or len(self.outputs) != 1
+                or len(self.destination_projections) != 1
+                or type(self.build_requests[0]) is not NugetReleaseBuildRequest
+                or self.build_requests[0].nuget_package_version
+                != native_version
+                or type(self.destination_projections[0].coordinate)
+                is not NugetExternalPackageCoordinate
+            ):
+                message = "Qualification Snapshot NuGet variant is not closed"
+                raise ValueError(message)
+        elif any(
+            type(request) is not ReleaseBuildRequest
+            for request in self.build_requests
+        ) or any(
+            type(projection.coordinate) is not ExternalPackageCoordinate
+            for projection in self.destination_projections
+        ):
+            message = "Qualification Snapshot mixes native ecosystem variants"
             raise ValueError(message)
         action_ids = {action.contract_id for action in self.potential_actions}
         if len(action_ids) != len(self.potential_actions):
@@ -1473,136 +1669,16 @@ class ReleaseArtifact:
     toolchain: tuple[tuple[str, str], ...]
     provenance_digest: str
 
-    def __post_init__(self) -> None:  # noqa: C901, PLR0915
-        """Reject substituted bytes, transport, or provenance bindings."""
-        if type(self.subject) not in {
-            SimulationIdentity,
-            ReleaseAttemptIdentity,
-        }:
-            message = "Release Artifact subject has the wrong runtime type"
-            raise TypeError(message)
-        repository = _string(self.repository, field="artifact.repository")
-        owner, separator, name = repository.partition("/")
-        if not separator or not owner or not name or "/" in name:
-            message = "Release Artifact repository must be owner/repository"
-            raise ValueError(message)
-        _digest(
-            self.qualification_snapshot_digest,
-            field="artifact.qualification_snapshot_digest",
+    def __post_init__(self) -> None:
+        """Admit npm fields together with the shared archive bindings."""
+        _pairs(self.lifecycle_scripts, field="artifact.lifecycle_scripts")
+        _validate_release_artifact_common(
+            self, expected_producer="build-tarball"
         )
-        _digest(
-            self.repository_model_digest,
-            field="artifact.repository_model_digest",
-        )
-        _sha(self.target, field="artifact.target")
-        _choice(self.purpose, _PURPOSES, field="artifact.purpose")
-        _exact(self.output, ReleaseOutputIdentity, field="artifact.output")
-        _digest(
-            self.build_request_digest,
-            field="artifact.build_request_digest",
-        )
-        _exact(
-            self.transport,
-            ArtifactTransportIdentity,
-            field="artifact.transport",
-        )
-        _exact(
-            self.content,
-            ArtifactContentIdentity,
-            field="artifact.content",
-        )
-        if (
-            self.content.output_id != self.output.output_id
-            or self.content.logical_role != self.output.logical_role
-            or self.content.media_kind != self.output.media_kind
-            or self.content.content_sha512 is None
-        ):
-            message = "Release Artifact content/output binding mismatch"
-            raise ValueError(message)
-        _string_tuple(
-            self.entries,
-            field="artifact.entries",
-            sorted_values=True,
-        )
-        _pairs(
-            self.lifecycle_scripts,
-            field="artifact.lifecycle_scripts",
-        )
-        _digest(self.witness_digest, field="artifact.witness_digest")
-        manifest = _pairs(
-            self.source_input_manifest,
-            field="artifact.source_input_manifest",
-        )
-        for _, digest in manifest:
-            _digest(digest, field="artifact.source_input_manifest.digest")
-        _pairs(self.toolchain, field="artifact.toolchain", sorted_values=False)
-        _digest(
-            self.provenance_digest,
-            field="artifact.provenance_digest",
-        )
-        workflow_run_id, run_attempt = _subject_run(self.subject)
-        if (
-            self.transport.workflow_run_id != workflow_run_id
-            or self.transport.run_attempt != run_attempt
-        ):
-            message = "Release Artifact transport is from another run context"
-            raise ValueError(message)
-        if self.transport.producer != "build-tarball":
-            message = "Release Artifact transport producer is not exact"
-            raise ValueError(message)
-        expected_url = (
-            f"https://github.com/{self.repository}/actions/runs/"
-            f"{workflow_run_id}/artifacts/{self.transport.artifact_id}"
-        )
-        if self.transport.artifact_url != expected_url:
-            message = "Release Artifact transport URL is not exact"
-            raise ValueError(message)
-        expected_name = release_artifact_transport_name(
-            repository=self.repository,
-            purpose=self.purpose,
-            output=self.output,
-            qualification_snapshot_digest=(self.qualification_snapshot_digest),
-            workflow_run_id=workflow_run_id,
-            run_attempt=run_attempt,
-            producer=self.transport.producer,
-        )
-        if self.transport.artifact_name != expected_name:
-            message = "Release Artifact transport name is not exact"
-            raise ValueError(message)
-        if isinstance(self.subject, SimulationIdentity):
-            if self.purpose != "release-simulation":
-                message = "Simulation Artifact has a cross-purpose binding"
-                raise ValueError(message)
-        elif self.purpose != "live-release":
-            message = "Live Release Artifact has a cross-purpose binding"
-            raise ValueError(message)
-        expected_provenance = canonical_sha256(self.provenance_document())
-        if self.provenance_digest != expected_provenance:
-            message = "Release Artifact provenance digest mismatch"
-            raise ValueError(message)
 
     def provenance_document(self) -> dict[str, JsonValue]:
-        """Return the exact internal artifact provenance basis."""
-        return {
-            "schema": "workflow-delivery/v3/release-artifact-provenance",
-            "subject": _subject_document(self.subject),
-            "repository": self.repository,
-            "qualification-snapshot-digest": (
-                self.qualification_snapshot_digest
-            ),
-            "repository-model-digest": self.repository_model_digest,
-            "target": self.target,
-            "purpose": self.purpose,
-            "output": self.output.to_document(),
-            "build-request-digest": self.build_request_digest,
-            "transport": self.transport.to_document(),
-            "content": self.content.to_document(),
-            "witness-digest": self.witness_digest,
-            "source-input-manifest": [
-                [path, digest] for path, digest in self.source_input_manifest
-            ],
-            "toolchain": [[name, version] for name, version in self.toolchain],
-        }
+        """Return the unchanged npm provenance basis."""
+        return _release_artifact_provenance(self)
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the complete canonical Release Artifact."""
@@ -1627,6 +1703,203 @@ class ReleaseArtifact:
     def artifact_digest(self) -> str:
         """Return the canonical Release Artifact record digest."""
         return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
+class NugetReleaseArtifact:
+    """One original NuGet archive with identity and Release provenance."""
+
+    subject: SimulationIdentity | ReleaseAttemptIdentity
+    repository: str
+    qualification_snapshot_digest: str
+    repository_model_digest: str
+    target: str
+    purpose: str
+    output: ReleaseOutputIdentity
+    build_request_digest: str
+    transport: ArtifactTransportIdentity
+    content: ArtifactContentIdentity
+    entries: tuple[str, ...]
+    identity: NugetPackageIdentity
+    witness_digest: str
+    source_input_manifest: tuple[tuple[str, str], ...]
+    toolchain: tuple[tuple[str, str], ...]
+    provenance_digest: str
+
+    def __post_init__(self) -> None:
+        """Reject npm producers, wrong media and unbound native identity."""
+        _exact(
+            self.identity, NugetPackageIdentity, field="NuGet artifact.identity"
+        )
+        _validate_release_artifact_common(
+            self, expected_producer="build-nuget-package"
+        )
+        if (
+            self.output.media_kind != "nuget-package"
+            or self.output.output_id != "nuget-package"
+            or self.output.logical_role != "primary-package"
+            or self.output.variant.build.definition_id
+            != "dotnet/nuget-package-v1"
+            or not self.content.basename.endswith(".nupkg")
+        ):
+            message = (
+                "NuGet Release Artifact output is outside the selected shape"
+            )
+            raise ValueError(message)
+
+    def provenance_document(self) -> dict[str, JsonValue]:
+        """Bind native package facts inside the shared provenance envelope."""
+        document = _release_artifact_provenance(self)
+        document["nuget-identity"] = self.identity.to_document()
+        return document
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Serialize the NuGet variant without lifecycle-script placeholders."""
+        document = self.provenance_document()
+        document["schema"] = RELEASE_ARTIFACT_SCHEMA
+        document["entries"] = _json_strings(self.entries)
+        document["provenance-digest"] = self.provenance_digest
+        return document
+
+    @property
+    def artifact_digest(self) -> str:
+        """Return the canonical Release Artifact record digest."""
+        return canonical_sha256(self.to_document())
+
+
+def _validate_release_artifact_common(  # noqa: C901, PLR0915
+    artifact: ReleaseArtifact | NugetReleaseArtifact,
+    *,
+    expected_producer: str,
+) -> None:
+    """Share exact byte, provenance, purpose and current-run admission."""
+    if type(artifact.subject) not in {
+        SimulationIdentity,
+        ReleaseAttemptIdentity,
+    }:
+        message = "Release Artifact subject has the wrong runtime type"
+        raise TypeError(message)
+    repository = _string(artifact.repository, field="artifact.repository")
+    owner, separator, name = repository.partition("/")
+    if not separator or not owner or not name or "/" in name:
+        message = "Release Artifact repository must be owner/repository"
+        raise ValueError(message)
+    _digest(
+        artifact.qualification_snapshot_digest,
+        field="artifact.qualification_snapshot_digest",
+    )
+    _digest(
+        artifact.repository_model_digest,
+        field="artifact.repository_model_digest",
+    )
+    _sha(artifact.target, field="artifact.target")
+    _choice(artifact.purpose, _PURPOSES, field="artifact.purpose")
+    _exact(artifact.output, ReleaseOutputIdentity, field="artifact.output")
+    _digest(
+        artifact.build_request_digest,
+        field="artifact.build_request_digest",
+    )
+    _exact(
+        artifact.transport,
+        ArtifactTransportIdentity,
+        field="artifact.transport",
+    )
+    _exact(
+        artifact.content,
+        ArtifactContentIdentity,
+        field="artifact.content",
+    )
+    if (
+        artifact.content.output_id != artifact.output.output_id
+        or artifact.content.logical_role != artifact.output.logical_role
+        or artifact.content.media_kind != artifact.output.media_kind
+        or artifact.content.content_sha512 is None
+    ):
+        message = "Release Artifact content/output binding mismatch"
+        raise ValueError(message)
+    _string_tuple(
+        artifact.entries,
+        field="artifact.entries",
+        sorted_values=True,
+    )
+    _digest(artifact.witness_digest, field="artifact.witness_digest")
+    manifest = _pairs(
+        artifact.source_input_manifest,
+        field="artifact.source_input_manifest",
+    )
+    for _, digest in manifest:
+        _digest(digest, field="artifact.source_input_manifest.digest")
+    _pairs(artifact.toolchain, field="artifact.toolchain", sorted_values=False)
+    _digest(
+        artifact.provenance_digest,
+        field="artifact.provenance_digest",
+    )
+    workflow_run_id, run_attempt = _subject_run(artifact.subject)
+    if (
+        artifact.transport.workflow_run_id != workflow_run_id
+        or artifact.transport.run_attempt != run_attempt
+    ):
+        message = "Release Artifact transport is from another run context"
+        raise ValueError(message)
+    if artifact.transport.producer != expected_producer:
+        message = "Release Artifact transport producer is not exact"
+        raise ValueError(message)
+    expected_url = (
+        f"https://github.com/{artifact.repository}/actions/runs/"
+        f"{workflow_run_id}/artifacts/{artifact.transport.artifact_id}"
+    )
+    if artifact.transport.artifact_url != expected_url:
+        message = "Release Artifact transport URL is not exact"
+        raise ValueError(message)
+    expected_name = release_artifact_transport_name(
+        repository=artifact.repository,
+        purpose=artifact.purpose,
+        output=artifact.output,
+        qualification_snapshot_digest=(artifact.qualification_snapshot_digest),
+        workflow_run_id=workflow_run_id,
+        run_attempt=run_attempt,
+        producer=artifact.transport.producer,
+    )
+    if artifact.transport.artifact_name != expected_name:
+        message = "Release Artifact transport name is not exact"
+        raise ValueError(message)
+    if isinstance(artifact.subject, SimulationIdentity):
+        if artifact.purpose != "release-simulation":
+            message = "Simulation Artifact has a cross-purpose binding"
+            raise ValueError(message)
+    elif artifact.purpose != "live-release":
+        message = "Live Release Artifact has a cross-purpose binding"
+        raise ValueError(message)
+    expected_provenance = canonical_sha256(artifact.provenance_document())
+    if artifact.provenance_digest != expected_provenance:
+        message = "Release Artifact provenance digest mismatch"
+        raise ValueError(message)
+
+
+def _release_artifact_provenance(
+    artifact: ReleaseArtifact | NugetReleaseArtifact,
+) -> dict[str, JsonValue]:
+    """Retain the shared provenance envelope for both native archive cases."""
+    return {
+        "schema": "workflow-delivery/v3/release-artifact-provenance",
+        "subject": _subject_document(artifact.subject),
+        "repository": artifact.repository,
+        "qualification-snapshot-digest": (
+            artifact.qualification_snapshot_digest
+        ),
+        "repository-model-digest": artifact.repository_model_digest,
+        "target": artifact.target,
+        "purpose": artifact.purpose,
+        "output": artifact.output.to_document(),
+        "build-request-digest": artifact.build_request_digest,
+        "transport": artifact.transport.to_document(),
+        "content": artifact.content.to_document(),
+        "witness-digest": artifact.witness_digest,
+        "source-input-manifest": [
+            [path, digest] for path, digest in artifact.source_input_manifest
+        ],
+        "toolchain": [[name, version] for name, version in artifact.toolchain],
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -2397,6 +2670,12 @@ def publication_mutable_resource_keys(
         DestinationProjection,
         field="publication mutable keys.projection",
     )
+    if type(projection.coordinate) is NugetExternalPackageCoordinate:
+        publication_capability_requirements(projection)
+        digest = canonical_sha256(projection.coordinate.resource_document())
+        return (
+            f"external-package-coordinate:{digest.removeprefix('sha256:')}",
+        )
     supported = (
         projection.coordinate.channel == "official"
         and projection.operation == "npm-publish-create-only"
@@ -2450,7 +2729,11 @@ def publication_serialization_projection(
         {
             "schema": "workflow-delivery/v3/conservative-lock-projection",
             "destination-id": projection.destination_id,
-            "package-name": projection.coordinate.package_name.lower(),
+            "package-name": (
+                projection.coordinate.identity.normalized_package_id
+                if type(projection.coordinate) is NugetExternalPackageCoordinate
+                else projection.coordinate.package_name.lower()
+            ),
         }
     )
     return f"destination-package:{digest.removeprefix('sha256:')}"
@@ -2465,6 +2748,19 @@ def publication_capability_requirements(
         DestinationProjection,
         field="publication capability requirements.projection",
     )
+    if type(projection.coordinate) is NugetExternalPackageCoordinate:
+        if (
+            projection.destination_id == "nuget/github-packages-hcoona-three-v1"
+            and projection.registry
+            == "https://nuget.pkg.github.com/hcoona/index.json"
+            and projection.operation == "nuget-publish-create-only"
+            and projection.output.media_kind == "nuget-package"
+        ):
+            return ("github/packages-write-v1",)
+        message = (
+            "NuGet Publication capability is outside the selected contract"
+        )
+        raise ValueError(message)
     if (
         projection.coordinate.channel == "official"
         and projection.destination_id == "npm/npmjs-public-v1"
@@ -2488,6 +2784,8 @@ def publication_mutable_resource_key_basis(
 ) -> tuple[str, ...]:
     """Return the exact mutable-key derivation basis for one projection."""
     publication_capability_requirements(projection)
+    if type(projection.coordinate) is NugetExternalPackageCoordinate:
+        return ("external-package-coordinate",)
     if projection.coordinate.channel == "official":
         return ("external-package-coordinate",)
     return ("external-package-coordinate", "npm-dist-tag")
@@ -4315,6 +4613,7 @@ type ReleaseRecord = (
     | SimulationBinding
     | QualificationSnapshot
     | ReleaseArtifact
+    | NugetReleaseArtifact
     | QualificationEvidence
     | QualificationDecision
     | ProjectionObservation
@@ -4401,6 +4700,10 @@ __all__ = [
     "GovernanceProof",
     "HypotheticalAction",
     "MutationMayHaveStartedMarker",
+    "NugetExternalPackageCoordinate",
+    "NugetPackageIdentity",
+    "NugetReleaseArtifact",
+    "NugetReleaseBuildRequest",
     "ObligationDisposition",
     "ObservationValue",
     "OfficialExecutionIdentity",

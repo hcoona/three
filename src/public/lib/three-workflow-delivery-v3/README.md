@@ -16,7 +16,10 @@ confirmed requirements, protected design and disabled implementation. The
 owns its marker-product purpose; the
 [native .NET helper](../../../private/app/workflow-delivery-v3-dotnet-provider/README.md)
 is a v3 Provider and package-inspection component. The handoff retains the
-distinct native and publication admission gates.
+distinct native and publication admission gates. Explicit NuGet Release
+records and qualification bind admitted native inputs and the original package
+to separate content and consumer Evidence; destination/runtime integration
+and real native/Live proving remain subsequent work.
 
 The documentation records accepted domain constraints and evidence. It grants no
 runtime work and does not renew either spent npm dispatch authorization.

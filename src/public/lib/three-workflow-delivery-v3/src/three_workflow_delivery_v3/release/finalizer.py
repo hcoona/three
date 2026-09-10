@@ -9,7 +9,9 @@ from three_workflow_delivery_v3.records.release import (
     NPMJS_OBSERVATION_CONTRACT_ID,
     NPMJS_OBSERVER_PRODUCER,
     DestinationOperationProfile,
+    ExternalPackageCoordinate,
     HypotheticalAction,
+    NugetReleaseArtifact,
     ObligationDisposition,
     ObservationRequestFacts,
     ObservationResponseFacts,
@@ -69,7 +71,7 @@ def _subject(
 def finalize_qualification(  # noqa: C901, PLR0912, PLR0915
     snapshot: QualificationSnapshot,
     evidence_records: tuple[QualificationEvidence, ...],
-    artifacts: tuple[ReleaseArtifact, ...],
+    artifacts: tuple[ReleaseArtifact | NugetReleaseArtifact, ...],
 ) -> QualificationDecision:
     """Close every obligation while preserving failure-continuation state."""
     if type(snapshot) is not QualificationSnapshot:
@@ -300,10 +302,14 @@ def _admit_synthetic_projection_observation(
         if owner is None:
             message = "synthetic exact observation requires an explicit owner"
             raise ValueError(message)
+        coordinate = projection.coordinate
+        if type(coordinate) is not ExternalPackageCoordinate:
+            message = "Synthetic npm observation requires an npm coordinate"
+            raise TypeError(message)
         value = ObservationValue(
             classification="exact-satisfied",
             owner=owner,
-            coordinate=projection.coordinate,
+            coordinate=coordinate,
             content_sha512=artifact.content.content_sha512,
             witness_digest=artifact.witness_digest,
             routing=(),

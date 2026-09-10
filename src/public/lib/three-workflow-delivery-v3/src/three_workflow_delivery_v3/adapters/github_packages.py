@@ -45,6 +45,7 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseAttemptIdentity,
     validate_publication_action_instantiation,
 )
+from three_workflow_delivery_v3.repository.node_provider import NbgvFacts
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -2993,6 +2994,9 @@ def _validate_first_slice_basis(
         raise ValueError(message)
     projection = snapshot.destination_projections[0]
     coordinate = projection.coordinate
+    if type(snapshot.nbgv) is not NbgvFacts:
+        message = "GitHub Packages npm observation requires npm version facts"
+        raise TypeError(message)
     if (
         projection.destination_id != GITHUB_PACKAGES_DESTINATION_ID
         or projection.registry != GITHUB_PACKAGES_REGISTRY

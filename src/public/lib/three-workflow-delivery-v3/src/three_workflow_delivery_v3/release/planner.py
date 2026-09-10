@@ -105,6 +105,8 @@ def _obligation(  # noqa: PLR0913
     subject_digest: str,
     target: str,
     prerequisites: tuple[str, ...] = (),
+    runner: str = _RUNNER,
+    dimensions: tuple[tuple[str, str], ...] = (),
 ) -> ReleaseObligation:
     definition_digest = _definition_digest(definition_id)
     request_digest = canonical_sha256(
@@ -117,8 +119,8 @@ def _obligation(  # noqa: PLR0913
             "subject-kind": subject_kind,
             "subject-digest": subject_digest,
             "target": target,
-            "dimensions": [],
-            "runner": _RUNNER,
+            "dimensions": [list(item) for item in dimensions],
+            "runner": runner,
             "prerequisites": list(prerequisites),
             "required": True,
         }
@@ -130,8 +132,8 @@ def _obligation(  # noqa: PLR0913
         subject_kind=subject_kind,
         subject_digest=subject_digest,
         target=target,
-        dimensions=(),
-        runner=_RUNNER,
+        dimensions=dimensions,
+        runner=runner,
         prerequisites=prerequisites,
         required=True,
         request_digest=request_digest,

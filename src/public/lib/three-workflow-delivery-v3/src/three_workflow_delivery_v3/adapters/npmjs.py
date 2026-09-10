@@ -27,6 +27,7 @@ from three_workflow_delivery_v3.canonical import (
 from three_workflow_delivery_v3.records.release import (
     NPMJS_OBSERVATION_CONTRACT_ID,
     NPMJS_OBSERVER_PRODUCER,
+    ExternalPackageCoordinate,
     ObservationRequestFacts,
     ObservationResponseFacts,
     ObservationValue,
@@ -39,6 +40,7 @@ from three_workflow_delivery_v3.records.release import (
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
 )
+from three_workflow_delivery_v3.repository.node_provider import NbgvFacts
 
 if TYPE_CHECKING:
     from three_workflow_delivery_v3.canonical import JsonValue
@@ -414,11 +416,15 @@ def _classified(  # noqa: PLR0913
     witness_digest: str | None = None,
 ) -> ProjectionObservation:
     projection = snapshot.destination_projections[0]
+    coordinate = projection.coordinate
+    if type(coordinate) is not ExternalPackageCoordinate:
+        message = "npmjs observation requires an npm coordinate"
+        raise TypeError(message)
     if classification == "exact-satisfied":
         value = ObservationValue(
             classification=classification,
             owner=NPMJS_EXACT_OWNER,
-            coordinate=projection.coordinate,
+            coordinate=coordinate,
             content_sha512=artifact.content.content_sha512,
             witness_digest=artifact.witness_digest,
             routing=(),
@@ -427,7 +433,7 @@ def _classified(  # noqa: PLR0913
         value = ObservationValue(
             classification=classification,
             owner=NPMJS_EXACT_OWNER,
-            coordinate=projection.coordinate,
+            coordinate=coordinate,
             content_sha512=content_sha512,
             witness_digest=witness_digest,
             routing=(),
@@ -456,6 +462,9 @@ def _validate_first_slice_basis(
     artifact: ReleaseArtifact,
     expectation: ArtifactExpectation,
 ) -> None:
+    if type(snapshot.nbgv) is not NbgvFacts:
+        message = "npmjs observation requires npm version facts"
+        raise TypeError(message)
     if not isinstance(snapshot.subject, SimulationBinding):
         message = "npmjs observation is implemented only for simulation"
         raise TypeError(message)
@@ -750,11 +759,13 @@ def observe_npmjs_projection(  # noqa: C901, PLR0911, PLR0912, PLR0913
         field="expanded_tarball_limit_bytes",
     )
     _validate_first_slice_basis(snapshot, decision, artifact, expectation)
+    # Basis admission above binds the expectation to the frozen npm projection.
+    version = expectation.npm_package_version
     transport = StdlibHttpTransport() if transport is None else transport
     request_facts = _request_facts(snapshot, artifact)
     metadata_url = _exact_metadata_url(
         FIRST_SLICE_PACKAGE,
-        snapshot.nbgv.npm_package_version,
+        version,
     )
     try:
         metadata = transport.get(
@@ -881,7 +892,7 @@ def observe_npmjs_projection(  # noqa: C901, PLR0911, PLR0912, PLR0913
     try:
         version_document = _metadata_version_manifest(
             parse_json_strict(metadata.body),
-            snapshot.nbgv.npm_package_version,
+            version,
         )
         tarball_url = _tarball_url(version_document)
     except (TypeError, ValueError):
@@ -901,7 +912,7 @@ def observe_npmjs_projection(  # noqa: C901, PLR0911, PLR0912, PLR0913
     metadata_facts = _MetadataResponseFacts(
         body_sha256=metadata_body_digest,
         package=FIRST_SLICE_PACKAGE,
-        version=snapshot.nbgv.npm_package_version,
+        version=version,
         dist_tarball=tarball_url,
         dist_integrity=_dist_integrity(version_document),
     )
