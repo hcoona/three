@@ -303,6 +303,7 @@ def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
     [
         "docs/wiki/README.md",
         "README.md",
+        "CONTRIBUTING.md",
         "LICENSES/MIT.txt",
         ".gitattributes",
         "nested/package.json",

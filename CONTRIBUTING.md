@@ -22,6 +22,14 @@ If a relied-on accepted prerequisite changes, pause affected work and refresh
 scope, validation, and review. Preserve unrelated work and human-source inputs.
 Product/domain preconditions and external-effects authorization still apply.
 
+For design, security or test/evidence decisions, apply the relevant
+[shared engineering principles](docs/engineering/engineering-principles.md)
+with the owning project's accepted records. Use them during both authorship and
+review; keep concrete assumptions, choices and evidence in the existing project
+record or work carrier. Project requirements and domain gates retain their
+scope. Pure text edits, test execution and faithful status reporting alone do
+not require a new engineering review or report.
+
 ## Local Checks
 
 Use the [repository toolchain guidance](README.md#repository-toolchain) and

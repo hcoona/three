@@ -41,6 +41,28 @@ controls:
       - local-fast
       - ci
     failure_mode: Malformed selected records enter review; excluded paths receive no implied coverage.
+  - id: engineering-guidance
+    state: current
+    class: procedural-review
+    enforcement: advisory
+    producer: Engineering authors and reviewers applying the shared guidance
+    maintainer: Repository owner
+    consumers:
+      - Agents making or reviewing design, security and test/evidence strategy decisions
+    governing_rules:
+      - docs/engineering/engineering-principles.md
+      - docs/governance/record-system.md
+      - AGENTS.md
+    invariant: The root agent entry routes applicable engineering decisions to shared principles and owning-project
+      authorities without merging project scope or replacing existing review and owner judgment.
+    runner: agent-skill
+    implementation:
+      kind: repository-path
+      value: .github/skills/engineering-guidance/SKILL.md
+    execution_points:
+      - local-validation
+      - pull-request-review
+    failure_mode: Engineering decisions miss shared principles or apply them without project context.
   - id: record-system-review
     state: current
     class: procedural-review

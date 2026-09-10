@@ -39,6 +39,11 @@ Use the [documentation portal](docs/README.md) and
 Keep project records separate and use path-qualified cross-project references.
 A README is sufficient when no distinct record has a current consumer.
 
+Before making or reviewing architecture, abstraction, dependency-boundary,
+security/recovery or test/evidence strategy decisions, invoke
+[shared engineering guidance](.github/skills/engineering-guidance/SKILL.md)
+and follow its project routing.
+
 For record-system changes, invoke
 [record-system review](.github/skills/record-system-review/SKILL.md) directly.
 For research/evidence changes and every merged Wave change, invoke
