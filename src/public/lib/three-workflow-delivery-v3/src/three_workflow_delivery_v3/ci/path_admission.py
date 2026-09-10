@@ -47,7 +47,9 @@ _REPOSITORY_ONLY_PREFIXES = (
     "docs/",
     "eng/",
     "LICENSES/",
+    "src/private/app/workflow-delivery-v3-dotnet-provider/",
     "src/private/lib/scholarly-publication/",
+    "src/public/lib/hcoona-release-smoke-github-packages/",
     "tests/",
 )
 _REPOSITORY_ONLY_PATHS = frozenset(

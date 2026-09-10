@@ -6,6 +6,7 @@
 import hashlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import zipfile
@@ -154,6 +155,7 @@ def frozen_package(
     source = root / "source"
     subprocess.run(
         ("git", "clone", "--quiet", "--no-local", str(repo), str(source)),
+        env={**os.environ, "GIT_LFS_SKIP_SMUDGE": "1"},
         check=True,
     )
     for path in (repo / DOTNET_PROJECT_ROOT).iterdir():
@@ -180,7 +182,10 @@ def frozen_package(
         check=True,
     )
     subprocess.run(
-        ("git", "checkout", "--quiet", "--detach"), cwd=source, check=True
+        ("git", "checkout", "--quiet", "--detach"),
+        cwd=source,
+        env={**os.environ, "GIT_LFS_SKIP_SMUDGE": "1"},
+        check=True,
     )
     target = subprocess.check_output(
         ("git", "rev-parse", "HEAD"), cwd=source, text=True
@@ -387,7 +392,11 @@ def test_build_rejects_substituted_source_before_native_execution(
 
 def _git_bytes(repo: Path, *arguments: str) -> bytes:
     return subprocess.run(
-        ("git", *arguments), cwd=repo, check=True, capture_output=True
+        ("git", *arguments),
+        cwd=repo,
+        env={**os.environ, "GIT_LFS_SKIP_SMUDGE": "1"},
+        check=True,
+        capture_output=True,
     ).stdout
 
 
