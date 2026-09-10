@@ -51,7 +51,7 @@ effect.
 Before planning or editing v3 work, read the [Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md). It is
 operating guidance, not a second normative specification.
 
-## NuGet Second-Slice Design
+## NuGet Second-Slice Implementation
 
 The [NuGet second-slice handoff](./nuget-smoke-research-handoff.md) retains the
 completed research and current requirements packet. The user selected
@@ -59,8 +59,13 @@ completed research and current requirements packet. The user selected
 smoke use. Scope, trust, and acceptance are confirmed in `WD-NUGET-*`;
 the HLD and affected MLDs define the design, followed by
 the [NuGet LLD](./hcoona-release-smoke-github-packages-lld.md) and its local
-and native admission gates. No implementation, native
-probe, or publication is authorized.
+and native admission gates. Protected design delivery is complete. The user
+subsequently delegated implementation through verified go-live without
+intermediate confirmation. The first disabled unit adds native Provider and
+frozen Build/Quality, authoring/compiler, one-shot HTTP mechanisms, and blocked
+NuGet Governance. Typed Release/workflow integration and native/Live proving
+remain pending; missing service-owned atomic non-overwrite assurance blocks
+activation. The handoff defines concrete operation and delivery discipline.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.
 

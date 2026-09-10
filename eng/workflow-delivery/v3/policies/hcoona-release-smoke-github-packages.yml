@@ -1,0 +1,17 @@
+schema: workflow-delivery/v3/release-policy
+release-unit: hcoona-release-smoke-github-packages
+governance:
+  attestation:
+    repository: hcoona/three
+    ref: refs/heads/main
+    path: .github/workflow-delivery/governance/hcoona-release-smoke-github-packages.json
+    max-age-days: 90
+channels:
+  buddy:
+    quality:
+      - dotnet/nuget-artifact-contents-v1
+      - dotnet/nuget-restore-build-invoke-v1
+    projections:
+      - destination: nuget/github-packages-hcoona-three-v1
+        artifact: nuget-package
+        package: Hcoona.ReleaseSmoke.GithubPackages

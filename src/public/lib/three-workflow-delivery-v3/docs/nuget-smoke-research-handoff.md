@@ -6,24 +6,29 @@ This is an operating handoff. The research delivery and interactive
 requirements confirmation are complete. The canonical confirmed product,
 trust, and acceptance requirements are `WD-NUGET-*` in
 [Requirements](./requirements.md#nuget-second-slice). The design extends the
-HLD, five MLDs, and brief LLD in that order toward validation of this slice.
-Do not repeat the completed research delivery.
+HLD, five MLDs, and brief LLD in that order. PR #669 completed protected
+design delivery. Do not repeat the completed research or design delivery.
 
 The user selected `Hcoona.ReleaseSmoke.GithubPackages` and confirmed that its
 existing container is operator-controlled, dedicated to smoke use, and has no
 production dependency or existing consumers requiring compatibility. This is
 an operator statement of intended use, not an exhaustive consumer or access
 audit. Product shape, channel scope, destination-specific trust, and acceptance
-criteria are confirmed in `WD-NUGET-*`. Design delivery does not authorize
-restoration, implementation, native acceptance, publication, or adoption of
-historical delivery policy.
+criteria are confirmed in `WD-NUGET-*`. After design delivery, the user
+delegated implementation through verified C# smoke go-live without further
+intermediate confirmation. That subsequent grant covers the ordered disabled
+implementation, bounded native acceptance, activation, and current-run
+publication work in the confirmed scope. It does not adopt historical policy
+or waive technical admission, protected delivery, independent review and
+audit, current-run Approval, or ambiguity stop conditions.
 
-Do not change product code, tests, descriptors, workflows, dependencies,
-Governance, Environments, credentials, or package access during design.
-Do not dispatch, rerun, approve a deployment, publish a package, execute a
-native acceptance probe, delete, restore, or repair anything. A subsequent user
-request must authorize further work; this handoff grants no standing mutation
-budget.
+Close and record exact native fixtures, coordinates, operation budgets,
+profile/tooling identities, evidence paths, and stop conditions before any
+native execution. Do not change package access, credentials, or Environments,
+operate on unrelated packages, perform administrative repair, or retry an
+ambiguous mutation. Missing GitHub-specific atomic non-overwrite assurance
+continues to block activation; broad completion authorization is not platform
+evidence.
 
 The npm Normal Live objective remains complete. Its two dispatch
 authorizations are spent, and its native acceptance, first failure, successful
@@ -47,20 +52,21 @@ merged before repeating any documentary delivery.
 
 Keep these facts in the working context:
 
-- Requirements are confirmed and the design package is present. Verify its
-  protected delivery in Git and the PR, completing only outstanding delivery
-  gates. After delivery, disabled implementation is the next separately
-  authorized phase. Targeted read-only inspection remains permitted;
-  implementation and native or publication operations are not authorized.
+- Requirements and protected design delivery are complete. The first disabled
+  implementation unit adds the selected product, native Provider and frozen
+  Build/Quality, authoring/compiler, HTTP adapter, and blocked Governance.
+  Inspect its current Git/PR delivery state before proceeding. Typed Release
+  integration and native/Live proving remain subsequent work.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
-- The GitHub Packages-named project is selected for the next slice, but has
-  not been restored or admitted as a v3 Release Unit.
-- Current release execution remains npm-specific; the NuGet static-reference
-  helper is not a .NET Release Provider or publisher.
+- The selected GitHub Packages marker project has independent v3 authoring;
+  no historical control-plane assets or the other .NET project are restored.
+- Current Release workflow execution remains npm-specific. The new
+  `workflow-delivery-v3-dotnet-provider` helper is distinct from the retained
+  NuGet static-reference authority; neither helper is a publisher.
 - Scope and trust are confirmed. The LLD identifies local and platform
   capability gates; concrete native acceptance and publication requests must
-  be closed before their respective execution authorizations.
+  be closed before execution under the subsequent delegation.
 - Preserve the waterfall, validation-before-OCR, independent adjudication,
   contraction, and protected-delivery gates below.
 
@@ -83,8 +89,8 @@ not prerequisites for continuing this research.
 
 ## The Remembered Projects
 
-The current tree has `src/public/lib/hcoona-release-smoke-npm`, but neither of
-the following .NET projects. Both were added in
+The research baseline had `src/public/lib/hcoona-release-smoke-npm`, but neither
+of the following .NET projects. Both were added in
 `ac1659d92e2d80b2a6687af657193abf75ee322d` and deliberately removed in
 `50e4463a8d355e28ad23d3fca944182fd04efe0d`. The removal commit explicitly
 removed obsolete smoke fixtures and inherited pre-v3 control-plane assets
@@ -169,7 +175,7 @@ target-bound canonical and native NBGV facts; Build applies the frozen native
 projection. Required complete Git history and neutral exact-target evaluation
 must not be replaced by the dispatch ref.
 
-### What v3 Already Has, and What It Does Not
+### Disabled Mechanisms and Remaining Integration
 
 Python paths below are relative to
 `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/`.
@@ -177,8 +183,10 @@ Python paths below are relative to
 | Surface                                                                                                | Reuse boundary                                                                                                                                                                                              |
 | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Shared canonicalization, artifact/provenance primitives, Qualification and Release authority semantics | Reuse their contracts; do not invent a second Approval/Outcome protocol for NuGet. This does not imply all current representations are ecosystem-neutral.                                                   |
-| `repository/node_provider.py`, `repository/compiler.py`                                                | Current admission uses `NodeProviderFactBundle` and `NodeProviderResult`; a native .NET Release Provider is not implemented.                                                                                |
-| `repository/descriptors.py` and `eng/workflow-delivery/v3/policies/`                                   | The admitted Release Unit, output, Build/Quality definitions, destinations, and policy are bounded to the npm first slice. A new descriptor alone cannot enable NuGet.                                      |
+| `repository/dotnet_provider.py`, `repository/compiler.py`                                              | The disabled unit adds explicit native .NET Provider/Bundle and Repository Model admission beside the existing Node case. Runtime workflow execution still requires typed Release integration.              |
+| `repository/descriptors.py` and `eng/workflow-delivery/v3/policies/`                                   | Independent NuGet authoring selects one package, two quality obligations, Buddy only, and its own Governance source. A descriptor alone cannot enable publication.                                          |
+| `adapters/dotnet.py`, `adapters/nuget_github_packages.py`                                              | Native frozen pack/content/consumer mechanisms and one-shot HTTP observation/publication mechanisms are present. They do not supply current-run Release authority or native acceptance.                     |
+| `release/nuget_governance.py`                                                                          | Disabled NuGet governance and operator platform collection preserve separate native admission. Raw platform facts do not grant authority or establish service guarantees.                                   |
 | `adapters/node.py`, `adapters/github_packages.py`, `adapters/npm_runtime.py`                           | Existing package construction, destination state, and command profiles are npm implementations despite the generic-sounding GitHub Packages filename.                                                       |
 | `release/publication.py`, `records/release.py`                                                         | Publication imports Node/npm mechanisms; Release Artifact admission includes the exact `build-tarball` producer. Inspect the concrete seams before claiming a drop-in adapter change.                       |
 | `src/private/app/workflow-delivery-v3-nuget-authority/Program.cs`                                      | This existing C# helper admits `nuget-lock` and `nuget-packages-config` static-reference facts. It does not evaluate a Release Unit, freeze NBGV, build a package, publish, or observe a NuGet destination. |
@@ -239,13 +247,14 @@ this summary routes the next agent to that authority.
 | Completion               | `WD-NUGET-007`: local/package evidence, an audited native suite, and one audited real publication with its own current-run authority and actual destination bytes.                                                                                                   |
 | Execution boundaries     | `WD-NUGET-008`: ordered design, subsequent implementation authorization, and separate concrete native and real-publication authorization.                                                                                                                            |
 
-The next implementation still requires separate authorization. A descriptor alone cannot enable
-NuGet: Provider/compiler, artifact representation, Build/Quality, destination
-observation/publication, and authority integration need bounded extensions.
+The subsequent implementation is authorized as described above. A descriptor
+alone cannot enable NuGet: typed Release artifact and authority integration
+and native admission remain necessary after the disabled mechanism unit.
 The [HLD extension](./high-level-design.md#nuget-second-slice-extension)
 assigns ownership. Local tests or historical package versions cannot supply
-missing native or real-publication evidence. No implementation or external
-operation is authorized by the confirmed completion objective alone.
+missing native or real-publication evidence. The confirmed requirements alone
+are not authorization; the subsequent explicit delegation supplies execution
+authority within those boundaries.
 
 The [NuGet LLD](./hcoona-release-smoke-github-packages-lld.md) follows the five
 MLD extensions. It selects a project-local frozen NBGV Build mode and a
@@ -264,8 +273,8 @@ These gates remain binding after the research is handed off:
    scope and threat/cost decision. Any new scope or risk change requires
    confirmation before the affected HLD, MLD, and brief LLD reconciliation,
    in that order. Existing general v3 approval does not approve a new
-   slice-specific exception. Implementation follows design delivery and
-   subsequent authorization.
+   slice-specific exception. Protected design delivery and subsequent
+   implementation authorization are complete; preserve their scope.
 2. **Bounded work ownership.** Follow the
    [repository contribution guide](../../../../../CONTRIBUTING.md) and
    [record policy](../../../../../docs/governance/record-system.md) for work
@@ -321,9 +330,8 @@ not implied permission to finish the original task.
 The handoff is usable only if a new subagent, given the checkout and this entry
 path without the preceding conversation or research summary, can:
 
-- distinguish completed npm work, confirmed NuGet requirements, and the
-  unimplemented NuGet design, and name the next permitted action without
-  restoring or publishing anything;
+- distinguish completed npm work, protected NuGet design, the disabled
+  implementation unit, and remaining integration/native/Live gates;
 - find both historical projects, their intentional removal, retained
   containers, and the difference between old descriptors and current v3;
 - identify native-evaluation and current implementation gaps without treating

@@ -1,4 +1,4 @@
-"""Purpose-bound Repository Model compiler for the first v3 slice."""
+"""Purpose-bound Repository Model compiler for Node and .NET slices."""
 
 from __future__ import annotations
 
@@ -18,13 +18,21 @@ from three_workflow_delivery_v3.catalogs import (
     QUALITY_PRESETS,
     catalog_digest,
 )
+from three_workflow_delivery_v3.repository import dotnet_provider
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
     FIRST_SLICE_POLICY_PATH,
     FIRST_SLICE_RELEASE_UNIT,
+    NUGET_GOVERNANCE_PATH,
+    NUGET_PACKAGE,
+    NUGET_POLICY_PATH,
+    NUGET_RELEASE_PROJECTIONS,
+    NUGET_RELEASE_QUALITY,
+    NUGET_RELEASE_UNIT,
     MissingFirstSliceAuthoringError,
     ReleasePolicy,
     load_first_slice_authoring,
+    load_nuget_authoring,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
     AUTHORITATIVE_REMOTE,
@@ -157,6 +165,19 @@ class AdmittedNodeProviderFactBundle:
     @property
     def provider_result(self) -> NodeProviderResult:
         """Return the admitted Provider Result payload."""
+        return self.bundle.provider_result
+
+
+@dataclass(frozen=True, slots=True)
+class AdmittedDotnetProviderFactBundle:
+    """Strictly admitted .NET Provider input, distinct from Node facts."""
+
+    bundle: dotnet_provider.DotnetProviderFactBundle
+    admission: FactBundleAdmissionContext
+
+    @property
+    def provider_result(self) -> dotnet_provider.DotnetProviderResult:
+        """Return the admitted .NET Provider Result payload."""
         return self.bundle.provider_result
 
 
@@ -299,12 +320,12 @@ class RepositoryModelSnapshot:
     context: CompilationContext
     manifest_digest: str
     provider_result_digests: tuple[str, ...]
-    project_nodes: tuple[ProjectNode, ...]
+    project_nodes: tuple[ProjectNode | dotnet_provider.DotnetProjectNode, ...]
     release_units: tuple[CompiledReleaseUnit, ...]
     quality: tuple[CompiledQualitySelection, ...]
     release_policy_path: str
     release_policy: CompiledReleasePolicy | None
-    nbgv: NbgvFacts
+    nbgv: NbgvFacts | dotnet_provider.DotnetNbgvFacts
     reverse_index: tuple[tuple[str, tuple[str, ...]], ...]
     unresolved: tuple[str, ...]
     ready: bool
@@ -316,6 +337,12 @@ class RepositoryModelSnapshot:
         )
         projects: list[JsonValue] = []
         for project in self.project_nodes:
+            if type(project) is dotnet_provider.DotnetProjectNode:
+                projects.append(project.to_document())
+                continue
+            if type(project) is not ProjectNode:
+                message = "Snapshot contains an unsupported Project Node type"
+                raise TypeError(message)
             workspace_dependencies: list[JsonValue] = list(
                 project.workspace_dependencies
             )
@@ -433,7 +460,7 @@ class AdmittedRepositoryModelSnapshot:
         ):
             message = "Repository Model admission integrity failed"
             raise ValueError(message)
-        validate_first_slice_repository_model_snapshot(self.snapshot)
+        validate_repository_model_snapshot(self.snapshot)
 
 
 def _document(
@@ -588,7 +615,13 @@ def _compilation_context_from_document(
     )
 
 
-def _project_node_from_document(value: JsonValue, *, index: int) -> ProjectNode:
+def _project_node_from_document(
+    value: JsonValue,
+    *,
+    index: int,
+) -> ProjectNode | dotnet_provider.DotnetProjectNode:
+    if type(value) is dict and "normalized-package-id" in value:
+        return dotnet_provider.dotnet_project_node_from_document(value)
     field = f"project-nodes[{index}]"
     document = _document(
         value,
@@ -844,10 +877,15 @@ def _compiled_release_policy_from_document(
         field="release-policy.governance",
         keys=frozenset({"repository", "ref", "path", "max-age-days"}),
     )
+    channel_names = (
+        ("buddy",)
+        if document["release-unit"] == NUGET_RELEASE_UNIT
+        else ("buddy", "official")
+    )
     channels = _document(
         document["channels"],
         field="release-policy.channels",
-        keys=frozenset({"buddy", "official"}),
+        keys=frozenset(channel_names),
     )
     return CompiledReleasePolicy(
         path=_document_string(
@@ -884,12 +922,16 @@ def _compiled_release_policy_from_document(
                     field=f"release-policy.channels.{name}",
                 ),
             )
-            for name in ("buddy", "official")
+            for name in channel_names
         ),
     )
 
 
-def _nbgv_from_document(value: JsonValue) -> NbgvFacts:
+def _nbgv_from_document(
+    value: JsonValue,
+) -> NbgvFacts | dotnet_provider.DotnetNbgvFacts:
+    if type(value) is dict and "native-result-digest" in value:
+        return dotnet_provider.dotnet_nbgv_facts_from_document(value)
     document = _document(
         value,
         field="nbgv",
@@ -1043,6 +1085,7 @@ def repository_model_snapshot_from_document(
     if snapshot.to_document() != document:
         message = "Repository Model Snapshot document is not normalized"
         raise ValueError(message)
+    _validate_snapshot_ecosystem(snapshot)
     return snapshot
 
 
@@ -1052,7 +1095,7 @@ def admit_repository_model_snapshot(
     expected_context: CompilationContext,
     expected_digest: str,
 ) -> AdmittedRepositoryModelSnapshot:
-    """Admit one canonical, exact-current, ready first-slice Snapshot."""
+    """Admit one canonical, exact-current, ready supported-slice Snapshot."""
     if type(canonical_bytes) is not bytes:
         message = "Repository Model Snapshot transport must be exact bytes"
         raise TypeError(message)
@@ -1072,7 +1115,7 @@ def admit_repository_model_snapshot(
     if actual_digest != expected_digest:
         message = "Repository Model Snapshot canonical digest mismatch"
         raise ValueError(message)
-    validate_first_slice_repository_model_snapshot(snapshot)
+    validate_repository_model_snapshot(snapshot)
     return AdmittedRepositoryModelSnapshot(
         snapshot=snapshot,
         canonical_digest=actual_digest,
@@ -1088,6 +1131,12 @@ def validate_first_slice_repository_model_snapshot(  # noqa: C901, PLR0912, PLR0
         message = "Repository Model Snapshot has the wrong runtime type"
         raise TypeError(message)
     validate_compilation_context(snapshot.context)
+    if type(snapshot.nbgv) is not NbgvFacts or (
+        snapshot.context.purpose == "release-simulation"
+        and snapshot.context.release_unit != FIRST_SLICE_RELEASE_UNIT
+    ):
+        message = "first-slice Snapshot requires Node facts and selection"
+        raise ValueError(message)
     _exact_tuple(
         snapshot.provider_result_digests,
         field="provider_result_digests",
@@ -1112,6 +1161,9 @@ def validate_first_slice_repository_model_snapshot(  # noqa: C901, PLR0912, PLR0
         message = "Repository Model Snapshot must contain one Project Node"
         raise ValueError(message)
     project = snapshot.project_nodes[0]
+    if type(project) is not ProjectNode:
+        message = "first-slice Snapshot requires a Node Project Node"
+        raise TypeError(message)
     validate_project_node(project)
     if project.private is not False:
         message = "Repository Model Snapshot Project Node closure mismatch"
@@ -1375,7 +1427,12 @@ def validate_compiled_release_policy(
                 projection.package,
                 field=f"{name} projection package",
             )
-    if channel_names != ["buddy", "official"]:
+    expected_channels = (
+        ["buddy"]
+        if policy.release_unit == NUGET_RELEASE_UNIT
+        else ["buddy", "official"]
+    )
+    if channel_names != expected_channels:
         message = (
             "Repository Model Snapshot Release policy channels are not exact"
         )
@@ -1484,7 +1541,9 @@ def _validate_context_run_attempt(context: CompilationContext) -> None:
     _positive_integer(context.run_attempt, field="run_attempt")
 
 
-def validate_compilation_context(context: CompilationContext) -> None:
+def validate_compilation_context(  # noqa: C901
+    context: CompilationContext,
+) -> None:
     """Validate the canonical purpose-bound CompilationContext invariants."""
     if type(context) is not CompilationContext:
         message = "compilation context has the wrong runtime type"
@@ -1518,11 +1577,19 @@ def validate_compilation_context(context: CompilationContext) -> None:
         if context.channel not in {"buddy", "official"}:
             message = "simulation compilation requires a closed channel"
             raise ValueError(message)
-        if (
-            type(context.release_unit) is not str
-            or context.release_unit != FIRST_SLICE_RELEASE_UNIT
-        ):
+        if type(
+            context.release_unit
+        ) is not str or context.release_unit not in {
+            FIRST_SLICE_RELEASE_UNIT,
+            NUGET_RELEASE_UNIT,
+        }:
             message = "simulation compilation requires the first Release Unit"
+            raise ValueError(message)
+        if (
+            context.release_unit == NUGET_RELEASE_UNIT
+            and context.channel != "buddy"
+        ):
+            message = "NuGet compilation supports only the Buddy channel"
             raise ValueError(message)
     elif context.channel is not None or context.release_unit is not None:
         message = "non-simulation compilation cannot bind simulation selection"
@@ -1558,6 +1625,12 @@ def first_slice_provider_manifest(
 ) -> ProviderRequestManifest:
     """Close the one approved Provider request for this compilation."""
     validate_compilation_context(context)
+    if (
+        context.purpose == "release-simulation"
+        and context.release_unit != FIRST_SLICE_RELEASE_UNIT
+    ):
+        message = "Node Provider request requires the first Release Unit"
+        raise ValueError(message)
     _nonempty_string(provider_producer, field="Provider producer")
     request_document = _first_slice_provider_request_document(
         context,
@@ -1616,6 +1689,12 @@ def _validate_manifest(  # noqa: C901
     context: CompilationContext,
     manifest: ProviderRequestManifest,
 ) -> None:
+    if (
+        context.purpose == "release-simulation"
+        and context.release_unit != FIRST_SLICE_RELEASE_UNIT
+    ):
+        message = "Node Provider request requires the first Release Unit"
+        raise ValueError(message)
     if type(manifest) is not ProviderRequestManifest:
         message = "Provider Request Manifest has the wrong runtime type"
         raise TypeError(message)
@@ -2030,20 +2109,35 @@ def compile_release_policy(policy: ReleasePolicy) -> CompiledReleasePolicy:
 def _compile_release_unit(
     repo_root: Path,
     target: str,
-    project: ProjectNode,
+    project: ProjectNode | dotnet_provider.DotnetProjectNode,
 ) -> tuple[
     CompiledReleaseUnit,
     CompiledQualitySelection,
     CompiledReleasePolicy,
 ]:
-    descriptor, quality, policy = load_first_slice_authoring(repo_root, target)
-    if project.private is not False:
-        message = "first-slice Project Node cannot be private"
-        raise ValueError(message)
+    if type(project) is dotnet_provider.DotnetProjectNode:
+        descriptor, quality, policy = load_nuget_authoring(repo_root, target)
+        dotnet_provider.validate_dotnet_project_node(project)
+        expected_project_id = NUGET_RELEASE_UNIT
+        expected_package = NUGET_PACKAGE
+        ecosystem = "dotnet"
+    else:
+        if type(project) is not ProjectNode:
+            message = "compiler received an unsupported Project Node type"
+            raise TypeError(message)
+        descriptor, quality, policy = load_first_slice_authoring(
+            repo_root, target
+        )
+        if project.private is not False:
+            message = "first-slice Project Node cannot be private"
+            raise ValueError(message)
+        expected_project_id = FIRST_SLICE_PACKAGE
+        expected_package = FIRST_SLICE_PACKAGE
+        ecosystem = "node"
     descriptor_root = Path(_relative(repo_root, descriptor.path)).parent
     if (
-        project.project_id != FIRST_SLICE_PACKAGE
-        or project.package_name != FIRST_SLICE_PACKAGE
+        project.project_id != expected_project_id
+        or project.package_name != expected_package
         or project.path != descriptor_root.as_posix()
     ):
         message = "first-slice Project Node identity/path is not exact"
@@ -2074,11 +2168,11 @@ def _compile_release_unit(
                 ),
             )
         )
-    preset_id = quality.preset_for("node")
+    preset_id = quality.preset_for(ecosystem)
     preset = QUALITY_PRESETS[preset_id]
     compiled_quality = CompiledQualitySelection(
         path=_relative(repo_root, quality.path),
-        ecosystem="node",
+        ecosystem=ecosystem,
         preset=preset.logical_id,
         required=preset.required,
         advisory=preset.advisory,
@@ -2185,3 +2279,450 @@ def compile_repository_model(
         unresolved=(),
         ready=True,
     )
+
+
+def _validate_snapshot_ecosystem(snapshot: RepositoryModelSnapshot) -> None:
+    if type(snapshot.nbgv) is dotnet_provider.DotnetNbgvFacts:
+        expected_project_type = dotnet_provider.DotnetProjectNode
+        expected_unit = NUGET_RELEASE_UNIT
+    elif type(snapshot.nbgv) is NbgvFacts:
+        expected_project_type = ProjectNode
+        expected_unit = FIRST_SLICE_RELEASE_UNIT
+    else:
+        message = "Repository Model Snapshot has unsupported native facts"
+        raise TypeError(message)
+    if (
+        any(
+            type(project) is not expected_project_type
+            for project in snapshot.project_nodes
+        )
+        or any(
+            unit.release_unit != expected_unit
+            for unit in snapshot.release_units
+        )
+        or (
+            snapshot.release_policy is not None
+            and snapshot.release_policy.release_unit != expected_unit
+        )
+    ):
+        message = "Repository Model Snapshot mixes ecosystem facts or units"
+        raise ValueError(message)
+
+
+def validate_repository_model_snapshot(
+    snapshot: RepositoryModelSnapshot,
+) -> None:
+    """Validate either closed ecosystem with its exact admission contract."""
+    if type(snapshot) is not RepositoryModelSnapshot:
+        message = "Repository Model Snapshot has the wrong runtime type"
+        raise TypeError(message)
+    _validate_snapshot_ecosystem(snapshot)
+    if type(snapshot.nbgv) is dotnet_provider.DotnetNbgvFacts:
+        validate_nuget_repository_model_snapshot(snapshot)
+    else:
+        validate_first_slice_repository_model_snapshot(snapshot)
+
+
+def _expected_nuget_compiled_release_policy() -> CompiledReleasePolicy:
+    return CompiledReleasePolicy(
+        path=NUGET_POLICY_PATH,
+        release_unit=NUGET_RELEASE_UNIT,
+        governance=CompiledGovernanceSource(
+            repository="hcoona/three",
+            ref="refs/heads/main",
+            path=NUGET_GOVERNANCE_PATH,
+            max_age_days=90,
+        ),
+        channels=(
+            (
+                "buddy",
+                CompiledChannelPolicy(
+                    quality=NUGET_RELEASE_QUALITY,
+                    projections=tuple(
+                        CompiledProjection(
+                            item.destination, item.artifact, item.package
+                        )
+                        for item in NUGET_RELEASE_PROJECTIONS
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def validate_nuget_repository_model_snapshot(  # noqa: C901
+    snapshot: RepositoryModelSnapshot,
+) -> None:
+    """Require the exact NuGet build, quality, and policy closure."""
+    if type(snapshot) is not RepositoryModelSnapshot:
+        message = "Repository Model Snapshot has the wrong runtime type"
+        raise TypeError(message)
+    validate_compilation_context(snapshot.context)
+    _validate_nuget_selection(snapshot.context)
+    _validate_snapshot_ecosystem(snapshot)
+    for field in (
+        "provider_result_digests",
+        "project_nodes",
+        "release_units",
+        "quality",
+        "unresolved",
+    ):
+        _exact_tuple(getattr(snapshot, field), field=field)
+    if (
+        snapshot.ready is not True
+        or snapshot.unresolved
+        or len(snapshot.provider_result_digests) != 1
+        or type(snapshot.manifest_digest) is not str
+        or _DIGEST_PATTERN.fullmatch(snapshot.manifest_digest) is None
+        or any(
+            type(digest) is not str or _DIGEST_PATTERN.fullmatch(digest) is None
+            for digest in snapshot.provider_result_digests
+        )
+        or type(snapshot.nbgv) is not dotnet_provider.DotnetNbgvFacts
+        or len(snapshot.project_nodes) != 1
+    ):
+        message = "Repository Model Snapshot is not a ready NuGet closure"
+        raise ValueError(message)
+    dotnet_provider.validate_dotnet_nbgv_facts(
+        snapshot.nbgv, target=snapshot.context.target
+    )
+    project = snapshot.project_nodes[0]
+    if type(project) is not dotnet_provider.DotnetProjectNode:
+        message = "NuGet Snapshot requires a .NET Project Node"
+        raise TypeError(message)
+    dotnet_provider.validate_dotnet_project_node(project)
+    definition = BUILD_DEFINITIONS["dotnet/nuget-package-v1"]
+    expected_units = (
+        CompiledReleaseUnit(
+            release_unit=NUGET_RELEASE_UNIT,
+            descriptor_path=f"{dotnet_provider.DOTNET_PROJECT_ROOT}/workflow-delivery.release-unit.yml",
+            builds=(
+                CompiledBuild(
+                    build_id="nuget-package",
+                    definition=definition.logical_id,
+                    project_id=project.project_id,
+                    entry_point=dotnet_provider.DOTNET_ENTRY_POINT,
+                    outputs=(
+                        CompiledOutput(
+                            "nuget-package", "primary-package", "nuget-package"
+                        ),
+                    ),
+                    required_native_projections=definition.required_native_projections,
+                ),
+            ),
+        ),
+    )
+    for unit in snapshot.release_units:
+        _validate_compiled_release_unit(unit)
+    if snapshot.release_units != expected_units:
+        message = (
+            "Repository Model Snapshot NuGet build/output closure mismatch"
+        )
+        raise ValueError(message)
+    preset = QUALITY_PRESETS["dotnet/hcoona-release-smoke-github-packages-v1"]
+    expected_quality = (
+        CompiledQualitySelection(
+            path=f"{dotnet_provider.DOTNET_PROJECT_ROOT}/workflow-delivery.quality.yml",
+            ecosystem="dotnet",
+            preset=preset.logical_id,
+            required=preset.required,
+            advisory=preset.advisory,
+        ),
+    )
+    for selection in snapshot.quality:
+        _validate_compiled_quality_selection(selection)
+    if snapshot.quality != expected_quality:
+        message = "Repository Model Snapshot NuGet Quality closure mismatch"
+        raise ValueError(message)
+    if snapshot.release_policy is None:
+        message = "Repository Model Snapshot NuGet policy is incomplete"
+        raise ValueError(message)
+    validate_compiled_release_policy(snapshot.release_policy)
+    if (
+        snapshot.release_policy_path != NUGET_POLICY_PATH
+        or snapshot.release_policy != _expected_nuget_compiled_release_policy()
+    ):
+        message = "Repository Model Snapshot NuGet policy closure mismatch"
+        raise ValueError(message)
+    _validate_reverse_index(snapshot.reverse_index)
+    if snapshot.reverse_index != (
+        (project.project_id, (f"{NUGET_RELEASE_UNIT}/nuget-package",)),
+    ):
+        message = "Repository Model Snapshot NuGet reverse index mismatch"
+        raise ValueError(message)
+
+
+def _validate_nuget_selection(context: CompilationContext) -> None:
+    if context.purpose == "release-simulation" and (
+        context.release_unit != NUGET_RELEASE_UNIT or context.channel != "buddy"
+    ):
+        message = "NuGet Provider requires its own Buddy simulation selection"
+        raise ValueError(message)
+
+
+def _nuget_provider_request_document(
+    context: CompilationContext, *, provider_producer: str
+) -> dict[str, JsonValue]:
+    return {
+        "schema": "workflow-delivery/v3/dotnet-provider-request",
+        "context": _context_document(context),
+        "entry-id": "dotnet-nuget-slice",
+        "provider-logical-id": dotnet_provider.DOTNET_PROVIDER_LOGICAL_ID,
+        "provider-implementation-id": (
+            dotnet_provider.DOTNET_PROVIDER_IMPLEMENTATION_ID
+        ),
+        "execution-mode": dotnet_provider.DOTNET_PROVIDER_EXECUTION_MODE,
+        "producer": provider_producer,
+        "discovery-basis": {
+            "package": NUGET_PACKAGE,
+            "entry-point": dotnet_provider.DOTNET_ENTRY_POINT,
+            "configuration": "Release",
+            "target-framework": "net10.0",
+            "runner-platform": "windows",
+            "toolchain": dict(dotnet_provider.DOTNET_TOOLCHAIN),
+            "build-definition": "dotnet/nuget-package-v1",
+            "output-scope": ["nuget-package"],
+        },
+    }
+
+
+def nuget_provider_manifest(
+    context: CompilationContext, *, provider_producer: str
+) -> ProviderRequestManifest:
+    """Close the target-evaluating .NET request before native evaluation."""
+    validate_compilation_context(context)
+    _validate_nuget_selection(context)
+    _nonempty_string(provider_producer, field="Provider producer")
+    request_digest = canonical_sha256(
+        _nuget_provider_request_document(
+            context, provider_producer=provider_producer
+        )
+    )
+    return ProviderRequestManifest(
+        context=context,
+        requests=(
+            ProviderRequest(
+                entry_id="dotnet-nuget-slice",
+                provider_logical_id=dotnet_provider.DOTNET_PROVIDER_LOGICAL_ID,
+                provider_implementation_id=dotnet_provider.DOTNET_PROVIDER_IMPLEMENTATION_ID,
+                execution_mode=dotnet_provider.DOTNET_PROVIDER_EXECUTION_MODE,
+                producer=provider_producer,
+                request_digest=request_digest,
+                expected_result_identity=f"{dotnet_provider.DOTNET_PROVIDER_LOGICAL_ID}:{context.request_id}",
+            ),
+        ),
+    )
+
+
+def _validate_nuget_manifest(
+    context: CompilationContext, manifest: ProviderRequestManifest
+) -> None:
+    validate_compilation_context(context)
+    _validate_nuget_selection(context)
+    if (
+        type(manifest) is not ProviderRequestManifest
+        or type(manifest.context) is not CompilationContext
+    ):
+        message = "NuGet Provider Request Manifest has the wrong runtime type"
+        raise TypeError(message)
+    validate_compilation_context(manifest.context)
+    if type(manifest.requests) is not tuple or len(manifest.requests) != 1:
+        message = "NuGet manifest must contain exactly one Provider request"
+        raise ValueError(message)
+    request = manifest.requests[0]
+    if type(request) is not ProviderRequest:
+        message = "NuGet Provider request has the wrong runtime type"
+        raise TypeError(message)
+    for field in (
+        "entry_id",
+        "provider_logical_id",
+        "provider_implementation_id",
+        "execution_mode",
+        "producer",
+        "request_digest",
+        "expected_result_identity",
+    ):
+        _nonempty_string(
+            getattr(request, field), field=f"NuGet Provider request {field}"
+        )
+    expected = nuget_provider_manifest(
+        context, provider_producer=request.producer
+    )
+    if manifest != expected:
+        message = "NuGet manifest differs from its closed canonical request"
+        raise ValueError(message)
+
+
+def admit_dotnet_provider_fact_bundle(
+    bundle: dotnet_provider.DotnetProviderFactBundle,
+    *,
+    context: CompilationContext,
+    manifest: ProviderRequestManifest,
+    admission: FactBundleAdmissionContext,
+) -> AdmittedDotnetProviderFactBundle:
+    """Admit .NET facts bound to the current request and immutable transport."""
+    _validate_nuget_manifest(context, manifest)
+    _validate_fact_bundle_admission_context(admission)
+    if type(bundle) is not dotnet_provider.DotnetProviderFactBundle:
+        message = "NuGet compiler requires an exact .NET Fact Bundle"
+        raise TypeError(message)
+    if (
+        type(bundle.schema) is not str
+        or bundle.schema != dotnet_provider.DOTNET_PROVIDER_FACT_BUNDLE_SCHEMA
+    ):
+        message = "NuGet Fact Bundle schema identity mismatch"
+        raise ValueError(message)
+    validate_provider_binding(bundle.binding)
+    for field in (
+        "manifest_digest",
+        "request_artifact_digest",
+        "provider_result_digest",
+        "transport_digest",
+    ):
+        value = getattr(bundle, field)
+        if type(value) is not str or _DIGEST_PATTERN.fullmatch(value) is None:
+            message = f"NuGet Fact Bundle {field} must be a SHA-256 digest"
+            raise ValueError(message)
+    for field in ("request_artifact_id", "transport_id"):
+        _positive_integer(
+            getattr(bundle, field), field=f"NuGet Fact Bundle {field}"
+        )
+    _nonempty_string(
+        bundle.manifest_entry_id, field="NuGet Fact Bundle manifest_entry_id"
+    )
+    result = bundle.provider_result
+    dotnet_provider.validate_dotnet_provider_result(result)
+    request = manifest.requests[0]
+    expected_binding = provider_binding(manifest, request.entry_id)
+    if bundle.binding != expected_binding or result.binding != expected_binding:
+        message = "NuGet Fact Bundle authority binding mismatch"
+        raise ValueError(message)
+    checks = (
+        (bundle.manifest_digest, manifest.manifest_digest),
+        (bundle.manifest_entry_id, request.entry_id),
+        (bundle.provider_result_digest, result.result_digest),
+        (bundle.request_artifact_id, admission.request_artifact_id),
+        (bundle.request_artifact_digest, admission.request_artifact_digest),
+        (bundle.transport_id, admission.transport_id),
+        (bundle.transport_digest, admission.transport_digest),
+        (bundle.bundle_digest, admission.bundle_digest),
+    )
+    if any(actual != expected for actual, expected in checks):
+        message = "NuGet Fact Bundle integrity or transport binding mismatch"
+        raise ValueError(message)
+    if (
+        result.provider_logical_id != request.provider_logical_id
+        or result.provider_implementation_id
+        != request.provider_implementation_id
+        or result.execution_mode != request.execution_mode
+        or f"{result.provider_logical_id}:{result.binding.request_id}"
+        != request.expected_result_identity
+        or result.execution_class
+        != dotnet_provider.DOTNET_PROVIDER_EXECUTION_CLASS
+        or result.toolchain != dotnet_provider.DOTNET_TOOLCHAIN
+        or result.outcome != "success"
+        or result.unresolved
+        or result.conflicts
+        or result.diagnostic_reference is not None
+        or result.build_capabilities != ("dotnet/nuget-package-v1",)
+    ):
+        message = "NuGet Provider Result execution closure mismatch"
+        raise ValueError(message)
+    if (
+        result.checkout.target != context.target
+        or result.checkout.head != context.target
+        or result.checkout.shallow is not False
+        or result.checkout.ancestry_complete is not True
+        or result.checkout.tags_complete is not True
+        or result.checkout.credentials_persisted is not False
+        or result.checkout.authoritative_remote != AUTHORITATIVE_REMOTE
+        or result.checkout.tag_refspec != TAG_REFSPEC
+    ):
+        message = "NuGet Provider lacks exact full-history checkout evidence"
+        raise ValueError(message)
+    dotnet_provider.validate_dotnet_nbgv_facts(
+        result.nbgv, target=context.target
+    )
+    return AdmittedDotnetProviderFactBundle(bundle=bundle, admission=admission)
+
+
+def _validate_dotnet_target_inputs(
+    repo_root: Path,
+    context: CompilationContext,
+    result: dotnet_provider.DotnetProviderResult,
+) -> None:
+    paths = dotnet_provider.dotnet_provider_input_candidates(
+        tuple(sorted(_git_target_paths(repo_root, context.target)))
+    )
+    expected_inputs = tuple(
+        (
+            path,
+            _content_digest(
+                _git_target_file_bytes(repo_root, context.target, path)
+            ),
+        )
+        for path in paths
+    )
+    expected_digests = dotnet_provider.dotnet_input_digests(expected_inputs)
+    expected_global_inputs = tuple(
+        GlobalInput(path, digest, (NUGET_RELEASE_UNIT,))
+        for path, digest in expected_inputs
+    )
+    if (
+        result.source_input_manifest != expected_inputs
+        or (result.manifest_digest, result.configuration_digest)
+        != expected_digests
+        or result.global_inputs != expected_global_inputs
+    ):
+        message = "NuGet Provider input digests do not match the exact target"
+        raise ValueError(message)
+
+
+def compile_dotnet_repository_model(
+    repo_root: Path,
+    context: CompilationContext,
+    manifest: ProviderRequestManifest,
+    bundles: Sequence[AdmittedDotnetProviderFactBundle],
+) -> RepositoryModelSnapshot:
+    """Compile a NuGet Snapshot from native facts without target evaluation."""
+    _validate_nuget_manifest(context, manifest)
+    if len(bundles) != 1:
+        message = "NuGet compilation requires exactly one admitted Fact Bundle"
+        raise ValueError(message)
+    admitted = bundles[0]
+    if type(admitted) is not AdmittedDotnetProviderFactBundle:
+        message = "NuGet compiler requires an admitted .NET Fact Bundle"
+        raise TypeError(message)
+    admitted = admit_dotnet_provider_fact_bundle(
+        admitted.bundle,
+        context=context,
+        manifest=manifest,
+        admission=admitted.admission,
+    )
+    result = admitted.provider_result
+    _validate_dotnet_target_inputs(repo_root, context, result)
+    if len(result.project_nodes) != 1:
+        message = "NuGet Provider must emit exactly one Project Node"
+        raise ValueError(message)
+    project = result.project_nodes[0]
+    release_unit, quality, policy = _compile_release_unit(
+        repo_root, context.target, project
+    )
+    snapshot = RepositoryModelSnapshot(
+        context=context,
+        manifest_digest=manifest.manifest_digest,
+        provider_result_digests=(result.result_digest,),
+        project_nodes=result.project_nodes,
+        release_units=(release_unit,),
+        quality=(quality,),
+        release_policy_path=policy.path,
+        release_policy=policy,
+        nbgv=result.nbgv,
+        reverse_index=(
+            (project.project_id, (f"{NUGET_RELEASE_UNIT}/nuget-package",)),
+        ),
+        unresolved=(),
+        ready=True,
+    )
+    validate_nuget_repository_model_snapshot(snapshot)
+    return snapshot

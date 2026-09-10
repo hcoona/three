@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Never, Protocol
 
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
@@ -45,6 +45,9 @@ from three_workflow_delivery_v3.repository.descriptors import (
     GOVERNANCE_PATH,
     GOVERNANCE_REF,
     GOVERNANCE_REPOSITORY,
+    NUGET_GOVERNANCE_PATH,
+    NUGET_PACKAGE,
+    NUGET_RELEASE_UNIT,
     GovernanceSource,
     ReleasePolicy,
 )
@@ -58,6 +61,18 @@ if TYPE_CHECKING:
     )
 ATTESTATION_SCHEMA = (
     "workflow-delivery/v3/normal-live-governance-attestation-v2"
+)
+NUGET_ATTESTATION_SCHEMA = (
+    "workflow-delivery/v3/normal-live-nuget-governance-attestation-v1"
+)
+NUGET_CONTROL_POLICY: dict[str, JsonValue] = {
+    "repository": GOVERNANCE_REPOSITORY,
+    "selected_ref": GOVERNANCE_REF,
+    "accepted_operator": "hcoona",
+    "control_revision": "owner-reviewed-same-revision",
+}
+_NUGET_PACKAGE_REACH = (
+    "every-package-granting-actions-access-to-hcoona/three",
 )
 LIVE_ELIGIBILITY_DECISION_SCHEMA = (
     "workflow-delivery/v3/live-eligibility-decision"
@@ -461,7 +476,7 @@ class GovernanceAttestation:
     activation: GovernanceActivation
     live_enabled: bool
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901
         """Keep constructor and parser states equally strict."""
         if type(self.activation) not in (
             DisabledGovernanceActivation,
@@ -469,6 +484,11 @@ class GovernanceAttestation:
         ):
             message = "Governance activation has the wrong runtime type"
             raise TypeError(message)
+        if self.release_policy == NUGET_RELEASE_UNIT and isinstance(
+            self.activation, DisabledGovernanceActivation
+        ):
+            message = "NuGet disablement must use its state-only representation"
+            raise ValueError(message)
         _boolean(
             self.live_enabled, context="Governance attestation live_enabled"
         )
@@ -503,10 +523,10 @@ class GovernanceAttestation:
                 message = "Governance evidence was captured after inspection"
                 raise ValueError(message)
         document = self.to_document()
-        if (
-            self.release_policy != _RELEASE_POLICY_BINDING
-            or self.package != FIRST_SLICE_PACKAGE
-        ):
+        if (self.release_policy, self.package) not in {
+            (_RELEASE_POLICY_BINDING, FIRST_SLICE_PACKAGE),
+            (NUGET_RELEASE_UNIT, NUGET_PACKAGE),
+        }:
             message = "Governance attestation policy/package binding mismatch"
             raise ValueError(message)
         if (
@@ -517,7 +537,19 @@ class GovernanceAttestation:
             raise ValueError(message)
         _writer_inventory(document["accepted_writers"])
         _access_inventory(document["access_inventory"])
-        _package_principal(document["package_principal"])
+        _package_principal(document["package_principal"], package=self.package)
+        if self.release_policy == NUGET_RELEASE_UNIT and isinstance(
+            self.activation, EnabledGovernanceActivation
+        ):
+            from three_workflow_delivery_v3.release.nuget_governance import (  # noqa: PLC0415
+                nuget_destination_primitive_is_admitted,
+            )
+
+            if not nuget_destination_primitive_is_admitted(self):
+                message = (
+                    "NuGet ready activation requires admitted native assurance"
+                )
+                raise ValueError(message)
         _strings(document["limitations"], context="limitations")
 
     def to_document(self) -> dict[str, JsonValue]:
@@ -531,7 +563,11 @@ class GovernanceAttestation:
             accepted_writers.append(writer_document)
         limitations: list[JsonValue] = list(self.limitations)
         document: dict[str, JsonValue] = {
-            "schema": ATTESTATION_SCHEMA,
+            "schema": (
+                NUGET_ATTESTATION_SCHEMA
+                if self.release_policy == NUGET_RELEASE_UNIT
+                else ATTESTATION_SCHEMA
+            ),
             "release_policy": self.release_policy,
             "package": self.package,
             "issuer": self.issuer,
@@ -545,6 +581,8 @@ class GovernanceAttestation:
             "activation": self.activation.to_document(),
             "live_enabled": self.live_enabled,
         }
+        if self.release_policy == NUGET_RELEASE_UNIT:
+            document["control_policy"] = dict(NUGET_CONTROL_POLICY)
         return document
 
     @property
@@ -553,9 +591,79 @@ class GovernanceAttestation:
         return canonical_sha256(self.to_document())
 
 
+@dataclass(frozen=True, slots=True)
+class BlockedNuGetGovernanceAttestation:
+    """A disabled source with no inspected platform or access assertions."""
+
+    @property
+    def release_policy(self) -> str:
+        """Return the exact disabled unit."""
+        return NUGET_RELEASE_UNIT
+
+    @property
+    def package(self) -> str:
+        """Return the exact intended package, without asserting access."""
+        return NUGET_PACKAGE
+
+    @property
+    def live_enabled(self) -> bool:
+        """Deny live authority unconditionally."""
+        return False
+
+    @property
+    def activation(self) -> DisabledGovernanceActivation:
+        """Carry no native acceptance generation."""
+        return DisabledGovernanceActivation()
+
+    @property
+    def inspected_at(self) -> Never:
+        """Reject attempts to invent inspection evidence for this state."""
+        message = "Blocked NuGet Governance has no inspection evidence"
+        raise GovernanceFreshnessRejectionError(message)
+
+    @property
+    def expires_at(self) -> Never:
+        """Reject attempts to derive freshness authority from disablement."""
+        message = "Blocked NuGet Governance has no expiry evidence"
+        raise GovernanceFreshnessRejectionError(message)
+
+    @property
+    def package_principal(self) -> Never:
+        """Reject access assertions that have not been inspected."""
+        message = "Blocked NuGet Governance has no access evidence"
+        raise GovernanceRejectionError(message)
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return only the exact blocked state and intended control scope."""
+        return {
+            "schema": NUGET_ATTESTATION_SCHEMA,
+            "release_policy": NUGET_RELEASE_UNIT,
+            "package": NUGET_PACKAGE,
+            "control_policy": dict(NUGET_CONTROL_POLICY),
+            "activation": {"state": "blocked"},
+            "live_enabled": False,
+        }
+
+    @property
+    def content_digest(self) -> str:
+        """Bind the canonical disabled source bytes."""
+        return canonical_sha256(self.to_document())
+
+
+GovernanceAttestationState = (
+    GovernanceAttestation | BlockedNuGetGovernanceAttestation
+)
+
+
 def _destination_primitive_is_admitted(
-    attestation: GovernanceAttestation,
+    attestation: GovernanceAttestationState,
 ) -> bool:
+    if attestation.release_policy == NUGET_RELEASE_UNIT:
+        from three_workflow_delivery_v3.release.nuget_governance import (  # noqa: PLC0415
+            nuget_destination_primitive_is_admitted,
+        )
+
+        return nuget_destination_primitive_is_admitted(attestation)
     activation = attestation.activation
     if not isinstance(activation, EnabledGovernanceActivation):
         return False
@@ -572,7 +680,7 @@ def _destination_primitive_is_admitted(
 
 
 def require_action_governance(
-    attestation: GovernanceAttestation,
+    attestation: GovernanceAttestationState,
     *,
     now: datetime,
     destination_operation_profile_digest: str,
@@ -643,7 +751,7 @@ class GovernanceObservation:
     blob_oid: str
     canonical_content_digest: str
     observed_at: datetime
-    attestation: GovernanceAttestation
+    attestation: GovernanceAttestationState
 
 
 @dataclass(frozen=True, slots=True)
@@ -672,7 +780,7 @@ class LiveEligibilityGovernanceBinding:
     blob_oid: str
     canonical_content_digest: str
     observed_at: datetime
-    attestation: GovernanceAttestation
+    attestation: GovernanceAttestationState
 
     @classmethod
     def from_observation(
@@ -1056,7 +1164,9 @@ def _strings(
     return result
 
 
-def _package_principal(value: JsonValue) -> PackagePrincipalAttestation:
+def _package_principal(
+    value: JsonValue, *, package: str = FIRST_SLICE_PACKAGE
+) -> PackagePrincipalAttestation:
     document = _object(value, context="package_principal")
     _closed(
         document,
@@ -1081,8 +1191,13 @@ def _package_principal(value: JsonValue) -> PackagePrincipalAttestation:
     )
     if (
         result.repository != GOVERNANCE_REPOSITORY
-        or result.intended_coordinate != FIRST_SLICE_PACKAGE
-        or result.known_wider_reach != _KNOWN_WIDER_PACKAGE_REACH
+        or result.intended_coordinate != package
+        or result.known_wider_reach
+        != (
+            _NUGET_PACKAGE_REACH
+            if package == NUGET_PACKAGE
+            else _KNOWN_WIDER_PACKAGE_REACH
+        )
     ):
         message = "package_principal is not the exact accepted blast radius"
         raise ValueError(message)
@@ -1446,11 +1561,19 @@ def _activation(value: JsonValue) -> GovernanceActivation:
     raise ValueError(message)
 
 
-def parse_governance_attestation(
+def parse_governance_attestation(  # noqa: C901
     content: bytes | bytearray,
-) -> GovernanceAttestation:
-    """Parse and validate one canonical non-executable human attestation."""
+) -> GovernanceAttestationState:
+    """Parse a canonical human attestation or state-only NuGet disablement."""
     document = parse_canonical_json(content)
+    if document.get("schema") == NUGET_ATTESTATION_SCHEMA and document.get(
+        "activation"
+    ) == {"state": "blocked"}:
+        blocked = BlockedNuGetGovernanceAttestation()
+        if document != blocked.to_document():
+            message = "Blocked NuGet Governance must carry only disabled state"
+            raise ValueError(message)
+        return blocked
     required = frozenset(
         {
             "schema",
@@ -1468,12 +1591,21 @@ def parse_governance_attestation(
             "live_enabled",
         }
     )
+    is_nuget = document.get("schema") == NUGET_ATTESTATION_SCHEMA
+    if is_nuget:
+        required = required | {"control_policy"}
     _closed(
         document,
         required=required,
         context="Governance attestation",
     )
-    if document["schema"] != ATTESTATION_SCHEMA:
+    if is_nuget and document["control_policy"] != NUGET_CONTROL_POLICY:
+        message = (
+            "NuGet Governance requires protected "
+            "owner-reviewed same-revision control"
+        )
+        raise ValueError(message)
+    if document["schema"] not in {ATTESTATION_SCHEMA, NUGET_ATTESTATION_SCHEMA}:
         message = "Governance attestation has the wrong schema"
         raise ValueError(message)
     release_policy = _string(
@@ -1481,10 +1613,9 @@ def parse_governance_attestation(
         context="release_policy",
     )
     package = _string(document["package"], context="package")
-    if (
-        release_policy != _RELEASE_POLICY_BINDING
-        or package != FIRST_SLICE_PACKAGE
-    ):
+    if release_policy != (
+        NUGET_RELEASE_UNIT if is_nuget else _RELEASE_POLICY_BINDING
+    ) or package != (NUGET_PACKAGE if is_nuget else FIRST_SLICE_PACKAGE):
         message = "Governance attestation policy/package binding mismatch"
         raise ValueError(message)
     issuer = _exact_string(document["issuer"], context="issuer")
@@ -1530,7 +1661,9 @@ def parse_governance_attestation(
         accepted_writers=_writer_inventory(document["accepted_writers"]),
         accepted_publisher=accepted_publisher,
         access_inventory=_access_inventory(document["access_inventory"]),
-        package_principal=_package_principal(document["package_principal"]),
+        package_principal=_package_principal(
+            document["package_principal"], package=package
+        ),
         limitations=limitations,
         activation=activation,
         live_enabled=live_enabled,
@@ -1548,9 +1681,28 @@ def _validate_source(source: GovernanceSource) -> None:
         path=GOVERNANCE_PATH,
         max_age_days=GOVERNANCE_MAX_AGE_DAYS,
     )
-    if source != expected:
+    nuget_expected = GovernanceSource(
+        repository=GOVERNANCE_REPOSITORY,
+        ref=GOVERNANCE_REF,
+        path=NUGET_GOVERNANCE_PATH,
+        max_age_days=GOVERNANCE_MAX_AGE_DAYS,
+    )
+    if source not in (expected, nuget_expected):
         message = "Governance source is not the exact fixed contract"
         raise ValueError(message)
+
+
+def _validate_source_attestation(
+    source: GovernanceSource, attestation: GovernanceAttestationState
+) -> None:
+    expected_path = (
+        NUGET_GOVERNANCE_PATH
+        if attestation.release_policy == NUGET_RELEASE_UNIT
+        else GOVERNANCE_PATH
+    )
+    if source.path != expected_path:
+        message = "Governance source and ecosystem attestation differ"
+        raise GovernanceRejectionError(message)
 
 
 def _utc_now(now: datetime) -> datetime:
@@ -1626,6 +1778,7 @@ def _read_governance_source(
         attestation = parse_governance_attestation(read.content)
     except (TypeError, ValueError, UnicodeError) as error:
         raise GovernanceRejectionError(str(error)) from error
+    _validate_source_attestation(source, attestation)
     content_digest = f"sha256:{hashlib.sha256(read.content).hexdigest()}"
     if content_digest != attestation.content_digest:
         message = "Governance canonical content digest mismatch"
@@ -1726,6 +1879,9 @@ def require_fresh_governance_identity(  # noqa: PLR0913
         now=now,
         eligibility_main_sha=eligibility_main_sha,
     )
+    if not observation.attestation.live_enabled:
+        message = "Governance freshness comparison failed"
+        raise GovernanceFreshnessRejectionError(message)
     provenance = governance_observation_provenance(observation)
     if (
         provenance != expected_provenance
@@ -2034,6 +2190,7 @@ def _validate_governance_binding(
             "Live Eligibility Decision Governance attestation type mismatch"
         )
         raise TypeError(message)
+    _validate_source_attestation(binding.source, binding.attestation)
     if binding.canonical_content_digest != binding.attestation.content_digest:
         message = (
             "Live Eligibility Decision Governance attestation identity mismatch"
@@ -2340,6 +2497,9 @@ def evaluate_live_eligibility(  # noqa: PLR0913
 ) -> LiveEligibilityDecision:
     """Evaluate current exact-target eligibility before Attempt creation."""
     _validate_source(policy.governance)
+    if policy.release_unit != FIRST_SLICE_RELEASE_UNIT:
+        message = "npm Live eligibility cannot admit another ecosystem"
+        raise ValueError(message)
     _validate_live_context(context, snapshot, policy)
     static_reference = scan_bounded_static_references(
         repository_root,
