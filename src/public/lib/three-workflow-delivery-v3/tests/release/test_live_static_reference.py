@@ -150,7 +150,9 @@ def _evaluate_with_result(
         events.append(("governance", source, client, now))
         return governance
 
-    policy = SimpleNamespace(governance=governance.source)
+    policy = SimpleNamespace(
+        governance=governance.source, release_unit="hcoona-release-smoke-npm"
+    )
     snapshot = object()
     client = object()
     monkeypatch.setattr(eligibility, "_validate_source", lambda _source: None)
@@ -315,7 +317,9 @@ def test_live_eligibility_validates_static_reference_before_governance(
 ) -> None:
     """Do not observe Governance after a malformed scan result is rejected."""
     events: list[object] = []
-    policy = SimpleNamespace(governance=_governance().source)
+    policy = SimpleNamespace(
+        governance=_governance().source, release_unit="hcoona-release-smoke-npm"
+    )
     expected = _result()
 
     monkeypatch.setattr(eligibility, "_validate_source", lambda _source: None)

@@ -1,4 +1,4 @@
-"""Static same-revision catalogs for the first Workflow Delivery v3 slice."""
+"""Static same-revision catalogs for admitted v3 slices."""
 
 from __future__ import annotations
 
@@ -114,6 +114,16 @@ BUILD_DEFINITIONS: Mapping[str, BuildDefinition] = MappingProxyType(
             output_kinds=("npm-tarball",),
             required_native_projections=("npmPackageVersion",),
         ),
+        "dotnet/nuget-package-v1": BuildDefinition(
+            logical_id="dotnet/nuget-package-v1",
+            ecosystem="dotnet",
+            operation="nuget-package",
+            implementation_id="dotnet/nuget-package-v1",
+            execution_class="target-execution/unprivileged-v1",
+            capability_requirements=(),
+            output_kinds=("nuget-package",),
+            required_native_projections=("NuGetPackageVersion",),
+        ),
     }
 )
 
@@ -169,6 +179,22 @@ QUALITY_DEFINITIONS: Mapping[str, QualityDefinition] = MappingProxyType(
                 "target-execution/unprivileged-v1",
                 (),
             ),
+            QualityDefinition(
+                "dotnet/nuget-artifact-contents-v1",
+                "nuget-package",
+                "nuget-artifact-contents",
+                "dotnet/nuget-artifact-contents-v1",
+                "target-execution/unprivileged-v1",
+                (),
+            ),
+            QualityDefinition(
+                "dotnet/nuget-restore-build-invoke-v1",
+                "nuget-package",
+                "nuget-restore-build-invoke",
+                "dotnet/nuget-restore-build-invoke-v1",
+                "target-execution/unprivileged-v1",
+                (),
+            ),
         )
     }
 )
@@ -180,6 +206,13 @@ QUALITY_PRESETS: Mapping[str, QualityPreset] = MappingProxyType(
             required=(
                 "node/project-build-v1",
                 "node/project-test-v1",
+            ),
+        ),
+        "dotnet/hcoona-release-smoke-github-packages-v1": QualityPreset(
+            logical_id="dotnet/hcoona-release-smoke-github-packages-v1",
+            required=(
+                "dotnet/nuget-artifact-contents-v1",
+                "dotnet/nuget-restore-build-invoke-v1",
             ),
         ),
     }
@@ -206,6 +239,15 @@ DESTINATION_DEFINITIONS: Mapping[str, DestinationDefinition] = MappingProxyType(
                 "side-effect/privileged-v1",
                 ("npmjs/trusted-publishing-oidc-v1",),
                 "simulation-only-in-first-slice",
+            ),
+            DestinationDefinition(
+                "nuget/github-packages-hcoona-three-v1",
+                "nuget",
+                "https://nuget.pkg.github.com/hcoona/index.json",
+                ("buddy",),
+                "side-effect/privileged-v1",
+                ("github/packages-write-v1",),
+                "requires-nuget-native-acceptance",
             ),
         )
     }
@@ -289,6 +331,14 @@ RELEASE_POLICIES: Mapping[str, ReleasePolicyRegistration] = MappingProxyType(
             release_unit="hcoona-release-smoke-npm",
             path=(
                 "eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml"
+            ),
+        ),
+        "hcoona-release-smoke-github-packages": ReleasePolicyRegistration(
+            logical_id="hcoona-release-smoke-github-packages",
+            release_unit="hcoona-release-smoke-github-packages",
+            path=(
+                "eng/workflow-delivery/v3/policies/"
+                "hcoona-release-smoke-github-packages.yml"
             ),
         ),
     }

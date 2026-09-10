@@ -11,8 +11,12 @@ package purpose. This project owns the
 The [NuGet authority helper](../../../private/app/workflow-delivery-v3-nuget-authority/README.md)
 is a static-reference component. The
 [NuGet second-slice handoff](docs/nuget-smoke-research-handoff.md) routes the
-confirmed requirements and design. Disabled implementation, native probes,
-and publication require separate authorization.
+confirmed requirements, protected design and disabled implementation. The
+[selected NuGet smoke library](../hcoona-release-smoke-github-packages/README.md)
+owns its marker-product purpose; the
+[native .NET helper](../../../private/app/workflow-delivery-v3-dotnet-provider/README.md)
+is a v3 Provider and package-inspection component. The handoff retains the
+distinct native and publication admission gates.
 
 The documentation records accepted domain constraints and evidence. It grants no
 runtime work and does not renew either spent npm dispatch authorization.

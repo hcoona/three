@@ -240,9 +240,27 @@ def test_pr_candidate_rejects_unavailable_or_conflicting_comparison(
         form_pull_request_candidate(**kwargs)  # type: ignore[arg-type]
 
 
-def test_project_change_selects_complete_first_slice() -> None:
+@pytest.mark.parametrize(
+    "changed_paths",
+    [
+        (PROJECT_SOURCE,),
+        (
+            "src/private/app/workflow-delivery-v3-dotnet-provider/Program.cs",
+            "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs",
+            PROJECT_SOURCE,
+        ),
+        (
+            "src/private/app/workflow-delivery-v3-dotnet-provider/README.md",
+            "src/public/lib/hcoona-release-smoke-github-packages/version.json",
+            "src/public/lib/three-workflow-delivery-v3/src/control.py",
+        ),
+    ],
+)
+def test_project_change_selects_complete_first_slice(
+    changed_paths: tuple[str, ...],
+) -> None:
     """Select all four lanes and exact first-slice scope for project work."""
-    plan = _plan()
+    plan = _plan(changed_paths=changed_paths)
     assert plan.ready
     assert _selected_lanes(plan) == CI_LANE_IDS
     assert plan.selected_project_nodes == (FIRST_SLICE_PACKAGE,)
@@ -290,6 +308,29 @@ def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
         "nested/package.json",
         "nested/pnpm-lock.yaml",
         "nested/packages.lock.json",
+        *(
+            "src/private/app/workflow-delivery-v3-dotnet-provider/" + name
+            for name in (
+                "Program.cs",
+                "README.md",
+                "WorkflowDeliveryV3DotnetProvider.csproj",
+                "packages.lock.json",
+                "readers/PackageReader.cs",
+            )
+        ),
+        *(
+            "src/public/lib/hcoona-release-smoke-github-packages/" + name
+            for name in (
+                "README.md",
+                "Smoke.cs",
+                "hcoona-release-smoke-github-packages.csproj",
+                "packages.lock.json",
+                "version.json",
+                "workflow-delivery.quality.yml",
+                "workflow-delivery.release-unit.yml",
+                "Properties/AssemblyInfo.cs",
+            )
+        ),
         ".github/workflows/release/nested/packages.lock.json",
         ".github/workflows/consume.yml",
         "nested/package-lock.json",
@@ -455,6 +496,35 @@ def test_manual_slice_validation_always_selects_complete_slice() -> None:
         (
             (SHA_A, SHA_B),
             (".github/workflows/helper.py",),
+            "changed path is unclassified",
+        ),
+        (
+            (SHA_A, SHA_B),
+            (
+                (
+                    "src/private/app/workflow-delivery-v3-dotnet-provider-other/"
+                    "Program.cs"
+                ),
+            ),
+            "changed path is unclassified",
+        ),
+        (
+            (SHA_A, SHA_B),
+            (
+                (
+                    "src/public/lib/hcoona-release-smoke-github-packages-other/"
+                    "Smoke.cs"
+                ),
+            ),
+            "changed path is unclassified",
+        ),
+        (
+            (SHA_A, SHA_B),
+            (
+                PROJECT_SOURCE,
+                "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs",
+                "src/private/app/unclassified/source.py",
+            ),
             "changed path is unclassified",
         ),
     ],

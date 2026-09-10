@@ -32,6 +32,15 @@ FIRST_SLICE_PACKAGE = "@hcoona/hcoona-release-smoke-npm"
 FIRST_SLICE_POLICY_PATH = (
     "eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml"
 )
+NUGET_RELEASE_UNIT = "hcoona-release-smoke-github-packages"
+NUGET_PACKAGE = "Hcoona.ReleaseSmoke.GithubPackages"
+NUGET_POLICY_PATH = (
+    "eng/workflow-delivery/v3/policies/hcoona-release-smoke-github-packages.yml"
+)
+NUGET_GOVERNANCE_PATH = (
+    ".github/workflow-delivery/governance/"
+    "hcoona-release-smoke-github-packages.json"
+)
 GOVERNANCE_REPOSITORY = "hcoona/three"
 GOVERNANCE_REF = "refs/heads/main"
 GOVERNANCE_PATH = (
@@ -161,6 +170,17 @@ _APPROVED_RELEASE_PROJECTIONS = {
         ),
     ),
 }
+NUGET_RELEASE_QUALITY = (
+    "dotnet/nuget-artifact-contents-v1",
+    "dotnet/nuget-restore-build-invoke-v1",
+)
+NUGET_RELEASE_PROJECTIONS = (
+    Projection(
+        destination="nuget/github-packages-hcoona-three-v1",
+        artifact="nuget-package",
+        package=NUGET_PACKAGE,
+    ),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -458,7 +478,11 @@ def load_quality_selection(
     )
 
 
-def _governance_source(document: JsonValue) -> GovernanceSource:
+def _governance_source(
+    document: JsonValue,
+    *,
+    release_unit: str = FIRST_SLICE_RELEASE_UNIT,
+) -> GovernanceSource:
     governance = _mapping(document, context="governance")
     _closed(governance, required=("attestation",), context="governance")
     attestation = _mapping(
@@ -492,7 +516,9 @@ def _governance_source(document: JsonValue) -> GovernanceSource:
     expected = GovernanceSource(
         GOVERNANCE_REPOSITORY,
         GOVERNANCE_REF,
-        GOVERNANCE_PATH,
+        NUGET_GOVERNANCE_PATH
+        if release_unit == NUGET_RELEASE_UNIT
+        else GOVERNANCE_PATH,
         GOVERNANCE_MAX_AGE_DAYS,
     )
     if source != expected:
@@ -501,7 +527,12 @@ def _governance_source(document: JsonValue) -> GovernanceSource:
     return source
 
 
-def _channel_policy(name: str, value: JsonValue) -> ChannelPolicy:
+def _channel_policy(
+    name: str,
+    value: JsonValue,
+    *,
+    release_unit: str = FIRST_SLICE_RELEASE_UNIT,
+) -> ChannelPolicy:
     document = _mapping(value, context=f"channels.{name}")
     _closed(
         document,
@@ -521,7 +552,11 @@ def _channel_policy(name: str, value: JsonValue) -> ChannelPolicy:
             quality_id,
             kind="Quality Definition",
         )
-    if quality != _APPROVED_RELEASE_QUALITY:
+    is_nuget = release_unit == NUGET_RELEASE_UNIT
+    expected_quality = (
+        NUGET_RELEASE_QUALITY if is_nuget else _APPROVED_RELEASE_QUALITY
+    )
+    if quality != expected_quality:
         message = f"channels.{name}.quality must match the exact approved list"
         raise ValueError(message)
     projections: list[Projection] = []
@@ -575,10 +610,17 @@ def _channel_policy(name: str, value: JsonValue) -> ChannelPolicy:
                 f"{projection.destination} does not support {name}"
             )
             raise ValueError(message)
-        if projection.package != FIRST_SLICE_PACKAGE:
+        if projection.package != (
+            NUGET_PACKAGE if is_nuget else FIRST_SLICE_PACKAGE
+        ):
             message = f"channels.{name}.projection package binding is not exact"
             raise ValueError(message)
-    if projection_tuple != _APPROVED_RELEASE_PROJECTIONS[name]:
+    expected_projections = (
+        NUGET_RELEASE_PROJECTIONS
+        if is_nuget
+        else _APPROVED_RELEASE_PROJECTIONS[name]
+    )
+    if projection_tuple != expected_projections:
         message = (
             f"channels.{name}.projections must match the exact approved list"
         )
@@ -592,7 +634,7 @@ def load_release_policy(
     _target_content: str | None = None,
     _target_path: str | None = None,
 ) -> ReleasePolicy:
-    """Load the strict first-slice Release policy."""
+    """Load an exact registered slice policy with no cross-slice bindings."""
     document = (
         _load_yaml(path)
         if _target_content is None
@@ -618,32 +660,49 @@ def load_release_policy(
         release_unit,
         kind="Release policy",
     )
-    if release_unit != FIRST_SLICE_RELEASE_UNIT:
-        message = "release policy is not for the first-slice Release Unit"
+    if release_unit not in {FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT}:
+        message = "release policy is not for an admitted Release Unit"
         raise ValueError(message)
     channels_document = _mapping(
         document["channels"],
         context="release policy channels",
     )
-    if set(channels_document) != {"buddy", "official"}:
-        message = "release policy channels must be exactly buddy and official"
+    channel_names = (
+        ("buddy",)
+        if release_unit == NUGET_RELEASE_UNIT
+        else ("buddy", "official")
+    )
+    if set(channels_document) != set(channel_names):
+        message = (
+            "NuGet release policy channels must be exactly buddy"
+            if release_unit == NUGET_RELEASE_UNIT
+            else "release policy channels must be exactly buddy and official"
+        )
         raise ValueError(message)
     channels = tuple(
         (
             name,
-            _channel_policy(name, channels_document[name]),
+            _channel_policy(
+                name, channels_document[name], release_unit=release_unit
+            ),
         )
-        for name in ("buddy", "official")
+        for name in channel_names
     )
     policy = ReleasePolicy(
         path=_target_path or path.as_posix(),
         release_unit=release_unit,
-        governance=_governance_source(document["governance"]),
+        governance=_governance_source(
+            document["governance"], release_unit=release_unit
+        ),
         channels=channels,
     )
     for _, channel in policy.channels:
         for projection in channel.projections:
-            if projection.package != FIRST_SLICE_PACKAGE:
+            if projection.package != (
+                NUGET_PACKAGE
+                if release_unit == NUGET_RELEASE_UNIT
+                else FIRST_SLICE_PACKAGE
+            ):
                 message = "release policy package binding is not exact"
                 raise ValueError(message)
     return policy
@@ -655,14 +714,14 @@ def _git_paths(repo_root: Path, target: str) -> tuple[str, ...]:
         raise ValueError(message)
     try:
         resolved = subprocess.run(  # noqa: S603
-            ("git", "rev-parse", "--verify", f"{target}^{{commit}}"),
+            ("git", "rev-parse", "--verify", f"{target}^{{commit}}"),  # noqa: S607
             cwd=repo_root,
             check=True,
             capture_output=True,
             text=True,
         ).stdout.strip()
         result = subprocess.run(  # noqa: S603
-            ("git", "ls-tree", "-r", "--name-only", "-z", target),
+            ("git", "ls-tree", "-r", "--name-only", "-z", target),  # noqa: S607
             cwd=repo_root,
             check=True,
             capture_output=True,
@@ -683,7 +742,7 @@ def _git_paths(repo_root: Path, target: str) -> tuple[str, ...]:
 def _git_target_file(repo_root: Path, target: str, path: str) -> str:
     try:
         result = subprocess.run(  # noqa: S603
-            ("git", "show", f"{target}:{path}"),
+            ("git", "show", f"{target}:{path}"),  # noqa: S607
             cwd=repo_root,
             check=True,
             capture_output=True,
@@ -751,6 +810,38 @@ class MissingFirstSliceReleasePolicyError(MissingFirstSliceAuthoringError):
     """The target identity is valid but its Release policy is absent."""
 
 
+def _validate_slice_descriptor_inventory(
+    descriptors: tuple[ReleaseUnitDescriptor, ...],
+) -> None:
+    """Keep discovery closed to two independently registered units."""
+    for descriptor in descriptors:
+        registered_paths = {
+            f"src/public/lib/{unit}/{RELEASE_UNIT_BASENAME}": unit
+            for unit in (FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT)
+        }
+        if (
+            descriptor.path in registered_paths
+            and registered_paths[descriptor.path] != descriptor.release_unit
+        ):
+            message = "Release Unit descriptor and policy identity mismatch"
+            raise ValueError(message)
+        expected = (
+            PurePosixPath("src/public/lib")
+            / descriptor.release_unit
+            / RELEASE_UNIT_BASENAME
+        ).as_posix()
+        if (
+            descriptor.release_unit
+            not in {FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT}
+            or descriptor.path != expected
+        ):
+            message = (
+                "slice authoring must contain exactly one Release Unit "
+                "descriptor at each registered slice path"
+            )
+            raise ValueError(message)
+
+
 def load_first_slice_authoring(  # noqa: C901
     repo_root: Path,
     target: str,
@@ -762,12 +853,7 @@ def load_first_slice_authoring(  # noqa: C901
     if not descriptors:
         message = "first-slice Release Unit descriptor is missing"
         raise MissingFirstSliceDescriptorError(message)
-    if len(descriptors) != 1:
-        message = (
-            "first-slice authoring must contain exactly one Release Unit "
-            "descriptor"
-        )
-        raise ValueError(message)
+    _validate_slice_descriptor_inventory(descriptors)
     expected_root = PurePosixPath("src/public/lib/hcoona-release-smoke-npm")
     expected_descriptor = (expected_root / RELEASE_UNIT_BASENAME).as_posix()
     matches = tuple(
@@ -845,4 +931,62 @@ def load_first_slice_authoring(  # noqa: C901
                 f"{build.build_id}"
             )
             raise ValueError(message)
+    return descriptor, quality, policy
+
+
+def load_nuget_authoring(
+    repo_root: Path,
+    target: str,
+) -> tuple[ReleaseUnitDescriptor, QualitySelection, ReleasePolicy]:
+    """Load the bounded NuGet unit without borrowing npm authoring or policy."""
+    paths = _git_paths(repo_root, target)
+    descriptors = _discover_release_units(repo_root, target, paths)
+    _validate_slice_descriptor_inventory(descriptors)
+    root = PurePosixPath("src/public/lib") / NUGET_RELEASE_UNIT
+    descriptor_path = (root / RELEASE_UNIT_BASENAME).as_posix()
+    matches = tuple(d for d in descriptors if d.path == descriptor_path)
+    if len(matches) != 1:
+        message = "NuGet Release Unit descriptor is missing"
+        raise ValueError(message)
+    descriptor = matches[0]
+    expected_build = BuildDeclaration(
+        build_id="nuget-package",
+        definition="dotnet/nuget-package-v1",
+        entry_point=f"{NUGET_RELEASE_UNIT}.csproj",
+        outputs=(
+            OutputDeclaration(
+                "nuget-package", "primary-package", "nuget-package"
+            ),
+        ),
+    )
+    if descriptor.builds != (expected_build,):
+        message = "NuGet build must select the exact single-package contract"
+        raise ValueError(message)
+    quality_path = (root / QUALITY_BASENAME).as_posix()
+    required_paths = (
+        quality_path,
+        NUGET_POLICY_PATH,
+        (root / expected_build.entry_point).as_posix(),
+    )
+    if any(path not in paths for path in required_paths):
+        message = "NuGet target authoring or project entry point is missing"
+        raise ValueError(message)
+    quality = load_quality_selection(
+        repo_root / quality_path,
+        _target_content=_git_target_file(repo_root, target, quality_path),
+        _target_path=quality_path,
+    )
+    if quality.ecosystems != (
+        ("dotnet", "dotnet/hcoona-release-smoke-github-packages-v1"),
+    ):
+        message = "NuGet Quality selection must match the exact slice preset"
+        raise ValueError(message)
+    policy = load_release_policy(
+        repo_root / NUGET_POLICY_PATH,
+        _target_content=_git_target_file(repo_root, target, NUGET_POLICY_PATH),
+        _target_path=NUGET_POLICY_PATH,
+    )
+    if descriptor.release_unit != policy.release_unit:
+        message = "NuGet descriptor and policy identity mismatch"
+        raise ValueError(message)
     return descriptor, quality, policy

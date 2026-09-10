@@ -1,0 +1,4 @@
+schema: workflow-delivery/v3/quality-selection
+ecosystems:
+  dotnet:
+    preset: dotnet/hcoona-release-smoke-github-packages-v1

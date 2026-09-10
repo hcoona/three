@@ -26,6 +26,7 @@ APPROVED_RELEASE_MODULES = (
     "governance_git.py",
     "identity.py",
     "live.py",
+    "nuget_governance.py",
     "observation.py",
     "planner.py",
     "publication.py",

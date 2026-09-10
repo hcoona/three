@@ -2257,7 +2257,7 @@ def test_repository_model_valid_tuples_keep_canonical_json_arrays() -> None:
         },
     }
     assert snapshot.snapshot_digest == (
-        "sha256:db47876800cb5f09b416c0222b2609cd3bb64699cb022c7a491b98952de3b055"
+        "sha256:b28688ff9a6530564456da5eb7decf61957e8e590da8afe657bb5157463fc8dc"
     )
 
 
@@ -2284,11 +2284,11 @@ def test_exact_provider_result_and_repository_model_admission_preserve_concrete_
     assert result.nbgv.git_commit_id == TARGET
     assert result.nbgv.npm_package_version == NPM_VERSION
     assert result.result_digest == (
-        "sha256:56a59d6a237494431e86943eb4dfbe6147de14dfc030b76b1eee0a6ca6ce1fc6"
+        "sha256:6dc1cf66e83f30f9d1730cd0f2eb0c6401b4412711f722490f45179188bedb8f"
     )
     assert snapshot.release_units[0].builds[0].build_id == "npm-package"
     assert snapshot.quality[0].preset == "node/hcoona-release-smoke-npm-v1"
     assert snapshot.ready is True
     assert snapshot.snapshot_digest == (
-        "sha256:db47876800cb5f09b416c0222b2609cd3bb64699cb022c7a491b98952de3b055"
+        "sha256:b28688ff9a6530564456da5eb7decf61957e8e590da8afe657bb5157463fc8dc"
     )

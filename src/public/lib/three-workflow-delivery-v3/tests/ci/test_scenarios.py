@@ -848,11 +848,19 @@ def test_ci_scenario_project_test_failure_fails_shadow_check() -> None:
     assert "date +%s" not in enforce_run
 
 
-def test_ci_scenario_repository_only_change_has_valid_empty_affected_lanes() -> (  # noqa: E501
-    None
-):
+@pytest.mark.parametrize(
+    "changed_path",
+    [
+        "docs/wiki/README.md",
+        "src/private/app/workflow-delivery-v3-dotnet-provider/Program.cs",
+        "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs",
+    ],
+)
+def test_ci_scenario_repository_only_change_has_valid_empty_affected_lanes(
+    changed_path: str,
+) -> None:
     """Exercise literal LLD CI scenario 4 with three exact empty lanes."""
-    plan = _incremental_plan(changed_paths=("docs/wiki/README.md",))
+    plan = _incremental_plan(changed_paths=(changed_path,))
     results = _lane_results(plan)
     root = results[0]
     empty = results[1:]
@@ -861,7 +869,7 @@ def test_ci_scenario_repository_only_change_has_valid_empty_affected_lanes() -> 
     plan_digest = ci_qualification_snapshot_digest(plan)
 
     assert plan.ready is True
-    assert plan.changed_paths == ("docs/wiki/README.md",)
+    assert plan.changed_paths == (changed_path,)
     assert _selected_lanes(plan) == ("root-hk",)
     assert plan.selected_project_nodes == ()
     assert plan.selected_release_units == ()

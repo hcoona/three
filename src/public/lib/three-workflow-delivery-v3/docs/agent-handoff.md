@@ -89,7 +89,7 @@ operations, publication, or another npm proving run.
   [retained source extracts](./validation/native-and-normal-live-evidence.md)
   with their pinned source provenance.
 
-## NuGet Second-Slice Design
+## NuGet Second-Slice Implementation
 
 The NuGet research delivery is complete. The user has selected
 `Hcoona.ReleaseSmoke.GithubPackages` and confirmed its operator-controlled,
@@ -97,12 +97,26 @@ smoke-only use without production dependencies or existing compatibility
 obligations. Scope, trust, and acceptance are now confirmed as `WD-NUGET-*`.
 The HLD, five MLD extensions, and brief NuGet LLD define the design. The
 [NuGet handoff](./nuget-smoke-research-handoff.md) routes its admission gates.
-Verify design delivery in Git and the PR, complete only outstanding delivery
-gates, and skip completed stages. After protected design delivery, the next
-phase is separately authorized disabled implementation. Implementation,
-native probes, and publication are not currently authorized. The confirmed
-validation objective does not adopt npm risk exceptions, authority, evidence,
-or external operations.
+Design delivery is complete through PR #669. The user subsequently delegated
+end-to-end implementation and proving of this C# smoke project without
+intermediate confirmation. Continue within the confirmed scope; close each
+concrete native request and its bounded budget before execution. This grant
+does not waive native guarantees, protected delivery, current-run Approval,
+independent audit, or ambiguity stop conditions, and does not reopen npm.
+
+The accepted [Delivery Wave](../../../../../docs/delivery-wave.md#advance-workflow-delivery-v3)
+supplies repository work authorization. [Issue #676](https://github.com/hcoona/three/issues/676)
+coordinates the concrete NuGet advancement and retains delivery evidence;
+neither this handoff nor the Issue enlarges the Wave or domain effect bounds.
+
+The first disabled implementation unit adds native Provider and frozen
+Build/Quality mechanisms, independent authoring/compiler contracts, the
+one-shot HTTP adapter, and blocked NuGet Governance. Typed Release records,
+workflow integration, native acceptance tooling, activation, and real
+publication remain subsequent work. Inspect Git and PR state before claiming
+this implementation unit is protected-delivered. Sufficient GitHub-owned
+atomic non-overwrite assurance remains an activation gate; sequential
+duplicate tests cannot supply it.
 
 ## Git Inspection and Implementation Scope
 
@@ -120,11 +134,10 @@ and synchronized current-state documentation. Treat that as a bounded purpose,
 not an exhaustive path allowlist; inspect every changed path and reject
 unrelated scope.
 
-That inventory is not authorization to reopen npm implementation. The NuGet
-design delivery covers requirements, HLD, five MLD extensions, glossary,
-migration policy, brief LLD, handoff, navigation, and retained design evidence.
-It changes no runtime or product files. Subsequent implementation requires a
-new authorized scope.
+That inventory is not authorization to reopen npm implementation. NuGet
+implementation follows the protected design and the subsequent end-to-end
+delegation described above. Changes to shared code preserve npm contracts;
+NuGet receives its own Provider facts, policy, Governance, and native evidence.
 
 When these paths are under review, preserve unrelated worktree changes and do
 not reset or overwrite them.
@@ -378,10 +391,11 @@ provisioning, acceptance, either dispatch, or either Approval. Original-D
 recovery and any future mutation require separate explicit authorization.
 This completed task authorizes no third proving dispatch.
 
-The NuGet slice follows its linked handoff and existing design package.
-Verify protected design delivery before proceeding to separately authorized
-disabled implementation. Do not repeat completed design stages or infer
-native-operation or publication authorization.
+The NuGet slice follows its linked handoff and protected design package under
+the subsequent end-to-end delegation. Continue the disabled implementation
+units and their delivery gates without repeating design delivery. Native
+operations still require concrete bounded requests and satisfied technical
+gates; missing service assurance keeps activation disabled.
 
 ## Validation and Review Protocol
 

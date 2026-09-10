@@ -38,6 +38,7 @@ from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_POLICY_PATH,
     FIRST_SLICE_RELEASE_UNIT,
 )
+from three_workflow_delivery_v3.repository.node_provider import NbgvFacts
 
 if TYPE_CHECKING:
     from three_workflow_delivery_v3.canonical import JsonValue
@@ -261,6 +262,8 @@ def _plan_qualification(
     purpose = "live-release" if live else "release-simulation"
     subject = binding.attempt if live else binding
     repository_model = admitted_repository_model.snapshot
+    if type(repository_model.nbgv) is not NbgvFacts:
+        raise ValueError("The npm Release Planner requires native Node facts")
     policy = repository_model.release_policy
     if policy is None:
         message = "Release Planner requires compiled Snapshot policy"

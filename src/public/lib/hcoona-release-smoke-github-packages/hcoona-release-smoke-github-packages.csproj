@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>Hcoona.ReleaseSmoke.GithubPackages</PackageId>
+    <AssemblyName>Hcoona.ReleaseSmoke.GithubPackages</AssemblyName>
+    <RootNamespace>HcoonaReleaseSmokeGithubPackages</RootNamespace>
+    <Description>Operator-controlled Workflow Delivery v3 NuGet smoke marker.</Description>
+    <IsPackable>true</IsPackable>
+    <IncludeSymbols>false</IncludeSymbols>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(WorkflowDeliveryFrozenBuild)' == 'true'">
+    <Version>$(WorkflowDeliveryNuGetVersion)</Version>
+    <PackageVersion>$(WorkflowDeliveryNuGetVersion)</PackageVersion>
+    <AssemblyVersion>$(WorkflowDeliveryAssemblyVersion)</AssemblyVersion>
+    <FileVersion>$(WorkflowDeliveryFileVersion)</FileVersion>
+    <InformationalVersion>$(WorkflowDeliveryInformationalVersion)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(WorkflowDeliveryFrozenBuild)' == 'true'">
+    <GlobalPackageReference Update="Nerdbank.GitVersioning" ExcludeAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="$(WorkflowDeliveryWitnessPath)" Condition="'$(WorkflowDeliveryWitnessPath)' != ''" Pack="true" PackagePath="workflow-delivery/provenance.json" />
+  </ItemGroup>
+
+  <Target Name="ValidateWorkflowDeliveryFrozenInputs" BeforeTargets="Restore;PrepareForBuild;GenerateNuspec" Condition="'$(WorkflowDeliveryFrozenBuild)' == 'true'">
+    <Error Condition="'$(WorkflowDeliveryNuGetVersion)' == '' or '$(WorkflowDeliveryAssemblyVersion)' == '' or '$(WorkflowDeliveryFileVersion)' == '' or '$(WorkflowDeliveryInformationalVersion)' == ''" Text="Frozen Workflow Delivery version inputs are required." />
+    <Error Condition="'$(WorkflowDeliveryWitnessPath)' == '' or !Exists('$(WorkflowDeliveryWitnessPath)')" Text="Frozen Workflow Delivery witness is required." />
+    <Error Condition="'$(BaseIntermediateOutputPath)' == 'obj\' or '$(BaseIntermediateOutputPath)' == 'obj/'" Text="Frozen Workflow Delivery requires a separate clean intermediate directory." />
+  </Target>
+</Project>

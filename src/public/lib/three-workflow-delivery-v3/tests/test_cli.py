@@ -596,13 +596,18 @@ def test_catalog_command_emits_exact_static_catalog(
 
     assert result == 0
     assert output["schema"] == "workflow-delivery/v3/static-catalog"
-    assert set(output["build-definitions"]) == {"node/npm-package-v1"}
+    assert set(output["build-definitions"]) == {
+        "node/npm-package-v1",
+        "dotnet/nuget-package-v1",
+    }
     assert set(output["quality-presets"]) == {
-        "node/hcoona-release-smoke-npm-v1"
+        "node/hcoona-release-smoke-npm-v1",
+        "dotnet/hcoona-release-smoke-github-packages-v1",
     }
     assert set(output["destination-definitions"]) == {
         "npm/github-packages-hcoona-three-v1",
         "npm/npmjs-public-v1",
+        "nuget/github-packages-hcoona-three-v1",
     }
     assert output["catalog-digest"].startswith("sha256:")
 

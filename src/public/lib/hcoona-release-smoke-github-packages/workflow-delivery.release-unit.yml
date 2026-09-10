@@ -1,0 +1,10 @@
+schema: workflow-delivery/v3/release-unit
+release-unit: hcoona-release-smoke-github-packages
+builds:
+  - id: nuget-package
+    definition: dotnet/nuget-package-v1
+    entry-point: hcoona-release-smoke-github-packages.csproj
+    outputs:
+      - id: nuget-package
+        role: primary-package
+        kind: nuget-package

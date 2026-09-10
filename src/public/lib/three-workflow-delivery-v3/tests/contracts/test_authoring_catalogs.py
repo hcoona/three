@@ -353,9 +353,12 @@ def test_first_slice_authoring_accepts_exact_approved_one_output(
     assert len(descriptor.builds[0].outputs) == 1
 
 
-def test_static_catalog_contains_exact_first_slice_contracts() -> None:
-    """Register only the approved first-slice logical contract inventory."""
-    assert set(BUILD_DEFINITIONS) == {"node/npm-package-v1"}
+def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
+    """Register only the two confirmed slices' logical contract inventory."""
+    assert set(BUILD_DEFINITIONS) == {
+        "node/npm-package-v1",
+        "dotnet/nuget-package-v1",
+    }
     assert set(QUALITY_DEFINITIONS) == {
         "node/project-build-v1",
         "node/project-test-v1",
@@ -363,11 +366,17 @@ def test_static_catalog_contains_exact_first_slice_contracts() -> None:
         "node/npm-artifact-v1",
         "node/npm-artifact-contents-v1",
         "node/npm-install-import-v1",
+        "dotnet/nuget-artifact-contents-v1",
+        "dotnet/nuget-restore-build-invoke-v1",
     }
-    assert set(QUALITY_PRESETS) == {"node/hcoona-release-smoke-npm-v1"}
+    assert set(QUALITY_PRESETS) == {
+        "node/hcoona-release-smoke-npm-v1",
+        "dotnet/hcoona-release-smoke-github-packages-v1",
+    }
     assert set(DESTINATION_DEFINITIONS) == {
         "npm/github-packages-hcoona-three-v1",
         "npm/npmjs-public-v1",
+        "nuget/github-packages-hcoona-three-v1",
     }
     assert set(EXECUTION_CLASSES) == {
         "control/read-only-v1",
@@ -382,7 +391,10 @@ def test_static_catalog_contains_exact_first_slice_contracts() -> None:
         "github/packages-write-v1",
         "npmjs/trusted-publishing-oidc-v1",
     }
-    assert set(RELEASE_POLICIES) == {"hcoona-release-smoke-npm"}
+    assert set(RELEASE_POLICIES) == {
+        "hcoona-release-smoke-npm",
+        "hcoona-release-smoke-github-packages",
+    }
     assert RELEASE_POLICIES["hcoona-release-smoke-npm"].path == (
         FIRST_SLICE_POLICY_PATH
     )
@@ -408,8 +420,7 @@ def test_catalog_definitions_are_data_only_and_canonically_stable() -> None:
 
     assert second == first
     assert catalog_digest() == (
-        "sha256:2bebcd092c6c4ea58797488f76d9db9ffe166df8735d7efa"
-        "67995163af24e357"
+        "sha256:98fec8147b0bb59f9cfd6f0051bd1a55817a4f74c00272fe02ad236ec2030990"
     )
     definition_sections = (
         "build-definitions",
@@ -1547,8 +1558,7 @@ def test_npmjs_destination_uses_hypothetical_trusted_publishing_oidc() -> None:
         "npmjs/trusted-publishing-oidc-v1",
     )
     assert catalog_digest() == (
-        "sha256:2bebcd092c6c4ea58797488f76d9db9ffe166df8735d7efa"
-        "67995163af24e357"
+        "sha256:98fec8147b0bb59f9cfd6f0051bd1a55817a4f74c00272fe02ad236ec2030990"
     )
 
     npmjs_capability = CAPABILITIES["npmjs/trusted-publishing-oidc-v1"]

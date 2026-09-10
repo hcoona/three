@@ -166,7 +166,9 @@ def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
         path=GOVERNANCE_PATH,
         max_age_days=GOVERNANCE_MAX_AGE_DAYS,
     )
-    policy = SimpleNamespace(governance=source)
+    policy = SimpleNamespace(
+        governance=source, release_unit="hcoona-release-smoke-npm"
+    )
     static_reference = BoundedStaticReferenceResult(
         source_kind="git-target",
         target="e" * 40,

@@ -271,6 +271,7 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       ".github/actions/workflow-delivery-v3-*/**",
       ".github/actions/workflow-delivery-v3/**",
       ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json",
+      ".github/workflow-delivery/governance/hcoona-release-smoke-github-packages.json",
       ".github/workflows/*.yaml",
       ".github/workflows/*.yml",
       ".github/workflows/workflow-delivery-v3-*.yaml",
@@ -295,6 +296,8 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       "src/**/workflow-delivery.quality.yml",
       "src/**/workflow-delivery.release-unit.yml",
       "src/private/app/workflow-delivery-v3-nuget-authority/**",
+      "src/private/app/workflow-delivery-v3-dotnet-provider/**",
+      "src/public/lib/hcoona-release-smoke-github-packages/**",
       "src/private/lib/hk/**",
       "src/public/lib/three-workflow-delivery-v3/**",
       "uv.lock",
@@ -312,7 +315,7 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
     depends = List("static-reference-authority-preparation")
     glob = workflow_delivery_v3_files
     check =
-      "python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests"
+      "python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13.12 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests"
   }
 
   ["node-mise-authority"] {

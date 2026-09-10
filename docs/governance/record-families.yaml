@@ -361,6 +361,34 @@ families:
     creation_trigger: The named consumers need the retained concern at its review or use point.
     failure_mode: The helper becomes a competing project or implies authorized NuGet release implementation.
     review_point: Changes to this interface or its owning project records
+  - id: three-workflow-delivery-v3-dotnet-helper-interface
+    state: current
+    namespace: src/public/lib/three-workflow-delivery-v3
+    concern: Native .NET helper usage and routing to its v3 engineering owner
+    carrier: repository-file
+    path: src/private/app/workflow-delivery-v3-dotnet-provider/README.md
+    format: markdown
+    producer: Project maintainers
+    maintainer: Repository owner
+    consumers:
+      - Helper maintainers invoking the prebuilt native reader and locating Provider, frozen Build and admission contracts
+    creation_trigger: The native helper needs a callable interface and an owning domain authority.
+    failure_mode: Readers confuse package inspection with publishing or treat local mechanism evidence as native admission.
+    review_point: Changes to this helper interface or its owning project records
+  - id: hcoona-release-smoke-github-packages-interface
+    state: current
+    namespace: src/public/lib/hcoona-release-smoke-github-packages
+    concern: Independent NuGet smoke-library purpose and marker API
+    carrier: repository-file
+    path: src/public/lib/hcoona-release-smoke-github-packages/README.md
+    format: markdown
+    producer: Project maintainers
+    maintainer: Repository owner
+    consumers:
+      - Smoke-library users and v3 reviewers confirming the marker behavior and absence of production compatibility obligations
+    creation_trigger: The selected smoke library needs its own minimal product interface.
+    failure_mode: Package topology substitutes for a stated product purpose or creates an implied production support commitment.
+    review_point: Changes to the smoke-library purpose or API
   - id: hcoona-release-smoke-npm-package-interface
     state: current
     namespace: src/public/lib/hcoona-release-smoke-npm
