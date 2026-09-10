@@ -21,7 +21,7 @@ Authority is scoped rather than globally ranked.
 | Current positive work authorization                                        | Root `docs/delivery-wave.md`                                  |
 | Repository governance and record policy                                    | `docs/governance/`                                            |
 | Product purpose and directional boundary                                   | Project-local product vision, or README when sufficient       |
-| User context and accepted journeys                                         | Project-local stories, only when admitted for a real consumer |
+| User context and motivation for required behavior                          | Project-local user stories, when admitted for a real consumer |
 | Required product behavior                                                  | Project-local requirements                                    |
 | Current system structure and invariants                                    | Project-local architecture records                            |
 | Durable design choices and rationale                                       | Decision records in the owning namespace                      |
@@ -71,6 +71,38 @@ Before adding a record or control, identify:
 6. why an existing carrier cannot serve the same purpose.
 
 If these questions do not have concrete answers, do not add the record.
+
+## User Stories
+
+User stories own user context and motivation for requirements work. They do not
+define normative behavior, realization choices, validation procedures, current
+support, or work authorization. Those concerns remain with the owning project's
+requirements, architecture, validation and support records, and the Delivery Wave.
+
+The repository owner produces and maintains stories with consumer input.
+Requirement authors and reviewers use them when deriving behavior from user
+goals and scenario context. Validation and release reviewers follow their routes
+to the scenario and evidence authorities relevant to the proposed release.
+
+Admit a distinct story record when an accepted Wave requires user goals or a
+primary journey whose context the existing capability requirements or README do
+not preserve. Evaluate that need during the relevant requirements or journey
+review; the Wave review selecting that work is the fallback review. Keep an
+admitted record in the owning project's documentation, normally
+`<project-root>/docs/product/user-stories.md`, and reconcile its project portal
+and family coverage. A README remains sufficient when it serves the actual
+consumer; this rule does not require stories for every project.
+
+An existing story section in a project specification may remain with its actual
+consumers. Keep motivation distinct from normative requirements in that carrier;
+preserve its paths and anchors rather than creating a duplicate story record.
+
+Describe the actor, context, desired goal and motivation. Context variants of
+the same goal need not become separate stories. Link the applicable capability
+requirements and validation authorities rather than copying acceptance criteria.
+A primary journey can explain priority, but its release-blocking evidence gate
+belongs in the project's validation authority. Stories do not independently
+select implementation mechanisms, platforms or additional release commitments.
 
 ## Granularity
 
@@ -305,7 +337,16 @@ Adapted from [the pinned Repository Record System][source] at
 [copyright and license notice](reference-license.txt) is retained. Adaptations
 are repository/project namespaces, `main`, preservation of local identifiers,
 Three's existing tool and provenance carriers, narrow mutable-source routing,
-and explicit validation and control activation boundaries. Authentication-product
-families and User Story additions after the pinned source are not imported.
+and explicit validation and control activation boundaries.
+
+The User Story role, admission and requirement/validation routing additionally
+derive from the [upstream story record][story-source] and
+[record-family entry][story-family-source] at
+`f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64`. They use Three's existing project
+namespaces and record-admission rules. This supplement imports neither
+authentication-product stories nor unrelated upstream governance changes;
+other parts of this policy retain the original source baseline above.
 
 [source]: https://github.com/hcoona/microsoft-authentication-cli/blob/1a02498589769c38bc16eefc2efc5f9eca6e6994/docs/governance/record-system.md
+[story-source]: https://github.com/hcoona/microsoft-authentication-cli/blob/f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64/docs/product/user-stories.md
+[story-family-source]: https://github.com/hcoona/microsoft-authentication-cli/blob/f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64/docs/governance/record-families.yaml
