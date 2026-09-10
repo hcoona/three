@@ -1,0 +1,149 @@
+# Repository record controls; scope and execution are defined by the linked policies.
+# Derived from hcoona/microsoft-authentication-cli at 1a02498589769c38bc16eefc2efc5f9eca6e6994.
+# Source copyright and MIT notice: docs/governance/reference-license.txt.
+schema_version: 2
+controls:
+  - id: record-format
+    state: current
+    class: mechanical
+    enforcement: blocking
+    producer: HK and configured formatters
+    maintainer: Repository owner
+    consumers:
+      - Contributors using the local small,medium profiles
+      - CI validation and reviewers using small,medium,large with explicit changed refs
+    governing_rules:
+      - hk.pkl
+      - mise.toml
+      - .github/workflows/ci.yml
+      - AGENTS.md
+    invariant: Selected Markdown, YAML, and JSON satisfy their existing format/lint configuration. HK path exclusions
+      and profiles apply; this is not schema, link, coverage, or semantic validation.
+    runner: hk
+    implementation:
+      kind: hk-steps
+      steps:
+        local-fast:
+          - typos
+          - editorconfig-check
+          - markdownlint-cli2
+          - markdown-prettier
+          - yaml-prettier
+          - json-biome
+        ci:
+          - typos
+          - editorconfig-check
+          - markdownlint-cli2
+          - markdown-prettier
+          - yaml-prettier
+          - json-biome
+    execution_points:
+      - local-fast
+      - ci
+    failure_mode: Malformed selected records enter review; excluded paths receive no implied coverage.
+  - id: record-system-review
+    state: current
+    class: procedural-review
+    enforcement: review-required
+    producer: Reviewer independent of change author and implementation agent
+    maintainer: Repository owner
+    consumers:
+      - Record authors and repository owner at record-system review
+    governing_rules:
+      - docs/governance/governance-system.md#changing-rules
+      - docs/governance/record-system.md#record-system-gate
+    invariant:
+      Changed records receive independent review of authority, actual consumers, lifecycle, routing and policy-control
+      agreement.
+    runner: agent-skill
+    implementation:
+      kind: repository-path
+      value: .github/skills/record-system-review/SKILL.md
+    execution_points:
+      - pull-request-review
+    failure_mode: Changed records create duplicate authority or omit an actual consumer.
+  - id: independent-finding-triage
+    state: current
+    class: procedural-review
+    enforcement: review-required
+    producer: Reviewer independent of originating reviewer, change author, and implementation agent
+    maintainer: Repository owner
+    consumers:
+      - Change author and owner disposing of material findings
+    governing_rules:
+      - docs/governance/governance-system.md#gov-011-separate-findings-from-disposition
+    invariant: Each material finding receives evidenced true-positive, false-positive, or unresolved classification
+      independently before remediation or dismissal.
+    runner: agent-skill
+    implementation:
+      kind: review-procedure
+      value: Apply GOV-011 and the canonical review procedure; record independent classifications and owner dispositions
+        in the governing PR.
+    execution_points:
+      - pull-request-review
+    failure_mode: Self-confirming review creates false assurance or unnecessary changes.
+  - id: record-system-gate
+    state: current
+    class: owner-decision
+    enforcement: owner-disposition
+    producer: Repository owner
+    maintainer: Repository owner
+    consumers:
+      - Repository owner accepting a record-system change
+    governing_rules:
+      - docs/governance/record-system.md#record-system-gate
+    invariant: Acceptance has applicable check results, independent record/domain reviews, finding triage and required
+      owner dispositions against the reviewed change.
+    runner: human-owner
+    implementation:
+      kind: evidence-carrier
+      value:
+        The proposing PR links exact changes, applicable checks, independent reviews, triage and owner dispositions;
+        accepted merge establishes current state.
+    execution_points:
+      - pull-request-merge
+    failure_mode: A change is accepted without evidence for its claimed gates or preservation of current consumers.
+  - id: research-evidence-review
+    state: current
+    class: procedural-review
+    enforcement: review-required
+    producer: Reviewer independent of the change author and implementation agent
+    maintainer: Repository owner
+    consumers:
+      - Research authors and repository owner during research, recheck and evidence review, including every merged Wave
+        change
+    governing_rules:
+      - docs/governance/record-system.md
+      - docs/governance/governance-system.md
+    invariant: Research preserves source boundaries, accepted effects and protocols, evidence labels, reproducibility,
+      and claim limits; review applicable mutable-source triggers at every Wave change.
+    runner: agent-skill
+    implementation:
+      kind: repository-path
+      value: .github/skills/research-evidence-review/SKILL.md
+    execution_points:
+      - pull-request-review
+      - recheck-trigger
+      - release
+    failure_mode: Research conclusions overstate evidence or expose unsafe experimental detail.
+  - id: repository-record-validation
+    state: current
+    class: procedural-review
+    enforcement: review-required
+    producer: Record author and independent reviewer executing applicable validation
+    maintainer: Repository owner
+    consumers:
+      - Record authors and reviewers checking discovered records and their consumers
+    governing_rules:
+      - docs/governance/record-system.md#enforcement
+      - docs/governance/checker-contract.md
+    invariant: Independently discovered scope receives schema, reference, namespace, portal and applicable HK-plan
+      validation; each result identifies the actual snapshot and limitations.
+    runner: agent-skill
+    implementation:
+      kind: review-procedure
+      value: Execute the applicable checks defined in docs/governance/checker-contract.md and retain commands, snapshots
+        and results in the PR; no general checker or automatic CI schema/coverage gate is claimed.
+    execution_points:
+      - local-validation
+    failure_mode: Catalog omissions, broken consumers or unexecuted checks are mistaken for complete validated coverage.

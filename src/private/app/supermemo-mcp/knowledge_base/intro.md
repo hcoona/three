@@ -113,6 +113,6 @@ End RepHist #52013
 End Element #52013
 ```
 
-In above example, the element with ID 52013 is a topic that contains 2 images and 2 HTML components. The first image is a map of the United States, and the second image is an occlusion of the first image. The HTML components are question & answer pairs related to the state names in the map. If the content is a short plain text, it could (but is not required to) be stored in the `Text` field of the HTML component. If the field `HTMFile` appears, it indicates that the HTML content is stored in a separate file. The ending part of the element data includes repetition history, which tracks the learning progress for this element.
+In above example, the element with ID 52013 is an item that contains 2 images and 2 HTML components. The first image is a map of the United States, and the second image is an occlusion of the first image. The HTML components are question & answer pairs related to the state names in the map. If the content is a short plain text, it could (but is not required to) be stored in the `Text` field of the HTML component. If the field `HTMFile` appears, it indicates that the HTML content is stored in a separate file. The ending part of the element data includes repetition history, which tracks the learning progress for this element.
 
 If you paste back the copied element data into SuperMemo, it will create a new element according to the provided structure.

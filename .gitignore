@@ -925,3 +925,6 @@ apm_modules/
 !src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/dist/
 !src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/dist/index.js
 !src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/dist/acceptance-witness.json
+
+# Disposable test-agent execution state; durable evidence belongs in its work carrier.
+/.testagent/

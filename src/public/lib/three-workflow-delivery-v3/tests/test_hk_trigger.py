@@ -292,7 +292,7 @@ def _initialize_repository(
     shutil.copy2(REPO_ROOT / HK_RANGE_HELPER, helper)
     for path in baseline_paths:
         if not (repo / path).exists():
-            _write(repo, path, "baseline\n")
+            _write(repo, path, f"baseline: {path}\n")
     _git(repo, "init", "--quiet")
     _git(repo, "config", "user.name", "Workflow Delivery Test")
     _git(
@@ -1710,21 +1710,6 @@ def test_typos_legacy_identifier_exceptions_are_file_specific() -> None:
         for line in typos_config.splitlines()
     )
     assert rf"\b{legacy_identifier}\b" not in typos_config.casefold()
-
-
-def test_historical_status_identifier_and_typos_scope_are_exact() -> None:
-    """Preserve the historical line while limiting the exception to one file."""
-    status_path = ".testagent/status.md"
-    status_lines = (
-        (REPO_ROOT / status_path).read_text(encoding="utf-8").splitlines()
-    )
-    legacy_identifier = "b" + "a"
-    typos_config = (REPO_ROOT / ".typos.toml").read_text(encoding="utf-8")
-
-    assert (
-        status_lines[2899] == f"hex fixture substring `{legacy_identifier}` in"
-    )
-    assert typos_config.count(f"  '{status_path}',") == 1
     assert ".testagent/**" not in typos_config
 
 

@@ -1,21 +1,24 @@
 # Final Verification Checklist – asciidoctor-latexmath v0.1.0
 
+> This is historical verification evidence for the stated baseline, not a new test result or a current release authorization. Its warning and reported scope remain intact.
+> Navigation: [project records](../../docs/README.md).
+
 Date: 2025-10-07
 Verified by: GitHub Copilot agent
 
 ## Test Matrix
 
-| Check | Command | Result |
-| ----- | ------- | ------ |
-| RSpec suite (pass #1) | `bundle exec rspec` | ✅ 91 examples, 0 failures |
-| RSpec suite (pass #2) | `bundle exec rspec` | ✅ 91 examples, 0 failures |
-| Gem reproducibility | `bundle exec rake release:verify` | ✅ SHA256 match `fe818300b8b0c35e9e96a19a37951186c9e282d387ac02a3a963627e1c235e2a` |
+| Check                 | Command                           | Result                                                                             |
+| --------------------- | --------------------------------- | ---------------------------------------------------------------------------------- |
+| RSpec suite (pass #1) | `bundle exec rspec`               | ✅ 91 examples, 0 failures                                                         |
+| RSpec suite (pass #2) | `bundle exec rspec`               | ✅ 91 examples, 0 failures                                                         |
+| Gem reproducibility   | `bundle exec rake release:verify` | ✅ SHA256 match `fe818300b8b0c35e9e96a19a37951186c9e282d387ac02a3a963627e1c235e2a` |
 
 ## Statistics Line Validation
 
 Captured via `Asciidoctor::MemoryLogger` during a warm render (50 cached formulas):
 
-```
+```text
 latexmath stats: renders=0 cache_hits=50 avg_render_ms=0 avg_hit_ms=0
 ```
 

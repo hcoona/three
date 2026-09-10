@@ -8,7 +8,7 @@
 
 ## Installation
 
-- Install the package into your monorepo environment using `uv add --package nbgv-python nbgv-python`.
+- Synchronize this package's monorepo environment using `uv sync --package nbgv-python`. In a consuming project, add `nbgv-python` to the build requirements as shown below.
 - Ensure the `nbgv` CLI is available either as a global .NET tool (`dotnet tool install -g nbgv`) or via a local tool manifest.
 - Optionally set `NBGV_PYTHON_COMMAND` when the executable lives outside of `PATH` or requires additional arguments.
 
@@ -17,6 +17,10 @@
 Add the plugin to your project configuration:
 
 ```toml
+[build-system]
+requires = ["hatchling", "nbgv-python"]
+build-backend = "hatchling.build"
+
 [project]
 dynamic = ["version"]
 
@@ -27,12 +31,12 @@ source = "nbgv"
 version-field = "SemVer2"
 ```
 
-During builds Hatch invokes `nbgv get-version --format json` in the project root and uses the selected field for the package version.
+During version resolution Hatch invokes `nbgv get-version --format json --project <absolute-project-path>` and uses the selected field for the package version. The subprocess retains the caller's working directory.
 Additional configuration keys include:
 
 - `command` (override CLI invocation)
-- `working-directory` (relative path for the repository root)
-- `epoch` _(default: `null`)_ – when provided, this non-negative integer is prepended to the normalized version to emit a PEP 440 epoch (for example `2!1.2.3`). Leave it unset or `null` to omit the epoch entirely.
+- `working-directory` (project path passed to `--project`; relative paths resolve against the Hatch project root, and absolute paths are accepted)
+- `epoch` _(default: unset)_ – when provided, this non-negative integer is prepended to the normalized version to emit a PEP 440 epoch (for example `2!1.2.3`). Omit the key in TOML to skip the epoch; the Python configuration parser also accepts `None`. TOML has no `null` value.
 
 The plugin normalizes the chosen value to a PEP 440 compliant version, so SemVer pre-release tags such as `-beta.1` are mapped to `b1` automatically.
 
@@ -42,7 +46,7 @@ The plugin normalizes the chosen value to a PEP 440 compliant version, so SemVer
     - `version-tuple.mode` _(default: `"nbgv"`)_ – choose how to build the tuple. Use `"nbgv"` (default) to assemble components from the Nerdbank.GitVersioning JSON payload, or `"pep440"` to parse the normalized version string.
     - `version-tuple.fields` _(default: `["VersionMajor", "VersionMinor", "BuildNumber", "PrereleaseVersionNoLeadingHyphen"]`)_ – when `mode = "nbgv"`, this ordered list determines which NBGV variables populate the tuple. Empty strings and `null` values are skipped.
     - `version-tuple.normalized-prerelease` _(default: `false`)_ – when `mode = "nbgv"`, convert the `PrereleaseVersionNoLeadingHyphen` entry to its PEP 440 shorthand (for example `beta.1` → `b1`).
-    - `version-tuple.epoch` _(default: `null`)_ – only applies when `mode = "pep440"`. Keep it `null` to emit the epoch only when the source string already includes a non-zero epoch (e.g., `2!1.0.0`), set `true` to force inclusion, or `false` to suppress it.
+    - `version-tuple.epoch` _(default: unset)_ – only applies when `mode = "pep440"`. Omit it to emit the epoch only when the source string already includes a non-zero epoch (e.g., `2!1.0.0`), set `true` to force inclusion, or `false` to suppress it. The parser represents the unset value as `None`.
     - `version-tuple.double-quote` _(default: `true`)_ – controls whether string parts in the tuple use double quotes (`""`) or single quotes (`''`).
 
     ```toml
@@ -79,7 +83,7 @@ The plugin normalizes the chosen value to a PEP 440 compliant version, so SemVer
 
 ### Writing Version Files
 
-- Emit a templated artifact (for example `src/pkg/_version.py`) during build. The `write` table accepts the following keys:
+- Emit a templated artifact (for example `src/pkg/_version.py`) when Hatch resolves the version, including during builds. The `write` table accepts the following keys:
     - `file` _(required)_ – relative or absolute path of the generated file.
     - `template` _(optional)_ – custom format string. When omitted, `.py` files default to `__version__ = "{normalized_version}"` when that field is available (otherwise `version` is used), while `.txt` or extension-less files default to `{version}`; other suffixes require an explicit template.
     - `encoding` _(optional, default: `"utf-8"`)_ – text encoding used when writing the file.
@@ -112,7 +116,7 @@ from nbgv_python import forward
 forward(["cloud", "--ci"])
 ```
 
-All helpers raise `NbgvNotFoundError` when the CLI cannot be resolved and `NbgvCommandError` for non-zero exit codes.
+Command discovery raises `NbgvNotFoundError` when it finds neither an override, `nbgv`, nor `dotnet`; subprocess failures with non-zero exit codes raise `NbgvCommandError`. An override is not checked for executability during discovery, and finding `dotnet` does not establish that the local `nbgv` tool is installed. `get_version()` raises `NbgvJsonError` for malformed JSON. The Hatch adapter wraps `NbgvError` failures from command discovery, version retrieval, and normalization in `RuntimeError`, retaining the original exception as its cause.
 
 ## Command-Line Usage
 
@@ -122,4 +126,11 @@ The console script `nbgv-python` proxies all arguments to the real CLI:
 nbgv-python get-version --format json
 ```
 
-The wrapper surfaces the same exit codes as the underlying tool and prints diagnostic guidance when the command cannot be located.
+The wrapper surfaces the same exit codes as the underlying tool and prints diagnostic guidance with exit code 127 when discovery raises `NbgvNotFoundError`.
+
+## Project Records
+
+- [Architecture overview](https://github.com/hcoona/three/blob/main/src/public/lib/nbgv-python/docs/architecture/overview.md): CLI delegation, component boundaries, and unresolved differences from the original design.
+- [Hatch integration design](https://github.com/hcoona/three/blob/main/src/public/lib/nbgv-python/docs/architecture/hatch-integration.md): configuration rationale, error handling, and the existing validation basis.
+- [Changelog](https://github.com/hcoona/three/blob/main/src/public/lib/nbgv-python/CHANGELOG.md): package history and compatibility changes.
+- [Separate Hatch sample](https://github.com/hcoona/three/blob/main/src/sample/nbgv-hatch-demo/README.md): sample-specific configuration and limitations.

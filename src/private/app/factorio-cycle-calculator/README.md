@@ -49,3 +49,18 @@ the upstream URL and does not store a local JSON schema file.
 Generate models:
 
 - `mise //src/private/app/factorio-cycle-calculator:schema:generate`
+
+## Design and Data Evidence
+
+- [Planner UI design and boundaries](docs/architecture/planner-ui.md) separates
+  the broader interaction proposal from the oil demo's behavior-preserving
+  layout constraints.
+- [Data dump analysis](docs/research/factorio-data-analysis.md),
+  [recipe analysis](docs/research/factorio-recipe-data-analysis.md), and the
+  [machine-speed and localization addendum](docs/research/factorio-recipe-data-analysis.addendum.md)
+  retain the 2026-02-11 observations and their source references. They describe
+  the inspected dump and proposed modeling choices, not a new validation run or
+  a promise that every discussed constraint is implemented.
+
+The icon/localization diagnostic script remains at
+`.AGENT/scripts/check_icons_and_locale.py`, as referenced by the addendum.
