@@ -306,6 +306,7 @@ jobs:
                   )
           PY
           mise run prepare:static-reference-authorities
+          mise run bootstrap:dotnet-tools
           pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site \
             install --frozen-lockfile --ignore-scripts
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then

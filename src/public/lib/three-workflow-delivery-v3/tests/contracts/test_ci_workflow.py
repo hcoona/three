@@ -437,12 +437,15 @@ def test_root_hk_preserves_incremental_and_full_index_modes() -> None:
     assert execute["continue-on-error"] is True
     assert command.count("--frozen-lockfile --ignore-scripts") == 1
     verification = command.index("if toolchain[name] != os.environ[")
+    dotnet_tools = command.index("mise run bootstrap:dotnet-tools")
     prepare = command.index("mise run prepare:static-reference-authorities")
     hexo_install = command.index(
         "pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site"
     )
     incremental_hk = command.index("workflow_delivery_v3_hk.py")
     manual_hk = command.index("mise exec -- hk --no-progress check --all")
+    assert verification < dotnet_tools < incremental_hk
+    assert dotnet_tools < manual_hk
     assert (
         command.index('actual_node="$(node --version)"')
         < command.index('actual_pnpm="$(pnpm --version)"')
