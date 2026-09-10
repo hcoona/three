@@ -102,28 +102,53 @@ class NuGetPlatformFacts:
 
     @property
     def readback_digest(self) -> str:
-        """Bind actual response bytes and URLs, without token material."""
-        import hashlib  # noqa: PLC0415
+        """Bind actual response bytes and URLs without token material."""
+        return _readback_digest(self)
 
-        return canonical_sha256(
-            {
-                "target": self.target,
-                "control_sha": self.control_sha,
-                "workflow_sha": self.workflow_sha,
-                "workflow_run_id": self.workflow_run_id,
-                "observed_at": shared._format_instant(self.observed_at),
-                "responses": [
-                    {
-                        "url": response.url,
-                        "status": response.status,
-                        "body_sha256": hashlib.sha256(
-                            response.body
-                        ).hexdigest(),
-                    }
-                    for response in self.exchanges
-                ],
-            }
-        )
+
+@dataclass(frozen=True)
+class NuGetLiveControlFacts:
+    """Actual Live control reads, with no operator administration projection."""
+
+    target: str
+    control_sha: str
+    workflow_sha: str
+    workflow_run_id: int
+    current_main_sha: str
+    reviewed_head_sha: str
+    reviewed_tree_sha: str
+    pull_request_number: int
+    observed_at: datetime
+    review_carriers: tuple[NuGetHttpResponse, ...] = field(repr=False)
+    exchanges: tuple[NuGetHttpResponse, ...] = field(repr=False)
+
+    @property
+    def readback_digest(self) -> str:
+        """Bind actual response bytes and URLs without token material."""
+        return _readback_digest(self)
+
+
+def _readback_digest(facts: NuGetPlatformFacts | NuGetLiveControlFacts) -> str:
+    """Bind actual response bytes and URLs, without token material."""
+    import hashlib  # noqa: PLC0415
+
+    return canonical_sha256(
+        {
+            "target": facts.target,
+            "control_sha": facts.control_sha,
+            "workflow_sha": facts.workflow_sha,
+            "workflow_run_id": facts.workflow_run_id,
+            "observed_at": shared._format_instant(facts.observed_at),
+            "responses": [
+                {
+                    "url": response.url,
+                    "status": response.status,
+                    "body_sha256": hashlib.sha256(response.body).hexdigest(),
+                }
+                for response in facts.exchanges
+            ],
+        }
+    )
 
 
 class _Reader:
@@ -391,10 +416,9 @@ def _package(reader: _Reader) -> dict[str, JsonValue]:
     return document
 
 
-def read_nuget_platform_facts(  # noqa: C901, PLR0913, PLR0915
+def _read_live_control(  # noqa: C901, PLR0913
+    reader: _Reader,
     *,
-    transport: NuGetReadTransport,
-    token: str,
     selected_ref: str,
     target: str,
     control_sha: str,
@@ -402,18 +426,7 @@ def read_nuget_platform_facts(  # noqa: C901, PLR0913, PLR0915
     workflow_run_id: int,
     workflow_path: str,
     now: datetime,
-) -> NuGetPlatformFacts:
-    """Collect operator platform facts using actual authenticated GETs.
-
-    This comprehensive collection includes administrative metadata endpoints
-    that normal Actions tokens may not support. It is not installed runtime
-    freshness and never authorizes a PAT/admin fallback in a Live job.
-
-    Owner merge with equal reviewed/target trees is operator/delegated
-    acceptance. PR body, reviews, comments and checks are retained verbatim for
-    the existing review gate; this reader never interprets COMMENTED as formal
-    APPROVED or claims it established an independent review verdict.
-    """
+) -> tuple[NuGetLiveControlFacts, dict[str, JsonValue]]:
     shared._validate_instant(now)
     if (
         selected_ref != GOVERNANCE_REF
@@ -432,7 +445,6 @@ def read_nuget_platform_facts(  # noqa: C901, PLR0913, PLR0915
     ) or not workflow_path.endswith(".yml"):
         message = "NuGet Live workflow path is malformed"
         raise shared.GovernanceRejectionError(message)
-    reader = _Reader(transport, token, now)
     repository = reader.obj(_REPO)
     if (
         repository.get("id") != _REPOSITORY_ID
@@ -545,6 +557,85 @@ def read_nuget_platform_facts(  # noqa: C901, PLR0913, PLR0915
             response.url.startswith(_API + path + "?") for path in review_paths
         )
     )
+    return NuGetLiveControlFacts(
+        target,
+        control_sha,
+        workflow_sha,
+        workflow_run_id,
+        main,
+        head_sha,
+        target_tree,
+        number,
+        now,
+        review_carriers,
+        tuple(reader.exchanges),
+    ), repository
+
+
+def read_nuget_live_control_facts(  # noqa: PLR0913
+    *,
+    transport: NuGetReadTransport,
+    token: str,
+    selected_ref: str,
+    target: str,
+    control_sha: str,
+    workflow_sha: str,
+    workflow_run_id: int,
+    workflow_path: str,
+    now: datetime,
+) -> NuGetLiveControlFacts:
+    """Read current control and raw review carriers without admin endpoints.
+
+    Equal reviewed/merged trees and the accepted owner's merge provide control
+    provenance. Raw reviews and comments remain evidence, not a review verdict.
+    """
+    facts, _repository = _read_live_control(
+        _Reader(transport, token, now),
+        selected_ref=selected_ref,
+        target=target,
+        control_sha=control_sha,
+        workflow_sha=workflow_sha,
+        workflow_run_id=workflow_run_id,
+        workflow_path=workflow_path,
+        now=now,
+    )
+    return facts
+
+
+def read_nuget_platform_facts(  # noqa: PLR0913
+    *,
+    transport: NuGetReadTransport,
+    token: str,
+    selected_ref: str,
+    target: str,
+    control_sha: str,
+    workflow_sha: str,
+    workflow_run_id: int,
+    workflow_path: str,
+    now: datetime,
+) -> NuGetPlatformFacts:
+    """Collect operator platform facts using actual authenticated GETs.
+
+    This comprehensive collection includes administrative metadata endpoints
+    that normal Actions tokens may not support. It is not installed runtime
+    freshness and never authorizes a PAT/admin fallback in a Live job.
+
+    Owner merge with equal reviewed/target trees is operator/delegated
+    acceptance. PR body, reviews, comments and checks are retained verbatim for
+    the existing review gate; this reader never interprets COMMENTED as formal
+    APPROVED or claims it established an independent review verdict.
+    """
+    reader = _Reader(transport, token, now)
+    control, repository = _read_live_control(
+        reader,
+        selected_ref=selected_ref,
+        target=target,
+        control_sha=control_sha,
+        workflow_sha=workflow_sha,
+        workflow_run_id=workflow_run_id,
+        workflow_path=workflow_path,
+        now=now,
+    )
     writers = _writers(reader)
     environment = _environment(reader, repository)
     retention_path = _REPO + "/actions/permissions/artifact-and-log-retention"
@@ -562,23 +653,23 @@ def read_nuget_platform_facts(  # noqa: C901, PLR0913, PLR0915
         control_sha,
         workflow_sha,
         workflow_run_id,
-        main,
-        head_sha,
-        target_tree,
-        number,
+        control.current_main_sha,
+        control.reviewed_head_sha,
+        control.reviewed_tree_sha,
+        control.pull_request_number,
         now,
         environment,
         retention_fact,
         package,
         writers,
-        review_carriers,
+        control.review_carriers,
         tuple(reader.exchanges),
     )
 
 
 def require_nuget_live_platform(
     governance: shared.GovernanceObservation,
-    facts: NuGetPlatformFacts,
+    facts: NuGetPlatformFacts | NuGetLiveControlFacts,
     *,
     target: str,
     workflow_run_id: int,
@@ -595,7 +686,7 @@ def require_nuget_live_platform(
         type(governance) is not shared.GovernanceObservation
         or governance.source.path != NUGET_GOVERNANCE_PATH
         or governance.attestation.release_policy != NUGET_RELEASE_UNIT
-        or type(facts) is not NuGetPlatformFacts
+        or type(facts) not in (NuGetPlatformFacts, NuGetLiveControlFacts)
         or facts.target != target
         or facts.control_sha != target
         or facts.workflow_sha != target

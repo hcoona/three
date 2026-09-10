@@ -21,6 +21,7 @@ from three_workflow_delivery_v3.records.release import (
 from three_workflow_delivery_v3.release import eligibility as shared
 from three_workflow_delivery_v3.release.identity import BUDDY_LIVE_WORKFLOW_PATH
 from three_workflow_delivery_v3.release.nuget_governance import (
+    NuGetLiveControlFacts,
     NuGetPlatformFacts,
     nuget_destination_primitive_is_admitted,
     require_nuget_live_platform,
@@ -392,7 +393,7 @@ def evaluate_nuget_live_eligibility(  # noqa: PLR0913
     policy: ReleasePolicy,
     client: shared.GovernanceSourceClient,
     now: datetime,
-    platform: NuGetPlatformFacts | None = None,
+    platform: NuGetPlatformFacts | NuGetLiveControlFacts | None = None,
     profile: NugetDestinationOperationProfile | None = None,
 ) -> NugetLiveEligibilityDecision:
     """Evaluate authority while preserving the state-only blocked case."""

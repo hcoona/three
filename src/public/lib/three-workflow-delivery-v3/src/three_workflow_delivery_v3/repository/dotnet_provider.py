@@ -575,6 +575,107 @@ def validate_dotnet_provider_result(result: DotnetProviderResult) -> None:
         _digest(digest)
 
 
+def dotnet_provider_result_from_document(
+    value: JsonValue,
+) -> DotnetProviderResult:
+    """Parse the closed native result without evaluating its target.
+
+    This validates representation. The consumer separately admits the expected
+    request, manifest, source inputs, and immutable transport bindings.
+    """
+    document = _object(value)
+    binding = _object(document["binding"])
+    provider = _object(document["provider"])
+    digests = _object(document["input-digests"])
+    checkout = _object(document["checkout"])
+
+    def array(item: JsonValue) -> list[JsonValue]:
+        if type(item) is not list:
+            message = "native Provider collections must be JSON arrays"
+            raise ValueError(message)
+        return item
+
+    result = DotnetProviderResult(
+        binding=ProviderBinding(
+            request_id=_text(binding["request-id"]),
+            purpose=_text(binding["purpose"]),
+            workflow_run_id=cast("int", binding["workflow-run-id"]),
+            run_attempt=cast("int | None", binding.get("run-attempt")),
+            target=_text(binding["target"]),
+            producer=_text(binding["producer"]),
+            control=_text(binding["control"]),
+            catalog_digest=_text(binding["catalog-digest"]),
+            request_digest=_text(binding["request-digest"]),
+        ),
+        provider_logical_id=_text(provider["logical-id"]),
+        provider_implementation_id=_text(provider["implementation-id"]),
+        execution_mode=_text(provider["execution-mode"]),
+        execution_class=_text(provider["execution-class"]),
+        toolchain=tuple(
+            sorted(
+                (name, _text(version))
+                for name, version in _object(provider["toolchain"]).items()
+            )
+        ),
+        manifest_digest=_text(digests["manifest"]),
+        configuration_digest=_text(digests["configuration"]),
+        checkout=CheckoutEvidence(
+            target=_text(checkout["target"]),
+            head=_text(checkout["head"]),
+            shallow=cast("bool", checkout["shallow"]),
+            ancestry_complete=cast("bool", checkout["ancestry-complete"]),
+            tags_complete=cast("bool", checkout["tags-complete"]),
+            credentials_persisted=cast(
+                "bool", checkout["credentials-persisted"]
+            ),
+            authoritative_remote=_text(checkout["authoritative-remote"]),
+            authoritative_remote_url=_text(
+                checkout["authoritative-remote-url"]
+            ),
+            tag_refspec=_text(checkout["tag-refspec"]),
+        ),
+        project_nodes=tuple(
+            dotnet_project_node_from_document(item)
+            for item in array(document["project-nodes"])
+        ),
+        global_inputs=tuple(
+            GlobalInput(
+                path=_text(item["path"]),
+                content_digest=_text(item["content-digest"]),
+                project_ids=tuple(
+                    _text(project) for project in array(item["project-ids"])
+                ),
+            )
+            for item in (
+                _object(item) for item in array(document["global-inputs"])
+            )
+        ),
+        build_capabilities=tuple(
+            _text(item) for item in array(document["build-capabilities"])
+        ),
+        nbgv=dotnet_nbgv_facts_from_document(document["nbgv"]),
+        unresolved=tuple(_text(item) for item in array(document["unresolved"])),
+        conflicts=tuple(_text(item) for item in array(document["conflicts"])),
+        outcome=_text(document["outcome"]),
+        diagnostic_reference=cast(
+            "str | None", document["diagnostic-reference"]
+        ),
+        source_input_manifest=tuple(
+            (_text(item["path"]), _text(item["content-digest"]))
+            for item in (
+                _object(item)
+                for item in array(document["source-input-manifest"])
+            )
+        ),
+        native_evaluation_digest=_text(document["native-evaluation-digest"]),
+    )
+    validate_dotnet_provider_result(result)
+    if result.to_document() != document:
+        message = "native Provider result is not the exact normalized schema"
+        raise ValueError(message)
+    return result
+
+
 @dataclass(frozen=True, slots=True)
 class DotnetProviderFactBundle:
     """Immutable .NET Provider transport and request bindings."""

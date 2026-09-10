@@ -591,3 +591,82 @@ def test_nuget_disabled_source_has_no_unobserved_access_or_time_claims():
         _ = blocked.expires_at
     with pytest.raises(shared.GovernanceRejectionError, match="no access"):
         _ = blocked.package_principal
+
+
+def _live_facts(transport, **changes):
+    arguments = {
+        "transport": transport,
+        "token": TOKEN,
+        "selected_ref": GOVERNANCE_REF,
+        "target": TARGET,
+        "control_sha": TARGET,
+        "workflow_sha": TARGET,
+        "workflow_run_id": RUN_ID,
+        "workflow_path": WORKFLOW,
+        "now": NOW,
+    }
+    arguments.update(changes)
+    return nuget.read_nuget_live_control_facts(**arguments)
+
+
+def test_live_control_reads_no_operator_administration():
+    documents = _platform_documents()
+    control_paths = {
+        REPO,
+        REPO + "/branches/main",
+        f"{REPO}/compare/{TARGET}...{MAIN}",
+        f"{REPO}/actions/runs/{RUN_ID}",
+        _page(f"{REPO}/commits/{TARGET}/pulls"),
+        f"{REPO}/pulls/700",
+        f"{REPO}/git/commits/{TARGET}",
+        f"{REPO}/git/commits/{HEAD}",
+        _page(f"{REPO}/pulls/700/reviews"),
+        _page(f"{REPO}/pulls/700/comments"),
+        _page(f"{REPO}/issues/700/comments"),
+        _page(f"{REPO}/commits/{HEAD}/check-runs"),
+    }
+    transport = _transport({path: documents[path] for path in control_paths})
+    live = _live_facts(transport)
+    assert type(live) is nuget.NuGetLiveControlFacts
+    assert live.target == live.control_sha == live.workflow_sha == TARGET
+    assert live.current_main_sha == MAIN
+    assert live.reviewed_head_sha == HEAD
+    assert live.reviewed_tree_sha == TREE
+    assert live.pull_request_number == 700
+    assert {response.url for response in live.exchanges} == {
+        API + path for path in control_paths
+    }
+    operator = _facts(_transport(documents))
+    assert live.review_carriers == operator.review_carriers
+    assert live.exchanges == operator.exchanges[: len(live.exchanges)]
+    assert live.readback_digest != operator.readback_digest
+    assert not hasattr(live, "approval_environment")
+    assert not hasattr(live, "writer_inventory")
+    nuget.require_nuget_live_platform(
+        _observation(), live, target=TARGET, workflow_run_id=RUN_ID, now=NOW
+    )
+
+
+@pytest.mark.parametrize("fault", ["actor", "rerun", "tree", "unprotected"])
+def test_live_control_rejects_wrong_actual_context(fault):
+    documents = _platform_documents()
+    if fault == "actor":
+        documents[f"{REPO}/actions/runs/{RUN_ID}"]["actor"] = {
+            "login": "other",
+            "id": 99,
+        }
+    elif fault == "rerun":
+        documents[f"{REPO}/actions/runs/{RUN_ID}"]["run_attempt"] = 2
+    elif fault == "tree":
+        documents[f"{REPO}/git/commits/{HEAD}"]["tree"]["sha"] = "f" * 40
+    else:
+        documents[REPO + "/branches/main"]["protected"] = False
+    with pytest.raises(shared.GovernanceRejectionError):
+        _live_facts(_transport(documents))
+
+
+def test_live_control_rejects_arbitrary_ref_before_reads():
+    transport = _transport({})
+    with pytest.raises(shared.GovernanceRejectionError):
+        _live_facts(transport, selected_ref="refs/heads/feature")
+    transport.get.assert_not_called()
