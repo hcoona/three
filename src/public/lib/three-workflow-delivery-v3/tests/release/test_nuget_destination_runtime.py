@@ -6,8 +6,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import sys
 from dataclasses import replace
 from datetime import datetime, timedelta
+from platform import python_version
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -78,6 +80,7 @@ from .test_nuget_destination import (
     DIGEST,
     NOW_TEXT,
     RESOURCES,
+    _modeled_profile_document,
     _reference,
 )
 from .test_nuget_governance import _attested_document, _client
@@ -138,6 +141,15 @@ def native_case(nuget_scenario, monkeypatch, tmp_path):
         scenario.request.source_root / NUGET_POLICY_PATH,
         _target_path=NUGET_POLICY_PATH,
     )
+    if (
+        sys.implementation.name != "cpython"
+        or python_version() != native.NUGET_PYTHON_VERSION
+    ):
+        # Higher-layer scenarios model the adapter on unpinned test hosts.
+        # The pinned HK host retains actual runtime/source profile checks.
+        monkeypatch.setattr(
+            native, "nuget_operation_profile", _modeled_profile_document
+        )
     profile = NugetDestinationOperationProfile(
         canonicalize(native.nuget_operation_profile(RESOURCES))
     )
@@ -471,7 +483,10 @@ def _finish(
     )
 
 
-def test_native_eligibility_keeps_blocked_source_state_only(native_case):
+@pytest.mark.parametrize("supply_runtime_facts", [False, True])
+def test_native_eligibility_keeps_blocked_source_state_only(
+    native_case, supply_runtime_facts
+):
     case = native_case
     blocked = evaluate_nuget_live_eligibility(
         case.context,
@@ -480,18 +495,23 @@ def test_native_eligibility_keeps_blocked_source_state_only(native_case):
         policy=case.policy,
         client=_client(),
         now=NOW,
+        platform=case.platform if supply_runtime_facts else None,
+        profile=case.profile if supply_runtime_facts else None,
     )
     assert blocked.result is shared.EligibilityResult.BLOCKED
     assert blocked.diagnostics == ("governance-live-disabled",)
     assert blocked.platform is None
     assert blocked.profile is None
-    retained = blocked.to_document()["governance"]["admitted-attestation"]
+    document = blocked.to_document()
+    assert document["platform"] is None
+    assert document["profile"] is None
+    retained = document["governance"]["admitted-attestation"]
     assert "inspected_at" not in retained
     assert "access_inventory" not in retained
-    assert "static-reference" not in blocked.to_document()
+    assert "static-reference" not in document
     with pytest.raises(ValueError, match="passing Decision"):
         admit_nuget_live_eligibility_decision(
-            canonicalize(blocked.to_document()),
+            canonicalize(document),
             intent=case.intent,
             repository_model=case.scenario.model,
             policy=case.policy,
@@ -980,6 +1000,7 @@ def test_native_success_without_complete_readback_stays_failed(
         "action-archive",
         "inspection-identity",
         "inspection-witness",
+        "runtime-profile",
     ],
 )
 def test_native_publisher_rejects_broken_authority_before_mutation(
@@ -991,6 +1012,12 @@ def test_native_publisher_rejects_broken_authority_before_mutation(
     if change == "source-touch":
         case.client.read_source.side_effect = GovernanceGitReadError(
             "protected path touched"
+        )
+    elif change == "runtime-profile":
+        profile = case.profile.to_document()
+        profile["executableSha256"] = "f" * 64
+        monkeypatch.setattr(
+            native, "nuget_operation_profile", lambda _resources: profile
         )
     elif change == "authorization":
         inputs = replace(

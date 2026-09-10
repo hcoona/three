@@ -47,13 +47,26 @@ RESOURCES = native.NuGetServiceResources(
 )
 
 
+def _modeled_profile_document(resources=RESOURCES):
+    # Synthetic imported host facts exercise records, not native acceptance.
+    return native._nuget_profile_document(  # noqa: SLF001
+        resources.package_publish,
+        {
+            "executableSha256": "b" * 64,
+            "runtimeBuild": "modeled CPython 3.13.12 build",
+            "sslSourceSha256": "c" * 64,
+            "platform": "Windows",
+            "tlsLibrary": "modeled TLS library",
+            "adapterSha256": "d" * 64,
+        },
+    )
+
+
 @pytest.fixture
 def native_profile():
-    # Retained foreign-host facts are intentionally different from this process.
-    document = native.nuget_operation_profile(RESOURCES)
-    document["platform"] = "Windows"
-    document["executableSha256"] = "b" * 64
-    return NugetDestinationOperationProfile(canonicalize(document))
+    return NugetDestinationOperationProfile(
+        canonicalize(_modeled_profile_document())
+    )
 
 
 def _reference(digest, run_id, artifact_id=500):

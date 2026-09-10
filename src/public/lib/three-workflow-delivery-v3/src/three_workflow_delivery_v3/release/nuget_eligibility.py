@@ -407,6 +407,7 @@ def evaluate_nuget_live_eligibility(  # noqa: PLR0913
     control = None
     if not observation.attestation.live_enabled:
         diagnostics.append("governance-live-disabled")
+        profile = None
     else:
         if observation.current_main_sha != intent.target:
             diagnostics.append("initial-protected-main-target-changed")
