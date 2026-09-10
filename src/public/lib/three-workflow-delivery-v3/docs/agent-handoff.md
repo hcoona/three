@@ -109,12 +109,16 @@ supplies repository work authorization. [Issue #676](https://github.com/hcoona/t
 coordinates the concrete NuGet advancement and retains delivery evidence;
 neither this handoff nor the Issue enlarges the Wave or domain effect bounds.
 
-The first disabled implementation unit adds native Provider and frozen
-Build/Quality mechanisms, independent authoring/compiler contracts, the
-one-shot HTTP adapter, and blocked NuGet Governance. Typed Release records,
-workflow integration, native acceptance tooling, activation, and real
-publication remain subsequent work. Inspect Git and PR state before claiming
-this implementation unit is protected-delivered. Sufficient GitHub-owned
+The native Provider and frozen Build/Quality foundation, independent
+authoring/compiler contracts, one-shot HTTP adapter, and blocked NuGet
+Governance are protected-delivered through PR #678. The next disabled unit
+adds explicit NuGet Release records and planning from matched admitted Model
+and Provider inputs. It binds the original archive to immutable transport and
+separate content/consumer Evidence through the shared Qualification Finalizer.
+Inspect Git and PR state before claiming this integration is protected-delivered.
+Destination authority/runtime integration, workflow execution, native
+acceptance tooling, activation, and real publication remain subsequent work.
+Sufficient GitHub-owned
 atomic non-overwrite assurance remains an activation gate; sequential
 duplicate tests cannot supply it.
 

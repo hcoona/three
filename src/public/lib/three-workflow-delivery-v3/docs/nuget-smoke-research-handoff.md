@@ -57,11 +57,12 @@ merged before repeating any documentary delivery.
 
 Keep these facts in the working context:
 
-- Requirements and protected design delivery are complete. The first disabled
-  implementation unit adds the selected product, native Provider and frozen
-  Build/Quality, authoring/compiler, HTTP adapter, and blocked Governance.
-  Inspect its current Git/PR delivery state before proceeding. Typed Release
-  integration and native/Live proving remain subsequent work.
+- Requirements, protected design, and the disabled native foundation are
+  delivered. Explicit NuGet Release records and qualification now bind matched
+  admitted Model/Provider inputs, frozen source facts, original archive bytes,
+  and separate content/consumer Evidence. Inspect current Git/PR state before
+  claiming this integration is protected-delivered. Destination authority/runtime,
+  workflow integration, and native/Live proving remain subsequent work.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
 - The selected GitHub Packages marker project has independent v3 authoring;
@@ -185,16 +186,17 @@ must not be replaced by the dispatch ref.
 Python paths below are relative to
 `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/`.
 
-| Surface                                                                                                | Reuse boundary                                                                                                                                                                                              |
-| ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Shared canonicalization, artifact/provenance primitives, Qualification and Release authority semantics | Reuse their contracts; do not invent a second Approval/Outcome protocol for NuGet. This does not imply all current representations are ecosystem-neutral.                                                   |
-| `repository/dotnet_provider.py`, `repository/compiler.py`                                              | The disabled unit adds explicit native .NET Provider/Bundle and Repository Model admission beside the existing Node case. Runtime workflow execution still requires typed Release integration.              |
-| `repository/descriptors.py` and `eng/workflow-delivery/v3/policies/`                                   | Independent NuGet authoring selects one package, two quality obligations, Buddy only, and its own Governance source. A descriptor alone cannot enable publication.                                          |
-| `adapters/dotnet.py`, `adapters/nuget_github_packages.py`                                              | Native frozen pack/content/consumer mechanisms and one-shot HTTP observation/publication mechanisms are present. They do not supply current-run Release authority or native acceptance.                     |
-| `release/nuget_governance.py`                                                                          | Disabled NuGet governance and operator platform collection preserve separate native admission. Raw platform facts do not grant authority or establish service guarantees.                                   |
-| `adapters/node.py`, `adapters/github_packages.py`, `adapters/npm_runtime.py`                           | Existing package construction, destination state, and command profiles are npm implementations despite the generic-sounding GitHub Packages filename.                                                       |
-| `release/publication.py`, `records/release.py`                                                         | Publication imports Node/npm mechanisms; Release Artifact admission includes the exact `build-tarball` producer. Inspect the concrete seams before claiming a drop-in adapter change.                       |
-| `src/private/app/workflow-delivery-v3-nuget-authority/Program.cs`                                      | This existing C# helper admits `nuget-lock` and `nuget-packages-config` static-reference facts. It does not evaluate a Release Unit, freeze NBGV, build a package, publish, or observe a NuGet destination. |
+| Surface                                                                                                | Reuse boundary                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared canonicalization, artifact/provenance primitives, Qualification and Release authority semantics | Reuse their contracts; do not invent a second Approval/Outcome protocol for NuGet. This does not imply all current representations are ecosystem-neutral.                                                                                                        |
+| `repository/dotnet_provider.py`, `repository/compiler.py`                                              | The disabled unit adds explicit native .NET Provider/Bundle and Repository Model admission beside the existing Node case. The NuGet planner consumes the matched admitted Model and Provider Bundle to retain frozen source-input identity.                      |
+| `repository/descriptors.py` and `eng/workflow-delivery/v3/policies/`                                   | Independent NuGet authoring selects one package, two quality obligations, Buddy only, and its own Governance source. A descriptor alone cannot enable publication.                                                                                               |
+| `adapters/dotnet.py`, `adapters/nuget_github_packages.py`                                              | Native frozen pack/content/consumer mechanisms and one-shot HTTP observation/publication mechanisms are present. They do not supply current-run Release authority or native acceptance.                                                                          |
+| `release/nuget_planner.py`, `release/nuget_qualification.py`                                           | Disabled Release integration binds protected-main Buddy context, frozen Provider inputs, native package identity, and two independent quality obligations. Local mechanics with modeled transport do not prove Actions execution or native destination behavior. |
+| `release/nuget_governance.py`                                                                          | Disabled NuGet governance and operator platform collection preserve separate native admission. Raw platform facts do not grant authority or establish service guarantees.                                                                                        |
+| `adapters/node.py`, `adapters/github_packages.py`, `adapters/npm_runtime.py`                           | Existing package construction, destination state, and command profiles are npm implementations despite the generic-sounding GitHub Packages filename.                                                                                                            |
+| `release/publication.py`, `records/release.py`                                                         | Publication execution still imports Node/npm mechanisms. Release records now include explicit native NuGet identity, Build Request, and `build-nuget-package` Artifact cases without npm-only placeholders.                                                      |
+| `src/private/app/workflow-delivery-v3-nuget-authority/Program.cs`                                      | This existing C# helper admits `nuget-lock` and `nuget-packages-config` static-reference facts. It does not evaluate a Release Unit, freeze NBGV, build a package, publish, or observe a NuGet destination.                                                      |
 
 The HLD, MLD extensions, and NuGet LLD identify the representation and adapter
 changes required by the concrete second case. `WD-NFR-003` expects ecosystem additions
@@ -245,7 +247,7 @@ this summary routes the next agent to that authority.
 | Confirmed concern        | Requirement and next evidence boundary                                                                                                                                                                                                                               |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Product and scope        | `WD-NUGET-001`: the selected marker library, `net10.0`, Windows, one `.nupkg`, no separate `.snupkg`, GitHub Packages Buddy only.                                                                                                                                    |
-| Native facts and version | `WD-NUGET-002`: official evaluation at the exact target, complete history, and a frozen native NBGV NuGet projection. Actual evaluated facts are still future evidence.                                                                                              |
+| Native facts and version | `WD-NUGET-002`: official evaluation at the exact target, complete history, and a frozen native NBGV NuGet projection. Native evaluation and frozen Build mechanisms are present; current-run Windows execution still needs workflow integration.                     |
 | Trust and authority      | `WD-NUGET-003` and `WD-NUGET-004`: reviewed protected-main control, isolated target evaluation/build, build-free publication, self-approval by the sole trusted writer, and explicitly accepted repository-token reach. Platform configuration still needs readback. |
 | Qualification            | `WD-NUGET-005`: distinct package-content and clean exact-version restore/build/marker evidence for the Release-owned artifact.                                                                                                                                       |
 | Destination acceptance   | `WD-NUGET-006`: independently establish the required active creation, duplicate, actual-byte, witness, and observation behavior for the NuGet profile.                                                                                                               |
@@ -253,8 +255,9 @@ this summary routes the next agent to that authority.
 | Execution boundaries     | `WD-NUGET-008`: ordered design, subsequent implementation authorization, and separate concrete native and real-publication authorization.                                                                                                                            |
 
 The subsequent implementation is authorized as described above. A descriptor
-alone cannot enable NuGet: typed Release artifact and authority integration
-and native admission remain necessary after the disabled mechanism unit.
+alone cannot enable NuGet: destination authority/runtime and workflow
+integration, followed by native admission, remain necessary after disabled
+artifact qualification.
 The [HLD extension](./high-level-design.md#nuget-second-slice-extension)
 assigns ownership. Local tests or historical package versions cannot supply
 missing native or real-publication evidence. The confirmed requirements alone

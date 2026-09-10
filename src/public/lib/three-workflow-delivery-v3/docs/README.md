@@ -61,11 +61,14 @@ the HLD and affected MLDs define the design, followed by
 the [NuGet LLD](./hcoona-release-smoke-github-packages-lld.md) and its local
 and native admission gates. Protected design delivery is complete. The user
 subsequently delegated implementation through verified go-live without
-intermediate confirmation. The first disabled unit adds native Provider and
-frozen Build/Quality, authoring/compiler, one-shot HTTP mechanisms, and blocked
-NuGet Governance. Typed Release/workflow integration and native/Live proving
-remain pending; missing service-owned atomic non-overwrite assurance blocks
-activation. The handoff defines concrete operation and delivery discipline.
+intermediate confirmation. The disabled native Provider, frozen Build/Quality,
+authoring/compiler, one-shot HTTP mechanisms, and blocked NuGet Governance
+foundation is protected-delivered. Explicit NuGet Release records and
+qualification integration bind frozen inputs, original archive bytes, and
+separate content/consumer Evidence. Destination authority/runtime and workflow
+integration, followed by native/Live proving, remain pending; missing
+service-owned atomic non-overwrite assurance blocks activation. The handoff defines concrete operation and delivery
+discipline.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.
 

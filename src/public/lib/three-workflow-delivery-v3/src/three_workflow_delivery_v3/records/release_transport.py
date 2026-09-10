@@ -61,6 +61,10 @@ from three_workflow_delivery_v3.records.release import (
     GovernanceProof,
     HypotheticalAction,
     MutationMayHaveStartedMarker,
+    NugetExternalPackageCoordinate,
+    NugetPackageIdentity,
+    NugetReleaseArtifact,
+    NugetReleaseBuildRequest,
     ObligationDisposition,
     ObservationRequestFacts,
     ObservationResponseFacts,
@@ -93,6 +97,10 @@ from three_workflow_delivery_v3.records.release import (
     SimulationBinding,
     SimulationIdentity,
     SimulationOutcome,
+)
+from three_workflow_delivery_v3.repository.dotnet_provider import (
+    DotnetNbgvFacts,
+    dotnet_nbgv_facts_from_document,
 )
 from three_workflow_delivery_v3.repository.node_provider import NbgvFacts
 
@@ -548,7 +556,9 @@ def _records(
     return tuple(parser(item) for item in _array(value, field=field))
 
 
-def _nbgv(value: JsonValue) -> NbgvFacts:
+def _nbgv(value: JsonValue) -> NbgvFacts | DotnetNbgvFacts:
+    if "native-result-digest" in _object(value, field="NBGV"):
+        return dotnet_nbgv_facts_from_document(value)
     document = _closed(
         value,
         field="NBGV",
@@ -907,7 +917,66 @@ def _output(value: JsonValue) -> ReleaseOutputIdentity:
     )
 
 
-def _build_request(value: JsonValue) -> ReleaseBuildRequest:
+def _nuget_build_request(value: JsonValue) -> NugetReleaseBuildRequest:
+    document = _closed(
+        value,
+        field="NugetReleaseBuildRequest",
+        schema=RELEASE_BUILD_REQUEST_SCHEMA,
+        fields=frozenset(
+            {
+                "build",
+                "variant",
+                "output",
+                "repository-model-digest",
+                "definition-digest",
+                "nuget-package-version",
+                "witness-digest",
+                "declared-inputs",
+                "source-input-manifest",
+                "adapter-id",
+            }
+        ),
+    )
+    return NugetReleaseBuildRequest(
+        build=_build(document["build"]),
+        variant=_variant(document["variant"]),
+        output=_output(document["output"]),
+        repository_model_digest=_string(
+            document["repository-model-digest"],
+            field="build request.repository-model-digest",
+        ),
+        definition_digest=_string(
+            document["definition-digest"],
+            field="build request.definition-digest",
+        ),
+        nuget_package_version=_string(
+            document["nuget-package-version"],
+            field="build request.nuget-package-version",
+        ),
+        source_input_manifest=_pairs(
+            document["source-input-manifest"],
+            field="NuGet request.source-input-manifest",
+        ),
+        witness_digest=_string(
+            document["witness-digest"],
+            field="build request.witness-digest",
+        ),
+        declared_inputs=_strings(
+            document["declared-inputs"],
+            field="build request.declared-inputs",
+        ),
+        adapter_id=_string(
+            document["adapter-id"],
+            field="build request.adapter-id",
+        ),
+    )
+
+
+def _build_request(
+    value: JsonValue,
+) -> ReleaseBuildRequest | NugetReleaseBuildRequest:
+    if "nuget-package-version" in _object(value, field="Build Request"):
+        return _nuget_build_request(value)
     document = _closed(
         value,
         field="ReleaseBuildRequest",
@@ -1025,7 +1094,59 @@ def _obligation(value: JsonValue) -> ReleaseObligation:
     )
 
 
-def _coordinate(value: JsonValue) -> ExternalPackageCoordinate:
+def _nuget_identity(value: JsonValue) -> NugetPackageIdentity:
+    document = _closed(
+        value,
+        field="NuGet identity",
+        schema=None,
+        fields=frozenset(
+            {
+                "package-name",
+                "native-version",
+                "normalized-package-id",
+                "normalized-version",
+            }
+        ),
+    )
+    return NugetPackageIdentity(
+        package_name=_string(
+            document["package-name"], field="NuGet identity.package-name"
+        ),
+        native_version=_string(
+            document["native-version"], field="NuGet identity.native-version"
+        ),
+        normalized_package_id=_string(
+            document["normalized-package-id"],
+            field="NuGet identity.normalized-package-id",
+        ),
+        normalized_version=_string(
+            document["normalized-version"],
+            field="NuGet identity.normalized-version",
+        ),
+    )
+
+
+def _nuget_coordinate(value: JsonValue) -> NugetExternalPackageCoordinate:
+    document = _closed(
+        value,
+        field="NuGet coordinate",
+        schema=EXTERNAL_PACKAGE_COORDINATE_SCHEMA,
+        fields=frozenset({"channel", "destination-id", "nuget-identity"}),
+    )
+    return NugetExternalPackageCoordinate(
+        channel=_string(document["channel"], field="coordinate.channel"),
+        destination_id=_string(
+            document["destination-id"], field="coordinate.destination-id"
+        ),
+        identity=_nuget_identity(document["nuget-identity"]),
+    )
+
+
+def _coordinate(
+    value: JsonValue,
+) -> ExternalPackageCoordinate | NugetExternalPackageCoordinate:
+    if "nuget-identity" in _object(value, field="coordinate"):
+        return _nuget_coordinate(value)
     document = _closed(
         value,
         field="ExternalPackageCoordinate",
@@ -1190,7 +1311,7 @@ def _qualification_snapshot(value: JsonValue) -> QualificationSnapshot:
         ),
     )
     build_requests = cast(
-        "tuple[ReleaseBuildRequest, ...]",
+        "tuple[ReleaseBuildRequest | NugetReleaseBuildRequest, ...]",
         _records(
             document["build-requests"],
             field="snapshot.build-requests",
@@ -1414,6 +1535,81 @@ def _release_artifact(value: JsonValue) -> ReleaseArtifact:
             document["lifecycle-scripts"],
             field="artifact.lifecycle-scripts",
         ),
+        witness_digest=_string(
+            document["witness-digest"],
+            field="artifact.witness-digest",
+        ),
+        source_input_manifest=_pairs(
+            document["source-input-manifest"],
+            field="artifact.source-input-manifest",
+        ),
+        toolchain=_pairs(document["toolchain"], field="artifact.toolchain"),
+        provenance_digest=_string(
+            document["provenance-digest"],
+            field="artifact.provenance-digest",
+        ),
+    )
+
+
+def _nuget_release_artifact(value: JsonValue) -> NugetReleaseArtifact:
+    raw_document = _object(value, field="NugetReleaseArtifact")
+    if "purpose" not in raw_document:
+        message = "NugetReleaseArtifact missing field: purpose"
+        raise ValueError(message)
+    purpose = _string(raw_document["purpose"], field="artifact.purpose")
+    if purpose not in {"live-release", "release-simulation"}:
+        message = "Release Artifact purpose is not in the closed set"
+        raise ValueError(message)
+    document = _closed(
+        value,
+        field="NugetReleaseArtifact",
+        schema=RELEASE_ARTIFACT_SCHEMA,
+        fields=frozenset(
+            {
+                "subject",
+                "repository",
+                "qualification-snapshot-digest",
+                "repository-model-digest",
+                "target",
+                "purpose",
+                "output",
+                "build-request-digest",
+                "transport",
+                "content",
+                "witness-digest",
+                "source-input-manifest",
+                "toolchain",
+                "entries",
+                "nuget-identity",
+                "provenance-digest",
+            }
+        ),
+    )
+    return NugetReleaseArtifact(
+        subject=_subject(document["subject"]),
+        repository=_string(
+            document["repository"],
+            field="artifact.repository",
+        ),
+        qualification_snapshot_digest=_string(
+            document["qualification-snapshot-digest"],
+            field="artifact.qualification-snapshot-digest",
+        ),
+        repository_model_digest=_string(
+            document["repository-model-digest"],
+            field="artifact.repository-model-digest",
+        ),
+        target=_string(document["target"], field="artifact.target"),
+        purpose=purpose,
+        output=_output(document["output"]),
+        build_request_digest=_string(
+            document["build-request-digest"],
+            field="artifact.build-request-digest",
+        ),
+        transport=_transport(document["transport"], purpose=purpose),
+        content=_content(document["content"]),
+        entries=_strings(document["entries"], field="artifact.entries"),
+        identity=_nuget_identity(document["nuget-identity"]),
         witness_digest=_string(
             document["witness-digest"],
             field="artifact.witness-digest",
@@ -2510,6 +2706,7 @@ _PARSERS: dict[type[object], Callable[[JsonValue], ReleaseRecord]] = {
     SimulationBinding: _simulation_binding,
     QualificationSnapshot: _qualification_snapshot,
     ReleaseArtifact: _release_artifact,
+    NugetReleaseArtifact: _nuget_release_artifact,
     QualificationEvidence: _qualification_evidence,
     QualificationDecision: _qualification_decision,
     ProjectionObservation: _projection_observation,
@@ -2608,7 +2805,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
             record.target,
             None,
         )
-    if isinstance(record, ReleaseArtifact):
+    if type(record) in {ReleaseArtifact, NugetReleaseArtifact}:
         return (
             record.purpose,
             record.transport.workflow_run_id,

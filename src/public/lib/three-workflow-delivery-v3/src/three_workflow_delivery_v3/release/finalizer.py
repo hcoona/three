@@ -10,6 +10,7 @@ from three_workflow_delivery_v3.records.release import (
     NPMJS_OBSERVER_PRODUCER,
     DestinationOperationProfile,
     HypotheticalAction,
+    NugetReleaseArtifact,
     ObligationDisposition,
     ObservationRequestFacts,
     ObservationResponseFacts,
@@ -69,7 +70,7 @@ def _subject(
 def finalize_qualification(  # noqa: C901, PLR0912, PLR0915
     snapshot: QualificationSnapshot,
     evidence_records: tuple[QualificationEvidence, ...],
-    artifacts: tuple[ReleaseArtifact, ...],
+    artifacts: tuple[ReleaseArtifact | NugetReleaseArtifact, ...],
 ) -> QualificationDecision:
     """Close every obligation while preserving failure-continuation state."""
     if type(snapshot) is not QualificationSnapshot:
