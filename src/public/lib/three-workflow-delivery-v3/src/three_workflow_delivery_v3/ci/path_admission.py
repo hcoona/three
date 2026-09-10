@@ -56,6 +56,7 @@ _REPOSITORY_ONLY_PATHS = frozenset(
     {
         ".typos.toml",
         "AGENTS.md",
+        "CONTRIBUTING.md",
         "COPYING",
         "COPYING.LESSER",
         "Directory.Build.props",
