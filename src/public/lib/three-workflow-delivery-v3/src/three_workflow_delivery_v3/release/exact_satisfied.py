@@ -6,8 +6,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from three_workflow_delivery_v3.records.release import (
+    DestinationReadback,
     ExactSatisfiedFinalizationProof,
     GovernanceProof,
+    NugetDestinationReadback,
+    NugetReleaseArtifact,
+    NugetRemoteStateObservation,
+    RemoteStateObservation,
 )
 from three_workflow_delivery_v3.release.eligibility import (
     governance_observation_provenance,
@@ -27,6 +32,10 @@ if TYPE_CHECKING:
         GitHubPackagesTransport,
     )
     from three_workflow_delivery_v3.adapters.node import ArtifactExpectation
+    from three_workflow_delivery_v3.adapters.nuget_github_packages import (
+        NuGetAuthority,
+        NuGetReadTransport,
+    )
     from three_workflow_delivery_v3.records.artifacts import ArtifactReference
     from three_workflow_delivery_v3.records.release import (
         PublicationSnapshot,
@@ -35,11 +44,13 @@ if TYPE_CHECKING:
         ReleaseArtifact,
         ReleaseAttemptBinding,
         ReleaseIntent,
-        RemoteStateObservation,
     )
     from three_workflow_delivery_v3.release.eligibility import (
         AdmittedLiveEligibilityDecision,
         GovernanceSourceClient,
+    )
+    from three_workflow_delivery_v3.release.nuget_eligibility import (
+        AdmittedNugetLiveEligibilityDecision,
     )
     from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
 
@@ -50,13 +61,14 @@ def validate_exact_satisfied_snapshot(  # noqa: PLR0913
     publication_snapshot_reference: ArtifactReference,
     intent: ReleaseIntent,
     attempt_binding: ReleaseAttemptBinding,
-    eligibility: AdmittedLiveEligibilityDecision,
+    eligibility: AdmittedLiveEligibilityDecision
+    | AdmittedNugetLiveEligibilityDecision,
     policy: ReleasePolicy,
     snapshot: QualificationSnapshot,
     decision: QualificationDecision,
     decision_reference: ArtifactReference,
-    artifact: ReleaseArtifact,
-    observation: RemoteStateObservation,
+    artifact: ReleaseArtifact | NugetReleaseArtifact,
+    observation: RemoteStateObservation | NugetRemoteStateObservation,
 ) -> None:
     """Admit the complete zero-action closure without IO or action authority."""
     if (
@@ -94,13 +106,14 @@ def admit_exact_satisfied_finalization_proof(  # noqa: PLR0913
     publication_snapshot_reference: ArtifactReference,
     intent: ReleaseIntent,
     attempt_binding: ReleaseAttemptBinding,
-    eligibility: AdmittedLiveEligibilityDecision,
+    eligibility: AdmittedLiveEligibilityDecision
+    | AdmittedNugetLiveEligibilityDecision,
     policy: ReleasePolicy,
     snapshot: QualificationSnapshot,
     decision: QualificationDecision,
     decision_reference: ArtifactReference,
-    artifact: ReleaseArtifact,
-    observation: RemoteStateObservation,
+    artifact: ReleaseArtifact | NugetReleaseArtifact,
+    observation: RemoteStateObservation | NugetRemoteStateObservation,
 ) -> ExactSatisfiedFinalizationProof:
     """Admit evidence against original Governance, not today's clock."""
     validate_exact_satisfied_snapshot(
@@ -118,6 +131,20 @@ def admit_exact_satisfied_finalization_proof(  # noqa: PLR0913
     )
     governance = eligibility.governance
     readback = proof.exact_version_readback
+    if type(observation) is NugetRemoteStateObservation:
+        same_version = (
+            type(readback) is NugetDestinationReadback
+            and readback.identity.normalized_version
+            == observation.desired_identity.normalized_version
+        )
+    elif type(observation) is RemoteStateObservation:
+        same_version = (
+            type(readback) is DestinationReadback
+            and readback.version == observation.desired_version
+        )
+    else:
+        message = "Exact proof Observation variant is unsupported"
+        raise TypeError(message)
     if (
         proof.attempt != publication_snapshot.attempt
         or proof.publication_snapshot_reference
@@ -127,7 +154,7 @@ def admit_exact_satisfied_finalization_proof(  # noqa: PLR0913
         != governance.attestation.expires_at
         or not governance.attestation.live_enabled
         or readback.package != observation.desired_subject.normalized_package
-        or readback.version != observation.desired_version
+        or not same_version
         or readback.content_sha256 != artifact.content.content_sha256
         or readback.content_sha512 != artifact.content.content_sha512
         or readback.witness_digest != artifact.witness_digest
@@ -278,6 +305,121 @@ def prove_exact_satisfied(  # noqa: PLR0913
         producer="prove-exact-satisfied",
         control=eligibility.context.control,
         workflow_run_id=intent.workflow_run_id,
+    )
+    return admit_exact_satisfied_finalization_proof(
+        proof,
+        publication_snapshot=publication_snapshot,
+        publication_snapshot_reference=publication_snapshot_reference,
+        intent=intent,
+        attempt_binding=attempt_binding,
+        eligibility=eligibility,
+        policy=policy,
+        snapshot=snapshot,
+        decision=decision,
+        decision_reference=decision_reference,
+        artifact=artifact,
+        observation=observation,
+    )
+
+
+def prove_nuget_exact_satisfied(  # noqa: PLR0913
+    *,
+    publication_snapshot: PublicationSnapshot,
+    publication_snapshot_reference: ArtifactReference,
+    intent: ReleaseIntent,
+    attempt_binding: ReleaseAttemptBinding,
+    eligibility: AdmittedNugetLiveEligibilityDecision,
+    policy: ReleasePolicy,
+    snapshot: QualificationSnapshot,
+    decision: QualificationDecision,
+    decision_reference: ArtifactReference,
+    artifact: NugetReleaseArtifact,
+    observation: NugetRemoteStateObservation,
+    publisher_conclusion: str,
+    authority: NuGetAuthority,
+    governance_client: GovernanceSourceClient,
+    transport: NuGetReadTransport,
+    token: str,
+    clock: Callable[[], datetime],
+) -> ExactSatisfiedFinalizationProof:
+    """Recheck the protected source and actual native bytes for zero actions."""
+    from three_workflow_delivery_v3.adapters.nuget_github_packages import (  # noqa: PLC0415
+        read_nuget_active_state,
+    )
+    from three_workflow_delivery_v3.release.nuget_observation import (  # noqa: PLC0415
+        classify_nuget_package_control,
+        nuget_readback_from_state,
+    )
+
+    if publisher_conclusion != "skipped":
+        message = "NuGet exact-satisfied proof requires publisher skipped"
+        raise ValueError(message)
+    validate_exact_satisfied_snapshot(
+        publication_snapshot=publication_snapshot,
+        publication_snapshot_reference=publication_snapshot_reference,
+        intent=intent,
+        attempt_binding=attempt_binding,
+        eligibility=eligibility,
+        policy=policy,
+        snapshot=snapshot,
+        decision=decision,
+        decision_reference=decision_reference,
+        artifact=artifact,
+        observation=observation,
+    )
+    initial = eligibility.governance
+    fresh = require_fresh_governance_identity(
+        policy.governance,
+        governance_client,
+        now=clock(),
+        expected_provenance=initial.provenance,
+        expected_canonical_content_digest=initial.canonical_content_digest,
+        expected_expires_at=initial.attestation.expires_at.isoformat().replace(
+            "+00:00", "Z"
+        ),
+        expected_live_enabled=initial.attestation.live_enabled,
+    )
+    state = read_nuget_active_state(
+        transport=transport,
+        authority=authority,
+        token=token,
+        package_id=artifact.identity.package_name,
+        version=artifact.identity.native_version,
+    )
+    control, readback = nuget_readback_from_state(
+        state,
+        artifact=artifact,
+        observed_at=clock().isoformat().replace("+00:00", "Z"),
+    )
+    if (
+        readback.classification != "exact-satisfied"
+        or classify_nuget_package_control(
+            control,
+            subject=observation.desired_subject,
+            eligibility=eligibility,
+        )
+        != "ready"
+    ):
+        message = (
+            "NuGet fresh exact-satisfied state or package control is not exact"
+        )
+        raise ValueError(message)
+    proof = ExactSatisfiedFinalizationProof(
+        publication_snapshot.attempt,
+        publication_snapshot_reference,
+        GovernanceProof(
+            governance_observation_provenance(fresh),
+            fresh.current_main_sha,
+            fresh.observed_at.isoformat().replace("+00:00", "Z"),
+            fresh.attestation.expires_at.isoformat().replace("+00:00", "Z"),
+            fresh.attestation.live_enabled,
+        ),
+        control,
+        readback,
+        clock().isoformat().replace("+00:00", "Z"),
+        "prove-exact-satisfied",
+        eligibility.context.control,
+        intent.workflow_run_id,
     )
     return admit_exact_satisfied_finalization_proof(
         proof,

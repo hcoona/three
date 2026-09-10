@@ -16,6 +16,9 @@ from three_workflow_delivery_v3.records.release import (
     DestinationOperationProfile,
     DestinationProjection,
     GovernanceProof,
+    NugetDestinationOperationProfile,
+    NugetPublicationAction,
+    NugetReleaseArtifact,
     PublicationAction,
     PublicationAuthorization,
     PublicationSnapshot,
@@ -24,6 +27,7 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseArtifact,
     ReleaseAttemptBinding,
     ReleaseIntent,
+    form_nuget_publication_action,
     validate_publication_action_instantiation,
 )
 from three_workflow_delivery_v3.release.eligibility import (
@@ -125,8 +129,9 @@ def validate_approval_bundle_closure(
     attempt_binding: ReleaseAttemptBinding,
     qualification_decision: QualificationDecision,
     qualification_snapshot: QualificationSnapshot,
-    release_artifact: ReleaseArtifact,
-    destination_operation_profile: DestinationOperationProfile,
+    release_artifact: ReleaseArtifact | NugetReleaseArtifact,
+    destination_operation_profile: DestinationOperationProfile
+    | NugetDestinationOperationProfile,
     publication_snapshot: PublicationSnapshot,
     publication_snapshot_reference: ArtifactReference,
     reviewer_summary_reference: ArtifactReference,
@@ -256,14 +261,16 @@ def fetch_exact_public_revision(
 
 def _validate_publication_action_context(
     *,
-    action: PublicationAction,
+    action: PublicationAction | NugetPublicationAction,
     publication_snapshot: PublicationSnapshot,
     qualification_decision: QualificationDecision,
     qualification_snapshot: QualificationSnapshot | None,
-    release_artifact: ReleaseArtifact | None,
-    destination_operation_profile: DestinationOperationProfile | None,
+    release_artifact: ReleaseArtifact | NugetReleaseArtifact | None,
+    destination_operation_profile: DestinationOperationProfile
+    | NugetDestinationOperationProfile
+    | None,
     context: str,
-) -> tuple[DestinationProjection, ReleaseArtifact]:
+) -> tuple[DestinationProjection, ReleaseArtifact | NugetReleaseArtifact]:
     qualification_context_error = (
         f"{context} requires exact qualification context"
     )
@@ -273,10 +280,16 @@ def _validate_publication_action_context(
     context_mismatch_error = f"{context} qualification context mismatch"
     if (
         type(qualification_snapshot) is not QualificationSnapshot
-        or type(release_artifact) is not ReleaseArtifact
+        or not isinstance(
+            release_artifact, (ReleaseArtifact, NugetReleaseArtifact)
+        )
+        or type(release_artifact) not in {ReleaseArtifact, NugetReleaseArtifact}
     ):
         raise TypeError(qualification_context_error)
-    if type(destination_operation_profile) is not DestinationOperationProfile:
+    if type(destination_operation_profile) not in {
+        DestinationOperationProfile,
+        NugetDestinationOperationProfile,
+    }:
         raise TypeError(destination_profile_error)
     if len(qualification_snapshot.destination_projections) != 1:
         raise ValueError(context_mismatch_error)
@@ -298,6 +311,28 @@ def _validate_publication_action_context(
         or projection.output != release_artifact.output
     ):
         raise ValueError(context_mismatch_error)
+    if type(release_artifact) is NugetReleaseArtifact:
+        if (
+            type(action) is not NugetPublicationAction
+            or type(destination_operation_profile)
+            is not NugetDestinationOperationProfile
+        ):
+            raise TypeError(context_mismatch_error)
+        expected = form_nuget_publication_action(
+            destination_operation_profile=destination_operation_profile,
+            projection=projection,
+            artifact=release_artifact,
+        )
+        if action != expected:
+            raise ValueError(context_mismatch_error)
+        return projection, release_artifact
+    if (
+        type(release_artifact) is not ReleaseArtifact
+        or type(action) is not PublicationAction
+        or type(destination_operation_profile)
+        is not DestinationOperationProfile
+    ):
+        raise TypeError(context_mismatch_error)
     validate_publication_action_instantiation(
         action,
         destination_operation_profile=destination_operation_profile,

@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING, Literal, cast
 from three_workflow_delivery_v3.catalogs import DESTINATION_DEFINITIONS
 from three_workflow_delivery_v3.records.release import (
     DestinationReadback,
+    NugetExternalPackageCoordinate,
+    NugetReleaseArtifact,
+    NugetRemoteStateObservation,
     PackageControlProof,
     PackageControlSubject,
     PublicationDiagnostics,
@@ -22,6 +25,9 @@ from three_workflow_delivery_v3.release.eligibility import (
 from three_workflow_delivery_v3.release.identity import (
     derive_buddy_execution_identity,
     derive_release_attempt_binding,
+)
+from three_workflow_delivery_v3.release.nuget_eligibility import (
+    AdmittedNugetLiveEligibilityDecision,
 )
 from three_workflow_delivery_v3.release.qualification import (
     validate_qualification_artifacts,
@@ -58,8 +64,16 @@ _DESTINATION = DESTINATION_DEFINITIONS["npm/github-packages-hcoona-three-v1"]
 
 def _validate_package_subject(
     subject: PackageControlSubject,
-    eligibility: AdmittedLiveEligibilityDecision,
+    eligibility: AdmittedLiveEligibilityDecision
+    | AdmittedNugetLiveEligibilityDecision,
 ) -> None:
+    if type(eligibility) is AdmittedNugetLiveEligibilityDecision:
+        from three_workflow_delivery_v3.release.nuget_observation import (  # noqa: PLC0415
+            validate_nuget_package_subject,
+        )
+
+        validate_nuget_package_subject(subject, eligibility)
+        return
     attestation = eligibility.governance.attestation
     principal = attestation.package_principal
     if (
@@ -78,7 +92,8 @@ def classify_package_control(
     proof: PackageControlProof | None,
     *,
     subject: PackageControlSubject,
-    eligibility: AdmittedLiveEligibilityDecision,
+    eligibility: AdmittedLiveEligibilityDecision
+    | AdmittedNugetLiveEligibilityDecision,
 ) -> Literal["ready", "conflicting", "unprovable"]:
     """Compare observed supported facts with admitted Governance and policy.
 
@@ -86,6 +101,14 @@ def classify_package_control(
     the supported USER package API exposes no package-grant facts. In
     particular, repository.permissions cannot populate exposed-access.
     """
+    if type(eligibility) is AdmittedNugetLiveEligibilityDecision:
+        from three_workflow_delivery_v3.release.nuget_observation import (  # noqa: PLC0415
+            classify_nuget_package_control,
+        )
+
+        return classify_nuget_package_control(
+            proof, subject=subject, eligibility=eligibility
+        )
     _validate_package_subject(subject, eligibility)
     if proof is None:
         return "unprovable"
@@ -110,15 +133,24 @@ def _validate_basis(  # noqa: PLR0913
     *,
     intent: ReleaseIntent,
     attempt_binding: ReleaseAttemptBinding,
-    eligibility: AdmittedLiveEligibilityDecision,
+    eligibility: AdmittedLiveEligibilityDecision
+    | AdmittedNugetLiveEligibilityDecision,
     policy: ReleasePolicy,
     snapshot: QualificationSnapshot,
     decision: QualificationDecision,
     decision_reference: ArtifactReference,
-    artifact: ReleaseArtifact,
+    artifact: ReleaseArtifact | NugetReleaseArtifact,
 ) -> DestinationProjection:
-    if type(eligibility) is not AdmittedLiveEligibilityDecision:
+    if type(eligibility) not in {
+        AdmittedLiveEligibilityDecision,
+        AdmittedNugetLiveEligibilityDecision,
+    }:
         message = "Observation requires parser-admitted Live Eligibility"
+        raise TypeError(message)
+    if (type(eligibility) is AdmittedNugetLiveEligibilityDecision) != (
+        type(artifact) is NugetReleaseArtifact
+    ):
+        message = "Observation artifact and eligibility ecosystem differ"
         raise TypeError(message)
     context = eligibility.context
     if (
@@ -196,7 +228,11 @@ def _validate_basis(  # noqa: PLR0913
         PackageControlSubject(
             destination_id=projection.destination_id,
             registry=projection.registry,
-            normalized_package=projection.coordinate.package_name,
+            normalized_package=(
+                projection.coordinate.identity.normalized_package_id
+                if type(projection.coordinate) is NugetExternalPackageCoordinate
+                else projection.coordinate.package_name
+            ),
         ),
         eligibility,
     )
@@ -204,7 +240,8 @@ def _validate_basis(  # noqa: PLR0913
 
 
 def _require_current_eligibility(
-    eligibility: AdmittedLiveEligibilityDecision,
+    eligibility: AdmittedLiveEligibilityDecision
+    | AdmittedNugetLiveEligibilityDecision,
     now: datetime,
 ) -> None:
     if now.tzinfo is None or now.utcoffset() is None:
@@ -219,10 +256,18 @@ def _require_current_eligibility(
 
 
 def _require_action_freshness(
-    eligibility: AdmittedLiveEligibilityDecision,
+    eligibility: AdmittedLiveEligibilityDecision
+    | AdmittedNugetLiveEligibilityDecision,
     now: datetime,
 ) -> None:
     _require_current_eligibility(eligibility, now)
+    if type(eligibility) is AdmittedNugetLiveEligibilityDecision:
+        require_action_governance(
+            eligibility.governance.attestation,
+            now=now,
+            destination_operation_profile_digest=eligibility.profile.profile_digest,
+        )
+        return
     from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
         github_packages_destination_operation_profile,
     )
@@ -237,7 +282,8 @@ def _require_action_freshness(
 
 
 def _native_acceptance_expiry(
-    eligibility: AdmittedLiveEligibilityDecision,
+    eligibility: AdmittedLiveEligibilityDecision
+    | AdmittedNugetLiveEligibilityDecision,
 ) -> datetime:
     activation = cast(
         "EnabledGovernanceActivation",
@@ -252,12 +298,13 @@ def validate_remote_state_observation_basis(  # noqa: PLR0913
     *,
     intent: ReleaseIntent,
     attempt_binding: ReleaseAttemptBinding,
-    eligibility: AdmittedLiveEligibilityDecision,
+    eligibility: AdmittedLiveEligibilityDecision
+    | AdmittedNugetLiveEligibilityDecision,
     policy: ReleasePolicy,
     snapshot: QualificationSnapshot,
     decision: QualificationDecision,
     decision_reference: ArtifactReference,
-    artifact: ReleaseArtifact,
+    artifact: ReleaseArtifact | NugetReleaseArtifact,
     now: datetime,
 ) -> DestinationProjection:
     """Validate current authority before any remote read, without doing IO.
@@ -305,6 +352,12 @@ def admit_remote_state_observation(  # noqa: PLR0913
     Constructors already own readback/ready shape and exactness, including
     the absence-only tag constraint; this function owns cross-record closure.
     """
+    if (
+        type(eligibility) is not AdmittedLiveEligibilityDecision
+        or type(observation) is not RemoteStateObservation
+    ):
+        message = "npm observation requires its exact native variant"
+        raise TypeError(message)
     projection = _validate_basis(
         intent=intent,
         attempt_binding=attempt_binding,
@@ -467,4 +520,66 @@ def observe_remote_state(  # noqa: PLR0913
         decision=decision,
         decision_reference=decision_reference,
         artifact=artifact,
+    )
+
+
+def admit_destination_observation(  # noqa: PLR0913
+    observation: RemoteStateObservation | NugetRemoteStateObservation,
+    *,
+    intent: ReleaseIntent,
+    attempt_binding: ReleaseAttemptBinding,
+    eligibility: AdmittedLiveEligibilityDecision
+    | AdmittedNugetLiveEligibilityDecision,
+    policy: ReleasePolicy,
+    snapshot: QualificationSnapshot,
+    decision: QualificationDecision,
+    decision_reference: ArtifactReference,
+    artifact: ReleaseArtifact | NugetReleaseArtifact,
+    action_creation_at: datetime | None = None,
+) -> RemoteStateObservation | NugetRemoteStateObservation:
+    """Admit one native case under the shared authority DAG."""
+    from three_workflow_delivery_v3.records.release import (  # noqa: PLC0415
+        ReleaseArtifact,
+    )
+    from three_workflow_delivery_v3.release.nuget_observation import (  # noqa: PLC0415
+        admit_nuget_remote_state_observation,
+    )
+
+    if type(observation) is NugetRemoteStateObservation:
+        if (
+            type(eligibility) is not AdmittedNugetLiveEligibilityDecision
+            or type(artifact) is not NugetReleaseArtifact
+        ):
+            message = "NuGet Observation has cross-ecosystem authority inputs"
+            raise TypeError(message)
+        return admit_nuget_remote_state_observation(
+            observation,
+            intent=intent,
+            attempt_binding=attempt_binding,
+            eligibility=eligibility,
+            policy=policy,
+            snapshot=snapshot,
+            decision=decision,
+            decision_reference=decision_reference,
+            artifact=artifact,
+            action_creation_at=action_creation_at,
+        )
+    if (
+        type(observation) is not RemoteStateObservation
+        or type(eligibility) is not AdmittedLiveEligibilityDecision
+        or type(artifact) is not ReleaseArtifact
+    ):
+        message = "npm Observation has cross-ecosystem authority inputs"
+        raise TypeError(message)
+    return admit_remote_state_observation(
+        observation,
+        intent=intent,
+        attempt_binding=attempt_binding,
+        eligibility=eligibility,
+        policy=policy,
+        snapshot=snapshot,
+        decision=decision,
+        decision_reference=decision_reference,
+        artifact=artifact,
+        action_creation_at=action_creation_at,
     )

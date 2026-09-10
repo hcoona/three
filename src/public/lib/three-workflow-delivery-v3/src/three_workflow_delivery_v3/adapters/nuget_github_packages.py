@@ -24,6 +24,7 @@ from urllib.parse import quote, unquote, urlsplit
 
 from three_workflow_delivery_v3.canonical import (
     canonical_sha256,
+    canonicalize,
     parse_json_strict,
 )
 
@@ -385,22 +386,38 @@ def nuget_operation_profile(
     ):
         msg = "The publication transport runtime is not pinned."
         raise NuGetAdapterError(msg)
-    _safe_url(resources.package_publish, origin=NUGET_ORIGIN)
+    return _nuget_profile_document(
+        resources.package_publish,
+        {
+            "executableSha256": _sha256(Path(sys.executable).read_bytes()),
+            "runtimeBuild": sys.version,
+            "sslSourceSha256": _sha256(inspect.getsource(ssl).encode("utf-8")),
+            "platform": platform.system(),
+            "tlsLibrary": ssl.OPENSSL_VERSION,
+            "adapterSha256": _sha256(Path(__file__).read_bytes()),
+        },
+    )
+
+
+def _nuget_profile_document(
+    package_publish: str, runtime_facts: dict[str, str]
+) -> dict[str, JsonValue]:
+    _safe_url(package_publish, origin=NUGET_ORIGIN)
     return {
         "profileId": NUGET_PROFILE_ID,
         "destinationId": NUGET_DESTINATION_ID,
         "operation": "create-active-nuget-version-once",
         "serviceIndex": NUGET_SERVICE_INDEX,
-        "packagePublish": resources.package_publish,
+        "packagePublish": package_publish,
         "resourceType": "PackagePublish/2.0.0",
-        "runtime": "CPython@" + runtime,
-        "executableSha256": _sha256(Path(sys.executable).read_bytes()),
-        "runtimeBuild": sys.version,
-        "sslSourceSha256": _sha256(inspect.getsource(ssl).encode("utf-8")),
-        "platform": platform.system(),
-        "tlsLibrary": ssl.OPENSSL_VERSION,
-        "httpClientSha256": source,
-        "adapterSha256": _sha256(Path(__file__).read_bytes()),
+        "runtime": "CPython@" + NUGET_PYTHON_VERSION,
+        "executableSha256": runtime_facts["executableSha256"],
+        "runtimeBuild": runtime_facts["runtimeBuild"],
+        "sslSourceSha256": runtime_facts["sslSourceSha256"],
+        "platform": runtime_facts["platform"],
+        "tlsLibrary": runtime_facts["tlsLibrary"],
+        "httpClientSha256": NUGET_HTTP_CLIENT_SHA256,
+        "adapterSha256": runtime_facts["adapterSha256"],
         "method": "PUT",
         "authentication": {
             "Authorization": "Basic base64(hcoona:GITHUB_TOKEN)",
@@ -437,6 +454,45 @@ def nuget_operation_profile(
         "failureReadback": "diagnostic-only-never-success",
         "sourceBasis": "https://github.com/python/cpython/blob/v3.13.12/Lib/http/client.py",
     }
+
+
+def validate_nuget_operation_profile(document: JsonValue) -> None:
+    """Validate imported profile shape without replacing retained host facts.
+
+    This is protocol representation admission, not native or runtime admission.
+    Execution must compare the complete profile with the actual running adapter.
+    """
+    if type(document) is not dict:
+        msg = "NuGet operation profile must be an object."
+        raise NuGetAdapterError(msg)
+    runtime_facts: dict[str, str] = {}
+    for name in (
+        "executableSha256",
+        "runtimeBuild",
+        "sslSourceSha256",
+        "platform",
+        "tlsLibrary",
+        "adapterSha256",
+    ):
+        value = document.get(name)
+        if type(value) is not str or not value:
+            msg = "NuGet operation profile runtime fact is incomplete."
+            raise NuGetAdapterError(msg)
+        if (
+            name.endswith("Sha256")
+            and re.fullmatch(r"[0-9a-f]{64}", value) is None
+        ):
+            msg = "NuGet operation profile source digest is invalid."
+            raise NuGetAdapterError(msg)
+        runtime_facts[name] = value
+    endpoint = document.get("packagePublish")
+    if type(endpoint) is not str:
+        msg = "NuGet operation profile endpoint is missing."
+        raise NuGetAdapterError(msg)
+    expected = _nuget_profile_document(endpoint, runtime_facts)
+    if canonicalize(document) != canonicalize(expected):
+        msg = "NuGet operation profile is outside the closed HTTP contract."
+        raise NuGetAdapterError(msg)
 
 
 @dataclass(frozen=True)

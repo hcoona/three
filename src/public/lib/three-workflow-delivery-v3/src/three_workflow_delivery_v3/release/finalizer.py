@@ -11,12 +11,16 @@ from three_workflow_delivery_v3.records.release import (
     DestinationOperationProfile,
     ExternalPackageCoordinate,
     HypotheticalAction,
+    NugetDestinationOperationProfile,
+    NugetPublicationAction,
     NugetReleaseArtifact,
+    NugetRemoteStateObservation,
     ObligationDisposition,
     ObservationRequestFacts,
     ObservationResponseFacts,
     ObservationValue,
     ProjectionObservation,
+    PublicationAction,
     PublicationObservationReference,
     PublicationSnapshot,
     QualificationDecision,
@@ -28,10 +32,14 @@ from three_workflow_delivery_v3.records.release import (
     SimulationBinding,
     SimulationIdentity,
     SimulationOutcome,
+    form_nuget_publication_action,
     form_publication_action,
 )
+from three_workflow_delivery_v3.release.nuget_eligibility import (
+    AdmittedNugetLiveEligibilityDecision,
+)
 from three_workflow_delivery_v3.release.observation import (
-    admit_remote_state_observation,
+    admit_destination_observation,
 )
 from three_workflow_delivery_v3.release.qualification import (
     admit_evidence_for_snapshot,
@@ -502,19 +510,24 @@ def materialize_hypothetical_actions(
     return tuple(actions)
 
 
-def materialize_publication_snapshot(  # noqa: PLR0913
+def materialize_publication_snapshot(  # noqa: C901, PLR0913
     snapshot: QualificationSnapshot,
     decision: QualificationDecision,
-    observations: tuple[RemoteStateObservation, ...],
-    artifacts: tuple[ReleaseArtifact, ...],
+    observations: tuple[
+        RemoteStateObservation | NugetRemoteStateObservation, ...
+    ],
+    artifacts: tuple[ReleaseArtifact | NugetReleaseArtifact, ...],
     *,
     intent: ReleaseIntent,
     attempt_binding: ReleaseAttemptBinding,
-    eligibility: AdmittedLiveEligibilityDecision,
+    eligibility: AdmittedLiveEligibilityDecision
+    | AdmittedNugetLiveEligibilityDecision,
     policy: ReleasePolicy,
     decision_reference: ArtifactReference,
     action_creation_at: datetime,
-    destination_operation_profile: DestinationOperationProfile | None = None,
+    destination_operation_profile: DestinationOperationProfile
+    | NugetDestinationOperationProfile
+    | None = None,
 ) -> PublicationSnapshot:
     """Materialize the guarded second Snapshot for a live Attempt only."""
     if action_creation_at is None:
@@ -536,7 +549,7 @@ def materialize_publication_snapshot(  # noqa: PLR0913
         message = "Publication Snapshot requires one Remote-State Observation"
         raise ValueError(message)
     (artifact,) = admitted_artifacts
-    observation = admit_remote_state_observation(
+    observation = admit_destination_observation(
         observations[0],
         intent=intent,
         attempt_binding=attempt_binding,
@@ -552,24 +565,48 @@ def materialize_publication_snapshot(  # noqa: PLR0913
     if observation.classification not in {"absent", "exact-satisfied"}:
         message = "Publication Snapshot observation is not ready"
         raise ValueError(message)
-    materialized_actions = ()
+    materialized_actions: tuple[
+        PublicationAction | NugetPublicationAction, ...
+    ] = ()
     if observation.classification == "absent":
-        if (
-            type(destination_operation_profile)
-            is not DestinationOperationProfile
-        ):
-            message = (
-                "Publication Action requires an exact Destination Operation "
-                "Profile"
+        if type(artifact) is NugetReleaseArtifact:
+            if (
+                type(destination_operation_profile)
+                is not NugetDestinationOperationProfile
+                or type(eligibility) is not AdmittedNugetLiveEligibilityDecision
+            ):
+                message = "NuGet action requires its exact admitted profile"
+                raise TypeError(message)
+            if destination_operation_profile != eligibility.profile:
+                message = (
+                    "NuGet action profile differs from admitted Eligibility"
+                )
+                raise ValueError(message)
+            materialized_actions = (
+                form_nuget_publication_action(
+                    destination_operation_profile=destination_operation_profile,
+                    projection=projection,
+                    artifact=artifact,
+                ),
             )
-            raise TypeError(message)
-        materialized_actions = (
-            form_publication_action(
-                destination_operation_profile=destination_operation_profile,
-                projection=projection,
-                artifact=artifact,
-            ),
-        )
+        else:
+            if (
+                type(artifact) is not ReleaseArtifact
+                or type(destination_operation_profile)
+                is not DestinationOperationProfile
+            ):
+                message = (
+                    "Publication Action requires an exact "
+                    "Destination Operation Profile"
+                )
+                raise TypeError(message)
+            materialized_actions = (
+                form_publication_action(
+                    destination_operation_profile=destination_operation_profile,
+                    projection=projection,
+                    artifact=artifact,
+                ),
+            )
     return PublicationSnapshot(
         attempt=snapshot.subject,
         qualification_snapshot_digest=snapshot.snapshot_digest,

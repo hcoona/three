@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactContentIdentity,
     ArtifactReference,
@@ -61,10 +62,15 @@ from three_workflow_delivery_v3.records.release import (
     GovernanceProof,
     HypotheticalAction,
     MutationMayHaveStartedMarker,
+    NugetDestinationOperationProfile,
+    NugetDestinationReadback,
     NugetExternalPackageCoordinate,
     NugetPackageIdentity,
+    NugetProfileMatchEvidence,
+    NugetPublicationAction,
     NugetReleaseArtifact,
     NugetReleaseBuildRequest,
+    NugetRemoteStateObservation,
     ObligationDisposition,
     ObservationRequestFacts,
     ObservationResponseFacts,
@@ -413,7 +419,24 @@ def _package_control_proof(value: JsonValue) -> PackageControlProof:
     )
 
 
-def _profile_match(value: JsonValue) -> ProfileMatchEvidence:
+def _profile_match(
+    value: JsonValue,
+) -> ProfileMatchEvidence | NugetProfileMatchEvidence:
+    if "nuget-profile" in _object(value, field="profile match"):
+        document = _closed(
+            value,
+            field="NuGet profile match",
+            schema=None,
+            fields=frozenset({"nuget-profile", "matched-at"}),
+        )
+        return NugetProfileMatchEvidence(
+            actual_profile=NugetDestinationOperationProfile(
+                canonicalize(document["nuget-profile"])
+            ),
+            matched_at=_string(
+                document["matched-at"], field="NuGet profile match.matched-at"
+            ),
+        )
     document = _closed(
         value,
         field="profile match",
@@ -457,7 +480,15 @@ def _profile_match(value: JsonValue) -> ProfileMatchEvidence:
     )
 
 
-def _destination_readback(value: JsonValue) -> DestinationReadback:
+def _destination_readback(
+    value: JsonValue,
+) -> DestinationReadback | NugetDestinationReadback:
+    if "nuget-identity" in _object(value, field="destination readback"):
+        return _nuget_destination_readback(value)
+    return _npm_destination_readback(value)
+
+
+def _npm_destination_readback(value: JsonValue) -> DestinationReadback:
     document = _closed(
         value,
         field="destination readback",
@@ -516,6 +547,57 @@ def _destination_readback(value: JsonValue) -> DestinationReadback:
         tag_version=_nullable_string(
             document["tag-version"],
             field="destination readback.tag-version",
+        ),
+        observed_at=_string(
+            document["observed-at"],
+            field="destination readback.observed-at",
+        ),
+        response_digests=_pairs(
+            document["response-digests"],
+            field="destination readback.response-digests",
+        ),
+    )
+
+
+def _nuget_destination_readback(value: JsonValue) -> NugetDestinationReadback:
+    document = _closed(
+        value,
+        field="destination readback",
+        schema=None,
+        fields=frozenset(
+            {
+                "nuget-identity",
+                "classification",
+                "content-sha256",
+                "content-sha512",
+                "witness-digest",
+                "witness-target",
+                "observed-at",
+                "response-digests",
+            }
+        ),
+    )
+    return NugetDestinationReadback(
+        identity=_nuget_identity(document["nuget-identity"]),
+        classification=_string(
+            document["classification"],
+            field="destination readback.classification",
+        ),
+        content_sha256=_nullable_string(
+            document["content-sha256"],
+            field="destination readback.content-sha256",
+        ),
+        content_sha512=_nullable_string(
+            document["content-sha512"],
+            field="destination readback.content-sha512",
+        ),
+        witness_digest=_nullable_string(
+            document["witness-digest"],
+            field="destination readback.witness-digest",
+        ),
+        witness_target=_nullable_string(
+            document["witness-target"],
+            field="destination readback.witness-target",
         ),
         observed_at=_string(
             document["observed-at"],
@@ -2095,7 +2177,82 @@ def _remote_state_observation(value: JsonValue) -> RemoteStateObservation:
         active_readback=(
             None
             if document["active-readback"] is None
-            else _destination_readback(document["active-readback"])
+            else _npm_destination_readback(document["active-readback"])
+        ),
+        response_identity=_nullable_string(
+            document["response-identity"],
+            field=f"{field}.response-identity",
+        ),
+        diagnostics=_publication_diagnostics(document["diagnostics"]),
+        producer=_string(document["producer"], field=f"{field}.producer"),
+        control=_string(document["control"], field=f"{field}.control"),
+        workflow_run_id=_integer(
+            document["workflow-run-id"],
+            field=f"{field}.workflow-run-id",
+        ),
+    )
+
+
+def _nuget_remote_state_observation(
+    value: JsonValue,
+) -> NugetRemoteStateObservation:
+    field = "Remote-State Observation"
+    document = _closed(
+        value,
+        field=field,
+        schema=REMOTE_STATE_OBSERVATION_SCHEMA,
+        fields=frozenset(
+            {
+                "attempt",
+                "qualification-decision-reference",
+                "desired-subject",
+                "desired-nuget-identity",
+                "desired-content-sha256",
+                "desired-content-sha512",
+                "desired-witness-digest",
+                "classification",
+                "package-control",
+                "active-readback",
+                "response-identity",
+                "diagnostics",
+                "producer",
+                "control",
+                "workflow-run-id",
+            }
+        ),
+    )
+    return NugetRemoteStateObservation(
+        attempt=_release_attempt(document["attempt"]),
+        qualification_decision_reference=_artifact_reference(
+            document["qualification-decision-reference"]
+        ),
+        desired_subject=_package_control_subject(document["desired-subject"]),
+        desired_identity=_nuget_identity(document["desired-nuget-identity"]),
+        desired_content_sha256=_string(
+            document["desired-content-sha256"],
+            field=f"{field}.desired-content-sha256",
+        ),
+        desired_content_sha512=_string(
+            document["desired-content-sha512"],
+            field=f"{field}.desired-content-sha512",
+        ),
+        desired_witness_digest=_string(
+            document["desired-witness-digest"],
+            field=f"{field}.desired-witness-digest",
+        ),
+        classification=_string(
+            document["classification"],
+            field=f"{field}.classification",
+        ),
+        package_control=(
+            None
+            if document["package-control"] is None
+            else _package_control_proof(document["package-control"])
+        ),
+        active_readback=(
+            None
+            if document["active-readback"] is None
+            else _nuget_destination_readback(document["active-readback"])
         ),
         response_identity=_nullable_string(
             document["response-identity"],
@@ -2159,7 +2316,15 @@ def _hypothetical_action(value: JsonValue) -> HypotheticalAction:
     )
 
 
-def _publication_action(value: JsonValue) -> PublicationAction:
+def _publication_action(
+    value: JsonValue,
+) -> PublicationAction | NugetPublicationAction:
+    if "nuget-identity" in _object(value, field="publication action"):
+        return _nuget_publication_action(value)
+    return _npm_publication_action(value)
+
+
+def _npm_publication_action(value: JsonValue) -> PublicationAction:
     document = _closed(
         value,
         field="publication action",
@@ -2200,6 +2365,46 @@ def _publication_action(value: JsonValue) -> PublicationAction:
         tag=_string(
             document["tag"],
             field="publication action.tag",
+        ),
+        mutable_resource_keys=_strings(
+            document["mutable-resource-keys"],
+            field="publication action.mutable-resource-keys",
+        ),
+        serialization_projection=_string(
+            document["serialization-projection"],
+            field="publication action.serialization-projection",
+        ),
+    )
+
+
+def _nuget_publication_action(value: JsonValue) -> NugetPublicationAction:
+    document = _closed(
+        value,
+        field="publication action",
+        schema=PUBLICATION_ACTION_SCHEMA,
+        fields=frozenset(
+            {
+                "action-id",
+                "destination-operation-profile-digest",
+                "nuget-identity",
+                "nupkg-reference",
+                "mutable-resource-keys",
+                "serialization-projection",
+            }
+        ),
+    )
+    return NugetPublicationAction(
+        action_id=_string(
+            document["action-id"],
+            field="publication action.action-id",
+        ),
+        destination_operation_profile_digest=_string(
+            document["destination-operation-profile-digest"],
+            field=("publication action.destination-operation-profile-digest"),
+        ),
+        identity=_nuget_identity(document["nuget-identity"]),
+        nupkg_reference=artifact_reference_from_document(
+            document["nupkg-reference"]
         ),
         mutable_resource_keys=_strings(
             document["mutable-resource-keys"],
@@ -2715,8 +2920,10 @@ _PARSERS: dict[type[object], Callable[[JsonValue], ReleaseRecord]] = {
     QualificationDecision: _qualification_decision,
     ProjectionObservation: _projection_observation,
     RemoteStateObservation: _remote_state_observation,
+    NugetRemoteStateObservation: _nuget_remote_state_observation,
     HypotheticalAction: _hypothetical_action,
-    PublicationAction: _publication_action,
+    PublicationAction: _npm_publication_action,
+    NugetPublicationAction: _nuget_publication_action,
     PublicationSnapshot: _publication_snapshot,
     SimulationOutcome: _simulation_outcome,
     ApprovalBundle: _approval_bundle,
@@ -2859,7 +3066,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
             record.target,
             record.producer,
         )
-    if isinstance(record, PublicationAction):
+    if isinstance(record, PublicationAction | NugetPublicationAction):
         message = "Publication Action has no standalone current bindings"
         raise ValueError(message)  # noqa: TRY004
     if isinstance(record, PublicationSnapshot):
@@ -2889,6 +3096,7 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
     if isinstance(
         record,
         RemoteStateObservation
+        | NugetRemoteStateObservation
         | MutationMayHaveStartedMarker
         | PublicationResult,
     ):

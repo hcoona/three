@@ -111,16 +111,26 @@ neither this handoff nor the Issue enlarges the Wave or domain effect bounds.
 
 The native Provider and frozen Build/Quality foundation, independent
 authoring/compiler contracts, one-shot HTTP adapter, and blocked NuGet
-Governance are protected-delivered through PR #678. The next disabled unit
-adds explicit NuGet Release records and planning from matched admitted Model
-and Provider inputs. It binds the original archive to immutable transport and
-separate content/consumer Evidence through the shared Qualification Finalizer.
-Inspect Git and PR state before claiming this integration is protected-delivered.
-Destination authority/runtime integration, workflow execution, native
-acceptance tooling, activation, and real publication remain subsequent work.
-Sufficient GitHub-owned
-atomic non-overwrite assurance remains an activation gate; sequential
-duplicate tests cannot supply it.
+Governance are protected-delivered through PR #678. PR #679 protected-delivered
+explicit NuGet Release records, planning from matched admitted Model/Provider
+inputs, and original-archive content/consumer Qualification.
+
+Disabled destination integration adds a separate native Eligibility Decision,
+no-tag active observation and action records, and original `.nupkg` publication.
+It reuses Publication Snapshot, current-Attempt Approval/Authorization, fresh
+exact-satisfied proof, marker/Result transport, and the shared Outcome Finalizer.
+Imported HTTP profiles retain their original runtime/source/TLS identity;
+publication compares the actual profile before its one-shot invocation.
+Initial protected-main control evidence and later protected-path freshness
+remain distinct. The native Eligibility Decision carries no npm static-reference
+placeholder. Modeled service/admission scenarios establish local contracts only.
+Inspect current Git/PR state before claiming this unit is protected-delivered.
+
+Workflow/CLI entry delivery, native acceptance tooling, activation, and real
+publication remain subsequent work. Existing publisher entries remain npm-only.
+The checked-in NuGet source stays blocked and its native/atomic admission sets
+stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an
+activation gate; sequential duplicate tests cannot supply it.
 
 ## Git Inspection and Implementation Scope
 

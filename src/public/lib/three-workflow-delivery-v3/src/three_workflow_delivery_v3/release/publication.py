@@ -39,8 +39,12 @@ from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.release import (
     GovernanceProof,
     MutationMayHaveStartedMarker,
+    NugetReleaseArtifact,
+    NugetRemoteStateObservation,
+    PublicationAction,
     PublicationDiagnostics,
     PublicationResult,
+    ReleaseArtifact,
     admit_release_record,
 )
 from three_workflow_delivery_v3.release.eligibility import (
@@ -54,6 +58,9 @@ from three_workflow_delivery_v3.release.finalizer import (
 )
 from three_workflow_delivery_v3.release.live import (
     validate_approval_bundle_closure,
+)
+from three_workflow_delivery_v3.release.nuget_eligibility import (
+    AdmittedNugetLiveEligibilityDecision,
 )
 from three_workflow_delivery_v3.release.observation import (
     classify_package_control,
@@ -79,7 +86,6 @@ if TYPE_CHECKING:
         PublicationSnapshot,
         QualificationDecision,
         QualificationSnapshot,
-        ReleaseArtifact,
         ReleaseAttemptBinding,
         ReleaseIntent,
         RemoteStateObservation,
@@ -100,13 +106,15 @@ class PublicationInputs:
 
     intent: ReleaseIntent
     attempt_binding: ReleaseAttemptBinding
-    eligibility: AdmittedLiveEligibilityDecision
+    eligibility: (
+        AdmittedLiveEligibilityDecision | AdmittedNugetLiveEligibilityDecision
+    )
     policy: ReleasePolicy
     snapshot: QualificationSnapshot
     decision: QualificationDecision
     decision_reference: ArtifactReference
-    artifact: ReleaseArtifact
-    observation: RemoteStateObservation
+    artifact: ReleaseArtifact | NugetReleaseArtifact
+    observation: RemoteStateObservation | NugetRemoteStateObservation
     publication_snapshot: PublicationSnapshot
     publication_snapshot_reference: ArtifactReference
     approval_bundle: ApprovalBundle
@@ -132,7 +140,11 @@ class PublicationInputs:
             or current.target != self.intent.target
         ):
             raise ValueError("Publisher requires the current attempt-one run")
-        profile = github_packages_destination_operation_profile()
+        profile = (
+            self.eligibility.profile
+            if type(self.eligibility) is AdmittedNugetLiveEligibilityDecision
+            else github_packages_destination_operation_profile()
+        )
         publication = materialize_publication_snapshot(
             self.snapshot,
             self.decision,
@@ -166,11 +178,17 @@ class PublicationInputs:
             reviewer_summary_reference=self.reviewer_summary_reference,
             control=self.eligibility.context.control,
         )
-        validate_github_packages_publication_action(
-            action=publication.materialized_actions[0],
-            projection=self.snapshot.destination_projections[0],
-            artifact=self.artifact,
-        )
+        action = publication.materialized_actions[0]
+        if type(self.artifact) is ReleaseArtifact:
+            if type(action) is not PublicationAction:
+                raise TypeError(
+                    "npm publisher requires its exact action variant"
+                )
+            validate_github_packages_publication_action(
+                action=action,
+                projection=self.snapshot.destination_projections[0],
+                artifact=self.artifact,
+            )
         for record, reference in (
             (self.authorization, self.authorization_reference),
             (self.approval_bundle, self.approval_bundle_reference),
@@ -225,6 +243,11 @@ def _profile_match(  # noqa: PLR0913
 ) -> ProfileMatchEvidence:
     validate_npm_runtime(directory)
     action = inputs.publication_snapshot.materialized_actions[0]
+    if (
+        type(inputs.artifact) is not ReleaseArtifact
+        or type(action) is not PublicationAction
+    ):
+        raise TypeError("npm publisher requires its exact artifact and action")
     tarball = directory / inputs.artifact.content.basename
     try:
         _validate_local_tarball_preconditions(
@@ -279,6 +302,8 @@ def prepare_publication(  # noqa: PLR0913
     Execution reconstructs and revalidates it; no local manifest is authority.
     """
     inputs.validate(current=current, run_attempt=run_attempt, now=clock())
+    if type(inputs.artifact) is not ReleaseArtifact:
+        raise TypeError("npm publisher requires its exact artifact")
     directory, toolchain = npm_runtime_paths(
         runtime_directory, toolchain_directory, checkout
     )
@@ -426,6 +451,8 @@ def execute_publication(  # noqa: PLR0913
     cannot attest to transport and deliberately invents no service proof.
     """
     inputs.validate(current=current, run_attempt=run_attempt, now=clock())
+    if type(inputs.artifact) is not ReleaseArtifact:
+        raise TypeError("npm publisher requires its exact artifact")
     if (
         type(durable_marker) is not MutationMayHaveStartedMarker
         or type(marker_reference) is not ArtifactReference

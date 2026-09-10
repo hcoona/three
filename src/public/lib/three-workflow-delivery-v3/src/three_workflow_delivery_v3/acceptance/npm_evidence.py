@@ -39,6 +39,7 @@ from three_workflow_delivery_v3.canonical import (
     parse_canonical_json,
     parse_json_strict,
 )
+from three_workflow_delivery_v3.records.release import ProfileMatchEvidence
 from three_workflow_delivery_v3.records.release_transport import (
     _boolean,
     _closed,
@@ -55,7 +56,6 @@ if TYPE_CHECKING:
         CommandClassification,
     )
     from three_workflow_delivery_v3.canonical import JsonValue
-    from three_workflow_delivery_v3.records.release import ProfileMatchEvidence
 
 _WORKFLOW = ".github/workflows/workflow-delivery-v3-native-npm-acceptance.yml"
 _REPOSITORY = "hcoona/three"
@@ -108,6 +108,9 @@ def _read_profile(
     path: Path, request: NpmProbeRequest, run_id: int
 ) -> ProfileMatchEvidence:
     match = _profile_match(parse_canonical_json(path.read_bytes()))
+    if type(match) is not ProfileMatchEvidence:
+        message = "npm probe requires its exact command profile evidence"
+        raise ValueError(message)
     profile = github_packages_destination_operation_profile()
     _require(
         match.destination_operation_profile_digest == profile.profile_digest

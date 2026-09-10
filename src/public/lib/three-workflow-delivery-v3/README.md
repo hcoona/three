@@ -18,8 +18,10 @@ owns its marker-product purpose; the
 is a v3 Provider and package-inspection component. The handoff retains the
 distinct native and publication admission gates. Explicit NuGet Release
 records and qualification bind admitted native inputs and the original package
-to separate content and consumer Evidence; destination/runtime integration
-and real native/Live proving remain subsequent work.
+to separate content and consumer Evidence. Disabled destination integration
+adds native eligibility, active observation, original-archive publication,
+and shared Approval/terminal closure. Workflow entry delivery, native acceptance,
+activation, and real Live proving remain subsequent work.
 
 The documentation records accepted domain constraints and evidence. It grants no
 runtime work and does not renew either spent npm dispatch authorization.

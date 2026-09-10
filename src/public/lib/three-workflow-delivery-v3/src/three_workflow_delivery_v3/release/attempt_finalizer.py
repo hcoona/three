@@ -20,15 +20,26 @@ from three_workflow_delivery_v3.records.release import (
     ApprovalBundle,
     AttemptOutcome,
     DestinationOperationProfile,
+    DestinationReadback,
     DirectPredecessor,
     ExactSatisfiedFinalizationProof,
     MutationMayHaveStartedMarker,
+    NugetDestinationOperationProfile,
+    NugetDestinationReadback,
+    NugetProfileMatchEvidence,
+    NugetPublicationAction,
+    NugetReleaseArtifact,
+    NugetRemoteStateObservation,
+    ProfileMatchEvidence,
+    PublicationAction,
     PublicationAuthorization,
     PublicationObservationReference,
     PublicationResult,
     PublicationSnapshot,
+    ReleaseArtifact,
     RemoteStateObservation,
     admit_release_record,
+    form_nuget_publication_action,
     form_publication_action,
 )
 from three_workflow_delivery_v3.release.eligibility import (
@@ -47,8 +58,11 @@ from three_workflow_delivery_v3.release.identity import (
 from three_workflow_delivery_v3.release.live import (
     validate_approval_bundle_closure,
 )
+from three_workflow_delivery_v3.release.nuget_eligibility import (
+    AdmittedNugetLiveEligibilityDecision,
+)
 from three_workflow_delivery_v3.release.observation import (
-    admit_remote_state_observation,
+    admit_destination_observation,
     classify_package_control,
 )
 from three_workflow_delivery_v3.repository.compiler import (
@@ -60,7 +74,6 @@ if TYPE_CHECKING:
         QualificationDecision,
         QualificationEvidence,
         QualificationSnapshot,
-        ReleaseArtifact,
         ReleaseAttemptBinding,
         ReleaseIntent,
         ReleaseRecord,
@@ -74,7 +87,11 @@ _PLATFORM_OUTCOMES = frozenset({"success", "failure", "cancelled", "skipped"})
 _RECORD_REFERENCE_PAIR_SIZE = 2
 
 
-def _profile() -> DestinationOperationProfile:
+def _profile(
+    inputs: FinalizationInputs,
+) -> DestinationOperationProfile | NugetDestinationOperationProfile:
+    if type(inputs.eligibility) is AdmittedNugetLiveEligibilityDecision:
+        return inputs.eligibility.profile
     from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
         github_packages_destination_operation_profile,
     )
@@ -109,15 +126,21 @@ class FinalizationInputs:
 
     intent: ReleaseIntent
     attempt_binding: ReleaseAttemptBinding
-    eligibility: AdmittedLiveEligibilityDecision
+    eligibility: (
+        AdmittedLiveEligibilityDecision | AdmittedNugetLiveEligibilityDecision
+    )
     policy: ReleasePolicy
     snapshot: QualificationSnapshot
     decision: QualificationDecision
     decision_reference: ArtifactReference
     evidence: tuple[QualificationEvidence, ...]
-    artifacts: tuple[ReleaseArtifact, ...]
+    artifacts: tuple[ReleaseArtifact | NugetReleaseArtifact, ...]
     observations: tuple[
-        tuple[RemoteStateObservation, ArtifactReference], ...
+        tuple[
+            RemoteStateObservation | NugetRemoteStateObservation,
+            ArtifactReference,
+        ],
+        ...,
     ] = ()
     publication: tuple[PublicationSnapshot, ArtifactReference] | None = None
     bundle: tuple[ApprovalBundle, ArtifactReference] | None = None
@@ -171,7 +194,11 @@ def _admit_qualification(
     if (
         type(run_attempt) is not int
         or run_attempt != 1
-        or type(eligibility) is not AdmittedLiveEligibilityDecision
+        or type(eligibility)
+        not in {
+            AdmittedLiveEligibilityDecision,
+            AdmittedNugetLiveEligibilityDecision,
+        }
         or current.purpose != "live-release"
         or current.run_attempt is not None
         or current.workflow_run_id != inputs.intent.workflow_run_id
@@ -231,7 +258,7 @@ def _admit_qualification(
         )
 
 
-def _admit_publication(inputs: FinalizationInputs) -> None:  # noqa: C901, PLR0912
+def _admit_publication(inputs: FinalizationInputs) -> None:  # noqa: C901, PLR0912, PLR0915
     if inputs.publication is None:
         if any(
             (
@@ -255,18 +282,34 @@ def _admit_publication(inputs: FinalizationInputs) -> None:  # noqa: C901, PLR09
     (projection,) = inputs.snapshot.destination_projections
     if observation.classification not in {"absent", "exact-satisfied"}:
         raise ValueError("Blocking Observation cannot precede a Snapshot")
-    profile = _profile()
-    actions = (
-        (
-            form_publication_action(
-                destination_operation_profile=profile,
-                projection=projection,
-                artifact=artifact,
-            ),
-        )
-        if observation.classification == "absent"
-        else ()
-    )
+    profile = _profile(inputs)
+    actions: tuple[PublicationAction | NugetPublicationAction, ...] = ()
+    if observation.classification == "absent":
+        if type(artifact) is NugetReleaseArtifact:
+            if type(profile) is not NugetDestinationOperationProfile:
+                raise TypeError("NuGet Finalizer requires a native profile")
+            actions = (
+                form_nuget_publication_action(
+                    destination_operation_profile=profile,
+                    projection=projection,
+                    artifact=artifact,
+                ),
+            )
+        else:
+            if (
+                type(artifact) is not ReleaseArtifact
+                or type(profile) is not DestinationOperationProfile
+            ):
+                raise TypeError(
+                    "npm Finalizer requires its native artifact/profile"
+                )
+            actions = (
+                form_publication_action(
+                    destination_operation_profile=profile,
+                    projection=projection,
+                    artifact=artifact,
+                ),
+            )
     expected = PublicationSnapshot(
         attempt=inputs.attempt_binding.attempt,
         qualification_snapshot_digest=inputs.snapshot.snapshot_digest,
@@ -381,28 +424,59 @@ def _admit_marker(
     artifact = inputs.artifacts[0]
     action = inputs.publication[0].materialized_actions[0]
     initial = inputs.eligibility.governance
-    profile = _profile()
+    profile = _profile(inputs)
     match = marker.profile_match
-    if len(match.command) != len(profile.command_template):
-        raise ValueError("Marker command template mismatch")
-    tarball = match.command[profile.command_template.index("{tarball-path}")]
-    path = PurePosixPath(tarball)
-    expected_command = tuple(
-        {"{tarball-path}": tarball, "{tag}": action.tag}.get(word, word)
-        for word in profile.command_template
-    )
-    expected_configuration = tuple(
-        sorted(
-            {
-                "@hcoona:registry": profile.registry,
-                "registry": profile.registry + "/",
-                "tag": action.tag,
-                "ignore-scripts": "true",
-                "fetch-retries": "0",
-                "access": "null",
-            }.items()
+    if type(profile) is NugetDestinationOperationProfile:
+        if (
+            type(match) is not NugetProfileMatchEvidence
+            or type(action) is not NugetPublicationAction
+            or match.actual_profile != profile
+        ):
+            raise ValueError(
+                "Finalizer native marker profile evidence mismatch"
+            )
+    else:
+        if (
+            type(profile) is not DestinationOperationProfile
+            or type(match) is not ProfileMatchEvidence
+            or type(action) is not PublicationAction
+        ):
+            raise TypeError("Finalizer npm marker profile evidence mismatch")
+        if len(match.command) != len(profile.command_template):
+            raise ValueError("Marker command template mismatch")
+        tarball = match.command[
+            profile.command_template.index("{tarball-path}")
+        ]
+        path = PurePosixPath(tarball)
+        expected_command = tuple(
+            {"{tarball-path}": tarball, "{tag}": action.tag}.get(word, word)
+            for word in profile.command_template
         )
-    )
+        expected_configuration = tuple(
+            sorted(
+                {
+                    "@hcoona:registry": profile.registry,
+                    "registry": profile.registry + "/",
+                    "tag": action.tag,
+                    "ignore-scripts": "true",
+                    "fetch-retries": "0",
+                    "access": "null",
+                }.items()
+            )
+        )
+        if (
+            match.node_version != profile.node_version
+            or match.npm_version != profile.npm_version
+            or match.command != expected_command
+            or not path.is_absolute()
+            or path.as_posix() != tarball
+            or ".." in path.parts
+            or path.name != artifact.content.basename
+            or match.configuration != expected_configuration
+        ):
+            raise ValueError(
+                "Finalizer marker authority/profile evidence mismatch"
+            )
     if (
         marker.publication_authorization_reference != authorization_reference
         or marker.governance_proof.provenance != initial.provenance
@@ -420,14 +494,6 @@ def _admit_marker(
         <= datetime.fromisoformat(match.matched_at)
         < initial.attestation.expires_at
         or match.destination_operation_profile_digest != profile.profile_digest
-        or match.node_version != profile.node_version
-        or match.npm_version != profile.npm_version
-        or match.command != expected_command
-        or not path.is_absolute()
-        or path.as_posix() != tarball
-        or ".." in path.parts
-        or path.name != artifact.content.basename
-        or match.configuration != expected_configuration
     ):
         raise ValueError("Finalizer marker authority/profile evidence mismatch")
     require_action_governance(
@@ -450,10 +516,24 @@ def _admit_result(
     if inputs.publication is None:
         raise ValueError("Result requires its Publication Snapshot")
     action = inputs.publication[0].materialized_actions[0]
+    if type(observation) is NugetRemoteStateObservation:
+        same_coordinate = (
+            type(readback) is NugetDestinationReadback
+            and type(action) is NugetPublicationAction
+            and readback.identity.normalized_version
+            == observation.desired_identity.normalized_version
+        )
+    else:
+        same_coordinate = (
+            type(observation) is RemoteStateObservation
+            and type(readback) is DestinationReadback
+            and type(action) is PublicationAction
+            and readback.version == observation.desired_version
+            and readback.tag == action.tag
+        )
     if (
         readback.package != observation.desired_subject.normalized_package
-        or readback.version != observation.desired_version
-        or readback.tag != action.tag
+        or not same_coordinate
         or datetime.fromisoformat(readback.observed_at)
         < datetime.fromisoformat(marker.profile_match.matched_at)
         or (
@@ -504,7 +584,12 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if type(inputs.observations) is not tuple or len(inputs.observations) > 1:
         raise ValueError("Finalizer requires at most one Observation")
     for pair in inputs.observations:
-        _admit_pair(pair, RemoteStateObservation, current)
+        expected_observation_type = (
+            NugetRemoteStateObservation
+            if type(inputs.eligibility) is AdmittedNugetLiveEligibilityDecision
+            else RemoteStateObservation
+        )
+        _admit_pair(pair, expected_observation_type, current)
     if inputs.observations and observation_conclusion == "skipped":
         raise ValueError("Skipped Observer cannot supply an Observation")
     for pair, record_type in (
@@ -557,7 +642,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if len(inputs.artifacts) != 1:
         raise ValueError("Successful Qualification requires its exact artifact")
     for observation, _ in inputs.observations:
-        admit_remote_state_observation(
+        admit_destination_observation(
             observation,
             intent=inputs.intent,
             attempt_binding=inputs.attempt_binding,

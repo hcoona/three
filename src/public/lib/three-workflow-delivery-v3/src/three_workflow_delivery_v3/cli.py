@@ -3929,6 +3929,11 @@ def _load_publication_terminal(
 def _release_prepare_publication_command(arguments: argparse.Namespace) -> int:
     inputs = _load_publication_inputs(arguments)
     context = _load_release_adapter_context(arguments, inputs.snapshot)
+    from three_workflow_delivery_v3.records.release import ReleaseArtifact  # noqa: PLC0415
+
+    if type(inputs.artifact) is not ReleaseArtifact:
+        message = "This publisher entry requires the npm artifact variant"
+        raise TypeError(message)
     marker = prepare_publication(
         inputs,
         current=_release_bindings(arguments, purpose="live-release"),
@@ -3976,6 +3981,11 @@ def _release_execute_publication_command(arguments: argparse.Namespace) -> int:
     )
     if type(marker) is not MutationMayHaveStartedMarker:
         raise ValueError("Publication requires the exact marker target")
+    from three_workflow_delivery_v3.records.release import ReleaseArtifact  # noqa: PLC0415
+
+    if type(inputs.artifact) is not ReleaseArtifact:
+        message = "This publisher entry requires the npm artifact variant"
+        raise TypeError(message)
     result = execute_publication(
         inputs,
         current=_release_bindings(arguments, purpose="live-release"),
