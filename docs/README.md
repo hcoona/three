@@ -27,6 +27,9 @@ Neither this portal nor an old plan adds work to the accepted Wave.
 
 ## Shared Engineering
 
+- [Engineering principles](engineering/engineering-principles.md): shared design,
+  security and test/evidence guidance applied with each project's authorities.
+  Agents use the [thin guidance interface](../.github/skills/engineering-guidance/SKILL.md).
 - [Workspace and toolchain setup](engineering/workspaces.md).
 - [.NET compatibility rationale](engineering/dotnet-compatibility.md), including
   generator/analyzer and retained legacy-format exceptions.

@@ -205,6 +205,20 @@ families:
     creation_trigger: The named consumers need the retained concern at its review or use point.
     failure_mode: Source-derived material loses required attribution.
     review_point: Changes to this concern, its policy, or its consumers
+  - id: engineering-guidance-source
+    state: current
+    namespace: repository
+    concern: Agent routing from engineering decisions to shared principles and project authorities
+    carrier: repository-file
+    path: .github/skills/engineering-guidance/SKILL.md
+    format: markdown
+    producer: Repository owner and engineering authors
+    maintainer: Repository owner
+    consumers:
+      - Agents making or reviewing design, security and test/evidence strategy decisions
+    creation_trigger: Shared principles need an agent entry point at the relevant project decision.
+    failure_mode: Agents miss shared principles or apply them without the owning project's accepted context.
+    review_point: Changes to shared principles, this interface, or its project routing
   - id: record-system-review-source
     state: current
     namespace: repository
@@ -408,7 +422,7 @@ families:
   - id: shared-engineering
     state: current
     namespace: repository
-    concern: Shared workspace, compatibility, HK and bounded agent execution guidance
+    concern: Shared engineering principles, workspace, compatibility, HK and bounded agent execution guidance
     carrier: repository-files
     path: docs/engineering/*.md
     format: markdown
@@ -416,6 +430,7 @@ families:
     maintainer: Repository owner
     consumers:
       - Contributors setting up tools and preserving shared build exceptions
+      - Authors and reviewers applying shared design, security and test/evidence principles with project authorities
       - Agents coordinating recoverable work and rechecking mutable execution interfaces
     creation_trigger: The named consumers require this existing concern at its use or review point.
     failure_mode: Shared setup and execution assumptions drift or project details become repository policy.
