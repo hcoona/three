@@ -186,6 +186,10 @@ def _plan_from_provider(repo, context, manifest, result):
 
 @pytest.fixture
 def nuget_scenario(native_scenario, tmp_path: Path) -> NugetScenario:
+    return _nuget_scenario(native_scenario, tmp_path)
+
+
+def _nuget_scenario(native_scenario, tmp_path: Path) -> NugetScenario:
     repo, old_context, _, old_result = native_scenario
     context = replace(old_context, request_id="release-request:" + "4" * 64)
     manifest = compiler.nuget_provider_manifest(

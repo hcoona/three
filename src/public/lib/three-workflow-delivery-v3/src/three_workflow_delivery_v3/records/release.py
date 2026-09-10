@@ -2660,6 +2660,47 @@ class DestinationOperationProfile:
         return canonical_sha256(self.to_document())
 
 
+@dataclass(frozen=True, slots=True)
+class NugetDestinationOperationProfile:
+    """Immutable original native HTTP profile, including its producer host."""
+
+    canonical_bytes: bytes
+
+    def __post_init__(self) -> None:
+        """Admit closed protocol data without evaluating this host's runtime."""
+        from three_workflow_delivery_v3.adapters.nuget_github_packages import (  # noqa: PLC0415
+            validate_nuget_operation_profile,
+        )
+
+        _exact(
+            self.canonical_bytes, bytes, field="NuGet profile.canonical_bytes"
+        )
+        validate_nuget_operation_profile(
+            parse_canonical_json(self.canonical_bytes)
+        )
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return a detached copy of the exact original profile document."""
+        return cast(
+            "dict[str, JsonValue]", parse_canonical_json(self.canonical_bytes)
+        )
+
+    @property
+    def profile_digest(self) -> str:
+        """Return the unchanged canonical adapter profile digest."""
+        return canonical_sha256(self.to_document())
+
+    @property
+    def profile_id(self) -> str:
+        """Return the admitted native operation identity."""
+        return cast("str", self.to_document()["profileId"])
+
+    @property
+    def registry(self) -> str:
+        """Return the admitted discovery endpoint."""
+        return cast("str", self.to_document()["serviceIndex"])
+
+
 def publication_mutable_resource_keys(
     projection: DestinationProjection,
     artifact: ReleaseArtifact | ReleaseAttemptIdentity | None = None,
@@ -2967,6 +3008,109 @@ def validate_publication_action_instantiation(
 
 
 @dataclass(frozen=True, slots=True)
+class NugetPublicationAction:
+    """One native create operation over the original qualified nupkg."""
+
+    action_id: str
+    destination_operation_profile_digest: str
+    identity: NugetPackageIdentity
+    nupkg_reference: ArtifactReference
+    mutable_resource_keys: tuple[str, ...]
+    serialization_projection: str
+
+    def __post_init__(self) -> None:
+        """Reject malformed native operands without adding npm tag state."""
+        _string(self.action_id, field="NuGet action.action_id")
+        _digest(
+            self.destination_operation_profile_digest,
+            field="NuGet action.profile",
+        )
+        _exact(
+            self.identity, NugetPackageIdentity, field="NuGet action.identity"
+        )
+        _exact(
+            self.nupkg_reference,
+            ArtifactReference,
+            field="NuGet action.nupkg_reference",
+        )
+        _string_tuple(
+            self.mutable_resource_keys,
+            field="NuGet action.mutable_resource_keys",
+            sorted_values=True,
+        )
+        _string(
+            self.serialization_projection,
+            field="NuGet action.serialization_projection",
+        )
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the explicit native action variant."""
+        return {
+            "schema": PUBLICATION_ACTION_SCHEMA,
+            "action-id": self.action_id,
+            "destination-operation-profile-digest": (
+                self.destination_operation_profile_digest
+            ),
+            "nuget-identity": self.identity.to_document(),
+            "nupkg-reference": self.nupkg_reference.to_document(),
+            "mutable-resource-keys": _json_strings(self.mutable_resource_keys),
+            "serialization-projection": self.serialization_projection,
+        }
+
+    @property
+    def action_digest(self) -> str:
+        """Return the canonical action digest."""
+        return canonical_sha256(self.to_document())
+
+
+def form_nuget_publication_action(
+    *,
+    destination_operation_profile: NugetDestinationOperationProfile,
+    projection: DestinationProjection,
+    artifact: NugetReleaseArtifact,
+) -> NugetPublicationAction:
+    """Bind the native profile, coordinate, and exact qualified archive."""
+    _exact(
+        destination_operation_profile,
+        NugetDestinationOperationProfile,
+        field="NuGet action.profile",
+    )
+    _exact(projection, DestinationProjection, field="NuGet action.projection")
+    _exact(artifact, NugetReleaseArtifact, field="NuGet action.artifact")
+    if type(projection.coordinate) is not NugetExternalPackageCoordinate:
+        message = "NuGet action requires the exact native coordinate"
+        raise TypeError(message)
+    if (
+        type(artifact.subject) is not ReleaseAttemptIdentity
+        or type(artifact.subject.execution) is not BuddyExecutionIdentity
+        or artifact.purpose != "live-release"
+        or destination_operation_profile.registry != projection.registry
+        or projection.output != artifact.output
+        or projection.coordinate.identity != artifact.identity
+    ):
+        message = (
+            "NuGet action profile, projection, or qualified artifact mismatch"
+        )
+        raise ValueError(message)
+    return NugetPublicationAction(
+        action_id=projection.potential_action_id,
+        destination_operation_profile_digest=destination_operation_profile.profile_digest,
+        identity=projection.coordinate.identity,
+        nupkg_reference=ArtifactReference(
+            artifact_id=artifact.transport.artifact_id,
+            artifact_digest=artifact.transport.transport_digest,
+            artifact_url=artifact.transport.artifact_url,
+            payload_path=artifact.content.basename,
+            payload_digest=artifact.content.content_sha256,
+        ),
+        mutable_resource_keys=publication_mutable_resource_keys(projection),
+        serialization_projection=publication_serialization_projection(
+            projection
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class PublicationObservationReference:
     """Closed retained observation fact for one planned projection."""
 
@@ -3001,10 +3145,13 @@ class PublicationObservationReference:
 
 
 def _validate_materialized_actions(
-    actions: tuple[PublicationAction, ...],
+    actions: tuple[PublicationAction | NugetPublicationAction, ...],
 ) -> None:
     _exact(actions, tuple, field="publication.materialized_actions")
-    if any(type(action) is not PublicationAction for action in actions):
+    if any(
+        type(action) not in {PublicationAction, NugetPublicationAction}
+        for action in actions
+    ):
         message = "Publication Snapshot action has the wrong type"
         raise TypeError(message)
     if len(actions) > 1:
@@ -3024,7 +3171,7 @@ class PublicationSnapshot:
     artifact_digests: tuple[str, ...]
     artifact_output_ids: tuple[str, ...]
     observation_references: tuple[PublicationObservationReference, ...]
-    materialized_actions: tuple[PublicationAction, ...]
+    materialized_actions: tuple[PublicationAction | NugetPublicationAction, ...]
 
     def __post_init__(self) -> None:
         """Reject placeholder, incomplete, or simulation second Snapshots."""
@@ -3797,6 +3944,100 @@ class DestinationReadback:
 
 
 @dataclass(frozen=True, slots=True)
+class NugetDestinationReadback:
+    """Supported native active-version facts without npm tag placeholders."""
+
+    identity: NugetPackageIdentity
+    classification: str
+    content_sha256: str | None
+    content_sha512: str | None
+    witness_digest: str | None
+    witness_target: str | None
+    observed_at: str
+    response_digests: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        """Reject contradictory native active-version evidence."""
+        _exact(
+            self.identity, NugetPackageIdentity, field="NuGet readback.identity"
+        )
+        _choice(
+            self.classification,
+            _OBSERVATION_CLASSIFICATIONS,
+            field="readback.classification",
+        )
+        content_sha256 = _optional_digest(
+            self.content_sha256,
+            field="readback.content_sha256",
+        )
+        content_sha512 = _optional_sha512(
+            self.content_sha512,
+            field="readback.content_sha512",
+        )
+        witness_digest = _optional_digest(
+            self.witness_digest,
+            field="readback.witness_digest",
+        )
+        witness_target = (
+            None
+            if self.witness_target is None
+            else _sha(self.witness_target, field="readback.witness_target")
+        )
+        version_evidence = (
+            content_sha256,
+            content_sha512,
+            witness_digest,
+            witness_target,
+        )
+        if self.classification == "absent" and any(
+            value is not None for value in version_evidence
+        ):
+            message = "Absent destination readback cannot contain version facts"
+            raise ValueError(message)
+        if self.classification in {"exact-satisfied", "conflicting"} and any(
+            value is None for value in version_evidence
+        ):
+            message = (
+                "Conclusive destination readback requires complete version "
+                "facts"
+            )
+            raise ValueError(message)
+        _timestamp(self.observed_at, field="readback.observed_at")
+        response_digests = _pairs(
+            self.response_digests,
+            field="readback.response_digests",
+        )
+        if not response_digests:
+            message = "Destination readback requires response digests"
+            raise ValueError(message)
+        for index, (_, digest) in enumerate(response_digests):
+            _digest(digest, field=f"readback.response_digests[{index}]")
+
+    @property
+    def package(self) -> str:
+        """Return the official normalized package-control identity."""
+        return self.identity.normalized_package_id
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed destination readback."""
+        return {
+            "nuget-identity": self.identity.to_document(),
+            "classification": self.classification,
+            "content-sha256": self.content_sha256,
+            "content-sha512": self.content_sha512,
+            "witness-digest": self.witness_digest,
+            "witness-target": self.witness_target,
+            "observed-at": self.observed_at,
+            "response-digests": _json_pairs(self.response_digests),
+        }
+
+    @property
+    def readback_digest(self) -> str:
+        """Return the canonical destination readback digest."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
 class PublicationDiagnostics:
     """Bounded sanitized diagnostics retained by Observation and Result."""
 
@@ -4015,6 +4256,224 @@ class RemoteStateObservation:
 
 
 @dataclass(frozen=True, slots=True)
+class NugetRemoteStateObservation:
+    """Native active observation bound to current Qualification authority."""
+
+    attempt: ReleaseAttemptIdentity
+    qualification_decision_reference: ArtifactReference
+    desired_subject: PackageControlSubject
+    desired_identity: NugetPackageIdentity
+    desired_content_sha256: str
+    desired_content_sha512: str
+    desired_witness_digest: str
+    classification: str
+    package_control: PackageControlProof | None
+    active_readback: NugetDestinationReadback | None
+    response_identity: str | None
+    diagnostics: PublicationDiagnostics
+    producer: str
+    control: str
+    workflow_run_id: int
+
+    def __post_init__(self) -> None:
+        """Reject open identity, substituted subjects, or false ready state."""
+        field = "remote-state observation"
+        _exact(self.attempt, ReleaseAttemptIdentity, field=f"{field}.attempt")
+        if (
+            _string(self.producer, field=f"{field}.producer")
+            != "observe-github-packages"
+        ):
+            message = "Remote-State Observation producer is not exact"
+            raise ValueError(message)
+        _target_control(
+            self.control,
+            target=self.attempt.execution.target,
+            field=f"{field}.control",
+        )
+        if (
+            _positive(self.workflow_run_id, field=f"{field}.workflow_run_id")
+            != self.attempt.workflow_run_id
+        ):
+            message = (
+                "Remote-State Observation current Attempt binding mismatch"
+            )
+            raise ValueError(message)
+        _exact(
+            self.qualification_decision_reference,
+            ArtifactReference,
+            field=f"{field}.qualification_decision_reference",
+        )
+        _exact(
+            self.desired_subject,
+            PackageControlSubject,
+            field=f"{field}.desired_subject",
+        )
+        _exact(
+            self.desired_identity,
+            NugetPackageIdentity,
+            field=f"{field}.desired_identity",
+        )
+        if (
+            self.desired_identity.normalized_package_id
+            != self.desired_subject.normalized_package
+        ):
+            message = "NuGet Observation desired package identity mismatch"
+            raise ValueError(message)
+        _digest(
+            self.desired_content_sha256,
+            field=f"{field}.desired_content_sha256",
+        )
+        _digest(
+            self.desired_content_sha512,
+            field=f"{field}.desired_content_sha512",
+            sha512=True,
+        )
+        _digest(
+            self.desired_witness_digest,
+            field=f"{field}.desired_witness_digest",
+        )
+        _choice(
+            self.classification,
+            _OBSERVATION_CLASSIFICATIONS,
+            field=f"{field}.classification",
+        )
+        _optional_digest(
+            self.response_identity, field=f"{field}.response_identity"
+        )
+        _exact(
+            self.diagnostics,
+            PublicationDiagnostics,
+            field=f"{field}.diagnostics",
+        )
+        if self.package_control is not None:
+            _exact(
+                self.package_control,
+                PackageControlProof,
+                field=f"{field}.package_control",
+            )
+            if self.package_control.subject != self.desired_subject:
+                message = (
+                    "Remote-State Observation package-control subject mismatch"
+                )
+                raise ValueError(message)
+        readback = self.active_readback
+        if readback is not None:
+            _exact(
+                readback,
+                NugetDestinationReadback,
+                field=f"{field}.active_readback",
+            )
+            if (
+                readback.package != self.desired_subject.normalized_package
+                or readback.identity.normalized_version
+                != self.desired_identity.normalized_version
+            ):
+                message = "Remote-State Observation readback identity mismatch"
+                raise ValueError(message)
+        if self.classification in {"absent", "exact-satisfied"}:
+            if self.package_control is None or readback is None:
+                message = (
+                    "Ready Observation requires package control "
+                    "and active readback"
+                )
+                raise ValueError(message)
+            self._validate_ready_readback(readback)
+
+    def _validate_ready_readback(
+        self, readback: NugetDestinationReadback
+    ) -> None:
+        if readback.classification != self.classification:
+            message = "Ready Observation readback classification mismatch"
+            raise ValueError(message)
+        if self.classification == "exact-satisfied" and (
+            readback.content_sha256,
+            readback.content_sha512,
+            readback.witness_digest,
+            readback.witness_target,
+        ) != (
+            self.desired_content_sha256,
+            self.desired_content_sha512,
+            self.desired_witness_digest,
+            self.attempt.execution.target,
+        ):
+            message = (
+                "Exact Observation readback differs from desired "
+                "bytes or witness"
+            )
+            raise ValueError(message)
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed active-only Remote-State Observation."""
+        return {
+            "schema": REMOTE_STATE_OBSERVATION_SCHEMA,
+            "attempt": self.attempt.to_document(),
+            "qualification-decision-reference": (
+                self.qualification_decision_reference.to_document()
+            ),
+            "desired-subject": self.desired_subject.to_document(),
+            "desired-nuget-identity": self.desired_identity.to_document(),
+            "desired-content-sha256": self.desired_content_sha256,
+            "desired-content-sha512": self.desired_content_sha512,
+            "desired-witness-digest": self.desired_witness_digest,
+            "classification": self.classification,
+            "package-control": (
+                None
+                if self.package_control is None
+                else self.package_control.to_document()
+            ),
+            "active-readback": (
+                None
+                if self.active_readback is None
+                else self.active_readback.to_document()
+            ),
+            "response-identity": self.response_identity,
+            "diagnostics": self.diagnostics.to_document(),
+            "producer": self.producer,
+            "control": self.control,
+            "workflow-run-id": self.workflow_run_id,
+        }
+
+    @property
+    def observation_digest(self) -> str:
+        """Return the canonical Remote-State Observation digest."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
+class NugetProfileMatchEvidence:
+    """Actual complete native transport profile observed before mutation."""
+
+    actual_profile: NugetDestinationOperationProfile
+    matched_at: str
+
+    def __post_init__(self) -> None:
+        """Reject open profile or timestamp representation."""
+        _exact(
+            self.actual_profile,
+            NugetDestinationOperationProfile,
+            field="NuGet profile match.actual_profile",
+        )
+        _timestamp(self.matched_at, field="NuGet profile match.matched_at")
+
+    @property
+    def destination_operation_profile_digest(self) -> str:
+        """Return the actual profile identity to compare with Authorization."""
+        return self.actual_profile.profile_digest
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the retained native transport profile facts."""
+        return {
+            "nuget-profile": self.actual_profile.to_document(),
+            "matched-at": self.matched_at,
+        }
+
+    @property
+    def match_digest(self) -> str:
+        """Return the canonical profile-match evidence digest."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
 class MutationMayHaveStartedMarker:
     """Durable authority boundary immediately before mutation."""
 
@@ -4022,7 +4481,7 @@ class MutationMayHaveStartedMarker:
     publication_authorization_reference: ArtifactReference
     governance_proof: GovernanceProof
     package_control_proof: PackageControlProof
-    profile_match: ProfileMatchEvidence
+    profile_match: ProfileMatchEvidence | NugetProfileMatchEvidence
     producer: str
     control: str
     workflow_run_id: int
@@ -4069,11 +4528,12 @@ class MutationMayHaveStartedMarker:
             PackageControlProof,
             field="mutation marker.package_control_proof",
         )
-        _exact(
-            self.profile_match,
+        if type(self.profile_match) not in {
             ProfileMatchEvidence,
-            field="mutation marker.profile_match",
-        )
+            NugetProfileMatchEvidence,
+        }:
+            message = "Mutation marker profile-match variant is unsupported"
+            raise TypeError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical mutation-may-have-started marker."""
@@ -4104,7 +4564,7 @@ class PublicationResult:
     attempt: ReleaseAttemptIdentity
     mutation_marker_reference: ArtifactReference
     command_classification: str
-    post_action_readback: DestinationReadback | None
+    post_action_readback: DestinationReadback | NugetDestinationReadback | None
     result: str
     mutation_classification: str
     response_identity: str | None
@@ -4150,12 +4610,16 @@ class PublicationResult:
             _COMMAND_CLASSIFICATIONS,
             field="publication result.command_classification",
         )
-        if self.post_action_readback is not None:
-            _exact(
-                self.post_action_readback,
-                DestinationReadback,
-                field="publication result.post_action_readback",
+        if self.post_action_readback is not None and type(
+            self.post_action_readback
+        ) not in {
+            DestinationReadback,
+            NugetDestinationReadback,
+        }:
+            message = (
+                "publication result.post_action_readback has wrong runtime type"
             )
+            raise TypeError(message)
         result = _choice(
             self.result,
             _PUBLICATION_RESULTS,
@@ -4241,7 +4705,7 @@ class ExactSatisfiedFinalizationProof:
     publication_snapshot_reference: ArtifactReference
     governance_proof: GovernanceProof
     package_control_proof: PackageControlProof
-    exact_version_readback: DestinationReadback
+    exact_version_readback: DestinationReadback | NugetDestinationReadback
     proved_at: str
     producer: str
     control: str
@@ -4293,11 +4757,15 @@ class ExactSatisfiedFinalizationProof:
             PackageControlProof,
             field=("exact-satisfied finalization proof.package_control_proof"),
         )
-        _exact(
-            self.exact_version_readback,
+        if type(self.exact_version_readback) not in {
             DestinationReadback,
-            field=("exact-satisfied finalization proof.exact_version_readback"),
-        )
+            NugetDestinationReadback,
+        }:
+            message = (
+                "exact-satisfied finalization proof.exact_version_readback "
+                "has wrong runtime type"
+            )
+            raise TypeError(message)
         if self.exact_version_readback.classification != "exact-satisfied":
             message = (
                 "Exact-satisfied finalization proof requires exact readback"
@@ -4618,8 +5086,10 @@ type ReleaseRecord = (
     | QualificationDecision
     | ProjectionObservation
     | RemoteStateObservation
+    | NugetRemoteStateObservation
     | HypotheticalAction
     | PublicationAction
+    | NugetPublicationAction
     | PublicationSnapshot
     | ApprovalBundle
     | PublicationAuthorization

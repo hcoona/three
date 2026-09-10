@@ -18,6 +18,7 @@ from three_workflow_delivery_v3.repository.compiler import (
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_RELEASE_UNIT,
+    NUGET_RELEASE_UNIT,
 )
 
 OFFICIAL_SIMULATION_PRODUCER = "compile-simulation-model"
@@ -202,9 +203,18 @@ def derive_buddy_execution_identity(
         or intent.channel != "buddy"
         or intent.mode != "live"
         or intent.purpose != "live-release"
-        or intent.release_unit != FIRST_SLICE_RELEASE_UNIT
+        or intent.release_unit
+        not in {FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT}
     ):
-        message = "Buddy Execution requires the strict first-slice live Intent"
+        message = "Buddy Execution requires an exact supported live Intent"
+        raise ValueError(message)
+    if intent.release_unit == NUGET_RELEASE_UNIT and (
+        intent.repository != "hcoona/three"
+        or intent.actor != "hcoona"
+        or intent.selected_ref != "refs/heads/main"
+        or intent.workflow_sha != intent.target
+    ):
+        message = "NuGet Buddy Execution requires protected-main control"
         raise ValueError(message)
     return BuddyExecutionIdentity(
         channel="buddy",

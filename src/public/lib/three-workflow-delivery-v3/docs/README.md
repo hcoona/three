@@ -65,10 +65,12 @@ intermediate confirmation. The disabled native Provider, frozen Build/Quality,
 authoring/compiler, one-shot HTTP mechanisms, and blocked NuGet Governance
 foundation is protected-delivered. Explicit NuGet Release records and
 qualification integration bind frozen inputs, original archive bytes, and
-separate content/consumer Evidence. Destination authority/runtime and workflow
-integration, followed by native/Live proving, remain pending; missing
-service-owned atomic non-overwrite assurance blocks activation. The handoff defines concrete operation and delivery
-discipline.
+separate content/consumer Evidence. Disabled destination integration adds
+native eligibility, no-tag observation, zero-or-one action materialization,
+and the shared Approval, Authorization, marker, Result, and Outcome contracts.
+Workflow entry delivery and native/Live proving remain pending; missing
+service-owned atomic non-overwrite assurance blocks activation. The handoff
+defines concrete operation and delivery discipline.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.
 

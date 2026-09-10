@@ -65,6 +65,11 @@ def _blob_digest(repo: Path, target: str, path: str) -> str:
 @pytest.fixture
 def native_scenario(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Supply evaluator facts while exercising exact-target Git authority."""
+    return _native_scenario(tmp_path, monkeypatch)
+
+
+def _native_scenario(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Construct one isolated native source repository and provider result."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "--quiet")
