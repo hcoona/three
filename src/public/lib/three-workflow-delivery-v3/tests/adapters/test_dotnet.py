@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from three_workflow_delivery_v3.adapters import dotnet as dotnet_adapter
 from three_workflow_delivery_v3.adapters.dotnet import (
     BUILD_DEFINITION,
     DotnetBuildRequest,
@@ -24,6 +25,7 @@ from three_workflow_delivery_v3.adapters.dotnet import (
 )
 from three_workflow_delivery_v3.canonical import parse_canonical_json
 from three_workflow_delivery_v3.catalogs import catalog_digest
+from three_workflow_delivery_v3.repository import compiler, dotnet_provider
 from three_workflow_delivery_v3.repository.dotnet_provider import (
     DOTNET_PROJECT_ROOT,
     DOTNET_RELEASE_UNIT,
@@ -381,3 +383,186 @@ def test_build_rejects_substituted_source_before_native_execution(
     with pytest.raises(ValueError, match="source input digest mismatch"):
         build_dotnet_package(request)
     assert not evidence.exists()
+
+
+def _git_bytes(repo: Path, *arguments: str) -> bytes:
+    return subprocess.run(
+        ("git", *arguments), cwd=repo, check=True, capture_output=True
+    ).stdout
+
+
+def _autocrlf_source(scratch: Path) -> Path:
+    repo = Path(__file__).resolve().parents[6]
+    seed = scratch / "seed"
+    _git_bytes(scratch, "clone", "--quiet", "--no-local", str(repo), str(seed))
+    shutil.copyfile(repo / ".gitattributes", seed / ".gitattributes")
+    (seed / "autocrlf-control.txt").write_bytes(b"unselected\ncontrol\n")
+    _git_bytes(seed, "add", ".gitattributes", "autocrlf-control.txt")
+    _git_bytes(
+        seed,
+        "-c",
+        "user.name=Native Test",
+        "-c",
+        "user.email=native-test@example.invalid",
+        "commit",
+        "--quiet",
+        "--no-verify",
+        "-m",
+        "Exercise LF source policy",
+    )
+    source = scratch / "source"
+    _git_bytes(
+        scratch, "clone", "--quiet", "--no-local", str(seed), str(source)
+    )
+    return source
+
+
+def _assert_canonical_inputs(root: Path, blobs: dict[str, bytes]) -> None:
+    for path, content in blobs.items():
+        assert b"\r\n" not in content, path
+        assert (root / path).read_bytes() == content, path
+
+
+def _compile_native_provider(
+    source: Path,
+    context: compiler.CompilationContext,
+    manifest: compiler.ProviderRequestManifest,
+    provider: dotnet_provider.DotnetProviderResult,
+) -> compiler.RepositoryModelSnapshot:
+    request_digest = "sha256:" + "a" * 64
+    transport_digest = "sha256:" + "b" * 64
+    bundle = dotnet_provider.create_dotnet_provider_fact_bundle(
+        provider,
+        manifest_digest=manifest.manifest_digest,
+        manifest_entry_id=manifest.requests[0].entry_id,
+        request_artifact_id=101,
+        request_artifact_digest=request_digest,
+        transport_id=202,
+        transport_digest=transport_digest,
+    )
+    admission = compiler.FactBundleAdmissionContext(
+        request_artifact_id=101,
+        request_artifact_digest=request_digest,
+        transport_id=202,
+        transport_digest=transport_digest,
+        bundle_digest=bundle.bundle_digest,
+    )
+    admitted = compiler.admit_dotnet_provider_fact_bundle(
+        bundle, context=context, manifest=manifest, admission=admission
+    )
+    return compiler.compile_dotnet_repository_model(
+        source, context, manifest, [admitted]
+    )
+
+
+def test_autocrlf_preserves_provider_compiler_and_build_source_bytes(
+    native_helper: NativeNuGetHelper,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Global Windows conversion preserves the exact evaluated/built blobs."""
+    configuration = tmp_path / "global.gitconfig"
+    configuration.write_bytes(b"[core]\n\tautocrlf = true\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(configuration))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    source = _autocrlf_source(tmp_path)
+    target = _git_bytes(source, "rev-parse", "HEAD").decode().strip()
+    blobs = {
+        path: _git_bytes(source, "show", f"{target}:{path}")
+        for path in dotnet_provider.dotnet_provider_input_paths(source)
+    }
+    _assert_canonical_inputs(source, blobs)
+    context = compiler.CompilationContext(
+        request_id="autocrlf-native-test",
+        purpose="release-simulation",
+        workflow_run_id=1,
+        run_attempt=1,
+        target=target,
+        producer="compile-native-test",
+        control=f"workflow-delivery-v3:{target}",
+        catalog_digest=catalog_digest(),
+        channel="buddy",
+        release_unit=DOTNET_RELEASE_UNIT,
+    )
+    manifest = compiler.nuget_provider_manifest(
+        context, provider_producer="discover-dotnet"
+    )
+    evaluate = dotnet_provider.evaluate_dotnet_project
+    evaluated: list[Path] = []
+
+    def inspect_evaluation(
+        root: Path, helper: NativeNuGetHelper, evidence: Path
+    ) -> tuple[
+        dotnet_provider.DotnetProjectNode, dotnet_provider.DotnetNbgvFacts, str
+    ]:
+        assert (
+            _git_bytes(root, "config", "--get", "core.autocrlf").strip()
+            == b"true"
+        )
+        assert (
+            _git_bytes(
+                root, "config", "--global", "--get", "core.autocrlf"
+            ).strip()
+            == b"true"
+        )
+        assert (
+            root / "autocrlf-control.txt"
+        ).read_bytes() == b"unselected\r\ncontrol\r\n"
+        _assert_canonical_inputs(root, blobs)
+        evaluated.append(root)
+        return evaluate(root, helper, evidence)
+
+    monkeypatch.setattr(
+        dotnet_provider, "evaluate_dotnet_project", inspect_evaluation
+    )
+    provider = provide_dotnet_repository_facts(
+        source,
+        compiler.provider_binding(manifest, "dotnet-nuget-slice"),
+        CheckoutMaterialization(0, credentials_persisted=False),
+        helper=native_helper,
+        evidence_directory=tmp_path / "provider",
+    )
+    assert len(evaluated) == 1
+    assert evaluated[0] != source
+    snapshot = _compile_native_provider(source, context, manifest, provider)
+    assert snapshot.ready is True
+    assert snapshot.nbgv == provider.nbgv
+    _assert_canonical_inputs(source, blobs)
+    execute = dotnet_adapter.run_native
+    built: list[str] = []
+
+    def inspect_build(
+        command: tuple[str, ...], root: Path, environment: dict[str, str]
+    ) -> str:
+        if command[1] in {"restore", "build", "pack"}:
+            assert root != source
+            _assert_canonical_inputs(root, blobs)
+            built.append(command[1])
+        return execute(command, root, environment)
+
+    monkeypatch.setattr(dotnet_adapter, "run_native", inspect_build)
+    witness = DotnetPackageTargetWitness(
+        target,
+        DOTNET_RELEASE_UNIT,
+        provider.nbgv,
+        BUILD_DEFINITION,
+        context.catalog_digest,
+        "sha256:" + "c" * 64,
+        context.purpose,
+    )
+    result = build_dotnet_package(
+        DotnetBuildRequest(
+            source,
+            tuple(blobs),
+            provider.source_input_manifest,
+            witness,
+            native_helper,
+            tmp_path / "build",
+        )
+    )
+    assert built == ["restore", "build", "pack"]
+    assert result.source_input_manifest == provider.source_input_manifest
+    assert (
+        result.manifest.sha256
+        == "sha256:" + hashlib.sha256(result.package).hexdigest()
+    )

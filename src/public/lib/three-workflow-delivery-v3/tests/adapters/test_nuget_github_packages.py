@@ -7,8 +7,10 @@ import base64
 import hashlib
 import http.client
 import json
+import platform
 import socket
 import ssl
+import sys
 import threading
 from dataclasses import replace
 from email import policy
@@ -34,6 +36,14 @@ ARCHIVE_URL = (
     PACKAGE_ROOT + VERSION + "/" + PACKAGE.lower() + "." + VERSION + ".nupkg"
 )
 RESOURCES = nuget.NuGetServiceResources(BASE, PUBLISH, "a" * 64)
+_PINNED_PROFILE_RUNTIME = (
+    sys.implementation.name == "cpython"
+    and platform.python_version() == "3.13.12"
+)
+_REQUIRES_PROFILE_RUNTIME = pytest.mark.skipif(
+    not _PINNED_PROFILE_RUNTIME,
+    reason="The mandatory HK profile proof runs on CPython 3.13.12",
+)
 
 
 def _native(package_id=PACKAGE, version=VERSION, normalized_version=VERSION):
@@ -291,6 +301,7 @@ def test_observation_blocks_wrong_downloaded_identity_and_missing_witness(
         _observe(_reader(_responses()), authority)
 
 
+@_REQUIRES_PROFILE_RUNTIME
 def test_profile_pins_source_runtime_endpoint_and_credential_free_auth():
     profile = nuget.nuget_operation_profile(RESOURCES)
     assert profile["runtime"] == "CPython@3.13.12"
@@ -315,6 +326,7 @@ def test_profile_pins_source_runtime_endpoint_and_credential_free_auth():
     assert profile["authentication"]["X-NuGet-ApiKey"] == "GITHUB_TOKEN"
 
 
+@_REQUIRES_PROFILE_RUNTIME
 def test_publication_rejects_changed_profile_before_network(monkeypatch):
     connection = Mock()
     monkeypatch.setattr(http.client, "HTTPSConnection", connection)
@@ -329,10 +341,20 @@ def test_publication_rejects_changed_profile_before_network(monkeypatch):
     connection.assert_not_called()
 
 
-def test_profile_rejects_runtime_change(monkeypatch):
-    monkeypatch.setattr(nuget.platform, "python_version", lambda: "3.13.13")
+def test_publication_rejects_unpinned_runtime_before_network(monkeypatch):
+    if _PINNED_PROFILE_RUNTIME:
+        monkeypatch.setattr(nuget.platform, "python_version", lambda: "3.13.13")
+    connection = Mock()
+    monkeypatch.setattr(http.client, "HTTPSConnection", connection)
     with pytest.raises(nuget.NuGetAdapterError, match="runtime is not pinned"):
-        nuget.nuget_operation_profile(RESOURCES)
+        nuget.publish_nuget_once(
+            resources=RESOURCES,
+            package=PACKAGE_BYTES,
+            token=TOKEN,
+            expected_profile_sha256="0" * 64,
+            expected_package_sha256=hashlib.sha256(PACKAGE_BYTES).hexdigest(),
+        )
+    connection.assert_not_called()
 
 
 @pytest.fixture
@@ -416,6 +438,7 @@ def _publish():
     )
 
 
+@_REQUIRES_PROFILE_RUNTIME
 def test_local_server_receives_one_exact_multipart_package(fault_server):
     _behavior, received = fault_server
     result = _publish()
@@ -466,6 +489,7 @@ def test_local_server_receives_one_exact_multipart_package(fault_server):
         "dropped",
     ],
 )
+@_REQUIRES_PROFILE_RUNTIME
 def test_local_server_fault_has_one_put_and_conservative_result(
     fault_server, fault
 ):
@@ -486,6 +510,7 @@ def test_local_server_fault_has_one_put_and_conservative_result(
 
 
 @pytest.mark.parametrize("fault", ["truncated", "oversize"])
+@_REQUIRES_PROFILE_RUNTIME
 def test_local_server_response_limit_and_truncation_are_uncertain(
     fault_server, fault
 ):
@@ -597,6 +622,7 @@ def test_service_discovery_rejects_unbounded_resource_projection(
         nuget.discover_nuget_resources(authority, b'{"resources":[]}')
 
 
+@_REQUIRES_PROFILE_RUNTIME
 def test_publication_rejects_changed_package_before_network(monkeypatch):
     connection = Mock()
     monkeypatch.setattr(http.client, "HTTPSConnection", connection)
@@ -614,6 +640,7 @@ def test_publication_rejects_changed_package_before_network(monkeypatch):
 
 
 @pytest.mark.parametrize("token", ["", "new\nheader", "non-ascii-\u03b1"])
+@_REQUIRES_PROFILE_RUNTIME
 def test_publication_rejects_invalid_token_before_network(monkeypatch, token):
     connection = Mock()
     monkeypatch.setattr(http.client, "HTTPSConnection", connection)

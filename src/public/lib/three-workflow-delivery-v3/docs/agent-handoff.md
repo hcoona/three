@@ -104,6 +104,11 @@ concrete native request and its bounded budget before execution. This grant
 does not waive native guarantees, protected delivery, current-run Approval,
 independent audit, or ambiguity stop conditions, and does not reopen npm.
 
+The accepted [Delivery Wave](../../../../../docs/delivery-wave.md#advance-workflow-delivery-v3)
+supplies repository work authorization. [Issue #676](https://github.com/hcoona/three/issues/676)
+coordinates the concrete NuGet advancement and retains delivery evidence;
+neither this handoff nor the Issue enlarges the Wave or domain effect bounds.
+
 The first disabled implementation unit adds native Provider and frozen
 Build/Quality mechanisms, independent authoring/compiler contracts, the
 one-shot HTTP adapter, and blocked NuGet Governance. Typed Release records,

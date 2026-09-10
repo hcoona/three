@@ -22,6 +22,11 @@ publication work in the confirmed scope. It does not adopt historical policy
 or waive technical admission, protected delivery, independent review and
 audit, current-run Approval, or ambiguity stop conditions.
 
+Check the accepted [Workflow v3 Wave entry](../../../../../docs/delivery-wave.md#advance-workflow-delivery-v3)
+before continuing. [Issue #676](https://github.com/hcoona/three/issues/676)
+coordinates the NuGet delivery units and their evidence under that grant;
+domain-specific external-effect bounds remain separate.
+
 Close and record exact native fixtures, coordinates, operation budgets,
 profile/tooling identities, evidence paths, and stop conditions before any
 native execution. Do not change package access, credentials, or Environments,

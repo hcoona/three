@@ -1077,7 +1077,7 @@ def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
     assert f'"{package_root.as_posix()}/**"' in v3_config
     assert destination.is_relative_to(package_root)
     assert (
-        "uv run --python 3.13 --package three-workflow-delivery-v3 "
+        "uv run --python 3.13.12 --package three-workflow-delivery-v3 "
         f"pytest -q {package_test_root.as_posix()}"
     ) in v3_config
 

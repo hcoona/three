@@ -4,6 +4,12 @@ This helper reads native NuGet package data and MSBuild binary logs. It never
 publishes packages. `NativeNuGetHelper` invokes a previously built DLL; reader
 and publisher code must not build the helper or evaluate a product project.
 
+The [Workflow Delivery v3 project](../../../public/lib/three-workflow-delivery-v3/README.md)
+owns this component's contracts. Its
+[NuGet LLD](../../../public/lib/three-workflow-delivery-v3/docs/hcoona-release-smoke-github-packages-lld.md)
+and [handoff](../../../public/lib/three-workflow-delivery-v3/docs/nuget-smoke-research-handoff.md)
+define the native Provider, frozen Build and admission boundaries.
+
 The pinned dependencies are .NET SDK `10.0.300`, runtime `10.0.8`, NuGet
 libraries `7.9.0`, and the SDK's MSBuild `18.6.3` binary-log reader. The
 project-specific `System.Security.Cryptography.ProtectedData` `10.0.8` central
