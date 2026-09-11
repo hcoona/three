@@ -431,6 +431,96 @@ def test_nuget_publication_cli_executes_durable_marker_once(
     assert case.result.read_bytes() == result_bytes
 
 
+@pytest.mark.parametrize("failure", ["http-status", "transport", "resources"])
+def test_nuget_publication_cli_records_discovery_failure(
+    publication_case, failure, monkeypatch, capsys
+):
+    case = publication_case
+    _prepared(case)
+    original_get = case.feed.get
+    claimed = []
+
+    def discover(url, **kwargs):
+        assert url == native.NUGET_SERVICE_INDEX
+        claimed.append((case.runtime / "command-started").is_file())
+        if failure == "http-status":
+            return native.NuGetHttpResponse(url, 503, (), b"unavailable")
+        if failure == "transport":
+            message = "modeled discovery failure"
+            raise native.NuGetTransportError(message)
+        return original_get(url, **kwargs)
+
+    if failure == "resources":
+        case.feed.authority.service_resources.return_value = {
+            "packageBaseAddress": "https://untrusted.example.invalid/",
+            "packagePublish": RESOURCES.package_publish,
+        }
+    read = Mock(side_effect=discover)
+    monkeypatch.setattr(case.feed, "get", read)
+    arguments = _args(case, COMMANDS[2])
+    assert cli.main(arguments) == 1
+    result = _record(case.result, PublicationResult)
+    assert result.result == "failed"
+    assert result.command_classification == "not-initiated"
+    assert result.mutation_classification == "not-mutated"
+    assert result.post_action_readback is None
+    assert result.mutation_marker_reference.to_document() == json.loads(
+        case.marker_wire
+    )
+    assert (
+        f"publication-result-digest={result.result_digest}"
+        in case.github_output.read_text()
+    )
+    assert claimed == [True]
+    read.assert_called_once()
+    case.publish.assert_not_called()
+    assert not case.runtime.exists()
+    _assert_build_free(case)
+    result_bytes = case.result.read_bytes()
+    assert cli.main(arguments) == 1
+    assert capsys.readouterr().err
+    read.assert_called_once()
+    case.publish.assert_not_called()
+    assert case.result.read_bytes() == result_bytes
+
+
+@pytest.mark.parametrize("owner", ["different-authorization", "claimed"])
+def test_nuget_publication_cli_preserves_unowned_runtime(
+    publication_case, owner, monkeypatch, capsys
+):
+    case = publication_case
+    _prepared(case)
+    claim = case.runtime / "command-started"
+    if owner == "claimed":
+        claim.write_bytes(b"another caller owns this claim")
+    else:
+        document = json.loads(case.marker.read_bytes())
+        reference = document["publication-authorization-reference"]
+        reference["artifact-id"] += 1
+        reference["artifact-url"] = (
+            reference["artifact-url"].rsplit("/", 1)[0]
+            + f"/{reference['artifact-id']}"
+        )
+        case.marker.write_bytes(canonicalize(document))
+        case.marker_wire = _admit_terminal(case, case.marker, 606)
+    package = case.runtime / case.artifact_record.content.basename
+    package_bytes = package.read_bytes()
+    read = Mock(wraps=case.feed.get)
+    monkeypatch.setattr(case.feed, "get", read)
+    assert cli.main(_args(case, COMMANDS[2])) == 1
+    assert capsys.readouterr().err
+    read.assert_not_called()
+    case.publish.assert_not_called()
+    assert not case.result.exists()
+    assert not case.github_output.exists()
+    assert package.read_bytes() == package_bytes
+    if owner == "claimed":
+        assert claim.read_bytes() == b"another caller owns this claim"
+    else:
+        assert not claim.exists()
+    _assert_build_free(case)
+
+
 def _wire(case, path, artifact_id):
     digest = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
     return canonicalize(

@@ -4058,9 +4058,6 @@ def _release_execute_nuget_publication_command(
         Path(arguments.helper_dll).resolve()
     )
     transport = nuget_adapter.NuGetHttpTransport()
-    resources = _read_nuget_service_resources(
-        authority=authority, transport=transport, token=arguments.github_token
-    )
     result = execute_nuget_publication(
         inputs,
         current=_release_bindings(arguments, purpose="live-release"),
@@ -4068,7 +4065,11 @@ def _release_execute_nuget_publication_command(
         durable_marker=marker,
         marker_reference=reference,
         runtime_directory=Path(arguments.runtime_directory),
-        resources=resources,
+        read_resources=lambda: _read_nuget_service_resources(
+            authority=authority,
+            transport=transport,
+            token=arguments.github_token,
+        ),
         authority=authority,
         transport=transport,
         token=arguments.github_token,

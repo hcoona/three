@@ -234,7 +234,7 @@ def execute_nuget_publication(  # noqa: PLR0913
     durable_marker: MutationMayHaveStartedMarker,
     marker_reference: ArtifactReference,
     runtime_directory: Path,
-    resources: native.NuGetServiceResources,
+    read_resources: Callable[[], native.NuGetServiceResources],
     authority: native.NuGetAuthority,
     transport: native.NuGetReadTransport,
     token: str,
@@ -244,6 +244,7 @@ def execute_nuget_publication(  # noqa: PLR0913
 
     The caller obtains both through immutable artifact admission.
     A local file or upload intention never stands in for that service evidence.
+    Resource discovery runs only after full marker admission and ownership.
     """
     eligibility, artifact, observation = _native_inputs(inputs)
     if (
@@ -297,6 +298,7 @@ def execute_nuget_publication(  # noqa: PLR0913
                 artifact,
                 authority,
             )
+            resources = read_resources()
             profile = NugetDestinationOperationProfile(
                 canonicalize(native.nuget_operation_profile(resources))
             )
@@ -312,6 +314,7 @@ def execute_nuget_publication(  # noqa: PLR0913
             OSError,
             ValueError,
             GovernanceFreshnessRejectionError,
+            native.NuGetTransportError,
         ) as error:
             return _result(
                 inputs,
