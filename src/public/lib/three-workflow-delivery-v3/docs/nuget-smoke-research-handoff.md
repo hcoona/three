@@ -70,10 +70,10 @@ Keep these facts in the working context:
   and the shared Finalizer. PR #685 completed protected Build/Qualification
   entry delivery. Native observation and approval commands now connect supported
   reads, zero-or-one action materialization, a native reviewer summary, and
-  current-Attempt Approval/Authorization. Inspect current Git/PR state before
-  claiming this observation/approval entry is protected-delivered. Workflow
-  execution, exact-satisfied proof and publisher/terminal commands, native
-  acceptance tooling, activation, and real
+  current-Attempt Approval/Authorization. PR #687 completed protected
+  observation/approval entry delivery. Native publication/terminal commands are
+  implemented; inspect current Git/PR state before claiming their protected
+  delivery. Workflow execution, native acceptance tooling, activation, and real
   publication remain subsequent work; NuGet Governance and admission stay disabled.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
@@ -230,7 +230,19 @@ summary presents the actual package identity, archive contents and hashes,
 target witness, Qualification, and exact action. Zero action produces no summary
 or Approval. Authorization replays the admitted publication basis before fresh
 Governance and the existing sentinel check. This orchestration grants no
-native operation or publication and leaves publisher/terminal entry pending.
+native operation or publication. PR #687 completed its protected delivery.
+
+The native publication/terminal entries reuse the existing fresh zero-action
+proof, original-archive preparation, one-shot executor, and shared current-DAG
+Finalizer. Complete current authority and uploaded marker admission precede
+execution; supported service-index discovery supplies the real resource profile.
+The publisher executes no target code and never reclassifies conflict or response
+loss as success based on diagnostic readback. Native finalization requires the
+matching three Qualification Evidence records and terminal lineage. Shared
+`release admit-publication-terminal` and `release resolve-publication-terminal`
+already admit and resolve native marker/Result transport. Local modeled scenarios
+do not establish actual destination behavior or enable workflow execution.
+Inspect current Git/PR state before claiming protected delivery of these entries.
 
 ## Verified Platform Findings and Remaining Gates
 

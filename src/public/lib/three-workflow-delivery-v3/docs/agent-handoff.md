@@ -156,13 +156,26 @@ authority before supported reads, retains blocking observations, and materialize
 zero or one action. Only an action produces `reviewer-summary.md` and may form
 an Approval Bundle. Authorization replays the exact publication basis and
 Bundle closure before requiring fresh matching Governance and the existing
-Approval sentinel. All entries reject reruns. Inspect current Git/PR state
-before claiming this observation/approval entry is protected-delivered.
+Approval sentinel. All entries reject reruns. PR #687 completed protected
+observation/approval entry delivery.
 
-Workflow execution, fresh exact-satisfied proof and publisher/terminal CLI
-orchestration, native
-acceptance tooling, activation, and real publication remain subsequent work.
-Existing publisher entries remain npm-only.
+The native publication entry adds `prove-exact-satisfied`, `prepare-publication`,
+`execute-publication`, and `finalize-live` under `release nuget`. Fresh zero-action
+proof requires a skipped publisher and current Governance, package-control, and
+actual bytes. Preparation preserves the original archive without target
+execution. Execution requires complete current Approval/Authorization and an
+admitted durable marker, discovers the supported service resources, and consumes
+the marker once. A conflict or lost response remains failed despite exact
+diagnostic readback. The native Finalizer admits all three Qualification Evidence
+records and the current terminal chain; it performs no destination reads.
+Existing shared `release admit-publication-terminal` and
+`release resolve-publication-terminal` handle native marker/Result transport.
+Inspect current Git/PR state before claiming this publication entry is
+protected-delivered. Local scenarios use modeled destination and native-helper
+seams and establish no Windows Actions or real publication evidence.
+
+Workflow execution, native acceptance tooling, activation, and real publication
+remain subsequent work.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
 stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an
 activation gate; sequential duplicate tests cannot supply it.

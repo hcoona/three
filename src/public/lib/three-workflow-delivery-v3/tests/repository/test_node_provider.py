@@ -209,6 +209,14 @@ class _LocalCloneTopology:
 
 
 @dataclass(frozen=True, slots=True)
+class _NeutralNbgvBaseline:
+    bare_remote: Path
+    target: str
+    facts: _SelectedNbgvFacts
+    commands: tuple[RecordedCommand, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class _WorkspaceDependencyCase:
     sections: tuple[tuple[str, tuple[str, ...]], ...]
     version: str = "workspace:*"
@@ -1657,6 +1665,39 @@ def test_installed_nbgv_api_returns_exact_head_and_native_projection() -> None:
     )
 
 
+@pytest.fixture(scope="module")
+def neutral_nbgv_baseline(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> _NeutralNbgvBaseline:
+    """Share neutral native facts while each CI case owns a fresh clone."""
+    topology = _create_local_clone_topology(
+        tmp_path_factory.mktemp("neutral-nbgv"),
+        public_release_tag=False,
+    )
+    repo = topology.complete_clone
+    expected_head = _DetachedHeadState(commit=topology.target, detached=True)
+    runner = _RecordingSubprocessRunner()
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        _configure_local_only_environment(monkeypatch)
+        for variable in _NBGV_CI_VARIABLES:
+            monkeypatch.delenv(variable, raising=False)
+        assert _read_detached_head(repo) == expected_head
+        result = provide_node_repository_facts(
+            repo,
+            PROJECT_PATH,
+            _binding(topology.target),
+            _materialization(),
+            runner=runner,
+        )
+        assert _read_detached_head(repo) == expected_head
+    return _NeutralNbgvBaseline(
+        bare_remote=topology.bare_remote,
+        target=topology.target,
+        facts=_selected_nbgv_facts(result),
+        commands=tuple(runner.commands),
+    )
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
@@ -1718,16 +1759,24 @@ def test_installed_nbgv_api_returns_exact_head_and_native_projection() -> None:
 def test_detached_target_nbgv_facts_ignore_conflicting_ci_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    neutral_nbgv_baseline: _NeutralNbgvBaseline,
     overrides: dict[str, str],
 ) -> None:
     """Keep exact NBGV facts independent of ambient cloud-build refs."""
-    topology = _create_local_clone_topology(
+    baseline = neutral_nbgv_baseline
+    remote_url = baseline.bare_remote.resolve().as_uri()
+    _assert_local_remote_url(remote_url)
+    repo = tmp_path / "complete"
+    _run_fixture_command(
+        ("git", "clone", remote_url, str(repo)),
         tmp_path,
-        public_release_tag=False,
     )
-    repo = topology.complete_clone
+    _run_fixture_command(
+        ("git", "switch", "--detach", baseline.target),
+        repo,
+    )
     expected_head = _DetachedHeadState(
-        commit=topology.target,
+        commit=baseline.target,
         detached=True,
     )
     _configure_local_only_environment(monkeypatch)
@@ -1735,38 +1784,29 @@ def test_detached_target_nbgv_facts_ignore_conflicting_ci_environment(
         monkeypatch.delenv(variable, raising=False)
 
     assert _read_detached_head(repo) == expected_head
-    baseline_runner = _RecordingSubprocessRunner()
-    baseline = provide_node_repository_facts(
-        repo,
-        PROJECT_PATH,
-        _binding(topology.target),
-        _materialization(),
-        runner=baseline_runner,
-    )
-    assert _read_detached_head(repo) == expected_head
 
     for name, value in overrides.items():
-        monkeypatch.setenv(name, value.format(target=topology.target))
+        monkeypatch.setenv(name, value.format(target=baseline.target))
     assert _read_detached_head(repo) == expected_head
     conflicting_runner = _RecordingSubprocessRunner()
     conflicting = provide_node_repository_facts(
         repo,
         PROJECT_PATH,
-        _binding(topology.target),
+        _binding(baseline.target),
         _materialization(),
         runner=conflicting_runner,
     )
     assert _read_detached_head(repo) == expected_head
 
-    baseline_calls = _installed_nbgv_calls(baseline_runner.commands)
+    baseline_calls = _installed_nbgv_calls(baseline.commands)
     conflicting_calls = _installed_nbgv_calls(conflicting_runner.commands)
     assert len(baseline_calls) == 1
     assert len(conflicting_calls) == 1
     assert baseline_calls[0][3].count("getVersion(process.cwd())") == 1
     assert conflicting_calls[0][3].count("getVersion(process.cwd())") == 1
-    _assert_no_nbgv_fallback_calls(baseline_runner.commands)
+    _assert_no_nbgv_fallback_calls(baseline.commands)
     _assert_no_nbgv_fallback_calls(conflicting_runner.commands)
-    assert _selected_nbgv_facts(conflicting) == _selected_nbgv_facts(baseline)
+    assert _selected_nbgv_facts(conflicting) == baseline.facts
 
 
 def test_no_tags_clone_preparation_fetches_exact_tag_refspec_without_moving_target(  # noqa: E501
