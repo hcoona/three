@@ -123,6 +123,7 @@ from three_workflow_delivery_v3.records.release import (
     RemoteStateObservation,
     NugetDestinationOperationProfile,
     NugetReleaseArtifact,
+    NugetRemoteStateObservation,
     NugetReleaseBuildRequest,
     SimulationBinding,
     SimulationOutcome,
@@ -237,6 +238,9 @@ from three_workflow_delivery_v3.release.nuget_eligibility import (
 )
 from three_workflow_delivery_v3.release.nuget_governance import (
     read_nuget_live_control_facts,
+)
+from three_workflow_delivery_v3.release.nuget_observation import (
+    observe_nuget_remote_state,
 )
 from three_workflow_delivery_v3.release.nuget_planner import (
     nuget_package_target_witness,
@@ -2147,6 +2151,7 @@ def _load_release_record(  # noqa: PLR0913
         | QualificationDecision
         | ProjectionObservation
         | RemoteStateObservation
+        | NugetRemoteStateObservation
         | HypotheticalAction
         | PublicationSnapshot
         | ApprovalBundle
@@ -2172,6 +2177,7 @@ def _load_release_record(  # noqa: PLR0913
     | QualificationDecision
     | ProjectionObservation
     | RemoteStateObservation
+    | NugetRemoteStateObservation
     | HypotheticalAction
     | PublicationSnapshot
     | ApprovalBundle
@@ -3483,6 +3489,404 @@ def _release_finalize_nuget_qualification_command(
             ("qualification-result", decision.terminal_result),
             ("qualification-failure-class", decision.failure_class),
         ),
+    )
+    return 0
+
+
+def _load_nuget_observation_authority(
+    arguments: argparse.Namespace,
+    *,
+    admission_mode: LiveEligibilityAdmissionMode,
+) -> tuple[
+    ReleaseIntent,
+    ReleaseAttemptBinding,
+    AdmittedNugetLiveEligibilityDecision,
+    ReleasePolicy,
+]:
+    intent = _load_nuget_live_intent(arguments)
+    model = _load_live_model(arguments, intent)
+    binding = _load_attempt_binding(arguments)
+    eligibility = _admitted_nuget_live_eligibility_decision(
+        arguments,
+        intent,
+        model,
+        admission_mode=admission_mode,
+        attempt_binding=binding,
+    )
+    _descriptor, _quality, policy = load_nuget_authoring(
+        Path(arguments.repo_root).resolve(), arguments.target
+    )
+    return intent, binding, eligibility, policy
+
+
+def _load_nuget_observation(
+    arguments: argparse.Namespace,
+) -> NugetRemoteStateObservation:
+    return cast(
+        "NugetRemoteStateObservation",
+        _load_release_record(
+            arguments.observation,
+            record_type=NugetRemoteStateObservation,
+            expected_digest=arguments.observation_digest,
+            artifact_id=arguments.observation_artifact_id,
+            artifact_digest=arguments.observation_artifact_digest,
+            bindings=_release_bindings(
+                arguments,
+                producer="observe-github-packages",
+                purpose="live-release",
+            ),
+        ),
+    )
+
+
+def _render_nuget_reviewer_summary(  # noqa: PLR0913
+    *,
+    intent: ReleaseIntent,
+    qualification_snapshot: QualificationSnapshot,
+    artifact: NugetReleaseArtifact,
+    observation: NugetRemoteStateObservation,
+    publication_snapshot: PublicationSnapshot,
+    eligibility: AdmittedNugetLiveEligibilityDecision,
+    rendered_at: datetime,
+) -> bytes:
+    (action,) = publication_snapshot.materialized_actions
+    governance = eligibility.governance
+    activation = cast(
+        "EnabledGovernanceActivation", governance.attestation.activation
+    )
+    primitive = activation.destination_primitive
+    lines = [
+        "# Workflow Delivery v3 NuGet Buddy publication review",
+        "",
+        "## Selected source and destination",
+        "",
+        f"- Selected ref: `{intent.selected_ref}`",
+        f"- Repository: `{intent.repository}`",
+        f"- Release Unit: `{intent.release_unit}`",
+        f"- Target SHA: `{qualification_snapshot.target}`",
+        f"- Workflow run: `{publication_snapshot.attempt.workflow_run_id}`",
+        "",
+        *_indented_json(artifact.identity.to_document()),
+        "",
+        "## Original publication artifact",
+        "",
+        f"- Release Artifact digest: `{artifact.artifact_digest}`",
+        f"- Package artifact ID: `{artifact.transport.artifact_id}`",
+        f"- Package artifact URL: {artifact.transport.artifact_url}",
+        f"- Package SHA-256: `{artifact.content.content_sha256}`",
+        f"- Package SHA-512: `{artifact.content.content_sha512}`",
+        f"- Target witness digest: `{artifact.witness_digest}`",
+        "",
+        *_indented_json(
+            {
+                "basename": artifact.content.basename,
+                "byte-size": artifact.content.byte_size,
+                "entries": list(artifact.entries),
+            }
+        ),
+        "",
+        "## Qualification and current authority",
+        "",
+        (
+            "Required Qualification covers the frozen Build, package contents, "
+            "and isolated restore/build/invoke consumer."
+        ),
+        "",
+        f"- Destination observation: `{observation.classification}`",
+        (
+            "- Qualification Decision: "
+            f"`{observation.qualification_decision_reference.payload_digest}`"
+        ),
+        (
+            "- Qualification artifact URL: "
+            f"{observation.qualification_decision_reference.artifact_url}"
+        ),
+        f"- Governance content digest: `{governance.canonical_content_digest}`",
+        f"- Governance observed at: `{governance.observed_at.isoformat()}`",
+        (
+            "- Governance expires at: "
+            f"`{governance.attestation.expires_at.isoformat()}`"
+        ),
+        f"- Native acceptance evidence: `{primitive.evidence_digest}`",
+        (
+            "- Native acceptance captured at: "
+            f"`{primitive.captured_at.isoformat()}`"
+        ),
+        f"- Native acceptance age: `{rendered_at - primitive.captured_at}`",
+        f"- Destination profile digest: `{eligibility.profile.profile_digest}`",
+        "",
+        "## Exact action summary",
+        "",
+        (
+            "- Publication Snapshot digest: "
+            f"`{publication_snapshot.snapshot_digest}`"
+        ),
+        (
+            "- Materialized actions: "
+            f"`{len(publication_snapshot.materialized_actions)}`"
+        ),
+        f"- Action digest: `{action.action_digest}`",
+        "",
+        *_indented_json(action.to_document()),
+        "",
+        "## Active-state evidence",
+        "",
+        *_indented_json(observation.to_document()),
+        "",
+        (
+            "Publication retains the original .nupkg bytes at the normalized "
+            "native coordinate. The embedded target witness binds those bytes "
+            "to the selected source."
+        ),
+        (
+            "The repository GITHUB_TOKEN is not package-isolated; its known "
+            "wider reach is accepted by protected Governance."
+        ),
+    ]
+    return ("\n".join(lines) + "\n").encode()
+
+
+def _release_observe_nuget_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent, binding, eligibility, policy = _load_nuget_observation_authority(
+        arguments, admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS
+    )
+    snapshot = _load_nuget_qualification_snapshot(arguments)
+    decision = _load_live_qualification_decision(arguments)
+    artifact = _load_nuget_release_artifact(arguments)
+    observation = observe_nuget_remote_state(
+        intent=intent,
+        attempt_binding=binding,
+        eligibility=eligibility,
+        policy=policy,
+        snapshot=snapshot,
+        decision=decision,
+        decision_reference=_payload_reference(
+            arguments,
+            name="qualification_decision",
+            payload_digest=decision.decision_digest,
+        ),
+        artifact=artifact,
+        authority=dotnet_provider.NativeNuGetHelper(
+            Path(arguments.helper_dll).resolve()
+        ),
+        token=arguments.github_token,
+        transport=nuget_adapter.NuGetHttpTransport(),
+        now=datetime.now(UTC),
+    )
+    _write_output(arguments.output, observation.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="observation",
+        digest=observation.observation_digest,
+    )
+    if observation.classification in {"absent", "exact-satisfied"}:
+        return 0
+    return 1
+
+
+def _release_materialize_nuget_publication_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent, binding, eligibility, policy = _load_nuget_observation_authority(
+        arguments, admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS
+    )
+    if arguments.selected_ref != intent.selected_ref:
+        message = "selected ref does not match the admitted Release Intent"
+        raise ValueError(message)
+    snapshot = _load_nuget_qualification_snapshot(arguments)
+    decision = _load_live_qualification_decision(arguments)
+    artifact = _load_nuget_release_artifact(arguments)
+    observation = _load_nuget_observation(arguments)
+    now = datetime.now(UTC)
+    publication = materialize_publication_snapshot(
+        snapshot,
+        decision,
+        (observation,),
+        (artifact,),
+        intent=intent,
+        attempt_binding=binding,
+        eligibility=eligibility,
+        policy=policy,
+        decision_reference=_payload_reference(
+            arguments,
+            name="qualification_decision",
+            payload_digest=decision.decision_digest,
+        ),
+        action_creation_at=now,
+        destination_operation_profile=(eligibility.profile),
+    )
+    snapshot_bytes = canonicalize(publication.to_document())
+    snapshot_digest = publication.snapshot_digest
+    Path(arguments.output).write_bytes(snapshot_bytes)
+    reviewer_output: tuple[tuple[str, str], ...] = ()
+    if publication.materialized_actions:
+        markdown = _render_nuget_reviewer_summary(
+            intent=intent,
+            qualification_snapshot=snapshot,
+            artifact=artifact,
+            observation=observation,
+            publication_snapshot=publication,
+            eligibility=eligibility,
+            rendered_at=now,
+        )
+        reviewer_digest = f"sha256:{hashlib.sha256(markdown).hexdigest()}"
+        Path(arguments.summary_output).write_bytes(markdown)
+        reviewer_output = (("reviewer-digest", reviewer_digest),)
+    _record_outputs(
+        arguments.github_output,
+        role="publication-snapshot",
+        digest=snapshot_digest,
+        extra=(
+            *reviewer_output,
+            (
+                "publish-required",
+                str(bool(publication.materialized_actions)).lower(),
+            ),
+            (
+                "resource-concurrency-key",
+                publication.materialized_actions[0].serialization_projection
+                if publication.materialized_actions
+                else "no-op",
+            ),
+        ),
+    )
+    return 0
+
+
+def _release_form_nuget_approval_bundle_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent = _load_nuget_live_intent(arguments)
+    attempt_binding = _load_attempt_binding(arguments)
+    publication = _load_publication_snapshot(arguments)
+    bundle = form_approval_bundle(
+        intent=intent,
+        attempt_binding=attempt_binding,
+        qualification_decision=_load_live_qualification_decision(arguments),
+        publication_snapshot=publication,
+        publication_snapshot_reference=_uploaded_payload_reference(
+            arguments,
+            name="publication_snapshot",
+        ),
+        reviewer_summary_reference=_uploaded_payload_reference(
+            arguments,
+            name="reviewer_summary",
+        ),
+        control=arguments.control,
+    )
+    _write_output(arguments.output, bundle.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="approval-bundle",
+        digest=bundle.bundle_digest,
+    )
+    return 0
+
+
+def _release_form_nuget_publication_authorization_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent, binding, initial_eligibility, policy = (
+        _load_nuget_observation_authority(
+            arguments,
+            admission_mode=LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
+        )
+    )
+    bundle = _load_approval_bundle(arguments)
+    decision = _load_live_qualification_decision(arguments)
+    qualification_snapshot = _load_nuget_qualification_snapshot(arguments)
+    release_artifact = _load_nuget_release_artifact(arguments)
+    publication = _load_publication_snapshot(arguments)
+    expected_publication = materialize_publication_snapshot(
+        qualification_snapshot,
+        decision,
+        (_load_nuget_observation(arguments),),
+        (release_artifact,),
+        intent=intent,
+        attempt_binding=binding,
+        eligibility=initial_eligibility,
+        policy=policy,
+        decision_reference=_payload_reference(
+            arguments,
+            name="qualification_decision",
+            payload_digest=decision.decision_digest,
+        ),
+        action_creation_at=datetime.now(UTC),
+        destination_operation_profile=initial_eligibility.profile,
+    )
+    if publication != expected_publication:
+        raise ValueError(
+            "Publication Authorization Observation closure mismatch"
+        )
+    publication_reference = _payload_reference(
+        arguments,
+        name="publication_snapshot",
+        payload_digest=publication.snapshot_digest,
+    )
+    reviewer_reference = _uploaded_payload_reference(
+        arguments,
+        name="reviewer_summary",
+    )
+    bundle_reference = _payload_reference(
+        arguments,
+        name="approval_bundle",
+        payload_digest=bundle.bundle_digest,
+    )
+    validate_approval_bundle_closure(
+        approval_bundle=bundle,
+        intent=intent,
+        attempt_binding=binding,
+        qualification_decision=decision,
+        qualification_snapshot=qualification_snapshot,
+        release_artifact=release_artifact,
+        destination_operation_profile=(initial_eligibility.profile),
+        publication_snapshot=publication,
+        publication_snapshot_reference=publication_reference,
+        reviewer_summary_reference=reviewer_reference,
+        control=arguments.control,
+    )
+    observed_at = datetime.now(UTC)
+    initial_governance = initial_eligibility.governance
+    fresh = require_fresh_governance_identity(
+        policy.governance,
+        GitHubGovernanceClient(
+            repository=policy.governance.repository,
+            token=arguments.github_token,
+        ),
+        now=observed_at,
+        expected_provenance=initial_governance.provenance,
+        expected_canonical_content_digest=(
+            initial_governance.canonical_content_digest
+        ),
+        expected_expires_at=(
+            initial_governance.attestation.expires_at.strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+        ),
+        expected_live_enabled=initial_governance.attestation.live_enabled,
+    )
+    completed_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    (action,) = publication.materialized_actions
+    authorization = form_publication_authorization(
+        approval_bundle=bundle,
+        approval_bundle_reference=bundle_reference,
+        approval_boundary_sentinel_result=(
+            arguments.approval_boundary_sentinel_result
+        ),
+        governance=fresh,
+        destination_operation_profile_digest=(
+            action.destination_operation_profile_digest
+        ),
+        completed_at=completed_at,
+        control=arguments.control,
+    )
+    _write_output(arguments.output, authorization.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="publication-authorization",
+        digest=authorization.authorization_digest,
     )
     return 0
 
@@ -6358,6 +6762,66 @@ def _add_nuget_qualification_commands(
             command.add_argument("--output", required=True)
 
 
+def _add_nuget_approval_commands(  # noqa: C901
+    commands: argparse._SubParsersAction,
+) -> None:
+    for name, handler in (
+        ("observe-github-packages", _release_observe_nuget_command),
+        (
+            "materialize-publication",
+            _release_materialize_nuget_publication_command,
+        ),
+        ("form-approval-bundle", _release_form_nuget_approval_bundle_command),
+        (
+            "form-publication-authorization",
+            _release_form_nuget_publication_authorization_command,
+        ),
+    ):
+        command = commands.add_parser(name)
+        _add_current_release_arguments(command)
+        command.add_argument("--output", required=True)
+        command.add_argument("--github-output")
+        command.set_defaults(handler=handler)
+        if name == "form-approval-bundle":
+            command.add_argument("--repo-root", default=".")
+            for record in ("intent", "attempt_binding"):
+                _add_uploaded_record_arguments(command, name=record)
+            _add_decision_arguments(command)
+        else:
+            _add_live_observation_authority_arguments(command)
+            _add_snapshot_arguments(command)
+            _add_referenced_uploaded_payload_arguments(
+                command, name="qualification_decision"
+            )
+            _add_release_artifact_arguments(command)
+        if name in {"form-approval-bundle", "form-publication-authorization"}:
+            for record in ("publication_snapshot", "reviewer_summary"):
+                _add_referenced_uploaded_payload_arguments(command, name=record)
+            command.add_argument("--control", required=True)
+        if name in {
+            "materialize-publication",
+            "form-publication-authorization",
+        }:
+            _add_uploaded_record_arguments(command, name="observation")
+        if name in {
+            "observe-github-packages",
+            "form-publication-authorization",
+        }:
+            command.add_argument("--github-token", required=True)
+        if name == "observe-github-packages":
+            command.add_argument("--helper-dll", required=True)
+        elif name == "materialize-publication":
+            command.add_argument("--selected-ref", required=True)
+            command.add_argument("--summary-output", required=True)
+        elif name == "form-publication-authorization":
+            _add_referenced_uploaded_payload_arguments(
+                command, name="approval_bundle"
+            )
+            command.add_argument(
+                "--approval-boundary-sentinel-result", required=True
+            )
+
+
 def _add_nuget_release_commands(
     release_commands: argparse._SubParsersAction,
 ) -> None:
@@ -6426,6 +6890,7 @@ def _add_nuget_release_commands(
         command.set_defaults(handler=handler)
 
     _add_nuget_qualification_commands(commands)
+    _add_nuget_approval_commands(commands)
 
 
 def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915

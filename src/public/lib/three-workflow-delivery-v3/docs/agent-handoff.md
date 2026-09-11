@@ -145,11 +145,22 @@ binding, and produces independent contents/consumer Evidence for the shared
 Finalizer. Mechanical metadata travels separately from the archive; its
 representation does not add native authority. Missing Evidence remains
 incomplete, malformed partial transport is rejected, and GitHub reruns are
-rejected before effects. Inspect current Git/PR state before claiming this
-Build/Qualification entry is protected-delivered. Local command tests do not
-prove Windows Actions execution or destination behavior.
+rejected before effects. PR #685 completed protected Build/Qualification entry
+delivery. Local command tests do not prove Windows Actions execution or
+destination behavior.
 
-Workflow execution, publisher CLI orchestration, native
+The native observation and approval entry adds `observe-github-packages`,
+`materialize-publication`, `form-approval-bundle`, and
+`form-publication-authorization` under `release nuget`. It admits native current
+authority before supported reads, retains blocking observations, and materializes
+zero or one action. Only an action produces `reviewer-summary.md` and may form
+an Approval Bundle. Authorization replays the exact publication basis and
+Bundle closure before requiring fresh matching Governance and the existing
+Approval sentinel. All entries reject reruns. Inspect current Git/PR state
+before claiming this observation/approval entry is protected-delivered.
+
+Workflow execution, fresh exact-satisfied proof and publisher/terminal CLI
+orchestration, native
 acceptance tooling, activation, and real publication remain subsequent work.
 Existing publisher entries remain npm-only.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
