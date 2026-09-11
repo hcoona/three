@@ -134,9 +134,22 @@ actual protected-main/run/merged-tree checks and retains raw review carriers;
 the comprehensive operator collector remains separate. Disabled Governance
 performs no native profile collection. Attempt admission selects current
 freshness or authorization replay explicitly. Inspect current Git/PR state
-before claiming this control-entry unit is protected-delivered.
+before relying on remote availability; PR #684 completed protected
+control-entry delivery.
 
-Workflow execution, Build/Qualification/publisher CLI orchestration, native
+The native Build/Qualification entry adds `plan-qualification`, `run-build`,
+`form-artifact`, `artifact-contents`, `restore-build-invoke`, and
+`finalize-qualification` under `release nuget`. It imports matched native facts,
+freezes the Snapshot and witness, retains the original `.nupkg` through upload
+binding, and produces independent contents/consumer Evidence for the shared
+Finalizer. Mechanical metadata travels separately from the archive; its
+representation does not add native authority. Missing Evidence remains
+incomplete, malformed partial transport is rejected, and GitHub reruns are
+rejected before effects. Inspect current Git/PR state before claiming this
+Build/Qualification entry is protected-delivered. Local command tests do not
+prove Windows Actions execution or destination behavior.
+
+Workflow execution, publisher CLI orchestration, native
 acceptance tooling, activation, and real publication remain subsequent work.
 Existing publisher entries remain npm-only.
 The checked-in NuGet source stays blocked and its native/atomic admission sets

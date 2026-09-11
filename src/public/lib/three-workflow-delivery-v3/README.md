@@ -22,17 +22,29 @@ to separate content and consumer Evidence. Disabled destination integration
 adds native eligibility, active observation, original-archive publication,
 and shared Approval/terminal closure. The native control CLI imports Provider
 facts, compiles the Model, and binds Eligibility and the current Attempt.
-Workflow execution, native acceptance, activation, and real Live proving remain
-subsequent work.
+Native Build/Qualification commands connect matched planning, frozen Build,
+original-package upload binding, separate quality Evidence, and finalization.
+Workflow execution, publisher commands, native acceptance, activation, and real
+Live proving remain subsequent work.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,
-Model, Eligibility, and Attempt admission. Model compilation consumes immutable
+Model, Eligibility, Attempt admission, and Build/Qualification. Model compilation consumes immutable
 uploaded Provider bytes without reevaluating the target. Live control reads
 exclude operator administration endpoints; disabled Governance performs no
 native profile collection. Attempt admission requires an explicit freshness or
 authorization-replay phase. These commands provide no native dispatch or
 publication authorization, and NuGet Governance and admission remain blocked.
+
+The qualification sequence is `plan-qualification`, `run-build`,
+`form-artifact`, `artifact-contents` and `restore-build-invoke`, then
+`finalize-qualification`. Planning imports matched native facts without target
+reevaluation. Build retains the original `.nupkg`; upload binding keeps its
+content identity distinct from the transport digest. The two quality commands
+produce separate Evidence for that artifact. Missing Evidence remains
+`incomplete`, while malformed or mismatched transport is rejected. Use each
+command's `--help` for its required current-run inputs. These local command
+contracts do not establish Actions execution or native destination behavior.
 
 The documentation records accepted domain constraints and evidence. It grants no
 runtime work and does not renew either spent npm dispatch authorization.
