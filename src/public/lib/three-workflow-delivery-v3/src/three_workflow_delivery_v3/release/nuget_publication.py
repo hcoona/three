@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import shutil
 from datetime import datetime
+from subprocess import TimeoutExpired
 from typing import TYPE_CHECKING
 
 from three_workflow_delivery_v3.adapters import nuget_github_packages as native
@@ -234,7 +235,7 @@ def execute_nuget_publication(  # noqa: PLR0913
     durable_marker: MutationMayHaveStartedMarker,
     marker_reference: ArtifactReference,
     runtime_directory: Path,
-    resources: native.NuGetServiceResources,
+    read_resources: Callable[[], native.NuGetServiceResources],
     authority: native.NuGetAuthority,
     transport: native.NuGetReadTransport,
     token: str,
@@ -244,6 +245,7 @@ def execute_nuget_publication(  # noqa: PLR0913
 
     The caller obtains both through immutable artifact admission.
     A local file or upload intention never stands in for that service evidence.
+    Resource discovery runs only after full marker admission and ownership.
     """
     eligibility, artifact, observation = _native_inputs(inputs)
     if (
@@ -297,6 +299,7 @@ def execute_nuget_publication(  # noqa: PLR0913
                 artifact,
                 authority,
             )
+            resources = read_resources()
             profile = NugetDestinationOperationProfile(
                 canonicalize(native.nuget_operation_profile(resources))
             )
@@ -311,7 +314,9 @@ def execute_nuget_publication(  # noqa: PLR0913
         except (
             OSError,
             ValueError,
+            TimeoutExpired,
             GovernanceFreshnessRejectionError,
+            native.NuGetTransportError,
         ) as error:
             return _result(
                 inputs,
@@ -371,7 +376,12 @@ def execute_nuget_publication(  # noqa: PLR0913
             _proof, readback = nuget_readback_from_state(
                 state, artifact=artifact, observed_at=_instant(clock())
             )
-        except (OSError, ValueError, native.NuGetTransportError) as error:
+        except (
+            OSError,
+            ValueError,
+            TimeoutExpired,
+            native.NuGetTransportError,
+        ) as error:
             diagnostics = (
                 f"NuGet post-publication read failed: {type(error).__name__}",
             )

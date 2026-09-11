@@ -26,12 +26,14 @@ Native Build/Qualification commands connect matched planning, frozen Build,
 original-package upload binding, separate quality Evidence, and finalization.
 Native observation and approval commands connect supported active readback,
 zero-or-one action materialization, and current-Attempt Approval/Authorization.
-Workflow execution, publisher commands, native acceptance, activation, and real
-Live proving remain subsequent work.
+Native publication commands connect fresh exact-state proof, build-free
+preparation, one-shot execution, and current-DAG finalization. Workflow execution,
+native acceptance, activation, and real Live proving remain subsequent work.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,
-Model, Eligibility, Attempt admission, Build/Qualification, and approval.
+Model, Eligibility, Attempt admission, Build/Qualification, approval, publication,
+and finalization.
 Model compilation consumes immutable
 uploaded Provider bytes without reevaluating the target. Live control reads
 exclude operator administration endpoints; disabled Governance performs no
@@ -56,8 +58,20 @@ only an action produces the native reviewer summary. Upload it as
 `form-approval-bundle`. `form-publication-authorization` replays the exact
 publication basis and Bundle references, then requires fresh matching
 Governance and the existing Approval boundary sentinel. A zero-action Snapshot
-cannot acquire Approval. All native commands reject GitHub reruns. Fresh
-exact-satisfied proof and publisher/terminal command integration remain pending.
+cannot acquire Approval. All native commands reject GitHub reruns.
+
+`prove-exact-satisfied` repeats fresh Governance, package-control, and actual-byte
+checks for a zero-action Snapshot with a skipped publisher. For an approved
+action, `prepare-publication` retains the original archive in an owned runtime
+directory and emits the mutation marker. Admit its immutable uploaded reference
+with the shared `release admit-publication-terminal` before
+`release nuget execute-publication`. Execution consumes that marker once;
+conflict or response loss remains failed even after exact diagnostic readback.
+The shared `release resolve-publication-terminal` resolves marker/Result transport.
+`release nuget finalize-live` admits the three native Qualification Evidence
+records and current terminal chain without destination reads. Missing terminal
+evidence cannot establish success. Use each command's `--help` for its complete
+current-run transport inputs; command availability does not enable a workflow.
 
 The documentation records accepted domain constraints and evidence. It grants no
 runtime work and does not renew either spent npm dispatch authorization.

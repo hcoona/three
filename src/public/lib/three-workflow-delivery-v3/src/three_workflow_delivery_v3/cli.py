@@ -19,6 +19,7 @@ import tarfile
 import tempfile
 import threading
 from datetime import UTC, datetime
+from functools import lru_cache
 from http import HTTPStatus
 from pathlib import Path
 from time import monotonic, time
@@ -241,6 +242,10 @@ from three_workflow_delivery_v3.release.nuget_governance import (
 )
 from three_workflow_delivery_v3.release.nuget_observation import (
     observe_nuget_remote_state,
+)
+from three_workflow_delivery_v3.release.nuget_publication import (
+    execute_nuget_publication,
+    prepare_nuget_publication,
 )
 from three_workflow_delivery_v3.release.nuget_planner import (
     nuget_package_target_witness,
@@ -3891,13 +3896,371 @@ def _release_form_nuget_publication_authorization_command(
     return 0
 
 
-def _nuget_live_profile(
+def _load_nuget_publication_inputs(
     arguments: argparse.Namespace,
-) -> NugetDestinationOperationProfile:
-    """Read the feed resources and collect the actual HTTP profile."""
-    response = nuget_adapter.NuGetHttpTransport().get(
+) -> PublicationInputs:
+    intent, binding, eligibility, policy = _load_nuget_observation_authority(
+        arguments,
+        admission_mode=LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
+    )
+    inputs = PublicationInputs(
+        intent=intent,
+        attempt_binding=binding,
+        eligibility=eligibility,
+        policy=policy,
+        snapshot=_load_nuget_qualification_snapshot(arguments),
+        decision=_load_live_qualification_decision(arguments),
+        decision_reference=_uploaded_payload_reference(
+            arguments, name="qualification_decision"
+        ),
+        artifact=_load_nuget_release_artifact(arguments),
+        observation=_load_nuget_observation(arguments),
+        publication_snapshot=_load_publication_snapshot(arguments),
+        publication_snapshot_reference=_uploaded_payload_reference(
+            arguments, name="publication_snapshot"
+        ),
+        approval_bundle=_load_approval_bundle(arguments),
+        approval_bundle_reference=_uploaded_payload_reference(
+            arguments, name="approval_bundle"
+        ),
+        reviewer_summary=_verify_uploaded_payload(
+            arguments.reviewer_summary,
+            artifact_id=arguments.reviewer_summary_artifact_id,
+            artifact_digest=arguments.reviewer_summary_artifact_digest,
+        ),
+        reviewer_summary_reference=_uploaded_payload_reference(
+            arguments, name="reviewer_summary"
+        ),
+        authorization=_load_publication_authorization(arguments),
+        authorization_reference=_uploaded_payload_reference(
+            arguments, name="publication_authorization"
+        ),
+    )
+
+    inputs.validate(
+        current=_release_bindings(arguments, purpose="live-release"),
+        run_attempt=_platform_run_attempt(arguments),
+        now=datetime.now(UTC),
+    )
+    return inputs
+
+
+def _release_prove_nuget_exact_satisfied_command(
+    arguments: argparse.Namespace,
+) -> int:
+    from three_workflow_delivery_v3.release.exact_satisfied import (  # noqa: PLC0415
+        prove_nuget_exact_satisfied,
+    )
+
+    intent, binding, initial_eligibility, policy = (
+        _load_nuget_observation_authority(
+            arguments,
+            admission_mode=LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
+        )
+    )
+    publication = _load_publication_snapshot(arguments)
+    snapshot = _load_nuget_qualification_snapshot(arguments)
+    decision = _load_live_qualification_decision(arguments)
+    artifact = _load_nuget_release_artifact(arguments)
+    if arguments.control != initial_eligibility.context.control:
+        raise ValueError("Exact-satisfied proof control mismatch")
+    proof = prove_nuget_exact_satisfied(
+        publication_snapshot=publication,
+        publication_snapshot_reference=_payload_reference(
+            arguments,
+            name="publication_snapshot",
+            payload_digest=publication.snapshot_digest,
+        ),
+        snapshot=snapshot,
+        decision=decision,
+        observation=_load_nuget_observation(arguments),
+        artifact=artifact,
+        intent=intent,
+        attempt_binding=binding,
+        eligibility=initial_eligibility,
+        policy=policy,
+        decision_reference=_payload_reference(
+            arguments,
+            name="qualification_decision",
+            payload_digest=decision.decision_digest,
+        ),
+        publisher_conclusion=arguments.publisher_conclusion,
+        authority=dotnet_provider.NativeNuGetHelper(
+            Path(arguments.helper_dll).resolve()
+        ),
+        governance_client=GitHubGovernanceClient(
+            repository=policy.governance.repository,
+            token=arguments.github_token,
+        ),
+        transport=nuget_adapter.NuGetHttpTransport(),
+        token=arguments.github_token,
+        clock=lambda: datetime.now(UTC),
+    )
+    _write_output(arguments.output, proof.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="exact-satisfied-finalization-proof",
+        digest=proof.proof_digest,
+    )
+    return 0
+
+
+def _release_prepare_nuget_publication_command(
+    arguments: argparse.Namespace,
+) -> int:
+    inputs = _load_nuget_publication_inputs(arguments)
+    marker = prepare_nuget_publication(
+        inputs,
+        current=_release_bindings(arguments, purpose="live-release"),
+        run_attempt=_platform_run_attempt(arguments),
+        nupkg=Path(arguments.package),
+        runtime_directory=Path(arguments.runtime_directory),
+        authority=dotnet_provider.NativeNuGetHelper(
+            Path(arguments.helper_dll).resolve()
+        ),
+        governance_client=GitHubGovernanceClient(
+            repository=inputs.policy.governance.repository,
+            token=arguments.github_token,
+        ),
+        transport=nuget_adapter.NuGetHttpTransport(),
+        token=arguments.github_token,
+        clock=lambda: datetime.now(UTC),
+    )
+    try:
+        _write_output(arguments.output, marker.to_document())
+        _record_outputs(
+            arguments.github_output,
+            role="mutation-marker",
+            digest=marker.marker_digest,
+            extra=(("runtime-created", "true"),),
+        )
+    except BaseException:
+        shutil.rmtree(arguments.runtime_directory)
+        raise
+    return 0
+
+
+def _release_execute_nuget_publication_command(
+    arguments: argparse.Namespace,
+) -> int:
+    inputs = _load_nuget_publication_inputs(arguments)
+    reference = parse_publication_terminal_reference(
+        arguments.publication_terminal_reference, publisher_conclusion="success"
+    )
+    if reference is None:
+        raise ValueError("Publication requires a durable mutation marker")
+    marker = _load_publication_terminal(
+        arguments, reference, directory=arguments.terminal_directory
+    )
+    if type(marker) is not MutationMayHaveStartedMarker:
+        raise ValueError("Publication requires the exact marker target")
+    authority = dotnet_provider.NativeNuGetHelper(
+        Path(arguments.helper_dll).resolve()
+    )
+    transport = nuget_adapter.NuGetHttpTransport()
+    result = execute_nuget_publication(
+        inputs,
+        current=_release_bindings(arguments, purpose="live-release"),
+        run_attempt=_platform_run_attempt(arguments),
+        durable_marker=marker,
+        marker_reference=reference,
+        runtime_directory=Path(arguments.runtime_directory),
+        read_resources=lambda: _read_nuget_service_resources(
+            authority=authority,
+            transport=transport,
+            token=arguments.github_token,
+        ),
+        authority=authority,
+        transport=transport,
+        token=arguments.github_token,
+        clock=lambda: datetime.now(UTC),
+    )
+    _write_output(arguments.output, result.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="publication-result",
+        digest=result.result_digest,
+    )
+    return 0 if result.result == "published" else 1
+
+
+def _release_finalize_nuget_live_command(arguments: argparse.Namespace) -> int:  # noqa: C901
+    reference = parse_publication_terminal_reference(
+        arguments.publication_terminal_reference,
+        publisher_conclusion=arguments.publisher_conclusion,
+    )
+    terminal = None
+    marker = None
+    if reference is not None:
+        if arguments.terminal_directory is None:
+            raise ValueError("Publication terminal download is missing")
+        record = _load_publication_terminal(
+            arguments, reference, directory=arguments.terminal_directory
+        )
+        terminal = (record, reference)
+        if type(record) is PublicationResult:
+            if arguments.marker_directory is None:
+                raise ValueError("Result direct marker download is missing")
+            marker_record = _load_publication_terminal(
+                arguments,
+                record.mutation_marker_reference,
+                directory=arguments.marker_directory,
+            )
+            if type(marker_record) is not MutationMayHaveStartedMarker:
+                raise ValueError("Result predecessor is not a mutation marker")
+            marker = (marker_record, record.mutation_marker_reference)
+    if (reference is None and arguments.terminal_directory is not None) or (
+        marker is None and arguments.marker_directory is not None
+    ):
+        raise ValueError("Unexpected publication terminal download")
+    intent, binding, eligibility, policy = _load_nuget_observation_authority(
+        arguments,
+        admission_mode=LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
+    )
+    for name in (
+        "build_evidence",
+        "artifact_contents_evidence",
+        "consumer_evidence",
+        "release_artifact",
+    ):
+        _validate_optional_uploaded_record_transport(
+            name,
+            path=getattr(arguments, name),
+            record_digest=getattr(arguments, f"{name}_digest"),
+            artifact_id=getattr(arguments, f"{name}_artifact_id"),
+            artifact_digest=getattr(arguments, f"{name}_artifact_digest"),
+        )
+    evidence = tuple(
+        item
+        for item in (
+            _optional_evidence(
+                arguments,
+                prefix=prefix,
+                producer=producer,
+                purpose="live-release",
+            )
+            for prefix, producer in (
+                ("build-evidence", "build-nuget-package"),
+                ("artifact-contents-evidence", "nuget-artifact-qualification"),
+                ("consumer-evidence", "nuget-artifact-qualification"),
+            )
+        )
+        if item is not None
+    )
+    observation = _optional_finalization_pair(
+        arguments,
+        "observation",
+        NugetRemoteStateObservation,
+        "observe-github-packages",
+    )
+    reviewer = None
+    reviewer_values = tuple(
+        getattr(arguments, "reviewer_summary" + suffix)
+        for suffix in (
+            "",
+            "_digest",
+            "_artifact_id",
+            "_artifact_digest",
+            "_artifact_url",
+            "_payload_path",
+        )
+    )
+    if any(value is not None for value in reviewer_values):
+        if any(value is None for value in reviewer_values):
+            raise ValueError(
+                "Reviewer summary full Artifact Reference is partial"
+            )
+        reviewer_reference = _uploaded_payload_reference(
+            arguments, name="reviewer_summary"
+        )
+        reviewer = (
+            Path(arguments.reviewer_summary).read_bytes(),
+            reviewer_reference,
+        )
+    inputs = FinalizationInputs(
+        intent=intent,
+        attempt_binding=binding,
+        eligibility=eligibility,
+        policy=policy,
+        snapshot=_load_nuget_qualification_snapshot(arguments),
+        decision=_load_live_qualification_decision(arguments),
+        decision_reference=_uploaded_payload_reference(
+            arguments, name="qualification_decision"
+        ),
+        evidence=evidence,
+        artifacts=()
+        if arguments.release_artifact is None
+        else (_load_nuget_release_artifact(arguments),),
+        observations=() if observation is None else (observation,),
+        publication=_optional_finalization_pair(
+            arguments, "publication_snapshot", PublicationSnapshot
+        ),
+        bundle=_optional_finalization_pair(
+            arguments,
+            "approval_bundle",
+            ApprovalBundle,
+            "materialize-publication",
+        ),
+        reviewer_summary=reviewer,
+        authorization=_optional_finalization_pair(
+            arguments,
+            "publication_authorization",
+            PublicationAuthorization,
+            "approve-publication",
+        ),
+        exact_proof=_optional_finalization_pair(
+            arguments,
+            "exact_satisfied_finalization_proof",
+            ExactSatisfiedFinalizationProof,
+            "prove-exact-satisfied",
+        ),
+        terminal=terminal,
+        result_marker=marker,
+    )
+    outcome = finalize_attempt_outcome(
+        inputs,
+        current=_release_bindings(arguments, purpose="live-release"),
+        run_attempt=_platform_run_attempt(arguments),
+        publisher_conclusion=arguments.publisher_conclusion,
+        publication_step_outcome=arguments.publication_step_outcome,
+        publication_terminal_reference=arguments.publication_terminal_reference,
+        observation_conclusion=arguments.observation_conclusion,
+    )
+    if outcome is None:
+        return 1
+    _write_output(arguments.outcome_output, outcome.to_document())
+    summary = (
+        "# Workflow Delivery v3 live finalization\n\n"
+        f"- Disposition: `{outcome.disposition}`\n"
+        f"- Possibly mutated: `{str(outcome.possibly_mutated).lower()}`\n"
+        f"- Direct predecessor: `{outcome.direct_predecessor.kind}`\n"
+    )
+    Path(arguments.summary_output).write_text(
+        summary, encoding="utf-8", newline="\n"
+    )
+    if arguments.github_step_summary is not None:
+        with Path(arguments.github_step_summary).open(
+            "a", encoding="utf-8", newline="\n"
+        ) as stream:
+            stream.write(summary)
+    _record_outputs(
+        arguments.github_output,
+        role="attempt-outcome",
+        digest=outcome.outcome_digest,
+        extra=(("disposition", outcome.disposition),),
+    )
+    return LIVE_OUTCOME_EXIT_STATUS[outcome.disposition]
+
+
+def _read_nuget_service_resources(
+    *,
+    authority: nuget_adapter.NuGetAuthority,
+    transport: nuget_adapter.NuGetReadTransport,
+    token: str,
+) -> nuget_adapter.NuGetServiceResources:
+    response = transport.get(
         nuget_adapter.NUGET_SERVICE_INDEX,
-        headers=nuget_adapter._headers(arguments.github_token),  # noqa: SLF001
+        headers=nuget_adapter._headers(token),  # noqa: SLF001
         timeout=60,
         max_bytes=nuget_adapter._METADATA_LIMIT,  # noqa: SLF001
     )
@@ -3910,9 +4273,19 @@ def _nuget_live_profile(
         response,
         max_bytes=nuget_adapter._METADATA_LIMIT,  # noqa: SLF001
     )
-    resources = nuget_adapter.discover_nuget_resources(
-        dotnet_provider.NativeNuGetHelper(Path(arguments.helper_dll).resolve()),
-        response.body,
+    return nuget_adapter.discover_nuget_resources(authority, response.body)
+
+
+def _nuget_live_profile(
+    arguments: argparse.Namespace,
+) -> NugetDestinationOperationProfile:
+    """Read the feed resources and collect the actual HTTP profile."""
+    resources = _read_nuget_service_resources(
+        authority=dotnet_provider.NativeNuGetHelper(
+            Path(arguments.helper_dll).resolve()
+        ),
+        transport=nuget_adapter.NuGetHttpTransport(),
+        token=arguments.github_token,
     )
     return NugetDestinationOperationProfile(
         canonicalize(nuget_adapter.nuget_operation_profile(resources))
@@ -5170,6 +5543,7 @@ def _release_resolve_publication_terminal_command(
 def _optional_finalization_pair[
     T: (
         RemoteStateObservation
+        | NugetRemoteStateObservation
         | PublicationSnapshot
         | ApprovalBundle
         | PublicationAuthorization
@@ -6822,6 +7196,94 @@ def _add_nuget_approval_commands(  # noqa: C901
             )
 
 
+def _add_nuget_publication_commands(
+    commands: argparse._SubParsersAction,
+) -> None:
+    for name, handler in (
+        ("prove-exact-satisfied", _release_prove_nuget_exact_satisfied_command),
+        ("prepare-publication", _release_prepare_nuget_publication_command),
+        ("execute-publication", _release_execute_nuget_publication_command),
+    ):
+        command = commands.add_parser(name)
+        _add_current_release_arguments(command)
+        _add_live_observation_authority_arguments(command)
+        _add_snapshot_arguments(command)
+        _add_release_artifact_arguments(command)
+        _add_uploaded_record_arguments(command, name="observation")
+        for record in ("qualification_decision", "publication_snapshot"):
+            _add_referenced_uploaded_payload_arguments(command, name=record)
+        command.add_argument("--github-token", required=True)
+        command.add_argument("--helper-dll", required=True)
+        command.add_argument("--output", required=True)
+        command.add_argument("--github-output")
+        command.set_defaults(handler=handler)
+        if name == "prove-exact-satisfied":
+            command.add_argument("--control", required=True)
+            command.add_argument(
+                "--publisher-conclusion",
+                required=True,
+                choices=("skipped", "success", "failure", "cancelled"),
+            )
+        else:
+            for record in (
+                "approval_bundle",
+                "reviewer_summary",
+                "publication_authorization",
+            ):
+                _add_referenced_uploaded_payload_arguments(command, name=record)
+            command.add_argument("--runtime-directory", required=True)
+            if name == "prepare-publication":
+                command.add_argument("--package", required=True)
+            else:
+                command.add_argument(
+                    "--publication-terminal-reference", required=True
+                )
+                command.add_argument("--terminal-directory", required=True)
+
+    finalize = commands.add_parser("finalize-live")
+    _add_current_release_arguments(finalize)
+    _add_live_observation_authority_arguments(finalize)
+    _add_snapshot_arguments(finalize)
+    _add_referenced_uploaded_payload_arguments(
+        finalize, name="qualification_decision"
+    )
+    for record in (
+        "build_evidence",
+        "artifact_contents_evidence",
+        "consumer_evidence",
+    ):
+        _add_optional_evidence_arguments(finalize, name=record)
+    _add_release_artifact_arguments(finalize, required=False)
+    for record in (
+        "observation",
+        "publication_snapshot",
+        "approval_bundle",
+        "publication_authorization",
+        "exact_satisfied_finalization_proof",
+        "reviewer_summary",
+    ):
+        _add_referenced_uploaded_payload_arguments(
+            finalize, name=record, required=False
+        )
+    finalize.add_argument(
+        "--publisher-conclusion",
+        required=True,
+        choices=("skipped", "success", "failure", "cancelled"),
+    )
+    finalize.add_argument("--publication-terminal-reference", required=True)
+    for option in ("--publication-step-outcome", "--observation-conclusion"):
+        finalize.add_argument(
+            option, choices=("", "success", "failure", "cancelled", "skipped")
+        )
+    finalize.add_argument("--terminal-directory")
+    finalize.add_argument("--marker-directory")
+    finalize.add_argument("--outcome-output", required=True)
+    finalize.add_argument("--summary-output", required=True)
+    finalize.add_argument("--github-step-summary")
+    finalize.add_argument("--github-output")
+    finalize.set_defaults(handler=_release_finalize_nuget_live_command)
+
+
 def _add_nuget_release_commands(
     release_commands: argparse._SubParsersAction,
 ) -> None:
@@ -6891,10 +7353,19 @@ def _add_nuget_release_commands(
 
     _add_nuget_qualification_commands(commands)
     _add_nuget_approval_commands(commands)
+    _add_nuget_publication_commands(commands)
 
 
-def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
-    parser = argparse.ArgumentParser(description=__doc__)
+def _parser() -> argparse.ArgumentParser:
+    # Preserve argparse's default program-name normalization.
+    prog = os.path.basename(sys.argv[0])  # noqa: PTH119
+    return _parser_for_program(prog)
+
+
+@lru_cache(maxsize=1)
+def _parser_for_program(prog: str) -> argparse.ArgumentParser:  # noqa: PLR0915
+    # Reuse command metadata only; parse_args creates a fresh Namespace.
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     commands = parser.add_subparsers(dest="context", required=True)
 
     catalog = commands.add_parser("catalog")
