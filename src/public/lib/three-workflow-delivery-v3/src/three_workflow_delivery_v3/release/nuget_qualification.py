@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3.adapters import dotnet as native
 from three_workflow_delivery_v3.canonical import (
+    JsonValue,
     canonical_sha256,
     parse_canonical_json,
 )
@@ -43,6 +44,8 @@ from three_workflow_delivery_v3.repository.dotnet_provider import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+_MECHANICAL_SCHEMA = "workflow-delivery/v3/nuget-mechanical-build-result"
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +138,182 @@ def _validate_result(
         raise ValueError(message)
 
 
+def nuget_artifact_expectation(
+    snapshot: QualificationSnapshot,
+    witness: native.DotnetPackageTargetWitness,
+) -> native.DotnetArtifactExpectation:
+    """Bind the transported native witness to the frozen package identity."""
+    identity = _identity(snapshot)
+    expectation = native.DotnetArtifactExpectation(
+        identity.package_name,
+        identity.native_version,
+        identity.normalized_package_id,
+        identity.normalized_version,
+        witness.canonical_bytes,
+    )
+    _validate_expectation(snapshot, expectation)
+    return expectation
+
+
+def _validate_mechanics(
+    snapshot: QualificationSnapshot,
+    mechanics: NugetMechanicalBuildResult,
+) -> None:
+    contract = _contract(snapshot)
+    if type(mechanics) is not NugetMechanicalBuildResult or (
+        mechanics.qualification_snapshot_digest != snapshot.snapshot_digest
+        or mechanics.build_request_digest != contract.request_digest
+    ):
+        message = "NuGet mechanics do not match the current Snapshot"
+        raise ValueError(message)
+    _validate_result(snapshot, mechanics.result)
+
+
+def nuget_mechanical_build_document(
+    snapshot: QualificationSnapshot,
+    mechanics: NugetMechanicalBuildResult,
+) -> dict[str, JsonValue]:
+    """Represent verified mechanics separately from the original archive."""
+    _validate_mechanics(snapshot, mechanics)
+    result = mechanics.result
+    manifest = result.manifest
+    expectation = result.expectation
+    return {
+        "schema": _MECHANICAL_SCHEMA,
+        "qualification-snapshot-digest": (
+            mechanics.qualification_snapshot_digest
+        ),
+        "build-request-digest": mechanics.build_request_digest,
+        "manifest": {
+            "basename": manifest.basename,
+            "entries": list(manifest.entries),
+            "sha256": manifest.sha256,
+            "sha512": manifest.sha512,
+            "byte-size": manifest.byte_size,
+        },
+        "expectation": {
+            "package-name": expectation.package_name,
+            "nuget-package-version": expectation.nuget_package_version,
+            "normalized-package-id": expectation.normalized_package_id,
+            "normalized-version": expectation.normalized_version,
+            "assembly-name": expectation.assembly_name,
+            "witness": parse_canonical_json(expectation.witness_bytes),
+        },
+        "source-input-manifest": [
+            list(pair) for pair in result.source_input_manifest
+        ],
+        "toolchain": [list(pair) for pair in result.toolchain],
+    }
+
+
+def _mechanical_object(
+    value: JsonValue, keys: set[str]
+) -> dict[str, JsonValue]:
+    if not isinstance(value, dict) or value.keys() != keys:
+        message = "NuGet mechanical record has an open or incomplete shape"
+        raise ValueError(message)
+    return value
+
+
+def _mechanical_text(value: JsonValue) -> str:
+    if not isinstance(value, str) or not value:
+        message = "NuGet mechanical record requires a nonempty string"
+        raise ValueError(message)
+    return value
+
+
+def _mechanical_strings(value: JsonValue) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        message = "NuGet mechanical record requires a string array"
+        raise TypeError(message)
+    return tuple(_mechanical_text(item) for item in value)
+
+
+def _mechanical_pairs(value: JsonValue) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, list):
+        message = "NuGet mechanical record requires string pairs"
+        raise TypeError(message)
+    pairs = []
+    for item in value:
+        left, right = _mechanical_strings(item)
+        pairs.append((left, right))
+    return tuple(pairs)
+
+
+def nuget_mechanical_build_from_bytes(
+    content: bytes,
+    *,
+    snapshot: QualificationSnapshot,
+    package: bytes,
+) -> NugetMechanicalBuildResult:
+    """Admit mechanics against the current Snapshot and original archive."""
+    document = _mechanical_object(
+        parse_canonical_json(content),
+        {
+            "schema",
+            "qualification-snapshot-digest",
+            "build-request-digest",
+            "manifest",
+            "expectation",
+            "source-input-manifest",
+            "toolchain",
+        },
+    )
+    if document["schema"] != _MECHANICAL_SCHEMA:
+        message = "NuGet mechanical record has another schema"
+        raise ValueError(message)
+    manifest = _mechanical_object(
+        document["manifest"],
+        {"basename", "entries", "sha256", "sha512", "byte-size"},
+    )
+    expectation = _mechanical_object(
+        document["expectation"],
+        {
+            "package-name",
+            "nuget-package-version",
+            "normalized-package-id",
+            "normalized-version",
+            "assembly-name",
+            "witness",
+        },
+    )
+    size = manifest["byte-size"]
+    if type(size) is not int or size <= 0:
+        message = "NuGet mechanical byte size must be a positive integer"
+        raise ValueError(message)
+    witness = native.dotnet_package_target_witness_from_document(
+        expectation["witness"]
+    ).canonical_bytes
+    mechanics = NugetMechanicalBuildResult(
+        _mechanical_text(document["qualification-snapshot-digest"]),
+        _mechanical_text(document["build-request-digest"]),
+        native.DotnetBuildResult(
+            package,
+            native.DotnetArtifactManifest(
+                _mechanical_text(manifest["basename"]),
+                _mechanical_strings(manifest["entries"]),
+                _mechanical_text(manifest["sha256"]),
+                _mechanical_text(manifest["sha512"]),
+                size,
+            ),
+            native.DotnetArtifactExpectation(
+                _mechanical_text(expectation["package-name"]),
+                _mechanical_text(expectation["nuget-package-version"]),
+                _mechanical_text(expectation["normalized-package-id"]),
+                _mechanical_text(expectation["normalized-version"]),
+                witness,
+            ),
+            witness,
+            _mechanical_pairs(document["source-input-manifest"]),
+            _mechanical_pairs(document["toolchain"]),
+        ),
+    )
+    if nuget_mechanical_build_document(snapshot, mechanics) != document:
+        message = "NuGet mechanical record is not normalized"
+        raise ValueError(message)
+    return mechanics
+
+
 def execute_nuget_release_build(
     snapshot: QualificationSnapshot,
     request: native.DotnetBuildRequest,
@@ -180,13 +359,7 @@ def form_uploaded_nuget_release_artifact(
 ) -> tuple[NugetReleaseArtifact, QualificationEvidence]:
     """Bind original archive bytes to immutable upload metadata."""
     contract = _contract(snapshot)
-    if type(mechanics) is not NugetMechanicalBuildResult or (
-        mechanics.qualification_snapshot_digest != snapshot.snapshot_digest
-        or mechanics.build_request_digest != contract.request_digest
-    ):
-        message = "NuGet mechanics do not match the current Snapshot"
-        raise ValueError(message)
-    _validate_result(snapshot, mechanics.result)
+    _validate_mechanics(snapshot, mechanics)
     result = mechanics.result
     manifest = result.manifest
     output = contract.output

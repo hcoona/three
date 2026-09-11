@@ -105,6 +105,39 @@ def _validate_inputs(
         raise ValueError(message)
 
 
+def nuget_package_target_witness(
+    model: AdmittedRepositoryModelSnapshot,
+) -> DotnetPackageTargetWitness:
+    """Construct the canonical native witness from the admitted live Model."""
+    if type(model) is not AdmittedRepositoryModelSnapshot:
+        message = "NuGet witness requires an admitted Repository Model"
+        raise TypeError(message)
+    repository = model.snapshot
+    validate_nuget_repository_model_snapshot(repository)
+    if (
+        canonicalize(repository.to_document()) != model.canonical_bytes
+        or repository.snapshot_digest != model.canonical_digest
+        or repository.context.purpose != "live-release"
+        or type(repository.nbgv) is not DotnetNbgvFacts
+    ):
+        message = "NuGet witness requires the intact native live Model"
+        raise ValueError(message)
+    return DotnetPackageTargetWitness(
+        target=repository.context.target,
+        release_unit=NUGET_RELEASE_UNIT,
+        nbgv=repository.nbgv,
+        build_definition=repository.release_units[0].builds[0].definition,
+        catalog_digest=repository.context.catalog_digest,
+        control_digest=canonical_sha256(
+            {
+                "schema": "workflow-delivery/v3/control-identity",
+                "identity": repository.context.control,
+            }
+        ),
+        purpose="live-release",
+    )
+
+
 def plan_nuget_live_qualification(
     intent: ReleaseIntent,
     binding: ReleaseAttemptBinding,
@@ -143,20 +176,7 @@ def plan_nuget_live_qualification(
         compiled_output.role,
         compiled_output.kind,
     )
-    witness = DotnetPackageTargetWitness(
-        target=intent.target,
-        release_unit=intent.release_unit,
-        nbgv=facts,
-        build_definition=build.definition_id,
-        catalog_digest=repository.context.catalog_digest,
-        control_digest=canonical_sha256(
-            {
-                "schema": "workflow-delivery/v3/control-identity",
-                "identity": repository.context.control,
-            }
-        ),
-        purpose=intent.purpose,
-    )
+    witness = nuget_package_target_witness(model)
     manifest = provider.provider_result.source_input_manifest
     request = NugetReleaseBuildRequest(
         build=build,

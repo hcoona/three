@@ -64,11 +64,13 @@ Keep these facts in the working context:
   PR #680 completed protected destination-runtime delivery. The native control
   CLI now imports immutable Provider facts, compiles the Model without target
   reevaluation, and binds/adopts Eligibility and the current Attempt under the
-  selected freshness phase. Inspect current Git/PR state before claiming this
-  control-entry unit is protected-delivered. Workflow execution, remaining
-  Build/Qualification/publisher commands, native acceptance tooling, activation,
-  and real publication remain subsequent work; NuGet Governance and admission
-  stay disabled.
+  selected freshness phase. PR #684 completed protected control-entry delivery.
+  Native Build/Qualification commands now connect matched planning, frozen
+  Build, original-package upload binding, independent contents/consumer Evidence,
+  and the shared Finalizer. Inspect current Git/PR state before claiming this
+  Build/Qualification entry is protected-delivered. Workflow execution,
+  publisher commands, native acceptance tooling, activation, and real
+  publication remain subsequent work; NuGet Governance and admission stay disabled.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
 - The selected GitHub Packages marker project has independent v3 authoring;
@@ -209,6 +211,14 @@ The HLD, MLD extensions, and NuGet LLD identify the representation and adapter
 changes required by the concrete second case. `WD-NFR-003` expects ecosystem additions
 without changing cross-system authority semantics; it does not authorize a
 universal plugin framework or speculative Environment Profiles.
+
+The `release nuget` Build/Qualification entries reuse those owners. Canonical
+mechanical metadata binds the frozen Snapshot, Build request, native witness,
+source/toolchain facts, and original archive bytes across the Build/upload
+boundary. Content identity remains distinct from transport identity. The
+two quality commands produce independent Evidence; the shared Finalizer
+retains incomplete and failed outcomes. These command contracts supply no
+Windows Actions or native destination evidence and enable no workflow.
 
 ## Verified Platform Findings and Remaining Gates
 

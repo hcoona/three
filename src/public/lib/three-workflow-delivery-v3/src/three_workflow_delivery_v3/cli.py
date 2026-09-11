@@ -122,6 +122,8 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseIntent,
     RemoteStateObservation,
     NugetDestinationOperationProfile,
+    NugetReleaseArtifact,
+    NugetReleaseBuildRequest,
     SimulationBinding,
     SimulationOutcome,
     admit_release_record,
@@ -222,6 +224,7 @@ from three_workflow_delivery_v3.repository.node_provider import (
 )
 
 from three_workflow_delivery_v3.adapters import (
+    dotnet as dotnet_adapter,
     nuget_github_packages as nuget_adapter,
 )
 from three_workflow_delivery_v3.release.identity import (
@@ -235,8 +238,22 @@ from three_workflow_delivery_v3.release.nuget_eligibility import (
 from three_workflow_delivery_v3.release.nuget_governance import (
     read_nuget_live_control_facts,
 )
+from three_workflow_delivery_v3.release.nuget_planner import (
+    nuget_package_target_witness,
+    plan_nuget_live_qualification,
+)
+from three_workflow_delivery_v3.release.nuget_qualification import (
+    execute_nuget_release_build,
+    form_uploaded_nuget_release_artifact,
+    nuget_artifact_expectation,
+    nuget_mechanical_build_document,
+    nuget_mechanical_build_from_bytes,
+    qualify_release_nuget_consumer,
+    qualify_release_nuget_contents,
+)
 from three_workflow_delivery_v3.repository import dotnet_provider
 from three_workflow_delivery_v3.repository.compiler import (
+    AdmittedDotnetProviderFactBundle,
     admit_dotnet_provider_fact_bundle,
     compile_dotnet_repository_model,
     nuget_provider_manifest,
@@ -2125,6 +2142,7 @@ def _load_release_record(  # noqa: PLR0913
         | ReleaseAttemptBinding
         | QualificationSnapshot
         | ReleaseArtifact
+        | NugetReleaseArtifact
         | QualificationEvidence
         | QualificationDecision
         | ProjectionObservation
@@ -2149,6 +2167,7 @@ def _load_release_record(  # noqa: PLR0913
     | ReleaseAttemptBinding
     | QualificationSnapshot
     | ReleaseArtifact
+    | NugetReleaseArtifact
     | QualificationEvidence
     | QualificationDecision
     | ProjectionObservation
@@ -3130,10 +3149,10 @@ def _load_dotnet_provider_result(
     return result
 
 
-def _release_compile_nuget_live_model_command(
+def _load_nuget_provider_bundle(
     arguments: argparse.Namespace,
-) -> int:
-    intent = _load_nuget_live_intent(arguments)
+    intent: ReleaseIntent,
+) -> tuple[ProviderRequestManifest, AdmittedDotnetProviderFactBundle]:
     context = _live_model_context(intent)
     manifest = nuget_provider_manifest(
         context, provider_producer="discover-dotnet"
@@ -3171,6 +3190,15 @@ def _release_compile_nuget_live_model_command(
             bundle_digest=bundle.bundle_digest,
         ),
     )
+    return manifest, admitted
+
+
+def _release_compile_nuget_live_model_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent = _load_nuget_live_intent(arguments)
+    context = _live_model_context(intent)
+    manifest, admitted = _load_nuget_provider_bundle(arguments, intent)
     snapshot = compile_dotnet_repository_model(
         Path(arguments.repo_root).resolve(), context, manifest, [admitted]
     )
@@ -3191,6 +3219,269 @@ def _release_compile_nuget_live_model_command(
                     derive_buddy_execution_identity(intent).to_document()
                 ).removeprefix("sha256:"),
             ),
+        ),
+    )
+    return 0
+
+
+def _load_nuget_qualification_snapshot(
+    arguments: argparse.Namespace,
+) -> QualificationSnapshot:
+    _require_nuget_initial_attempt(arguments)
+    snapshot = _load_live_qualification_snapshot(arguments)
+    if (
+        len(snapshot.build_requests) != 1
+        or type(snapshot.build_requests[0]) is not NugetReleaseBuildRequest
+    ):
+        raise ValueError("NuGet command requires its native live Snapshot")
+    return snapshot
+
+
+def _load_nuget_package_witness(
+    arguments: argparse.Namespace,
+    snapshot: QualificationSnapshot,
+) -> dotnet_adapter.DotnetPackageTargetWitness:
+    content = _verify_uploaded_payload(
+        arguments.package_witness,
+        artifact_id=arguments.package_witness_artifact_id,
+        artifact_digest=arguments.package_witness_artifact_digest,
+    )
+    witness = dotnet_adapter.dotnet_package_target_witness_from_document(
+        parse_canonical_json(content)
+    )
+    if canonical_sha256(witness.to_document()) != _normalized_digest(
+        arguments.package_witness_digest
+    ):
+        raise ValueError("NuGet package witness payload digest mismatch")
+    nuget_artifact_expectation(snapshot, witness)
+    return witness
+
+
+def _load_nuget_release_artifact(
+    arguments: argparse.Namespace,
+) -> NugetReleaseArtifact:
+    record = _load_release_record(
+        arguments.release_artifact,
+        record_type=NugetReleaseArtifact,
+        expected_digest=arguments.release_artifact_digest,
+        artifact_id=arguments.release_artifact_artifact_id,
+        artifact_digest=arguments.release_artifact_artifact_digest,
+        bindings=_release_bindings(
+            arguments, producer="build-nuget-package", purpose="live-release"
+        ),
+    )
+    return cast("NugetReleaseArtifact", record)
+
+
+def _release_plan_nuget_qualification_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent = _load_nuget_live_intent(arguments)
+    model = _load_live_model(arguments, intent)
+    binding = _load_attempt_binding(arguments)
+    _manifest, provider = _load_nuget_provider_bundle(arguments, intent)
+    snapshot = plan_nuget_live_qualification(intent, binding, model, provider)
+    witness = nuget_package_target_witness(model)
+    witness_digest = canonical_sha256(witness.to_document())
+    _write_output(arguments.output, snapshot.to_document())
+    _write_output(arguments.package_witness_output, witness.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="qualification-snapshot",
+        digest=snapshot.snapshot_digest,
+        extra=(
+            ("package-witness-digest", witness_digest),
+            (
+                "package-witness-digest-hex",
+                witness_digest.removeprefix("sha256:"),
+            ),
+            (
+                "package-artifact-name",
+                release_artifact_transport_name(
+                    repository=snapshot.repository,
+                    purpose="live-release",
+                    output=snapshot.outputs[0],
+                    qualification_snapshot_digest=snapshot.snapshot_digest,
+                    workflow_run_id=arguments.workflow_run_id,
+                    run_attempt=None,
+                    producer="build-nuget-package",
+                ),
+            ),
+        ),
+    )
+    return 0
+
+
+def _release_run_nuget_build_command(arguments: argparse.Namespace) -> int:
+    snapshot = _load_nuget_qualification_snapshot(arguments)
+    witness = _load_nuget_package_witness(arguments, snapshot)
+    contract = cast("NugetReleaseBuildRequest", snapshot.build_requests[0])
+    request = dotnet_adapter.DotnetBuildRequest(
+        Path(arguments.repo_root).resolve(),
+        contract.declared_inputs,
+        contract.source_input_manifest,
+        witness,
+        dotnet_provider.NativeNuGetHelper(Path(arguments.helper_dll).resolve()),
+        Path(arguments.evidence_directory).resolve(),
+    )
+    mechanics, failure = execute_nuget_release_build(snapshot, request)
+    if failure is not None:
+        _write_output(arguments.failure_evidence_output, failure.to_document())
+        _record_outputs(
+            arguments.github_output,
+            role="build-evidence",
+            digest=failure.evidence_digest,
+            extra=(("build-status", "failed"),),
+        )
+        return 0
+    if mechanics is None:
+        raise ValueError("NuGet Build returned neither mechanics nor Evidence")
+    document = nuget_mechanical_build_document(snapshot, mechanics)
+    package = Path(arguments.package_output)
+    package.parent.mkdir(parents=True, exist_ok=True)
+    package.write_bytes(mechanics.result.package)
+    _write_output(arguments.mechanical_output, document)
+    _append_outputs(
+        arguments.github_output,
+        (
+            ("build-status", "satisfied"),
+            ("package-content-digest", mechanics.result.manifest.sha256),
+            (
+                "package-content-digest-hex",
+                mechanics.result.manifest.sha256.removeprefix("sha256:"),
+            ),
+        ),
+    )
+    return 0
+
+
+def _release_form_nuget_artifact_command(arguments: argparse.Namespace) -> int:
+    snapshot = _load_nuget_qualification_snapshot(arguments)
+    mechanics = nuget_mechanical_build_from_bytes(
+        Path(arguments.mechanical_result).read_bytes(),
+        snapshot=snapshot,
+        package=Path(arguments.package).read_bytes(),
+    )
+    transport = ArtifactTransportIdentity(
+        artifact_id=arguments.package_artifact_id,
+        artifact_name=arguments.package_artifact_name,
+        artifact_url=arguments.package_artifact_url,
+        transport_digest=_normalized_digest(arguments.package_artifact_digest),
+        producer="build-nuget-package",
+        workflow_run_id=arguments.workflow_run_id,
+        run_attempt=None,
+    )
+    artifact, evidence = form_uploaded_nuget_release_artifact(
+        snapshot, mechanics, transport
+    )
+    _write_output(arguments.artifact_output, artifact.to_document())
+    _write_output(arguments.evidence_output, evidence.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="release-artifact",
+        digest=artifact.artifact_digest,
+        extra=(
+            ("build-evidence-digest", evidence.evidence_digest),
+            (
+                "build-evidence-digest-hex",
+                evidence.evidence_digest.removeprefix("sha256:"),
+            ),
+        ),
+    )
+    return 0
+
+
+def _release_nuget_quality_command(
+    arguments: argparse.Namespace, *, consumer: bool
+) -> int:
+    snapshot = _load_nuget_qualification_snapshot(arguments)
+    witness = _load_nuget_package_witness(arguments, snapshot)
+    artifact = _load_nuget_release_artifact(arguments)
+    package = Path(arguments.package).read_bytes()
+    expectation = nuget_artifact_expectation(snapshot, witness)
+    helper = dotnet_provider.NativeNuGetHelper(
+        Path(arguments.helper_dll).resolve()
+    )
+    if consumer:
+        evidence = qualify_release_nuget_consumer(
+            snapshot,
+            artifact,
+            package,
+            expectation,
+            helper,
+            evidence_directory=Path(arguments.evidence_directory).resolve(),
+        )
+        role = "consumer-evidence"
+    else:
+        evidence = qualify_release_nuget_contents(
+            snapshot, artifact, package, expectation, helper
+        )
+        role = "artifact-contents-evidence"
+    _write_output(arguments.output, evidence.to_document())
+    _record_outputs(
+        arguments.github_output, role=role, digest=evidence.evidence_digest
+    )
+    return 0
+
+
+def _release_nuget_contents_command(arguments: argparse.Namespace) -> int:
+    return _release_nuget_quality_command(arguments, consumer=False)
+
+
+def _release_nuget_consumer_command(arguments: argparse.Namespace) -> int:
+    return _release_nuget_quality_command(arguments, consumer=True)
+
+
+def _release_finalize_nuget_qualification_command(
+    arguments: argparse.Namespace,
+) -> int:
+    snapshot = _load_nuget_qualification_snapshot(arguments)
+    for name in (
+        "build_evidence",
+        "artifact_contents_evidence",
+        "consumer_evidence",
+        "release_artifact",
+    ):
+        _validate_optional_uploaded_record_transport(
+            name,
+            path=getattr(arguments, name),
+            record_digest=getattr(arguments, f"{name}_digest"),
+            artifact_id=getattr(arguments, f"{name}_artifact_id"),
+            artifact_digest=getattr(arguments, f"{name}_artifact_digest"),
+        )
+    evidence = tuple(
+        item
+        for item in (
+            _optional_evidence(
+                arguments,
+                prefix="build-evidence",
+                producer="build-nuget-package",
+            ),
+            _optional_evidence(
+                arguments,
+                prefix="artifact-contents-evidence",
+                producer="nuget-artifact-qualification",
+            ),
+            _optional_evidence(
+                arguments,
+                prefix="consumer-evidence",
+                producer="nuget-artifact-qualification",
+            ),
+        )
+        if item is not None
+    )
+    artifacts: tuple[NugetReleaseArtifact, ...] = ()
+    if arguments.release_artifact is not None:
+        artifacts = (_load_nuget_release_artifact(arguments),)
+    decision = finalize_qualification(snapshot, evidence, artifacts)
+    _write_output(arguments.output, decision.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="qualification-decision",
+        digest=decision.decision_digest,
+        extra=(
+            ("qualification-result", decision.terminal_result),
+            ("qualification-failure-class", decision.failure_class),
         ),
     )
     return 0
@@ -5986,6 +6277,87 @@ def _add_optional_evidence_arguments(
     _add_uploaded_record_arguments(parser, name=name, required=False)
 
 
+def _add_nuget_planning_command(
+    commands: argparse._SubParsersAction,
+) -> None:
+    plan = commands.add_parser("plan-qualification")
+    _add_current_release_arguments(plan)
+    plan.add_argument("--repo-root", default=".")
+    for name in ("intent", "repository_model", "attempt_binding"):
+        _add_uploaded_record_arguments(plan, name=name)
+    for name in (
+        "provider-result",
+        "provider-artifact-digest",
+        "output",
+        "package-witness-output",
+    ):
+        plan.add_argument("--" + name, required=True)
+    plan.add_argument("--provider-artifact-id", required=True, type=int)
+    plan.add_argument("--github-output")
+    plan.set_defaults(handler=_release_plan_nuget_qualification_command)
+
+
+def _add_nuget_qualification_commands(
+    commands: argparse._SubParsersAction,
+) -> None:
+    _add_nuget_planning_command(commands)
+    for name, handler in (
+        ("run-build", _release_run_nuget_build_command),
+        ("form-artifact", _release_form_nuget_artifact_command),
+        ("artifact-contents", _release_nuget_contents_command),
+        ("restore-build-invoke", _release_nuget_consumer_command),
+        (
+            "finalize-qualification",
+            _release_finalize_nuget_qualification_command,
+        ),
+    ):
+        command = commands.add_parser(name)
+        _add_current_release_arguments(command)
+        _add_snapshot_arguments(command)
+        command.add_argument("--github-output")
+        command.set_defaults(handler=handler, purpose="live-release")
+        if name in {"run-build", "artifact-contents", "restore-build-invoke"}:
+            _add_uploaded_record_arguments(command, name="package_witness")
+            command.add_argument("--helper-dll", required=True)
+        if name in {"run-build", "restore-build-invoke"}:
+            command.add_argument("--evidence-directory", required=True)
+        if name == "run-build":
+            command.add_argument("--repo-root", default=".")
+            for output in (
+                "package-output",
+                "mechanical-output",
+                "failure-evidence-output",
+            ):
+                command.add_argument("--" + output, required=True)
+        elif name == "form-artifact":
+            for option in (
+                "package",
+                "mechanical-result",
+                "package-artifact-name",
+                "package-artifact-url",
+                "package-artifact-digest",
+                "artifact-output",
+                "evidence-output",
+            ):
+                command.add_argument("--" + option, required=True)
+            command.add_argument(
+                "--package-artifact-id", required=True, type=int
+            )
+        elif name == "finalize-qualification":
+            _add_release_artifact_arguments(command, required=False)
+            for evidence in (
+                "build_evidence",
+                "artifact_contents_evidence",
+                "consumer_evidence",
+            ):
+                _add_optional_evidence_arguments(command, name=evidence)
+            command.add_argument("--output", required=True)
+        else:
+            _add_release_artifact_arguments(command)
+            command.add_argument("--package", required=True)
+            command.add_argument("--output", required=True)
+
+
 def _add_nuget_release_commands(
     release_commands: argparse._SubParsersAction,
 ) -> None:
@@ -6052,6 +6424,8 @@ def _add_nuget_release_commands(
             command.add_argument("--output", required=True)
             command.add_argument("--github-output")
         command.set_defaults(handler=handler)
+
+    _add_nuget_qualification_commands(commands)
 
 
 def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
