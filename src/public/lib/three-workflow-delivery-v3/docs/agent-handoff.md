@@ -170,12 +170,21 @@ diagnostic readback. The native Finalizer admits all three Qualification Evidenc
 records and the current terminal chain; it performs no destination reads.
 Existing shared `release admit-publication-terminal` and
 `release resolve-publication-terminal` handle native marker/Result transport.
-Inspect current Git/PR state before claiming this publication entry is
-protected-delivered. Local scenarios use modeled destination and native-helper
+PR #688 completed protected publication-entry delivery. Local scenarios use
+modeled destination and native-helper
 seams and establish no Windows Actions or real publication evidence.
 
-Workflow execution, native acceptance tooling, activation, and real publication
-remain subsequent work.
+The separate `workflow-delivery-v3-nuget-buddy-smoke.yml` caller and
+`workflow-delivery-v3-nuget-live-attempt.yml` reusable workflow connect the
+native commands on Windows. Their Intent binds the native caller path. An
+unprivileged helper producer uploads its full same-revision runtime; readers
+and the publisher consume that immutable archive without building it. The
+Attempt retains native Build/content/consumer Evidence, current-run Approval,
+uploaded-marker admission, zero-action proof, and failed terminal payloads.
+Inspect current Git/PR state before claiming protected workflow delivery.
+Local shell/transport contracts establish no actual Windows Actions execution.
+Windows workflow execution, native acceptance tooling, activation, and real
+publication remain subsequent work.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
 stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an
 activation gate; sequential duplicate tests cannot supply it.

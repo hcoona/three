@@ -25,6 +25,9 @@ OFFICIAL_SIMULATION_PRODUCER = "compile-simulation-model"
 BUDDY_LIVE_WORKFLOW_PATH = (
     ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
 )
+NUGET_BUDDY_LIVE_WORKFLOW_PATH = (
+    ".github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml"
+)
 
 
 def _request_id(
@@ -211,11 +214,11 @@ def normalize_nuget_buddy_live_intent(
         raise ValueError(message)
     return ReleaseIntent(
         repository=repository,
-        workflow_path=BUDDY_LIVE_WORKFLOW_PATH,
+        workflow_path=NUGET_BUDDY_LIVE_WORKFLOW_PATH,
         workflow_ref=selected_ref,
         workflow_sha=target,
         request_id=_request_id(
-            repository, BUDDY_LIVE_WORKFLOW_PATH, workflow_run_id
+            repository, NUGET_BUDDY_LIVE_WORKFLOW_PATH, workflow_run_id
         ),
         actor=actor,
         workflow_run_id=workflow_run_id,
@@ -236,8 +239,13 @@ def derive_buddy_execution_identity(
     if type(intent) is not ReleaseIntent:
         message = "Buddy Execution requires an exact ReleaseIntent"
         raise TypeError(message)
+    expected_workflow_path = (
+        NUGET_BUDDY_LIVE_WORKFLOW_PATH
+        if intent.release_unit == NUGET_RELEASE_UNIT
+        else BUDDY_LIVE_WORKFLOW_PATH
+    )
     if (
-        intent.workflow_path != BUDDY_LIVE_WORKFLOW_PATH
+        intent.workflow_path != expected_workflow_path
         or intent.channel != "buddy"
         or intent.mode != "live"
         or intent.purpose != "live-release"
@@ -301,6 +309,7 @@ def derive_release_attempt_binding(  # noqa: PLR0913
 
 __all__ = [
     "BUDDY_LIVE_WORKFLOW_PATH",
+    "NUGET_BUDDY_LIVE_WORKFLOW_PATH",
     "OFFICIAL_SIMULATION_PRODUCER",
     "derive_buddy_execution_identity",
     "derive_release_attempt_binding",

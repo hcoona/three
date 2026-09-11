@@ -326,6 +326,93 @@ def test_nuget_cli_keeps_npm_normalization_separate(control_case):
     assert json.loads(case.output.read_bytes()) == npm.to_document()
 
 
+def test_nuget_cli_binds_actual_native_workflow_path(control_case):
+    case = control_case
+    arguments = [
+        "release",
+        "nuget",
+        "normalize-live-request",
+        *case.current,
+        "--repository",
+        "hcoona/three",
+        "--actor",
+        "hcoona",
+        "--selected-ref",
+        "refs/heads/main",
+        "--output",
+        str(case.output),
+    ]
+    assert cli.main(arguments) == 0
+    document = json.loads(case.output.read_bytes())
+    assert document["workflow-path"] == (
+        ".github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml"
+    )
+    npm = normalize_buddy_live_intent(
+        repository="hcoona/three",
+        selected_ref="refs/heads/main",
+        target=case.source.intent.target,
+        actor="hcoona",
+        workflow_run_id=case.source.intent.workflow_run_id,
+    )
+    assert npm.workflow_path == (
+        ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
+    )
+    assert document["request-id"] != npm.request_id
+    assert document == case.source.intent.to_document()
+    assert derive_buddy_execution_identity(case.source.intent).release_unit == (
+        NUGET_RELEASE_UNIT
+    )
+    assert derive_buddy_execution_identity(npm).release_unit == npm.release_unit
+
+
+@pytest.mark.parametrize("native_unit", [True, False])
+def test_buddy_execution_rejects_cross_ecosystem_workflow_path(
+    control_case, native_unit
+):
+    original = control_case.source.intent
+    if native_unit:
+        substituted = replace(
+            original,
+            workflow_path=(
+                ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
+            ),
+        )
+    else:
+        npm = normalize_buddy_live_intent(
+            repository=original.repository,
+            selected_ref=original.selected_ref,
+            target=original.target,
+            actor=original.actor,
+            workflow_run_id=original.workflow_run_id,
+        )
+        substituted = replace(
+            npm,
+            workflow_path=(
+                ".github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml"
+            ),
+        )
+    with pytest.raises(ValueError, match="exact supported live Intent"):
+        derive_buddy_execution_identity(substituted)
+
+
+def test_nuget_eligibility_rejects_npm_workflow_before_reads(enabled_case):
+    case = enabled_case
+    substituted = replace(
+        case.source.intent,
+        workflow_path=".github/workflows/workflow-delivery-v3-buddy-smoke.yml",
+    )
+    case.intent_args = _uploaded(
+        case.root, "intent", substituted.to_document(), 101
+    )
+    assert _evaluate(case) == 1
+    assert not case.output.exists()
+    assert not case.github_output.exists()
+    case.client_factory.assert_not_called()
+    case.platform_reader.assert_not_called()
+    case.profile_reader.assert_not_called()
+    case.evaluate.assert_not_called()
+
+
 def test_dotnet_provider_cli_routes_native_materialization(
     control_case, monkeypatch
 ):

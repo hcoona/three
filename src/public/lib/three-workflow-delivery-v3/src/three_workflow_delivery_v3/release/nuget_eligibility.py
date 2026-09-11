@@ -19,7 +19,9 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseIntent,
 )
 from three_workflow_delivery_v3.release import eligibility as shared
-from three_workflow_delivery_v3.release.identity import BUDDY_LIVE_WORKFLOW_PATH
+from three_workflow_delivery_v3.release.identity import (
+    NUGET_BUDDY_LIVE_WORKFLOW_PATH,
+)
 from three_workflow_delivery_v3.release.nuget_governance import (
     NuGetLiveControlFacts,
     NuGetPlatformFacts,
@@ -101,7 +103,7 @@ def _validate_context(
         or intent.repository != "hcoona/three"
         or intent.actor != "hcoona"
         or intent.selected_ref != context.selected_ref
-        or intent.workflow_path != BUDDY_LIVE_WORKFLOW_PATH
+        or intent.workflow_path != NUGET_BUDDY_LIVE_WORKFLOW_PATH
         or intent.workflow_sha != intent.target
         or intent.release_unit != NUGET_RELEASE_UNIT
         or intent.channel != "buddy"

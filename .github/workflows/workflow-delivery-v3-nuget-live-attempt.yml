@@ -1,0 +1,3486 @@
+# Implements the NuGet LLD's current-Attempt authority and terminal protocol.
+# Only the publisher receives package-write permission; it executes no target code.
+name: Workflow Delivery v3 NuGet live Attempt
+'on':
+  workflow_call:
+    inputs:
+      target-sha:
+        required: true
+        type: string
+      selected-ref:
+        required: true
+        type: string
+      intent-name:
+        required: true
+        type: string
+      intent-digest:
+        required: true
+        type: string
+      intent-id:
+        required: true
+        type: string
+      intent-transport-digest:
+        required: true
+        type: string
+      provider-name:
+        required: true
+        type: string
+      provider-id:
+        required: true
+        type: string
+      provider-transport-digest:
+        required: true
+        type: string
+      repository-model-name:
+        required: true
+        type: string
+      repository-model-digest:
+        required: true
+        type: string
+      repository-model-id:
+        required: true
+        type: string
+      repository-model-transport-digest:
+        required: true
+        type: string
+      eligibility-name:
+        required: true
+        type: string
+      eligibility-digest:
+        required: true
+        type: string
+      eligibility-id:
+        required: true
+        type: string
+      eligibility-transport-digest:
+        required: true
+        type: string
+      helper-name:
+        required: true
+        type: string
+      helper-id:
+        required: true
+        type: string
+      helper-digest:
+        required: true
+        type: string
+permissions: {}
+defaults:
+  run:
+    shell: pwsh
+env:
+  WDV3_PACKAGE: three-workflow-delivery-v3
+jobs:
+  admit:
+    name: Admit current native Attempt
+    if: github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Require the exact protected-main native caller
+        id: identity
+        env:
+          WDV3_TARGET: ${{ inputs.target-sha }}
+          WDV3_SELECTED_REF: ${{ inputs.selected-ref }}
+          WDV3_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WDV3_WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          if ($env:GITHUB_REPOSITORY -ne 'hcoona/three' -or $env:GITHUB_ACTOR -ne 'hcoona') { throw 'Unaccepted native caller' }
+          if ($env:GITHUB_REF -ne 'refs/heads/main' -or $env:WDV3_SELECTED_REF -ne $env:GITHUB_REF) { throw 'Native caller must select main' }
+          if ($env:WDV3_TARGET -cnotmatch '^[0-9a-f]{40}$' -or $env:WDV3_TARGET -ne $env:GITHUB_SHA -or $env:WDV3_TARGET -ne $env:WDV3_WORKFLOW_SHA) { throw 'Native caller revision mismatch' }
+          if ($env:WDV3_WORKFLOW_REF -ne 'hcoona/three/.github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml@refs/heads/main') { throw 'Native caller workflow mismatch' }
+          'identity-admitted=true' | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ inputs.intent-id }},${{ inputs.repository-model-id }},${{ inputs.eligibility-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Bind freshly admitted native Attempt
+        env:
+          WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ inputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ inputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ inputs.intent-transport-digest }}
+          WDV3_ARG_REPOSITORY_MODEL: .wdv3/input/${{ inputs.repository-model-name }}
+          WDV3_ARG_REPOSITORY_MODEL_DIGEST: ${{ inputs.repository-model-digest }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID: ${{ inputs.repository-model-id }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST: ${{ inputs.repository-model-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_DECISION: .wdv3/input/${{ inputs.eligibility-name }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID: ${{ inputs.eligibility-id }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST: ${{ inputs.eligibility-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST: ${{ inputs.eligibility-digest }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'bind-live-attempt',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--repository-model',
+            $env:WDV3_ARG_REPOSITORY_MODEL,
+            '--repository-model-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_DIGEST,
+            '--repository-model-artifact-id',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID,
+            '--repository-model-artifact-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST,
+            '--live-eligibility-decision',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_DECISION,
+            '--live-eligibility-artifact-id',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID,
+            '--live-eligibility-artifact-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST,
+            '--live-eligibility-payload-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST,
+            '--output',
+            '.wdv3/attempt.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind attempt-binding payload identity
+        id: seal-attempt-binding
+        env:
+          WDV3_PAYLOAD: .wdv3/attempt.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-attempt-binding-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable attempt-binding
+        id: upload-attempt-binding
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-attempt-binding.outputs.name }}
+          path: ${{ steps.seal-attempt-binding.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      attempt-binding-name: ${{ steps.seal-attempt-binding.outputs.name }}
+      attempt-binding-digest: ${{ steps.seal-attempt-binding.outputs.digest }}
+      attempt-binding-id: ${{ steps.upload-attempt-binding.outputs.artifact-id }}
+      attempt-binding-transport-digest: ${{ steps.upload-attempt-binding.outputs.artifact-digest }}
+      attempt-binding-url: ${{ steps.upload-attempt-binding.outputs.artifact-url }}
+      identity-admitted: ${{ steps.identity.outputs.identity-admitted }}
+  plan-qualification:
+    name: Freeze native qualification inputs
+    if: github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    needs:
+      - admit
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids:
+            ${{ inputs.intent-id }},${{ inputs.repository-model-id }},${{ inputs.eligibility-id }},${{ needs.admit.outputs.attempt-binding-id
+            }},${{ inputs.provider-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Admit fresh current Attempt
+        env:
+          WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ inputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ inputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ inputs.intent-transport-digest }}
+          WDV3_ARG_REPOSITORY_MODEL: .wdv3/input/${{ inputs.repository-model-name }}
+          WDV3_ARG_REPOSITORY_MODEL_DIGEST: ${{ inputs.repository-model-digest }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID: ${{ inputs.repository-model-id }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST: ${{ inputs.repository-model-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_DECISION: .wdv3/input/${{ inputs.eligibility-name }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID: ${{ inputs.eligibility-id }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST: ${{ inputs.eligibility-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST: ${{ inputs.eligibility-digest }}
+          WDV3_ARG_ATTEMPT_BINDING: .wdv3/input/${{ needs.admit.outputs.attempt-binding-name }}
+          WDV3_ARG_ATTEMPT_BINDING_DIGEST: ${{ needs.admit.outputs.attempt-binding-digest }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID: ${{ needs.admit.outputs.attempt-binding-id }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST: ${{ needs.admit.outputs.attempt-binding-transport-digest }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'admit-live-attempt',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--repository-model',
+            $env:WDV3_ARG_REPOSITORY_MODEL,
+            '--repository-model-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_DIGEST,
+            '--repository-model-artifact-id',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID,
+            '--repository-model-artifact-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST,
+            '--live-eligibility-decision',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_DECISION,
+            '--live-eligibility-artifact-id',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID,
+            '--live-eligibility-artifact-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST,
+            '--live-eligibility-payload-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST,
+            '--attempt-binding',
+            $env:WDV3_ARG_ATTEMPT_BINDING,
+            '--attempt-binding-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_DIGEST,
+            '--attempt-binding-artifact-id',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID,
+            '--attempt-binding-artifact-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST,
+            '--admission-mode',
+            'current-freshness'
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Plan from admitted native facts
+        id: plan
+        env:
+          WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ inputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ inputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ inputs.intent-transport-digest }}
+          WDV3_ARG_REPOSITORY_MODEL: .wdv3/input/${{ inputs.repository-model-name }}
+          WDV3_ARG_REPOSITORY_MODEL_DIGEST: ${{ inputs.repository-model-digest }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID: ${{ inputs.repository-model-id }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST: ${{ inputs.repository-model-transport-digest }}
+          WDV3_ARG_ATTEMPT_BINDING: .wdv3/input/${{ needs.admit.outputs.attempt-binding-name }}
+          WDV3_ARG_ATTEMPT_BINDING_DIGEST: ${{ needs.admit.outputs.attempt-binding-digest }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID: ${{ needs.admit.outputs.attempt-binding-id }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST: ${{ needs.admit.outputs.attempt-binding-transport-digest }}
+          WDV3_ARG_PROVIDER_RESULT: .wdv3/input/${{ inputs.provider-name }}
+          WDV3_ARG_PROVIDER_ARTIFACT_ID: ${{ inputs.provider-id }}
+          WDV3_ARG_PROVIDER_ARTIFACT_DIGEST: ${{ inputs.provider-transport-digest }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'plan-qualification',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--repository-model',
+            $env:WDV3_ARG_REPOSITORY_MODEL,
+            '--repository-model-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_DIGEST,
+            '--repository-model-artifact-id',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID,
+            '--repository-model-artifact-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST,
+            '--attempt-binding',
+            $env:WDV3_ARG_ATTEMPT_BINDING,
+            '--attempt-binding-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_DIGEST,
+            '--attempt-binding-artifact-id',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID,
+            '--attempt-binding-artifact-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST,
+            '--provider-result',
+            $env:WDV3_ARG_PROVIDER_RESULT,
+            '--provider-artifact-id',
+            $env:WDV3_ARG_PROVIDER_ARTIFACT_ID,
+            '--provider-artifact-digest',
+            $env:WDV3_ARG_PROVIDER_ARTIFACT_DIGEST,
+            '--output',
+            '.wdv3/qualification.json',
+            '--package-witness-output',
+            '.wdv3/witness.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind qualification-snapshot payload identity
+        id: seal-qualification-snapshot
+        env:
+          WDV3_PAYLOAD: .wdv3/qualification.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-qualification-snapshot-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable qualification-snapshot
+        id: upload-qualification-snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-qualification-snapshot.outputs.name }}
+          path: ${{ steps.seal-qualification-snapshot.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Bind package-witness payload identity
+        id: seal-package-witness
+        env:
+          WDV3_PAYLOAD: .wdv3/witness.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-package-witness-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable package-witness
+        id: upload-package-witness
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-package-witness.outputs.name }}
+          path: ${{ steps.seal-package-witness.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      qualification-snapshot-name: ${{ steps.seal-qualification-snapshot.outputs.name }}
+      qualification-snapshot-digest: ${{ steps.seal-qualification-snapshot.outputs.digest }}
+      qualification-snapshot-id: ${{ steps.upload-qualification-snapshot.outputs.artifact-id }}
+      qualification-snapshot-transport-digest: ${{ steps.upload-qualification-snapshot.outputs.artifact-digest }}
+      qualification-snapshot-url: ${{ steps.upload-qualification-snapshot.outputs.artifact-url }}
+      package-witness-name: ${{ steps.seal-package-witness.outputs.name }}
+      package-witness-digest: ${{ steps.seal-package-witness.outputs.digest }}
+      package-witness-id: ${{ steps.upload-package-witness.outputs.artifact-id }}
+      package-witness-transport-digest: ${{ steps.upload-package-witness.outputs.artifact-digest }}
+      package-witness-url: ${{ steps.upload-package-witness.outputs.artifact-url }}
+      package-artifact-name: ${{ steps.plan.outputs.package-artifact-name }}
+  build-nuget-package:
+    name: Build the frozen original NuGet package
+    if: github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    needs:
+      - plan-qualification
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned .NET SDK and runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-id }},${{ needs.plan-qualification.outputs.package-witness-id
+            }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download trusted prebuilt helper by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ inputs.helper-id }}
+          path: .wdv3/helper-archive
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify and extract the trusted helper runtime
+        env:
+          WDV3_HELPER_ARCHIVE: .wdv3/helper-archive/${{ inputs.helper-name }}
+          WDV3_HELPER_DIGEST: ${{ inputs.helper-digest }}
+        run: |
+          $digest = 'sha256:' + (Get-FileHash -LiteralPath $env:WDV3_HELPER_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne $env:WDV3_HELPER_DIGEST) { throw 'Trusted helper digest mismatch' }
+          if (Test-Path -LiteralPath '.wdv3/helper') { throw 'Trusted helper destination already exists' }
+          Expand-Archive -LiteralPath $env:WDV3_HELPER_ARCHIVE -DestinationPath '.wdv3/helper'
+          foreach ($file in @('WorkflowDeliveryV3DotnetProvider.dll', 'WorkflowDeliveryV3DotnetProvider.deps.json', 'WorkflowDeliveryV3DotnetProvider.runtimeconfig.json')) {
+            if (-not (Test-Path -LiteralPath (Join-Path '.wdv3/helper' $file) -PathType Leaf)) { throw "Missing trusted helper runtime file: $file" }
+          }
+      - name: Build from frozen native projection
+        id: build
+        env:
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_PACKAGE_WITNESS: .wdv3/input/${{ needs.plan-qualification.outputs.package-witness-name }}
+          WDV3_ARG_PACKAGE_WITNESS_DIGEST: ${{ needs.plan-qualification.outputs.package-witness-digest }}
+          WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.package-witness-id }}
+          WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_DIGEST: ${{ needs.plan-qualification.outputs.package-witness-transport-digest }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'run-build',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--package-witness',
+            $env:WDV3_ARG_PACKAGE_WITNESS,
+            '--package-witness-digest',
+            $env:WDV3_ARG_PACKAGE_WITNESS_DIGEST,
+            '--package-witness-artifact-id',
+            $env:WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_ID,
+            '--package-witness-artifact-digest',
+            $env:WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_DIGEST,
+            '--helper-dll',
+            '.wdv3/helper/WorkflowDeliveryV3DotnetProvider.dll',
+            '--evidence-directory',
+            '.wdv3/build-evidence',
+            '--package-output',
+            '.wdv3/package.nupkg',
+            '--mechanical-output',
+            '.wdv3/mechanical.json',
+            '--failure-evidence-output',
+            '.wdv3/build-evidence.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind package payload identity
+        id: seal-package
+        env:
+          WDV3_PAYLOAD: .wdv3/package.nupkg
+          WDV3_FIXED_NAME: ${{ needs.plan-qualification.outputs.package-artifact-name }}
+        if: steps.build.outputs.build-status == 'satisfied'
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = $env:WDV3_FIXED_NAME
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable package
+        id: upload-package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-package.outputs.name }}
+          path: ${{ steps.seal-package.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+        if: steps.build.outputs.build-status == 'satisfied'
+      - name: Bind the uploaded original package
+        id: form-artifact
+        if: steps.build.outputs.build-status == 'satisfied'
+        env:
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_PACKAGE: .wdv3/upload/${{ steps.seal-package.outputs.name }}
+          WDV3_ARG_PACKAGE_ARTIFACT_ID: ${{ steps.upload-package.outputs.artifact-id }}
+          WDV3_ARG_PACKAGE_ARTIFACT_DIGEST: ${{ steps.upload-package.outputs.artifact-digest }}
+          WDV3_ARG_PACKAGE_ARTIFACT_URL: ${{ steps.upload-package.outputs.artifact-url }}
+          WDV3_ARG_PACKAGE_ARTIFACT_NAME: ${{ steps.seal-package.outputs.name }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'form-artifact',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--package',
+            $env:WDV3_ARG_PACKAGE,
+            '--package-artifact-id',
+            $env:WDV3_ARG_PACKAGE_ARTIFACT_ID,
+            '--package-artifact-digest',
+            $env:WDV3_ARG_PACKAGE_ARTIFACT_DIGEST,
+            '--package-artifact-url',
+            $env:WDV3_ARG_PACKAGE_ARTIFACT_URL,
+            '--package-artifact-name',
+            $env:WDV3_ARG_PACKAGE_ARTIFACT_NAME,
+            '--mechanical-result',
+            '.wdv3/mechanical.json',
+            '--artifact-output',
+            '.wdv3/artifact.json',
+            '--evidence-output',
+            '.wdv3/build-evidence.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind release-artifact payload identity
+        id: seal-release-artifact
+        env:
+          WDV3_PAYLOAD: .wdv3/artifact.json
+        if: steps.build.outputs.build-status == 'satisfied'
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-release-artifact-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable release-artifact
+        id: upload-release-artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-release-artifact.outputs.name }}
+          path: ${{ steps.seal-release-artifact.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+        if: steps.build.outputs.build-status == 'satisfied'
+      - name: Bind build-evidence payload identity
+        id: seal-build-evidence
+        env:
+          WDV3_PAYLOAD: .wdv3/build-evidence.json
+        if: always() && (steps.build.outputs.build-status == 'failed' || steps.form-artifact.outcome == 'success')
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-build-evidence-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable build-evidence
+        id: upload-build-evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-build-evidence.outputs.name }}
+          path: ${{ steps.seal-build-evidence.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+        if: always() && (steps.build.outputs.build-status == 'failed' || steps.form-artifact.outcome == 'success')
+    outputs:
+      package-name: ${{ steps.seal-package.outputs.name }}
+      package-digest: ${{ steps.seal-package.outputs.digest }}
+      package-id: ${{ steps.upload-package.outputs.artifact-id }}
+      package-transport-digest: ${{ steps.upload-package.outputs.artifact-digest }}
+      package-url: ${{ steps.upload-package.outputs.artifact-url }}
+      release-artifact-name: ${{ steps.seal-release-artifact.outputs.name }}
+      release-artifact-digest: ${{ steps.seal-release-artifact.outputs.digest }}
+      release-artifact-id: ${{ steps.upload-release-artifact.outputs.artifact-id }}
+      release-artifact-transport-digest: ${{ steps.upload-release-artifact.outputs.artifact-digest }}
+      release-artifact-url: ${{ steps.upload-release-artifact.outputs.artifact-url }}
+      build-evidence-name: ${{ steps.seal-build-evidence.outputs.name }}
+      build-evidence-digest: ${{ steps.seal-build-evidence.outputs.digest }}
+      build-evidence-id: ${{ steps.upload-build-evidence.outputs.artifact-id }}
+      build-evidence-transport-digest: ${{ steps.upload-build-evidence.outputs.artifact-digest }}
+      build-evidence-url: ${{ steps.upload-build-evidence.outputs.artifact-url }}
+  nuget-artifact-qualification:
+    name: Qualify native package contents and clean consumption
+    if: github.run_attempt == 1 && needs.build-nuget-package.outputs.release-artifact-id != ''
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    needs:
+      - plan-qualification
+      - build-nuget-package
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned .NET SDK and runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-id }},${{ needs.plan-qualification.outputs.package-witness-id
+            }},${{ needs.build-nuget-package.outputs.release-artifact-id }},${{ needs.build-nuget-package.outputs.package-id
+            }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download trusted prebuilt helper by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ inputs.helper-id }}
+          path: .wdv3/helper-archive
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify and extract the trusted helper runtime
+        env:
+          WDV3_HELPER_ARCHIVE: .wdv3/helper-archive/${{ inputs.helper-name }}
+          WDV3_HELPER_DIGEST: ${{ inputs.helper-digest }}
+        run: |
+          $digest = 'sha256:' + (Get-FileHash -LiteralPath $env:WDV3_HELPER_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne $env:WDV3_HELPER_DIGEST) { throw 'Trusted helper digest mismatch' }
+          if (Test-Path -LiteralPath '.wdv3/helper') { throw 'Trusted helper destination already exists' }
+          Expand-Archive -LiteralPath $env:WDV3_HELPER_ARCHIVE -DestinationPath '.wdv3/helper'
+          foreach ($file in @('WorkflowDeliveryV3DotnetProvider.dll', 'WorkflowDeliveryV3DotnetProvider.deps.json', 'WorkflowDeliveryV3DotnetProvider.runtimeconfig.json')) {
+            if (-not (Test-Path -LiteralPath (Join-Path '.wdv3/helper' $file) -PathType Leaf)) { throw "Missing trusted helper runtime file: $file" }
+          }
+      - name: Inspect the original package contents
+        id: contents
+        env:
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_PACKAGE_WITNESS: .wdv3/input/${{ needs.plan-qualification.outputs.package-witness-name }}
+          WDV3_ARG_PACKAGE_WITNESS_DIGEST: ${{ needs.plan-qualification.outputs.package-witness-digest }}
+          WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.package-witness-id }}
+          WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_DIGEST: ${{ needs.plan-qualification.outputs.package-witness-transport-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT: .wdv3/input/${{ needs.build-nuget-package.outputs.release-artifact-name }}
+          WDV3_ARG_RELEASE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.release-artifact-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST:
+            ${{ needs.build-nuget-package.outputs.release-artifact-transport-digest
+            }}
+          WDV3_ARG_PACKAGE: .wdv3/input/${{ needs.build-nuget-package.outputs.package-name }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'artifact-contents',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--package-witness',
+            $env:WDV3_ARG_PACKAGE_WITNESS,
+            '--package-witness-digest',
+            $env:WDV3_ARG_PACKAGE_WITNESS_DIGEST,
+            '--package-witness-artifact-id',
+            $env:WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_ID,
+            '--package-witness-artifact-digest',
+            $env:WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_DIGEST,
+            '--release-artifact',
+            $env:WDV3_ARG_RELEASE_ARTIFACT,
+            '--release-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_DIGEST,
+            '--release-artifact-artifact-id',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID,
+            '--release-artifact-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST,
+            '--package',
+            $env:WDV3_ARG_PACKAGE,
+            '--helper-dll',
+            '.wdv3/helper/WorkflowDeliveryV3DotnetProvider.dll',
+            '--output',
+            '.wdv3/contents-evidence.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind artifact-contents-evidence payload identity
+        id: seal-artifact-contents-evidence
+        env:
+          WDV3_PAYLOAD: .wdv3/contents-evidence.json
+        if: always() && steps.contents.outcome == 'success'
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-artifact-contents-evidence-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable artifact-contents-evidence
+        id: upload-artifact-contents-evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-artifact-contents-evidence.outputs.name }}
+          path: ${{ steps.seal-artifact-contents-evidence.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+        if: always() && steps.contents.outcome == 'success'
+      - name: Restore build and invoke from a fresh package cache
+        id: consumer
+        if: "!cancelled() && steps.contents.outcome == 'success'"
+        env:
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_PACKAGE_WITNESS: .wdv3/input/${{ needs.plan-qualification.outputs.package-witness-name }}
+          WDV3_ARG_PACKAGE_WITNESS_DIGEST: ${{ needs.plan-qualification.outputs.package-witness-digest }}
+          WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.package-witness-id }}
+          WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_DIGEST: ${{ needs.plan-qualification.outputs.package-witness-transport-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT: .wdv3/input/${{ needs.build-nuget-package.outputs.release-artifact-name }}
+          WDV3_ARG_RELEASE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.release-artifact-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST:
+            ${{ needs.build-nuget-package.outputs.release-artifact-transport-digest
+            }}
+          WDV3_ARG_PACKAGE: .wdv3/input/${{ needs.build-nuget-package.outputs.package-name }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'restore-build-invoke',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--package-witness',
+            $env:WDV3_ARG_PACKAGE_WITNESS,
+            '--package-witness-digest',
+            $env:WDV3_ARG_PACKAGE_WITNESS_DIGEST,
+            '--package-witness-artifact-id',
+            $env:WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_ID,
+            '--package-witness-artifact-digest',
+            $env:WDV3_ARG_PACKAGE_WITNESS_ARTIFACT_DIGEST,
+            '--release-artifact',
+            $env:WDV3_ARG_RELEASE_ARTIFACT,
+            '--release-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_DIGEST,
+            '--release-artifact-artifact-id',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID,
+            '--release-artifact-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST,
+            '--package',
+            $env:WDV3_ARG_PACKAGE,
+            '--helper-dll',
+            '.wdv3/helper/WorkflowDeliveryV3DotnetProvider.dll',
+            '--evidence-directory',
+            '.wdv3/consumer-evidence',
+            '--output',
+            '.wdv3/consumer-evidence.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind consumer-evidence payload identity
+        id: seal-consumer-evidence
+        env:
+          WDV3_PAYLOAD: .wdv3/consumer-evidence.json
+        if: always() && steps.consumer.outcome == 'success'
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-consumer-evidence-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable consumer-evidence
+        id: upload-consumer-evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-consumer-evidence.outputs.name }}
+          path: ${{ steps.seal-consumer-evidence.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+        if: always() && steps.consumer.outcome == 'success'
+    outputs:
+      artifact-contents-evidence-name: ${{ steps.seal-artifact-contents-evidence.outputs.name }}
+      artifact-contents-evidence-digest: ${{ steps.seal-artifact-contents-evidence.outputs.digest }}
+      artifact-contents-evidence-id: ${{ steps.upload-artifact-contents-evidence.outputs.artifact-id }}
+      artifact-contents-evidence-transport-digest: ${{ steps.upload-artifact-contents-evidence.outputs.artifact-digest }}
+      artifact-contents-evidence-url: ${{ steps.upload-artifact-contents-evidence.outputs.artifact-url }}
+      consumer-evidence-name: ${{ steps.seal-consumer-evidence.outputs.name }}
+      consumer-evidence-digest: ${{ steps.seal-consumer-evidence.outputs.digest }}
+      consumer-evidence-id: ${{ steps.upload-consumer-evidence.outputs.artifact-id }}
+      consumer-evidence-transport-digest: ${{ steps.upload-consumer-evidence.outputs.artifact-digest }}
+      consumer-evidence-url: ${{ steps.upload-consumer-evidence.outputs.artifact-url }}
+  qualification-finalizer:
+    name: Finalize native Qualification
+    if: always() && github.run_attempt == 1 && needs.admit.outputs.identity-admitted == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    needs:
+      - admit
+      - plan-qualification
+      - build-nuget-package
+      - nuget-artifact-qualification
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download available build-evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.build-nuget-package.outputs.build-evidence-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.build-nuget-package.outputs.build-evidence-id != ''
+      - name: Download available artifact-contents-evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-id != ''
+      - name: Download available consumer-evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.nuget-artifact-qualification.outputs.consumer-evidence-id != ''
+      - name: Download available release-artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.build-nuget-package.outputs.release-artifact-id != ''
+      - name: Admit available Evidence and finalize Qualification
+        id: finalize
+        if: success() || cancelled()
+        env:
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_BUILD_EVIDENCE_OPTIONAL_ID: ${{ needs.build-nuget-package.outputs.build-evidence-id }}
+          WDV3_ARG_BUILD_EVIDENCE: .wdv3/input/${{ needs.build-nuget-package.outputs.build-evidence-name }}
+          WDV3_ARG_BUILD_EVIDENCE_DIGEST: ${{ needs.build-nuget-package.outputs.build-evidence-digest }}
+          WDV3_ARG_BUILD_EVIDENCE_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.build-evidence-id }}
+          WDV3_ARG_BUILD_EVIDENCE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.build-evidence-transport-digest }}
+          WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_OPTIONAL_ID:
+            ${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-id
+            }}
+          WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE:
+            .wdv3/input/${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-name
+            }}
+          WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_DIGEST:
+            ${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-digest
+            }}
+          WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_ARTIFACT_ID:
+            ${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-id
+            }}
+          WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_ARTIFACT_DIGEST:
+            ${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-transport-digest
+            }}
+          WDV3_ARG_CONSUMER_EVIDENCE_OPTIONAL_ID: ${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-id }}
+          WDV3_ARG_CONSUMER_EVIDENCE: .wdv3/input/${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-name }}
+          WDV3_ARG_CONSUMER_EVIDENCE_DIGEST: ${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-digest }}
+          WDV3_ARG_CONSUMER_EVIDENCE_ARTIFACT_ID: ${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-id }}
+          WDV3_ARG_CONSUMER_EVIDENCE_ARTIFACT_DIGEST:
+            ${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-transport-digest
+            }}
+          WDV3_ARG_RELEASE_ARTIFACT_OPTIONAL_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT: .wdv3/input/${{ needs.build-nuget-package.outputs.release-artifact-name }}
+          WDV3_ARG_RELEASE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.release-artifact-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST:
+            ${{ needs.build-nuget-package.outputs.release-artifact-transport-digest
+            }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'finalize-qualification',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--output',
+            '.wdv3/decision.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          if ($env:WDV3_ARG_BUILD_EVIDENCE_OPTIONAL_ID) {
+            $arguments += @('--build-evidence', $env:WDV3_ARG_BUILD_EVIDENCE, '--build-evidence-digest', $env:WDV3_ARG_BUILD_EVIDENCE_DIGEST, '--build-evidence-artifact-id', $env:WDV3_ARG_BUILD_EVIDENCE_ARTIFACT_ID, '--build-evidence-artifact-digest', $env:WDV3_ARG_BUILD_EVIDENCE_ARTIFACT_DIGEST)
+          }
+          if ($env:WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_OPTIONAL_ID) {
+            $arguments += @('--artifact-contents-evidence', $env:WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE, '--artifact-contents-evidence-digest', $env:WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_DIGEST, '--artifact-contents-evidence-artifact-id', $env:WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_ARTIFACT_ID, '--artifact-contents-evidence-artifact-digest', $env:WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_ARTIFACT_DIGEST)
+          }
+          if ($env:WDV3_ARG_CONSUMER_EVIDENCE_OPTIONAL_ID) {
+            $arguments += @('--consumer-evidence', $env:WDV3_ARG_CONSUMER_EVIDENCE, '--consumer-evidence-digest', $env:WDV3_ARG_CONSUMER_EVIDENCE_DIGEST, '--consumer-evidence-artifact-id', $env:WDV3_ARG_CONSUMER_EVIDENCE_ARTIFACT_ID, '--consumer-evidence-artifact-digest', $env:WDV3_ARG_CONSUMER_EVIDENCE_ARTIFACT_DIGEST)
+          }
+          if ($env:WDV3_ARG_RELEASE_ARTIFACT_OPTIONAL_ID) {
+            $arguments += @('--release-artifact', $env:WDV3_ARG_RELEASE_ARTIFACT, '--release-artifact-digest', $env:WDV3_ARG_RELEASE_ARTIFACT_DIGEST, '--release-artifact-artifact-id', $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID, '--release-artifact-artifact-digest', $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST)
+          }
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind qualification-decision payload identity
+        id: seal-qualification-decision
+        env:
+          WDV3_PAYLOAD: .wdv3/decision.json
+        if: always() && steps.finalize.outcome == 'success'
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-qualification-decision-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable qualification-decision
+        id: upload-qualification-decision
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-qualification-decision.outputs.name }}
+          path: ${{ steps.seal-qualification-decision.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+        if: always() && steps.finalize.outcome == 'success'
+    outputs:
+      qualification-decision-name: ${{ steps.seal-qualification-decision.outputs.name }}
+      qualification-decision-digest: ${{ steps.seal-qualification-decision.outputs.digest }}
+      qualification-decision-id: ${{ steps.upload-qualification-decision.outputs.artifact-id }}
+      qualification-decision-transport-digest: ${{ steps.upload-qualification-decision.outputs.artifact-digest }}
+      qualification-decision-url: ${{ steps.upload-qualification-decision.outputs.artifact-url }}
+      qualification-result: ${{ steps.finalize.outputs.qualification-result }}
+  observe-github-packages:
+    name: Observe native destination under admitted authority
+    if: github.run_attempt == 1 && needs.qualification-finalizer.outputs.qualification-result == 'success'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    needs:
+      - admit
+      - plan-qualification
+      - build-nuget-package
+      - qualification-finalizer
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned .NET SDK and runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids:
+            ${{ inputs.intent-id }},${{ inputs.repository-model-id }},${{ inputs.eligibility-id }},${{ needs.admit.outputs.attempt-binding-id
+            }},${{ needs.plan-qualification.outputs.qualification-snapshot-id }},${{ needs.qualification-finalizer.outputs.qualification-decision-id
+            }},${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download trusted prebuilt helper by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ inputs.helper-id }}
+          path: .wdv3/helper-archive
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify and extract the trusted helper runtime
+        env:
+          WDV3_HELPER_ARCHIVE: .wdv3/helper-archive/${{ inputs.helper-name }}
+          WDV3_HELPER_DIGEST: ${{ inputs.helper-digest }}
+        run: |
+          $digest = 'sha256:' + (Get-FileHash -LiteralPath $env:WDV3_HELPER_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne $env:WDV3_HELPER_DIGEST) { throw 'Trusted helper digest mismatch' }
+          if (Test-Path -LiteralPath '.wdv3/helper') { throw 'Trusted helper destination already exists' }
+          Expand-Archive -LiteralPath $env:WDV3_HELPER_ARCHIVE -DestinationPath '.wdv3/helper'
+          foreach ($file in @('WorkflowDeliveryV3DotnetProvider.dll', 'WorkflowDeliveryV3DotnetProvider.deps.json', 'WorkflowDeliveryV3DotnetProvider.runtimeconfig.json')) {
+            if (-not (Test-Path -LiteralPath (Join-Path '.wdv3/helper' $file) -PathType Leaf)) { throw "Missing trusted helper runtime file: $file" }
+          }
+      - name: Read supported active NuGet state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ inputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ inputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ inputs.intent-transport-digest }}
+          WDV3_ARG_REPOSITORY_MODEL: .wdv3/input/${{ inputs.repository-model-name }}
+          WDV3_ARG_REPOSITORY_MODEL_DIGEST: ${{ inputs.repository-model-digest }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID: ${{ inputs.repository-model-id }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST: ${{ inputs.repository-model-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_DECISION: .wdv3/input/${{ inputs.eligibility-name }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID: ${{ inputs.eligibility-id }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST: ${{ inputs.eligibility-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST: ${{ inputs.eligibility-digest }}
+          WDV3_ARG_ATTEMPT_BINDING: .wdv3/input/${{ needs.admit.outputs.attempt-binding-name }}
+          WDV3_ARG_ATTEMPT_BINDING_DIGEST: ${{ needs.admit.outputs.attempt-binding-digest }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID: ${{ needs.admit.outputs.attempt-binding-id }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST: ${{ needs.admit.outputs.attempt-binding-transport-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION:
+            .wdv3/input/${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_DIGEST: ${{ needs.qualification-finalizer.outputs.qualification-decision-digest }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID: ${{ needs.qualification-finalizer.outputs.qualification-decision-id }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-url
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_RELEASE_ARTIFACT: .wdv3/input/${{ needs.build-nuget-package.outputs.release-artifact-name }}
+          WDV3_ARG_RELEASE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.release-artifact-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST:
+            ${{ needs.build-nuget-package.outputs.release-artifact-transport-digest
+            }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'observe-github-packages',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--repository-model',
+            $env:WDV3_ARG_REPOSITORY_MODEL,
+            '--repository-model-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_DIGEST,
+            '--repository-model-artifact-id',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID,
+            '--repository-model-artifact-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST,
+            '--live-eligibility-decision',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_DECISION,
+            '--live-eligibility-artifact-id',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID,
+            '--live-eligibility-artifact-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST,
+            '--live-eligibility-payload-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST,
+            '--attempt-binding',
+            $env:WDV3_ARG_ATTEMPT_BINDING,
+            '--attempt-binding-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_DIGEST,
+            '--attempt-binding-artifact-id',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID,
+            '--attempt-binding-artifact-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--qualification-decision',
+            $env:WDV3_ARG_QUALIFICATION_DECISION,
+            '--qualification-decision-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_DIGEST,
+            '--qualification-decision-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID,
+            '--qualification-decision-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST,
+            '--qualification-decision-artifact-url',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL,
+            '--qualification-decision-payload-path',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH,
+            '--release-artifact',
+            $env:WDV3_ARG_RELEASE_ARTIFACT,
+            '--release-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_DIGEST,
+            '--release-artifact-artifact-id',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID,
+            '--release-artifact-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST,
+            '--helper-dll',
+            '.wdv3/helper/WorkflowDeliveryV3DotnetProvider.dll',
+            '--output',
+            '.wdv3/observation.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT,
+            '--github-token',
+            $env:GITHUB_TOKEN
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind observation payload identity
+        id: seal-observation
+        env:
+          WDV3_PAYLOAD: .wdv3/observation.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-observation-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable observation
+        id: upload-observation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-observation.outputs.name }}
+          path: ${{ steps.seal-observation.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      observation-name: ${{ steps.seal-observation.outputs.name }}
+      observation-digest: ${{ steps.seal-observation.outputs.digest }}
+      observation-id: ${{ steps.upload-observation.outputs.artifact-id }}
+      observation-transport-digest: ${{ steps.upload-observation.outputs.artifact-digest }}
+      observation-url: ${{ steps.upload-observation.outputs.artifact-url }}
+  materialize-publication:
+    name: Materialize zero or one native publication action
+    if: github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    needs:
+      - admit
+      - plan-qualification
+      - build-nuget-package
+      - qualification-finalizer
+      - observe-github-packages
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids:
+            ${{ inputs.intent-id }},${{ inputs.repository-model-id }},${{ inputs.eligibility-id }},${{ needs.admit.outputs.attempt-binding-id
+            }},${{ needs.plan-qualification.outputs.qualification-snapshot-id }},${{ needs.qualification-finalizer.outputs.qualification-decision-id
+            }},${{ needs.build-nuget-package.outputs.release-artifact-id }},${{ needs.observe-github-packages.outputs.observation-id
+            }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Materialize the current native publication basis
+        id: materialize
+        env:
+          WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ inputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ inputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ inputs.intent-transport-digest }}
+          WDV3_ARG_REPOSITORY_MODEL: .wdv3/input/${{ inputs.repository-model-name }}
+          WDV3_ARG_REPOSITORY_MODEL_DIGEST: ${{ inputs.repository-model-digest }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID: ${{ inputs.repository-model-id }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST: ${{ inputs.repository-model-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_DECISION: .wdv3/input/${{ inputs.eligibility-name }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID: ${{ inputs.eligibility-id }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST: ${{ inputs.eligibility-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST: ${{ inputs.eligibility-digest }}
+          WDV3_ARG_ATTEMPT_BINDING: .wdv3/input/${{ needs.admit.outputs.attempt-binding-name }}
+          WDV3_ARG_ATTEMPT_BINDING_DIGEST: ${{ needs.admit.outputs.attempt-binding-digest }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID: ${{ needs.admit.outputs.attempt-binding-id }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST: ${{ needs.admit.outputs.attempt-binding-transport-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION:
+            .wdv3/input/${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_DIGEST: ${{ needs.qualification-finalizer.outputs.qualification-decision-digest }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID: ${{ needs.qualification-finalizer.outputs.qualification-decision-id }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-url
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_RELEASE_ARTIFACT: .wdv3/input/${{ needs.build-nuget-package.outputs.release-artifact-name }}
+          WDV3_ARG_RELEASE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.release-artifact-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST:
+            ${{ needs.build-nuget-package.outputs.release-artifact-transport-digest
+            }}
+          WDV3_ARG_OBSERVATION: .wdv3/input/${{ needs.observe-github-packages.outputs.observation-name }}
+          WDV3_ARG_OBSERVATION_DIGEST: ${{ needs.observe-github-packages.outputs.observation-digest }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_ID: ${{ needs.observe-github-packages.outputs.observation-id }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST: ${{ needs.observe-github-packages.outputs.observation-transport-digest }}
+          WDV3_ARG_SELECTED_REF: ${{ inputs.selected-ref }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'materialize-publication',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--repository-model',
+            $env:WDV3_ARG_REPOSITORY_MODEL,
+            '--repository-model-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_DIGEST,
+            '--repository-model-artifact-id',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID,
+            '--repository-model-artifact-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST,
+            '--live-eligibility-decision',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_DECISION,
+            '--live-eligibility-artifact-id',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID,
+            '--live-eligibility-artifact-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST,
+            '--live-eligibility-payload-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST,
+            '--attempt-binding',
+            $env:WDV3_ARG_ATTEMPT_BINDING,
+            '--attempt-binding-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_DIGEST,
+            '--attempt-binding-artifact-id',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID,
+            '--attempt-binding-artifact-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--qualification-decision',
+            $env:WDV3_ARG_QUALIFICATION_DECISION,
+            '--qualification-decision-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_DIGEST,
+            '--qualification-decision-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID,
+            '--qualification-decision-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST,
+            '--qualification-decision-artifact-url',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL,
+            '--qualification-decision-payload-path',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH,
+            '--release-artifact',
+            $env:WDV3_ARG_RELEASE_ARTIFACT,
+            '--release-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_DIGEST,
+            '--release-artifact-artifact-id',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID,
+            '--release-artifact-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST,
+            '--observation',
+            $env:WDV3_ARG_OBSERVATION,
+            '--observation-digest',
+            $env:WDV3_ARG_OBSERVATION_DIGEST,
+            '--observation-artifact-id',
+            $env:WDV3_ARG_OBSERVATION_ARTIFACT_ID,
+            '--observation-artifact-digest',
+            $env:WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST,
+            '--selected-ref',
+            $env:WDV3_ARG_SELECTED_REF,
+            '--output',
+            '.wdv3/publication.json',
+            '--summary-output',
+            '.wdv3/reviewer-summary.md',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind publication-snapshot payload identity
+        id: seal-publication-snapshot
+        env:
+          WDV3_PAYLOAD: .wdv3/publication.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-publication-snapshot-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable publication-snapshot
+        id: upload-publication-snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-publication-snapshot.outputs.name }}
+          path: ${{ steps.seal-publication-snapshot.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Bind reviewer-summary payload identity
+        id: seal-reviewer-summary
+        env:
+          WDV3_PAYLOAD: .wdv3/reviewer-summary.md
+        if: steps.materialize.outputs.publish-required == 'true'
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = 'reviewer-summary.md'
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable reviewer-summary
+        id: upload-reviewer-summary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-reviewer-summary.outputs.name }}
+          path: ${{ steps.seal-reviewer-summary.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+        if: steps.materialize.outputs.publish-required == 'true'
+      - name: Form the current action-bound Approval Bundle
+        if: steps.materialize.outputs.publish-required == 'true'
+        env:
+          WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ inputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ inputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ inputs.intent-transport-digest }}
+          WDV3_ARG_ATTEMPT_BINDING: .wdv3/input/${{ needs.admit.outputs.attempt-binding-name }}
+          WDV3_ARG_ATTEMPT_BINDING_DIGEST: ${{ needs.admit.outputs.attempt-binding-digest }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID: ${{ needs.admit.outputs.attempt-binding-id }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST: ${{ needs.admit.outputs.attempt-binding-transport-digest }}
+          WDV3_ARG_QUALIFICATION_DECISION:
+            .wdv3/input/${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_DIGEST: ${{ needs.qualification-finalizer.outputs.qualification-decision-digest }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID: ${{ needs.qualification-finalizer.outputs.qualification-decision-id }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-transport-digest
+            }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT: .wdv3/upload/${{ steps.seal-publication-snapshot.outputs.name }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST: ${{ steps.seal-publication-snapshot.outputs.digest }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID: ${{ steps.upload-publication-snapshot.outputs.artifact-id }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST: ${{ steps.upload-publication-snapshot.outputs.artifact-digest }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL: ${{ steps.upload-publication-snapshot.outputs.artifact-url }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH: ${{ steps.seal-publication-snapshot.outputs.name }}
+          WDV3_ARG_REVIEWER_SUMMARY: .wdv3/upload/${{ steps.seal-reviewer-summary.outputs.name }}
+          WDV3_ARG_REVIEWER_SUMMARY_DIGEST: ${{ steps.seal-reviewer-summary.outputs.digest }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_ID: ${{ steps.upload-reviewer-summary.outputs.artifact-id }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_DIGEST: ${{ steps.upload-reviewer-summary.outputs.artifact-digest }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_URL: ${{ steps.upload-reviewer-summary.outputs.artifact-url }}
+          WDV3_ARG_REVIEWER_SUMMARY_PAYLOAD_PATH: ${{ steps.seal-reviewer-summary.outputs.name }}
+          WDV3_ARG_CONTROL: workflow-delivery-v3:${{ github.sha }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'form-approval-bundle',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--attempt-binding',
+            $env:WDV3_ARG_ATTEMPT_BINDING,
+            '--attempt-binding-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_DIGEST,
+            '--attempt-binding-artifact-id',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID,
+            '--attempt-binding-artifact-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST,
+            '--qualification-decision',
+            $env:WDV3_ARG_QUALIFICATION_DECISION,
+            '--qualification-decision-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_DIGEST,
+            '--qualification-decision-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID,
+            '--qualification-decision-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST,
+            '--publication-snapshot',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT,
+            '--publication-snapshot-digest',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST,
+            '--publication-snapshot-artifact-id',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID,
+            '--publication-snapshot-artifact-digest',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--publication-snapshot-artifact-url',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL,
+            '--publication-snapshot-payload-path',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH,
+            '--reviewer-summary',
+            $env:WDV3_ARG_REVIEWER_SUMMARY,
+            '--reviewer-summary-digest',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_DIGEST,
+            '--reviewer-summary-artifact-id',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_ID,
+            '--reviewer-summary-artifact-digest',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_DIGEST,
+            '--reviewer-summary-artifact-url',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_URL,
+            '--reviewer-summary-payload-path',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_PAYLOAD_PATH,
+            '--control',
+            $env:WDV3_ARG_CONTROL,
+            '--output',
+            '.wdv3/bundle.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind approval-bundle payload identity
+        id: seal-approval-bundle
+        env:
+          WDV3_PAYLOAD: .wdv3/bundle.json
+        if: steps.materialize.outputs.publish-required == 'true'
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-approval-bundle-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable approval-bundle
+        id: upload-approval-bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-approval-bundle.outputs.name }}
+          path: ${{ steps.seal-approval-bundle.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+        if: steps.materialize.outputs.publish-required == 'true'
+    outputs:
+      publication-snapshot-name: ${{ steps.seal-publication-snapshot.outputs.name }}
+      publication-snapshot-digest: ${{ steps.seal-publication-snapshot.outputs.digest }}
+      publication-snapshot-id: ${{ steps.upload-publication-snapshot.outputs.artifact-id }}
+      publication-snapshot-transport-digest: ${{ steps.upload-publication-snapshot.outputs.artifact-digest }}
+      publication-snapshot-url: ${{ steps.upload-publication-snapshot.outputs.artifact-url }}
+      reviewer-summary-name: ${{ steps.seal-reviewer-summary.outputs.name }}
+      reviewer-summary-digest: ${{ steps.seal-reviewer-summary.outputs.digest }}
+      reviewer-summary-id: ${{ steps.upload-reviewer-summary.outputs.artifact-id }}
+      reviewer-summary-transport-digest: ${{ steps.upload-reviewer-summary.outputs.artifact-digest }}
+      reviewer-summary-url: ${{ steps.upload-reviewer-summary.outputs.artifact-url }}
+      approval-bundle-name: ${{ steps.seal-approval-bundle.outputs.name }}
+      approval-bundle-digest: ${{ steps.seal-approval-bundle.outputs.digest }}
+      approval-bundle-id: ${{ steps.upload-approval-bundle.outputs.artifact-id }}
+      approval-bundle-transport-digest: ${{ steps.upload-approval-bundle.outputs.artifact-digest }}
+      approval-bundle-url: ${{ steps.upload-approval-bundle.outputs.artifact-url }}
+      publish-required: ${{ steps.materialize.outputs.publish-required }}
+      resource-concurrency-key: ${{ steps.materialize.outputs.resource-concurrency-key }}
+  approve-publication:
+    name: Approve the current native publication
+    if: github.run_attempt == 1 && needs.materialize-publication.outputs.publish-required == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    needs:
+      - admit
+      - plan-qualification
+      - build-nuget-package
+      - qualification-finalizer
+      - observe-github-packages
+      - materialize-publication
+    steps:
+      - name: Verify the existing Approval Environment marker
+        id: approval-marker
+        env:
+          WDV3_ACTUAL_APPROVAL_MARKER: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
+        run: |
+          if ($env:WDV3_ACTUAL_APPROVAL_MARKER -cne 'workflow-delivery-v3-buddy-approval/v1') { throw 'Approval Environment marker mismatch' }
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids:
+            ${{ inputs.intent-id }},${{ inputs.repository-model-id }},${{ inputs.eligibility-id }},${{ needs.admit.outputs.attempt-binding-id
+            }},${{ needs.plan-qualification.outputs.qualification-snapshot-id }},${{ needs.qualification-finalizer.outputs.qualification-decision-id
+            }},${{ needs.build-nuget-package.outputs.release-artifact-id }},${{ needs.observe-github-packages.outputs.observation-id
+            }},${{ needs.materialize-publication.outputs.publication-snapshot-id }},${{ needs.materialize-publication.outputs.reviewer-summary-id
+            }},${{ needs.materialize-publication.outputs.approval-bundle-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Form current action-bound Publication Authorization
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ inputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ inputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ inputs.intent-transport-digest }}
+          WDV3_ARG_REPOSITORY_MODEL: .wdv3/input/${{ inputs.repository-model-name }}
+          WDV3_ARG_REPOSITORY_MODEL_DIGEST: ${{ inputs.repository-model-digest }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID: ${{ inputs.repository-model-id }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST: ${{ inputs.repository-model-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_DECISION: .wdv3/input/${{ inputs.eligibility-name }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID: ${{ inputs.eligibility-id }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST: ${{ inputs.eligibility-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST: ${{ inputs.eligibility-digest }}
+          WDV3_ARG_ATTEMPT_BINDING: .wdv3/input/${{ needs.admit.outputs.attempt-binding-name }}
+          WDV3_ARG_ATTEMPT_BINDING_DIGEST: ${{ needs.admit.outputs.attempt-binding-digest }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID: ${{ needs.admit.outputs.attempt-binding-id }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST: ${{ needs.admit.outputs.attempt-binding-transport-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION:
+            .wdv3/input/${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_DIGEST: ${{ needs.qualification-finalizer.outputs.qualification-decision-digest }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID: ${{ needs.qualification-finalizer.outputs.qualification-decision-id }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-url
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_RELEASE_ARTIFACT: .wdv3/input/${{ needs.build-nuget-package.outputs.release-artifact-name }}
+          WDV3_ARG_RELEASE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.release-artifact-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST:
+            ${{ needs.build-nuget-package.outputs.release-artifact-transport-digest
+            }}
+          WDV3_ARG_OBSERVATION: .wdv3/input/${{ needs.observe-github-packages.outputs.observation-name }}
+          WDV3_ARG_OBSERVATION_DIGEST: ${{ needs.observe-github-packages.outputs.observation-digest }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_ID: ${{ needs.observe-github-packages.outputs.observation-id }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST: ${{ needs.observe-github-packages.outputs.observation-transport-digest }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT: .wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-name }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST: ${{ needs.materialize-publication.outputs.publication-snapshot-digest }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.publication-snapshot-id }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.publication-snapshot-transport-digest
+            }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.publication-snapshot-url }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.publication-snapshot-name }}
+          WDV3_ARG_REVIEWER_SUMMARY: .wdv3/input/${{ needs.materialize-publication.outputs.reviewer-summary-name }}
+          WDV3_ARG_REVIEWER_SUMMARY_DIGEST: ${{ needs.materialize-publication.outputs.reviewer-summary-digest }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.reviewer-summary-id }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.reviewer-summary-transport-digest
+            }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.reviewer-summary-url }}
+          WDV3_ARG_REVIEWER_SUMMARY_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.reviewer-summary-name }}
+          WDV3_ARG_APPROVAL_BUNDLE: .wdv3/input/${{ needs.materialize-publication.outputs.approval-bundle-name }}
+          WDV3_ARG_APPROVAL_BUNDLE_DIGEST: ${{ needs.materialize-publication.outputs.approval-bundle-digest }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.approval-bundle-id }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.approval-bundle-transport-digest
+            }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.approval-bundle-url }}
+          WDV3_ARG_APPROVAL_BUNDLE_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.approval-bundle-name }}
+          WDV3_ARG_CONTROL: workflow-delivery-v3:${{ github.sha }}
+          WDV3_ARG_APPROVAL_BOUNDARY_SENTINEL_RESULT: ${{ steps.approval-marker.outcome }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'form-publication-authorization',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--repository-model',
+            $env:WDV3_ARG_REPOSITORY_MODEL,
+            '--repository-model-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_DIGEST,
+            '--repository-model-artifact-id',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID,
+            '--repository-model-artifact-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST,
+            '--live-eligibility-decision',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_DECISION,
+            '--live-eligibility-artifact-id',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID,
+            '--live-eligibility-artifact-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST,
+            '--live-eligibility-payload-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST,
+            '--attempt-binding',
+            $env:WDV3_ARG_ATTEMPT_BINDING,
+            '--attempt-binding-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_DIGEST,
+            '--attempt-binding-artifact-id',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID,
+            '--attempt-binding-artifact-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--qualification-decision',
+            $env:WDV3_ARG_QUALIFICATION_DECISION,
+            '--qualification-decision-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_DIGEST,
+            '--qualification-decision-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID,
+            '--qualification-decision-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST,
+            '--qualification-decision-artifact-url',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL,
+            '--qualification-decision-payload-path',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH,
+            '--release-artifact',
+            $env:WDV3_ARG_RELEASE_ARTIFACT,
+            '--release-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_DIGEST,
+            '--release-artifact-artifact-id',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID,
+            '--release-artifact-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST,
+            '--observation',
+            $env:WDV3_ARG_OBSERVATION,
+            '--observation-digest',
+            $env:WDV3_ARG_OBSERVATION_DIGEST,
+            '--observation-artifact-id',
+            $env:WDV3_ARG_OBSERVATION_ARTIFACT_ID,
+            '--observation-artifact-digest',
+            $env:WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST,
+            '--publication-snapshot',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT,
+            '--publication-snapshot-digest',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST,
+            '--publication-snapshot-artifact-id',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID,
+            '--publication-snapshot-artifact-digest',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--publication-snapshot-artifact-url',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL,
+            '--publication-snapshot-payload-path',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH,
+            '--reviewer-summary',
+            $env:WDV3_ARG_REVIEWER_SUMMARY,
+            '--reviewer-summary-digest',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_DIGEST,
+            '--reviewer-summary-artifact-id',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_ID,
+            '--reviewer-summary-artifact-digest',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_DIGEST,
+            '--reviewer-summary-artifact-url',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_URL,
+            '--reviewer-summary-payload-path',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_PAYLOAD_PATH,
+            '--approval-bundle',
+            $env:WDV3_ARG_APPROVAL_BUNDLE,
+            '--approval-bundle-digest',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_DIGEST,
+            '--approval-bundle-artifact-id',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_ID,
+            '--approval-bundle-artifact-digest',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_DIGEST,
+            '--approval-bundle-artifact-url',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_URL,
+            '--approval-bundle-payload-path',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_PAYLOAD_PATH,
+            '--control',
+            $env:WDV3_ARG_CONTROL,
+            '--approval-boundary-sentinel-result',
+            $env:WDV3_ARG_APPROVAL_BOUNDARY_SENTINEL_RESULT,
+            '--output',
+            '.wdv3/authorization.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT,
+            '--github-token',
+            $env:GITHUB_TOKEN
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind publication-authorization payload identity
+        id: seal-publication-authorization
+        env:
+          WDV3_PAYLOAD: .wdv3/authorization.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-publication-authorization-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable publication-authorization
+        id: upload-publication-authorization
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-publication-authorization.outputs.name }}
+          path: ${{ steps.seal-publication-authorization.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    environment:
+      name: workflow-delivery-v3-buddy-approval
+      url: ${{ needs.materialize-publication.outputs.reviewer-summary-url }}
+    outputs:
+      publication-authorization-name: ${{ steps.seal-publication-authorization.outputs.name }}
+      publication-authorization-digest: ${{ steps.seal-publication-authorization.outputs.digest }}
+      publication-authorization-id: ${{ steps.upload-publication-authorization.outputs.artifact-id }}
+      publication-authorization-transport-digest: ${{ steps.upload-publication-authorization.outputs.artifact-digest }}
+      publication-authorization-url: ${{ steps.upload-publication-authorization.outputs.artifact-url }}
+  publish-github-packages:
+    name: Publish the exact authorized original NuGet archive
+    if: success() && github.run_attempt == 1 && needs.approve-publication.result == 'success'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    needs:
+      - admit
+      - plan-qualification
+      - build-nuget-package
+      - qualification-finalizer
+      - observe-github-packages
+      - materialize-publication
+      - approve-publication
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned .NET SDK and runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids:
+            ${{ inputs.intent-id }},${{ inputs.repository-model-id }},${{ inputs.eligibility-id }},${{ needs.admit.outputs.attempt-binding-id
+            }},${{ needs.plan-qualification.outputs.qualification-snapshot-id }},${{ needs.qualification-finalizer.outputs.qualification-decision-id
+            }},${{ needs.build-nuget-package.outputs.release-artifact-id }},${{ needs.observe-github-packages.outputs.observation-id
+            }},${{ needs.materialize-publication.outputs.publication-snapshot-id }},${{ needs.materialize-publication.outputs.reviewer-summary-id
+            }},${{ needs.materialize-publication.outputs.approval-bundle-id }},${{ needs.approve-publication.outputs.publication-authorization-id
+            }},${{ needs.build-nuget-package.outputs.package-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download trusted prebuilt helper by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ inputs.helper-id }}
+          path: .wdv3/helper-archive
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify and extract the trusted helper runtime
+        env:
+          WDV3_HELPER_ARCHIVE: .wdv3/helper-archive/${{ inputs.helper-name }}
+          WDV3_HELPER_DIGEST: ${{ inputs.helper-digest }}
+        run: |
+          $digest = 'sha256:' + (Get-FileHash -LiteralPath $env:WDV3_HELPER_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne $env:WDV3_HELPER_DIGEST) { throw 'Trusted helper digest mismatch' }
+          if (Test-Path -LiteralPath '.wdv3/helper') { throw 'Trusted helper destination already exists' }
+          Expand-Archive -LiteralPath $env:WDV3_HELPER_ARCHIVE -DestinationPath '.wdv3/helper'
+          foreach ($file in @('WorkflowDeliveryV3DotnetProvider.dll', 'WorkflowDeliveryV3DotnetProvider.deps.json', 'WorkflowDeliveryV3DotnetProvider.runtimeconfig.json')) {
+            if (-not (Test-Path -LiteralPath (Join-Path '.wdv3/helper' $file) -PathType Leaf)) { throw "Missing trusted helper runtime file: $file" }
+          }
+      - name: Prepare original bytes and the canonical mutation marker
+        id: prepare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ inputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ inputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ inputs.intent-transport-digest }}
+          WDV3_ARG_REPOSITORY_MODEL: .wdv3/input/${{ inputs.repository-model-name }}
+          WDV3_ARG_REPOSITORY_MODEL_DIGEST: ${{ inputs.repository-model-digest }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID: ${{ inputs.repository-model-id }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST: ${{ inputs.repository-model-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_DECISION: .wdv3/input/${{ inputs.eligibility-name }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID: ${{ inputs.eligibility-id }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST: ${{ inputs.eligibility-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST: ${{ inputs.eligibility-digest }}
+          WDV3_ARG_ATTEMPT_BINDING: .wdv3/input/${{ needs.admit.outputs.attempt-binding-name }}
+          WDV3_ARG_ATTEMPT_BINDING_DIGEST: ${{ needs.admit.outputs.attempt-binding-digest }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID: ${{ needs.admit.outputs.attempt-binding-id }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST: ${{ needs.admit.outputs.attempt-binding-transport-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION:
+            .wdv3/input/${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_DIGEST: ${{ needs.qualification-finalizer.outputs.qualification-decision-digest }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID: ${{ needs.qualification-finalizer.outputs.qualification-decision-id }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-url
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_RELEASE_ARTIFACT: .wdv3/input/${{ needs.build-nuget-package.outputs.release-artifact-name }}
+          WDV3_ARG_RELEASE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.release-artifact-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST:
+            ${{ needs.build-nuget-package.outputs.release-artifact-transport-digest
+            }}
+          WDV3_ARG_OBSERVATION: .wdv3/input/${{ needs.observe-github-packages.outputs.observation-name }}
+          WDV3_ARG_OBSERVATION_DIGEST: ${{ needs.observe-github-packages.outputs.observation-digest }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_ID: ${{ needs.observe-github-packages.outputs.observation-id }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST: ${{ needs.observe-github-packages.outputs.observation-transport-digest }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT: .wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-name }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST: ${{ needs.materialize-publication.outputs.publication-snapshot-digest }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.publication-snapshot-id }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.publication-snapshot-transport-digest
+            }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.publication-snapshot-url }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.publication-snapshot-name }}
+          WDV3_ARG_REVIEWER_SUMMARY: .wdv3/input/${{ needs.materialize-publication.outputs.reviewer-summary-name }}
+          WDV3_ARG_REVIEWER_SUMMARY_DIGEST: ${{ needs.materialize-publication.outputs.reviewer-summary-digest }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.reviewer-summary-id }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.reviewer-summary-transport-digest
+            }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.reviewer-summary-url }}
+          WDV3_ARG_REVIEWER_SUMMARY_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.reviewer-summary-name }}
+          WDV3_ARG_APPROVAL_BUNDLE: .wdv3/input/${{ needs.materialize-publication.outputs.approval-bundle-name }}
+          WDV3_ARG_APPROVAL_BUNDLE_DIGEST: ${{ needs.materialize-publication.outputs.approval-bundle-digest }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.approval-bundle-id }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.approval-bundle-transport-digest
+            }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.approval-bundle-url }}
+          WDV3_ARG_APPROVAL_BUNDLE_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.approval-bundle-name }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION:
+            .wdv3/input/${{ needs.approve-publication.outputs.publication-authorization-name
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_DIGEST:
+            ${{ needs.approve-publication.outputs.publication-authorization-digest
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_ID:
+            ${{ needs.approve-publication.outputs.publication-authorization-id
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_DIGEST:
+            ${{ needs.approve-publication.outputs.publication-authorization-transport-digest
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_URL:
+            ${{ needs.approve-publication.outputs.publication-authorization-url
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_PAYLOAD_PATH:
+            ${{ needs.approve-publication.outputs.publication-authorization-name
+            }}
+          WDV3_ARG_PACKAGE: .wdv3/input/${{ needs.build-nuget-package.outputs.package-name }}
+          WDV3_ARG_RUNTIME_DIRECTORY: ${{ runner.temp }}/wdv3-nuget-publication-${{ github.run_id }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'prepare-publication',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--repository-model',
+            $env:WDV3_ARG_REPOSITORY_MODEL,
+            '--repository-model-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_DIGEST,
+            '--repository-model-artifact-id',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID,
+            '--repository-model-artifact-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST,
+            '--live-eligibility-decision',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_DECISION,
+            '--live-eligibility-artifact-id',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID,
+            '--live-eligibility-artifact-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST,
+            '--live-eligibility-payload-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST,
+            '--attempt-binding',
+            $env:WDV3_ARG_ATTEMPT_BINDING,
+            '--attempt-binding-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_DIGEST,
+            '--attempt-binding-artifact-id',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID,
+            '--attempt-binding-artifact-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--qualification-decision',
+            $env:WDV3_ARG_QUALIFICATION_DECISION,
+            '--qualification-decision-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_DIGEST,
+            '--qualification-decision-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID,
+            '--qualification-decision-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST,
+            '--qualification-decision-artifact-url',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL,
+            '--qualification-decision-payload-path',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH,
+            '--release-artifact',
+            $env:WDV3_ARG_RELEASE_ARTIFACT,
+            '--release-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_DIGEST,
+            '--release-artifact-artifact-id',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID,
+            '--release-artifact-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST,
+            '--observation',
+            $env:WDV3_ARG_OBSERVATION,
+            '--observation-digest',
+            $env:WDV3_ARG_OBSERVATION_DIGEST,
+            '--observation-artifact-id',
+            $env:WDV3_ARG_OBSERVATION_ARTIFACT_ID,
+            '--observation-artifact-digest',
+            $env:WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST,
+            '--publication-snapshot',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT,
+            '--publication-snapshot-digest',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST,
+            '--publication-snapshot-artifact-id',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID,
+            '--publication-snapshot-artifact-digest',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--publication-snapshot-artifact-url',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL,
+            '--publication-snapshot-payload-path',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH,
+            '--reviewer-summary',
+            $env:WDV3_ARG_REVIEWER_SUMMARY,
+            '--reviewer-summary-digest',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_DIGEST,
+            '--reviewer-summary-artifact-id',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_ID,
+            '--reviewer-summary-artifact-digest',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_DIGEST,
+            '--reviewer-summary-artifact-url',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_URL,
+            '--reviewer-summary-payload-path',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_PAYLOAD_PATH,
+            '--approval-bundle',
+            $env:WDV3_ARG_APPROVAL_BUNDLE,
+            '--approval-bundle-digest',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_DIGEST,
+            '--approval-bundle-artifact-id',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_ID,
+            '--approval-bundle-artifact-digest',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_DIGEST,
+            '--approval-bundle-artifact-url',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_URL,
+            '--approval-bundle-payload-path',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_PAYLOAD_PATH,
+            '--publication-authorization',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION,
+            '--publication-authorization-digest',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_DIGEST,
+            '--publication-authorization-artifact-id',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_ID,
+            '--publication-authorization-artifact-digest',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_DIGEST,
+            '--publication-authorization-artifact-url',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_URL,
+            '--publication-authorization-payload-path',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_PAYLOAD_PATH,
+            '--package',
+            $env:WDV3_ARG_PACKAGE,
+            '--helper-dll',
+            '.wdv3/helper/WorkflowDeliveryV3DotnetProvider.dll',
+            '--runtime-directory',
+            $env:WDV3_ARG_RUNTIME_DIRECTORY,
+            '--output',
+            '.wdv3/mutation-marker.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT,
+            '--github-token',
+            $env:GITHUB_TOKEN
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind mutation-marker payload identity
+        id: seal-mutation-marker
+        env:
+          WDV3_PAYLOAD: .wdv3/mutation-marker.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = 'mutation-marker.json'
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable mutation-marker
+        id: upload-mutation-marker
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-mutation-marker.outputs.name }}
+          path: ${{ steps.seal-mutation-marker.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Download persisted mutation-marker by immutable ID
+        id: download-mutation-marker
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ steps.upload-mutation-marker.outputs.artifact-id }}
+          path: .wdv3/persisted-mutation-marker
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Admit persisted mutation-marker before exposing its reference
+        id: admit-marker
+        env:
+          WDV3_ARG_TERMINAL_DIGEST: ${{ steps.seal-mutation-marker.outputs.digest }}
+          WDV3_ARG_TERMINAL_ARTIFACT_ID: ${{ steps.upload-mutation-marker.outputs.artifact-id }}
+          WDV3_ARG_TERMINAL_ARTIFACT_DIGEST: ${{ steps.upload-mutation-marker.outputs.artifact-digest }}
+          WDV3_ARG_TERMINAL_ARTIFACT_URL: ${{ steps.upload-mutation-marker.outputs.artifact-url }}
+        run: |
+          $arguments = @(
+            'release',
+            'admit-publication-terminal',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--terminal',
+            '.wdv3/persisted-mutation-marker/mutation-marker.json',
+            '--terminal-digest',
+            $env:WDV3_ARG_TERMINAL_DIGEST,
+            '--terminal-artifact-id',
+            $env:WDV3_ARG_TERMINAL_ARTIFACT_ID,
+            '--terminal-artifact-digest',
+            $env:WDV3_ARG_TERMINAL_ARTIFACT_DIGEST,
+            '--terminal-artifact-url',
+            $env:WDV3_ARG_TERMINAL_ARTIFACT_URL,
+            '--terminal-payload-path',
+            'mutation-marker.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Invoke publication once from the admitted durable marker
+        id: publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ inputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ inputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ inputs.intent-transport-digest }}
+          WDV3_ARG_REPOSITORY_MODEL: .wdv3/input/${{ inputs.repository-model-name }}
+          WDV3_ARG_REPOSITORY_MODEL_DIGEST: ${{ inputs.repository-model-digest }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID: ${{ inputs.repository-model-id }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST: ${{ inputs.repository-model-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_DECISION: .wdv3/input/${{ inputs.eligibility-name }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID: ${{ inputs.eligibility-id }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST: ${{ inputs.eligibility-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST: ${{ inputs.eligibility-digest }}
+          WDV3_ARG_ATTEMPT_BINDING: .wdv3/input/${{ needs.admit.outputs.attempt-binding-name }}
+          WDV3_ARG_ATTEMPT_BINDING_DIGEST: ${{ needs.admit.outputs.attempt-binding-digest }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID: ${{ needs.admit.outputs.attempt-binding-id }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST: ${{ needs.admit.outputs.attempt-binding-transport-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION:
+            .wdv3/input/${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_DIGEST: ${{ needs.qualification-finalizer.outputs.qualification-decision-digest }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID: ${{ needs.qualification-finalizer.outputs.qualification-decision-id }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-url
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_RELEASE_ARTIFACT: .wdv3/input/${{ needs.build-nuget-package.outputs.release-artifact-name }}
+          WDV3_ARG_RELEASE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.release-artifact-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST:
+            ${{ needs.build-nuget-package.outputs.release-artifact-transport-digest
+            }}
+          WDV3_ARG_OBSERVATION: .wdv3/input/${{ needs.observe-github-packages.outputs.observation-name }}
+          WDV3_ARG_OBSERVATION_DIGEST: ${{ needs.observe-github-packages.outputs.observation-digest }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_ID: ${{ needs.observe-github-packages.outputs.observation-id }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST: ${{ needs.observe-github-packages.outputs.observation-transport-digest }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT: .wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-name }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST: ${{ needs.materialize-publication.outputs.publication-snapshot-digest }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.publication-snapshot-id }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.publication-snapshot-transport-digest
+            }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.publication-snapshot-url }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.publication-snapshot-name }}
+          WDV3_ARG_REVIEWER_SUMMARY: .wdv3/input/${{ needs.materialize-publication.outputs.reviewer-summary-name }}
+          WDV3_ARG_REVIEWER_SUMMARY_DIGEST: ${{ needs.materialize-publication.outputs.reviewer-summary-digest }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.reviewer-summary-id }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.reviewer-summary-transport-digest
+            }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.reviewer-summary-url }}
+          WDV3_ARG_REVIEWER_SUMMARY_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.reviewer-summary-name }}
+          WDV3_ARG_APPROVAL_BUNDLE: .wdv3/input/${{ needs.materialize-publication.outputs.approval-bundle-name }}
+          WDV3_ARG_APPROVAL_BUNDLE_DIGEST: ${{ needs.materialize-publication.outputs.approval-bundle-digest }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.approval-bundle-id }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.approval-bundle-transport-digest
+            }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.approval-bundle-url }}
+          WDV3_ARG_APPROVAL_BUNDLE_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.approval-bundle-name }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION:
+            .wdv3/input/${{ needs.approve-publication.outputs.publication-authorization-name
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_DIGEST:
+            ${{ needs.approve-publication.outputs.publication-authorization-digest
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_ID:
+            ${{ needs.approve-publication.outputs.publication-authorization-id
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_DIGEST:
+            ${{ needs.approve-publication.outputs.publication-authorization-transport-digest
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_URL:
+            ${{ needs.approve-publication.outputs.publication-authorization-url
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_PAYLOAD_PATH:
+            ${{ needs.approve-publication.outputs.publication-authorization-name
+            }}
+          WDV3_ARG_RUNTIME_DIRECTORY: ${{ runner.temp }}/wdv3-nuget-publication-${{ github.run_id }}
+          WDV3_ARG_PUBLICATION_TERMINAL_REFERENCE: ${{ steps.admit-marker.outputs.publication-terminal-reference }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'execute-publication',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--repository-model',
+            $env:WDV3_ARG_REPOSITORY_MODEL,
+            '--repository-model-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_DIGEST,
+            '--repository-model-artifact-id',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID,
+            '--repository-model-artifact-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST,
+            '--live-eligibility-decision',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_DECISION,
+            '--live-eligibility-artifact-id',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID,
+            '--live-eligibility-artifact-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST,
+            '--live-eligibility-payload-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST,
+            '--attempt-binding',
+            $env:WDV3_ARG_ATTEMPT_BINDING,
+            '--attempt-binding-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_DIGEST,
+            '--attempt-binding-artifact-id',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID,
+            '--attempt-binding-artifact-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--qualification-decision',
+            $env:WDV3_ARG_QUALIFICATION_DECISION,
+            '--qualification-decision-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_DIGEST,
+            '--qualification-decision-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID,
+            '--qualification-decision-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST,
+            '--qualification-decision-artifact-url',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL,
+            '--qualification-decision-payload-path',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH,
+            '--release-artifact',
+            $env:WDV3_ARG_RELEASE_ARTIFACT,
+            '--release-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_DIGEST,
+            '--release-artifact-artifact-id',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID,
+            '--release-artifact-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST,
+            '--observation',
+            $env:WDV3_ARG_OBSERVATION,
+            '--observation-digest',
+            $env:WDV3_ARG_OBSERVATION_DIGEST,
+            '--observation-artifact-id',
+            $env:WDV3_ARG_OBSERVATION_ARTIFACT_ID,
+            '--observation-artifact-digest',
+            $env:WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST,
+            '--publication-snapshot',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT,
+            '--publication-snapshot-digest',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST,
+            '--publication-snapshot-artifact-id',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID,
+            '--publication-snapshot-artifact-digest',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--publication-snapshot-artifact-url',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL,
+            '--publication-snapshot-payload-path',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH,
+            '--reviewer-summary',
+            $env:WDV3_ARG_REVIEWER_SUMMARY,
+            '--reviewer-summary-digest',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_DIGEST,
+            '--reviewer-summary-artifact-id',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_ID,
+            '--reviewer-summary-artifact-digest',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_DIGEST,
+            '--reviewer-summary-artifact-url',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_URL,
+            '--reviewer-summary-payload-path',
+            $env:WDV3_ARG_REVIEWER_SUMMARY_PAYLOAD_PATH,
+            '--approval-bundle',
+            $env:WDV3_ARG_APPROVAL_BUNDLE,
+            '--approval-bundle-digest',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_DIGEST,
+            '--approval-bundle-artifact-id',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_ID,
+            '--approval-bundle-artifact-digest',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_DIGEST,
+            '--approval-bundle-artifact-url',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_URL,
+            '--approval-bundle-payload-path',
+            $env:WDV3_ARG_APPROVAL_BUNDLE_PAYLOAD_PATH,
+            '--publication-authorization',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION,
+            '--publication-authorization-digest',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_DIGEST,
+            '--publication-authorization-artifact-id',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_ID,
+            '--publication-authorization-artifact-digest',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_DIGEST,
+            '--publication-authorization-artifact-url',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_URL,
+            '--publication-authorization-payload-path',
+            $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_PAYLOAD_PATH,
+            '--helper-dll',
+            '.wdv3/helper/WorkflowDeliveryV3DotnetProvider.dll',
+            '--runtime-directory',
+            $env:WDV3_ARG_RUNTIME_DIRECTORY,
+            '--publication-terminal-reference',
+            $env:WDV3_ARG_PUBLICATION_TERMINAL_REFERENCE,
+            '--terminal-directory',
+            '.wdv3/persisted-mutation-marker',
+            '--output',
+            '.wdv3/publication-result.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT,
+            '--github-token',
+            $env:GITHUB_TOKEN
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind publication-result payload identity
+        id: seal-publication-result
+        env:
+          WDV3_PAYLOAD: .wdv3/publication-result.json
+        if: always() && steps.publish.outputs.publication-result-digest != ''
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = 'publication-result.json'
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable publication-result
+        id: upload-publication-result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-publication-result.outputs.name }}
+          path: ${{ steps.seal-publication-result.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+        if: always() && steps.publish.outputs.publication-result-digest != ''
+      - name: Download persisted publication-result by immutable ID
+        id: download-publication-result
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ steps.upload-publication-result.outputs.artifact-id }}
+          path: .wdv3/persisted-publication-result
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && steps.upload-publication-result.outcome == 'success'
+      - name: Admit persisted publication-result before exposing its reference
+        id: admit-result
+        if: always() && steps.download-publication-result.outcome == 'success'
+        env:
+          WDV3_ARG_TERMINAL_DIGEST: ${{ steps.seal-publication-result.outputs.digest }}
+          WDV3_ARG_TERMINAL_ARTIFACT_ID: ${{ steps.upload-publication-result.outputs.artifact-id }}
+          WDV3_ARG_TERMINAL_ARTIFACT_DIGEST: ${{ steps.upload-publication-result.outputs.artifact-digest }}
+          WDV3_ARG_TERMINAL_ARTIFACT_URL: ${{ steps.upload-publication-result.outputs.artifact-url }}
+        run: |
+          $arguments = @(
+            'release',
+            'admit-publication-terminal',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--terminal',
+            '.wdv3/persisted-publication-result/publication-result.json',
+            '--terminal-digest',
+            $env:WDV3_ARG_TERMINAL_DIGEST,
+            '--terminal-artifact-id',
+            $env:WDV3_ARG_TERMINAL_ARTIFACT_ID,
+            '--terminal-artifact-digest',
+            $env:WDV3_ARG_TERMINAL_ARTIFACT_DIGEST,
+            '--terminal-artifact-url',
+            $env:WDV3_ARG_TERMINAL_ARTIFACT_URL,
+            '--terminal-payload-path',
+            'publication-result.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Clean only caller-owned prepared runtime
+        if: always() && steps.prepare.outputs.runtime-created == 'true'
+        env:
+          WDV3_OWNED_RUNTIME: ${{ runner.temp }}/wdv3-nuget-publication-${{ github.run_id }}
+        run: |
+          if (Test-Path -LiteralPath $env:WDV3_OWNED_RUNTIME) { Remove-Item -LiteralPath $env:WDV3_OWNED_RUNTIME -Recurse -Force }
+    concurrency:
+      group: wdv3-resource-${{ needs.materialize-publication.outputs.resource-concurrency-key }}
+      cancel-in-progress: false
+    outputs:
+      publication-terminal-reference:
+        ${{ steps.admit-result.outputs.publication-terminal-reference || steps.admit-marker.outputs.publication-terminal-reference
+        || 'null' }}
+      publication-step-outcome: ${{ steps.publish.outcome }}
+      mutation-marker-name: ${{ steps.seal-mutation-marker.outputs.name }}
+      mutation-marker-digest: ${{ steps.seal-mutation-marker.outputs.digest }}
+      mutation-marker-id: ${{ steps.upload-mutation-marker.outputs.artifact-id }}
+      mutation-marker-transport-digest: ${{ steps.upload-mutation-marker.outputs.artifact-digest }}
+      mutation-marker-url: ${{ steps.upload-mutation-marker.outputs.artifact-url }}
+      publication-result-name: ${{ steps.seal-publication-result.outputs.name }}
+      publication-result-digest: ${{ steps.seal-publication-result.outputs.digest }}
+      publication-result-id: ${{ steps.upload-publication-result.outputs.artifact-id }}
+      publication-result-transport-digest: ${{ steps.upload-publication-result.outputs.artifact-digest }}
+      publication-result-url: ${{ steps.upload-publication-result.outputs.artifact-url }}
+  prove-exact-satisfied:
+    name: Prove fresh native zero-action satisfaction
+    if:
+      always() && github.run_attempt == 1 && needs.admit.outputs.identity-admitted == 'true' && needs.materialize-publication.outputs.publish-required
+      == 'false' && needs.publish-github-packages.result == 'skipped'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    needs:
+      - admit
+      - plan-qualification
+      - build-nuget-package
+      - qualification-finalizer
+      - observe-github-packages
+      - materialize-publication
+      - publish-github-packages
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned .NET SDK and runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids:
+            ${{ inputs.intent-id }},${{ inputs.repository-model-id }},${{ inputs.eligibility-id }},${{ needs.admit.outputs.attempt-binding-id
+            }},${{ needs.plan-qualification.outputs.qualification-snapshot-id }},${{ needs.qualification-finalizer.outputs.qualification-decision-id
+            }},${{ needs.build-nuget-package.outputs.release-artifact-id }},${{ needs.observe-github-packages.outputs.observation-id
+            }},${{ needs.materialize-publication.outputs.publication-snapshot-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download trusted prebuilt helper by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ inputs.helper-id }}
+          path: .wdv3/helper-archive
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify and extract the trusted helper runtime
+        env:
+          WDV3_HELPER_ARCHIVE: .wdv3/helper-archive/${{ inputs.helper-name }}
+          WDV3_HELPER_DIGEST: ${{ inputs.helper-digest }}
+        run: |
+          $digest = 'sha256:' + (Get-FileHash -LiteralPath $env:WDV3_HELPER_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne $env:WDV3_HELPER_DIGEST) { throw 'Trusted helper digest mismatch' }
+          if (Test-Path -LiteralPath '.wdv3/helper') { throw 'Trusted helper destination already exists' }
+          Expand-Archive -LiteralPath $env:WDV3_HELPER_ARCHIVE -DestinationPath '.wdv3/helper'
+          foreach ($file in @('WorkflowDeliveryV3DotnetProvider.dll', 'WorkflowDeliveryV3DotnetProvider.deps.json', 'WorkflowDeliveryV3DotnetProvider.runtimeconfig.json')) {
+            if (-not (Test-Path -LiteralPath (Join-Path '.wdv3/helper' $file) -PathType Leaf)) { throw "Missing trusted helper runtime file: $file" }
+          }
+      - name: Reobserve exact bytes and current native authority
+        id: proof
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ inputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ inputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ inputs.intent-transport-digest }}
+          WDV3_ARG_REPOSITORY_MODEL: .wdv3/input/${{ inputs.repository-model-name }}
+          WDV3_ARG_REPOSITORY_MODEL_DIGEST: ${{ inputs.repository-model-digest }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID: ${{ inputs.repository-model-id }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST: ${{ inputs.repository-model-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_DECISION: .wdv3/input/${{ inputs.eligibility-name }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID: ${{ inputs.eligibility-id }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST: ${{ inputs.eligibility-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST: ${{ inputs.eligibility-digest }}
+          WDV3_ARG_ATTEMPT_BINDING: .wdv3/input/${{ needs.admit.outputs.attempt-binding-name }}
+          WDV3_ARG_ATTEMPT_BINDING_DIGEST: ${{ needs.admit.outputs.attempt-binding-digest }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID: ${{ needs.admit.outputs.attempt-binding-id }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST: ${{ needs.admit.outputs.attempt-binding-transport-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION:
+            .wdv3/input/${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_DIGEST: ${{ needs.qualification-finalizer.outputs.qualification-decision-digest }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID: ${{ needs.qualification-finalizer.outputs.qualification-decision-id }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-url
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_RELEASE_ARTIFACT: .wdv3/input/${{ needs.build-nuget-package.outputs.release-artifact-name }}
+          WDV3_ARG_RELEASE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.release-artifact-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST:
+            ${{ needs.build-nuget-package.outputs.release-artifact-transport-digest
+            }}
+          WDV3_ARG_OBSERVATION: .wdv3/input/${{ needs.observe-github-packages.outputs.observation-name }}
+          WDV3_ARG_OBSERVATION_DIGEST: ${{ needs.observe-github-packages.outputs.observation-digest }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_ID: ${{ needs.observe-github-packages.outputs.observation-id }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST: ${{ needs.observe-github-packages.outputs.observation-transport-digest }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT: .wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-name }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST: ${{ needs.materialize-publication.outputs.publication-snapshot-digest }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.publication-snapshot-id }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.publication-snapshot-transport-digest
+            }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.publication-snapshot-url }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.publication-snapshot-name }}
+          WDV3_ARG_CONTROL: workflow-delivery-v3:${{ github.sha }}
+          WDV3_ARG_PUBLISHER_CONCLUSION: ${{ needs.publish-github-packages.result }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'prove-exact-satisfied',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--repository-model',
+            $env:WDV3_ARG_REPOSITORY_MODEL,
+            '--repository-model-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_DIGEST,
+            '--repository-model-artifact-id',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID,
+            '--repository-model-artifact-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST,
+            '--live-eligibility-decision',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_DECISION,
+            '--live-eligibility-artifact-id',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID,
+            '--live-eligibility-artifact-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST,
+            '--live-eligibility-payload-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST,
+            '--attempt-binding',
+            $env:WDV3_ARG_ATTEMPT_BINDING,
+            '--attempt-binding-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_DIGEST,
+            '--attempt-binding-artifact-id',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID,
+            '--attempt-binding-artifact-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--qualification-decision',
+            $env:WDV3_ARG_QUALIFICATION_DECISION,
+            '--qualification-decision-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_DIGEST,
+            '--qualification-decision-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID,
+            '--qualification-decision-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST,
+            '--qualification-decision-artifact-url',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL,
+            '--qualification-decision-payload-path',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH,
+            '--release-artifact',
+            $env:WDV3_ARG_RELEASE_ARTIFACT,
+            '--release-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_DIGEST,
+            '--release-artifact-artifact-id',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID,
+            '--release-artifact-artifact-digest',
+            $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST,
+            '--observation',
+            $env:WDV3_ARG_OBSERVATION,
+            '--observation-digest',
+            $env:WDV3_ARG_OBSERVATION_DIGEST,
+            '--observation-artifact-id',
+            $env:WDV3_ARG_OBSERVATION_ARTIFACT_ID,
+            '--observation-artifact-digest',
+            $env:WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST,
+            '--publication-snapshot',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT,
+            '--publication-snapshot-digest',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST,
+            '--publication-snapshot-artifact-id',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID,
+            '--publication-snapshot-artifact-digest',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--publication-snapshot-artifact-url',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL,
+            '--publication-snapshot-payload-path',
+            $env:WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH,
+            '--helper-dll',
+            '.wdv3/helper/WorkflowDeliveryV3DotnetProvider.dll',
+            '--control',
+            $env:WDV3_ARG_CONTROL,
+            '--publisher-conclusion',
+            $env:WDV3_ARG_PUBLISHER_CONCLUSION,
+            '--output',
+            '.wdv3/exact-proof.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT,
+            '--github-token',
+            $env:GITHUB_TOKEN
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind exact-satisfied-finalization-proof payload identity
+        id: seal-exact-satisfied-finalization-proof
+        env:
+          WDV3_PAYLOAD: .wdv3/exact-proof.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-exact-satisfied-finalization-proof-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable exact-satisfied-finalization-proof
+        id: upload-exact-satisfied-finalization-proof
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-exact-satisfied-finalization-proof.outputs.name }}
+          path: ${{ steps.seal-exact-satisfied-finalization-proof.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      exact-satisfied-finalization-proof-name: ${{ steps.seal-exact-satisfied-finalization-proof.outputs.name }}
+      exact-satisfied-finalization-proof-digest: ${{ steps.seal-exact-satisfied-finalization-proof.outputs.digest }}
+      exact-satisfied-finalization-proof-id: ${{ steps.upload-exact-satisfied-finalization-proof.outputs.artifact-id }}
+      exact-satisfied-finalization-proof-transport-digest:
+        ${{ steps.upload-exact-satisfied-finalization-proof.outputs.artifact-digest
+        }}
+      exact-satisfied-finalization-proof-url: ${{ steps.upload-exact-satisfied-finalization-proof.outputs.artifact-url }}
+  release-finalizer:
+    name: Finalize the current native Attempt Outcome
+    if: always() && github.run_attempt == 1 && needs.admit.outputs.identity-admitted == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    needs:
+      - admit
+      - plan-qualification
+      - build-nuget-package
+      - nuget-artifact-qualification
+      - qualification-finalizer
+      - observe-github-packages
+      - materialize-publication
+      - approve-publication
+      - publish-github-packages
+      - prove-exact-satisfied
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids:
+            ${{ inputs.intent-id }},${{ inputs.repository-model-id }},${{ inputs.eligibility-id }},${{ needs.admit.outputs.attempt-binding-id
+            }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download available qualification-snapshot
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.plan-qualification.outputs.qualification-snapshot-id != ''
+      - name: Download available qualification-decision
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.qualification-finalizer.outputs.qualification-decision-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.qualification-finalizer.outputs.qualification-decision-id != ''
+      - name: Download available build-evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.build-nuget-package.outputs.build-evidence-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.build-nuget-package.outputs.build-evidence-id != ''
+      - name: Download available artifact-contents-evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-id != ''
+      - name: Download available consumer-evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.nuget-artifact-qualification.outputs.consumer-evidence-id != ''
+      - name: Download available release-artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.build-nuget-package.outputs.release-artifact-id != ''
+      - name: Download available observation
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.observe-github-packages.outputs.observation-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.observe-github-packages.outputs.observation-id != ''
+      - name: Download available publication-snapshot
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.materialize-publication.outputs.publication-snapshot-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.materialize-publication.outputs.publication-snapshot-id != ''
+      - name: Download available reviewer-summary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.materialize-publication.outputs.reviewer-summary-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.materialize-publication.outputs.reviewer-summary-id != ''
+      - name: Download available approval-bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.materialize-publication.outputs.approval-bundle-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.materialize-publication.outputs.approval-bundle-id != ''
+      - name: Download available publication-authorization
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.approve-publication.outputs.publication-authorization-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.approve-publication.outputs.publication-authorization-id != ''
+      - name: Download available exact-satisfied-finalization-proof
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+        if: always() && needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-id != ''
+      - name: Resolve the sole current-DAG publication terminal
+        id: terminal
+        if: always()
+        env:
+          WDV3_ARG_PUBLICATION_TERMINAL_REFERENCE:
+            ${{ needs.publish-github-packages.outputs.publication-terminal-reference
+            || 'null' }}
+          WDV3_ARG_PUBLISHER_CONCLUSION: ${{ needs.publish-github-packages.result }}
+        run: |
+          $arguments = @(
+            'release',
+            'resolve-publication-terminal',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--publication-terminal-reference',
+            $env:WDV3_ARG_PUBLICATION_TERMINAL_REFERENCE,
+            '--publisher-conclusion',
+            $env:WDV3_ARG_PUBLISHER_CONCLUSION,
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Download the resolved terminal by immutable ID
+        id: download-terminal
+        if: always() && steps.terminal.outputs.terminal-artifact-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ steps.terminal.outputs.terminal-artifact-id }}
+          path: .wdv3/terminal
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Resolve the Result direct marker lineage
+        id: marker-lineage
+        if: always() && steps.download-terminal.outcome == 'success'
+        env:
+          WDV3_ARG_PUBLICATION_TERMINAL_REFERENCE:
+            ${{ needs.publish-github-packages.outputs.publication-terminal-reference
+            || 'null' }}
+          WDV3_ARG_PUBLISHER_CONCLUSION: ${{ needs.publish-github-packages.result }}
+        run: |
+          $arguments = @(
+            'release',
+            'resolve-publication-terminal',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--publication-terminal-reference',
+            $env:WDV3_ARG_PUBLICATION_TERMINAL_REFERENCE,
+            '--publisher-conclusion',
+            $env:WDV3_ARG_PUBLISHER_CONCLUSION,
+            '--terminal-directory',
+            '.wdv3/terminal',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Download the Result direct marker by immutable ID
+        if: always() && steps.marker-lineage.outputs.marker-artifact-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ steps.marker-lineage.outputs.marker-artifact-id }}
+          path: .wdv3/marker
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Admit complete native Evidence and finalize the Attempt
+        id: finalize
+        if: success() || cancelled()
+        env:
+          WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ inputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ inputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ inputs.intent-transport-digest }}
+          WDV3_ARG_REPOSITORY_MODEL: .wdv3/input/${{ inputs.repository-model-name }}
+          WDV3_ARG_REPOSITORY_MODEL_DIGEST: ${{ inputs.repository-model-digest }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID: ${{ inputs.repository-model-id }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST: ${{ inputs.repository-model-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_DECISION: .wdv3/input/${{ inputs.eligibility-name }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID: ${{ inputs.eligibility-id }}
+          WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST: ${{ inputs.eligibility-transport-digest }}
+          WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST: ${{ inputs.eligibility-digest }}
+          WDV3_ARG_ATTEMPT_BINDING: .wdv3/input/${{ needs.admit.outputs.attempt-binding-name }}
+          WDV3_ARG_ATTEMPT_BINDING_DIGEST: ${{ needs.admit.outputs.attempt-binding-digest }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID: ${{ needs.admit.outputs.attempt-binding-id }}
+          WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST: ${{ needs.admit.outputs.attempt-binding-transport-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT: .wdv3/input/${{ needs.plan-qualification.outputs.qualification-snapshot-name }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST: ${{ needs.plan-qualification.outputs.qualification-snapshot-digest }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.plan-qualification.outputs.qualification-snapshot-id }}
+          WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.plan-qualification.outputs.qualification-snapshot-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION:
+            .wdv3/input/${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_DIGEST: ${{ needs.qualification-finalizer.outputs.qualification-decision-digest }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID: ${{ needs.qualification-finalizer.outputs.qualification-decision-id }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-transport-digest
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-url
+            }}
+          WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH:
+            ${{ needs.qualification-finalizer.outputs.qualification-decision-name
+            }}
+          WDV3_ARG_PUBLICATION_TERMINAL_REFERENCE:
+            ${{ needs.publish-github-packages.outputs.publication-terminal-reference
+            || 'null' }}
+          WDV3_ARG_PUBLISHER_CONCLUSION: ${{ needs.publish-github-packages.result }}
+          WDV3_ARG_OBSERVATION_CONCLUSION: ${{ needs.observe-github-packages.result }}
+          WDV3_ARG_BUILD_EVIDENCE_OPTIONAL_ID: ${{ needs.build-nuget-package.outputs.build-evidence-id }}
+          WDV3_ARG_BUILD_EVIDENCE: .wdv3/input/${{ needs.build-nuget-package.outputs.build-evidence-name }}
+          WDV3_ARG_BUILD_EVIDENCE_DIGEST: ${{ needs.build-nuget-package.outputs.build-evidence-digest }}
+          WDV3_ARG_BUILD_EVIDENCE_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.build-evidence-id }}
+          WDV3_ARG_BUILD_EVIDENCE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.build-evidence-transport-digest }}
+          WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_OPTIONAL_ID:
+            ${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-id
+            }}
+          WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE:
+            .wdv3/input/${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-name
+            }}
+          WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_DIGEST:
+            ${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-digest
+            }}
+          WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_ARTIFACT_ID:
+            ${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-id
+            }}
+          WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_ARTIFACT_DIGEST:
+            ${{ needs.nuget-artifact-qualification.outputs.artifact-contents-evidence-transport-digest
+            }}
+          WDV3_ARG_CONSUMER_EVIDENCE_OPTIONAL_ID: ${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-id }}
+          WDV3_ARG_CONSUMER_EVIDENCE: .wdv3/input/${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-name }}
+          WDV3_ARG_CONSUMER_EVIDENCE_DIGEST: ${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-digest }}
+          WDV3_ARG_CONSUMER_EVIDENCE_ARTIFACT_ID: ${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-id }}
+          WDV3_ARG_CONSUMER_EVIDENCE_ARTIFACT_DIGEST:
+            ${{ needs.nuget-artifact-qualification.outputs.consumer-evidence-transport-digest
+            }}
+          WDV3_ARG_RELEASE_ARTIFACT_OPTIONAL_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT: .wdv3/input/${{ needs.build-nuget-package.outputs.release-artifact-name }}
+          WDV3_ARG_RELEASE_ARTIFACT_DIGEST: ${{ needs.build-nuget-package.outputs.release-artifact-digest }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID: ${{ needs.build-nuget-package.outputs.release-artifact-id }}
+          WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST:
+            ${{ needs.build-nuget-package.outputs.release-artifact-transport-digest
+            }}
+          WDV3_ARG_OBSERVATION_OPTIONAL_ID: ${{ needs.observe-github-packages.outputs.observation-id }}
+          WDV3_ARG_OBSERVATION: .wdv3/input/${{ needs.observe-github-packages.outputs.observation-name }}
+          WDV3_ARG_OBSERVATION_DIGEST: ${{ needs.observe-github-packages.outputs.observation-digest }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_ID: ${{ needs.observe-github-packages.outputs.observation-id }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST: ${{ needs.observe-github-packages.outputs.observation-transport-digest }}
+          WDV3_ARG_OBSERVATION_ARTIFACT_URL: ${{ needs.observe-github-packages.outputs.observation-url }}
+          WDV3_ARG_OBSERVATION_PAYLOAD_PATH: ${{ needs.observe-github-packages.outputs.observation-name }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_OPTIONAL_ID: ${{ needs.materialize-publication.outputs.publication-snapshot-id }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT: .wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-name }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST: ${{ needs.materialize-publication.outputs.publication-snapshot-digest }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.publication-snapshot-id }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.publication-snapshot-transport-digest
+            }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.publication-snapshot-url }}
+          WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.publication-snapshot-name }}
+          WDV3_ARG_REVIEWER_SUMMARY_OPTIONAL_ID: ${{ needs.materialize-publication.outputs.reviewer-summary-id }}
+          WDV3_ARG_REVIEWER_SUMMARY: .wdv3/input/${{ needs.materialize-publication.outputs.reviewer-summary-name }}
+          WDV3_ARG_REVIEWER_SUMMARY_DIGEST: ${{ needs.materialize-publication.outputs.reviewer-summary-digest }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.reviewer-summary-id }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.reviewer-summary-transport-digest
+            }}
+          WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.reviewer-summary-url }}
+          WDV3_ARG_REVIEWER_SUMMARY_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.reviewer-summary-name }}
+          WDV3_ARG_APPROVAL_BUNDLE_OPTIONAL_ID: ${{ needs.materialize-publication.outputs.approval-bundle-id }}
+          WDV3_ARG_APPROVAL_BUNDLE: .wdv3/input/${{ needs.materialize-publication.outputs.approval-bundle-name }}
+          WDV3_ARG_APPROVAL_BUNDLE_DIGEST: ${{ needs.materialize-publication.outputs.approval-bundle-digest }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_ID: ${{ needs.materialize-publication.outputs.approval-bundle-id }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_DIGEST:
+            ${{ needs.materialize-publication.outputs.approval-bundle-transport-digest
+            }}
+          WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_URL: ${{ needs.materialize-publication.outputs.approval-bundle-url }}
+          WDV3_ARG_APPROVAL_BUNDLE_PAYLOAD_PATH: ${{ needs.materialize-publication.outputs.approval-bundle-name }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_OPTIONAL_ID:
+            ${{ needs.approve-publication.outputs.publication-authorization-id
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION:
+            .wdv3/input/${{ needs.approve-publication.outputs.publication-authorization-name
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_DIGEST:
+            ${{ needs.approve-publication.outputs.publication-authorization-digest
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_ID:
+            ${{ needs.approve-publication.outputs.publication-authorization-id
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_DIGEST:
+            ${{ needs.approve-publication.outputs.publication-authorization-transport-digest
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_URL:
+            ${{ needs.approve-publication.outputs.publication-authorization-url
+            }}
+          WDV3_ARG_PUBLICATION_AUTHORIZATION_PAYLOAD_PATH:
+            ${{ needs.approve-publication.outputs.publication-authorization-name
+            }}
+          WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_OPTIONAL_ID:
+            ${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-id
+            }}
+          WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF:
+            .wdv3/input/${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-name
+            }}
+          WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_DIGEST:
+            ${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-digest
+            }}
+          WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_ARTIFACT_ID:
+            ${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-id
+            }}
+          WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_ARTIFACT_DIGEST:
+            ${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-transport-digest
+            }}
+          WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_ARTIFACT_URL:
+            ${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-url
+            }}
+          WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_PAYLOAD_PATH:
+            ${{ needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof-name
+            }}
+          WDV3_ARG_TERMINAL_DIRECTORY_PRESENT: ${{ steps.terminal.outputs.terminal-artifact-id }}
+          WDV3_ARG_MARKER_DIRECTORY_PRESENT: ${{ steps.marker-lineage.outputs.marker-artifact-id }}
+          WDV3_ARG_PUBLICATION_STEP_OUTCOME_PRESENT: ${{ needs.publish-github-packages.outputs.publication-step-outcome }}
+          WDV3_ARG_PUBLICATION_STEP_OUTCOME: ${{ needs.publish-github-packages.outputs.publication-step-outcome }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'finalize-live',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--repository-model',
+            $env:WDV3_ARG_REPOSITORY_MODEL,
+            '--repository-model-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_DIGEST,
+            '--repository-model-artifact-id',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID,
+            '--repository-model-artifact-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST,
+            '--live-eligibility-decision',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_DECISION,
+            '--live-eligibility-artifact-id',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_ID,
+            '--live-eligibility-artifact-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_ARTIFACT_DIGEST,
+            '--live-eligibility-payload-digest',
+            $env:WDV3_ARG_LIVE_ELIGIBILITY_PAYLOAD_DIGEST,
+            '--attempt-binding',
+            $env:WDV3_ARG_ATTEMPT_BINDING,
+            '--attempt-binding-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_DIGEST,
+            '--attempt-binding-artifact-id',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_ID,
+            '--attempt-binding-artifact-digest',
+            $env:WDV3_ARG_ATTEMPT_BINDING_ARTIFACT_DIGEST,
+            '--qualification-snapshot',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT,
+            '--qualification-snapshot-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_DIGEST,
+            '--qualification-snapshot-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_ID,
+            '--qualification-snapshot-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_SNAPSHOT_ARTIFACT_DIGEST,
+            '--qualification-decision',
+            $env:WDV3_ARG_QUALIFICATION_DECISION,
+            '--qualification-decision-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_DIGEST,
+            '--qualification-decision-artifact-id',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_ID,
+            '--qualification-decision-artifact-digest',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_DIGEST,
+            '--qualification-decision-artifact-url',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_ARTIFACT_URL,
+            '--qualification-decision-payload-path',
+            $env:WDV3_ARG_QUALIFICATION_DECISION_PAYLOAD_PATH,
+            '--publication-terminal-reference',
+            $env:WDV3_ARG_PUBLICATION_TERMINAL_REFERENCE,
+            '--publisher-conclusion',
+            $env:WDV3_ARG_PUBLISHER_CONCLUSION,
+            '--observation-conclusion',
+            $env:WDV3_ARG_OBSERVATION_CONCLUSION,
+            '--outcome-output',
+            '.wdv3/outcome.json',
+            '--summary-output',
+            '.wdv3/summary.md',
+            '--github-step-summary',
+            $env:GITHUB_STEP_SUMMARY,
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          if ($env:WDV3_ARG_BUILD_EVIDENCE_OPTIONAL_ID) {
+            $arguments += @('--build-evidence', $env:WDV3_ARG_BUILD_EVIDENCE, '--build-evidence-digest', $env:WDV3_ARG_BUILD_EVIDENCE_DIGEST, '--build-evidence-artifact-id', $env:WDV3_ARG_BUILD_EVIDENCE_ARTIFACT_ID, '--build-evidence-artifact-digest', $env:WDV3_ARG_BUILD_EVIDENCE_ARTIFACT_DIGEST)
+          }
+          if ($env:WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_OPTIONAL_ID) {
+            $arguments += @('--artifact-contents-evidence', $env:WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE, '--artifact-contents-evidence-digest', $env:WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_DIGEST, '--artifact-contents-evidence-artifact-id', $env:WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_ARTIFACT_ID, '--artifact-contents-evidence-artifact-digest', $env:WDV3_ARG_ARTIFACT_CONTENTS_EVIDENCE_ARTIFACT_DIGEST)
+          }
+          if ($env:WDV3_ARG_CONSUMER_EVIDENCE_OPTIONAL_ID) {
+            $arguments += @('--consumer-evidence', $env:WDV3_ARG_CONSUMER_EVIDENCE, '--consumer-evidence-digest', $env:WDV3_ARG_CONSUMER_EVIDENCE_DIGEST, '--consumer-evidence-artifact-id', $env:WDV3_ARG_CONSUMER_EVIDENCE_ARTIFACT_ID, '--consumer-evidence-artifact-digest', $env:WDV3_ARG_CONSUMER_EVIDENCE_ARTIFACT_DIGEST)
+          }
+          if ($env:WDV3_ARG_RELEASE_ARTIFACT_OPTIONAL_ID) {
+            $arguments += @('--release-artifact', $env:WDV3_ARG_RELEASE_ARTIFACT, '--release-artifact-digest', $env:WDV3_ARG_RELEASE_ARTIFACT_DIGEST, '--release-artifact-artifact-id', $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID, '--release-artifact-artifact-digest', $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST)
+          }
+          if ($env:WDV3_ARG_OBSERVATION_OPTIONAL_ID) {
+            $arguments += @('--observation', $env:WDV3_ARG_OBSERVATION, '--observation-digest', $env:WDV3_ARG_OBSERVATION_DIGEST, '--observation-artifact-id', $env:WDV3_ARG_OBSERVATION_ARTIFACT_ID, '--observation-artifact-digest', $env:WDV3_ARG_OBSERVATION_ARTIFACT_DIGEST, '--observation-artifact-url', $env:WDV3_ARG_OBSERVATION_ARTIFACT_URL, '--observation-payload-path', $env:WDV3_ARG_OBSERVATION_PAYLOAD_PATH)
+          }
+          if ($env:WDV3_ARG_PUBLICATION_SNAPSHOT_OPTIONAL_ID) {
+            $arguments += @('--publication-snapshot', $env:WDV3_ARG_PUBLICATION_SNAPSHOT, '--publication-snapshot-digest', $env:WDV3_ARG_PUBLICATION_SNAPSHOT_DIGEST, '--publication-snapshot-artifact-id', $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_ID, '--publication-snapshot-artifact-digest', $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_DIGEST, '--publication-snapshot-artifact-url', $env:WDV3_ARG_PUBLICATION_SNAPSHOT_ARTIFACT_URL, '--publication-snapshot-payload-path', $env:WDV3_ARG_PUBLICATION_SNAPSHOT_PAYLOAD_PATH)
+          }
+          if ($env:WDV3_ARG_REVIEWER_SUMMARY_OPTIONAL_ID) {
+            $arguments += @('--reviewer-summary', $env:WDV3_ARG_REVIEWER_SUMMARY, '--reviewer-summary-digest', $env:WDV3_ARG_REVIEWER_SUMMARY_DIGEST, '--reviewer-summary-artifact-id', $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_ID, '--reviewer-summary-artifact-digest', $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_DIGEST, '--reviewer-summary-artifact-url', $env:WDV3_ARG_REVIEWER_SUMMARY_ARTIFACT_URL, '--reviewer-summary-payload-path', $env:WDV3_ARG_REVIEWER_SUMMARY_PAYLOAD_PATH)
+          }
+          if ($env:WDV3_ARG_APPROVAL_BUNDLE_OPTIONAL_ID) {
+            $arguments += @('--approval-bundle', $env:WDV3_ARG_APPROVAL_BUNDLE, '--approval-bundle-digest', $env:WDV3_ARG_APPROVAL_BUNDLE_DIGEST, '--approval-bundle-artifact-id', $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_ID, '--approval-bundle-artifact-digest', $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_DIGEST, '--approval-bundle-artifact-url', $env:WDV3_ARG_APPROVAL_BUNDLE_ARTIFACT_URL, '--approval-bundle-payload-path', $env:WDV3_ARG_APPROVAL_BUNDLE_PAYLOAD_PATH)
+          }
+          if ($env:WDV3_ARG_PUBLICATION_AUTHORIZATION_OPTIONAL_ID) {
+            $arguments += @('--publication-authorization', $env:WDV3_ARG_PUBLICATION_AUTHORIZATION, '--publication-authorization-digest', $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_DIGEST, '--publication-authorization-artifact-id', $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_ID, '--publication-authorization-artifact-digest', $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_DIGEST, '--publication-authorization-artifact-url', $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_ARTIFACT_URL, '--publication-authorization-payload-path', $env:WDV3_ARG_PUBLICATION_AUTHORIZATION_PAYLOAD_PATH)
+          }
+          if ($env:WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_OPTIONAL_ID) {
+            $arguments += @('--exact-satisfied-finalization-proof', $env:WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF, '--exact-satisfied-finalization-proof-digest', $env:WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_DIGEST, '--exact-satisfied-finalization-proof-artifact-id', $env:WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_ARTIFACT_ID, '--exact-satisfied-finalization-proof-artifact-digest', $env:WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_ARTIFACT_DIGEST, '--exact-satisfied-finalization-proof-artifact-url', $env:WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_ARTIFACT_URL, '--exact-satisfied-finalization-proof-payload-path', $env:WDV3_ARG_EXACT_SATISFIED_FINALIZATION_PROOF_PAYLOAD_PATH)
+          }
+          if ($env:WDV3_ARG_TERMINAL_DIRECTORY_PRESENT) { $arguments += @('--terminal-directory', '.wdv3/terminal') }
+          if ($env:WDV3_ARG_MARKER_DIRECTORY_PRESENT) { $arguments += @('--marker-directory', '.wdv3/marker') }
+          if ($env:WDV3_ARG_PUBLICATION_STEP_OUTCOME_PRESENT) { $arguments += @('--publication-step-outcome', $env:WDV3_ARG_PUBLICATION_STEP_OUTCOME) }
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind attempt-outcome payload identity
+        id: seal-attempt-outcome
+        env:
+          WDV3_PAYLOAD: .wdv3/outcome.json
+        if: always() && steps.finalize.outputs.attempt-outcome-digest != ''
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-attempt-outcome-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable attempt-outcome
+        id: upload-attempt-outcome
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-attempt-outcome.outputs.name }}
+          path: ${{ steps.seal-attempt-outcome.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+        if: always() && steps.finalize.outputs.attempt-outcome-digest != ''
+      - name: Bind attempt-summary payload identity
+        id: seal-attempt-summary
+        env:
+          WDV3_PAYLOAD: .wdv3/summary.md
+        if: always() && steps.finalize.outputs.attempt-outcome-digest != ''
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-attempt-summary-r${env:GITHUB_RUN_ID}-$hex.md"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable attempt-summary
+        id: upload-attempt-summary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-attempt-summary.outputs.name }}
+          path: ${{ steps.seal-attempt-summary.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+        if: always() && steps.finalize.outputs.attempt-outcome-digest != ''
+    outputs:
+      attempt-outcome-name: ${{ steps.seal-attempt-outcome.outputs.name }}
+      attempt-outcome-digest: ${{ steps.seal-attempt-outcome.outputs.digest }}
+      attempt-outcome-id: ${{ steps.upload-attempt-outcome.outputs.artifact-id }}
+      attempt-outcome-transport-digest: ${{ steps.upload-attempt-outcome.outputs.artifact-digest }}
+      attempt-outcome-url: ${{ steps.upload-attempt-outcome.outputs.artifact-url }}
+      attempt-summary-name: ${{ steps.seal-attempt-summary.outputs.name }}
+      attempt-summary-digest: ${{ steps.seal-attempt-summary.outputs.digest }}
+      attempt-summary-id: ${{ steps.upload-attempt-summary.outputs.artifact-id }}
+      attempt-summary-transport-digest: ${{ steps.upload-attempt-summary.outputs.artifact-digest }}
+      attempt-summary-url: ${{ steps.upload-attempt-summary.outputs.artifact-url }}

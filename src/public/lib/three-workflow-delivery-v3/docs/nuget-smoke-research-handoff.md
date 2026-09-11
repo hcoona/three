@@ -71,15 +71,17 @@ Keep these facts in the working context:
   entry delivery. Native observation and approval commands now connect supported
   reads, zero-or-one action materialization, a native reviewer summary, and
   current-Attempt Approval/Authorization. PR #687 completed protected
-  observation/approval entry delivery. Native publication/terminal commands are
-  implemented; inspect current Git/PR state before claiming their protected
-  delivery. Workflow execution, native acceptance tooling, activation, and real
-  publication remain subsequent work; NuGet Governance and admission stay disabled.
+  observation/approval entry delivery. PR #688 completed protected native
+  publication/terminal entry delivery. Separate disabled Windows workflows now
+  connect the native commands; inspect current Git/PR state before claiming
+  protected workflow delivery. Actual Windows execution, native acceptance
+  tooling, activation, and real publication remain subsequent work; NuGet
+  Governance and admission stay disabled.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
 - The selected GitHub Packages marker project has independent v3 authoring;
   no historical control-plane assets or the other .NET project are restored.
-- Current Release workflow execution remains npm-specific. The new
+- The native workflow pair is distinct from the completed npm work. The
   `workflow-delivery-v3-dotnet-provider` helper is distinct from the retained
   NuGet static-reference authority; neither helper is a publisher.
 - Scope and trust are confirmed. The LLD identifies local and platform
@@ -242,7 +244,19 @@ matching three Qualification Evidence records and terminal lineage. Shared
 `release admit-publication-terminal` and `release resolve-publication-terminal`
 already admit and resolve native marker/Result transport. Local modeled scenarios
 do not establish actual destination behavior or enable workflow execution.
-Inspect current Git/PR state before claiming protected delivery of these entries.
+PR #688 completed protected delivery of these entries.
+
+The disabled native manual caller and reusable Attempt use the actual native
+workflow identity, Windows jobs, and current immutable artifact IDs/digests.
+The trusted helper's complete runtime is built without publication authority
+and transported to native readers and the build-free publisher. Blocked
+Eligibility uploads its Decision before failing. Original package bytes and
+the three Qualification Evidence records flow into the existing authority
+owners. The action path requires current Approval and persisted-marker
+admission; the zero-action path requires fresh exact proof. Failed or missing
+publication evidence retains conservative current-DAG semantics. Workflow
+contracts and controlled PowerShell tests are local implementation evidence,
+not Windows Actions, native acceptance, or service-guarantee evidence.
 
 ## Verified Platform Findings and Remaining Gates
 
