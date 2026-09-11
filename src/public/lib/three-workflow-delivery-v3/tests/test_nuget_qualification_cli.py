@@ -518,6 +518,7 @@ def test_nuget_mechanical_result_round_trip(qualification_source):
         "bytes",
         "sha512",
         "identity",
+        "assembly-name",
         "witness",
         "source",
         "toolchain",
@@ -544,6 +545,8 @@ def test_nuget_mechanical_result_rejects_substitution(
         document["manifest"]["sha512"] = "sha512:" + "9" * 128
     elif fault == "identity":
         document["expectation"]["normalized-version"] = "99.0.0"
+    elif fault == "assembly-name":
+        document["expectation"]["assembly-name"] = "Another.Assembly"
     elif fault == "witness":
         document["expectation"]["witness"]["catalog-digest"] = (
             "sha256:" + "9" * 64

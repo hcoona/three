@@ -302,7 +302,6 @@ def nuget_mechanical_build_from_bytes(
                 _mechanical_text(expectation["normalized-package-id"]),
                 _mechanical_text(expectation["normalized-version"]),
                 witness,
-                _mechanical_text(expectation["assembly-name"]),
             ),
             witness,
             _mechanical_pairs(document["source-input-manifest"]),
