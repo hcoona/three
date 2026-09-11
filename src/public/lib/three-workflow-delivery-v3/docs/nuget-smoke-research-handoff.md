@@ -67,9 +67,13 @@ Keep these facts in the working context:
   selected freshness phase. PR #684 completed protected control-entry delivery.
   Native Build/Qualification commands now connect matched planning, frozen
   Build, original-package upload binding, independent contents/consumer Evidence,
-  and the shared Finalizer. Inspect current Git/PR state before claiming this
-  Build/Qualification entry is protected-delivered. Workflow execution,
-  publisher commands, native acceptance tooling, activation, and real
+  and the shared Finalizer. PR #685 completed protected Build/Qualification
+  entry delivery. Native observation and approval commands now connect supported
+  reads, zero-or-one action materialization, a native reviewer summary, and
+  current-Attempt Approval/Authorization. Inspect current Git/PR state before
+  claiming this observation/approval entry is protected-delivered. Workflow
+  execution, exact-satisfied proof and publisher/terminal commands, native
+  acceptance tooling, activation, and real
   publication remain subsequent work; NuGet Governance and admission stay disabled.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
@@ -219,6 +223,14 @@ boundary. Content identity remains distinct from transport identity. The
 two quality commands produce independent Evidence; the shared Finalizer
 retains incomplete and failed outcomes. These command contracts supply no
 Windows Actions or native destination evidence and enable no workflow.
+
+The native observation/approval entries reuse supported readback and shared
+materialization, Bundle closure, and Governance freshness contracts. A native
+summary presents the actual package identity, archive contents and hashes,
+target witness, Qualification, and exact action. Zero action produces no summary
+or Approval. Authorization replays the admitted publication basis before fresh
+Governance and the existing sentinel check. This orchestration grants no
+native operation or publication and leaves publisher/terminal entry pending.
 
 ## Verified Platform Findings and Remaining Gates
 

@@ -24,17 +24,20 @@ and shared Approval/terminal closure. The native control CLI imports Provider
 facts, compiles the Model, and binds Eligibility and the current Attempt.
 Native Build/Qualification commands connect matched planning, frozen Build,
 original-package upload binding, separate quality Evidence, and finalization.
+Native observation and approval commands connect supported active readback,
+zero-or-one action materialization, and current-Attempt Approval/Authorization.
 Workflow execution, publisher commands, native acceptance, activation, and real
 Live proving remain subsequent work.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,
-Model, Eligibility, Attempt admission, and Build/Qualification. Model compilation consumes immutable
+Model, Eligibility, Attempt admission, Build/Qualification, and approval.
+Model compilation consumes immutable
 uploaded Provider bytes without reevaluating the target. Live control reads
 exclude operator administration endpoints; disabled Governance performs no
 native profile collection. Attempt admission requires an explicit freshness or
-authorization-replay phase. These commands provide no native dispatch or
-publication authorization, and NuGet Governance and admission remain blocked.
+authorization-replay phase. Command availability grants no native dispatch or
+real publication; NuGet Governance and admission remain blocked.
 
 The qualification sequence is `plan-qualification`, `run-build`,
 `form-artifact`, `artifact-contents` and `restore-build-invoke`, then
@@ -45,6 +48,16 @@ produce separate Evidence for that artifact. Missing Evidence remains
 `incomplete`, while malformed or mismatched transport is rejected. Use each
 command's `--help` for its required current-run inputs. These local command
 contracts do not establish Actions execution or native destination behavior.
+
+After Qualification, `observe-github-packages` admits current native authority
+before supported reads. `materialize-publication` forms zero or one action;
+only an action produces the native reviewer summary. Upload it as
+`reviewer-summary.md` with the Publication Snapshot before
+`form-approval-bundle`. `form-publication-authorization` replays the exact
+publication basis and Bundle references, then requires fresh matching
+Governance and the existing Approval boundary sentinel. A zero-action Snapshot
+cannot acquire Approval. All native commands reject GitHub reruns. Fresh
+exact-satisfied proof and publisher/terminal command integration remain pending.
 
 The documentation records accepted domain constraints and evidence. It grants no
 runtime work and does not renew either spent npm dispatch authorization.

@@ -71,8 +71,11 @@ and the shared Approval, Authorization, marker, Result, and Outcome contracts.
 The native control CLI connects immutable Provider/Model admission and current
 Eligibility/Attempt bindings. Native Build/Qualification commands connect
 matched planning, frozen Build, original-package upload binding, separate
-content/consumer Evidence, and the shared Finalizer. Workflow execution,
-publisher commands, and native/Live proving remain pending; missing
+content/consumer Evidence, and the shared Finalizer. Native observation and
+approval commands connect supported reads, zero-or-one action materialization,
+a native reviewer summary, and current-Attempt Approval/Authorization with
+fresh Governance. Workflow execution, exact-satisfied proof and publisher/terminal
+commands, and native/Live proving remain pending; missing
 service-owned atomic non-overwrite assurance blocks activation.
 The handoff
 defines concrete operation and delivery discipline.
