@@ -7,6 +7,7 @@ import hashlib
 import json
 from datetime import timedelta
 from pathlib import Path
+from subprocess import TimeoutExpired
 from unittest.mock import Mock
 
 import pytest
@@ -519,6 +520,101 @@ def test_nuget_publication_cli_preserves_unowned_runtime(
     else:
         assert not claim.exists()
     _assert_build_free(case)
+
+
+@pytest.mark.parametrize("operation", ["inspect_package", "service_resources"])
+def test_nuget_publication_cli_records_helper_timeout_before_invocation(
+    publication_case, operation, capsys
+):
+    case = publication_case
+    _prepared(case)
+    reader = getattr(case.feed.authority, operation)
+    reader.reset_mock()
+
+    def timeout(*_args):
+        assert (case.runtime / "command-started").is_file()
+        raise TimeoutExpired(("dotnet", "modeled-helper"), 300)
+
+    reader.side_effect = timeout
+    arguments = _args(case, COMMANDS[2])
+    assert cli.main(arguments) == 1
+    result = _record(case.result, PublicationResult)
+    assert result.result == "failed"
+    assert result.command_classification == "not-initiated"
+    assert result.mutation_classification == "not-mutated"
+    assert result.post_action_readback is None
+    assert result.response_identity is None
+    assert result.mutation_marker_reference.to_document() == json.loads(
+        case.marker_wire
+    )
+    assert result.diagnostics.entries == (
+        "NuGet pre-invocation rejection: TimeoutExpired",
+    )
+    assert (
+        f"publication-result-digest={result.result_digest}"
+        in case.github_output.read_text()
+    )
+    reader.assert_called_once()
+    case.publish.assert_not_called()
+    assert not case.runtime.exists()
+    _assert_build_free(case)
+    result_bytes = case.result.read_bytes()
+    assert cli.main(arguments) == 1
+    assert capsys.readouterr().err
+    reader.assert_called_once()
+    case.publish.assert_not_called()
+    assert case.result.read_bytes() == result_bytes
+
+
+@pytest.mark.parametrize(
+    ("invocation", "classification", "has_response"),
+    [
+        ("created", "definitive-success", True),
+        ("conflict", "definitive-non-success", True),
+        ("lost-response", "ambiguous", False),
+    ],
+)
+def test_nuget_publication_cli_retains_invocation_after_readback_timeout(
+    publication_case, invocation, classification, has_response, capsys
+):
+    case = publication_case
+    _prepared(case)
+    _invocation(case, invocation)
+    reader = case.feed.authority.normalize_identity
+    reader.reset_mock()
+    reader.side_effect = TimeoutExpired(("dotnet", "modeled-helper"), 300)
+    arguments = _args(case, COMMANDS[2])
+    assert cli.main(arguments) == 1
+    result = _record(case.result, PublicationResult)
+    assert result.result == "failed"
+    assert result.command_classification == classification
+    assert result.mutation_classification == "possibly-mutated"
+    assert result.post_action_readback is None
+    assert result.response_identity == (
+        "sha256:" + hashlib.sha256(b"modeled-response").hexdigest()
+        if has_response
+        else None
+    )
+    assert result.mutation_marker_reference.to_document() == json.loads(
+        case.marker_wire
+    )
+    assert result.diagnostics.entries == (
+        "NuGet post-publication read failed: TimeoutExpired",
+    )
+    assert (
+        f"publication-result-digest={result.result_digest}"
+        in case.github_output.read_text()
+    )
+    reader.assert_called_once()
+    case.publish.assert_called_once()
+    assert not case.runtime.exists()
+    _assert_build_free(case)
+    result_bytes = case.result.read_bytes()
+    assert cli.main(arguments) == 1
+    assert capsys.readouterr().err
+    reader.assert_called_once()
+    case.publish.assert_called_once()
+    assert case.result.read_bytes() == result_bytes
 
 
 def _wire(case, path, artifact_id):

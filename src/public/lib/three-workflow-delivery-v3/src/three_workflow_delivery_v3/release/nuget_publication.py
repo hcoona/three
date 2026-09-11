@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import shutil
 from datetime import datetime
+from subprocess import TimeoutExpired
 from typing import TYPE_CHECKING
 
 from three_workflow_delivery_v3.adapters import nuget_github_packages as native
@@ -313,6 +314,7 @@ def execute_nuget_publication(  # noqa: PLR0913
         except (
             OSError,
             ValueError,
+            TimeoutExpired,
             GovernanceFreshnessRejectionError,
             native.NuGetTransportError,
         ) as error:
@@ -374,7 +376,12 @@ def execute_nuget_publication(  # noqa: PLR0913
             _proof, readback = nuget_readback_from_state(
                 state, artifact=artifact, observed_at=_instant(clock())
             )
-        except (OSError, ValueError, native.NuGetTransportError) as error:
+        except (
+            OSError,
+            ValueError,
+            TimeoutExpired,
+            native.NuGetTransportError,
+        ) as error:
             diagnostics = (
                 f"NuGet post-publication read failed: {type(error).__name__}",
             )
