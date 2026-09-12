@@ -193,9 +193,15 @@ clean local consumer before returning a complete pair. Only fixture preparation
 disables remote vulnerability auditing; ordinary Release keeps its configuration.
 Available diagnostics and already retained outputs survive failure without a
 success manifest. Local SDK scenarios establish this mechanism,
-not protected Windows preparation, actual destination behavior or service-owned
-atomic guarantees. The next integration owns protected request/admission binding,
-immutable fixture transport, native collection and bounded operator execution.
+not actual Windows preparation, destination behavior or service-owned atomic
+guarantees. The separate `workflow-delivery-v3-nuget-fixtures.yml` entry connects
+the protected current request, immutable helper/native setup inputs and offline
+pair transport on Windows. It rejects reruns and closes native Provider/Model
+admission under `destination-acceptance`. Setup acquires original dependencies
+through native locked restore before the offline pair boundary. Failed preparation
+retains diagnostics without completed output. Inspect Git and protected delivery
+before relying on remote availability. Actual Windows preparation, native
+collection and bounded operator execution remain subsequent work.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
 stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an
 activation gate; sequential duplicate tests cannot supply it.

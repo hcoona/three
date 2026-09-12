@@ -62,10 +62,31 @@ def _blob_digest(repo: Path, target: str, path: str) -> str:
     return "sha256:" + hashlib.sha256(content).hexdigest()
 
 
+def _reject_native(*_args: object, **_kwargs: object) -> None:
+    pytest.fail("the compiler must not execute native target code")
+
+
+@pytest.fixture(scope="module")
+def native_scenario_basis(tmp_path_factory: pytest.TempPathFactory):
+    """Construct the immutable source and supplied facts once."""
+    with pytest.MonkeyPatch.context() as patch:
+        return _native_scenario(
+            tmp_path_factory.mktemp("nuget-compiler-basis"), patch
+        )
+
+
 @pytest.fixture
-def native_scenario(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Supply evaluator facts while exercising exact-target Git authority."""
-    return _native_scenario(tmp_path, monkeypatch)
+def native_scenario(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    native_scenario_basis,
+):
+    """Keep each scenario's Git/worktree changes and native guard isolated."""
+    source, context, manifest, result = native_scenario_basis
+    repo = tmp_path / "repo"
+    shutil.copytree(source, repo)
+    monkeypatch.setattr(dotnet_provider, "run_native", _reject_native)
+    return repo, context, manifest, result
 
 
 def _native_scenario(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -176,10 +197,7 @@ def _native_scenario(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         native_evaluation_digest=DIGEST,
     )
 
-    def reject_native(*_args: object, **_kwargs: object) -> None:
-        pytest.fail("the compiler must not execute native target code")
-
-    monkeypatch.setattr(dotnet_provider, "run_native", reject_native)
+    monkeypatch.setattr(dotnet_provider, "run_native", _reject_native)
     return repo, context, manifest, result
 
 

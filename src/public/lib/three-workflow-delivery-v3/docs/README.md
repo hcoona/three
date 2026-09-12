@@ -86,8 +86,10 @@ The [fixture and operator contract](./hcoona-release-smoke-github-packages-lld.m
 defines native-tooling preparation. The handoff defines concrete operation and
 delivery discipline.
 The offline paired-fixture component implements local construction and
-inspection; protected fixture transport and native operator integration remain
-subsequent work.
+inspection. Its separate Windows preparation entry binds the current request,
+trusted helper, admitted native/source facts and original dependencies through
+immutable transport. Local scenarios do not establish actual Windows execution;
+native operator integration and platform evidence remain subsequent work.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.
 

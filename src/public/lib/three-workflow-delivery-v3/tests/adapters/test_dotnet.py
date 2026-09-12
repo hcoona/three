@@ -215,6 +215,7 @@ def frozen_package(
         CheckoutMaterialization(0, credentials_persisted=False),
         helper=native_helper,
         evidence_directory=root / "provider",
+        dependency_directory=root / "provider-packages",
     )
     assert provider.checkout.head == target
     assert provider.checkout.ancestry_complete is True
@@ -282,6 +283,35 @@ def test_frozen_native_package_and_clean_consumer(
         == "sha256:" + hashlib.sha256(result.witness).hexdigest()
     )
     assert consumer.normalized_version == result.expectation.normalized_version
+
+
+def test_native_provider_captures_offline_dependency_inputs(
+    frozen_package: tuple[DotnetBuildResult, Path],
+) -> None:
+    """The native locked setup retains packages in its explicit fresh cache."""
+    _, root = frozen_package
+    assets = json.loads((root / "provider/project.assets.json").read_bytes())
+    cache = root / "provider-packages"
+    assert Path(assets["project"]["restore"]["packagesPath"]) == cache
+    libraries = {
+        name: item
+        for name, item in assets["libraries"].items()
+        if item["type"] == "package"
+    }
+    archives = tuple(cache.rglob("*.nupkg"))
+    assert len(archives) == len(libraries)
+    assert libraries
+    for name, item in libraries.items():
+        package, version = name.lower().split("/")
+        archive = cache / item["path"] / f"{package}.{version}.nupkg"
+        assert archive.is_file()
+        assert zipfile.is_zipfile(archive)
+    command = json.loads(
+        (root / "provider/evaluation/command.json").read_bytes()
+    )
+    assert "-property:RestoreLockedMode=true" in command["argv"]
+    assert "-property:RestorePackagesPath=" + str(cache) in command["argv"]
+    assert (root / "provider/evaluation/exit-code.txt").read_text() == "0"
 
 
 @pytest.mark.parametrize(
@@ -599,19 +629,8 @@ def fixture_request(
         purpose="destination-acceptance",
     )
     source = root / "source"
-    locked = json.loads(
-        (source / DOTNET_PROJECT_ROOT / "packages.lock.json").read_bytes()
-    )["dependencies"]["net10.0"]
-    cache = Path(
-        os.environ.get("NUGET_PACKAGES", Path.home() / ".nuget/packages")
-    )
-    archives = tuple(
-        cache
-        / name.lower()
-        / item["resolved"]
-        / f"{name.lower()}.{item['resolved']}.nupkg"
-        for name, item in locked.items()
-    )
+    archives = tuple(sorted((root / "provider-packages").rglob("*.nupkg")))
+    assert archives
     assert all(archive.is_file() for archive in archives)
     return NuGetFixtureRequest(
         DotnetBuildRequest(

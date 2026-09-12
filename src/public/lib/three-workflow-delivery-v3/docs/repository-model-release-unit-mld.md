@@ -506,6 +506,11 @@ Run-attempt binding follows the owning execution contract:
   identity only after Snapshot validation.
 - **CI Qualification:** the Snapshot and Fact Bundles retain CI's approved
   candidate and run-attempt contract.
+- **NuGet fixture preparation:** the Manifest, Fact Bundle and Snapshot bind
+  `destination-acceptance`, the exact preparation request and tooling control,
+  fixture target, current run and attempt one. They carry no selected Release
+  channel or normal-Live authority. The acceptance caller uses the admitted
+  native facts to form its fixture witness and frozen Build request.
 
 Every context rejects cross-purpose, other-request, and prior-Attempt
 Repository Model inputs. This is strict current-context admission, not custom
