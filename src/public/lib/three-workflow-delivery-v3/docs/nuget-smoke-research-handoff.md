@@ -75,9 +75,13 @@ Keep these facts in the working context:
   publication/terminal entry delivery. The separate disabled Windows workflows
   are present on protected `main` and connect the native commands. The
   [LLD fixture and operator contract](./hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
-  governs acceptance tooling. Actual native Windows workflow execution,
-  acceptance tooling/evidence, activation, and real publication remain
-  subsequent work; NuGet Governance and admission stay disabled.
+  governs acceptance tooling. The offline `acceptance.nuget_fixture` component
+  builds and inspects original A/B archives from the same compiled inputs,
+  retains diagnostics, and requires A's clean local consumer. Its local SDK
+  evidence does not establish Windows or destination behavior. Protected fixture
+  preparation/transport, native reader/operator integration, actual native
+  evidence, activation and real publication remain subsequent work; NuGet
+  Governance and admission stay disabled.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
 - The selected GitHub Packages marker project has independent v3 authoring;

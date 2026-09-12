@@ -95,17 +95,48 @@ def run_native(
     command: tuple[str, ...],
     cwd: Path,
     environment: dict[str, str] | None = None,
+    *,
+    diagnostics: Path | None = None,
 ) -> str:
     """Execute one unprivileged native command without shell interpretation."""
-    result = subprocess.run(  # noqa: S603
-        command,
-        cwd=cwd,
-        env=environment or neutral_dotnet_environment(),
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+    if diagnostics is not None:
+        diagnostics.mkdir(parents=True, exist_ok=False)
+        (diagnostics / "command.json").write_text(
+            json.dumps({"argv": command, "cwd": str(cwd)}, indent=2),
+            encoding="utf-8",
+        )
+    try:
+        result = subprocess.run(  # noqa: S603
+            command,
+            cwd=cwd,
+            env=environment or neutral_dotnet_environment(),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        if diagnostics is not None:
+            (diagnostics / "failure.txt").write_text(
+                str(error), encoding="utf-8"
+            )
+            if isinstance(error, subprocess.TimeoutExpired):
+                for name, value in (
+                    ("stdout", error.stdout),
+                    ("stderr", error.stderr),
+                ):
+                    (diagnostics / f"{name}.txt").write_bytes(
+                        value.encode()
+                        if isinstance(value, str)
+                        else value or b""
+                    )
+        raise
+    if diagnostics is not None:
+        (diagnostics / "stdout.txt").write_text(result.stdout, encoding="utf-8")
+        (diagnostics / "stderr.txt").write_text(result.stderr, encoding="utf-8")
+        (diagnostics / "exit-code.txt").write_text(
+            str(result.returncode), encoding="ascii"
+        )
     if result.returncode:
         message = (
             f"native command failed: {command[0]} {command[1]} "

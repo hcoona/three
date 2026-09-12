@@ -184,8 +184,18 @@ uploaded-marker admission, zero-action proof, and failed terminal payloads.
 The disabled workflow pair is present on protected `main`.
 Local shell/transport contracts establish no actual native Windows workflow execution.
 The [NuGet fixture and operator contract](./hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
-governs the next acceptance-tooling unit. Native workflow execution, tooling,
+governs acceptance tooling. Native workflow execution, operator integration,
 activation, and real publication remain subsequent work.
+The offline `acceptance.nuget_fixture` component prepares two original pack
+outputs from one frozen compilation. It requires explicit local dependency
+archives, a new dependency cache, official identity/content inspection and A's
+clean local consumer before returning a complete pair. Only fixture preparation
+disables remote vulnerability auditing; ordinary Release keeps its configuration.
+Available diagnostics and already retained outputs survive failure without a
+success manifest. Local SDK scenarios establish this mechanism,
+not protected Windows preparation, actual destination behavior or service-owned
+atomic guarantees. The next integration owns protected request/admission binding,
+immutable fixture transport, native collection and bounded operator execution.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
 stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an
 activation gate; sequential duplicate tests cannot supply it.
