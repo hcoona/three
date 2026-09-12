@@ -200,8 +200,14 @@ pair transport on Windows. It rejects reruns and closes native Provider/Model
 admission under `destination-acceptance`. Setup acquires original dependencies
 through native locked restore before the offline pair boundary. Failed preparation
 retains diagnostics without completed output. Inspect Git and protected delivery
-before relying on remote availability. Actual Windows preparation, native
-collection and bounded operator execution remain subsequent work.
+before relying on remote availability. A bounded Windows preparation run has
+passed independent artifact-body and lineage audit: the original A/B packages
+have native-equivalent identities and different bytes, and A's clean local
+consumer passed. The [preparation evidence](https://github.com/hcoona/three/issues/676)
+retains the exact request, protected source/run identities, artifact digests
+and audit limits. Its single dispatch allowance is spent; the evidence grants
+no rerun or replacement. Native collection, bounded operator execution and
+normal-Live workflow proving remain subsequent work.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
 stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an
 activation gate; sequential duplicate tests cannot supply it.
