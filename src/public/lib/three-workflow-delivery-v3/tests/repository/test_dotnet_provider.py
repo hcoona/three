@@ -1,5 +1,6 @@
 """Immutable native fact admission contracts for the NuGet slice."""
 
+import os
 from dataclasses import replace
 
 import pytest
@@ -95,3 +96,53 @@ def test_native_environment_discards_authority_and_ambient_ref(
     assert environment["PATH"] == "/controlled/tools"
     assert environment["IGNORE_GITHUB_REF"] == "true"
     assert "must-not-survive" not in environment.values()
+
+
+@pytest.mark.parametrize(
+    "roots",
+    [
+        {
+            "ProgramFiles(x86)": r"C:\Program Files (x86)",
+            "ProgramFiles": r"C:\Program Files",
+        },
+        {
+            "PROGRAMFILES(X86)": r"C:\Program Files (x86)",
+            "PROGRAMFILES": r"C:\Program Files",
+        },
+        {"programfiles": r"C:\Program Files"},
+        {"ProgramFiles(x86)": "", "ProgramFiles": r"C:\Program Files"},
+    ],
+    ids=["mixed-case", "uppercase", "fallback-only", "empty-x86"],
+)
+def test_native_environment_preserves_windows_nuget_settings_roots(
+    monkeypatch: pytest.MonkeyPatch, roots: dict[str, str]
+) -> None:
+    """NuGet's Windows settings roots survive the credential-free boundary."""
+    directory_keys = {"PROGRAMFILES(X86)", "PROGRAMFILES"}
+    for key in tuple(os.environ):
+        if key.upper() in directory_keys:
+            monkeypatch.delenv(key)
+    for key, value in roots.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("GITHUB_TOKEN", "parent-only-token")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/ambient")
+    monkeypatch.setenv("IGNORE_GITHUB_REF", "false")
+    parent_values = (
+        os.environ["GITHUB_TOKEN"],
+        os.environ["IGNORE_GITHUB_REF"],
+    )
+
+    environment = neutral_dotnet_environment()
+
+    assert {
+        key.upper(): value
+        for key, value in environment.items()
+        if key.upper() in directory_keys
+    } == {key.upper(): value for key, value in roots.items()}
+    assert "GITHUB_TOKEN" not in environment
+    assert "GITHUB_REF" not in environment
+    assert environment["IGNORE_GITHUB_REF"] == "true"
+    assert (
+        os.environ["GITHUB_TOKEN"],
+        os.environ["IGNORE_GITHUB_REF"],
+    ) == parent_values

@@ -77,6 +77,8 @@ _GLOBAL_INPUTS = (
 def neutral_dotnet_environment() -> dict[str, str]:
     """Remove cloud refs and credentials before any target-defined execution."""
     allowed = {name.upper() for name in NBGV_ENVIRONMENT_ALLOWLIST}
+    # NuGet's Windows machine-wide settings path uses these OS directory roots.
+    allowed.update(("PROGRAMFILES(X86)", "PROGRAMFILES"))
     environment = {
         key: value
         for key, value in os.environ.items()
