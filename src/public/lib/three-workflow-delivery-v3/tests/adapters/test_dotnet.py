@@ -854,6 +854,8 @@ def test_nuget_fixture_rejects_mismatched_frozen_inputs(
         "assembly",
         "metadata",
         "relationships",
+        "relationships-nuspec-target",
+        "relationships-core-target",
         "core",
         "content-types",
     ],
@@ -896,6 +898,35 @@ def test_nuget_fixture_inspection_rejects_substitution(  # noqa: C901
                 content = content.replace(b"<authors>", b"<authors>changed ")
             elif substitution == "relationships" and name == "_rels/.rels":
                 content = content.replace(b"Type=", b"ChangedType=")
+            elif (
+                substitution
+                in {
+                    "relationships-nuspec-target",
+                    "relationships-core-target",
+                }
+                and name == "_rels/.rels"
+            ):
+                suffix = (
+                    ".nuspec"
+                    if substitution == "relationships-nuspec-target"
+                    else ".psmdcp"
+                )
+                original_entry = next(
+                    entry
+                    for entry in paired_fixture.inspection.original.entries
+                    if entry.endswith(suffix)
+                )
+                comparison_entry = next(
+                    entry
+                    for entry in source.namelist()
+                    if entry.endswith(suffix)
+                )
+                assert original_entry != comparison_entry
+                actual_target = f'Target="/{comparison_entry}"'.encode()
+                assert actual_target in content
+                content = content.replace(
+                    actual_target, f'Target="/{original_entry}"'.encode()
+                )
             elif substitution == "core" and name.endswith(".psmdcp"):
                 content = content.replace(b"<keywords>", b"<keywords>changed")
             elif (
@@ -915,6 +946,8 @@ def test_nuget_fixture_inspection_rejects_substitution(  # noqa: C901
         "assembly": "native command failed",
         "metadata": "undeclared package metadata",
         "relationships": "package relationships changed",
+        "relationships-nuspec-target": "package relationships changed",
+        "relationships-core-target": "package relationships changed",
         "core": "undeclared package metadata",
         "content-types": "compiled inputs or fixed package content",
     }

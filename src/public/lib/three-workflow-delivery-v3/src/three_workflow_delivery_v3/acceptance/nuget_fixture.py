@@ -149,9 +149,13 @@ def _inspect_relationships(
         message = "fixture package relationships changed"
         raise ValueError(message)
     for before, after in zip(left, right, strict=True):
+        original_target = before.get("Target", "")
+        expected_target = targets.get(original_target, original_target)
+        if after.get("Target", "") != expected_target:
+            message = "fixture package relationships changed"
+            raise ValueError(message)
         after.set("Id", before.get("Id", ""))
-        actual = after.get("Target", "")
-        after.set("Target", targets.get(actual, actual))
+        after.set("Target", original_target)
     if ET.tostring(left) != ET.tostring(right):
         message = "fixture package relationships changed"
         raise ValueError(message)
@@ -259,8 +263,8 @@ def inspect_nuget_fixture_pair(
             left_zip.read("_rels/.rels"),
             right_zip.read("_rels/.rels"),
             {
-                "/" + right_nuspec: "/" + left_nuspec,
-                "/" + core[0]: "/" + left_core,
+                "/" + left_nuspec: "/" + right_nuspec,
+                "/" + left_core: "/" + core[0],
             },
         )
     if (
