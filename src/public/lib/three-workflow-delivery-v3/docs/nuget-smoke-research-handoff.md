@@ -72,11 +72,12 @@ Keep these facts in the working context:
   reads, zero-or-one action materialization, a native reviewer summary, and
   current-Attempt Approval/Authorization. PR #687 completed protected
   observation/approval entry delivery. PR #688 completed protected native
-  publication/terminal entry delivery. Separate disabled Windows workflows now
-  connect the native commands; inspect current Git/PR state before claiming
-  protected workflow delivery. Actual Windows execution, native acceptance
-  tooling, activation, and real publication remain subsequent work; NuGet
-  Governance and admission stay disabled.
+  publication/terminal entry delivery. The separate disabled Windows workflows
+  are present on protected `main` and connect the native commands. The
+  [LLD fixture and operator contract](./hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
+  governs acceptance tooling. Actual native Windows workflow execution,
+  acceptance tooling/evidence, activation, and real publication remain
+  subsequent work; NuGet Governance and admission stay disabled.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
 - The selected GitHub Packages marker project has independent v3 authoring;
@@ -302,7 +303,7 @@ this summary routes the next agent to that authority.
 | Confirmed concern        | Requirement and next evidence boundary                                                                                                                                                                                                                               |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Product and scope        | `WD-NUGET-001`: the selected marker library, `net10.0`, Windows, one `.nupkg`, no separate `.snupkg`, GitHub Packages Buddy only.                                                                                                                                    |
-| Native facts and version | `WD-NUGET-002`: official evaluation at the exact target, complete history, and a frozen native NBGV NuGet projection. Native evaluation and frozen Build mechanisms are present; current-run Windows execution still needs workflow integration.                     |
+| Native facts and version | `WD-NUGET-002`: official evaluation at the exact target, complete history, and a frozen native NBGV NuGet projection. Native evaluation, frozen Build, and disabled Windows workflow integration are present; actual native workflow execution remains unproven.     |
 | Trust and authority      | `WD-NUGET-003` and `WD-NUGET-004`: reviewed protected-main control, isolated target evaluation/build, build-free publication, self-approval by the sole trusted writer, and explicitly accepted repository-token reach. Platform configuration still needs readback. |
 | Qualification            | `WD-NUGET-005`: distinct package-content and clean exact-version restore/build/marker evidence for the Release-owned artifact.                                                                                                                                       |
 | Destination acceptance   | `WD-NUGET-006`: independently establish the required active creation, duplicate, actual-byte, witness, and observation behavior for the NuGet profile.                                                                                                               |
@@ -310,9 +311,8 @@ this summary routes the next agent to that authority.
 | Execution boundaries     | `WD-NUGET-008`: ordered design, subsequent implementation authorization, and separate concrete native and real-publication authorization.                                                                                                                            |
 
 The subsequent implementation is authorized as described above. A descriptor
-alone cannot enable NuGet: workflow entry delivery, native acceptance tooling
-and evidence, and protected activation remain necessary after disabled
-artifact and destination integration.
+alone cannot enable NuGet: native acceptance tooling and evidence, and
+protected activation remain necessary after disabled workflow integration.
 The [HLD extension](./high-level-design.md#nuget-second-slice-extension)
 assigns ownership. Local tests or historical package versions cannot supply
 missing native or real-publication evidence. The confirmed requirements alone

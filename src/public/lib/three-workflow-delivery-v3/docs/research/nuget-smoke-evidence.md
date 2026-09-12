@@ -203,3 +203,27 @@ been downloaded or reverified by this record migration.
   material gap and correctly distinguished outstanding design-delivery gates
   from post-delivery implementation authorization. The correction's 155 local
   Markdown path/anchor checks passed. No product or native execution occurred.
+
+## [2026-09-12] query | Prepare the NuGet native fixture contract
+
+- A bounded recheck of three GitHub-owned raw documentation bodies at
+  `078b5832caa5cde591c2babb389ef447a0ef66eb` did not close the service-owned
+  atomic non-overwrite gate. Client support and restoration constraints do
+  not establish competing-write behavior. This is an evidence-sufficiency
+  conclusion for those sources, not proof of overwrite or universal absence
+  of a guarantee. Exact sources, independent review, hashes, and scope limits
+  are retained in the [Issue evidence carrier](https://github.com/hcoona/three/issues/676#issuecomment-5642567112).
+- Microsoft's [pack target reference](https://learn.microsoft.com/en-us/nuget/reference/msbuild-targets#pack-target)
+  defines `PackageId`, `PackageVersion`, and `PackageDescription` as native pack
+  inputs. The repository-pinned SDK source's
+  [manifest serializer](https://github.com/dotnet/dotnet/blob/caa81fa4971f74880cdab61990cb1b11420939ec/src/nuget-client/src/NuGet.Core/NuGet.Packaging/PackageCreation/Xml/PackageMetadataXmlExtensions.cs#L40-L42)
+  writes the supplied ID and `NuGetVersion.ToFullString()`. These are source
+  findings supporting fixture construction through pack; they are not proof
+  that a generated fixture, GitHub feed, or native scenario passes.
+- The [LLD fixture contract](../hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
+  selects original pack outputs, official coordinate-equivalence checks,
+  separate bounded preflight and mutation requests, and independently audited
+  evidence. Concrete coordinates, tool/profile identities, operation budgets,
+  and actual pinned-toolchain results remain execution prerequisites. No
+  native request, dispatch, publication, or administrative operation was
+  performed by this source research.
