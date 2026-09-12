@@ -35,6 +35,13 @@ Windows Actions execution, native acceptance, activation, and real Live proving
 remain subsequent work. The [native fixture and operator contract](docs/hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
 defines acceptance-tooling preparation and its evidence boundary.
 
+The offline [NuGet fixture component](src/three_workflow_delivery_v3/acceptance/nuget_fixture.py)
+prepares original A/B archives from one frozen compilation, inspects their
+native identity and payload relationship, and requires A's clean local
+consumer. It retains inputs, original bytes and diagnostics. Its local SDK
+checks do not establish Windows or destination evidence; protected fixture
+workflow, native reader/operator and admission integration remain pending.
+
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,
 Model, Eligibility, Attempt admission, Build/Qualification, approval, publication,
