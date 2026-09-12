@@ -206,7 +206,12 @@ have native-equivalent identities and different bytes, and A's clean local
 consumer passed. The [preparation evidence](https://github.com/hcoona/three/issues/676)
 retains the exact request, protected source/run identities, artifact digests
 and audit limits. Its single dispatch allowance is spent; the evidence grants
-no rerun or replacement. Native collection, bounded operator execution and
+no rerun or replacement. The [NuGet capture component](../README.md) retains
+bounded complete observations or partial evidence through the existing reader.
+It supplies no executable operator: caller tooling/helper admission, process
+supervision, generation-wide limits and the exact reviewed native request remain
+prerequisites. A completion deadline is not process termination, and its local
+runtime record is not the Windows publication profile. Native collection and
 normal-Live workflow proving remain subsequent work.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
 stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an

@@ -88,9 +88,14 @@ Keep these facts in the working context:
   audit, including the original A/B pair and A's clean local consumer. The
   [preparation evidence](https://github.com/hcoona/three/issues/676) retains exact
   source/run and artifact bindings. Its single dispatch allowance is spent;
-  no rerun or replacement follows from the evidence. Native reader/operator
-  integration, destination evidence, activation and real publication remain
-  subsequent work; NuGet Governance and admission stay disabled.
+  no rerun or replacement follows from the evidence. The
+  [capture evidence component](../README.md) connects the existing reader to
+  finite per-capture allowances and complete or partial retained responses.
+  Its caller still owns exact tooling/helper admission, process supervision
+  and generation-wide budgets; it exposes no executable operator. Concrete
+  native requests, destination evidence, activation and real publication remain
+  subsequent work; NuGet Governance and admission stay disabled. A local reader
+  runtime record cannot establish the Windows publication profile.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
 - The selected GitHub Packages marker project has independent v3 authoring;
