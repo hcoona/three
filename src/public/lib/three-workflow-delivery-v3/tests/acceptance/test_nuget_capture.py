@@ -436,7 +436,9 @@ def test_capture_never_persists_request_credentials_or_exception_text(
 
 
 @pytest.mark.parametrize("encoded", [False, True])
-@pytest.mark.parametrize("field", ["body", "response-url", "selected-header"])
+@pytest.mark.parametrize(
+    "field", ["body", "response-url", "selected-header", "link"]
+)
 def test_capture_rejects_reflected_credentials_before_response_retention(
     tmp_path, capture_request, scenario, field, encoded
 ):
@@ -452,6 +454,16 @@ def test_capture_rejects_reflected_credentials_before_response_retention(
             "url": CONTROL + "?credential=" + quote(secret, safe="")
         },
         "selected-header": {"headers": (("ETag", secret),)},
+        "link": {
+            "headers": (
+                (
+                    "LiNk",
+                    "<https://api.github.com/related?value="
+                    + quote(secret, safe="").replace("%3D", "%3d")
+                    + '>; rel="related"',
+                ),
+            )
+        },
     }[field]
     responses[CONTROL] = replace(responses[CONTROL], **changed)
     with pytest.raises(ValueError, match="contains a request credential"):
@@ -515,6 +527,7 @@ def test_capture_projects_headers_without_changing_original_body(
             ("Content-Encoding", "identity"),
             ("Content-Length", str(len(ARCHIVE))),
             ("ETag", '"original-package"'),
+            ("Link", '<https://api.github.com/related?a=b%3Dc>; rel="related"'),
             ("Set-Cookie", "session=independent-cookie-secret"),
             ("X-Diagnostic", TOKEN),
         ),
@@ -527,6 +540,7 @@ def test_capture_projects_headers_without_changing_original_body(
         ["content-encoding", "identity"],
         ["content-length", str(len(ARCHIVE))],
         ["etag", '"original-package"'],
+        ["link", '<https://api.github.com/related?a=b%3Dc>; rel="related"'],
     ]
     assert (output.parent / response["body"]).read_bytes() == ARCHIVE
     assert (

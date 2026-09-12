@@ -284,6 +284,9 @@ class _CaptureTransport:
         self.charged_bytes -= bound + 1 - len(response.body)
         self.returned_bytes += len(response.body)
         self.audit.check(unquote(response.url).encode())
+        for key, value in response.headers:
+            if key.lower() == "link":
+                self.audit.check(unquote(value).encode())
         name = f"response-{self.requests:03d}.body"
         record: dict[str, JsonValue] = {
             "request": self.requests,
