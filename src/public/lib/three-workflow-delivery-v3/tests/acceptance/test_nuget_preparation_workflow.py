@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -136,6 +137,44 @@ def test_fixture_seal_preserves_payload_and_reports_exact_digest(
     assert values["name"] == f"wdv3-nuget-fixtures-prepare-r71-{digest}.zip"
     assert (tmp_path / values["path"]).read_bytes() == content
     assert payload.read_bytes() == content
+
+
+def test_fixture_diagnostics_keep_distinct_raw_artifact_names(
+    workflow, tmp_path
+):
+    """Raw uploads use file basenames; every job retains its own diagnostics."""
+    names = []
+    configured_names = []
+    for job_name, job in workflow["jobs"].items():
+        workspace = tmp_path / job_name
+        evidence = workspace / ".wdv3" / "evidence"
+        evidence.mkdir(parents=True)
+        content = f"{job_name}: retained partial native diagnostics\n".encode()
+        (evidence / "native-command.log").write_bytes(content)
+        archive_step = next(
+            step
+            for step in job["steps"]
+            if step["name"] == "Archive available preparation diagnostics"
+        )
+        upload_step = next(
+            step
+            for step in job["steps"]
+            if step["name"] == "Retain immutable preparation diagnostics"
+        )
+        result = _pwsh(workspace, archive_step["run"], {"GITHUB_RUN_ID": "71"})
+        _assert_success(result)
+        path = workspace / upload_step["with"]["path"].replace(
+            "${{ github.run_id }}", "71"
+        )
+        with zipfile.ZipFile(path) as archive:
+            assert archive.namelist() == ["native-command.log"]
+            assert archive.read("native-command.log") == content
+        names.append(path.name)
+        configured_names.append(
+            upload_step["with"]["name"].replace("${{ github.run_id }}", "71")
+        )
+    assert len(set(names)) == len(names)
+    assert configured_names == names
 
 
 @pytest.mark.parametrize("status", [0, 17])

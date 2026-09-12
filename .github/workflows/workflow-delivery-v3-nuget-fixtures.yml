@@ -127,13 +127,13 @@ jobs:
       - name: Archive available preparation diagnostics
         if: always()
         run: |
-          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath '.wdv3/diagnostics.zip'
+          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath ".wdv3/wdv3-nuget-fixtures-request-diagnostics-r${env:GITHUB_RUN_ID}.zip"
       - name: Retain immutable preparation diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: wdv3-nuget-fixtures-request-diagnostics-r${{ github.run_id }}
-          path: .wdv3/diagnostics.zip
+          name: wdv3-nuget-fixtures-request-diagnostics-r${{ github.run_id }}.zip
+          path: .wdv3/wdv3-nuget-fixtures-request-diagnostics-r${{ github.run_id }}.zip
           if-no-files-found: error
           retention-days: 45
           overwrite: false
@@ -262,13 +262,13 @@ jobs:
       - name: Archive available preparation diagnostics
         if: always()
         run: |
-          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath '.wdv3/diagnostics.zip'
+          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath ".wdv3/wdv3-nuget-fixtures-setup-diagnostics-r${env:GITHUB_RUN_ID}.zip"
       - name: Retain immutable preparation diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: wdv3-nuget-fixtures-setup-diagnostics-r${{ github.run_id }}
-          path: .wdv3/diagnostics.zip
+          name: wdv3-nuget-fixtures-setup-diagnostics-r${{ github.run_id }}.zip
+          path: .wdv3/wdv3-nuget-fixtures-setup-diagnostics-r${{ github.run_id }}.zip
           if-no-files-found: error
           retention-days: 45
           overwrite: false
@@ -401,13 +401,13 @@ jobs:
       - name: Archive available preparation diagnostics
         if: always()
         run: |
-          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath '.wdv3/diagnostics.zip'
+          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath ".wdv3/wdv3-nuget-fixtures-prepare-diagnostics-r${env:GITHUB_RUN_ID}.zip"
       - name: Retain immutable preparation diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: wdv3-nuget-fixtures-prepare-diagnostics-r${{ github.run_id }}
-          path: .wdv3/diagnostics.zip
+          name: wdv3-nuget-fixtures-prepare-diagnostics-r${{ github.run_id }}.zip
+          path: .wdv3/wdv3-nuget-fixtures-prepare-diagnostics-r${{ github.run_id }}.zip
           if-no-files-found: error
           retention-days: 45
           overwrite: false
