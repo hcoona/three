@@ -49,7 +49,15 @@ A bounded Windows preparation run has passed independent artifact-body and
 lineage audit, including original A/B packages and A's clean local consumer.
 The [preparation evidence](https://github.com/hcoona/three/issues/676) retains
 the exact request, source/run identities, artifact digests and audit limits.
-Native reader/operator integration and destination evidence remain pending.
+The [NuGet capture component](src/three_workflow_delivery_v3/acceptance/nuget_capture.py)
+connects the existing active-state reader to a closed request, finite read/page/body
+allowances and retained response evidence. It records complete sequential state
+or partial failure evidence; neither result is a native acceptance verdict.
+Its completion deadline rejects late results but does not terminate a blocked
+process. The caller must admit exact tooling and the prebuilt helper, supervise
+the process and enforce the complete generation budget. The local reader runtime
+record does not establish the Windows publication profile. The executable
+operator, concrete native request and destination evidence remain pending.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,
