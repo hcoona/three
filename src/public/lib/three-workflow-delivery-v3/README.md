@@ -59,8 +59,32 @@ response bodies retain their original bytes.
 Its completion deadline rejects late results but does not terminate a blocked
 process. The caller must admit exact tooling and the prebuilt helper, supervise
 the process and enforce the complete generation budget. The local reader runtime
-record does not establish the Windows publication profile. The executable
-operator, concrete native request and destination evidence remain pending.
+record does not establish the Windows publication profile.
+
+The [local NuGet read operator](src/three_workflow_delivery_v3/acceptance/nuget_operator.py)
+adds POSIX process supervision and a fixed, nonresumable generation budget.
+Windows operators need a configured WSL environment for this local entry;
+Windows Build and publication retain their separate platform requirements.
+`python -m three_workflow_delivery_v3.acceptance.nuget_operator --help` describes
+the single-capture preflight entry. Its canonical `NuGetReadRequest` binds the
+exact clean reader checkout and local Python/TLS identity, the original complete
+helper artifact and producer/run, independently admitted audit bytes, unchanged
+helper source inputs, and the actual local .NET host and runtime information.
+These comparisons preserve admitted provenance; supplied hashes or an audit file
+do not independently establish producer authenticity, input completeness or
+local helper compatibility. Close those facts in the reviewed native request.
+
+The operator retains bounded helper command/output records, excludes the read
+credential from helper environments, and terminates the capture process group
+and its descendants at the deadline. Process reaping has a separate five-second
+bound. Cumulative allowances reserve each declared capture once; helper output
+allowances include one overflow-detection byte per call. A failed capture spends
+the collector lifetime, retaining safe partial evidence without a retry. The
+library supports all six ordered capture positions; the CLI runs only the
+separate preflight and rejects a present scenario coordinate. It supplies no
+probe dispatcher or destination consumer. A complete preflight capture is not
+the required access audit, native acceptance, Windows profile or publication
+authority. Concrete native requests and destination evidence remain pending.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,

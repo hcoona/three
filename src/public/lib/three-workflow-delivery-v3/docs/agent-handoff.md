@@ -208,11 +208,15 @@ retains the exact request, protected source/run identities, artifact digests
 and audit limits. Its single dispatch allowance is spent; the evidence grants
 no rerun or replacement. The [NuGet capture component](../README.md) retains
 bounded complete observations or partial evidence through the existing reader.
-It supplies no executable operator: caller tooling/helper admission, process
-supervision, generation-wide limits and the exact reviewed native request remain
-prerequisites. A completion deadline is not process termination, and its local
-runtime record is not the Windows publication profile. Native collection and
-normal-Live workflow proving remain subsequent work.
+The local read operator adds a separate executable preflight, exact source and
+immutable-helper comparisons, POSIX process supervision and fixed cumulative
+capture allowances. It preserves the helper's original producer/run lineage;
+independent helper admission and actual local runtime compatibility remain
+required. A failed collector cannot resume or replenish its budget. Its local
+runtime is not the Windows publication profile. Close the exact reviewed native
+request and required access facts before collection; the entry's presence does
+not supply them. Probe/consumer integration, native collection and normal-Live
+workflow proving remain subsequent work.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
 stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an
 activation gate; sequential duplicate tests cannot supply it.
