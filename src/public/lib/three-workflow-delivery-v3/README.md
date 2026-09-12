@@ -32,7 +32,8 @@ preparation, one-shot execution, and current-DAG finalization. The separate
 and [reusable Attempt](../../../../.github/workflows/workflow-delivery-v3-nuget-live-attempt.yml)
 connect these commands on Windows. NuGet Governance remains disabled;
 Windows Actions execution, native acceptance, activation, and real Live proving
-remain subsequent work.
+remain subsequent work. The [native fixture and operator contract](docs/hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
+defines acceptance-tooling preparation and its evidence boundary.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,

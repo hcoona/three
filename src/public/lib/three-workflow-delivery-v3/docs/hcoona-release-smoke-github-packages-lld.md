@@ -252,6 +252,132 @@ and clean destination consumption. Unknown outcomes or unexpected deltas stop
 the generation without retry. No scenario count in this proposal is executable
 authorization.
 
+### Fixture Preparation Contract
+
+Acceptance tooling uses the selected smoke project and the existing frozen
+native Build mechanisms in an unprivileged Windows preparation boundary.
+The request binds the exact protected tooling revision, fixture target,
+complete source-input manifest, native Provider facts, pinned toolchain,
+fresh generation, and selected package. Fixture preparation is local Build
+work; it performs no registry request and carries no publication credential.
+
+Fixture A is an original pack output with a `destination-acceptance` witness.
+Its package and assembly projection comes from the admitted native Provider
+facts. Content checks and a clean local consumer must pass before native use.
+An actual absent destination coordinate is a later preflight prerequisite;
+a generated version or a fresh generation label does not establish absence.
+
+Fixture B is a deliberately different acceptance candidate for A's native
+coordinate. Prepare it through a separate pack invocation using the same
+captured source, compiled assembly inputs, frozen assembly projection, and
+exact witness. Change only declared fixture pack metadata: package-ID casing,
+version build metadata, and a generation-bound package description. NuGet's
+official parser must establish equality of the resulting native coordinates
+while retaining the two actual display spellings. Do not turn the fixture
+variant into a new NBGV result or a Release-qualified artifact.
+
+Both archives are original pack outputs. Retain their exact bytes, sizes,
+SHA-256/SHA-512 digests, extracted witnesses, native identities, effective pack
+inputs, toolchain and complete build/pack diagnostics. No archive is edited,
+repacked, or renamed internally after creation. B must differ in actual
+package content, not only transport naming. Verify byte reuse by construction
+and acceptance inspection; do not introduce a routine Release build-output
+comparison protocol. If pack discards the required spelling variation,
+changes compiled inputs, reruns native version selection, emits an unexpected
+output, or fails official identity/content inspection, preparation fails
+before any native operation.
+
+The supported pack metadata inputs are documented by
+[NuGet's pack target](https://learn.microsoft.com/en-us/nuget/reference/msbuild-targets#pack-target).
+The pinned SDK's [manifest serializer](https://github.com/dotnet/dotnet/blob/caa81fa4971f74880cdab61990cb1b11420939ec/src/nuget-client/src/NuGet.Core/NuGet.Packaging/PackageCreation/Xml/PackageMetadataXmlExtensions.cs)
+writes the package ID and full version. This source basis supports the
+mechanism; actual pinned-toolchain fixture checks remain required.
+
+### Native Request and Tooling Boundary
+
+The operator closes the concrete generation in the existing delivery work
+carrier before execution. Separate a bounded read-only preflight request from
+the subsequent publication request; neither a flag nor a stored request grants
+its own authorization. The end-to-end delegation described in the handoff may
+supply authority within its scope, but cannot fill missing request values or
+technical evidence.
+
+The read-only preflight identifies the selected existing container, exact
+service index, native reader/profile revision, complete declared inventory
+scope, finite request/page/byte/time bounds, evidence directory, and stop
+conditions. It discovers supported resources, checks current owner/repository
+association and required access facts, and establishes fresh coordinate
+absence. Authentication stays within the existing permitted read capability;
+no credential installation or grant expansion is part of preflight. Record
+raw responses and effective resource/profile identities without secrets.
+Missing or contradictory observations stop preparation of a mutation request.
+
+The mutation request binds that preflight, immutable A/B artifacts and their
+actual native/display identities, exact tooling and workflow revision, actor,
+repository-token principal, operation-profile digest, and evidence retention.
+It permits at most three fresh attempt-one probe dispatches and one one-shot
+publication invocation in each, in this order:
+
+| Probe                               | Exact input                                                  | Required observation                                                                   |
+| ----------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Create                              | Original A at the freshly absent coordinate                  | Definitive creation; exactly the allowed new active version; exact A bytes and witness |
+| Identical duplicate                 | The same A archive, without rebuilding                       | Definitive duplicate rejection; no declared active-state change                        |
+| Equivalent different-byte duplicate | Original B with its verified equivalent ID/version spellings | Definitive duplicate rejection; no declared active-state change; A bytes remain exact  |
+
+Each probe uses the actual Actions-issued `GITHUB_TOKEN` from the bound
+repository and the matched one-shot HTTP profile. The protected acceptance
+entry rejects a changed tooling SHA, another actor or repository, reruns, and
+unbound fixture/profile inputs before invocation. It consumes prebuilt trusted
+reader tooling and immutable fixtures; it evaluates no target project or
+product code while holding publication authority. It belongs to acceptance
+tooling, not the normal-Live DAG, and supplies no normal-Live Approval or
+Authorization.
+
+Capture complete declared active state immediately before and after every
+probe. Retain all six captures, even if adjacent states compare equal. The
+inventory scope includes every active version's native coordinate and GitHub
+object identity for this container, plus the scenario coordinate's actual
+archive and witness when present. State the scope explicitly; it is not an
+exhaustive package-grant inventory or a download of every historical archive.
+Page/response limits are hard bounds, not permission to call a partial result
+complete. Unsupported discovery, incomplete enumeration, unexpected deltas,
+missing bytes, or an ambiguous response stops further mutation. A diagnostic
+read after a failed invocation cannot relabel that invocation as successful.
+
+The concrete request also bounds read-only capture and consumer requests,
+including pagination and timeouts. There are no publication retries, GitHub
+reruns, replacement dispatches, extra coordinates, or administrative recovery.
+A failed dispatch consumes its place in the authorized generation; preserve
+partial evidence and investigate read-only. Changing the fixture contract or
+adding a scenario requires a new reviewed request and the applicable separate
+authorization. The preexisting container and any created version are retained;
+there is no deletion or cleanup step.
+
+### Evidence Admission and Completion
+
+After the creation capture passes, a separate clean destination consumer
+restores A's exact native version from the selected GitHub feed with a fresh
+package cache and controlled source mapping. Bind the actual consumed archive
+and witness to A. Use only the permitted read credential for restore and
+remove it before build and marker invocation. A local feed test, project
+reference, warm cache, metadata match, or assembly equivalence cannot replace
+this evidence.
+
+The collector retains each exact request, fixture, current run and immutable
+artifact reference, actor/tooling/profile binding, process result, raw service
+response, capture, and consumer result. The independent auditor admits the
+actual lineage and the sequence's complete allowed deltas; a supplied-fact
+comparison or successful workflow conclusion alone is not native provenance.
+A passed three-probe generation supplies only its bounded native evidence.
+The separate service-owned atomic guarantee remains required for activation.
+
+Native fixture publication is not the required normal-Live publication.
+Before the later concrete real-run request, verify that its newly qualified
+coordinate permits an actual creation and does not adopt a native fixture,
+prior-run artifact, or Approval. Install neither a native generation nor an
+atomic-contract identity before independent admission and protected activation
+delivery. A stopped generation grants no replacement generation.
+
 The following evidence is still required before corresponding admission:
 
 | Gate             | Evidence that closes it                                                                                                                                                       |

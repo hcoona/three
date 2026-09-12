@@ -82,8 +82,9 @@ Windows with immutable helper/record transport and a build-free publisher.
 Governance remains disabled. Actual Windows workflow execution and native/Live
 proving remain pending; missing service-owned atomic non-overwrite assurance
 blocks activation.
-The handoff
-defines concrete operation and delivery discipline.
+The [fixture and operator contract](./hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
+defines native-tooling preparation. The handoff defines concrete operation and
+delivery discipline.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.
 

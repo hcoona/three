@@ -181,10 +181,11 @@ unprivileged helper producer uploads its full same-revision runtime; readers
 and the publisher consume that immutable archive without building it. The
 Attempt retains native Build/content/consumer Evidence, current-run Approval,
 uploaded-marker admission, zero-action proof, and failed terminal payloads.
-Inspect current Git/PR state before claiming protected workflow delivery.
-Local shell/transport contracts establish no actual Windows Actions execution.
-Windows workflow execution, native acceptance tooling, activation, and real
-publication remain subsequent work.
+The disabled workflow pair is present on protected `main`.
+Local shell/transport contracts establish no actual native Windows workflow execution.
+The [NuGet fixture and operator contract](./hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
+governs the next acceptance-tooling unit. Native workflow execution, tooling,
+activation, and real publication remain subsequent work.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
 stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an
 activation gate; sequential duplicate tests cannot supply it.
