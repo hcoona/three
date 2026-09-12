@@ -4,12 +4,14 @@ The caller admits tooling and its prebuilt helper, supplies existing read
 capability, and owns process supervision and generation-wide budgets. This
 component never builds tooling, acquires credentials, dispatches or publishes.
 Its deadline rejects late completion; it does not terminate a blocked process.
-Only complete responses returned by the transport can be retained. A transport
-failure preserves earlier exchanges, never fabricated missing response bytes.
+Only complete, credential-free bodies returned by the transport are retained,
+with selected response headers. A transport failure or credential reflection
+preserves earlier exchanges, never fabricated or redacted package bytes.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import math
 import platform
@@ -22,7 +24,7 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 from three_workflow_delivery_v3.adapters import nuget_github_packages as native
 from three_workflow_delivery_v3.canonical import (
@@ -34,6 +36,22 @@ from three_workflow_delivery_v3.canonical import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+
+_RESPONSE_HEADERS = frozenset(
+    {
+        "cache-control",
+        "content-encoding",
+        "content-length",
+        "content-type",
+        "date",
+        "etag",
+        "last-modified",
+        "link",
+        "retry-after",
+        "x-github-request-id",
+    }
+)
 
 
 def _require(condition: bool, message: str) -> None:  # noqa: FBT001
@@ -139,12 +157,28 @@ class NuGetCaptureRequest:
 
 
 class _Audit:
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, token: str) -> None:
+        _require(
+            type(token) is str and bool(token), "missing capture credential"
+        )
+        # Cover the actual API Bearer and NuGet Basic credential forms. This
+        # does not claim to recognize arbitrary secrets or encodings.
+        self.secrets = (
+            token.encode(),
+            base64.b64encode(("hcoona:" + token).encode()),
+        )
         directory.mkdir(mode=0o700, parents=False, exist_ok=False)
         self.directory = directory
         self.files: dict[str, JsonValue] = {}
 
+    def check(self, content: bytes) -> None:
+        _require(
+            not any(secret in content for secret in self.secrets),
+            "capture evidence contains a request credential",
+        )
+
     def write(self, name: str, content: bytes) -> None:
+        self.check(content)
         with (self.directory / name).open("xb") as stream:
             stream.write(content)
         self.files[name] = {
@@ -155,8 +189,10 @@ class _Audit:
     def event(self, document: dict[str, JsonValue]) -> None:
         # Persist reservation before calling the transport. A stopped process
         # leaves an outstanding allowance, never a free retry.
+        content = canonicalize(document) + b"\n"
+        self.check(content)
         with (self.directory / "requests.jsonl").open("ab") as stream:
-            stream.write(canonicalize(document) + b"\n")
+            stream.write(content)
 
 
 class _CaptureTransport:
@@ -205,6 +241,7 @@ class _CaptureTransport:
         max_bytes: int,
     ) -> native.NuGetHttpResponse:
         remaining = self.remaining()
+        self.audit.check(unquote(url).encode())
         page = urlsplit(url).path.endswith("/versions")
         _require(
             self.requests < self.limits.requests,
@@ -246,19 +283,26 @@ class _CaptureTransport:
         )
         self.charged_bytes -= bound + 1 - len(response.body)
         self.returned_bytes += len(response.body)
+        self.audit.check(unquote(response.url).encode())
         name = f"response-{self.requests:03d}.body"
-        self.audit.write(name, response.body)
         record: dict[str, JsonValue] = {
             "request": self.requests,
             "requestedUrl": url,
             "responseUrl": response.url,
             "status": response.status,
-            "headers": [[key, value] for key, value in response.headers],
+            "headers": [
+                [key.lower(), value]
+                for key, value in response.headers
+                if key.lower() in _RESPONSE_HEADERS
+            ],
             "body": name,
         }
-        self.audit.write(
-            f"response-{self.requests:03d}.json", canonicalize(record)
-        )
+        encoded_record = canonicalize(record)
+        # Check URL/header metadata before writing even a safe body. Unsafe
+        # bodies fail in write(), leaving no artifact for this response.
+        self.audit.check(encoded_record)
+        self.audit.write(name, response.body)
+        self.audit.write(f"response-{self.requests:03d}.json", encoded_record)
         self.responses.append(record)
         self.audit.event(
             {
@@ -324,7 +368,7 @@ def capture_nuget_state(  # noqa: PLR0913
     """
     document = request.to_document()
     encoded_request = canonicalize(document)
-    audit = _Audit(audit_directory)
+    audit = _Audit(audit_directory, token)
     audit.write("request.json", encoded_request)
     bounded = _CaptureTransport(
         transport, request.limits, audit, monotonic, request.container_id
@@ -395,15 +439,17 @@ def capture_nuget_state(  # noqa: PLR0913
             ),
         }
         # A partial write is never exposed under the completed capture name.
+        encoded_capture = canonicalize(capture)
+        audit.check(encoded_capture)
         pending = audit_directory / "capture.pending"
         with pending.open("xb") as stream:
-            stream.write(canonicalize(capture))
+            stream.write(encoded_capture)
         bounded.remaining()
         completed = audit_directory / "capture.json"
         pending.rename(completed)
     except Exception as error:
         # Exception messages can contain request credentials or diagnostics.
-        # Preserve only the class; raw complete responses remain private above.
+        # Preserve only the class and previously retained safe responses.
         audit.write(
             "failure.json",
             canonicalize(

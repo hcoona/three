@@ -53,6 +53,9 @@ The [NuGet capture component](src/three_workflow_delivery_v3/acceptance/nuget_ca
 connects the existing active-state reader to a closed request, finite read/page/body
 allowances and retained response evidence. It records complete sequential state
 or partial failure evidence; neither result is a native acceptance verdict.
+Retained headers are an explicit non-secret projection. Known request
+credentials in evidence cause failure before that evidence is written; safe
+response bodies retain their original bytes.
 Its completion deadline rejects late results but does not terminate a blocked
 process. The caller must admit exact tooling and the prebuilt helper, supervise
 the process and enforce the complete generation budget. The local reader runtime

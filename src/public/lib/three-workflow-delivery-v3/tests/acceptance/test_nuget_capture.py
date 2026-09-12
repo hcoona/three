@@ -10,6 +10,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock
+from urllib.parse import quote
 
 import pytest
 from three_workflow_delivery_v3.acceptance.nuget_capture import (
@@ -432,6 +433,112 @@ def test_capture_never_persists_request_credentials_or_exception_text(
     assert failure["errorType"] == "NuGetTransportError"
     assert failure["returnedResponses"] == []
     scenario[1].get.assert_called_once()
+
+
+@pytest.mark.parametrize("encoded", [False, True])
+@pytest.mark.parametrize("field", ["body", "response-url", "selected-header"])
+def test_capture_rejects_reflected_credentials_before_response_retention(
+    tmp_path, capture_request, scenario, field, encoded
+):
+    _, transport, responses = scenario
+    secret = (
+        base64.b64encode(("hcoona:" + TOKEN).encode()).decode()
+        if encoded
+        else TOKEN
+    )
+    changed = {
+        "body": {"body": b"server diagnostic: " + secret.encode()},
+        "response-url": {
+            "url": CONTROL + "?credential=" + quote(secret, safe="")
+        },
+        "selected-header": {"headers": (("ETag", secret),)},
+    }[field]
+    responses[CONTROL] = replace(responses[CONTROL], **changed)
+    with pytest.raises(ValueError, match="contains a request credential"):
+        _capture(tmp_path, capture_request, scenario)
+    directory = tmp_path / "capture"
+    for path in directory.iterdir():
+        assert secret.encode() not in path.read_bytes()
+        assert quote(secret, safe="").encode() not in path.read_bytes()
+    assert not (directory / "capture.json").exists()
+    assert not (directory / "response-002.body").exists()
+    assert not (directory / "response-002.json").exists()
+    assert (directory / "response-001.body").read_bytes() == responses[
+        native.NUGET_SERVICE_INDEX
+    ].body
+    failure = _read(directory / "failure.json")
+    assert failure["completedCapture"] is False
+    assert failure["counts"]["requests"] == transport.get.call_count == 2
+    assert len(failure["returnedResponses"]) == 1
+    received = sum(
+        len(responses[url].body)
+        for url in (native.NUGET_SERVICE_INDEX, CONTROL)
+    )
+    assert failure["counts"]["returnedResponseBytes"] == received
+    assert failure["counts"]["chargedResponseBytes"] == received
+
+
+@pytest.mark.parametrize("encoded", [False, True])
+def test_capture_rejects_credential_bearing_request_url_before_journaling(
+    tmp_path, capture_request, scenario, encoded
+):
+    authority, transport, responses = scenario
+    secret = (
+        base64.b64encode(("hcoona:" + TOKEN).encode()).decode()
+        if encoded
+        else TOKEN
+    )
+    authority.service_resources.return_value["packageBaseAddress"] = (
+        BASE + quote(secret, safe="") + "/"
+    )
+    with pytest.raises(ValueError, match="contains a request credential"):
+        _capture(tmp_path, capture_request, scenario)
+    directory = tmp_path / "capture"
+    for path in directory.iterdir():
+        assert secret.encode() not in path.read_bytes()
+        assert quote(secret, safe="").encode() not in path.read_bytes()
+    assert [call.args[0] for call in transport.get.call_args_list] == list(
+        responses
+    )[:3]
+    assert not (directory / "capture.json").exists()
+    assert len(_read(directory / "failure.json")["returnedResponses"]) == 3
+
+
+def test_capture_projects_headers_without_changing_original_body(
+    tmp_path, capture_request, scenario
+):
+    _, _, responses = scenario
+    responses[ARCHIVE_URL] = replace(
+        responses[ARCHIVE_URL],
+        headers=(
+            ("Content-Type", "application/octet-stream"),
+            ("Content-Encoding", "identity"),
+            ("Content-Length", str(len(ARCHIVE))),
+            ("ETag", '"original-package"'),
+            ("Set-Cookie", "session=independent-cookie-secret"),
+            ("X-Diagnostic", TOKEN),
+        ),
+    )
+    output = _capture(tmp_path, capture_request, scenario)
+    document = _read(output)
+    response = document["responses"][-1]
+    assert response["headers"] == [
+        ["content-type", "application/octet-stream"],
+        ["content-encoding", "identity"],
+        ["content-length", str(len(ARCHIVE))],
+        ["etag", '"original-package"'],
+    ]
+    assert (output.parent / response["body"]).read_bytes() == ARCHIVE
+    assert (
+        document["scenarioPackage"]["sha256"]
+        == hashlib.sha256(ARCHIVE).hexdigest()
+    )
+    for path in output.parent.iterdir():
+        content = path.read_bytes()
+        assert b"independent-cookie-secret" not in content
+        assert TOKEN.encode() not in content
+        assert b"Set-Cookie" not in content
+    assert not (output.parent / "failure.json").exists()
 
 
 def test_capture_narrows_socket_timeout_to_remaining_deadline(
