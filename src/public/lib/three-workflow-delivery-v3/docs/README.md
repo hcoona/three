@@ -79,8 +79,8 @@ original-archive preparation, durable-marker one-shot execution, and current-DAG
 finalization. They reuse the shared terminal admission and resolution commands.
 Separate manual and reusable NuGet workflows connect the native commands on
 Windows with immutable helper/record transport and a build-free publisher.
-Governance remains disabled. Actual Windows workflow execution and native/Live
-proving remain pending; missing service-owned atomic non-overwrite assurance
+Governance remains disabled. Normal-Live Windows workflow execution and
+native/Live proving remain pending; missing service-owned atomic non-overwrite assurance
 blocks activation.
 The [fixture and operator contract](./hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
 defines native-tooling preparation. The handoff defines concrete operation and
@@ -88,8 +88,11 @@ delivery discipline.
 The offline paired-fixture component implements local construction and
 inspection. Its separate Windows preparation entry binds the current request,
 trusted helper, admitted native/source facts and original dependencies through
-immutable transport. Local scenarios do not establish actual Windows execution;
-native operator integration and platform evidence remain subsequent work.
+immutable transport. A bounded Windows preparation run has passed independent
+artifact-body and lineage audit. Its [retained evidence](https://github.com/hcoona/three/issues/676)
+binds the original A/B pair and A's clean local consumer to the exact protected
+source and current run. Native reader/operator integration and destination
+evidence remain subsequent work.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.
 

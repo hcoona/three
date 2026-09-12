@@ -83,10 +83,14 @@ Keep these facts in the working context:
   helper/native setup inputs and offline pair transport. Its acceptance-purpose
   Provider/Model admission closes source/toolchain facts before packing;
   failed preparation retains partial diagnostics without completed output.
-  Inspect current Git/PR state before claiming remote availability. Actual
-  Windows preparation, native reader/operator integration, native evidence,
-  activation and real publication remain subsequent work; NuGet Governance
-  and admission stay disabled.
+  Inspect current Git/PR state before claiming remote availability. A bounded
+  Windows preparation run has passed independent artifact-body and lineage
+  audit, including the original A/B pair and A's clean local consumer. The
+  [preparation evidence](https://github.com/hcoona/three/issues/676) retains exact
+  source/run and artifact bindings. Its single dispatch allowance is spent;
+  no rerun or replacement follows from the evidence. Native reader/operator
+  integration, destination evidence, activation and real publication remain
+  subsequent work; NuGet Governance and admission stay disabled.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
 - The selected GitHub Packages marker project has independent v3 authoring;
@@ -312,7 +316,7 @@ this summary routes the next agent to that authority.
 | Confirmed concern        | Requirement and next evidence boundary                                                                                                                                                                                                                               |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Product and scope        | `WD-NUGET-001`: the selected marker library, `net10.0`, Windows, one `.nupkg`, no separate `.snupkg`, GitHub Packages Buddy only.                                                                                                                                    |
-| Native facts and version | `WD-NUGET-002`: official evaluation at the exact target, complete history, and a frozen native NBGV NuGet projection. Native evaluation, frozen Build, and disabled Windows workflow integration are present; actual native workflow execution remains unproven.     |
+| Native facts and version | `WD-NUGET-002`: official evaluation at the exact target, complete history, and a frozen native NBGV NuGet projection. Native evaluation and frozen Build passed bounded Windows fixture preparation; normal-Live Windows workflow execution remains unproven.        |
 | Trust and authority      | `WD-NUGET-003` and `WD-NUGET-004`: reviewed protected-main control, isolated target evaluation/build, build-free publication, self-approval by the sole trusted writer, and explicitly accepted repository-token reach. Platform configuration still needs readback. |
 | Qualification            | `WD-NUGET-005`: distinct package-content and clean exact-version restore/build/marker evidence for the Release-owned artifact.                                                                                                                                       |
 | Destination acceptance   | `WD-NUGET-006`: independently establish the required active creation, duplicate, actual-byte, witness, and observation behavior for the NuGet profile.                                                                                                               |
