@@ -225,6 +225,116 @@ def test_nuget_blocked_eligibility_retains_decision_and_fails(
         assert not output.exists()
 
 
+@pytest.mark.parametrize(
+    ("status", "classification"),
+    [(0, "absent"), (1, "conflicting"), (1, None)],
+)
+def test_nuget_observation_failure_retains_payload_without_publication(
+    workflows, tmp_path, status, classification
+):
+    callee = workflows[1]
+    job, observe = _command(callee, "release nuget observe-github-packages")
+    output = tmp_path / "observation-output"
+    original = json.dumps({"classification": classification}).encode()
+    digest = "sha256:" + hashlib.sha256(original).hexdigest()
+    (tmp_path / "fixture.json").write_bytes(original)
+    # Record formation is covered by the typed CLI scenarios. Replace only
+    # the external invocation to exercise actual status and transport glue.
+    emitted = ""
+    if classification is not None:
+        emitted = (
+            "New-Item -ItemType Directory -Path '.wdv3' | Out-Null\n"
+            "Copy-Item fixture.json .wdv3/observation.json\n"
+            f"'observation-digest={digest}' | Add-Content $env:GITHUB_OUTPUT\n"
+        )
+    assert observe["run"].count(INVOCATION) == 1
+    result = _pwsh(
+        tmp_path,
+        observe["run"].replace(
+            INVOCATION, emitted + f"$global:LASTEXITCODE = {status}"
+        ),
+        {"GITHUB_OUTPUT": str(output)},
+    )
+    assert result.returncode == status, result.stdout + result.stderr
+    assert not observe.get("continue-on-error", False)
+    assert not job.get("continue-on-error", False)
+    seal = _step_id(job, "seal-observation")
+    upload = _step_id(job, "upload-observation")
+    assert observe.get("id") == "observe"
+    assert seal["if"] == (
+        "always() && steps.observe.outputs.observation-digest != ''"
+    )
+    assert upload["if"] == (
+        "always() && steps.seal-observation.outcome == 'success'"
+    )
+    materialize, _ = _command(callee, "release nuget materialize-publication")
+    assert "observe-github-packages" in materialize["needs"]
+    assert not re.search(
+        r"(?:always|failure|cancelled)\s*\(", materialize["if"]
+    )
+    finalizer, _ = _command(callee, "release nuget finalize-live")
+    assert "always()" in finalizer["if"]
+    download = next(
+        step
+        for step in finalizer["steps"]
+        if step.get("with", {}).get("artifact-ids")
+        == "${{ needs.observe-github-packages.outputs.observation-id }}"
+    )
+    assert download["if"] == (
+        "always() && needs.observe-github-packages.outputs.observation-id != ''"
+    )
+    if classification is None:
+        assert not output.exists()
+        assert not (tmp_path / ".wdv3/observation.json").exists()
+        return
+    assert output.read_text().strip() == f"observation-digest={digest}"
+    sealed_output = tmp_path / "sealed-output"
+    result = _pwsh(
+        tmp_path,
+        seal["run"],
+        {
+            "WDV3_PAYLOAD": ".wdv3/observation.json",
+            "GITHUB_RUN_ID": "123",
+            "GITHUB_OUTPUT": str(sealed_output),
+        },
+    )
+    _assert_success(result)
+    fields = dict(
+        line.split("=", 1) for line in sealed_output.read_text().splitlines()
+    )
+    assert (tmp_path / fields["path"]).read_bytes() == original
+    assert fields["digest"] == digest
+    assert Path(fields["path"]).name == fields["name"]
+    assert (
+        upload["with"]["path"] == "${{ steps.seal-observation.outputs.path }}"
+    )
+    assert upload["with"]["archive"] is False
+    assert upload["with"]["overwrite"] is False
+
+
+def test_nuget_observation_transport_rejects_missing_payload(
+    workflows, tmp_path
+):
+    job, _ = _command(workflows[1], "release nuget observe-github-packages")
+    seal = _step_id(job, "seal-observation")
+    output = tmp_path / "sealed-output"
+    result = _pwsh(
+        tmp_path,
+        seal["run"],
+        {
+            "WDV3_PAYLOAD": ".wdv3/missing-observation.json",
+            "GITHUB_RUN_ID": "123",
+            "GITHUB_OUTPUT": str(output),
+        },
+    )
+    assert result.returncode != 0
+    assert not output.exists()
+    assert not (tmp_path / ".wdv3/upload").exists()
+    assert _step_id(job, "upload-observation")["if"] == (
+        "always() && steps.seal-observation.outcome == 'success'"
+    )
+
+
 def test_nuget_workflows_confine_publication_authority(workflows):
     writes = []
     for workflow in workflows:

@@ -1167,6 +1167,7 @@ jobs:
             if (-not (Test-Path -LiteralPath (Join-Path '.wdv3/helper' $file) -PathType Leaf)) { throw "Missing trusted helper runtime file: $file" }
           }
       - name: Read supported active NuGet state
+        id: observe
         env:
           GITHUB_TOKEN: ${{ github.token }}
           WDV3_ARG_INTENT: .wdv3/input/${{ inputs.intent-name }}
@@ -1296,6 +1297,7 @@ jobs:
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind observation payload identity
         id: seal-observation
+        if: always() && steps.observe.outputs.observation-digest != ''
         env:
           WDV3_PAYLOAD: .wdv3/observation.json
         run: |
@@ -1307,6 +1309,7 @@ jobs:
           @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
       - name: Upload immutable observation
         id: upload-observation
+        if: always() && steps.seal-observation.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ${{ steps.seal-observation.outputs.name }}
