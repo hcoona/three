@@ -44,7 +44,7 @@ from three_workflow_delivery_v3.release.governance_git import (
     GovernanceGitReadError,
 )
 from three_workflow_delivery_v3.release.identity import (
-    BUDDY_LIVE_WORKFLOW_PATH,
+    NUGET_BUDDY_LIVE_WORKFLOW_PATH,
     derive_buddy_execution_identity,
     derive_release_attempt_binding,
 )
@@ -136,7 +136,9 @@ def _ready_document(profile, monkeypatch):
 @pytest.fixture
 def native_case(nuget_scenario, monkeypatch, tmp_path):
     scenario = nuget_scenario
-    intent = replace(scenario.intent, workflow_path=BUDDY_LIVE_WORKFLOW_PATH)
+    intent = replace(
+        scenario.intent, workflow_path=NUGET_BUDDY_LIVE_WORKFLOW_PATH
+    )
     policy = load_release_policy(
         scenario.request.source_root / NUGET_POLICY_PATH,
         _target_path=NUGET_POLICY_PATH,

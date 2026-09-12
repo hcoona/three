@@ -77,8 +77,11 @@ a native reviewer summary, and current-Attempt Approval/Authorization with
 fresh Governance. Native publication entries connect fresh zero-action proof,
 original-archive preparation, durable-marker one-shot execution, and current-DAG
 finalization. They reuse the shared terminal admission and resolution commands.
-Workflow execution and native/Live proving remain pending; missing
-service-owned atomic non-overwrite assurance blocks activation.
+Separate manual and reusable NuGet workflows connect the native commands on
+Windows with immutable helper/record transport and a build-free publisher.
+Governance remains disabled. Actual Windows workflow execution and native/Live
+proving remain pending; missing service-owned atomic non-overwrite assurance
+blocks activation.
 The handoff
 defines concrete operation and delivery discipline.
 This destination has its own explicit threat/cost decision and cannot inherit

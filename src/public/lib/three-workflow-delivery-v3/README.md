@@ -27,8 +27,12 @@ original-package upload binding, separate quality Evidence, and finalization.
 Native observation and approval commands connect supported active readback,
 zero-or-one action materialization, and current-Attempt Approval/Authorization.
 Native publication commands connect fresh exact-state proof, build-free
-preparation, one-shot execution, and current-DAG finalization. Workflow execution,
-native acceptance, activation, and real Live proving remain subsequent work.
+preparation, one-shot execution, and current-DAG finalization. The separate
+[NuGet manual caller](../../../../.github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml)
+and [reusable Attempt](../../../../.github/workflows/workflow-delivery-v3-nuget-live-attempt.yml)
+connect these commands on Windows. NuGet Governance remains disabled;
+Windows Actions execution, native acceptance, activation, and real Live proving
+remain subsequent work.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,
@@ -71,7 +75,18 @@ The shared `release resolve-publication-terminal` resolves marker/Result transpo
 `release nuget finalize-live` admits the three native Qualification Evidence
 records and current terminal chain without destination reads. Missing terminal
 evidence cannot establish success. Use each command's `--help` for its complete
-current-run transport inputs; command availability does not enable a workflow.
+current-run transport inputs.
+
+The native workflows bind the actual NuGet caller path and current immutable
+artifacts. An unprivileged job builds the trusted same-revision helper and
+transports its complete runtime to readers and the publisher. Target evaluation,
+Build, and both quality checks have no publication permission; the publisher
+uses the prebuilt helper. Blocked Eligibility retains its Decision and fails
+before the Attempt. Zero action uses fresh proof; one action requires the existing
+Approval Environment, current Authorization, and re-admission of the uploaded
+marker before invocation. Failed Result and Outcome payloads remain available
+for immutable upload. Local glue tests establish no Actions or destination
+behavior, and workflow availability supplies no missing native admission.
 
 The documentation records accepted domain constraints and evidence. It grants no
 runtime work and does not renew either spent npm dispatch authorization.

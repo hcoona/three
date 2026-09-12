@@ -1,0 +1,588 @@
+# Implements WD-NUGET-* and the NuGet LLD's protected admission boundary.
+# NuGet Governance and native admission remain disabled; this entry grants no probe.
+name: Workflow Delivery v3 NuGet Buddy smoke
+'on':
+  workflow_dispatch: null
+permissions: {}
+defaults:
+  run:
+    shell: pwsh
+env:
+  WDV3_PACKAGE: three-workflow-delivery-v3
+jobs:
+  request:
+    name: Normalize protected-main NuGet request
+    if: github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Normalize native live request
+        id: normalize
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'normalize-live-request',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--repository',
+            $env:GITHUB_REPOSITORY,
+            '--selected-ref',
+            $env:GITHUB_REF,
+            '--actor',
+            $env:GITHUB_ACTOR,
+            '--output',
+            '.wdv3/intent.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind intent payload identity
+        id: seal-intent
+        env:
+          WDV3_PAYLOAD: .wdv3/intent.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-intent-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable intent
+        id: upload-intent
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-intent.outputs.name }}
+          path: ${{ steps.seal-intent.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      request-id: ${{ steps.normalize.outputs.request-id }}
+      target-sha: ${{ github.sha }}
+      selected-ref: ${{ github.ref }}
+      intent-name: ${{ steps.seal-intent.outputs.name }}
+      intent-digest: ${{ steps.seal-intent.outputs.digest }}
+      intent-id: ${{ steps.upload-intent.outputs.artifact-id }}
+      intent-transport-digest: ${{ steps.upload-intent.outputs.artifact-digest }}
+      intent-url: ${{ steps.upload-intent.outputs.artifact-url }}
+  prepare-helper:
+    name: Build trusted native helper
+    if: github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    needs:
+      - request
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned .NET SDK and runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Build and archive only the trusted helper
+        run: |
+          dotnet build 'src/private/app/workflow-delivery-v3-dotnet-provider/WorkflowDeliveryV3DotnetProvider.csproj' -c Release -p:RestoreLockedMode=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path '.wdv3' -Force | Out-Null
+          Compress-Archive -Path 'src/private/app/workflow-delivery-v3-dotnet-provider/bin/Release/net10.0/*' -DestinationPath '.wdv3/helper.zip' -CompressionLevel Optimal
+      - name: Bind helper payload identity
+        id: seal-helper
+        env:
+          WDV3_PAYLOAD: .wdv3/helper.zip
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-helper-r${env:GITHUB_RUN_ID}-$hex.zip"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable helper
+        id: upload-helper
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-helper.outputs.name }}
+          path: ${{ steps.seal-helper.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      helper-name: ${{ steps.seal-helper.outputs.name }}
+      helper-digest: ${{ steps.seal-helper.outputs.digest }}
+      helper-id: ${{ steps.upload-helper.outputs.artifact-id }}
+      helper-transport-digest: ${{ steps.upload-helper.outputs.artifact-digest }}
+      helper-url: ${{ steps.upload-helper.outputs.artifact-url }}
+  discover-dotnet:
+    name: Discover exact native .NET facts
+    if: github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    needs:
+      - request
+      - prepare-helper
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned .NET SDK and runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.request.outputs.intent-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download trusted prebuilt helper by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prepare-helper.outputs.helper-id }}
+          path: .wdv3/helper-archive
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify and extract the trusted helper runtime
+        env:
+          WDV3_HELPER_ARCHIVE: .wdv3/helper-archive/${{ needs.prepare-helper.outputs.helper-name }}
+          WDV3_HELPER_DIGEST: ${{ needs.prepare-helper.outputs.helper-digest }}
+        run: |
+          $digest = 'sha256:' + (Get-FileHash -LiteralPath $env:WDV3_HELPER_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne $env:WDV3_HELPER_DIGEST) { throw 'Trusted helper digest mismatch' }
+          if (Test-Path -LiteralPath '.wdv3/helper') { throw 'Trusted helper destination already exists' }
+          Expand-Archive -LiteralPath $env:WDV3_HELPER_ARCHIVE -DestinationPath '.wdv3/helper'
+          foreach ($file in @('WorkflowDeliveryV3DotnetProvider.dll', 'WorkflowDeliveryV3DotnetProvider.deps.json', 'WorkflowDeliveryV3DotnetProvider.runtimeconfig.json')) {
+            if (-not (Test-Path -LiteralPath (Join-Path '.wdv3/helper' $file) -PathType Leaf)) { throw "Missing trusted helper runtime file: $file" }
+          }
+      - name: Admit current Release Intent
+        env:
+          WDV3_ARG_INTENT: .wdv3/input/${{ needs.request.outputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ needs.request.outputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ needs.request.outputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ needs.request.outputs.intent-transport-digest }}
+        run: |
+          $arguments = @(
+            'release',
+            'admit-intent',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--purpose',
+            'live-release'
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Restore pinned NBGV tooling
+        run: |
+          dotnet tool restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Evaluate the exact target once
+        env:
+          WDV3_ARG_REQUEST_ID: ${{ needs.request.outputs.request-id }}
+          WDV3_ARG_CONTROL: workflow-delivery-v3:${{ github.sha }}
+        run: |
+          $arguments = @(
+            'repository',
+            'provide-dotnet',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--request-id',
+            $env:WDV3_ARG_REQUEST_ID,
+            '--compiler-producer',
+            'compile-live-model',
+            '--provider-producer',
+            'discover-dotnet',
+            '--control',
+            $env:WDV3_ARG_CONTROL,
+            '--helper-dll',
+            '.wdv3/helper/WorkflowDeliveryV3DotnetProvider.dll',
+            '--evidence-directory',
+            '.wdv3/provider-evidence',
+            '--output',
+            '.wdv3/provider.json',
+            '--purpose',
+            'live-release',
+            '--fetch-depth',
+            '0',
+            '--no-persist-credentials'
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind provider payload identity
+        id: seal-provider
+        env:
+          WDV3_PAYLOAD: .wdv3/provider.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-provider-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable provider
+        id: upload-provider
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-provider.outputs.name }}
+          path: ${{ steps.seal-provider.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      provider-name: ${{ steps.seal-provider.outputs.name }}
+      provider-digest: ${{ steps.seal-provider.outputs.digest }}
+      provider-id: ${{ steps.upload-provider.outputs.artifact-id }}
+      provider-transport-digest: ${{ steps.upload-provider.outputs.artifact-digest }}
+      provider-url: ${{ steps.upload-provider.outputs.artifact-url }}
+  compile-model:
+    name: Compile admitted native Repository Model
+    if: github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    needs:
+      - request
+      - discover-dotnet
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.request.outputs.intent-id }},${{ needs.discover-dotnet.outputs.provider-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Compile without target reevaluation
+        id: compile
+        env:
+          WDV3_ARG_INTENT: .wdv3/input/${{ needs.request.outputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ needs.request.outputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ needs.request.outputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ needs.request.outputs.intent-transport-digest }}
+          WDV3_ARG_PROVIDER_RESULT: .wdv3/input/${{ needs.discover-dotnet.outputs.provider-name }}
+          WDV3_ARG_PROVIDER_ARTIFACT_ID: ${{ needs.discover-dotnet.outputs.provider-id }}
+          WDV3_ARG_PROVIDER_ARTIFACT_DIGEST: ${{ needs.discover-dotnet.outputs.provider-transport-digest }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'compile-live-model',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--provider-result',
+            $env:WDV3_ARG_PROVIDER_RESULT,
+            '--provider-artifact-id',
+            $env:WDV3_ARG_PROVIDER_ARTIFACT_ID,
+            '--provider-artifact-digest',
+            $env:WDV3_ARG_PROVIDER_ARTIFACT_DIGEST,
+            '--output',
+            '.wdv3/model.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -ne 0) { exit $commandStatus }
+      - name: Bind repository-model payload identity
+        id: seal-repository-model
+        env:
+          WDV3_PAYLOAD: .wdv3/model.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-repository-model-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable repository-model
+        id: upload-repository-model
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-repository-model.outputs.name }}
+          path: ${{ steps.seal-repository-model.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      execution-concurrency-key: ${{ steps.compile.outputs.execution-concurrency-key }}
+      repository-model-name: ${{ steps.seal-repository-model.outputs.name }}
+      repository-model-digest: ${{ steps.seal-repository-model.outputs.digest }}
+      repository-model-id: ${{ steps.upload-repository-model.outputs.artifact-id }}
+      repository-model-transport-digest: ${{ steps.upload-repository-model.outputs.artifact-digest }}
+      repository-model-url: ${{ steps.upload-repository-model.outputs.artifact-url }}
+  evaluate-live-eligibility:
+    name: Evaluate NuGet eligibility before Attempt
+    if: github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    needs:
+      - request
+      - prepare-helper
+      - compile-model
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned .NET SDK and runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Download immutable inputs by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.request.outputs.intent-id }},${{ needs.compile-model.outputs.repository-model-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download trusted prebuilt helper by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prepare-helper.outputs.helper-id }}
+          path: .wdv3/helper-archive
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify and extract the trusted helper runtime
+        env:
+          WDV3_HELPER_ARCHIVE: .wdv3/helper-archive/${{ needs.prepare-helper.outputs.helper-name }}
+          WDV3_HELPER_DIGEST: ${{ needs.prepare-helper.outputs.helper-digest }}
+        run: |
+          $digest = 'sha256:' + (Get-FileHash -LiteralPath $env:WDV3_HELPER_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne $env:WDV3_HELPER_DIGEST) { throw 'Trusted helper digest mismatch' }
+          if (Test-Path -LiteralPath '.wdv3/helper') { throw 'Trusted helper destination already exists' }
+          Expand-Archive -LiteralPath $env:WDV3_HELPER_ARCHIVE -DestinationPath '.wdv3/helper'
+          foreach ($file in @('WorkflowDeliveryV3DotnetProvider.dll', 'WorkflowDeliveryV3DotnetProvider.deps.json', 'WorkflowDeliveryV3DotnetProvider.runtimeconfig.json')) {
+            if (-not (Test-Path -LiteralPath (Join-Path '.wdv3/helper' $file) -PathType Leaf)) { throw "Missing trusted helper runtime file: $file" }
+          }
+      - name: Evaluate protected native Governance
+        id: eligibility
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WDV3_ARG_INTENT: .wdv3/input/${{ needs.request.outputs.intent-name }}
+          WDV3_ARG_INTENT_DIGEST: ${{ needs.request.outputs.intent-digest }}
+          WDV3_ARG_INTENT_ARTIFACT_ID: ${{ needs.request.outputs.intent-id }}
+          WDV3_ARG_INTENT_ARTIFACT_DIGEST: ${{ needs.request.outputs.intent-transport-digest }}
+          WDV3_ARG_REPOSITORY_MODEL: .wdv3/input/${{ needs.compile-model.outputs.repository-model-name }}
+          WDV3_ARG_REPOSITORY_MODEL_DIGEST: ${{ needs.compile-model.outputs.repository-model-digest }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID: ${{ needs.compile-model.outputs.repository-model-id }}
+          WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST: ${{ needs.compile-model.outputs.repository-model-transport-digest }}
+        run: |
+          $arguments = @(
+            'release',
+            'nuget',
+            'evaluate-live-eligibility',
+            '--workflow-run-id',
+            $env:GITHUB_RUN_ID,
+            '--run-attempt',
+            $env:GITHUB_RUN_ATTEMPT,
+            '--target',
+            $env:GITHUB_SHA,
+            '--intent',
+            $env:WDV3_ARG_INTENT,
+            '--intent-digest',
+            $env:WDV3_ARG_INTENT_DIGEST,
+            '--intent-artifact-id',
+            $env:WDV3_ARG_INTENT_ARTIFACT_ID,
+            '--intent-artifact-digest',
+            $env:WDV3_ARG_INTENT_ARTIFACT_DIGEST,
+            '--repository-model',
+            $env:WDV3_ARG_REPOSITORY_MODEL,
+            '--repository-model-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_DIGEST,
+            '--repository-model-artifact-id',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_ID,
+            '--repository-model-artifact-digest',
+            $env:WDV3_ARG_REPOSITORY_MODEL_ARTIFACT_DIGEST,
+            '--helper-dll',
+            '.wdv3/helper/WorkflowDeliveryV3DotnetProvider.dll',
+            '--output',
+            '.wdv3/eligibility.json',
+            '--github-output',
+            $env:GITHUB_OUTPUT,
+            '--github-token',
+            $env:GITHUB_TOKEN
+          )
+          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          $commandStatus = $LASTEXITCODE
+          if ($commandStatus -notin @(0, 1)) { exit $commandStatus }
+          $decision = Get-Content -LiteralPath '.wdv3/eligibility.json' -Raw | ConvertFrom-Json
+          if (($commandStatus -eq 0 -and $decision.result -ne 'pass') -or ($commandStatus -eq 1 -and $decision.result -ne 'blocked')) {
+            throw 'NuGet Eligibility status and Decision disagree'
+          }
+          "eligibility-status=$commandStatus" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Bind eligibility payload identity
+        id: seal-eligibility
+        env:
+          WDV3_PAYLOAD: .wdv3/eligibility.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-eligibility-r${env:GITHUB_RUN_ID}-$hex.json"
+          $path = Join-Path '.wdv3/upload' $name
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable eligibility
+        id: upload-eligibility
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-eligibility.outputs.name }}
+          path: ${{ steps.seal-eligibility.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Propagate blocked or failed Eligibility
+        if: always()
+        env:
+          WDV3_EVALUATION_OUTCOME: ${{ steps.eligibility.outcome }}
+          WDV3_UPLOAD_OUTCOME: ${{ steps.upload-eligibility.outcome }}
+          WDV3_ELIGIBILITY_STATUS: ${{ steps.eligibility.outputs.eligibility-status }}
+        run: |
+          if ($env:WDV3_EVALUATION_OUTCOME -ne 'success' -or $env:WDV3_UPLOAD_OUTCOME -ne 'success') { throw 'NuGet Eligibility production or upload failed' }
+          if ($env:WDV3_ELIGIBILITY_STATUS -eq '1') { exit 1 }
+          if ($env:WDV3_ELIGIBILITY_STATUS -ne '0') { throw 'Missing or invalid NuGet Eligibility status' }
+    outputs:
+      live-result: ${{ steps.eligibility.outputs.live-result }}
+      eligibility-name: ${{ steps.seal-eligibility.outputs.name }}
+      eligibility-digest: ${{ steps.seal-eligibility.outputs.digest }}
+      eligibility-id: ${{ steps.upload-eligibility.outputs.artifact-id }}
+      eligibility-transport-digest: ${{ steps.upload-eligibility.outputs.artifact-digest }}
+      eligibility-url: ${{ steps.upload-eligibility.outputs.artifact-url }}
+  run-live-attempt:
+    name: Run admitted native Attempt
+    if: github.run_attempt == 1 && needs.evaluate-live-eligibility.outputs.live-result == 'admitted'
+    needs:
+      - request
+      - prepare-helper
+      - discover-dotnet
+      - compile-model
+      - evaluate-live-eligibility
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    concurrency:
+      group: wdv3-execution-${{ needs.compile-model.outputs.execution-concurrency-key }}
+      cancel-in-progress: false
+    uses: ./.github/workflows/workflow-delivery-v3-nuget-live-attempt.yml
+    with:
+      target-sha: ${{ github.sha }}
+      selected-ref: ${{ github.ref }}
+      intent-name: ${{ needs.request.outputs.intent-name }}
+      intent-digest: ${{ needs.request.outputs.intent-digest }}
+      intent-id: ${{ needs.request.outputs.intent-id }}
+      intent-transport-digest: ${{ needs.request.outputs.intent-transport-digest }}
+      provider-name: ${{ needs.discover-dotnet.outputs.provider-name }}
+      provider-id: ${{ needs.discover-dotnet.outputs.provider-id }}
+      provider-transport-digest: ${{ needs.discover-dotnet.outputs.provider-transport-digest }}
+      repository-model-name: ${{ needs.compile-model.outputs.repository-model-name }}
+      repository-model-digest: ${{ needs.compile-model.outputs.repository-model-digest }}
+      repository-model-id: ${{ needs.compile-model.outputs.repository-model-id }}
+      repository-model-transport-digest: ${{ needs.compile-model.outputs.repository-model-transport-digest }}
+      eligibility-name: ${{ needs.evaluate-live-eligibility.outputs.eligibility-name }}
+      eligibility-digest: ${{ needs.evaluate-live-eligibility.outputs.eligibility-digest }}
+      eligibility-id: ${{ needs.evaluate-live-eligibility.outputs.eligibility-id }}
+      eligibility-transport-digest: ${{ needs.evaluate-live-eligibility.outputs.eligibility-transport-digest }}
+      helper-name: ${{ needs.prepare-helper.outputs.helper-name }}
+      helper-id: ${{ needs.prepare-helper.outputs.helper-id }}
+      helper-digest: ${{ needs.prepare-helper.outputs.helper-digest }}
