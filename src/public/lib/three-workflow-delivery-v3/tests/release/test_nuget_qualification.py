@@ -83,6 +83,9 @@ from ..repository.test_dotnet_compiler import (
 from ..repository.test_dotnet_compiler import (
     native_scenario as native_scenario,  # noqa: PLC0414
 )
+from ..repository.test_dotnet_compiler import (
+    native_scenario_basis as native_scenario_basis,  # noqa: PLC0414
+)
 
 if TYPE_CHECKING:
     from pathlib import Path

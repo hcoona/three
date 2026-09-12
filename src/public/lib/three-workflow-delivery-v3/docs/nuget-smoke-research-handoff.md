@@ -78,10 +78,15 @@ Keep these facts in the working context:
   governs acceptance tooling. The offline `acceptance.nuget_fixture` component
   builds and inspects original A/B archives from the same compiled inputs,
   retains diagnostics, and requires A's clean local consumer. Its local SDK
-  evidence does not establish Windows or destination behavior. Protected fixture
-  preparation/transport, native reader/operator integration, actual native
-  evidence, activation and real publication remain subsequent work; NuGet
-  Governance and admission stay disabled.
+  evidence does not establish Windows or destination behavior. The separate
+  Windows preparation entry connects the protected current request, immutable
+  helper/native setup inputs and offline pair transport. Its acceptance-purpose
+  Provider/Model admission closes source/toolchain facts before packing;
+  failed preparation retains partial diagnostics without completed output.
+  Inspect current Git/PR state before claiming remote availability. Actual
+  Windows preparation, native reader/operator integration, native evidence,
+  activation and real publication remain subsequent work; NuGet Governance
+  and admission stay disabled.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
 - The selected GitHub Packages marker project has independent v3 authoring;

@@ -261,6 +261,25 @@ complete source-input manifest, native Provider facts, pinned toolchain,
 fresh generation, and selected package. Fixture preparation is local Build
 work; it performs no registry request and carries no publication credential.
 
+Dependency acquisition precedes that offline Build boundary. Unprivileged
+setup uses native locked restore to populate a fresh explicit dependency
+directory and retains the original dependency archives, native assets and
+diagnostics with the Provider result. Archive digests bind transported bytes;
+they are not substituted for NuGet's signed lock-content validation. The
+offline pair consumes only those explicit archives in its own fresh cache.
+Trusted same-revision helper production also precedes preparation; downstream
+readers consume its complete immutable runtime without rebuilding it.
+
+The preparation entry binds protected tooling separately from the fixture
+target and rejects other repository/actor/workflow identities or reruns.
+Request, helper and setup inputs are selected by current-run immutable
+artifact IDs and exact raw payload digests. The caller closes the complete
+native/source/toolchain Build request before packing. Only successful pair
+inspection and A consumption produce the completed transport, preserving
+original logical names, bytes and diagnostic bindings. Partial diagnostics
+remain separate from a completed pair. This entry neither reads the selected
+GitHub destination nor forms a native acceptance or normal-Live request.
+
 Fixture A is an original pack output with a `destination-acceptance` witness.
 Its package and assembly projection comes from the admitted native Provider
 facts. Content checks and a clean local consumer must pass before native use.

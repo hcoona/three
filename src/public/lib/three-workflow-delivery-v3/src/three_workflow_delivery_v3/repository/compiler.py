@@ -72,6 +72,7 @@ _PURPOSES = frozenset(
         "slice-validation",
         "live-release",
         "release-simulation",
+        "destination-acceptance",
     }
 )
 
@@ -1131,9 +1132,13 @@ def validate_first_slice_repository_model_snapshot(  # noqa: C901, PLR0912, PLR0
         message = "Repository Model Snapshot has the wrong runtime type"
         raise TypeError(message)
     validate_compilation_context(snapshot.context)
-    if type(snapshot.nbgv) is not NbgvFacts or (
-        snapshot.context.purpose == "release-simulation"
-        and snapshot.context.release_unit != FIRST_SLICE_RELEASE_UNIT
+    if (
+        type(snapshot.nbgv) is not NbgvFacts
+        or snapshot.context.purpose == "destination-acceptance"
+        or (
+            snapshot.context.purpose == "release-simulation"
+            and snapshot.context.release_unit != FIRST_SLICE_RELEASE_UNIT
+        )
     ):
         message = "first-slice Snapshot requires Node facts and selection"
         raise ValueError(message)
@@ -1539,6 +1544,9 @@ def _validate_context_run_attempt(context: CompilationContext) -> None:
             raise ValueError(message)
         return
     _positive_integer(context.run_attempt, field="run_attempt")
+    if context.purpose == "destination-acceptance" and context.run_attempt != 1:
+        message = "destination acceptance compilation rejects reruns"
+        raise ValueError(message)
 
 
 def validate_compilation_context(  # noqa: C901
@@ -1625,7 +1633,7 @@ def first_slice_provider_manifest(
 ) -> ProviderRequestManifest:
     """Close the one approved Provider request for this compilation."""
     validate_compilation_context(context)
-    if (
+    if context.purpose == "destination-acceptance" or (
         context.purpose == "release-simulation"
         and context.release_unit != FIRST_SLICE_RELEASE_UNIT
     ):
@@ -1689,7 +1697,7 @@ def _validate_manifest(  # noqa: C901
     context: CompilationContext,
     manifest: ProviderRequestManifest,
 ) -> None:
-    if (
+    if context.purpose == "destination-acceptance" or (
         context.purpose == "release-simulation"
         and context.release_unit != FIRST_SLICE_RELEASE_UNIT
     ):

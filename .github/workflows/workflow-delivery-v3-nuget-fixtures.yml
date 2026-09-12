@@ -1,0 +1,421 @@
+# Implements the NuGet LLD Fixture Preparation Contract and WD-NUGET-002/006.
+# Setup acquisition precedes offline fixture packing; this entry grants no probe.
+name: Workflow Delivery v3 NuGet fixture preparation
+'on':
+  workflow_dispatch:
+    inputs:
+      expected_tooling_sha:
+        description: Exact protected tooling revision in the bounded preparation request
+        type: string
+        required: true
+      target_sha:
+        description: Exact same-repository fixture target with complete history
+        type: string
+        required: true
+      generation:
+        description: Closed preparation generation label; does not prove coordinate absence
+        type: string
+        required: true
+permissions: {}
+concurrency:
+  group: wdv3-nuget-fixture-preparation
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  request:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' &&
+      github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' &&
+      github.sha == inputs.expected_tooling_sha &&
+      github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Retain actual preparation platform context
+        run: |
+          New-Item -ItemType Directory -Path '.wdv3/evidence' | Out-Null
+          $context = @{}
+          foreach ($key in @('GITHUB_REPOSITORY', 'GITHUB_ACTOR_ID', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_SHA', 'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKFLOW_REF', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'RUNNER_OS')) {
+            $context[$key] = [Environment]::GetEnvironmentVariable($key)
+          }
+          $context | ConvertTo-Json | Set-Content -LiteralPath '.wdv3/evidence/platform.json' -Encoding utf8
+      - name: Check out exact protected tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned .NET SDK and runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Prepare the locked Python environment
+        run: |
+          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Close current preparation request
+        env:
+          WDV3_TOOLING: ${{ inputs.expected_tooling_sha }}
+          WDV3_TARGET: ${{ inputs.target_sha }}
+          WDV3_GENERATION: ${{ inputs.generation }}
+        run: |
+          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_preparation request --tooling-sha $env:WDV3_TOOLING --target $env:WDV3_TARGET --generation $env:WDV3_GENERATION --output "${env:GITHUB_WORKSPACE}/.wdv3/request.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Bind request payload bytes
+        id: seal-request
+        env:
+          WDV3_PAYLOAD: .wdv3/request.json
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $extension = [IO.Path]::GetExtension($env:WDV3_PAYLOAD)
+          $name = "wdv3-nuget-fixtures-request-r${env:GITHUB_RUN_ID}-$hex$extension"
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          $path = Join-Path '.wdv3/upload' $name
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable request
+        id: upload-request
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-request.outputs.name }}
+          path: ${{ steps.seal-request.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Build and archive the complete trusted helper
+        working-directory: tooling
+        run: |
+          dotnet build 'src/private/app/workflow-delivery-v3-dotnet-provider/WorkflowDeliveryV3DotnetProvider.csproj' --configuration Release -p:RestoreLockedMode=true "-bl:${env:GITHUB_WORKSPACE}/.wdv3/evidence/helper.binlog"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Compress-Archive -Path 'src/private/app/workflow-delivery-v3-dotnet-provider/bin/Release/net10.0/*' -DestinationPath "${env:GITHUB_WORKSPACE}/.wdv3/helper.zip"
+      - name: Bind helper payload bytes
+        id: seal-helper
+        env:
+          WDV3_PAYLOAD: .wdv3/helper.zip
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $extension = [IO.Path]::GetExtension($env:WDV3_PAYLOAD)
+          $name = "wdv3-nuget-fixtures-helper-r${env:GITHUB_RUN_ID}-$hex$extension"
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          $path = Join-Path '.wdv3/upload' $name
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable helper
+        id: upload-helper
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-helper.outputs.name }}
+          path: ${{ steps.seal-helper.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Archive available preparation diagnostics
+        if: always()
+        run: |
+          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath '.wdv3/diagnostics.zip'
+      - name: Retain immutable preparation diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wdv3-nuget-fixtures-request-diagnostics-r${{ github.run_id }}
+          path: .wdv3/diagnostics.zip
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      request-name: ${{ steps.seal-request.outputs.name }}
+      request-digest: ${{ steps.seal-request.outputs.digest }}
+      request-id: ${{ steps.upload-request.outputs.artifact-id }}
+      request-transport-digest: ${{ steps.upload-request.outputs.artifact-digest }}
+      request-url: ${{ steps.upload-request.outputs.artifact-url }}
+      helper-name: ${{ steps.seal-helper.outputs.name }}
+      helper-digest: ${{ steps.seal-helper.outputs.digest }}
+      helper-id: ${{ steps.upload-helper.outputs.artifact-id }}
+      helper-transport-digest: ${{ steps.upload-helper.outputs.artifact-digest }}
+      helper-url: ${{ steps.upload-helper.outputs.artifact-url }}
+  setup:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' &&
+      github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' &&
+      github.sha == inputs.expected_tooling_sha &&
+      github.run_attempt == 1
+    needs:
+      - request
+    runs-on: windows-2022
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Retain actual preparation platform context
+        run: |
+          New-Item -ItemType Directory -Path '.wdv3/evidence' | Out-Null
+          $context = @{}
+          foreach ($key in @('GITHUB_REPOSITORY', 'GITHUB_ACTOR_ID', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_SHA', 'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKFLOW_REF', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'RUNNER_OS')) {
+            $context[$key] = [Environment]::GetEnvironmentVariable($key)
+          }
+          $context | ConvertTo-Json | Set-Content -LiteralPath '.wdv3/evidence/platform.json' -Encoding utf8
+      - name: Check out exact protected tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned .NET SDK and runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Prepare the locked Python environment
+        run: |
+          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check out exact fixture target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.target_sha }}
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download exact immutable request
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.request.outputs.request-id }}
+          path: .wdv3/input/request
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download exact immutable helper
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.request.outputs.helper-id }}
+          path: .wdv3/input/helper
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Prepare pinned native version tooling
+        working-directory: tooling
+        run: |
+          dotnet tool restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Acquire native setup inputs
+        env:
+          WDV3_REQUEST_NAME: ${{ needs.request.outputs.request-name }}
+          WDV3_REQUEST_ID: ${{ needs.request.outputs.request-id }}
+          WDV3_REQUEST_TRANSPORT_DIGEST: ${{ needs.request.outputs.request-transport-digest }}
+          WDV3_REQUEST_URL: ${{ needs.request.outputs.request-url }}
+          WDV3_HELPER_NAME: ${{ needs.request.outputs.helper-name }}
+          WDV3_HELPER_ID: ${{ needs.request.outputs.helper-id }}
+          WDV3_HELPER_TRANSPORT_DIGEST: ${{ needs.request.outputs.helper-transport-digest }}
+          WDV3_HELPER_URL: ${{ needs.request.outputs.helper-url }}
+        run: |
+          $arguments = @('setup', '--source-root', "${env:GITHUB_WORKSPACE}/target", '--directory', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/setup", '--output', "${env:GITHUB_WORKSPACE}/.wdv3/setup.zip")
+          $arguments += @('--request', "${env:GITHUB_WORKSPACE}/.wdv3/input/request/${env:WDV3_REQUEST_NAME}", '--request-id', $env:WDV3_REQUEST_ID, '--request-digest', $env:WDV3_REQUEST_TRANSPORT_DIGEST, '--request-url', $env:WDV3_REQUEST_URL)
+          $arguments += @('--helper', "${env:GITHUB_WORKSPACE}/.wdv3/input/helper/${env:WDV3_HELPER_NAME}", '--helper-id', $env:WDV3_HELPER_ID, '--helper-digest', $env:WDV3_HELPER_TRANSPORT_DIGEST, '--helper-url', $env:WDV3_HELPER_URL)
+          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_preparation @arguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Bind setup payload bytes
+        id: seal-setup
+        env:
+          WDV3_PAYLOAD: .wdv3/setup.zip
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $extension = [IO.Path]::GetExtension($env:WDV3_PAYLOAD)
+          $name = "wdv3-nuget-fixtures-setup-r${env:GITHUB_RUN_ID}-$hex$extension"
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          $path = Join-Path '.wdv3/upload' $name
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable setup
+        id: upload-setup
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-setup.outputs.name }}
+          path: ${{ steps.seal-setup.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Archive available preparation diagnostics
+        if: always()
+        run: |
+          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath '.wdv3/diagnostics.zip'
+      - name: Retain immutable preparation diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wdv3-nuget-fixtures-setup-diagnostics-r${{ github.run_id }}
+          path: .wdv3/diagnostics.zip
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      setup-name: ${{ steps.seal-setup.outputs.name }}
+      setup-digest: ${{ steps.seal-setup.outputs.digest }}
+      setup-id: ${{ steps.upload-setup.outputs.artifact-id }}
+      setup-transport-digest: ${{ steps.upload-setup.outputs.artifact-digest }}
+      setup-url: ${{ steps.upload-setup.outputs.artifact-url }}
+  prepare:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' &&
+      github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' &&
+      github.sha == inputs.expected_tooling_sha &&
+      github.run_attempt == 1
+    needs:
+      - request
+      - setup
+    runs-on: windows-2022
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Retain actual preparation platform context
+        run: |
+          New-Item -ItemType Directory -Path '.wdv3/evidence' | Out-Null
+          $context = @{}
+          foreach ($key in @('GITHUB_REPOSITORY', 'GITHUB_ACTOR_ID', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_SHA', 'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKFLOW_REF', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'RUNNER_OS')) {
+            $context[$key] = [Environment]::GetEnvironmentVariable($key)
+          }
+          $context | ConvertTo-Json | Set-Content -LiteralPath '.wdv3/evidence/platform.json' -Encoding utf8
+      - name: Check out exact protected tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned .NET SDK and runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Prepare the locked Python environment
+        run: |
+          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check out exact fixture target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.target_sha }}
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download exact immutable request
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.request.outputs.request-id }}
+          path: .wdv3/input/request
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download exact immutable helper
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.request.outputs.helper-id }}
+          path: .wdv3/input/helper
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download exact immutable setup
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.setup.outputs.setup-id }}
+          path: .wdv3/input/setup
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Prepare offline original fixture pair
+        env:
+          WDV3_REQUEST_NAME: ${{ needs.request.outputs.request-name }}
+          WDV3_REQUEST_ID: ${{ needs.request.outputs.request-id }}
+          WDV3_REQUEST_TRANSPORT_DIGEST: ${{ needs.request.outputs.request-transport-digest }}
+          WDV3_REQUEST_URL: ${{ needs.request.outputs.request-url }}
+          WDV3_HELPER_NAME: ${{ needs.request.outputs.helper-name }}
+          WDV3_HELPER_ID: ${{ needs.request.outputs.helper-id }}
+          WDV3_HELPER_TRANSPORT_DIGEST: ${{ needs.request.outputs.helper-transport-digest }}
+          WDV3_HELPER_URL: ${{ needs.request.outputs.helper-url }}
+          WDV3_SETUP_NAME: ${{ needs.setup.outputs.setup-name }}
+          WDV3_SETUP_ID: ${{ needs.setup.outputs.setup-id }}
+          WDV3_SETUP_TRANSPORT_DIGEST: ${{ needs.setup.outputs.setup-transport-digest }}
+          WDV3_SETUP_URL: ${{ needs.setup.outputs.setup-url }}
+        run: |
+          $arguments = @('prepare', '--source-root', "${env:GITHUB_WORKSPACE}/target", '--directory', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/prepare", '--output', "${env:GITHUB_WORKSPACE}/.wdv3/prepare.zip")
+          $arguments += @('--request', "${env:GITHUB_WORKSPACE}/.wdv3/input/request/${env:WDV3_REQUEST_NAME}", '--request-id', $env:WDV3_REQUEST_ID, '--request-digest', $env:WDV3_REQUEST_TRANSPORT_DIGEST, '--request-url', $env:WDV3_REQUEST_URL)
+          $arguments += @('--helper', "${env:GITHUB_WORKSPACE}/.wdv3/input/helper/${env:WDV3_HELPER_NAME}", '--helper-id', $env:WDV3_HELPER_ID, '--helper-digest', $env:WDV3_HELPER_TRANSPORT_DIGEST, '--helper-url', $env:WDV3_HELPER_URL)
+          $arguments += @('--setup', "${env:GITHUB_WORKSPACE}/.wdv3/input/setup/${env:WDV3_SETUP_NAME}", '--setup-id', $env:WDV3_SETUP_ID, '--setup-digest', $env:WDV3_SETUP_TRANSPORT_DIGEST, '--setup-url', $env:WDV3_SETUP_URL)
+          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_preparation @arguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Bind prepare payload bytes
+        id: seal-prepare
+        env:
+          WDV3_PAYLOAD: .wdv3/prepare.zip
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $extension = [IO.Path]::GetExtension($env:WDV3_PAYLOAD)
+          $name = "wdv3-nuget-fixtures-prepare-r${env:GITHUB_RUN_ID}-$hex$extension"
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          $path = Join-Path '.wdv3/upload' $name
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable prepare
+        id: upload-prepare
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal-prepare.outputs.name }}
+          path: ${{ steps.seal-prepare.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Archive available preparation diagnostics
+        if: always()
+        run: |
+          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath '.wdv3/diagnostics.zip'
+      - name: Retain immutable preparation diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wdv3-nuget-fixtures-prepare-diagnostics-r${{ github.run_id }}
+          path: .wdv3/diagnostics.zip
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      prepare-name: ${{ steps.seal-prepare.outputs.name }}
+      prepare-digest: ${{ steps.seal-prepare.outputs.digest }}
+      prepare-id: ${{ steps.upload-prepare.outputs.artifact-id }}
+      prepare-transport-digest: ${{ steps.upload-prepare.outputs.artifact-digest }}
+      prepare-url: ${{ steps.upload-prepare.outputs.artifact-url }}

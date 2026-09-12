@@ -39,8 +39,13 @@ The offline [NuGet fixture component](src/three_workflow_delivery_v3/acceptance/
 prepares original A/B archives from one frozen compilation, inspects their
 native identity and payload relationship, and requires A's clean local
 consumer. It retains inputs, original bytes and diagnostics. Its local SDK
-checks do not establish Windows or destination evidence; protected fixture
-workflow, native reader/operator and admission integration remain pending.
+checks do not establish Windows or destination evidence. The separate
+[preparation entry](../../../../.github/workflows/workflow-delivery-v3-nuget-fixtures.yml)
+connects protected request, trusted helper and native setup transport to the
+offline pair on Windows. Its acceptance-only command module is
+`three_workflow_delivery_v3.acceptance.nuget_preparation`; `request`, `setup`
+and `prepare` retain exact current inputs and completed or partial evidence.
+Native reader/operator integration and actual platform execution remain pending.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,

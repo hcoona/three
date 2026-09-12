@@ -887,11 +887,26 @@ def _validate_native_imports(
     return audit
 
 
-def evaluate_dotnet_project(
-    repo_root: Path, helper: NativeNuGetHelper, evidence_directory: Path
+def evaluate_dotnet_project(  # noqa: C901, PLR0915
+    repo_root: Path,
+    helper: NativeNuGetHelper,
+    evidence_directory: Path,
+    *,
+    dependency_directory: Path | None = None,
 ) -> tuple[DotnetProjectNode, DotnetNbgvFacts, str]:
     """Evaluate real native targets; this runs only in the unprivileged zone."""
     evidence_directory.mkdir(parents=True, exist_ok=False)
+    restore_properties: tuple[str, ...] = ()
+    if dependency_directory is not None:
+        if not dependency_directory.is_absolute():
+            msg = "dependency directory must be absolute"
+            raise ValueError(msg)
+        dependency_directory.mkdir(parents=True, exist_ok=False)
+        restore_properties = (
+            "-property:RestorePackagesPath=" + str(dependency_directory),
+            "-property:RestoreFallbackFolders=",
+            "-property:RestoreAdditionalProjectFallbackFolders=",
+        )
     project = repo_root / DOTNET_PROJECT_PATH
     environment = neutral_dotnet_environment()
     version = run_native(
@@ -915,12 +930,24 @@ def evaluate_dotnet_project(
         "-target:GetBuildVersion",
         "-property:Configuration=Release",
         "-property:RestoreLockedMode=true",
+        *restore_properties,
         "-getProperty:" + ",".join(_EVALUATED_PROPERTIES),
         "-getItem:ProjectReference,PackageReference",
         "-bl:" + str(log),
     )
     native = _object(
-        parse_json_strict(run_native(command, repo_root, environment))
+        parse_json_strict(
+            run_native(
+                command,
+                repo_root,
+                environment,
+                diagnostics=(
+                    evidence_directory / "evaluation"
+                    if dependency_directory is not None
+                    else None
+                ),
+            )
+        )
     )
     properties = _object(native["Properties"])
     items = _object(native["Items"])
@@ -1041,16 +1068,22 @@ def evaluate_dotnet_project(
         ),
         encoding="utf-8",
     )
+    if dependency_directory is not None:
+        assets = project.parent / "obj" / "project.assets.json"
+        (evidence_directory / "project.assets.json").write_bytes(
+            assets.read_bytes()
+        )
     return project_node, facts, evaluation_digest
 
 
-def provide_dotnet_repository_facts(
+def provide_dotnet_repository_facts(  # noqa: PLR0913
     repo_root: Path,
     binding: ProviderBinding,
     materialization: CheckoutMaterialization,
     *,
     helper: NativeNuGetHelper,
     evidence_directory: Path,
+    dependency_directory: Path | None = None,
 ) -> DotnetProviderResult:
     """Evaluate an isolated exact target with complete history and tags."""
     validate_provider_binding(binding)
@@ -1075,9 +1108,17 @@ def provide_dotnet_repository_facts(
             )
             for path in paths
         )
-        project, nbgv, native_digest = evaluate_dotnet_project(
-            isolated, helper, evidence_directory
-        )
+        if dependency_directory is None:
+            project, nbgv, native_digest = evaluate_dotnet_project(
+                isolated, helper, evidence_directory
+            )
+        else:
+            project, nbgv, native_digest = evaluate_dotnet_project(
+                isolated,
+                helper,
+                evidence_directory,
+                dependency_directory=dependency_directory,
+            )
         if inputs != tuple(
             (
                 path,

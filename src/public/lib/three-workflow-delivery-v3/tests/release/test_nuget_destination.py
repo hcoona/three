@@ -32,6 +32,9 @@ from three_workflow_delivery_v3.records.release_transport import (
 from ..repository.test_dotnet_compiler import (
     native_scenario as native_scenario,  # noqa: PLC0414
 )
+from ..repository.test_dotnet_compiler import (
+    native_scenario_basis as native_scenario_basis,  # noqa: PLC0414
+)
 from .test_nuget_qualification import _qualified
 from .test_nuget_qualification import (
     nuget_scenario as nuget_scenario,  # noqa: PLC0414
