@@ -99,9 +99,11 @@ selects original A or equivalent B without rebuilding either package. Its
 process-local Git configuration preserves LF checkout bytes; it changes no
 machine Git settings. The unprivileged stage retains helper command diagnostics.
 
-The publisher consumes the current-run immutable prepared archive, evaluates no
-target or helper, and persists an exclusive, flushed invocation marker before
-one HTTP call. Safe response bytes, selected headers and partial failures are
+The publisher job holds package-write authority, including its pinned checkout
+and setup actions. The invocation step receives the token explicitly through
+its environment. The publisher consumes the current-run immutable prepared
+archive, evaluates no target or helper, and persists an exclusive, flushed
+invocation marker before one HTTP call. Safe response bytes, selected headers and partial failures are
 retained for 45 days. An expected HTTP status completes only that observation;
 it establishes neither destination readback nor native acceptance. Lost output
 or an ambiguous response leaves the request spent and cannot justify a rerun.

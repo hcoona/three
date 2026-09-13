@@ -22,10 +22,11 @@ def workflow():
     return yaml.safe_load((ROOT / WORKFLOW_PATH).read_text(encoding="utf-8"))
 
 
-def test_probe_workflow_confines_publication_authority(workflow):
-    """Only the one-shot step receives the repository publication token."""
+def test_probe_workflow_limits_publication_authority_to_publisher_job(workflow):
+    """Only the publisher job has effective package-write permission."""
     assert set(workflow["on"]) == {"workflow_dispatch"}
     assert workflow["permissions"] == {}
+    assert set(workflow["jobs"]) == {"prepare", "publish"}
     assert workflow["jobs"]["prepare"]["permissions"] == {
         "contents": "read",
         "actions": "read",
@@ -40,7 +41,9 @@ def test_probe_workflow_confines_publication_authority(workflow):
         "GIT_CONFIG_KEY_0": "core.autocrlf",
         "GIT_CONFIG_VALUE_0": "false",
     }
-    tokens = []
+    # Pinned checkout/setup actions can receive the publisher job token through
+    # their input defaults. This scan covers explicit command environments only.
+    explicit_tokens = []
     for name, job in workflow["jobs"].items():
         assert job["runs-on"] == "windows-2022"
         assert "environment" not in job
@@ -62,7 +65,9 @@ def test_probe_workflow_confines_publication_authority(workflow):
                 environment
             )
             if "GITHUB_TOKEN" in environment:
-                tokens.append((name, step["name"], environment["GITHUB_TOKEN"]))
+                explicit_tokens.append(
+                    (name, step["name"], environment["GITHUB_TOKEN"])
+                )
             source = step.get("run", "")
             assert not any(
                 command in source
@@ -78,7 +83,7 @@ def test_probe_workflow_confines_publication_authority(workflow):
                 assert step["with"]["ref"] == "${{ github.sha }}"
                 assert step["with"]["fetch-depth"] == 0
                 assert step["with"]["persist-credentials"] is False
-    assert tokens == [
+    assert explicit_tokens == [
         ("publish", "Invoke the bound probe once", "${{ github.token }}")
     ]
     publisher = workflow["jobs"]["publish"]
