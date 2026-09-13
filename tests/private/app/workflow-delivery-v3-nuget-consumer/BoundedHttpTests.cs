@@ -14,7 +14,7 @@ public sealed class BoundedHttpTests
     [TestMethod]
     public async Task HttpReadStopsAtCumulativeRequestAllowance()
     {
-        ConsumerRequest request = Request() with { MaximumRequests = 2, MaximumResponseBytes = 14 };
+        ConsumerRequest request = Request() with { MaximumRequests = 2, MaximumResponseBytes = 15 };
         var transport = new ResponseHandler(_ => Response("content"));
         var bounded = new BoundedHttpHandler(request, Token, transport);
         using var client = new HttpClient(bounded);
@@ -34,10 +34,15 @@ public sealed class BoundedHttpTests
     }
 
     [TestMethod]
-    public async Task HttpReadStopsBeforeReturningAnOversizedBody()
+    [DataRow("abcd")]
+    [DataRow("abcde")]
+    public async Task HttpReadStopsBeforeReturningAnOversizedBody(string body)
     {
         ConsumerRequest request = Request() with { MaximumResponseBytes = 4 };
-        var transport = new ResponseHandler(_ => Response("abcde"));
+        using var stream = new TrackingStream(body);
+        var transport = new ResponseHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(stream) }
+        );
         var bounded = new BoundedHttpHandler(request, Token, transport);
         using var client = new HttpClient(bounded);
 
@@ -45,7 +50,8 @@ public sealed class BoundedHttpTests
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => client.GetAsync(VersionsUrl));
 
         Assert.AreEqual(1, transport.Calls);
-        Assert.AreEqual(5, bounded.ResponseBytes);
+        Assert.AreEqual(4, stream.BytesRead);
+        Assert.AreEqual(stream.BytesRead, bounded.ResponseBytes);
         Assert.HasCount(1, Directory.GetFiles(request.EvidencePath, "*-reserved.json"));
         Assert.IsEmpty(Directory.GetFiles(request.EvidencePath, "*-body.bin"));
     }
@@ -55,7 +61,14 @@ public sealed class BoundedHttpTests
     {
         ConsumerRequest request = Request() with { MaximumResponseBytes = 4 };
         int calls = 0;
-        var transport = new ResponseHandler(_ => Response(++calls == 1 ? "abc" : "de"));
+        using var firstStream = new TrackingStream("abc");
+        using var secondStream = new TrackingStream("de");
+        var transport = new ResponseHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(++calls == 1 ? firstStream : secondStream),
+            }
+        );
         var bounded = new BoundedHttpHandler(request, Token, transport);
         using var client = new HttpClient(bounded);
 
@@ -65,7 +78,9 @@ public sealed class BoundedHttpTests
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => client.GetAsync(VersionsUrl));
 
         Assert.AreEqual(2, transport.Calls);
-        Assert.AreEqual(5, bounded.ResponseBytes);
+        Assert.AreEqual(3, firstStream.BytesRead);
+        Assert.AreEqual(1, secondStream.BytesRead);
+        Assert.AreEqual(firstStream.BytesRead + secondStream.BytesRead, bounded.ResponseBytes);
         Assert.HasCount(2, Directory.GetFiles(request.EvidencePath, "*-reserved.json"));
         Assert.HasCount(1, Directory.GetFiles(request.EvidencePath, "*-body.bin"));
         Assert.AreEqual(
@@ -220,6 +235,21 @@ public sealed class BoundedHttpTests
 
     private static HttpResponseMessage Response(string body) =>
         new(HttpStatusCode.OK) { Content = new ByteArrayContent(Encoding.UTF8.GetBytes(body)) };
+
+    private sealed class TrackingStream(string body) : MemoryStream(Encoding.UTF8.GetBytes(body))
+    {
+        internal long BytesRead { get; private set; }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            int count = await base.ReadAsync(buffer, cancellationToken);
+            BytesRead += count;
+            return count;
+        }
+    }
 
     private sealed class ResponseHandler : HttpMessageHandler
     {

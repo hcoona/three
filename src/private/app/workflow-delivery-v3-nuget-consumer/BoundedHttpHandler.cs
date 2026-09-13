@@ -79,7 +79,9 @@ internal sealed class BoundedHttpHandler : DelegatingHandler
         try
         {
             ConsumerRequest.Require(
-                !_stopped && Requests < _request.MaximumRequests,
+                !_stopped
+                    && Requests < _request.MaximumRequests
+                    && ResponseBytes < _request.MaximumResponseBytes,
                 "Consumer HTTP allowance exhausted or stopped."
             );
             cancellationToken.ThrowIfCancellationRequested();
@@ -141,14 +143,17 @@ internal sealed class BoundedHttpHandler : DelegatingHandler
             while (true)
             {
                 int allowance = (int)
-                    Math.Min(chunk.Length, _request.MaximumResponseBytes - ResponseBytes + 1);
+                    Math.Min(chunk.Length, _request.MaximumResponseBytes - ResponseBytes);
                 int count = await content
                     .ReadAsync(chunk.AsMemory(0, allowance), cancellationToken)
                     .ConfigureAwait(false);
                 ResponseBytes += count;
+                // EOF must be established within the declared total. A final
+                // allowance byte is an overflow sentinel, not permission to
+                // read again after exhausting that total.
                 ConsumerRequest.Require(
-                    ResponseBytes <= _request.MaximumResponseBytes,
-                    "Consumer response allowance exceeded."
+                    ResponseBytes < _request.MaximumResponseBytes,
+                    "Consumer response allowance exhausted before complete response."
                 );
                 if (count == 0)
                 {
