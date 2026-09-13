@@ -254,6 +254,11 @@ def test_pr_candidate_rejects_unavailable_or_conflicting_comparison(
             "src/public/lib/hcoona-release-smoke-github-packages/version.json",
             "src/public/lib/three-workflow-delivery-v3/src/control.py",
         ),
+        (
+            "src/private/app/workflow-delivery-v3-nuget-consumer/Program.cs",
+            "src/private/app/workflow-delivery-v3-nuget-consumer/README.md",
+            PROJECT_SOURCE,
+        ),
     ],
 )
 def test_project_change_selects_complete_first_slice(
@@ -317,6 +322,16 @@ def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
                 "WorkflowDeliveryV3DotnetProvider.csproj",
                 "packages.lock.json",
                 "readers/PackageReader.cs",
+            )
+        ),
+        *(
+            "src/private/app/workflow-delivery-v3-nuget-consumer/" + name
+            for name in (
+                "BoundedHttpHandler.cs",
+                "ConsumerRequest.cs",
+                "NativeRestore.cs",
+                "Program.cs",
+                "README.md",
             )
         ),
         *(
@@ -504,6 +519,16 @@ def test_manual_slice_validation_always_selects_complete_slice() -> None:
             (
                 (
                     "src/private/app/workflow-delivery-v3-dotnet-provider-other/"
+                    "Program.cs"
+                ),
+            ),
+            "changed path is unclassified",
+        ),
+        (
+            (SHA_A, SHA_B),
+            (
+                (
+                    "src/private/app/workflow-delivery-v3-nuget-consumer-other/"
                     "Program.cs"
                 ),
             ),

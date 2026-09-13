@@ -48,6 +48,7 @@ _REPOSITORY_ONLY_PREFIXES = (
     "eng/",
     "LICENSES/",
     "src/private/app/workflow-delivery-v3-dotnet-provider/",
+    "src/private/app/workflow-delivery-v3-nuget-consumer/",
     "src/private/lib/scholarly-publication/",
     "src/public/lib/hcoona-release-smoke-github-packages/",
     "tests/",

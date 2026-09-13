@@ -149,10 +149,14 @@ def controlled(monkeypatch):
     return command
 
 
+@pytest.mark.parametrize("requests", [6, 2**31 - 1])
 def test_consumer_completes_only_after_restore_build_and_marker(
-    inputs, controlled, monkeypatch
+    inputs, controlled, monkeypatch, requests
 ):
     request, kwargs = inputs
+    request = replace(
+        request, limits=replace(request.limits, requests=requests)
+    )
     monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
     monkeypatch.setenv("NuGetPackageSourceCredentials_selected", TOKEN)
     output = consumer.run_nuget_consumer(request, **kwargs)
@@ -240,14 +244,16 @@ def test_consumer_request_rejects_expansion_and_unselected_inputs(
     "changes",
     [
         {"requests": 0},
+        {"requests": 2**31},
         {"response_bytes": True},
         {"completion_timeout_seconds": float("inf")},
     ],
 )
 def test_consumer_limits_require_finite_unambiguous_allowances(inputs, changes):
-    request, _kwargs = inputs
-    with pytest.raises(ValueError, match="invalid"):
+    request, kwargs = inputs
+    with pytest.raises(ValueError, match=r"invalid|unsupported"):
         replace(request.limits, **changes)
+    assert not kwargs["audit_directory"].exists()
 
 
 @pytest.mark.parametrize(
@@ -338,15 +344,23 @@ def test_consumer_retains_partial_failure_without_retry(
     assert controlled.call_count == count
 
 
+@pytest.mark.parametrize("changed", ["runtime", "dotnet"])
 def test_consumer_rechecks_runtime_before_credential_process(
-    inputs, controlled
+    inputs, controlled, monkeypatch, tmp_path, changed
 ):
     request, kwargs = inputs
+    dotnet = tmp_path / "controlled-dotnet"
+    dotnet.write_bytes(b"controlled dotnet executable")
+    monkeypatch.setattr(consumer.shutil, "which", lambda _name: str(dotnet))
+    request = replace(
+        request, dotnet_executable_sha256=_sha(dotnet.read_bytes())
+    )
 
     def invoke(argv, **options):
         output = _controlled_command(argv, **options)
         if options["evidence"].directory.name == "graph":
-            kwargs["restore_host"].write_bytes(b"changed during evaluation")
+            path = kwargs["restore_host"] if changed == "runtime" else dotnet
+            path.write_bytes(b"changed during evaluation")
         return output
 
     controlled.side_effect = invoke
@@ -354,6 +368,16 @@ def test_consumer_rechecks_runtime_before_credential_process(
         consumer.run_nuget_consumer(request, **kwargs)
     assert controlled.call_count == 2
     assert not (kwargs["audit_directory"] / "restore").exists()
+    assert (
+        _read(kwargs["audit_directory"] / "consumer-failed.json")[
+            "consumerSpent"
+        ]
+        is True
+    )
+    assert all(
+        "WDV3_NUGET_CONSUMER_READ_TOKEN" not in call.kwargs["environment"]
+        for call in controlled.call_args_list
+    )
 
 
 @pytest.mark.parametrize("changed", ["package", "assets"])

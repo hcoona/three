@@ -379,7 +379,7 @@ public sealed class ConsumerRestoreTests
                 start.Environment[key] = value;
             }
         }
-        foreach (string key in new[] { "HOME", "USERPROFILE", "DOTNET_CLI_HOME" })
+        foreach (string key in new[] { "HOME", "USERPROFILE", "DOTNET_CLI_HOME", "APPDATA" })
         {
             start.Environment[key] = Path.Combine(root, "home");
         }

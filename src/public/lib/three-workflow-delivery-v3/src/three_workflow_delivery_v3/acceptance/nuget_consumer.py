@@ -91,7 +91,8 @@ class NuGetConsumerLimits:
                 type(value) is int and value > 0, "invalid consumer allowance"
             )
         _require(
-            self.response_bytes < 2**31 - 1
+            self.requests <= 2**31 - 1
+            and self.response_bytes < 2**31 - 1
             and type(self.restore_timeout_seconds) is int
             and 0 < self.restore_timeout_seconds <= _MAX_RESTORE_SECONDS,
             "unsupported native consumer bound",
@@ -345,8 +346,9 @@ def _steps(  # noqa: PLR0913, PLR0917
     evidence.write("restore-request.json", canonicalize(native_request))
     runtime = process._runtime_files(host.parent)  # noqa: SLF001
     _require(
-        runtime == dict(request.restore_host_files),
-        "consumer runtime changed",
+        runtime == dict(request.restore_host_files)
+        and _sha(dotnet.read_bytes()) == request.dotnet_executable_sha256,
+        "consumer runtime or dotnet changed",
     )
     output = run(
         "restore",

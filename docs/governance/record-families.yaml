@@ -389,6 +389,20 @@ families:
     creation_trigger: The native helper needs a callable interface and an owning domain authority.
     failure_mode: Readers confuse package inspection with publishing or treat local mechanism evidence as native admission.
     review_point: Changes to this helper interface or its owning project records
+  - id: three-workflow-delivery-v3-nuget-consumer-interface
+    state: current
+    namespace: src/public/lib/three-workflow-delivery-v3
+    concern: Native NuGet restore-host usage and routing to its v3 engineering owner
+    carrier: repository-file
+    path: src/private/app/workflow-delivery-v3-nuget-consumer/README.md
+    format: markdown
+    producer: Project maintainers
+    maintainer: Repository owner
+    consumers:
+      - Restore-host maintainers and callers locating the prebuilt entry, tooling admission and bounded read contract
+    creation_trigger: The native restore companion needs a callable interface and an owning domain authority.
+    failure_mode: Callers lose the tooling and credential boundaries or mistake local restore evidence for native authorization.
+    review_point: Changes to this companion interface or its owning consumer and admission contracts
   - id: hcoona-release-smoke-github-packages-interface
     state: current
     namespace: src/public/lib/hcoona-release-smoke-github-packages
