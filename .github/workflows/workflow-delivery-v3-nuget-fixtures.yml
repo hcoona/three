@@ -55,7 +55,7 @@ jobs:
       - name: Install pinned uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          version: 0.12.7
+          version: 0.12.12
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -183,7 +183,7 @@ jobs:
       - name: Install pinned uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          version: 0.12.7
+          version: 0.12.12
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -314,7 +314,7 @@ jobs:
       - name: Install pinned uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          version: 0.12.7
+          version: 0.12.12
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
