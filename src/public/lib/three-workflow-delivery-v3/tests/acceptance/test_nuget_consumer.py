@@ -409,27 +409,52 @@ def test_consumer_rechecks_inputs_after_product_execution(
     assert not (kwargs["audit_directory"] / "consumer.json").exists()
 
 
-def test_consumer_rejects_completion_after_parent_deadline(
-    inputs, controlled, monkeypatch
+@pytest.mark.parametrize(
+    ("rejection", "message"),
+    [
+        ("deadline", "consumer completed late"),
+        ("binding", "consumer completion request mismatch"),
+    ],
+)
+def test_consumer_rejects_unadmitted_parent_completion(
+    inputs, controlled, monkeypatch, rejection, message
 ):
     request, kwargs = inputs
+    directory = kwargs["audit_directory"]
     elapsed = [0.0]
+    retained: dict[Path, bytes] = {}
     monkeypatch.setattr(consumer.time, "monotonic", lambda: elapsed[0])
 
     def supervise(target, arguments, timeout):
         code = _inline_supervise(target, arguments, timeout)
-        elapsed[0] = timeout + 1
+        result = directory / "consumer.json"
+        retained.update(
+            {
+                path: path.read_bytes()
+                for path in directory.rglob("*")
+                if path.is_file() and path != result
+            }
+        )
+        if rejection == "deadline":
+            elapsed[0] = timeout + 1
+        else:
+            document = _read(result)
+            assert isinstance(document, dict)
+            document["requestDigest"] = "sha256:" + "0" * 64
+            result.write_bytes(canonicalize(document))
         return code
 
     monkeypatch.setattr(consumer.process, "_supervise", supervise)
-    with pytest.raises(ValueError, match="consumer completed late"):
+    with pytest.raises(ValueError, match=message):
         consumer.run_nuget_consumer(request, **kwargs)
     assert controlled.call_count == 5
-    assert (
-        _read(kwargs["audit_directory"] / "consumer-failed.json")[
-            "consumerSpent"
-        ]
-        is True
+    failure = _read(directory / "consumer-failed.json")
+    assert failure["consumerSpent"] is True
+    assert failure["completed"] is False
+    assert not (directory / "consumer.json").exists()
+    assert (directory / "consumer/restore-evidence/result.json") in retained
+    assert all(
+        path.read_bytes() == content for path, content in retained.items()
     )
 
 

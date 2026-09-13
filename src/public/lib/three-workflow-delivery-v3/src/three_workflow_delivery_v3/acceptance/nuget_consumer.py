@@ -554,6 +554,7 @@ def run_nuget_consumer(  # noqa: PLR0913
             "consumer completion request mismatch",
         )
     except BaseException as error:
+        (directory / "consumer.json").unlink(missing_ok=True)
         evidence.write(
             "consumer-failed.json",
             canonicalize(

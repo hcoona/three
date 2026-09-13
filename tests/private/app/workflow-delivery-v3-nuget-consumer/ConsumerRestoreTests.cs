@@ -265,18 +265,52 @@ public sealed class ConsumerRestoreTests
             "-nodeReuse:false",
             "-bl:" + Path.Combine(root, "graph.binlog")
         );
-        return new ConsumerRequest(
+        byte[] graphBytes = await File.ReadAllBytesAsync(Path.Combine(root, "graph.json"));
+        var request = new ConsumerRequest(
             root,
             "1.2.3",
             ConsumerRequest.Sha256(package),
             ConsumerRequest.Sha256("{\"test\":\"native consumer\"}"u8),
-            ConsumerRequest.Sha256(await File.ReadAllBytesAsync(Path.Combine(root, "graph.json"))),
+            ConsumerRequest.Sha256(graphBytes),
             ConsumerRequest.Sha256(ServiceIndex),
             BaseAddress,
             6,
             1024 * 1024,
             30
         );
+        try
+        {
+            request.ValidateGraph();
+        }
+        catch (InvalidDataException)
+        {
+            Console.WriteLine("Fresh fixture graph failed admission before mutation or transport.");
+            Console.WriteLine("Expected projectUniqueName and projectPath: " + request.ProjectPath);
+            Console.WriteLine("Expected projectStyle: PackageReference");
+            Console.WriteLine("Expected packagesPath: " + request.PackagesPath);
+            Console.WriteLine(
+                "Expected trimmed outputPath: " + Path.Combine(root, "obj")
+            );
+            Console.WriteLine("Expected sole configFilePaths entry: " + request.ConfigPath);
+            Console.WriteLine("Expected sole sources key: " + ConsumerRequest.ServiceIndex);
+            Console.WriteLine("Expected originalTargetFrameworks: [\"net10.0\"]");
+            Console.WriteLine("Expected restoreAuditProperties.enableAudit: false (string)");
+            Console.WriteLine("Expected fallbackFolders: absent or null");
+            Console.WriteLine("Graph path: " + request.GraphPath);
+            Console.WriteLine("Graph SHA-256: " + request.GraphSha256);
+            Console.WriteLine("Graph binlog: " + Path.Combine(root, "graph.binlog"));
+            if (graphBytes.Length <= 32 * 1024)
+            {
+                Console.WriteLine("Actual graph UTF-8: " + Encoding.UTF8.GetString(graphBytes));
+                Console.WriteLine("Original graph Base64: " + Convert.ToBase64String(graphBytes));
+            }
+            else
+            {
+                Console.WriteLine("Graph diagnostic incomplete: original exceeds 32 KiB.");
+            }
+            throw;
+        }
+        return request;
     }
 
     private static async Task<byte[]> CreatePackageAsync()
