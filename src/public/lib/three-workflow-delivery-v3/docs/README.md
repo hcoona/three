@@ -92,9 +92,12 @@ immutable transport. A bounded Windows preparation run has passed independent
 artifact-body and lineage audit. Its [retained evidence](https://github.com/hcoona/three/issues/676)
 binds the original A/B pair and A's clean local consumer to the exact protected
 source and current run. The [capture evidence component](../README.md)
-connects bounded reads and retained complete or partial observations. Executable
-operator integration, exact native requests and destination evidence remain
-subsequent work; the component does not admit native provenance or publication.
+connects bounded reads and retained complete or partial observations. The local
+read operator adds an executable preflight, immutable-input comparisons, POSIX
+process supervision and fixed cumulative capture allowances. Exact native
+requests, independent helper/runtime admission, probe and consumer integration,
+and destination evidence remain subsequent work. Local command availability
+does not admit native provenance or publication.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.
 

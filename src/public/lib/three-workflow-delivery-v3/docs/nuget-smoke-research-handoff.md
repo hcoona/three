@@ -91,11 +91,14 @@ Keep these facts in the working context:
   no rerun or replacement follows from the evidence. The
   [capture evidence component](../README.md) connects the existing reader to
   finite per-capture allowances and complete or partial retained responses.
-  Its caller still owns exact tooling/helper admission, process supervision
-  and generation-wide budgets; it exposes no executable operator. Concrete
-  native requests, destination evidence, activation and real publication remain
-  subsequent work; NuGet Governance and admission stay disabled. A local reader
-  runtime record cannot establish the Windows publication profile.
+  The local read operator adds a separate executable preflight, exact immutable
+  input comparisons, POSIX process supervision and fixed cumulative capture
+  allowances. It preserves original helper producer/run identities; independent
+  provenance admission and actual local runtime compatibility remain required.
+  Concrete native requests and access facts, probe/consumer integration,
+  destination evidence, activation and real publication remain subsequent work;
+  NuGet Governance and admission stay disabled. Local reader evidence cannot
+  establish the Windows publication profile.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
 - The selected GitHub Packages marker project has independent v3 authoring;
