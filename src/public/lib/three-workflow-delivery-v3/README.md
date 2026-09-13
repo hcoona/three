@@ -110,8 +110,22 @@ or an ambiguous response leaves the request spent and cannot justify a rerun.
 The spec's audit/preflight/capture hashes identify separately admitted evidence;
 they do not verify its provenance or supply authorization. Close the concrete
 native request and actual access/profile prerequisites before dispatch. The
-three-probe dispatcher, six capture/delta integration and clean destination
-consumer remain separate work. Atomic admission and NuGet Live stay disabled.
+three-probe dispatcher and six capture/delta integration remain separate work.
+Atomic admission and NuGet Live stay disabled.
+
+The [destination consumer component](src/three_workflow_delivery_v3/acceptance/nuget_consumer.py)
+creates a fresh, fixed consumer and SDK graph, then calls the prebuilt
+[native restore host](../../../private/app/workflow-delivery-v3-nuget-consumer/README.md).
+NuGet restores the exact version directly from the selected HTTP feed through
+bounded native transport. Only that restore child receives the supplied read
+credential. The coordinator requires the actual installed archive, witness and
+assets before credential-free `--no-restore` build and marker invocation. It
+supervises five bounded commands in one POSIX process group and retains safe
+partial failure without retry. It is a library component, without a new CLI.
+Callers must independently admit original inputs, complete prebuilt tooling,
+current read authority and the finite native generation; supplied hashes do not
+establish provenance. Controlled local tests establish native SDK and component
+behavior, not actual destination consumption, Windows profile or acceptance.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,
