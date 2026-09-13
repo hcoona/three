@@ -10,6 +10,9 @@ from pathlib import Path
 import pytest
 import yaml
 from three_workflow_delivery_v3.acceptance.nuget_probe import WORKFLOW_PATH
+from three_workflow_delivery_v3.records.artifacts import (
+    artifact_reference_from_document,
+)
 
 from ..contracts.test_nuget_workflows import _assert_success, _pwsh
 
@@ -163,7 +166,7 @@ def test_probe_seal_preserves_original_payload(workflow, tmp_path):
 
 
 def test_probe_reference_preserves_actual_upload_identity(workflow, tmp_path):
-    """The reference binds platform transport and payload separately."""
+    """Raw action output becomes a canonical, separately bound reference."""
     step = next(
         step
         for step in workflow["jobs"]["publish"]["steps"]
@@ -176,11 +179,14 @@ def test_probe_reference_preserves_actual_upload_identity(workflow, tmp_path):
         "WDV3_INPUT_NAME": "prepared.zip",
         "WDV3_INPUT_ID": "201",
         "WDV3_INPUT_DIGEST": "sha256:" + "a" * 64,
-        "WDV3_INPUT_TRANSPORT_DIGEST": "sha256:" + "b" * 64,
+        "WDV3_INPUT_TRANSPORT_DIGEST": "b" * 64,
         "WDV3_INPUT_URL": "https://github.com/hcoona/three/actions/runs/81/artifacts/201",
     }
     _assert_success(_pwsh(tmp_path, step["run"], environment))
-    assert json.loads((evidence / "reference.json").read_bytes()) == {
+    reference = artifact_reference_from_document(
+        json.loads((evidence / "reference.json").read_bytes())
+    )
+    assert reference.to_document() == {
         "artifact-id": 201,
         "artifact-digest": "sha256:" + "b" * 64,
         "artifact-url": environment["WDV3_INPUT_URL"],

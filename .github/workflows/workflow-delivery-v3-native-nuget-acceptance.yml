@@ -203,7 +203,7 @@ jobs:
           WDV3_INPUT_TRANSPORT_DIGEST: ${{ needs.prepare.outputs.input-transport-digest }}
           WDV3_INPUT_URL: ${{ needs.prepare.outputs.input-url }}
         run: |
-          $reference = @{'artifact-id' = [long]$env:WDV3_INPUT_ID; 'artifact-digest' = $env:WDV3_INPUT_TRANSPORT_DIGEST; 'artifact-url' = $env:WDV3_INPUT_URL; 'payload-path' = $env:WDV3_INPUT_NAME; 'payload-digest' = $env:WDV3_INPUT_DIGEST}
+          $reference = @{'artifact-id' = [long]$env:WDV3_INPUT_ID; 'artifact-digest' = "sha256:${env:WDV3_INPUT_TRANSPORT_DIGEST}"; 'artifact-url' = $env:WDV3_INPUT_URL; 'payload-path' = $env:WDV3_INPUT_NAME; 'payload-digest' = $env:WDV3_INPUT_DIGEST}
           [IO.File]::WriteAllText("${env:GITHUB_WORKSPACE}/.wdv3/evidence/reference.json", ($reference | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
       - name: Invoke the bound probe once
         env:
