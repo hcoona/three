@@ -95,7 +95,14 @@ Keep these facts in the working context:
   input comparisons, POSIX process supervision and fixed cumulative capture
   allowances. It preserves original helper producer/run identities; independent
   provenance admission and actual local runtime compatibility remain required.
-  Concrete native requests and access facts, probe/consumer integration,
+  The separate one-probe Windows entry now binds its current run to the original
+  immutable fixture/helper lineage, inspects without publication authority and
+  passes unchanged package bytes to a build-free one-shot publisher. It retains
+  a durable invocation marker and safe HTTP or partial-failure evidence. Neither
+  its spec nor a successful expected-status observation authenticates a native
+  generation or authorizes execution. Local tests establish component and shell
+  contracts only. Concrete native requests and access/profile facts, full
+  three-probe and six-capture integration, clean destination consumption,
   destination evidence, activation and real publication remain subsequent work;
   NuGet Governance and admission stay disabled. Local reader evidence cannot
   establish the Windows publication profile.

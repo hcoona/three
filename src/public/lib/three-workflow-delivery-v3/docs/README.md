@@ -94,10 +94,14 @@ binds the original A/B pair and A's clean local consumer to the exact protected
 source and current run. The [capture evidence component](../README.md)
 connects bounded reads and retained complete or partial observations. The local
 read operator adds an executable preflight, immutable-input comparisons, POSIX
-process supervision and fixed cumulative capture allowances. Exact native
-requests, independent helper/runtime admission, probe and consumer integration,
-and destination evidence remain subsequent work. Local command availability
-does not admit native provenance or publication.
+process supervision and fixed cumulative capture allowances. The separate
+[one-probe Windows entry](../README.md) binds the current run to the original
+fixture/helper inputs, inspects without publication authority and retains a
+durable marker plus HTTP or partial-failure evidence from its one-shot publisher.
+Exact native requests and independent helper/runtime admission remain required.
+The full three-probe sequence, six capture/delta integration, clean destination
+consumer and native proving remain subsequent work. Local command availability
+and expected HTTP status do not admit native provenance or publication.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.
 

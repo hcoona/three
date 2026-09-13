@@ -1,0 +1,230 @@
+# Implements the NuGet LLD Native Request and Tooling Boundary.
+# One separately admitted probe; no suite, native admission or Live authorization.
+name: Workflow Delivery v3 native NuGet acceptance probe
+'on':
+  workflow_dispatch:
+    inputs:
+      probe_spec:
+        description: Canonical reviewed prospective specification; execution requires the separate bounded native request
+        type: string
+        required: true
+permissions: {}
+concurrency:
+  group: wdv3-native-nuget-acceptance
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: pwsh
+env:
+  # Preserve actual imported Git bytes without changing machine Git settings.
+  GIT_CONFIG_COUNT: '1'
+  GIT_CONFIG_KEY_0: core.autocrlf
+  GIT_CONFIG_VALUE_0: 'false'
+jobs:
+  prepare:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' &&
+      github.repository_id == '1102295886' &&
+      github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' &&
+      github.ref_protected &&
+      github.sha == fromJSON(inputs.probe_spec).toolingSha &&
+      github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Retain actual probe platform context
+        run: |
+          New-Item -ItemType Directory -Path '.wdv3/evidence' | Out-Null
+          $context = @{}
+          foreach ($key in @('GITHUB_REPOSITORY', 'GITHUB_REPOSITORY_ID', 'GITHUB_ACTOR_ID', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_REF_PROTECTED', 'GITHUB_SHA', 'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKFLOW_REF', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'RUNNER_OS')) {
+            $context[$key] = [Environment]::GetEnvironmentVariable($key)
+          }
+          $context | ConvertTo-Json | Set-Content -LiteralPath '.wdv3/evidence/platform.json' -Encoding utf8
+      - name: Check out exact protected tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Install pinned helper runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Prepare the locked Python environment
+        run: |
+          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Bind the prospective specification to this run
+        id: bind
+        env:
+          WDV3_SPEC: ${{ inputs.probe_spec }}
+        run: |
+          [IO.File]::WriteAllText("${env:GITHUB_WORKSPACE}/.wdv3/evidence/spec.json", $env:WDV3_SPEC, [Text.UTF8Encoding]::new($false))
+          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_probe bind-spec --spec "${env:GITHUB_WORKSPACE}/.wdv3/evidence/spec.json" --output "${env:GITHUB_WORKSPACE}/.wdv3/evidence/request.json" --checkout "${env:GITHUB_WORKSPACE}/tooling" --evidence "${env:GITHUB_WORKSPACE}/.wdv3/evidence/bind"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $request = Get-Content -LiteralPath '.wdv3/evidence/request.json' -Raw | ConvertFrom-Json
+          @("producer-run=$($request.fixture.producerRunId)", "fixture-id=$($request.fixture.reference.'artifact-id')", "fixture-name=$($request.fixture.reference.'payload-path')", "helper-id=$($request.fixture.helperReference.'artifact-id')", "helper-name=$($request.fixture.helperReference.'payload-path')") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Download the original immutable fixture pair
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          repository: hcoona/three
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.bind.outputs.producer-run }}
+          artifact-ids: ${{ steps.bind.outputs.fixture-id }}
+          path: .wdv3/input/fixture
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download the original immutable helper
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          repository: hcoona/three
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.bind.outputs.producer-run }}
+          artifact-ids: ${{ steps.bind.outputs.helper-id }}
+          path: .wdv3/input/helper
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Inspect and bind original probe inputs
+        env:
+          WDV3_FIXTURE_NAME: ${{ steps.bind.outputs.fixture-name }}
+          WDV3_HELPER_NAME: ${{ steps.bind.outputs.helper-name }}
+        run: |
+          $arguments = @('prepare', '--request', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/request.json", '--fixture', "${env:GITHUB_WORKSPACE}/.wdv3/input/fixture/${env:WDV3_FIXTURE_NAME}", '--helper', "${env:GITHUB_WORKSPACE}/.wdv3/input/helper/${env:WDV3_HELPER_NAME}", '--output', "${env:GITHUB_WORKSPACE}/.wdv3/prepared.zip", '--checkout', "${env:GITHUB_WORKSPACE}/tooling", '--evidence', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/prepare")
+          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_probe @arguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Bind prepared payload bytes
+        id: seal
+        env:
+          WDV3_PAYLOAD: .wdv3/prepared.zip
+        run: |
+          $hex = (Get-FileHash -LiteralPath $env:WDV3_PAYLOAD -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-probe-input-r${env:GITHUB_RUN_ID}-$hex.zip"
+          New-Item -ItemType Directory -Path '.wdv3/upload' -Force | Out-Null
+          $path = Join-Path '.wdv3/upload' $name
+          Copy-Item -LiteralPath $env:WDV3_PAYLOAD -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Upload immutable prepared input
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal.outputs.name }}
+          path: ${{ steps.seal.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Archive available probe diagnostics
+        if: always()
+        run: |
+          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath ".wdv3/wdv3-nuget-probe-prepare-diagnostics-r${env:GITHUB_RUN_ID}.zip"
+      - name: Retain immutable probe diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wdv3-nuget-probe-prepare-diagnostics-r${{ github.run_id }}.zip
+          path: .wdv3/wdv3-nuget-probe-prepare-diagnostics-r${{ github.run_id }}.zip
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+    outputs:
+      input-name: ${{ steps.seal.outputs.name }}
+      input-digest: ${{ steps.seal.outputs.digest }}
+      input-id: ${{ steps.upload.outputs.artifact-id }}
+      input-transport-digest: ${{ steps.upload.outputs.artifact-digest }}
+      input-url: ${{ steps.upload.outputs.artifact-url }}
+  publish:
+    needs: prepare
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' &&
+      github.repository_id == '1102295886' &&
+      github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' &&
+      github.ref_protected &&
+      github.sha == fromJSON(inputs.probe_spec).toolingSha &&
+      github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Retain actual probe platform context
+        run: |
+          New-Item -ItemType Directory -Path '.wdv3/evidence' | Out-Null
+          $context = @{}
+          foreach ($key in @('GITHUB_REPOSITORY', 'GITHUB_REPOSITORY_ID', 'GITHUB_ACTOR_ID', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_REF_PROTECTED', 'GITHUB_SHA', 'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKFLOW_REF', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'RUNNER_OS')) {
+            $context[$key] = [Environment]::GetEnvironmentVariable($key)
+          }
+          $context | ConvertTo-Json | Set-Content -LiteralPath '.wdv3/evidence/platform.json' -Encoding utf8
+      - name: Check out exact protected tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Prepare the locked Python environment
+        run: |
+          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Download exact current-run prepared input
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.input-id }}
+          path: .wdv3/input/prepared
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Bind the actual prepared artifact reference
+        env:
+          WDV3_INPUT_NAME: ${{ needs.prepare.outputs.input-name }}
+          WDV3_INPUT_ID: ${{ needs.prepare.outputs.input-id }}
+          WDV3_INPUT_DIGEST: ${{ needs.prepare.outputs.input-digest }}
+          WDV3_INPUT_TRANSPORT_DIGEST: ${{ needs.prepare.outputs.input-transport-digest }}
+          WDV3_INPUT_URL: ${{ needs.prepare.outputs.input-url }}
+        run: |
+          $reference = @{'artifact-id' = [long]$env:WDV3_INPUT_ID; 'artifact-digest' = "sha256:${env:WDV3_INPUT_TRANSPORT_DIGEST}"; 'artifact-url' = $env:WDV3_INPUT_URL; 'payload-path' = $env:WDV3_INPUT_NAME; 'payload-digest' = $env:WDV3_INPUT_DIGEST}
+          [IO.File]::WriteAllText("${env:GITHUB_WORKSPACE}/.wdv3/evidence/reference.json", ($reference | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+      - name: Invoke the bound probe once
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WDV3_INPUT_NAME: ${{ needs.prepare.outputs.input-name }}
+        run: |
+          $arguments = @('publish', '--prepared', "${env:GITHUB_WORKSPACE}/.wdv3/input/prepared/${env:WDV3_INPUT_NAME}", '--reference', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/reference.json", '--checkout', "${env:GITHUB_WORKSPACE}/tooling", '--evidence', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/publish")
+          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_probe @arguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Archive available probe diagnostics
+        if: always()
+        run: |
+          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath ".wdv3/wdv3-nuget-probe-publish-diagnostics-r${env:GITHUB_RUN_ID}.zip"
+      - name: Retain immutable probe diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wdv3-nuget-probe-publish-diagnostics-r${{ github.run_id }}.zip
+          path: .wdv3/wdv3-nuget-probe-publish-diagnostics-r${{ github.run_id }}.zip
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true

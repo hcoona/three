@@ -86,6 +86,33 @@ probe dispatcher or destination consumer. A complete preflight capture is not
 the required access audit, native acceptance, Windows profile or publication
 authority. Concrete native requests and destination evidence remain pending.
 
+The [one-probe component](src/three_workflow_delivery_v3/acceptance/nuget_probe.py)
+and separate [Windows acceptance entry](../../../../.github/workflows/workflow-delivery-v3-native-nuget-acceptance.yml)
+consume an independently admitted original fixture pair and complete helper.
+`python -m three_workflow_delivery_v3.acceptance.nuget_probe --help` exposes
+prospective-spec binding, unprivileged inspection and one publication stage.
+The canonical spec uses `workflow-delivery/v3/nuget-probe-spec` and the request
+fields defined by `NuGetProbeRequest`, omitting the not-yet-created run ID.
+The entry binds the actual current run, preserves original producer identities,
+checks actual source bytes and the complete Windows operation profile, and
+selects original A or equivalent B without rebuilding either package. Its
+process-local Git configuration preserves LF checkout bytes; it changes no
+machine Git settings. The unprivileged stage retains helper command diagnostics.
+
+The publisher job holds package-write authority, including its pinned checkout
+and setup actions. The invocation step receives the token explicitly through
+its environment. The publisher consumes the current-run immutable prepared
+archive, evaluates no target or helper, and persists an exclusive, flushed
+invocation marker before one HTTP call. Safe response bytes, selected headers and partial failures are
+retained for 45 days. An expected HTTP status completes only that observation;
+it establishes neither destination readback nor native acceptance. Lost output
+or an ambiguous response leaves the request spent and cannot justify a rerun.
+The spec's audit/preflight/capture hashes identify separately admitted evidence;
+they do not verify its provenance or supply authorization. Close the concrete
+native request and actual access/profile prerequisites before dispatch. The
+three-probe dispatcher, six capture/delta integration and clean destination
+consumer remain separate work. Atomic admission and NuGet Live stay disabled.
+
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,
 Model, Eligibility, Attempt admission, Build/Qualification, approval, publication,

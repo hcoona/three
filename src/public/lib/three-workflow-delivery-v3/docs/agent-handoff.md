@@ -215,8 +215,18 @@ independent helper admission and actual local runtime compatibility remain
 required. A failed collector cannot resume or replenish its budget. Its local
 runtime is not the Windows publication profile. Close the exact reviewed native
 request and required access facts before collection; the entry's presence does
-not supply them. Probe/consumer integration, native collection and normal-Live
-workflow proving remain subsequent work.
+not supply them. The separate one-probe Windows entry binds a prospective spec
+to its actual protected current run, inspects the original immutable pair with
+the admitted prebuilt helper in an unprivileged job, and transports the selected
+unchanged package to the publisher. The publisher checks the current profile,
+persists its invocation marker and calls the one-shot adapter once without
+target or helper execution. Retained HTTP/partial-failure evidence is not a
+native verdict; the spec's evidence hashes do not authenticate their sources
+or authorize dispatch. Local tests establish source and shell contracts only.
+The full three-probe dispatcher, six capture/delta integration, clean destination
+consumer, native collection and normal-Live workflow proving remain subsequent
+work. Close the concrete native request and actual access/profile prerequisites
+before dispatch; source availability supplies no missing gate.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
 stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an
 activation gate; sequential duplicate tests cannot supply it.
