@@ -1,0 +1,90 @@
+# Implements the NuGet LLD's exact Windows operation-profile prerequisite.
+# The separate bounded dispatch and independent evidence audit remain required.
+name: Workflow Delivery v3 NuGet profile observation
+'on':
+  workflow_dispatch:
+    inputs:
+      profile_spec:
+        description: Canonical reviewed tooling and original preflight resource bindings
+        type: string
+        required: true
+permissions: {}
+concurrency:
+  group: wdv3-nuget-profile
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: pwsh
+env:
+  GIT_CONFIG_COUNT: '1'
+  GIT_CONFIG_KEY_0: core.autocrlf
+  GIT_CONFIG_VALUE_0: 'false'
+jobs:
+  observe:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' &&
+      github.repository_id == '1102295886' &&
+      github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' &&
+      github.ref_protected &&
+      github.sha == fromJSON(inputs.profile_spec).toolingSha &&
+      github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Retain actual profile platform context
+        run: |
+          New-Item -ItemType Directory -Path '.wdv3/evidence' | Out-Null
+          $context = @{}
+          foreach ($key in @('GITHUB_REPOSITORY', 'GITHUB_REPOSITORY_ID', 'GITHUB_ACTOR_ID', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_REF_PROTECTED', 'GITHUB_SHA', 'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKFLOW_REF', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'RUNNER_OS')) {
+            $context[$key] = [Environment]::GetEnvironmentVariable($key)
+          }
+          $context | ConvertTo-Json | Set-Content -LiteralPath '.wdv3/evidence/platform.json' -Encoding utf8
+      - name: Check out exact protected tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.12.7
+      - name: Prepare the locked Python environment
+        run: |
+          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Observe the current profile without package credentials
+        env:
+          WDV3_PROFILE_SPEC: ${{ inputs.profile_spec }}
+        run: |
+          [IO.File]::WriteAllText("${env:GITHUB_WORKSPACE}/.wdv3/evidence/spec.json", $env:WDV3_PROFILE_SPEC, [Text.UTF8Encoding]::new($false))
+          $arguments = @('--spec', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/spec.json", '--checkout', "${env:GITHUB_WORKSPACE}/tooling", '--evidence', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/observation")
+          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_profile @arguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Seal available profile evidence
+        id: seal
+        if: always()
+        run: |
+          $payload = ".wdv3/profile-r${env:GITHUB_RUN_ID}.zip"
+          Compress-Archive -Path '.wdv3/evidence/*' -DestinationPath $payload
+          $hex = (Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash.ToLowerInvariant()
+          $name = "wdv3-nuget-profile-r${env:GITHUB_RUN_ID}-$hex.zip"
+          $path = Join-Path '.wdv3' $name
+          Move-Item -LiteralPath $payload -Destination $path
+          @("name=$name", "digest=sha256:$hex", "path=$path") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Retain immutable profile evidence
+        if: always() && steps.seal.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.seal.outputs.name }}
+          path: ${{ steps.seal.outputs.path }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true

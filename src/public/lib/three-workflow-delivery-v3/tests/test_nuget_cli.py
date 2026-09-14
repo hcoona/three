@@ -594,9 +594,6 @@ def test_nuget_cli_blocks_before_native_collection(
         monkeypatch.setattr(
             governance, "_ADMITTED_NUGET_NATIVE_GENERATIONS", frozenset()
         )
-        monkeypatch.setattr(
-            governance, "_ADMITTED_NUGET_ATOMIC_CONTRACTS", frozenset()
-        )
     assert _evaluate(case) == 1
     if state == "disabled":
         decision = json.loads(case.output.read_bytes())

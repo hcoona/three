@@ -110,7 +110,19 @@ or an ambiguous response leaves the request spent and cannot justify a rerun.
 The spec's audit/preflight/capture hashes identify separately admitted evidence;
 they do not verify its provenance or supply authorization. Close the concrete
 native request and actual access/profile prerequisites before dispatch.
-Atomic admission and NuGet Live stay disabled.
+Native admission and NuGet Live stay disabled.
+
+The [profile observer](src/three_workflow_delivery_v3/acceptance/nuget_profile.py)
+and separate [Windows entry](../../../../.github/workflows/workflow-delivery-v3-nuget-profile.yml)
+measure the existing publication profile without a package credential, helper
+or SDK invocation. `python -m three_workflow_delivery_v3.acceptance.nuget_profile --help`
+describes its canonical input and retained output. Its small inline request
+binds protected tooling and the exact resource projection from a complete,
+independently audited preflight. Resource hashes alone do not establish that
+audit or authorize dispatch. The observer shares discovery's URL validation,
+including the exact owner-root publish address, and retains the complete
+actual Windows profile for independent review. It neither admits a native
+generation nor enables Live; source availability grants no observation run.
 
 The [destination consumer component](src/three_workflow_delivery_v3/acceptance/nuget_consumer.py)
 creates a fresh, fixed consumer and SDK graph, then calls the prebuilt
@@ -164,9 +176,11 @@ stops subsequent mutation. An observation timeout does not establish that a
 queued remote run cannot still publish. A completed suite observation is only
 candidate sequential evidence: independent native audit, admission of the
 accepted NuGet integration contract, protected activation and a separate
-normal-Live publication remain required. The coordinate projection changes
-the adapter source identity, so the current Windows profile must be admitted
-before native execution.
+normal-Live publication remain required. Adapter changes invalidate the prior
+source identity, so the current Windows profile must be admitted before native
+execution. NuGet admission binds the exact six-field native generation,
+including its integration-contract revision and evidence digest. Its production
+registry remains empty; no separate atomic-assurance registry is used.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,

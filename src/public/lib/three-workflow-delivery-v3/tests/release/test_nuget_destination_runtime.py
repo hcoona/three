@@ -110,8 +110,9 @@ def _ready_document(profile, monkeypatch):
     primitive = activation["destination_primitive"]
     primitive["destination_operation_profile_digest"] = profile.profile_digest
     primitive["disposable_package_preconditions"]["package"] = NUGET_PACKAGE
+    # This modeled revision is not an admitted service statement.
     primitive["lower_layer_contract_revision"] = (
-        "modeled/nuget-atomic-creation-v1"
+        "modeled/nuget-version-uniqueness-v1"
     )
     key = (
         profile.profile_digest,
@@ -123,11 +124,6 @@ def _ready_document(profile, monkeypatch):
     )
     monkeypatch.setattr(
         governance, "_ADMITTED_NUGET_NATIVE_GENERATIONS", frozenset({key})
-    )
-    monkeypatch.setattr(
-        governance,
-        "_ADMITTED_NUGET_ATOMIC_CONTRACTS",
-        frozenset({primitive["lower_layer_contract_revision"]}),
     )
     document.update(activation=activation, live_enabled=True)
     return document
@@ -1120,7 +1116,59 @@ def test_native_eligibility_replay_does_not_grant_fresh_action(native_case):
 
 def test_native_production_admission_stays_empty():
     assert frozenset() == governance._ADMITTED_NUGET_NATIVE_GENERATIONS
-    assert frozenset() == governance._ADMITTED_NUGET_ATOMIC_CONTRACTS
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "profile",
+        "suite",
+        "package",
+        "api",
+        "contract",
+        "evidence",
+        "empty",
+    ],
+)
+def test_native_admission_requires_exact_six_field_generation(
+    native_case, monkeypatch, field
+):
+    attestation = native_case.eligibility.governance.attestation
+    primitive = attestation.activation.destination_primitive
+    assert governance.nuget_destination_primitive_is_admitted(attestation)
+    shared.require_action_governance(
+        attestation,
+        now=NOW,
+        destination_operation_profile_digest=native_case.profile.profile_digest,
+    )
+    key = (*primitive.admission_key, primitive.evidence_digest)
+    fields = ("profile", "suite", "package", "api", "contract", "evidence")
+    admitted = (
+        frozenset()
+        if field == "empty"
+        else frozenset(
+            {
+                tuple(
+                    value + "-different" if name == field else value
+                    for name, value in zip(fields, key, strict=True)
+                )
+            }
+        )
+    )
+    monkeypatch.setattr(
+        governance, "_ADMITTED_NUGET_NATIVE_GENERATIONS", admitted
+    )
+    assert not governance.nuget_destination_primitive_is_admitted(attestation)
+    with pytest.raises(
+        shared.GovernanceRejectionError, match="primitive is not implemented"
+    ):
+        shared.require_action_governance(
+            attestation,
+            now=NOW,
+            destination_operation_profile_digest=(
+                native_case.profile.profile_digest
+            ),
+        )
 
 
 @pytest.mark.parametrize("field", ["actor", "selected_ref", "workflow_sha"])
