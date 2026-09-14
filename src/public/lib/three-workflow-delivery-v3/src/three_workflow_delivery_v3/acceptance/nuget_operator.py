@@ -300,7 +300,7 @@ def read_request(content: bytes) -> NuGetReadRequest:
 class _Evidence:
     def __init__(self, directory: Path, token: str) -> None:
         self.directory = directory
-        self.forbidden = (
+        self.forbidden: tuple[bytes, ...] = (
             token.encode(),
             base64.b64encode(f"hcoona:{token}".encode()),
         )

@@ -390,6 +390,33 @@ def _read_document(content):
     return parse_canonical_json(content)
 
 
+def test_probe_reader_keeps_recorded_profile_and_publisher_checks_runtime(
+    inputs,
+):
+    prepared = _prepare(inputs)
+    inputs.profile.return_value = {
+        **inputs.request.profile,
+        "platform": "Linux",
+    }
+    request, package, resources = probe.read_prepared_probe(
+        *prepared, _platform(inputs.request)
+    )
+    assert request.profile == inputs.request.profile
+    assert request.profile["platform"] == "Windows"
+    assert package == A
+    assert resources == native.NuGetServiceResources(BASE, PUBLISH, _sha(INDEX))
+    with pytest.raises(ValueError, match="actual publication profile changed"):
+        _invoke(inputs, prepared)
+    inputs.publisher.assert_not_called()
+    assert not (inputs.root / "publication/invocation-started.json").exists()
+    assert (
+        _read(inputs.root / "publication/failure.json")[
+            "invocationMayHaveStarted"
+        ]
+        is False
+    )
+
+
 @pytest.mark.parametrize(
     "change",
     [

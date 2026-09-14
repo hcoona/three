@@ -106,9 +106,13 @@ Keep these facts in the working context:
   build/marker invocation. It uses a distinct prebuilt restore host and POSIX
   supervision; callers still own original/tooling provenance and current read
   authority. Its controlled local tests are not actual destination consumption
-  or Windows acceptance. Concrete native requests and access/profile facts, full
-  three-probe and six-capture integration, actual destination consumption,
-  destination evidence, activation and real publication remain subsequent work;
+  or Windows acceptance. The fixed-suite operator now connects the three probes,
+  all six captures and the clean consumer, retaining original run/upload bytes
+  and stopping subsequent mutation on failure. It binds separate finite native
+  and GitHub budgets and the prior independent admission carrier; those supplied
+  records do not authorize themselves. Concrete native requests, current access
+  and Windows profile facts, actual destination consumption, native evidence,
+  activation and real publication remain subsequent work;
   NuGet Governance and admission stay disabled. Local reader evidence cannot
   establish the Windows publication profile.
 - Both remembered .NET smoke projects existed, were intentionally removed,
