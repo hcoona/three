@@ -80,8 +80,9 @@ finalization. They reuse the shared terminal admission and resolution commands.
 Separate manual and reusable NuGet workflows connect the native commands on
 Windows with immutable helper/record transport and a build-free publisher.
 Governance remains disabled. Normal-Live Windows workflow execution and
-native/Live proving remain pending; missing service-owned atomic non-overwrite assurance
-blocks activation.
+native/Live proving remain pending. The revised `WD-NUGET-006` dependency and
+evidence basis requires admission-control reconciliation before activation;
+no separate GitHub concurrent-atomicity statement is required.
 The [fixture and operator contract](./hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
 defines native-tooling preparation. The handoff defines concrete operation and
 delivery discipline.

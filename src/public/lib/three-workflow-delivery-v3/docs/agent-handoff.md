@@ -242,9 +242,15 @@ coordinate projection changes the adapter source hash; admit the current
 Windows profile rather than reusing an earlier identity.
 Close the concrete native request and actual access/profile prerequisites
 before dispatch; source availability supplies no missing gate.
-The checked-in NuGet source stays blocked and its native/atomic admission sets
-stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an
-activation gate; sequential duplicate tests cannot supply it.
+NuGet admission and Live stay disabled. `WD-NUGET-006` now relies explicitly
+on GitHub version uniqueness and duplicate non-replacement, with no chosen
+concurrency winner, global read-consistency claim, or serialized-only scope.
+The independent native suite still supplies bounded observations, not proof
+of arbitrary concurrent behavior. Reconcile the existing atomic-assurance
+admission control to the revised integration-contract basis after protected
+design delivery; do not fill it with an invented GitHub assurance. Current
+access/profile evidence, native audit, protected activation and the separate
+real publication remain required. No support inquiry is a prerequisite.
 
 ## Git Inspection and Implementation Scope
 
@@ -523,7 +529,8 @@ The NuGet slice follows its linked handoff and protected design package under
 the subsequent end-to-end delegation. Continue the disabled implementation
 units and their delivery gates without repeating design delivery. Native
 operations still require concrete bounded requests and satisfied technical
-gates; missing service assurance keeps activation disabled.
+gates. The revised NuGet dependency/evidence basis requires admission-control
+reconciliation and actual native evidence before activation.
 
 ## Validation and Review Protocol
 
@@ -561,6 +568,8 @@ applicable documentation and repository gates but keeps the same validate-before
   authority, abstractions, or external resources.
 - CI Qualification and Release Delivery remain peer contexts; Shared Foundation owns mechanisms, not business policy.
 - Rely on documented lower-layer guarantees. If one is absent, block the capability rather than simulate a weaker one.
+  The NuGet-specific dependency and evidence basis follows `WD-NUGET-006`;
+  do not reintroduce its superseded service-statement prerequisite.
 - Add an abstraction only when concrete scenarios prove independent identity, behavior, lifecycle, or policy.
 - Do not freeze non-authoritative topology, shell choreography, parser branches, or inventory counts as architecture.
 

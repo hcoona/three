@@ -1209,6 +1209,9 @@ authorization, registry publication relies on the destination's attested
 non-overwriting active-version behavior. Administrative deletion may make the
 same coordinate available for a new object; retained deleted records do not
 extend the non-overwrite guarantee beyond that active lifetime.
+For NuGet, `WD-NUGET-006` defines the relied-on service dependency and native
+evidence basis; the attestation does not claim a separate GitHub atomicity
+statement or atomic observation across service endpoints.
 Pre-observed exact active version state produces no action and may finalize
 as `exact-satisfied` success without
 approval or publication lineage, regardless of tag state or tag-read

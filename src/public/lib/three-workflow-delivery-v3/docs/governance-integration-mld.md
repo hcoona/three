@@ -346,6 +346,14 @@ An npm `ready` attestation or admitted npm acceptance generation cannot enable
 NuGet. The existing freshness, protected-path continuity, disablement, and
 current-Attempt checks apply to the NuGet source identified by the LLD.
 
+The NuGet destination-contract revision identifies the accepted uniqueness and
+duplicate-rejection dependency in `WD-NUGET-006`, separately from the actual
+native generation and its evidence digest. It is an integration-contract
+identity, not a fabricated GitHub service assurance. Admission requires the
+independently reviewed contract and audited native evidence, without a
+separate service-owned concurrent-atomicity statement. Changes to the relied-on
+behavior, profile, or evidence scope reopen the affected native admission.
+
 One action requires a new current-Attempt Approval Bundle, Environment
 Approval, and Authorization. Sharing the Environment never adopts an npm
 Approval or another run's authority. Zero actions use fresh read-only exact
@@ -724,10 +732,11 @@ Governance integration fails closed when:
   least 45 days;
 - the selected destination primitive, exact operation profile, or bound
   lower-layer/API contract has not passed the bounded documented-and-observable
-  native acceptance;
+  native acceptance applicable to that destination; NuGet uses the dependency
+  and evidence basis in `WD-NUGET-006` and `WD-NUGET-007`;
 - the acceptance lacks definitive failure and an empty complete active-state
-  delta for either active duplicate, exact creation readback, or the bounded
-  tag-race proof;
+  delta for either active duplicate, exact creation readback, or, for first-slice
+  npm, the bounded tag-race proof;
 - publisher-boundary supported package-control readback no longer matches
   accepted owner, repository association, visibility, or exposed access facts;
 - native acceptance is older than 90 days for an action-bearing admission;

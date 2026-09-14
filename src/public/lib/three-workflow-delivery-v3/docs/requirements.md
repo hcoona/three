@@ -52,13 +52,19 @@ claims, and destination API contracts. Workflow Delivery must validate bindings
 that it creates, but it must not reimplement a lower layer merely to prove the
 lower layer's own contract.
 
-Live registry publication may rely on a documented destination contract that
-version creation is atomic and non-overwriting and that exact package state is
+For destinations other than NuGet, live registry publication may rely on a
+documented destination contract that version creation is atomic and
+non-overwriting and that exact package state is
 sufficiently durable and observable. Destination Adapter acceptance tests must
 prove that contract. If a destination, including GitHub Packages, cannot provide
 it, live publication to that destination is unsupported or blocked rather than
 emulated through an application-level reservation, lock, tag witness, binding
 index, or permanent ledger.
+
+NuGet follows the dependency and evidence basis in
+[`WD-NUGET-006` and `WD-NUGET-007`](#nuget-second-slice), including bounded
+native acceptance without a separate provider-statement prerequisite. Missing
+or conflicting evidence required by those requirements keeps NuGet blocked.
 
 If a required guarantee is unavailable at the layer that must own it, the
 affected capability is unsupported or blocked. Application logic must not
@@ -791,16 +797,29 @@ establish native platform acceptance.
   Release builds and qualifies its own artifact; CI results and historical
   packages are not Release Evidence. The accepted source, version, content,
   and in-package witness must remain bound through publication and readback.
-- **WD-NUGET-006:** GitHub's NuGet service and the selected publication profile
-  must satisfy atomic active-version creation without replacement, definitive
-  active duplicate handling, observable actual package bytes, and sufficient
-  target-witness and provenance bindings. Identical-byte and different-byte
-  active duplicates, including native-equivalent coordinates, must not alter
-  existing active content. Missing guarantees block the affected capability;
-  a push exit code, HTTP 409, metadata-only match, or semantic assembly
-  equivalence is not proof of exact satisfaction. No npm tag mechanism,
-  deleted-version conclusion, administrative operation, application ledger,
-  or compensating mutation supplies the missing guarantee.
+- **WD-NUGET-006:** The NuGet slice relies on GitHub Packages preserving one
+  active version at each native package ID/version and rejecting competing or
+  later duplicate uploads without replacing its accepted bytes. This explicit
+  service dependency includes identical-byte and different-byte duplicates at
+  native-equivalent coordinates, not merely uniqueness of a metadata row.
+  GitHub chooses the successful competing creation; no client send order,
+  server arrival order, or particular winner is promised. Global linearizable
+  reads, an atomic snapshot across endpoints, and immediate read-after-write
+  visibility are not assumed. This is not a serialized-only publication scope.
+  Independently audited bounded native acceptance must qualify the selected
+  profile's creation, duplicate rejection, actual-byte preservation, target
+  witness, provenance, and clean consumption. It does not prove arbitrary
+  concurrent executions or universal future service behavior. A separate
+  GitHub-owned statement proving concurrent atomic creation is not an
+  activation prerequisite; this accepted dependency is not a claim that such
+  a statement has been obtained. Publication success still requires a
+  definitive successful response and exact current-artifact bytes and witness.
+  A push exit code, HTTP 409, metadata-only match, or semantic assembly
+  equivalence is insufficient; delayed, conflicting, or unavailable readback
+  cannot produce success. Readback detects observed differences but does not
+  enforce service immutability or prevent a service defect from replacing
+  content. No npm tag mechanism, administrative operation, application ledger,
+  retry, or compensating mutation substitutes for the required evidence.
 - **WD-NUGET-007:** Slice completion requires package and consumer evidence,
   an independently audited bounded native acceptance suite, and one
   independently audited real publication. That publication must retain its
@@ -887,7 +906,10 @@ establish native platform acceptance.
   non-overwriting creation against the active version namespace. Pre-observed
   exact active state produces no action. At mutation linearization, the
   admitted primitive must not replace or alter an active version; competing
-  active creation may cause definitive failure. For first-slice GitHub
+  active creation may cause definitive failure. For NuGet, this behavior is
+  the explicit uniqueness/non-replacement dependency and native evidence basis
+  in `WD-NUGET-006`; it does not require a separate service-owned atomicity
+  statement or establish global read consistency. For first-slice GitHub
   Packages, administrator deletion ends that active version's lifetime.
   A retained deleted object is restoration
   history, not a reservation: the same coordinate may subsequently bind a new
