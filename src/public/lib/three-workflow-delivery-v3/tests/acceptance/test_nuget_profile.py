@@ -378,7 +378,16 @@ def test_profile_observer_binds_actual_source_before_collection(
         monkeypatch.setenv("GITHUB_SHA", SHA)
         monkeypatch.setenv("GITHUB_WORKFLOW_SHA", SHA)
     elif change == "dirty":
-        path.write_bytes(b"# changed source\n")
+        (root / "untracked-observer-note.txt").write_bytes(
+            b"controlled untracked fixture\n"
+        )
+        assert git("rev-parse", "HEAD").decode().strip() == tooling
+        assert git("status", "--porcelain", "--untracked-files=all") == (
+            b"?? untracked-observer-note.txt\n"
+        )
+        for source in package.rglob("*.py"):
+            relative = source.relative_to(root).as_posix()
+            assert source.read_bytes() == git("show", f"{tooling}:{relative}")
     elif change == "actual-bytes":
         path.write_bytes(b"# controlled source\r\n")
         relative = path.relative_to(root).as_posix()
