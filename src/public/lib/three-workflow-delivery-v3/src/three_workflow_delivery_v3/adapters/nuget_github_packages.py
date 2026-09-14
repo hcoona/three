@@ -164,9 +164,26 @@ def discover_nuget_resources(
     authority: NuGetAuthority, index: bytes
 ) -> NuGetServiceResources:
     """Admit exactly the supported discovery result and credential origin."""
-    document = authority.service_resources(index)
-    if set(document) != {"packageBaseAddress", "packagePublish"}:
+    return nuget_service_resources_from_projection(
+        authority.service_resources(index), index_sha256=_sha256(index)
+    )
+
+
+def nuget_service_resources_from_projection(
+    document: dict[str, JsonValue], *, index_sha256: str
+) -> NuGetServiceResources:
+    """Validate resource shapes and URLs without admitting provenance."""
+    if type(document) is not dict or set(document) != {
+        "packageBaseAddress",
+        "packagePublish",
+    }:
         msg = "Unexpected NuGet service resource projection."
+        raise NuGetAdapterError(msg)
+    if (
+        not isinstance(index_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", index_sha256) is None
+    ):
+        msg = "NuGet service index digest is invalid."
         raise NuGetAdapterError(msg)
     base = document["packageBaseAddress"]
     publish = document["packagePublish"]
@@ -175,15 +192,14 @@ def discover_nuget_resources(
         raise NuGetAdapterError(msg)
     for endpoint in (base, publish):
         _safe_url(endpoint, origin=NUGET_ORIGIN)
-        if not urlsplit(endpoint).path.startswith("/hcoona/"):
+        parsed = urlsplit(endpoint)
+        if parsed.path != "/hcoona" and not parsed.path.startswith("/hcoona/"):
             msg = "NuGet resource has another owner scope."
             raise NuGetAdapterError(msg)
-        if urlsplit(endpoint).query:
+        if parsed.query:
             msg = "NuGet discovery resource has a query."
             raise NuGetAdapterError(msg)
-    return NuGetServiceResources(
-        base.rstrip("/") + "/", publish, _sha256(index)
-    )
+    return NuGetServiceResources(base.rstrip("/") + "/", publish, index_sha256)
 
 
 @dataclass(frozen=True)

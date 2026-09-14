@@ -34,9 +34,10 @@ operate on unrelated packages, perform administrative repair, or retry an
 ambiguous mutation. `WD-NUGET-006` adopts GitHub version uniqueness and
 duplicate non-replacement as an explicit service dependency, without a
 separate service-owned concurrent-atomicity statement. This changes the
-acceptance basis, not the strength of prior source evidence. Admission-control
-reconciliation, actual native evidence and protected activation remain
-required; broad completion authorization is not platform evidence.
+acceptance basis, not the strength of prior source evidence. The control binds
+the exact native-generation tuple while its production set remains empty;
+actual native evidence and protected activation remain required. Broad
+completion authorization is not platform evidence.
 
 The npm Normal Live objective remains complete. Its two dispatch
 authorizations are spent, and its native acceptance, first failure, successful
@@ -369,9 +370,12 @@ A passing three-invocation sequential suite qualifies the concrete profile
 under the accepted uniqueness dependency; it does not establish arbitrary
 concurrent behavior. The revised evidence basis requires no separate GitHub
 atomicity statement and does not impose serialized-only publication or choose
-a server-side winner. Reconcile the current atomic-assurance admission control
-after protected design delivery, retaining disabled Live until the revised
-native and activation gates close.
+a server-side winner. The control retains all six native-generation fields,
+including integration-contract revision and evidence digest, without a
+separate atomic-assurance registry. Native admission and Live remain disabled.
+The [profile observer](../README.md) reuses actual Windows profile collection
+and shared resource validation; a complete independently audited preflight
+and a separately reviewed bounded dispatch must precede its execution.
 
 ## Workflow and Discipline
 

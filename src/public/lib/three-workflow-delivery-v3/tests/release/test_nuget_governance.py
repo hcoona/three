@@ -78,7 +78,7 @@ def _attested_document():
         },
         "limitations": [
             (
-                "Disabled implementation; native atomic assurance "
+                "Disabled implementation; native acceptance "
                 "and current platform evidence are unadmitted."
             )
         ],
@@ -184,7 +184,6 @@ def test_nuget_ready_cannot_borrow_npm_acceptance():
         with pytest.raises(ValueError, match="NuGet ready activation requires"):
             shared.parse_governance_attestation(canonicalize(document))
     assert frozenset() == nuget._ADMITTED_NUGET_NATIVE_GENERATIONS
-    assert frozenset() == nuget._ADMITTED_NUGET_ATOMIC_CONTRACTS
 
 
 def test_nuget_blocked_action_has_no_authority():

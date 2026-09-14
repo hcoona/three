@@ -1,8 +1,8 @@
 """The fixed three-probe NuGet sequence over separately admitted operations.
 
 This module performs no IO and grants no native authority. The concrete operator
-owns one-time effects and original provenance; independent native and atomic
-admission remain separate from a completed candidate observation.
+owns one-time effects and original provenance; independent native audit and
+protected admission remain separate from a completed candidate observation.
 """
 
 from __future__ import annotations

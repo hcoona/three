@@ -80,9 +80,11 @@ state are outside this change. No npm redispatch or reproving is required.
 
 NuGet activation remains blocked until its own exact profile, actual native
 evidence, and current authority are admitted under the dependency and evidence
-basis in `WD-NUGET-006`. Reconcile the previous atomic-assurance admission
-control after protected design delivery; no separate GitHub atomicity statement
-is required. Missing evidence cannot be replaced by a runtime ledger,
+basis in `WD-NUGET-006`. The control retains an empty exact native-generation
+registry under that basis; no separate GitHub atomicity statement is required.
+Use complete audited preflight resources for the separately reviewed Windows
+profile observation before preparing native mutation. Missing evidence cannot
+be replaced by a runtime ledger,
 administrator compensation, or weaker success criteria. Use the existing
 review, adjudication, contraction, and protected-delivery discipline for each
 future delivery group.

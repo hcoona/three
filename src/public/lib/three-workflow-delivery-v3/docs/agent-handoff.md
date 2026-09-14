@@ -237,18 +237,24 @@ state through both duplicates. Failed positions cannot resume or trigger a
 replacement dispatch. Original uploads, prior admission evidence, partial
 responses and consumer files remain available to the independent auditor.
 Controlled integration tests establish application behavior only; actual native
-collection and normal-Live workflow proving remain subsequent work. The added
-coordinate projection changes the adapter source hash; admit the current
-Windows profile rather than reusing an earlier identity.
+collection and normal-Live workflow proving remain subsequent work. Adapter
+changes require admission of the current Windows profile. The
+[credential-free profile observer](../README.md) and dedicated Windows entry
+collect that existing profile from separately audited complete preflight
+resources, without helper, SDK or package access. Shared discovery validation
+accepts the advertised exact owner-root publish address while retaining origin,
+owner, query and traversal checks. The observer requires its own bounded
+reviewed dispatch; neither a partial preflight nor a self-consistent digest
+establishes resource provenance or permission to run it.
 Close the concrete native request and actual access/profile prerequisites
 before dispatch; source availability supplies no missing gate.
 NuGet admission and Live stay disabled. `WD-NUGET-006` now relies explicitly
 on GitHub version uniqueness and duplicate non-replacement, with no chosen
 concurrency winner, global read-consistency claim, or serialized-only scope.
 The independent native suite still supplies bounded observations, not proof
-of arbitrary concurrent behavior. Reconcile the existing atomic-assurance
-admission control to the revised integration-contract basis after protected
-design delivery; do not fill it with an invented GitHub assurance. Current
+of arbitrary concurrent behavior. The control uses the exact six-field native
+generation, including the integration-contract revision and evidence digest,
+without a separate atomic-assurance registry. Its production set stays empty. Current
 access/profile evidence, native audit, protected activation and the separate
 real publication remain required. No support inquiry is a prerequisite.
 
@@ -529,8 +535,8 @@ The NuGet slice follows its linked handoff and protected design package under
 the subsequent end-to-end delegation. Continue the disabled implementation
 units and their delivery gates without repeating design delivery. Native
 operations still require concrete bounded requests and satisfied technical
-gates. The revised NuGet dependency/evidence basis requires admission-control
-reconciliation and actual native evidence before activation.
+gates. The revised NuGet control retains empty native admission; actual native
+evidence and protected activation remain required.
 
 ## Validation and Review Protocol
 

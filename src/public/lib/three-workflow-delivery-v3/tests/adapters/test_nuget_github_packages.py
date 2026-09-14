@@ -208,6 +208,54 @@ def test_observation_absence_requires_complete_agreeing_inventories(authority):
     authority.inspect_package.assert_not_called()
 
 
+def test_observation_accepts_actual_owner_root_publish_resource(authority):
+    # Minimal public resource shape from the independently audited discovery
+    # failure; the helper projection remains a controlled dependency seam.
+    index = json.dumps(
+        {
+            "version": "3.0.0",
+            "resources": [
+                {
+                    "@id": "https://nuget.pkg.github.com/hcoona/download",
+                    "@type": "PackageBaseAddress/3.0.0",
+                },
+                {
+                    "@id": "https://nuget.pkg.github.com/hcoona",
+                    "@type": "PackagePublish/2.0.0",
+                },
+            ],
+        }
+    ).encode()
+    authority.service_resources.return_value = {
+        "packageBaseAddress": "https://nuget.pkg.github.com/hcoona/download",
+        "packagePublish": "https://nuget.pkg.github.com/hcoona",
+    }
+    responses = _responses(absent=True)
+    responses[nuget.NUGET_SERVICE_INDEX] = _response(
+        nuget.NUGET_SERVICE_INDEX, body=index
+    )
+    observed = _observe(_reader(responses), authority)
+    assert observed.resources == nuget.NuGetServiceResources(
+        BASE,
+        "https://nuget.pkg.github.com/hcoona",
+        hashlib.sha256(index).hexdigest(),
+    )
+    assert observed.package_control["id"] == 12024661
+    assert observed.package_control["name"] == PACKAGE
+    assert observed.package is None
+    assert observed.active_versions == ()
+    assert observed.github_versions == ()
+    assert observed.github_coordinates == ()
+    assert [exchange.url for exchange in observed.exchanges] == [
+        nuget.NUGET_SERVICE_INDEX,
+        CONTROL,
+        VERSIONS_API,
+        PACKAGE_ROOT + "index.json",
+    ]
+    authority.service_resources.assert_called_once_with(index)
+    authority.inspect_package.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "scenario",
     [
@@ -626,6 +674,23 @@ def test_observation_blocks_inventory_that_never_reaches_terminal_page(
     [
         ("packagePublish", "https://nuget.pkg.github.com/another/"),
         ("packagePublish", "https://nuget.pkg.github.com/hcoona/?fallback=1"),
+        ("packagePublish", "https://nuget.pkg.github.com/hcoona?fallback=1"),
+        ("packagePublish", "https://nuget.pkg.github.com/hcoonax"),
+        ("packageBaseAddress", "https://nuget.pkg.github.com/hcoonax"),
+        (
+            "packagePublish",
+            "https://nuget.pkg.github.com/hcoona-other/download",
+        ),
+        (
+            "packageBaseAddress",
+            "https://nuget.pkg.github.com/hcoona-other/download",
+        ),
+        ("packagePublish", "https://foreign.invalid/hcoona"),
+        ("packagePublish", "https://nuget.pkg.github.com/hcoona/../another"),
+        (
+            "packageBaseAddress",
+            "https://nuget.pkg.github.com/hcoona/%2e%2e/another",
+        ),
         ("packageBaseAddress", None),
     ],
 )

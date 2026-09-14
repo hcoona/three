@@ -38,14 +38,13 @@ if TYPE_CHECKING:
     )
     from three_workflow_delivery_v3.canonical import JsonValue
 
-# No generation or service-owned atomic assurance has been admitted. Native
-# sequential success, HTTP 409 and npm's active-lifetime acceptance are not
-# substitutes. Protected delivery may install only independently audited exact
-# identities after the separate GitHub-specific atomic assurance gate closes.
+# No NuGet generation has been admitted. Protected delivery may install only
+# exact independently audited native evidence under the accepted uniqueness
+# and duplicate non-replacement dependency. Candidate observations, HTTP 409
+# and npm acceptance do not supply that admission.
 _ADMITTED_NUGET_NATIVE_GENERATIONS: frozenset[
     tuple[str, str, str, str, str, str]
 ] = frozenset()
-_ADMITTED_NUGET_ATOMIC_CONTRACTS: frozenset[str] = frozenset()
 _NATIVE_SUITE = "workflow-delivery-v3/native-nuget-suite/v1"
 _API = "https://api.github.com"
 _REPO = "/repos/hcoona/three"
@@ -61,7 +60,7 @@ _FRESHNESS = timedelta(minutes=5)
 def nuget_destination_primitive_is_admitted(
     attestation: shared.GovernanceAttestationState,
 ) -> bool:
-    """Require distinct exact NuGet native evidence and atomic assurance."""
+    """Require the exact audited NuGet contract and native evidence."""
     activation = attestation.activation
     if (
         attestation.release_policy != NUGET_RELEASE_UNIT
@@ -75,8 +74,6 @@ def nuget_destination_primitive_is_admitted(
         and primitive.disposable_package_preconditions.package == NUGET_PACKAGE
         and (*primitive.admission_key, primitive.evidence_digest)
         in _ADMITTED_NUGET_NATIVE_GENERATIONS
-        and primitive.lower_layer_contract_revision
-        in _ADMITTED_NUGET_ATOMIC_CONTRACTS
     )
 
 
