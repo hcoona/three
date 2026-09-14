@@ -52,13 +52,19 @@ claims, and destination API contracts. Workflow Delivery must validate bindings
 that it creates, but it must not reimplement a lower layer merely to prove the
 lower layer's own contract.
 
-Live registry publication may rely on a documented destination contract that
-version creation is atomic and non-overwriting and that exact package state is
+For destinations other than NuGet, live registry publication may rely on a
+documented destination contract that version creation is atomic and
+non-overwriting and that exact package state is
 sufficiently durable and observable. Destination Adapter acceptance tests must
 prove that contract. If a destination, including GitHub Packages, cannot provide
 it, live publication to that destination is unsupported or blocked rather than
 emulated through an application-level reservation, lock, tag witness, binding
 index, or permanent ledger.
+
+NuGet follows the dependency and evidence basis in
+[`WD-NUGET-006` and `WD-NUGET-007`](#nuget-second-slice), including bounded
+native acceptance without a separate provider-statement prerequisite. Missing
+or conflicting evidence required by those requirements keeps NuGet blocked.
 
 If a required guarantee is unavailable at the layer that must own it, the
 affected capability is unsupported or blocked. Application logic must not

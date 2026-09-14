@@ -461,7 +461,7 @@ Destination Definitions and Adapters own:
 Shared Foundation may provide generic clients and binding primitives but does
 not classify projections, plan actions, or decide recovery.
 
-For a registry destination, the Adapter contract must establish:
+For registry destinations other than NuGet, the Adapter contract must establish:
 
 - atomic non-overwriting creation against the active package-version
   namespace;
@@ -476,6 +476,12 @@ unsupported rather than emulated through a reservation, tag witness, binding
 index, application lock, or permanent ledger. An explicitly authorized
 non-authoritative tag side effect remains governed by its bounded race contract
 and is not misrepresented as part of the version-object guarantee.
+
+NuGet instead follows the dependency and evidence basis in `WD-NUGET-006` and
+`WD-NUGET-007`, as realized by the
+[NuGet delivery design](#nuget-second-slice-delivery). Its create-only behavior,
+exact bytes and witness, conflict handling, and prohibition on application
+emulation remain required under that basis.
 
 For first-slice GitHub Packages, administrator deletion ends an active
 version's lifetime. A retained deleted record is not a namespace reservation,
@@ -1627,7 +1633,8 @@ Lower-layer design may define:
 - exact Build and Quality batching;
 - exact destination Observation and atomic non-overwriting active-version
   authoritative package-version effects, including the explicit bounded
-  exception for non-authoritative tag side effects;
+  exception for non-authoritative tag side effects, with NuGet's dependency
+  and evidence governed by the [NuGet delivery design](#nuget-second-slice-delivery);
 - exact reviewer summary and Approval Environment integration;
 - exact publisher permission declarations and caller ceiling;
 - exact marker and Result persistence mechanism;

@@ -937,8 +937,8 @@ Capability.
 - Exact satisfied state skips the side effect.
 - Partial, unknown, conflicting, or unprovable projection state fails closed.
 
-An active-absent registry coordinate is not proof that the version was never
-published, is not retained as deleted/restorable state, or will accept
+For first-slice npm, an active-absent registry coordinate is not proof that the
+version was never published, is not retained as deleted/restorable state, or will accept
 creation. With or without retained operational lineage, active absence is a
 legitimate action candidate only under an unexpired Governance-bound
 acceptance proving active-version non-overwrite and the bounded tag race.
@@ -960,6 +960,9 @@ Attempt even when post-failure readback is exact. A new dispatch may reobserve
 the exact active version and take `exact-satisfied`. Differing active version
 bytes fail closed. Release never uses active-version overwrite, a
 publisher-owned delete-and-recreate sequence, or compensation.
+
+NuGet's corresponding dependency and evidence follow `WD-NUGET-006` and
+`WD-NUGET-007` through the [NuGet extension](#nuget-second-slice-extension).
 
 Standard npm publication necessarily assigns a tag. For the dedicated
 first-slice smoke package, the target-derived tag is declared
@@ -1004,10 +1007,12 @@ destination authority required for exact-state readback, but receives no
 destination write authority, PAT, `id-token: write`, Approval Environment, or
 publication capability. Repository-controlled publishers serialize by physical
 destination and package. That does not constrain an external writer and is not
-presented as a registry lock. Live support trusts the destination's documented
-active-version non-overwrite rule and verifies its concrete GitHub Packages
+presented as a registry lock. First-slice npm Live support trusts the
+destination's documented active-version non-overwrite rule and verifies its concrete GitHub Packages
 behavior before activation; it does not emulate missing tag CAS through an
 application-level lock, retry, or permanent index.
+NuGet uses the dependency and evidence basis routed by the
+[NuGet extension](#nuget-second-slice-extension).
 
 ### Retry
 
