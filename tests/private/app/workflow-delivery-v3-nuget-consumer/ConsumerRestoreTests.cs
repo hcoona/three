@@ -245,6 +245,7 @@ public sealed class ConsumerRestoreTests
             Path.Combine(root, "consumer.csproj"),
             "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType>"
                 + "<TargetFramework>net10.0</TargetFramework><NuGetAudit>false</NuGetAudit>"
+                + "<DisableImplicitLibraryPacksFolder>true</DisableImplicitLibraryPacksFolder>"
                 + "<RestoreFallbackFolders></RestoreFallbackFolders></PropertyGroup><ItemGroup>"
                 + "<PackageReference Include=\""
                 + ConsumerRequest.PackageId
@@ -255,6 +256,8 @@ public sealed class ConsumerRestoreTests
             Path.Combine(root, "Program.cs"),
             "System.Console.Write(HcoonaReleaseSmokeGithubPackages.Smoke.ProjectId);"
         );
+        string libraryPacks = Path.Combine(root, "library-packs");
+        Directory.CreateDirectory(libraryPacks);
         await RunSdkAsync(
             root,
             "msbuild",
@@ -262,6 +265,7 @@ public sealed class ConsumerRestoreTests
             "-target:GenerateRestoreGraphFile",
             "-property:RestoreGraphOutputPath=" + Path.Combine(root, "graph.json"),
             "-property:RestoreConfigFile=" + Path.Combine(root, "nuget.config"),
+            "-property:_WorkloadLibraryPacksFolder=" + libraryPacks,
             "-nodeReuse:false",
             "-bl:" + Path.Combine(root, "graph.binlog")
         );

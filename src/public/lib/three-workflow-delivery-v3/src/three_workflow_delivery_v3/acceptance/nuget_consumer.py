@@ -262,6 +262,7 @@ def _steps(  # noqa: PLR0913, PLR0917
         '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
         "<OutputType>Exe</OutputType>"
         "<TargetFramework>net10.0</TargetFramework><NuGetAudit>false</NuGetAudit>"
+        "<DisableImplicitLibraryPacksFolder>true</DisableImplicitLibraryPacksFolder>"
         "<RestoreFallbackFolders></RestoreFallbackFolders>"
         "<RestoreAdditionalProjectFallbackFolders></RestoreAdditionalProjectFallbackFolders>"
         '</PropertyGroup><ItemGroup><PackageReference Include="'

@@ -518,6 +518,13 @@ def test_consumer_generates_native_graph_without_credentials(
             assert (
                 "WDV3_NUGET_CONSUMER_READ_TOKEN" not in options["environment"]
             )
+            if options["evidence"].directory.name == "graph":
+                library_packs = options["cwd"] / "library-packs"
+                library_packs.mkdir()
+                argv = [
+                    *argv,
+                    f"-property:_WorkloadLibraryPacksFolder={library_packs}",
+                ]
             return real_command(argv, **options)
         return _controlled_command(argv, **options)
 
