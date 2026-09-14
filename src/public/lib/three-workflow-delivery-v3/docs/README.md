@@ -102,8 +102,9 @@ Exact native requests and independent helper/runtime admission remain required.
 The [destination consumer component](../README.md) adds bounded native restore
 and exact installed-byte checks before credential-free build and marker
 invocation. Its local controlled evidence supplies no native admission.
-The full three-probe sequence, six capture/delta integration and actual
-destination consumption/native proving remain subsequent work. Local command availability
+The fixed-suite operator implements the full three-probe sequence and six
+capture/delta integration. Actual destination consumption, independent native
+proving, activation and normal Live remain pending. Local command availability
 and expected HTTP status do not admit native provenance or publication.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.

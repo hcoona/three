@@ -147,8 +147,11 @@ does not look up credentials, build a runtime or modify access.
 
 Dispatch requests return the exact run ID. The collector rechecks current main,
 workflow and actor, polls only that attempt-one run, and requires a complete
-single artifact page. Direct HTTPS calls preserve original response bodies;
-dispatch permits no redirects or retries. Each original artifact download may
+single artifact page. Direct HTTPS calls preserve original operation and artifact
+response bodies. The authenticated actor response retains only a typed, explicitly
+derived `id`/`login` projection; bodies carrying `Location` are omitted. Both
+exceptions retain original byte counts and hashes. Dispatch permits no redirects
+or retries. Each original artifact download may
 follow one redirect to the exact independently admitted storage origin without
 forwarding the GitHub credential. The temporary signed URL is not retained.
 Request and response-body budgets include redirects and overflow detection;

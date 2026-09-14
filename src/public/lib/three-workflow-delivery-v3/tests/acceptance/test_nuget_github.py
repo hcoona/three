@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 # ruff: noqa: D103, PLR2004
 import io
 import time
@@ -124,9 +126,13 @@ def test_http_preserves_raw_bytes_without_replay(transport):
 def test_artifact_redirect_omits_credentials_and_retains_no_capability(
     transport,
 ):
-    capability = ORIGIN + "/original.zip?sig=controlled-capability"
+    capability = ORIGIN + "/original.zip?sig=controlled-capability&se=2030"
+    escaped = capability.replace("&", "&amp;").encode()
+    redirect_body = b'<a href="' + escaped + b'">download</a>'
     original = b"PK\x00original-artifact-bytes"
-    item = transport([_response(b"", 302, capability), _response(original)])
+    item = transport(
+        [_response(redirect_body, 302, capability), _response(original)]
+    )
     actual = item.client.request(
         ROUTE, download=True, deadline=time.monotonic() + 10
     )
@@ -137,7 +143,7 @@ def test_artifact_redirect_omits_credentials_and_retains_no_capability(
     assert (host, method, target) == (
         "artifact-storage.example",
         "GET",
-        "/original.zip?sig=controlled-capability",
+        "/original.zip?sig=controlled-capability&se=2030",
     )
     assert "Authorization" not in supplied["headers"]
     assert supplied["body"] is None
@@ -147,10 +153,129 @@ def test_artifact_redirect_omits_credentials_and_retains_no_capability(
         if path.is_file()
     )
     assert capability.encode() not in retained
+    assert escaped not in retained
     assert TOKEN.encode() not in retained
     assert b"locationSha256" in retained
     assert item.client.requests == 2
+    assert item.client.response_bytes == len(original) + len(redirect_body)
+    directory = item.client.directory / "call-0001"
+    assert not (directory / "api.body").exists()
+    metadata = parse_canonical_json((directory / "api.json").read_bytes())
+    assert metadata["bodyRetention"] == "omitted"
+    assert metadata["bodyOmissionReason"] == "location"
+    assert metadata["bodyBytesRead"] == len(redirect_body)
+    assert metadata["bodySha256"] == (hashlib.sha256(redirect_body).hexdigest())
+
+
+def test_actor_response_retains_only_typed_identity(transport):
+    original = (
+        b'{"id":712433,"login":"hcoona",'
+        b'"private_profile":"unused-account-value"}'
+    )
+    item = transport([_response(original)])
+    result = item.client.request("/user", deadline=time.monotonic() + 10)
+    assert parse_canonical_json(result) == {"id": 712433, "login": "hcoona"}
+    directory = item.client.directory / "call-0001"
+    retained = b"".join(path.read_bytes() for path in directory.iterdir())
+    assert b"private_profile" not in retained
+    assert b"unused-account-value" not in retained
+    assert original not in retained
+    metadata = parse_canonical_json((directory / "api.json").read_bytes())
+    assert metadata["bodyRetention"] == "omitted"
+    assert metadata["bodyOmissionReason"] == "authenticated-actor"
+    assert metadata["bodyBytesRead"] == len(original)
+    assert metadata["bodySha256"] == (hashlib.sha256(original).hexdigest())
+    projection = parse_canonical_json(
+        (directory / "actor-identity.json").read_bytes()
+    )
+    assert projection == {
+        "evidenceKind": "derived-identity",
+        "endpoint": "/user",
+        "fields": ["id", "login"],
+        "bodyFile": "api.body",
+        "bodySha256": hashlib.sha256(result).hexdigest(),
+    }
+    assert item.client.requests == 1
     assert item.client.response_bytes == len(original)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "malformed",
+        "identity",
+        "login-type",
+        "status",
+        "redirect",
+        "overflow",
+        "encoding",
+    ],
+)
+def test_actor_failure_never_retains_raw_profile(transport, failure):
+    original = (
+        b'{"id":712433,"login":"hcoona","private":"unused-account-value"}'
+    )
+    response = {
+        "malformed": _response(b"unused-account-value"),
+        "identity": _response(original.replace(b"712433", b"true")),
+        "login-type": _response(
+            original.replace(b'"hcoona"', b'["unused-account-value"]')
+        ),
+        "status": _response(original, 403),
+        "redirect": _response(original, 302, ORIGIN + "/actor"),
+        "overflow": _response(original + b" " * 101),
+        "encoding": _response(original, Content_Encoding="gzip"),
+    }[failure]
+    item = transport([response], metadata_bytes=100)
+    with pytest.raises(ValueError, match="GitHub call failed"):
+        item.client.request("/user", deadline=time.monotonic() + 10)
+    directory = item.client.directory / "call-0001"
+    retained = b"".join(path.read_bytes() for path in directory.iterdir())
+    assert b"unused-account-value" not in retained
+    assert b'"private"' not in retained
+    assert not (directory / "api.body").exists()
+    assert not (directory / "completed.json").exists()
+    assert item.client.failed
+    assert item.client.requests == 1
+    assert item.client.response_bytes == 101
+    with pytest.raises(ValueError, match="already failed"):
+        item.client.request("/user", deadline=time.monotonic() + 10)
+    assert len(item.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "failure", ["status", "foreign", "overflow", "second-hop"]
+)
+def test_location_body_is_omitted_on_failure(transport, failure):
+    origin = "https://other.example" if failure == "foreign" else ORIGIN
+    capability = origin + "/artifact?sig=controlled&se=2030"
+    escaped = capability.replace("&", "&amp;").encode()
+    body = b'<a href="' + escaped + b'">download</a>'
+    if failure == "overflow":
+        body += b" " * 1000
+    responses = [
+        _response(body, 503 if failure == "status" else 302, capability)
+    ]
+    if failure == "second-hop":
+        responses.append(_response(body, 302, capability))
+    item = transport(responses, metadata_bytes=1000)
+    with pytest.raises(ValueError, match="GitHub call failed"):
+        item.client.request(
+            ROUTE, download=True, deadline=time.monotonic() + 10
+        )
+    directory = item.client.directory / "call-0001"
+    retained = b"".join(path.read_bytes() for path in directory.iterdir())
+    assert capability.encode() not in retained
+    assert escaped not in retained
+    assert not (directory / "api.body").exists()
+    assert not (directory / "artifact.body").exists()
+    metadata = parse_canonical_json((directory / "api.json").read_bytes())
+    assert metadata["bodyRetention"] == "omitted"
+    assert metadata["bodyBytesRead"] == min(len(body), 1001)
+    assert metadata["bodySha256"] == (hashlib.sha256(body[:1001]).hexdigest())
+    assert item.client.failed
+    assert item.client.response_bytes == 1_001_002
+    assert len(item.calls) == (2 if failure == "second-hop" else 1)
 
 
 @pytest.mark.parametrize(

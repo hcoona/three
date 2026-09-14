@@ -28,6 +28,7 @@ from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonicalize,
     parse_canonical_json,
+    parse_json_strict,
 )
 
 if TYPE_CHECKING:
@@ -121,9 +122,10 @@ def _exchange(  # noqa: PLR0913
     maximum_bytes: int,
     evidence: process._Evidence,
     label: str,
-) -> tuple[int, bytes, str | None]:
-    """Use one connection and request; retain bytes before interpreting them."""
+) -> tuple[int, bytes, str | None, int]:
+    """Retain safe evidence and account for the original response bytes."""
     parsed = urlsplit(url)
+    actor = url == _API + "/user" and method == "GET"
     headers = {
         "Accept": "application/vnd.github+json"
         if token
@@ -160,15 +162,24 @@ def _exchange(  # noqa: PLR0913
                 # including reflection in a response body.
                 evidence.forbidden += (location.encode(),)
             content = response.read(maximum_bytes + 1)
-            evidence.write(label + ".body", content[:maximum_bytes])
+            read_bytes = len(content)
+            omit_body = bool(locations) or actor
+            if not omit_body:
+                evidence.write(label + ".body", content[:maximum_bytes])
             evidence.write(
                 label + ".json",
                 canonicalize(
                     {
                         "status": response.status,
                         "bodyBytesRead": len(content),
-                        "bodySha256": _sha(content[:maximum_bytes]),
+                        "bodySha256": _sha(content),
                         "bodyComplete": len(content) <= maximum_bytes,
+                        "bodyRetention": "omitted" if omit_body else "original",
+                        "bodyOmissionReason": "location"
+                        if locations
+                        else "authenticated-actor"
+                        if actor
+                        else None,
                         "contentLength": response.getheader("Content-Length"),
                         "contentEncoding": response.getheader(
                             "Content-Encoding"
@@ -192,7 +203,36 @@ def _exchange(  # noqa: PLR0913
                 length is None or length == str(len(content)),
                 "incomplete GitHub response body",
             )
-            return response.status, content, location
+            if actor:
+                _require(
+                    response.status == HTTPStatus.OK and not locations,
+                    "invalid actor response",
+                )
+                user = _object(parse_json_strict(content))
+                _require(
+                    type(user.get("id")) is int
+                    and user["id"] > 0
+                    and isinstance(user.get("login"), str)
+                    and bool(user["login"]),
+                    "invalid actor identity",
+                )
+                content = canonicalize(
+                    {"id": user["id"], "login": user["login"]}
+                )
+                evidence.write(label + ".body", content)
+                evidence.write(
+                    "actor-identity.json",
+                    canonicalize(
+                        {
+                            "evidenceKind": "derived-identity",
+                            "endpoint": "/user",
+                            "fields": ["id", "login"],
+                            "bodyFile": label + ".body",
+                            "bodySha256": _sha(content),
+                        }
+                    ),
+                )
+            return response.status, content, location, read_bytes
     finally:
         connection.close()
 
@@ -212,7 +252,7 @@ def _worker(  # noqa: PLR0913, PLR0917
     evidence = process._Evidence(directory, token)  # noqa: SLF001
     deadline = time.monotonic() + timeout
     try:
-        status, content, location = _exchange(
+        status, content, location, read_bytes = _exchange(
             _API + request.route,
             request.method,
             request.body,
@@ -225,7 +265,6 @@ def _worker(  # noqa: PLR0913, PLR0917
             label="api",
         )
         count = 1
-        read_bytes = len(content)
         if request.download:
             _require(
                 status == HTTPStatus.FOUND and location is not None,
@@ -241,7 +280,7 @@ def _worker(  # noqa: PLR0913, PLR0917
             )
             remaining = deadline - time.monotonic()
             _require(remaining > 0, "artifact retrieval deadline expired")
-            status, content, further = _exchange(
+            status, content, further, artifact_bytes = _exchange(
                 location,
                 "GET",
                 None,
@@ -255,7 +294,7 @@ def _worker(  # noqa: PLR0913, PLR0917
                 further is None, "additional artifact redirect is forbidden"
             )
             count += 1
-            read_bytes += len(content)
+            read_bytes += artifact_bytes
         else:
             _require(location is None, "API redirects are forbidden")
         _require(status == HTTPStatus.OK, "unexpected GitHub response status")
