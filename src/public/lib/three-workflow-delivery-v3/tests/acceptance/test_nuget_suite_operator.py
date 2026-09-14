@@ -28,6 +28,7 @@ suite = import_module(".test_nuget_suite", __package__).suite
 
 @pytest.fixture
 def prepared(inputs, suite, tmp_path, monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     audits = {}
     for name in ("admission", "fixture", "helper"):
         path = tmp_path / (name + "-audit.md")
