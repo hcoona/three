@@ -227,3 +227,34 @@ been downloaded or reverified by this record migration.
   and actual pinned-toolchain results remain execution prerequisites. No
   native request, dispatch, publication, or administrative operation was
   performed by this source research.
+
+## [2026-09-14] query | Adopt the NuGet uniqueness dependency
+
+- The owner rejected both a linear-consistency prerequisite and a proposed
+  serialized-only scope. The revised decision relies on GitHub Packages'
+  native version uniqueness and duplicate non-replacement, with no specified
+  concurrent winner or request ordering. The [decision interpretation](https://github.com/hcoona/three/issues/676#issuecomment-5668280034)
+  and [independent review](https://github.com/hcoona/three/issues/676#issuecomment-5668280307)
+  retain that direction. `WD-NUGET-006` owns the resulting product requirement;
+  this entry records the evidence basis and its limits.
+- An [independent review of the owner-supplied sources](https://github.com/hcoona/three/issues/676#issuecomment-5668152155)
+  found that [navcontainerhelper issue #4064](https://github.com/microsoft/navcontainerhelper/issues/4064)
+  is a community report of a duplicate conflict despite missing/404 package
+  state, without a GitHub service response. The generic NuGet protocol permits
+  other feeds to replace packages, while GitHub's restoration documentation
+  describes namespace/version reuse after deletion. Those findings do not
+  independently establish concurrent non-replacement and are not evidence of
+  GitHub replacing active package bytes.
+- The decision changes the accepted dependency and evidence basis. It does
+  not upgrade these sources into an official GitHub concurrency contract or
+  erase the earlier evidence conclusions. A separate service-owned atomicity
+  statement is no longer a prerequisite. The required bounded native suite,
+  exact-byte and witness checks, clean consumer evidence, independent audit,
+  protected admission and actual normal-Live publication remain. Sequential
+  observations do not prove arbitrary concurrent executions, global read
+  consistency, or universal future service behavior.
+- This requirement/design reconciliation performs no native operation or
+  admission. The existing disabled admission control still requires a
+  subsequent implementation change after protected design delivery. Changes
+  to the relied-on service behavior, profile, or evidence scope reopen the
+  affected admission under the Governance MLD.

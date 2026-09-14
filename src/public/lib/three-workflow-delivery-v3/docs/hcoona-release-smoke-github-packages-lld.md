@@ -152,6 +152,13 @@ qualified bytes and digests, and in-package target witness. The resource key
 uses NuGet-native identity so equivalent spellings serialize together. No npm
 tag is part of this destination or its mutable-resource set.
 
+Resource groups constrain participating repository jobs, not server arrival
+order or other clients. The selected service's uniqueness/non-replacement
+behavior is the explicit dependency in `WD-NUGET-006`; any competing creation
+may win. Reads across GitHub and NuGet resources are not an atomic snapshot,
+and absence reserves no coordinate. Delayed or inconsistent observations may
+fail the bounded reader without permitting a weaker success claim.
+
 | Observed state                                                                | Permitted outcome                                                                                      |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Exact current package bytes and witness                                       | Zero actions; repeat fresh Governance, package-control, and exact-byte checks before `exact-satisfied` |
@@ -231,11 +238,13 @@ the actual Actions-issued repository token under the exact pinned profile,
 with complete before/after active-state captures. Both duplicates must fail
 definitively and leave the declared active state unchanged.
 
-Sequential scenarios do not alone establish atomic behavior under concurrent
-creation. Native admission also needs a sufficient service-owned guarantee
-for atomic non-overwriting active creation; the generic NuGet protocol does
-not promise that for every feed. Missing GitHub-specific assurance blocks
-activation even if the sequential scenarios pass.
+Sequential scenarios qualify the selected service/profile under the explicit
+uniqueness and duplicate-rejection dependency; they do not prove arbitrary
+concurrent executions. The generic NuGet protocol does not promise this
+behavior for every feed. This slice accepts the GitHub-specific dependency
+and requires its bounded native evidence, without a separate service-owned
+statement proving concurrent atomic creation. Neither a support ticket nor a
+particular request ordering is an activation prerequisite.
 
 Official-parser cases must cover native-equivalent version and package-ID
 spellings. The native fixture contract must close how those equivalences are
@@ -388,13 +397,15 @@ response, capture, and consumer result. The independent auditor admits the
 actual lineage and the sequence's complete allowed deltas; a supplied-fact
 comparison or successful workflow conclusion alone is not native provenance.
 A passed three-probe generation supplies only its bounded native evidence.
-The separate service-owned atomic guarantee remains required for activation.
+Admission also binds the reviewed NuGet integration-contract revision carrying
+the accepted uniqueness dependency and these evidence limits. The revision
+does not identify a newly obtained official GitHub guarantee.
 
 Native fixture publication is not the required normal-Live publication.
 Before the later concrete real-run request, verify that its newly qualified
 coordinate permits an actual creation and does not adopt a native fixture,
-prior-run artifact, or Approval. Install neither a native generation nor an
-atomic-contract identity before independent admission and protected activation
+prior-run artifact, or Approval. Install neither a native generation nor a
+destination-contract identity before independent admission and protected activation
 delivery. A stopped generation grants no replacement generation.
 
 The following evidence is still required before corresponding admission:

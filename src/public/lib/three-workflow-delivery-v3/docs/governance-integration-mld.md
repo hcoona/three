@@ -346,6 +346,14 @@ An npm `ready` attestation or admitted npm acceptance generation cannot enable
 NuGet. The existing freshness, protected-path continuity, disablement, and
 current-Attempt checks apply to the NuGet source identified by the LLD.
 
+The NuGet destination-contract revision identifies the accepted uniqueness and
+duplicate-rejection dependency in `WD-NUGET-006`, separately from the actual
+native generation and its evidence digest. It is an integration-contract
+identity, not a fabricated GitHub service assurance. Admission requires the
+independently reviewed contract and audited native evidence, without a
+separate service-owned concurrent-atomicity statement. Changes to the relied-on
+behavior, profile, or evidence scope reopen the affected native admission.
+
 One action requires a new current-Attempt Approval Bundle, Environment
 Approval, and Authorization. Sharing the Environment never adopts an npm
 Approval or another run's authority. Zero actions use fresh read-only exact

@@ -162,10 +162,11 @@ The private audit retains original uploads, prior evidence, safe partial
 responses and the actual consumer tree. Any failure spends the lifetime and
 stops subsequent mutation. An observation timeout does not establish that a
 queued remote run cannot still publish. A completed suite observation is only
-candidate sequential evidence: independent native audit, service-owned atomic
-assurance, protected activation and a separate normal-Live publication remain
-required. The coordinate projection changes the adapter source identity, so
-the current Windows profile must be admitted before native execution.
+candidate sequential evidence: independent native audit, admission of the
+accepted NuGet integration contract, protected activation and a separate
+normal-Live publication remain required. The coordinate projection changes
+the adapter source identity, so the current Windows profile must be admitted
+before native execution.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,

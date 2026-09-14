@@ -265,6 +265,16 @@ sharing the Environment never shares a prior Approval, Authorization, or
 native verdict. A second Environment or generic Environment Profile is not
 needed unless a concrete policy difference requires it.
 
+NuGet publication relies on the version-uniqueness and duplicate non-replacement
+dependency in `WD-NUGET-006`, qualified by independent native evidence. The
+service may select any competing creation; the architecture does not derive
+the winner from request order or require global linearizable reads. Existing
+concurrency controls reduce overlapping repository work without supplying a
+registry lock. Exact-byte readback remains a success prerequisite, with
+inconsistent or delayed observations producing no success. Native admission
+binds this accepted integration contract and its evidence; a separate
+GitHub-owned concurrent-atomicity statement is not required.
+
 ## Governance and Trust
 
 ### Context-Owned Planning and Finalization

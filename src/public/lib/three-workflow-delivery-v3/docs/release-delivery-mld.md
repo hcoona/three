@@ -130,15 +130,18 @@ The NuGet Adapter implements only these destination outcomes:
 | Existing active coordinate has different bytes or witness                   | Conflict; no action.                                                          |
 | State, bytes, witness, or native identity cannot be established             | Blocked observation; no publication authority.                                |
 
-There is no NuGet tag action or npm tag-race assumption. Native duplicate
-behavior, byte retrieval, and provenance must be independently established
-for this NuGet service and pinned operation profile. An identical-byte or
-different-byte push to an existing active native-equivalent coordinate must
-not alter that active content. No HTTP status or client exit code establishes
-this guarantee by itself. Missing service guarantees block the affected
-capability; no ledger, reservation, deletion, restoration, or compensating
-mutation substitutes for them. npm deleted-version conclusions and lifecycle
-risk acceptance do not transfer.
+There is no NuGet tag action or npm tag-race assumption. `WD-NUGET-006` supplies
+the explicit service dependency: one active native coordinate, with competing
+or later identical-byte and different-byte duplicates rejected without
+replacement. No winner is inferred from client send or server arrival order.
+This dependency does not require global linearizable
+reads or a serialized-only product restriction. Native acceptance qualifies
+the concrete profile's observed behavior, bytes and provenance; it does not
+prove all concurrent executions or require a separate GitHub atomicity
+statement. A stale absence is not a reservation, and agreement across reads
+is not an atomic service snapshot. Missing or inconsistent evidence blocks
+the affected path. No ledger, deletion, restoration, or compensating mutation
+substitutes for that evidence; npm lifecycle risk acceptance does not transfer.
 
 ### One-Shot Publication and Terminal Evidence
 

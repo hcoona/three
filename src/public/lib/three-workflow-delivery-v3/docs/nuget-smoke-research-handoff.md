@@ -31,9 +31,12 @@ Close and record exact native fixtures, coordinates, operation budgets,
 profile/tooling identities, evidence paths, and stop conditions before any
 native execution. Do not change package access, credentials, or Environments,
 operate on unrelated packages, perform administrative repair, or retry an
-ambiguous mutation. Missing GitHub-specific atomic non-overwrite assurance
-continues to block activation; broad completion authorization is not platform
-evidence.
+ambiguous mutation. `WD-NUGET-006` adopts GitHub version uniqueness and
+duplicate non-replacement as an explicit service dependency, without a
+separate service-owned concurrent-atomicity statement. This changes the
+acceptance basis, not the strength of prior source evidence. Admission-control
+reconciliation, actual native evidence and protected activation remain
+required; broad completion authorization is not platform evidence.
 
 The npm Normal Live objective remains complete. Its two dispatch
 authorizations are spent, and its native acceptance, first failure, successful
@@ -312,24 +315,24 @@ acceptance evidence:
 | Pack metadata            | [NuGet pack targets](https://learn.microsoft.com/en-us/nuget/reference/msbuild-targets) define `PackageId`, `PackageVersion`, `RepositoryUrl`, and optional `RepositoryCommit`. Optional source metadata is not registry-enforced provenance and is not automatically the v3 artifact witness.                                                                                                                                                                                                      |
 | Push result              | [dotnet nuget push](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-nuget-push) publishes an existing package. `--no-symbols` concerns publication, not whether pack created a symbol artifact. `--skip-duplicate` converts an HTTP 409 to a warning; it proves neither equality nor exact-satisfied state. No command profile is approved here.                                                                                                                                         |
 | Readback                 | The GitHub guide publishes `https://nuget.pkg.github.com/NAMESPACE/index.json`. [PackageBaseAddress](https://learn.microsoft.com/en-us/nuget/api/package-base-address-resource) defines discovered resource endpoints for version enumeration and actual `.nupkg` download. Confirm the selected feed's supported resources; do not invent endpoint paths or substitute metadata for actual artifact observation.                                                                                   |
-| Non-overwrite            | The [generic NuGet publication protocol](https://learn.microsoft.com/en-us/nuget/api/package-publish-resource) explicitly distinguishes nuget.org's duplicate rejection from other feeds that may replace a package. The reviewed GitHub guide does not establish a GitHub-specific active-version non-overwrite or upload-byte-preservation contract. This is a required capability gate, not evidence that GitHub actually permits overwrite.                                                     |
+| Non-overwrite            | The [generic NuGet publication protocol](https://learn.microsoft.com/en-us/nuget/api/package-publish-resource) distinguishes nuget.org duplicate rejection from feeds that may replace packages. The reviewed GitHub guide does not establish an active-version non-overwrite or upload-byte-preservation contract. The current dependency and evidence basis follows `WD-NUGET-006`; this source limit is not evidence of GitHub overwrite.                                                        |
 | Administrative lifecycle | [GitHub deletion/restoration](https://docs.github.com/en/packages/learn-github-packages/deleting-and-restoring-a-package) differs from nuget.org unlisting; the generic NuGet delete operation is server-dependent. Do not transfer npm tombstone conclusions, tag-race scenarios, or administrative authorization.                                                                                                                                                                                 |
 
-The NuGet design requires a sufficient destination contract and bounded
-native acceptance for required creation, active duplicates, actual bytes,
-provenance, and clean consumption. Documentation alone has not established
-those GitHub-specific guarantees. Do not weaken v3 content or witness
-requirements to metadata-only or semantic-only success because a service
-guarantee is missing. Native-equivalent collision behavior, evaluated
-toolchain/pack inputs, and current package grants still need evidence.
-Intended use and the destination-specific threat/cost decision are confirmed
-in `WD-NUGET-*`; those decisions do not establish platform or native facts.
+The current design relies on the explicit GitHub uniqueness/non-replacement
+dependency in `WD-NUGET-006` and bounded native evidence for creation, active
+duplicates, actual bytes, provenance, and clean consumption. The
+[subsequent evidence decision](./research/nuget-smoke-evidence.md#2026-09-14-query--adopt-the-nuget-uniqueness-dependency)
+preserves these source limits while removing the separate GitHub atomicity
+statement prerequisite. Do not substitute metadata-only or semantic-only
+success for exact content and witness. Native-equivalent collision behavior,
+evaluated toolchain/pack inputs, and current package grants still need evidence.
+Owner acceptance of the dependency does not establish native facts.
 
-Missing required platform guarantees block the corresponding capability;
-they do not justify a runtime history service, administrator compensation,
-unbounded retry, or a success-shaped fallback. Any later native acceptance
-must have its own approved contract, disposable scope, bounded operations,
-stop conditions, retained evidence, and independent audit.
+Missing or conflicting required evidence blocks the corresponding path. Any
+later native acceptance must have its own approved contract, disposable scope,
+bounded operations, stop conditions, retained evidence, and independent audit.
+No runtime history service, administrator compensation, unbounded retry, or
+success-shaped fallback supplies that evidence.
 
 ## Confirmed Requirements
 
@@ -362,8 +365,13 @@ one-shot standard-protocol HTTP publisher, with explicit local and native
 admission gates. Review and protected-delivery evidence belong in Git and the
 PR. The [retained source evidence](./research/nuget-smoke-evidence.md) preserves
 operator confirmation and source-supported design with their original limits.
-A passing three-invocation sequential suite alone does
-not establish the required service-owned atomic-creation guarantee.
+A passing three-invocation sequential suite qualifies the concrete profile
+under the accepted uniqueness dependency; it does not establish arbitrary
+concurrent behavior. The revised evidence basis requires no separate GitHub
+atomicity statement and does not impose serialized-only publication or choose
+a server-side winner. Reconcile the current atomic-assurance admission control
+after protected design delivery, retaining disabled Live until the revised
+native and activation gates close.
 
 ## Workflow and Discipline
 
