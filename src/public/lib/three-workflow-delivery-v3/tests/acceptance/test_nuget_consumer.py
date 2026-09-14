@@ -482,7 +482,13 @@ def test_consumer_deadline_stops_owned_process(inputs, tmp_path, monkeypatch):
     pid = int((directory / "consumer/sdk.pid").read_text())
     status = Path(f"/proc/{pid}/stat")
     deadline = time.monotonic() + 3
-    while status.exists() and status.read_text().split()[2] != "Z":
+    while True:
+        try:
+            process_state = status.read_text().split()[2]
+        except FileNotFoundError:
+            break
+        if process_state == "Z":
+            break
         assert time.monotonic() < deadline, "consumer descendant survived"
         time.sleep(0.01)
     assert (directory / "sdk/command.json").exists()
