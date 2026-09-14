@@ -469,11 +469,16 @@ def prepare_probe_inputs(
     write_archive(output, outputs)
 
 
-def _prepared_input(
+def read_prepared_probe(
     path: Path,
     reference: ArtifactReference,
     platform: Mapping[str, str],
 ) -> tuple[NuGetProbeRequest, bytes, native.NuGetServiceResources]:
+    """Read original prepared bytes and supplied platform facts without effects.
+
+    This comparison does not authenticate the supplied record or admit the
+    current publisher runtime. The publication boundary checks that separately.
+    """
     files = _archive_files(read_uploaded(path, reference))
     _require(
         set(files)
@@ -545,6 +550,15 @@ def _prepared_input(
         _text(resources_document["packagePublish"]),
         _text(resources_document["indexSha256"]),
     )
+    return request, package, resources
+
+
+def _prepared_input(
+    path: Path,
+    reference: ArtifactReference,
+    platform: Mapping[str, str],
+) -> tuple[NuGetProbeRequest, bytes, native.NuGetServiceResources]:
+    request, package, resources = read_prepared_probe(path, reference, platform)
     _require(
         native.nuget_operation_profile(resources) == request.profile,
         "probe actual publication profile changed",

@@ -135,13 +135,23 @@ def _observe(transport, authority):
     )
 
 
+@pytest.mark.parametrize("display_version", [VERSION, VERSION + "+build"])
 def test_observation_binds_official_identity_inventory_bytes_and_witness(
     authority,
+    display_version,
 ):
-    transport = _reader(_responses())
+    responses = _responses()
+    responses[VERSIONS_API] = _response(
+        VERSIONS_API, [{"id": 71, "name": display_version}]
+    )
+    transport = _reader(responses)
     observed = _observe(transport, authority)
     assert observed.identity.coordinate == PACKAGE.lower() + "@" + VERSION
     assert [item["id"] for item in observed.github_versions] == [71]
+    assert observed.github_versions[0]["name"] == display_version
+    assert observed.github_coordinates == (
+        (71, PACKAGE.lower() + "@" + VERSION),
+    )
     assert observed.package.content == PACKAGE_BYTES
     assert observed.package.sha256 == hashlib.sha256(PACKAGE_BYTES).hexdigest()
     assert observed.package.sha512 == hashlib.sha512(PACKAGE_BYTES).hexdigest()
@@ -192,6 +202,7 @@ def test_observation_absence_requires_complete_agreeing_inventories(authority):
     observed = _observe(transport, authority)
     assert observed.package is None
     assert observed.github_versions == ()
+    assert observed.github_coordinates == ()
     assert observed.active_versions == ()
     assert transport.get.call_count == 4
     authority.inspect_package.assert_not_called()
@@ -575,6 +586,10 @@ def test_observation_reads_all_pages_and_accepts_terminal_previous_link(
     assert observed.package is None
     assert len(observed.active_versions) == 101
     assert observed.github_versions[-1] == {"id": 101, "name": "1.0.100"}
+    assert observed.github_coordinates == tuple(
+        (index + 1, PACKAGE.lower() + "@" + version)
+        for index, version in enumerate(versions)
+    )
     assert [item.url for item in observed.exchanges].count(next_url) == 1
     authority.inspect_package.assert_not_called()
 

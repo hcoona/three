@@ -432,6 +432,10 @@ def capture_nuget_state(  # noqa: PLR0913
                 identity.coordinate for identity in state.active_versions
             ),
             "githubVersions": list(state.github_versions),
+            "githubCoordinates": [
+                {"id": identity, "coordinate": coordinate}
+                for identity, coordinate in state.github_coordinates
+            ],
             "scenarioPackage": package,
             "responses": bounded.responses,
             "counts": bounded.counts(),

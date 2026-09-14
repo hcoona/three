@@ -647,6 +647,7 @@ class NuGetActiveState:
     package_control: dict[str, JsonValue]
     active_versions: tuple[NuGetIdentity, ...]
     github_versions: tuple[dict[str, JsonValue], ...]
+    github_coordinates: tuple[tuple[int, str], ...]
     package: NuGetPackageInspection | None
     exchanges: tuple[NuGetHttpResponse, ...]
 
@@ -737,6 +738,7 @@ def read_nuget_active_state(  # noqa: C901, PLR0912, PLR0915
     control = _object(read(control_url, api=True).body)
     _package_control(control, package_id=package_id)
     github_versions: list[dict[str, JsonValue]] = []
+    github_coordinates: list[tuple[int, str]] = []
     native_ids: set[int] = set()
     api_coordinates: set[str] = set()
     for page in range(1, _MAX_VERSION_PAGES + 1):
@@ -772,6 +774,7 @@ def read_nuget_active_state(  # noqa: C901, PLR0912, PLR0915
                 raise NuGetAdapterError(msg)
             api_coordinates.add(native.coordinate)
             github_versions.append(item)
+            github_coordinates.append((native_id, native.coordinate))
         if len(items) < _PAGE_SIZE:
             if re.search(
                 r'rel="?next"?(?:[;,]|$)', response.header("link") or ""
@@ -826,6 +829,7 @@ def read_nuget_active_state(  # noqa: C901, PLR0912, PLR0915
         control,
         tuple(natives),
         tuple(github_versions),
+        tuple(github_coordinates),
         inspection,
         tuple(exchanges),
     )

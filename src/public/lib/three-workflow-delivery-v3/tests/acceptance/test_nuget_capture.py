@@ -157,6 +157,11 @@ def test_capture_retains_complete_state_and_actual_scenario_bytes(
     assert document["githubVersions"] == (
         [{"id": 71, "name": VERSION}] if present else []
     )
+    assert document["githubCoordinates"] == (
+        [{"id": 71, "coordinate": PACKAGE.lower() + "@" + VERSION}]
+        if present
+        else []
+    )
     assert document["packageControl"]["id"] == 12024661
     assert document["startedAt"] == document["completedAt"] == NOW.isoformat()
     urls = [call.args[0] for call in transport.get.call_args_list]

@@ -230,8 +230,16 @@ host is separate from the original fixture/reader helper and receives the read
 credential only for restore. Callers still own original/tooling provenance,
 current read authority and a concrete finite generation. Controlled local
 evidence is not actual destination consumption or Windows acceptance.
-The full three-probe dispatcher, six capture/delta integration, native collection
-and normal-Live workflow proving remain subsequent work.
+The [fixed-suite operator](../README.md) connects the three probes, all six
+captures and creation's clean consumer. It requires current protected tooling,
+exact dispatch run details, bounded original-byte HTTP collection and unchanged
+state through both duplicates. Failed positions cannot resume or trigger a
+replacement dispatch. Original uploads, prior admission evidence, partial
+responses and consumer files remain available to the independent auditor.
+Controlled integration tests establish application behavior only; actual native
+collection and normal-Live workflow proving remain subsequent work. The added
+coordinate projection changes the adapter source hash; admit the current
+Windows profile rather than reusing an earlier identity.
 Close the concrete native request and actual access/profile prerequisites
 before dispatch; source availability supplies no missing gate.
 The checked-in NuGet source stays blocked and its native/atomic admission sets

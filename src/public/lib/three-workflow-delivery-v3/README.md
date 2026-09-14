@@ -82,7 +82,7 @@ allowances include one overflow-detection byte per call. A failed capture spends
 the collector lifetime, retaining safe partial evidence without a retry. The
 library supports all six ordered capture positions; the CLI runs only the
 separate preflight and rejects a present scenario coordinate. It supplies no
-probe dispatcher or destination consumer. A complete preflight capture is not
+publication authority. A complete preflight capture is not
 the required access audit, native acceptance, Windows profile or publication
 authority. Concrete native requests and destination evidence remain pending.
 
@@ -109,8 +109,7 @@ it establishes neither destination readback nor native acceptance. Lost output
 or an ambiguous response leaves the request spent and cannot justify a rerun.
 The spec's audit/preflight/capture hashes identify separately admitted evidence;
 they do not verify its provenance or supply authorization. Close the concrete
-native request and actual access/profile prerequisites before dispatch. The
-three-probe dispatcher and six capture/delta integration remain separate work.
+native request and actual access/profile prerequisites before dispatch.
 Atomic admission and NuGet Live stay disabled.
 
 The [destination consumer component](src/three_workflow_delivery_v3/acceptance/nuget_consumer.py)
@@ -126,6 +125,44 @@ Callers must independently admit original inputs, complete prebuilt tooling,
 current read authority and the finite native generation; supplied hashes do not
 establish provenance. Controlled local tests establish native SDK and component
 behavior, not actual destination consumption, Windows profile or acceptance.
+
+The [fixed-suite operator](src/three_workflow_delivery_v3/acceptance/nuget_suite_operator.py)
+connects those components in the accepted order: create A, verify the creation
+delta, consume A, reject identical A, then reject equivalent different-byte B.
+It retains all six captures and compares official native coordinates and GitHub
+object identities, including unchanged neighboring versions. Original probe
+uploads bind the exact current run, prepared input, invocation marker, response
+and result. A duplicate rejection preserves its conservative mutation flag;
+it is not a successful publication.
+
+`python -m three_workflow_delivery_v3.acceptance.nuget_suite_operator --help`
+describes the operator-local entry. Its canonical `NuGetSuiteRequest` binds the
+static plan, separate preflight request, finite GitHub limits and the digest of
+the independently reviewed admission carrier. That carrier must close the
+concrete execution request, current protection/access facts, original fixture
+and helper provenance, current Windows profile, and prebuilt consumer runtime.
+Neither a request file nor its audit hash supplies missing authorization.
+The entry reads only the selected existing token environment variable. It
+does not look up credentials, build a runtime or modify access.
+
+Dispatch requests return the exact run ID. The collector rechecks current main,
+workflow and actor, polls only that attempt-one run, and requires a complete
+single artifact page. Direct HTTPS calls preserve original response bodies;
+dispatch permits no redirects or retries. Each original artifact download may
+follow one redirect to the exact independently admitted storage origin without
+forwarding the GitHub credential. The temporary signed URL is not retained.
+Request and response-body budgets include redirects and overflow detection;
+each call has a supervised deadline. Native captures and the consumer retain
+their separate bounds inside the fixed generation deadline.
+
+The private audit retains original uploads, prior evidence, safe partial
+responses and the actual consumer tree. Any failure spends the lifetime and
+stops subsequent mutation. An observation timeout does not establish that a
+queued remote run cannot still publish. A completed suite observation is only
+candidate sequential evidence: independent native audit, service-owned atomic
+assurance, protected activation and a separate normal-Live publication remain
+required. The coordinate projection changes the adapter source identity, so
+the current Windows profile must be admitted before native execution.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,
