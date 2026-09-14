@@ -230,6 +230,10 @@ been downloaded or reverified by this record migration.
 
 ## [2026-09-14] query | Adopt the NuGet uniqueness dependency
 
+This entry records a new current decision. It is not part of the historical
+wiki source; the retained-source provenance statement above applies only to
+the preceding dated sections.
+
 - The owner rejected both a linear-consistency prerequisite and a proposed
   serialized-only scope. The revised decision relies on GitHub Packages'
   native version uniqueness and duplicate non-replacement, with no specified

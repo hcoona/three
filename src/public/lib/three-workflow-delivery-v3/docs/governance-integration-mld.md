@@ -732,10 +732,11 @@ Governance integration fails closed when:
   least 45 days;
 - the selected destination primitive, exact operation profile, or bound
   lower-layer/API contract has not passed the bounded documented-and-observable
-  native acceptance;
+  native acceptance applicable to that destination; NuGet uses the dependency
+  and evidence basis in `WD-NUGET-006` and `WD-NUGET-007`;
 - the acceptance lacks definitive failure and an empty complete active-state
-  delta for either active duplicate, exact creation readback, or the bounded
-  tag-race proof;
+  delta for either active duplicate, exact creation readback, or, for first-slice
+  npm, the bounded tag-race proof;
 - publisher-boundary supported package-control readback no longer matches
   accepted owner, repository association, visibility, or exposed access facts;
 - native acceptance is older than 90 days for an action-bearing admission;
