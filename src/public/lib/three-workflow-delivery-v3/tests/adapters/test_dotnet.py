@@ -442,9 +442,17 @@ def _autocrlf_source(scratch: Path) -> Path:
     repo = Path(__file__).resolve().parents[6]
     seed = scratch / "seed"
     _git_bytes(scratch, "clone", "--quiet", "--no-local", str(repo), str(seed))
-    shutil.copyfile(repo / ".gitattributes", seed / ".gitattributes")
+    attributes = [
+        path
+        for path in _git_bytes(repo, "ls-files", "-z").decode().split("\0")
+        if Path(path).name == ".gitattributes"
+    ]
+    for path in attributes:
+        destination = seed / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(repo / path, destination)
     (seed / "autocrlf-control.txt").write_bytes(b"unselected\ncontrol\n")
-    _git_bytes(seed, "add", ".gitattributes", "autocrlf-control.txt")
+    _git_bytes(seed, "add", *attributes, "autocrlf-control.txt")
     _git_bytes(
         seed,
         "-c",

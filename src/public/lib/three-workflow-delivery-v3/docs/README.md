@@ -99,8 +99,11 @@ process supervision and fixed cumulative capture allowances. The separate
 fixture/helper inputs, inspects without publication authority and retains a
 durable marker plus HTTP or partial-failure evidence from its one-shot publisher.
 Exact native requests and independent helper/runtime admission remain required.
-The full three-probe sequence, six capture/delta integration, clean destination
-consumer and native proving remain subsequent work. Local command availability
+The [destination consumer component](../README.md) adds bounded native restore
+and exact installed-byte checks before credential-free build and marker
+invocation. Its local controlled evidence supplies no native admission.
+The full three-probe sequence, six capture/delta integration and actual
+destination consumption/native proving remain subsequent work. Local command availability
 and expected HTTP status do not admit native provenance or publication.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.

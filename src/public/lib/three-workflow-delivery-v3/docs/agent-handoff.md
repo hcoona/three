@@ -223,9 +223,16 @@ persists its invocation marker and calls the one-shot adapter once without
 target or helper execution. Retained HTTP/partial-failure evidence is not a
 native verdict; the spec's evidence hashes do not authenticate their sources
 or authorize dispatch. Local tests establish source and shell contracts only.
-The full three-probe dispatcher, six capture/delta integration, clean destination
-consumer, native collection and normal-Live workflow proving remain subsequent
-work. Close the concrete native request and actual access/profile prerequisites
+The [destination consumer component](../README.md) adds a fresh SDK graph,
+bounded native NuGet restore, exact installed-byte checks, and credential-free
+build/marker invocation under POSIX process supervision. Its prebuilt restore
+host is separate from the original fixture/reader helper and receives the read
+credential only for restore. Callers still own original/tooling provenance,
+current read authority and a concrete finite generation. Controlled local
+evidence is not actual destination consumption or Windows acceptance.
+The full three-probe dispatcher, six capture/delta integration, native collection
+and normal-Live workflow proving remain subsequent work.
+Close the concrete native request and actual access/profile prerequisites
 before dispatch; source availability supplies no missing gate.
 The checked-in NuGet source stays blocked and its native/atomic admission sets
 stay empty. Sufficient GitHub-owned atomic non-overwrite assurance remains an

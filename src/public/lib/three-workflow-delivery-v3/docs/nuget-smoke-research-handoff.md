@@ -101,8 +101,13 @@ Keep these facts in the working context:
   a durable invocation marker and safe HTTP or partial-failure evidence. Neither
   its spec nor a successful expected-status observation authenticates a native
   generation or authorizes execution. Local tests establish component and shell
-  contracts only. Concrete native requests and access/profile facts, full
-  three-probe and six-capture integration, clean destination consumption,
+  contracts only. The separate destination consumer component adds a fresh SDK
+  graph, bounded native restore, exact installed bytes and credential-free
+  build/marker invocation. It uses a distinct prebuilt restore host and POSIX
+  supervision; callers still own original/tooling provenance and current read
+  authority. Its controlled local tests are not actual destination consumption
+  or Windows acceptance. Concrete native requests and access/profile facts, full
+  three-probe and six-capture integration, actual destination consumption,
   destination evidence, activation and real publication remain subsequent work;
   NuGet Governance and admission stay disabled. Local reader evidence cannot
   establish the Windows publication profile.

@@ -853,6 +853,7 @@ def test_ci_scenario_project_test_failure_fails_shadow_check() -> None:
     [
         "docs/wiki/README.md",
         "src/private/app/workflow-delivery-v3-dotnet-provider/Program.cs",
+        "src/private/app/workflow-delivery-v3-nuget-consumer/Program.cs",
         "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs",
     ],
 )
