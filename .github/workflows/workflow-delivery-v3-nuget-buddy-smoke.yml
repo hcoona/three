@@ -509,6 +509,7 @@ jobs:
             throw 'NuGet Eligibility status and Decision disagree'
           }
           "eligibility-status=$commandStatus" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+          exit 0
       - name: Bind eligibility payload identity
         id: seal-eligibility
         env:

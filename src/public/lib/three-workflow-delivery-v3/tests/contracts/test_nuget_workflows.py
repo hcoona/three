@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -66,7 +67,12 @@ def _pwsh(root, source, env=None):
     assert executable, "The repository's PowerShell toolchain is required"
     script = root / "scenario.ps1"
     script.write_text(
-        "$ErrorActionPreference = 'Stop'\n" + source, encoding="utf-8"
+        "$ErrorActionPreference = 'Stop'\n"
+        + source
+        # GitHub's pwsh runner propagates the last native command's exit code.
+        + "\nif (Test-Path -LiteralPath variable:\\LASTEXITCODE) "
+        "{ exit $LASTEXITCODE }\n",
+        encoding="utf-8",
     )
     return subprocess.run(
         [
@@ -177,33 +183,52 @@ def test_nuget_workflow_uses_pinned_native_python(workflows):
 
 
 @pytest.mark.parametrize(
-    ("status", "decision", "expected"),
+    ("status", "payload", "expected"),
     [
-        (0, "pass", 0),
-        (1, "blocked", 0),
-        (0, "blocked", 1),
-        (1, "pass", 1),
-        (2, "blocked", 2),
+        (0, '{"result":"pass"}', 0),
+        (1, '{"result":"blocked"}', 0),
+        (0, '{"result":"blocked"}', 1),
+        (1, '{"result":"pass"}', 1),
+        (2, '{"result":"blocked"}', 2),
         (1, None, 1),
+        (1, "{", 1),
+        (1, "{}", 1),
+    ],
+    ids=[
+        "pass",
+        "blocked",
+        "zero-with-blocked",
+        "one-with-pass",
+        "unexpected-exit",
+        "missing-decision",
+        "malformed-decision",
+        "missing-result",
     ],
 )
 def test_nuget_blocked_eligibility_retains_decision_and_fails(
-    workflows, tmp_path, status, decision, expected
+    workflows, tmp_path, status, payload, expected
 ):
     job, step = _command(
         workflows[0], "release nuget evaluate-live-eligibility"
     )
     output = tmp_path / "github-output"
     (tmp_path / ".wdv3").mkdir()
-    if decision is not None:
+    if payload is not None:
         (tmp_path / ".wdv3/eligibility.json").write_text(
-            json.dumps({"result": decision}), encoding="utf-8"
+            payload, encoding="utf-8"
         )
     # Replace the external command at its boundary; execute the actual status
     # and Decision handling. No native service or target evaluation occurs.
     assert step["run"].count(INVOCATION) == 1
-    source = step["run"].replace(INVOCATION, f"$global:LASTEXITCODE = {status}")
-    result = _pwsh(tmp_path, source, {"GITHUB_OUTPUT": str(output)})
+    source = step["run"].replace(
+        INVOCATION,
+        f'& $env:WDV3_TEST_PYTHON -c "import sys; sys.exit({status})"',
+    )
+    result = _pwsh(
+        tmp_path,
+        source,
+        {"GITHUB_OUTPUT": str(output), "WDV3_TEST_PYTHON": sys.executable},
+    )
     assert result.returncode == expected, result.stdout + result.stderr
     upload = _step_id(job, "upload-eligibility")
     assert "if" not in upload  # Expected blocked status must reach upload.
@@ -211,6 +236,35 @@ def test_nuget_blocked_eligibility_retains_decision_and_fails(
     assert propagate["if"] == "always()"
     if expected == 0:
         assert output.read_text().strip() == f"eligibility-status={status}"
+        seal = _step_id(job, "seal-eligibility")
+        assert "if" not in seal
+        sealed_output = tmp_path / "sealed-output"
+        result = _pwsh(
+            tmp_path,
+            seal["run"],
+            {
+                "WDV3_PAYLOAD": ".wdv3/eligibility.json",
+                "GITHUB_RUN_ID": "123",
+                "GITHUB_OUTPUT": str(sealed_output),
+            },
+        )
+        _assert_success(result)
+        fields = dict(
+            line.split("=", 1)
+            for line in sealed_output.read_text().splitlines()
+        )
+        original = payload.encode("utf-8")
+        assert (tmp_path / fields["path"]).read_bytes() == original
+        assert (
+            fields["digest"] == "sha256:" + hashlib.sha256(original).hexdigest()
+        )
+        assert Path(fields["path"]).name == fields["name"]
+        assert (
+            upload["with"]["path"]
+            == "${{ steps.seal-eligibility.outputs.path }}"
+        )
+        assert upload["with"]["archive"] is False
+        assert upload["with"]["overwrite"] is False
         result = _pwsh(
             tmp_path,
             propagate["run"],
@@ -223,6 +277,30 @@ def test_nuget_blocked_eligibility_retains_decision_and_fails(
         assert result.returncode == status
     else:
         assert not output.exists()
+
+
+@pytest.mark.parametrize(("status", "decision"), [(0, "pass"), (1, "blocked")])
+def test_nuget_eligibility_rejects_output_write_failure(
+    workflows, tmp_path, status, decision
+):
+    _, step = _command(workflows[0], "release nuget evaluate-live-eligibility")
+    (tmp_path / ".wdv3").mkdir()
+    (tmp_path / ".wdv3/eligibility.json").write_text(
+        json.dumps({"result": decision}), encoding="utf-8"
+    )
+    output = tmp_path / "github-output"
+    output.mkdir()
+    result = _pwsh(
+        tmp_path,
+        step["run"].replace(
+            INVOCATION,
+            f'& $env:WDV3_TEST_PYTHON -c "import sys; sys.exit({status})"',
+        ),
+        {"GITHUB_OUTPUT": str(output), "WDV3_TEST_PYTHON": sys.executable},
+    )
+    assert result.returncode != 0
+    assert "Add-Content" in result.stderr
+    assert list(output.iterdir()) == []
 
 
 @pytest.mark.parametrize(
