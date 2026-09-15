@@ -104,6 +104,11 @@ concrete native request and its bounded budget before execution. This grant
 does not waive native guarantees, protected delivery, current-run Approval,
 independent audit, or ambiguity stop conditions, and does not reopen npm.
 
+The selected C# smoke project's verified go-live is complete. The
+[NuGet normal-Live evidence](./validation/nuget-normal-live-evidence.md) binds
+its own Windows publication, current-run authority, fresh destination bytes and
+clean consumer. Its consumed operation allowances grant no further execution.
+
 The accepted [Delivery Wave](../../../../../docs/delivery-wave.md#advance-workflow-delivery-v3)
 supplies repository work authorization. [Issue #676](https://github.com/hcoona/three/issues/676)
 coordinates the concrete NuGet advancement and retains delivery evidence;
@@ -186,7 +191,8 @@ Local shell/transport contracts establish no actual native Windows workflow exec
 The [NuGet fixture and operator contract](./hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
 governs acceptance tooling. The independently audited native generation and
 current Governance collection now supply the exact admission and ready
-Governance described below. Real normal-Live publication remains subsequent work.
+Governance described below. Separate [actual normal-Live evidence](./validation/nuget-normal-live-evidence.md)
+establishes Windows publication and fresh destination consumption.
 The offline `acceptance.nuget_fixture` component prepares two original pack
 outputs from one frozen compilation. It requires explicit local dependency
 archives, a new dependency cache, official identity/content inspection and A's
@@ -237,8 +243,9 @@ exact dispatch run details, bounded original-byte HTTP collection and unchanged
 state through both duplicates. Failed positions cannot resume or trigger a
 replacement dispatch. Original uploads, prior admission evidence, partial
 responses and consumer files remain available to the independent auditor.
-Controlled integration tests establish application behavior only; actual native
-collection and normal-Live workflow proving remain subsequent work. Adapter
+Controlled integration tests establish application behavior only. The accepted
+Native R4 audit below and separate [normal-Live audit](./validation/nuget-normal-live-evidence.md)
+establish their respective actual collection and publication outcomes. Adapter
 changes require admission of the current Windows profile. The
 [credential-free profile observer](../README.md) and dedicated Windows entry
 collect that existing profile from separately audited complete preflight
@@ -287,17 +294,18 @@ The [complete Native R4 and Governance audits](./research/nuget-smoke-evidence.m
 qualify the exact six-field NuGet generation and ready Governance with Live enabled.
 The create, both duplicate rejections, all six captures and clean destination
 consumer passed; original failed generations and their spent allowances remain
-unchanged. Normal-Live publication must still obtain its own qualification,
-Snapshot, Approval, Authorization and independently audited terminal/destination
-evidence. `WD-NUGET-006` relies explicitly
+unchanged. The completed [normal-Live publication](./validation/nuget-normal-live-evidence.md)
+retains its own qualification, Snapshot, Approval, Authorization and independently
+audited terminal, destination and clean-consumer evidence. `WD-NUGET-006` relies explicitly
 on GitHub version uniqueness and duplicate non-replacement, with no chosen
 concurrency winner, global read-consistency claim, or serialized-only scope.
 The independent native suite still supplies bounded observations, not proof
 of arbitrary concurrent behavior. The control uses the exact six-field native
 generation, including the integration-contract revision and evidence digest,
 without a separate atomic-assurance registry. Its production set binds the
-accepted generation. Current-run authority/profile checks and the separate real
-publication remain required. No support inquiry is a prerequisite.
+accepted generation. Future publication still requires fresh current-run
+authority/profile checks and its own concrete authorization. No support inquiry
+is a prerequisite.
 
 ## Git Inspection and Implementation Scope
 
@@ -572,12 +580,13 @@ provisioning, acceptance, either dispatch, or either Approval. Original-D
 recovery and any future mutation require separate explicit authorization.
 This completed task authorizes no third proving dispatch.
 
-The NuGet slice follows its linked handoff and protected design package under
-the subsequent end-to-end delegation. Continue normal-Live proving and its
-delivery gates without repeating completed implementation. Native
-operations still require concrete bounded requests and satisfied technical
-gates. The revised NuGet control binds the exact audited native admission and
-ready Governance. Fresh normal-Live publication and current-run gates remain due.
+The NuGet slice's [verified normal-Live objective](./validation/nuget-normal-live-evidence.md)
+is also complete under its separate end-to-end delegation. Preserve its accepted
+Native R4, ready Governance, actual publication and joined postpublication audit.
+Do not repeat completed implementation, native acceptance, dispatch, Approval,
+publication or postpublication verification. All consumed and failed lifetimes
+remain spent. Future operations require their own concrete bounded requests,
+fresh current-run authority/profile checks and satisfied technical gates.
 
 ## Validation and Review Protocol
 

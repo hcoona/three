@@ -36,9 +36,11 @@ duplicate non-replacement as an explicit service dependency, without a
 separate service-owned concurrent-atomicity statement. This changes the
 acceptance basis, not the strength of prior source evidence. The activation
 source admits the exact independently audited Native R4 generation with ready
-Governance and Live enabled. Protected activation delivery and the separately
-qualified normal-Live publication still require their own completed gates.
-Broad completion authorization is not platform evidence.
+Governance and Live enabled. Protected activation and the separately qualified
+normal-Live publication are complete. The [normal-Live evidence](./validation/nuget-normal-live-evidence.md)
+joins actual Windows publication, current-run authority, fresh destination bytes
+and clean consumption. This completes the selected smoke go-live objective;
+all consumed operations remain spent. Broad authorization alone is not platform evidence.
 
 The npm Normal Live objective remains complete. Its two dispatch
 authorizations are spent, and its native acceptance, first failure, successful
@@ -125,7 +127,8 @@ Keep these facts in the working context:
   and GitHub budgets and the prior independent admission carrier; those supplied
   records do not authorize themselves. The [accepted Native R4 and Governance evidence](./research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
   now bind the exact production generation and ready Governance with Live enabled.
-  Real normal-Live publication and its current-run gates remain subsequent work.
+  The separate [normal-Live evidence](./validation/nuget-normal-live-evidence.md)
+  closes real publication, its current-run gates and fresh destination consumption.
   Local reader evidence cannot
   establish the Windows publication profile.
 - Both remembered .NET smoke projects existed, were intentionally removed,
@@ -350,15 +353,15 @@ The user accepted the complete packet. The normative requirements are
 [WD-NUGET-001 through WD-NUGET-008](./requirements.md#nuget-second-slice);
 this summary routes the next agent to that authority.
 
-| Confirmed concern        | Requirement and next evidence boundary                                                                                                                                                                                                                               |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product and scope        | `WD-NUGET-001`: the selected marker library, `net10.0`, Windows, one `.nupkg`, no separate `.snupkg`, GitHub Packages Buddy only.                                                                                                                                    |
-| Native facts and version | `WD-NUGET-002`: official evaluation at the exact target, complete history, and a frozen native NBGV NuGet projection. Native evaluation and frozen Build passed bounded Windows fixture preparation; normal-Live Windows workflow execution remains unproven.        |
-| Trust and authority      | `WD-NUGET-003` and `WD-NUGET-004`: reviewed protected-main control, isolated target evaluation/build, build-free publication, self-approval by the sole trusted writer, and explicitly accepted repository-token reach. Platform configuration still needs readback. |
-| Qualification            | `WD-NUGET-005`: distinct package-content and clean exact-version restore/build/marker evidence for the Release-owned artifact.                                                                                                                                       |
-| Destination acceptance   | `WD-NUGET-006`: independently establish the required active creation, duplicate, actual-byte, witness, and observation behavior for the NuGet profile.                                                                                                               |
-| Completion               | `WD-NUGET-007`: local/package evidence, an audited native suite, and one audited real publication with its own current-run authority and actual destination bytes.                                                                                                   |
-| Execution boundaries     | `WD-NUGET-008`: ordered design, subsequent implementation authorization, and separate concrete native and real-publication authorization.                                                                                                                            |
+| Confirmed concern        | Requirement and next evidence boundary                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product and scope        | `WD-NUGET-001`: the selected marker library, `net10.0`, Windows, one `.nupkg`, no separate `.snupkg`, GitHub Packages Buddy only.                                                                                                                                                                                                                                           |
+| Native facts and version | `WD-NUGET-002`: official evaluation at the exact target, complete history, and a frozen native NBGV NuGet projection. Native evaluation, frozen Build and actual Windows normal-Live execution are independently audited in the [Live evidence](./validation/nuget-normal-live-evidence.md).                                                                                |
+| Trust and authority      | `WD-NUGET-003` and `WD-NUGET-004`: reviewed protected-main control, isolated target evaluation/build, build-free publication, self-approval by the sole trusted writer, and explicitly accepted repository-token reach. The [Live evidence](./validation/nuget-normal-live-evidence.md) joins actual current-run platform readback; future operations require fresh checks. |
+| Qualification            | `WD-NUGET-005`: distinct package-content and clean exact-version restore/build/marker evidence for the Release-owned artifact.                                                                                                                                                                                                                                              |
+| Destination acceptance   | `WD-NUGET-006`: independently establish the required active creation, duplicate, actual-byte, witness, and observation behavior for the NuGet profile.                                                                                                                                                                                                                      |
+| Completion               | `WD-NUGET-007`: local/package evidence, an audited native suite, and one audited real publication with its own current-run authority and actual destination bytes.                                                                                                                                                                                                          |
+| Execution boundaries     | `WD-NUGET-008`: ordered design, subsequent implementation authorization, and separate concrete native and real-publication authorization.                                                                                                                                                                                                                                   |
 
 The subsequent implementation is authorized as described above. A descriptor
 alone cannot enable NuGet: native acceptance tooling and evidence, and
@@ -382,8 +385,9 @@ atomicity statement and does not impose serialized-only publication or choose
 a server-side winner. The control retains all six native-generation fields,
 including integration-contract revision and evidence digest, without a
 separate atomic-assurance registry. The exact independently audited generation
-is admitted with ready Governance and Live enabled; the separately qualified
-normal-Live publication remains pending.
+is admitted with ready Governance and Live enabled. The separately qualified
+[normal-Live publication and fresh consumption](./validation/nuget-normal-live-evidence.md)
+are independently verified.
 The [profile observer](../README.md) reuses actual Windows profile collection
 and shared resource validation; a complete independently audited preflight
 and a separately reviewed bounded dispatch must precede its execution.
@@ -454,7 +458,8 @@ The handoff is usable only if a new subagent, given the checkout and this entry
 path without the preceding conversation or research summary, can:
 
 - distinguish completed npm work, protected NuGet implementation, accepted
-  native admission and ready Governance, and remaining normal-Live gates;
+  native admission and ready Governance, completed actual normal-Live proving,
+  and the fresh gates required for any future operation;
 - find both historical projects, their intentional removal, retained
   containers, and the difference between old descriptors and current v3;
 - identify the native Release Provider and its evidence boundary without
