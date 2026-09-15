@@ -34,10 +34,11 @@ operate on unrelated packages, perform administrative repair, or retry an
 ambiguous mutation. `WD-NUGET-006` adopts GitHub version uniqueness and
 duplicate non-replacement as an explicit service dependency, without a
 separate service-owned concurrent-atomicity statement. This changes the
-acceptance basis, not the strength of prior source evidence. The control binds
-the exact native-generation tuple while its production set remains empty;
-actual native evidence and protected activation remain required. Broad
-completion authorization is not platform evidence.
+acceptance basis, not the strength of prior source evidence. The activation
+source admits the exact independently audited Native R4 generation with ready
+Governance and Live enabled. Protected activation delivery and the separately
+qualified normal-Live publication still require their own completed gates.
+Broad completion authorization is not platform evidence.
 
 The npm Normal Live objective remains complete. Its two dispatch
 authorizations are spent, and its native acceptance, first failure, successful
