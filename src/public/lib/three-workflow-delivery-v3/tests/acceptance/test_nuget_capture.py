@@ -5,12 +5,13 @@ from __future__ import annotations
 # ruff: noqa: D103, PLR2004
 import base64
 import hashlib
+import html
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import pytest
 from three_workflow_delivery_v3.acceptance.nuget_capture import (
@@ -594,6 +595,162 @@ def _package_redirect(scenario, status=302):
         original, url=STORAGE_LOCATION
     )
     return responses[ARCHIVE_URL]
+
+
+_LOCATION_FORMS = (
+    "full",
+    "target",
+    "query",
+    "html-full",
+    "html-target",
+    "html-query",
+    "encoded-full",
+    "encoded-target",
+    "encoded-query",
+)
+_HEADER_REFLECTIONS = [
+    pytest.param((header, form), id=f"{header}-{form}")
+    for header in ("Link", "ETag")
+    for form in _LOCATION_FORMS
+]
+
+
+def _header_reflection(location, form):
+    parsed = urlsplit(location)
+    values = {
+        "full": location,
+        "target": parsed.path + "?" + parsed.query,
+        "query": parsed.query,
+    }
+    reflected = values[form.rsplit("-", 1)[-1]]
+    if form.startswith("html-"):
+        return html.escape(reflected)
+    if form.startswith("encoded-"):
+        return quote(reflected, safe="")
+    return reflected
+
+
+def _assert_safe_partial_header_failure(
+    tmp_path, scenario, location, *, requests, storage_calls
+):
+    _, transport, responses = scenario
+    assert transport.get.call_count == requests - storage_calls
+    assert transport.get_package_storage.call_count == storage_calls
+    directory = tmp_path / "capture"
+    assert not (directory / "capture.json").exists()
+    assert not (directory / f"response-{requests:03d}.json").exists()
+    assert not (directory / f"response-{requests:03d}.body").exists()
+    failure = _read(directory / "failure.json")
+    read_bytes = sum(
+        len(responses[call.args[0]].body)
+        for call in transport.get.call_args_list
+    ) + (
+        len(transport.get_package_storage.return_value.body)
+        if storage_calls
+        else 0
+    )
+    assert failure["counts"] == {
+        "requests": requests,
+        "versionPages": 0 if requests == 1 else 1,
+        "chargedResponseBytes": read_bytes,
+        "returnedResponseBytes": read_bytes,
+    }
+    assert len(failure["returnedResponses"]) == requests - 1
+    events = [
+        json.loads(line)
+        for line in (directory / "requests.jsonl").read_text().splitlines()
+    ]
+    assert events[-1]["event"] == "reserved"
+    assert events[-1]["request"] == requests
+    assert len([item for item in events if item["event"] == "reserved"]) == (
+        requests
+    )
+    assert len([item for item in events if item["event"] == "returned"]) == (
+        requests - 1
+    )
+    secrets = [
+        _header_reflection(location, form).encode() for form in _LOCATION_FORMS
+    ]
+    secrets += [TOKEN.encode(), base64.b64encode(("hcoona:" + TOKEN).encode())]
+    for path in directory.iterdir():
+        content = path.read_bytes()
+        assert all(secret not in content for secret in secrets), path.name
+
+
+@pytest.mark.parametrize("status", [301, 302])
+@pytest.mark.parametrize("reflection", _HEADER_REFLECTIONS)
+def test_capture_redirect_header_reflection_never_persists(
+    tmp_path, capture_request, scenario, status, reflection
+):
+    header, form = reflection
+    source = _package_redirect(scenario, status)
+    scenario[2][ARCHIVE_URL] = replace(
+        source,
+        headers=(
+            *source.headers,
+            (header, _header_reflection(STORAGE_LOCATION, form)),
+        ),
+    )
+    with pytest.raises((ValueError, RuntimeError)):
+        _capture(tmp_path, capture_request, scenario)
+    _assert_safe_partial_header_failure(
+        tmp_path, scenario, STORAGE_LOCATION, requests=5, storage_calls=0
+    )
+
+
+@pytest.mark.parametrize(
+    "stage",
+    ["metadata", "invalid-package", "unsupported-package", "second-hop"],
+)
+@pytest.mark.parametrize("reflection", _HEADER_REFLECTIONS)
+def test_capture_rejected_location_never_persists_headers(
+    tmp_path, capture_request, scenario, stage, reflection
+):
+    header, form = reflection
+    _, transport, responses = scenario
+    source = _package_redirect(scenario)
+    location = "https://other-storage.example/pkg-two?sig=capability-two&v=2"
+    if stage == "invalid-package":
+        location = location.replace("https:", "http:")
+    reflected_headers = (
+        ("Location", location),
+        (header, _header_reflection(location, form)),
+    )
+    target = native.NUGET_SERVICE_INDEX if stage == "metadata" else ARCHIVE_URL
+    if stage == "second-hop":
+        # L2 and its target/query are distinct from every installed L1 form.
+        assert all(
+            _header_reflection(STORAGE_LOCATION, item) not in location
+            for item in _LOCATION_FORMS
+        )
+        transport.get_package_storage.return_value = replace(
+            transport.get_package_storage.return_value,
+            status=302,
+            headers=reflected_headers,
+            body=location.encode(),
+        )
+    else:
+        responses[target] = replace(
+            responses[target],
+            status=307 if stage == "unsupported-package" else 302,
+            headers=reflected_headers,
+            body=location.encode(),
+        )
+    with pytest.raises((ValueError, RuntimeError)):
+        _capture(tmp_path, capture_request, scenario)
+    _assert_safe_partial_header_failure(
+        tmp_path,
+        scenario,
+        location,
+        requests={"metadata": 1, "second-hop": 6}.get(stage, 5),
+        storage_calls=int(stage == "second-hop"),
+    )
+    if stage == "second-hop":
+        prior = _read(tmp_path / "capture/response-005.json")
+        assert prior["bodyRetention"] == "omitted"
+        assert prior["bodyOmissionReason"] == "location"
+        assert prior["bodyBytesRead"] == len(source.body)
+        assert not (tmp_path / "capture/response-005.body").exists()
 
 
 @pytest.mark.parametrize("status", [301, 302])

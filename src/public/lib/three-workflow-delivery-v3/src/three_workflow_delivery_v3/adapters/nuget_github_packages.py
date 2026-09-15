@@ -347,7 +347,7 @@ def check_read_secrets(content: bytes, secrets: tuple[bytes, ...]) -> None:
 def safe_read_response(
     response: NuGetHttpResponse, *, source: NuGetHttpResponse | None = None
 ) -> NuGetHttpResponse:
-    """Project safe hop metadata while preserving successful original bytes."""
+    """Project admitted hop metadata while preserving successful bytes."""
     locations = [v for k, v in response.headers if k.lower() == "location"]
     omitted = (
         bool(locations)
@@ -916,8 +916,14 @@ def read_nuget_active_state(  # noqa: C901, PLR0912, PLR0915
             raise NuGetAdapterError(msg)
         _validate_response_body(response, max_bytes=bound)
         location = response.header("location")
-        if location:
-            check_read_secrets(location.encode(), secrets)
+        selected = None
+        if package and response.status in _PACKAGE_REDIRECT_STATUSES:
+            if location is not None:
+                check_read_secrets(location.encode(), secrets)
+            selected, _ = package_storage_location(response)
+            secrets += read_location_secrets(selected)
+        else:
+            _read_require(location is None, "metadata redirects are forbidden")
         safe = safe_read_response(response)
         check_read_secrets(
             canonicalize(
@@ -930,9 +936,7 @@ def read_nuget_active_state(  # noqa: C901, PLR0912, PLR0915
         )
         check_read_secrets(safe.body, secrets)
         exchanges.append(safe)
-        if package and response.status in _PACKAGE_REDIRECT_STATUSES:
-            selected, _ = package_storage_location(response)
-            secrets += read_location_secrets(selected)
+        if selected is not None:
             remaining = deadline - time.monotonic()
             _read_require(remaining > 0, "package read deadline expired")
             source = response
@@ -946,6 +950,11 @@ def read_nuget_active_state(  # noqa: C901, PLR0912, PLR0915
                 response.url == selected, "package storage target changed"
             )
             _validate_response_body(response, max_bytes=bound)
+            _read_require(
+                response.header("location") is None
+                and response.status == HTTPStatus.OK,
+                "package storage response failed or completed late",
+            )
             safe = safe_read_response(response, source=source)
             check_read_secrets(
                 canonicalize(
@@ -961,13 +970,10 @@ def read_nuget_active_state(  # noqa: C901, PLR0912, PLR0915
             check_read_secrets(safe.body, secrets)
             exchanges.append(safe)
             _read_require(
-                response.header("location") is None
-                and response.status == HTTPStatus.OK
-                and time.monotonic() < deadline,
+                time.monotonic() < deadline,
                 "package storage response failed or completed late",
             )
             return safe
-        _read_require(location is None, "metadata redirects are forbidden")
         if response.status != HTTPStatus.OK:
             msg = f"NuGet observation HTTP status {response.status}."
             raise NuGetAdapterError(msg)

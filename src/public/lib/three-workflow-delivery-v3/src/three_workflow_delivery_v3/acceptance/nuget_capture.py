@@ -253,10 +253,10 @@ class _CaptureTransport:
         _require(
             source is self.last_response, "package redirect source changed"
         )
-        location, _ = native.package_storage_location(source)
-        # Check before extending the confidentiality set with the Location.
-        self.audit.check(location.encode())
-        self.audit.secrets += native.read_location_secrets(location)
+        # _get already admitted this exact response and made its Location
+        # confidential before retaining headers. Revalidate without treating
+        # that same capability as a new reflected value.
+        native.package_storage_location(source)
         return self._get(
             source.url,
             headers=(),
@@ -341,8 +341,11 @@ class _CaptureTransport:
         else:
             _require(response.url == location, "package storage target changed")
         location_header = response.header("location")
-        if location_header:
+        if location_header is not None:
             self.audit.check(location_header.encode())
+            _require(source is None, "additional package redirect is forbidden")
+            location_header, _ = native.package_storage_location(response)
+            self.audit.secrets += native.read_location_secrets(location_header)
         projected = native.safe_read_response(response, source=source)
         for key, value in response.headers:
             if key.lower() == "link":

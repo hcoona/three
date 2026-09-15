@@ -5,6 +5,7 @@ from __future__ import annotations
 # ruff: noqa: D103, PLR2004
 import base64
 import hashlib
+import html
 import http.client
 import json
 import platform
@@ -17,6 +18,7 @@ from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import MagicMock, Mock
+from urllib.parse import quote, urlsplit
 
 import pytest
 from three_workflow_delivery_v3.adapters import nuget_github_packages as nuget
@@ -148,7 +150,7 @@ def test_package_read_follows_one_original_location_with_safe_exchanges(
         ARCHIVE_URL,
         body=redirect_body,
         status=status,
-        headers=(("Location", location),),
+        headers=(("Location", location), ("ETag", '"package-revision"')),
     )
     responses[ARCHIVE_URL] = source
     transport = _reader(responses)
@@ -184,11 +186,66 @@ def test_package_read_follows_one_original_location_with_safe_exchanges(
     assert {response.url: response for response in state.exchanges}[
         CONTROL
     ].body == responses[CONTROL].body
-    assert location not in repr(state.exchanges)
+    visible = json.dumps(
+        [{"url": item.url, "headers": item.headers} for item in state.exchanges]
+    ).encode() + b"".join(item.body for item in state.exchanges)
+    assert location.encode() not in visible
+    assert b"sig=private&v=1" not in visible
+    assert state.exchanges[-2].header("etag") == '"package-revision"'
     assert all(
         response.header("location") is None for response in state.exchanges
     )
     assert state.exchanges[-1].header("set-cookie") is None
+
+
+@pytest.mark.parametrize("status", [301, 302])
+@pytest.mark.parametrize("header", ["Link", "ETag"])
+@pytest.mark.parametrize(
+    "form",
+    [
+        "full",
+        "target",
+        "query",
+        "html-full",
+        "html-target",
+        "html-query",
+        "encoded-full",
+        "encoded-target",
+        "encoded-query",
+    ],
+)
+def test_package_redirect_header_reflection_stops_before_storage(
+    authority, status, header, form
+):
+    location = "https://storage.example/pkg-one?sig=capability-one&v=1"
+    parsed = urlsplit(location)
+    values = {
+        "full": location,
+        "target": parsed.path + "?" + parsed.query,
+        "query": parsed.query,
+    }
+    base_form = form.rsplit("-", 1)[-1]
+    reflected = values[base_form]
+    if form.startswith("html-"):
+        reflected = html.escape(reflected)
+    elif form.startswith("encoded-"):
+        reflected = quote(reflected, safe="")
+    responses = _responses()
+    responses[ARCHIVE_URL] = _response(
+        ARCHIVE_URL,
+        body=b"redirect",
+        status=status,
+        headers=(("Location", location), (header, reflected)),
+    )
+    transport = _reader(responses)
+    transport.get_package_storage.return_value = _response(
+        location, body=PACKAGE_BYTES
+    )
+    with pytest.raises(nuget.NuGetAdapterError, match="capability"):
+        _observe(transport, authority)
+    assert transport.get.call_count == 5
+    transport.get_package_storage.assert_not_called()
+    authority.inspect_package.assert_not_called()
 
 
 @pytest.mark.parametrize(
