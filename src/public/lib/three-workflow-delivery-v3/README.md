@@ -5,6 +5,10 @@ records. Start with the [document set](docs/README.md) and
 [agent handoff](docs/agent-handoff.md) for the authority order, current evidence,
 and operating limits.
 
+New sessions start at the [handoff entry](docs/agent-handoff.md#starting-a-new-session).
+The [NuGet delivery retrospective](docs/research/nuget-delivery-retrospective.md)
+explains reusable integration lessons and the next-task guide.
+
 The [npm smoke package](../hcoona-release-smoke-npm/README.md) owns its small
 package purpose. This project owns the
 [first-slice proving protocol](docs/hcoona-release-smoke-npm-lld.md).

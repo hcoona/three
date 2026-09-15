@@ -24,6 +24,31 @@ Repository work authorization and generic contribution procedure route to the
 remain additional prerequisites; repository governance does not grant native
 operations, publication, or another npm proving run.
 
+## Starting a New Session
+
+The npm and NuGet GitHub Packages smoke objectives are complete. Use the
+[NuGet completion evidence](./validation/nuget-normal-live-evidence.md) and
+the current checkpoints below; earlier delivery history does not create a
+new task or revive spent operations.
+
+For the owner's next Workflow Delivery v3 task:
+
+1. Inspect the actual checkout and read the accepted repository instructions,
+   policies and Delivery Wave. Follow the [required reading order](#required-reading-order)
+   for the affected concern.
+2. Read the [NuGet delivery retrospective and next-Agent guide](./research/nuget-delivery-retrospective.md#next-agent-guide)
+   to reuse the completed integration and avoid its diagnosed failure modes.
+3. Identify the selected next project, user-visible result and remaining
+   requirements from the owner's instruction and current work carrier.
+   No next smoke or real project is selected by this handoff. Apply the
+   existing domain gates to that scope; previous smoke permissions do not
+   automatically authorize its publication.
+
+Recovery uses repository records and linked GitHub carriers. A prior
+conversation, local operator directory or old Agent handle is not required.
+Keep next-task progress in its Issue or PR rather than appending another
+session history here.
+
 ## Current Checkpoint
 
 - The replacement baseline, bounded static-reference foundation, and

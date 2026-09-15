@@ -7,6 +7,9 @@ grant in addition to the domain prerequisites below. The records were relocated
 from the accepted v3 set at `0659eb96d916d4c64059b5c981ac2d8d399e60e5`;
 source history remains in Git. Relocation does not authorize runtime work.
 
+For a new session, use the [handoff entry](./agent-handoff.md#starting-a-new-session)
+and its route to the [NuGet delivery retrospective](./research/nuget-delivery-retrospective.md).
+
 ## Status
 
 Workflow Delivery v3 is active and is the only normative Workflow Delivery design line.
