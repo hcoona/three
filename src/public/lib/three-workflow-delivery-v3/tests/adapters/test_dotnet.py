@@ -515,16 +515,25 @@ def test_autocrlf_preserves_provider_compiler_and_build_source_bytes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Global Windows conversion preserves the exact evaluated/built blobs."""
+    """Windows conversion preserves admitted input and adapter source bytes."""
     configuration = tmp_path / "global.gitconfig"
     configuration.write_bytes(b"[core]\n\tautocrlf = true\n")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(configuration))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     source = _autocrlf_source(tmp_path)
     target = _git_bytes(source, "rev-parse", "HEAD").decode().strip()
-    blobs = {
+    provider_paths = dotnet_provider.dotnet_provider_input_paths(source)
+    adapter_path = (
+        "src/public/lib/three-workflow-delivery-v3/src/"
+        "three_workflow_delivery_v3/adapters/nuget_github_packages.py"
+    )
+    provider_blobs = {
         path: _git_bytes(source, "show", f"{target}:{path}")
-        for path in dotnet_provider.dotnet_provider_input_paths(source)
+        for path in provider_paths
+    }
+    blobs = {
+        **provider_blobs,
+        adapter_path: _git_bytes(source, "show", f"{target}:{adapter_path}"),
     }
     _assert_canonical_inputs(source, blobs)
     context = compiler.CompilationContext(
@@ -591,7 +600,7 @@ def test_autocrlf_preserves_provider_compiler_and_build_source_bytes(
     ) -> str:
         if command[1] in {"restore", "build", "pack"}:
             assert root != source
-            _assert_canonical_inputs(root, blobs)
+            _assert_canonical_inputs(root, provider_blobs)
             built.append(command[1])
         return execute(command, root, environment)
 
@@ -608,7 +617,7 @@ def test_autocrlf_preserves_provider_compiler_and_build_source_bytes(
     result = build_dotnet_package(
         DotnetBuildRequest(
             source,
-            tuple(blobs),
+            provider_paths,
             provider.source_input_manifest,
             witness,
             native_helper,

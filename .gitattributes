@@ -31,6 +31,9 @@ src/private/app/workflow-delivery-v3-nuget-authority/packages.lock.json text eol
 src/public/lib/hcoona-release-smoke-npm/package.json text eol=lf
 src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/package-manifest.json text eol=lf
 
+# Preserve the admitted NuGet operation profile's exact adapter source bytes.
+/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/nuget_github_packages.py text eol=lf
+
 # Preserve exact Git-blob bytes for the admitted NuGet Provider/Build inputs.
 /.agents/skills/winui-dev-workflow/analyzer/Microsoft.WindowsAppSDK.Analyzers.targets text eol=lf
 /.config/dotnet-tools.json text eol=lf
