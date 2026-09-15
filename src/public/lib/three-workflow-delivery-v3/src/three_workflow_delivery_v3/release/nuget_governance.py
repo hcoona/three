@@ -38,13 +38,27 @@ if TYPE_CHECKING:
     )
     from three_workflow_delivery_v3.canonical import JsonValue
 
-# No NuGet generation has been admitted. Protected delivery may install only
-# exact independently audited native evidence under the accepted uniqueness
+# Exact independently audited native evidence under the accepted uniqueness
 # and duplicate non-replacement dependency. Candidate observations, HTTP 409
-# and npm acceptance do not supply that admission.
+# and npm acceptance do not supply additional admission.
 _ADMITTED_NUGET_NATIVE_GENERATIONS: frozenset[
     tuple[str, str, str, str, str, str]
-] = frozenset()
+] = frozenset(
+    {
+        (
+            "sha256:b94921714157ea7747c8da342acb64a3d5542ef104511518a9b406fdbe1fb767",
+            "workflow-delivery-v3/native-nuget-suite/v1",
+            "Hcoona.ReleaseSmoke.GithubPackages",
+            "2022-11-28",
+            (
+                "https://github.com/hcoona/three/blob/"
+                "a42a2e380217d62088ddba2bf03937b1d2522d37/"
+                "src/public/lib/three-workflow-delivery-v3/docs/requirements.md#L800-L830"
+            ),
+            "sha256:5a98495094f50aefa896424442d0b545ca713f88584067a0f176de3be97fcfeb",
+        ),
+    }
+)
 _NATIVE_SUITE = "workflow-delivery-v3/native-nuget-suite/v1"
 _API = "https://api.github.com"
 _REPO = "/repos/hcoona/three"

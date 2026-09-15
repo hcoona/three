@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-# ruff: noqa: D103, SLF001
+# ruff: noqa: D103
 import base64
 import hashlib
 import json
@@ -1126,10 +1126,6 @@ def test_native_eligibility_replay_does_not_grant_fresh_action(native_case):
             action_creation_at=expired,
             destination_operation_profile=case.profile,
         )
-
-
-def test_native_production_admission_stays_empty():
-    assert frozenset() == governance._ADMITTED_NUGET_NATIVE_GENERATIONS
 
 
 @pytest.mark.parametrize(

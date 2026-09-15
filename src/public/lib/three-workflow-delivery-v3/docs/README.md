@@ -79,9 +79,10 @@ original-archive preparation, durable-marker one-shot execution, and current-DAG
 finalization. They reuse the shared terminal admission and resolution commands.
 Separate manual and reusable NuGet workflows connect the native commands on
 Windows with immutable helper/record transport and a build-free publisher.
-Governance remains disabled. Normal-Live Windows workflow execution and
-native/Live proving remain pending. Admission implements the `WD-NUGET-006`
-dependency and evidence basis with an empty exact native-generation registry;
+The [audited native generation and current Governance evidence](./research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
+are bound by ready Governance with Live enabled. Normal-Live Windows workflow
+execution and real publication proving remain pending. Admission implements
+the `WD-NUGET-006` dependency with the exact accepted six-field generation;
 no separate GitHub concurrent-atomicity statement is required. The
 [credential-free Windows profile observer](../README.md) supplies tooling for
 a separately reviewed observation after complete preflight resource admission.
@@ -106,8 +107,8 @@ The [destination consumer component](../README.md) adds bounded native restore
 and exact installed-byte checks before credential-free build and marker
 invocation. Its local controlled evidence supplies no native admission.
 The fixed-suite operator implements the full three-probe sequence and six
-capture/delta integration. Actual destination consumption, independent native
-proving, activation and normal Live remain pending. Local command availability
+capture/delta integration. Its actual destination consumption and native
+acceptance passed independent audit; normal Live remains pending. Local command availability
 and expected HTTP status do not admit native provenance or publication.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.

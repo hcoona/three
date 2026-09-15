@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-# ruff: noqa: D103, PLR2004, SLF001
+# ruff: noqa: D103, PLR2004
 import hashlib
 import json
 from copy import deepcopy
@@ -183,7 +183,6 @@ def test_nuget_ready_cannot_borrow_npm_acceptance():
         document["live_enabled"] = enabled
         with pytest.raises(ValueError, match="NuGet ready activation requires"):
             shared.parse_governance_attestation(canonicalize(document))
-    assert frozenset() == nuget._ADMITTED_NUGET_NATIVE_GENERATIONS
 
 
 def test_nuget_blocked_action_has_no_authority():
@@ -554,12 +553,33 @@ def test_platform_fact_binding_rejects_stale_or_cross_run_facts(changes):
         )
 
 
-def test_checked_in_nuget_source_is_state_only_disabled():
+def test_checked_in_nuget_source_is_ready_and_admitted():
     content = (ROOT / NUGET_GOVERNANCE_PATH).read_bytes()
     attestation = shared.parse_governance_attestation(content)
-    assert not attestation.live_enabled
-    assert attestation.activation.to_document() == {"state": "blocked"}
-    assert "destination_primitive" not in attestation.activation.to_document()
+    assert attestation.release_policy == NUGET_RELEASE_UNIT
+    assert attestation.package == NUGET_PACKAGE
+    assert (
+        attestation.to_document()["schema"] == shared.NUGET_ATTESTATION_SCHEMA
+    )
+    assert attestation.live_enabled is True
+    assert isinstance(
+        attestation.activation, shared.EnabledGovernanceActivation
+    )
+    assert attestation.activation.to_document()["state"] == "ready"
+    primitive = attestation.activation.destination_primitive
+    assert (*primitive.admission_key, primitive.evidence_digest) == (
+        "sha256:b94921714157ea7747c8da342acb64a3d5542ef104511518a9b406fdbe1fb767",
+        "workflow-delivery-v3/native-nuget-suite/v1",
+        "Hcoona.ReleaseSmoke.GithubPackages",
+        "2022-11-28",
+        (
+            "https://github.com/hcoona/three/blob/"
+            "a42a2e380217d62088ddba2bf03937b1d2522d37/"
+            "src/public/lib/three-workflow-delivery-v3/docs/requirements.md#L800-L830"
+        ),
+        "sha256:5a98495094f50aefa896424442d0b545ca713f88584067a0f176de3be97fcfeb",
+    )
+    assert nuget.nuget_destination_primitive_is_admitted(attestation)
     assert (
         attestation.to_document()["control_policy"]
         == shared.NUGET_CONTROL_POLICY

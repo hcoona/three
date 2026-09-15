@@ -181,11 +181,12 @@ unprivileged helper producer uploads its full same-revision runtime; readers
 and the publisher consume that immutable archive without building it. The
 Attempt retains native Build/content/consumer Evidence, current-run Approval,
 uploaded-marker admission, zero-action proof, and failed terminal payloads.
-The disabled workflow pair is present on protected `main`.
+The workflow pair is present on protected `main`.
 Local shell/transport contracts establish no actual native Windows workflow execution.
 The [NuGet fixture and operator contract](./hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
-governs acceptance tooling. Native workflow execution, operator integration,
-activation, and real publication remain subsequent work.
+governs acceptance tooling. The independently audited native generation and
+current Governance collection now supply the exact admission and ready
+Governance described below. Real normal-Live publication remains subsequent work.
 The offline `acceptance.nuget_fixture` component prepares two original pack
 outputs from one frozen compilation. It requires explicit local dependency
 archives, a new dependency cache, official identity/content inspection and A's
@@ -282,15 +283,21 @@ replacement native generation. R3 remains failed/spent; duplicate probes,
 complete consumer evidence and native admission were not obtained. Protected
 source delivery, separately admitted rebuilt consumer provenance, independent
 review and a renewed exact request precede further operations.
-NuGet admission and Live stay disabled. `WD-NUGET-006` now relies explicitly
+The [complete Native R4 and Governance audits](./research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
+qualify the exact six-field NuGet generation and ready Governance with Live enabled.
+The create, both duplicate rejections, all six captures and clean destination
+consumer passed; original failed generations and their spent allowances remain
+unchanged. Normal-Live publication must still obtain its own qualification,
+Snapshot, Approval, Authorization and independently audited terminal/destination
+evidence. `WD-NUGET-006` relies explicitly
 on GitHub version uniqueness and duplicate non-replacement, with no chosen
 concurrency winner, global read-consistency claim, or serialized-only scope.
 The independent native suite still supplies bounded observations, not proof
 of arbitrary concurrent behavior. The control uses the exact six-field native
 generation, including the integration-contract revision and evidence digest,
-without a separate atomic-assurance registry. Its production set stays empty. Current
-access/profile evidence, native audit, protected activation and the separate
-real publication remain required. No support inquiry is a prerequisite.
+without a separate atomic-assurance registry. Its production set binds the
+accepted generation. Current-run authority/profile checks and the separate real
+publication remain required. No support inquiry is a prerequisite.
 
 ## Git Inspection and Implementation Scope
 
@@ -566,11 +573,11 @@ recovery and any future mutation require separate explicit authorization.
 This completed task authorizes no third proving dispatch.
 
 The NuGet slice follows its linked handoff and protected design package under
-the subsequent end-to-end delegation. Continue the disabled implementation
-units and their delivery gates without repeating design delivery. Native
+the subsequent end-to-end delegation. Continue normal-Live proving and its
+delivery gates without repeating completed implementation. Native
 operations still require concrete bounded requests and satisfied technical
-gates. The revised NuGet control retains empty native admission; actual native
-evidence and protected activation remain required.
+gates. The revised NuGet control binds the exact audited native admission and
+ready Governance. Fresh normal-Live publication and current-run gates remain due.
 
 ## Validation and Review Protocol
 
