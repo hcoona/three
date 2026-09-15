@@ -16,17 +16,33 @@ allowance before execution.
 The host validates the SDK-generated graph, exact version, source mapping and
 fresh caches. NuGet's native restore engine reads directly from the selected
 GitHub Packages HTTP source through a GET-only handler with cumulative request,
-response-body-byte and time limits. Redirects, ambient proxies, cookies and
-default authentication are disabled. These limits describe application reads,
-not all TLS or network traffic. Original safe response bytes and reservations
-are retained; reflected credentials stop the operation before persistence or
-handoff to NuGet. Success requires exact installed archive/witness bytes and
+response-body-byte and time limits. Automatic redirects, ambient proxies,
+cookies and default authentication are disabled. The closed
+`nuget-package-location-v1` policy permits the selected package GET's original
+301/302 to supply one strictly validated HTTPS/DNS Location. Metadata stays
+direct. A new storage GET preserves the original signed path/query and receives
+no forwarded headers or credentials. Both sends and all body bytes, including
+the overflow sentinel, consume the original cumulative bounds and deadline.
+Storage must return 200 without a further Location; failure stops the handler.
+
+The `nuget-consumer-restore-request-v2` request binds that policy. The
+`nuget-consumer-http-v2` transcript retains ordered reservations, source/hop
+relationships, safe origins, Location digests and exact byte accounting.
+Redirect and error bodies are counted and omitted. Every encountered Location,
+including one on a rejected response, is protected before other response fields
+can be retained. Full URL, request-target and nonempty query reflections in raw,
+once-decoded or HTML form are rejected, as are credential reflections. Empty and
+bare-root comparison values remain excluded. These limits describe application
+reads, not all TLS/network traffic.
+Success requires exact installed archive/witness bytes and
 assets bound to that package. Failure retains safe partial evidence and cannot
 resume in the same directory.
 
 The Python [consumer component](../../../public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/acceptance/nuget_consumer.py)
 owns fresh project creation and POSIX process supervision, then checks the native
-result before credential-free build and marker invocation. Windows operators
+versioned result and complete HTTP transcript before credential-free build and
+marker invocation. Old requests/evidence are rejected rather than relabeled.
+Windows operators
 need configured WSL for that coordinator; local controlled tests do not establish
 the separate Windows publication profile, real feed access or native acceptance.
 Scoped CPM leaves the original fixture/reader helper's build inputs unchanged.

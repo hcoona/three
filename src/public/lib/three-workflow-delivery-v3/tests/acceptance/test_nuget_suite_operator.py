@@ -292,6 +292,25 @@ def test_suite_request_requires_closed_artifact_redirect_policy(
     assert not prepared.suite.events
 
 
+@pytest.mark.parametrize(
+    "change", ["old-schema", "missing-policy", "unknown-policy"]
+)
+def test_suite_request_rejects_previous_consumer_redirect_contract(
+    prepared, change
+):
+    document = prepared.request.to_document()
+    consumer = document["plan"]["consumerRequest"]
+    if change == "old-schema":
+        consumer["schema"] = "workflow-delivery/v3/nuget-consumer-request"
+    elif change == "missing-policy":
+        del consumer["packageRedirectPolicy"]
+    else:
+        consumer["packageRedirectPolicy"] = "automatic"
+    with pytest.raises(ValueError, match="closure mismatch"):
+        operator.read_suite_request(canonicalize(document))
+    assert not prepared.suite.events
+
+
 def test_suite_cli_uses_only_the_supplied_request_and_token(
     prepared, monkeypatch, tmp_path
 ):

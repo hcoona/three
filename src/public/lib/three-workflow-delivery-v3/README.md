@@ -129,8 +129,12 @@ creates a fresh, fixed consumer and SDK graph, then calls the prebuilt
 [native restore host](../../../private/app/workflow-delivery-v3-nuget-consumer/README.md).
 NuGet restores the exact version directly from the selected HTTP feed through
 bounded native transport. Only that restore child receives the supplied read
-credential. The coordinator requires the actual installed archive, witness and
-assets before credential-free `--no-restore` build and marker invocation. It
+credential. Its v2 request binds `nuget-package-location-v1`: the selected
+package's 301/302 may supply one validated storage GET, with no forwarded
+credentials and no automatic redirects. Both sends share the original bounds;
+redirect/error bodies are counted and omitted. The coordinator checks the v2
+HTTP transcript, terminal package response, actual installed archive, witness
+and assets before credential-free `--no-restore` build and marker invocation. It
 supervises five bounded commands in one POSIX process group and retains safe
 partial failure without retry. It is a library component, without a new CLI.
 Callers must independently admit original inputs, complete prebuilt tooling,

@@ -457,6 +457,18 @@ remove it before build and marker invocation. A local feed test, project
 reference, warm cache, metadata match, or assembly equivalence cannot replace
 this evidence.
 
+The destination restore host applies the same closed
+`nuget-package-location-v1` package-only hop policy. Its v2 native request
+explicitly binds the policy; the v2 HTTP transcript records each reserved GET,
+safe origin, redirect-source index, Location digest, status and retained or
+omitted body-byte count. The v2 result identifies the terminal package response.
+The coordinator validates the complete ordered transcript and file inventory,
+original cumulative bounds and package bytes before build. A storage hop has
+no forwarded request headers, must end at 200 without Location, and shares the
+original deadline. Automatic redirects remain disabled. No failed send is
+retried; omitted redirect/error bodies still consume allowance. Earlier
+consumer request/result/evidence contracts cannot qualify this successor host.
+
 The collector retains each exact request, fixture, current run and immutable
 artifact reference, actor/tooling/profile binding, process result, raw service
 response, capture, and consumer result. The independent auditor admits the
