@@ -122,10 +122,10 @@ Keep these facts in the working context:
   all six captures and the clean consumer, retaining original run/upload bytes
   and stopping subsequent mutation on failure. It binds separate finite native
   and GitHub budgets and the prior independent admission carrier; those supplied
-  records do not authorize themselves. Concrete native requests, current access
-  and Windows profile facts, actual destination consumption, native evidence,
-  activation and real publication remain subsequent work;
-  NuGet Governance and admission stay disabled. Local reader evidence cannot
+  records do not authorize themselves. The [accepted Native R4 and Governance evidence](./research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
+  now bind the exact production generation and ready Governance with Live enabled.
+  Real normal-Live publication and its current-run gates remain subsequent work.
+  Local reader evidence cannot
   establish the Windows publication profile.
 - Both remembered .NET smoke projects existed, were intentionally removed,
   and still have associated public GitHub NuGet package containers.
@@ -380,7 +380,9 @@ concurrent behavior. The revised evidence basis requires no separate GitHub
 atomicity statement and does not impose serialized-only publication or choose
 a server-side winner. The control retains all six native-generation fields,
 including integration-contract revision and evidence digest, without a
-separate atomic-assurance registry. Native admission and Live remain disabled.
+separate atomic-assurance registry. The exact independently audited generation
+is admitted with ready Governance and Live enabled; the separately qualified
+normal-Live publication remains pending.
 The [profile observer](../README.md) reuses actual Windows profile collection
 and shared resource validation; a complete independently audited preflight
 and a separately reviewed bounded dispatch must precede its execution.
@@ -450,12 +452,12 @@ not implied permission to finish the original task.
 The handoff is usable only if a new subagent, given the checkout and this entry
 path without the preceding conversation or research summary, can:
 
-- distinguish completed npm work, protected NuGet design, the disabled
-  implementation unit, and remaining integration/native/Live gates;
+- distinguish completed npm work, protected NuGet implementation, accepted
+  native admission and ready Governance, and remaining normal-Live gates;
 - find both historical projects, their intentional removal, retained
   containers, and the difference between old descriptors and current v3;
-- identify native-evaluation and current implementation gaps without treating
-  the static-reference helper as the missing Release Provider;
+- identify the native Release Provider and its evidence boundary without
+  treating the static-reference helper as that Provider;
 - reconstruct the authority order, waterfall, testing, OCR, independent
   adjudication, two-iteration/final/pre-PR contraction, and delivery gates;
 - separate confirmed facts, recommendations, missing decisions, and

@@ -403,3 +403,63 @@ the preceding dated sections.
   stays false. A relied-on .NET header/URI/redirect change or response outside
   the admitted shape triggers implementation and independent evidence review
   before renewed reliance; no retry follows from that recheck trigger.
+
+## [2026-09-15] query | Native acceptance and Governance activation
+
+- The [complete independently accepted Native R4 audit](https://github.com/hcoona/three/issues/676#issuecomment-5678026733)
+  establishes bounded runtime observations at protected source
+  `a42a2e380217d62088ddba2bf03937b1d2522d37`. Generation
+  `nuget-successor-native-20260915-r3` created
+  `Hcoona.ReleaseSmoke.GithubPackages@1.0.0-beta.253.g8ff9078` in run
+  [34951594289](https://github.com/hcoona/three/actions/runs/34951594289),
+  receiving HTTP 200. Identical A and native-equivalent different-byte B
+  uploads in runs [34951827632](https://github.com/hcoona/three/actions/runs/34951827632)
+  and [34952103615](https://github.com/hcoona/three/actions/runs/34952103615)
+  each received 409. All runs were attempt one. Creation added only native
+  object `1250518624`; both complete duplicate before/after deltas were empty.
+  Their original `possiblyMutated: true` observations remain unchanged;
+  independent byte/state audit supplies the bounded non-replacement conclusion.
+- Six complete captures and the clean destination consumer retained exact A
+  archive/witness bytes. SDK discovery, graph, restore, build and marker
+  invocation succeeded with a fresh cache. The three actual publication
+  profiles equal the original complete Windows profile from run
+  [34925387081](https://github.com/hcoona/three/actions/runs/34925387081),
+  digest `sha256:b94921714157ea7747c8da342acb64a3d5542ef104511518a9b406fdbe1fb767`.
+  That profile's original producer and specification are preserved separately.
+  The complete canonical suite evidence is
+  `sha256:5a98495094f50aefa896424442d0b545ca713f88584067a0f176de3be97fcfeb`.
+  Its last capture completed at `2026-09-15T09:23:36.334929+00:00`;
+  Governance uses the explicitly derived whole-second floor `09:23:36Z`,
+  without rewriting the original capture.
+- The [complete independent Governance audit](https://github.com/hcoona/three/issues/676#issuecomment-5678245186)
+  accepted one original collection using 21 GETs and 168,520 response bytes.
+  All eleven paginated families ended on their first page. Context observation
+  time was `2026-09-15T09:50:19Z`; the parent completed at
+  `2026-09-15T09:50:25.766132Z`. It binds current main and PR #704's exact
+  reviewed/merged tree, the sole named admin, unchanged Approval Environment,
+  90-day artifact retention and selected package metadata. Canonical readback
+  digest is `sha256:2a24c3fbe6496225b06fab97697a2d3c2093d00bf433950b69f2340e5a34b0bc`.
+  Raw `COMMENTED` review state is preserved; this collection does not create
+  a formal `APPROVED` review or replace the closed source-delivery audit.
+- The [independently reviewed issuer input mapping](https://github.com/hcoona/three/issues/676#issuecomment-5678249943)
+  distinguishes observed repository admin and package ownership from bounded
+  issuer acceptance of package write and intended Actions use. Those latter
+  entries combine accepted owner control, current named metadata and actual
+  repository `GITHUB_TOKEN` creation. No package ACL or Manage Actions UI/API
+  grant enumeration is claimed. The protected attestation records these
+  limitations and the accepted reach to every package granting Actions access
+  to `hcoona/three`; exact-coordinate checks do not imply package isolation.
+- Protected admission binds the exact profile, native suite v1, selected
+  package, GitHub metadata API `2022-11-28`, the [accepted integration contract](https://github.com/hcoona/three/blob/a42a2e380217d62088ddba2bf03937b1d2522d37/src/public/lib/three-workflow-delivery-v3/docs/requirements.md#L800-L830)
+  and canonical Native evidence digest. `PackagePublish/2.0.0` is the separate
+  NuGet resource type. Ready Governance is issued under the retained owner
+  delegation, inspected at `2026-09-15T09:58:11Z` and expiring at
+  `2026-12-14T09:58:11Z`. The schema, control policy, six-field matching and
+  current-run freshness gates remain unchanged.
+- These observations qualify the selected profile under `WD-NUGET-006`.
+  They do not establish arbitrary concurrent behavior, a chosen winner,
+  global linearizable reads, exhaustive grants or permanent freshness.
+  Original failures and spent lifetimes remain unchanged. Native acceptance
+  and ready Governance do not complete `WD-NUGET-007`: the normal-Live run
+  still needs its own qualification, Snapshot, Approval, Authorization,
+  terminal Outcome and independently audited destination bytes/consumer.

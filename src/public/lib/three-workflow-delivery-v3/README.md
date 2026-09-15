@@ -11,14 +11,14 @@ package purpose. This project owns the
 The [NuGet authority helper](../../../private/app/workflow-delivery-v3-nuget-authority/README.md)
 is a static-reference component. The
 [NuGet second-slice handoff](docs/nuget-smoke-research-handoff.md) routes the
-confirmed requirements, protected design and disabled implementation. The
+confirmed requirements, protected design and implementation. The
 [selected NuGet smoke library](../hcoona-release-smoke-github-packages/README.md)
 owns its marker-product purpose; the
 [native .NET helper](../../../private/app/workflow-delivery-v3-dotnet-provider/README.md)
 is a v3 Provider and package-inspection component. The handoff retains the
 distinct native and publication admission gates. Explicit NuGet Release
 records and qualification bind admitted native inputs and the original package
-to separate content and consumer Evidence. Disabled destination integration
+to separate content and consumer Evidence. Destination integration
 adds native eligibility, active observation, original-archive publication,
 and shared Approval/terminal closure. The native control CLI imports Provider
 facts, compiles the Model, and binds Eligibility and the current Attempt.
@@ -30,9 +30,10 @@ Native publication commands connect fresh exact-state proof, build-free
 preparation, one-shot execution, and current-DAG finalization. The separate
 [NuGet manual caller](../../../../.github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml)
 and [reusable Attempt](../../../../.github/workflows/workflow-delivery-v3-nuget-live-attempt.yml)
-connect these commands on Windows. NuGet Governance remains disabled;
-Normal-Live Windows workflow execution, native acceptance, activation, and real
-Live proving remain subsequent work. The [native fixture and operator contract](docs/hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
+connect these commands on Windows. The [audited native generation and Governance evidence](docs/research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
+are bound by the exact production admission and ready Governance with Live enabled.
+Normal-Live Windows workflow execution and real publication proving remain
+subsequent work. The [native fixture and operator contract](docs/hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
 defines acceptance-tooling preparation and its evidence boundary.
 
 The offline [NuGet fixture component](src/three_workflow_delivery_v3/acceptance/nuget_fixture.py)
@@ -84,7 +85,8 @@ library supports all six ordered capture positions; the CLI runs only the
 separate preflight and rejects a present scenario coordinate. It supplies no
 publication authority. A complete preflight capture is not
 the required access audit, native acceptance, Windows profile or publication
-authority. Concrete native requests and destination evidence remain pending.
+authority. The accepted generation's complete evidence is linked above;
+future operations still require their own concrete requests.
 
 The [one-probe component](src/three_workflow_delivery_v3/acceptance/nuget_probe.py)
 and separate [Windows acceptance entry](../../../../.github/workflows/workflow-delivery-v3-native-nuget-acceptance.yml)
@@ -110,7 +112,7 @@ or an ambiguous response leaves the request spent and cannot justify a rerun.
 The spec's audit/preflight/capture hashes identify separately admitted evidence;
 they do not verify its provenance or supply authorization. Close the concrete
 native request and actual access/profile prerequisites before dispatch.
-Native admission and NuGet Live stay disabled.
+The admitted generation and ready Governance do not authorize another probe.
 
 The [profile observer](src/three_workflow_delivery_v3/acceptance/nuget_profile.py)
 and separate [Windows entry](../../../../.github/workflows/workflow-delivery-v3-nuget-profile.yml)
@@ -184,7 +186,8 @@ normal-Live publication remain required. Adapter changes invalidate the prior
 source identity, so the current Windows profile must be admitted before native
 execution. NuGet admission binds the exact six-field native generation,
 including its integration-contract revision and evidence digest. Its production
-registry remains empty; no separate atomic-assurance registry is used.
+registry contains the independently audited generation linked above; no
+separate atomic-assurance registry is used.
 
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,
@@ -195,7 +198,8 @@ uploaded Provider bytes without reevaluating the target. Live control reads
 exclude operator administration endpoints; disabled Governance performs no
 native profile collection. Attempt admission requires an explicit freshness or
 authorization-replay phase. Command availability grants no native dispatch or
-real publication; NuGet Governance and admission remain blocked.
+real publication. Ready Governance remains subject to current-run authority,
+freshness and Approval requirements.
 
 The qualification sequence is `plan-qualification`, `run-build`,
 `form-artifact`, `artifact-contents` and `restore-build-invoke`, then
