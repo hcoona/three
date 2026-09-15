@@ -28,9 +28,12 @@ Storage must return 200 without a further Location; failure stops the handler.
 The `nuget-consumer-restore-request-v2` request binds that policy. The
 `nuget-consumer-http-v2` transcript retains ordered reservations, source/hop
 relationships, safe origins, Location digests and exact byte accounting.
-Redirect and error bodies are counted and omitted. Signed URLs, raw or decoded
-capability reflections and credential reflections are not retained or returned
-to NuGet. These limits describe application reads, not all TLS/network traffic.
+Redirect and error bodies are counted and omitted. Every encountered Location,
+including one on a rejected response, is protected before other response fields
+can be retained. Full URL, request-target and nonempty query reflections in raw,
+once-decoded or HTML form are rejected, as are credential reflections. Empty and
+bare-root comparison values remain excluded. These limits describe application
+reads, not all TLS/network traffic.
 Success requires exact installed archive/witness bytes and
 assets bound to that package. Failure retains safe partial evidence and cannot
 resume in the same directory.

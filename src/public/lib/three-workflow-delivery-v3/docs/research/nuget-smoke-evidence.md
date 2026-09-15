@@ -384,8 +384,12 @@ the preceding dated sections.
   Raw Location admission precedes URI construction; the storage GET preserves
   its path/query and receives no copied request headers. Both GETs and all
   consumed body bytes share the original request/byte/deadline allowance.
-  Redirect and error bodies are omitted; raw and decoded credential/capability
-  reflections stop persistence. The v2 request/result/transcript binds policy,
+  Redirect and error bodies are omitted. Every encountered Location, including
+  rejected metadata, unsupported package responses and second hops, is protected
+  before other response fields are retained. The existing bounded comparison set
+  covers full URL, request-target and nonempty query in raw, once-decoded and HTML
+  forms, excluding empty and bare-root values; credential reflections also stop
+  persistence. The v2 request/result/transcript binds policy,
   ordered source/hop relationships, safe origins, Location digests, accounting
   and terminal package bytes. Python verifies the complete transcript before
   product build. Old contracts cannot silently qualify this host.

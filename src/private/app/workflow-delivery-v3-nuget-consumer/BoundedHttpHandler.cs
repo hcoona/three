@@ -56,6 +56,41 @@ internal sealed class BoundedHttpHandler : DelegatingHandler
     private void Check(string text, bool credentialsOnly = false) =>
         Check(Encoding.UTF8.GetBytes(text), credentialsOnly);
 
+    private void RememberLocation(string location)
+    {
+        if (location.Length == 0) return;
+        Check(location, credentialsOnly: true);
+        // Derive comparison forms from raw text, never from a normalized URI.
+        string target = location.Split('#')[0];
+        int scheme = target.IndexOf("://", StringComparison.Ordinal);
+        int authorityStart = scheme >= 0 ? scheme + 3
+            : target.StartsWith("//", StringComparison.Ordinal) ? 2 : 0;
+        if (authorityStart > 0)
+        {
+            int start = target.IndexOfAny(['/', '?'], authorityStart);
+            target = start < 0 ? string.Empty : target[start..];
+        }
+        if (target.Length == 0 || target[0] == '?') target = "/" + target;
+        int question = target.IndexOf('?');
+        string query = question < 0 ? string.Empty : target[(question + 1)..];
+        // Match read_location_secrets: raw/once-decoded URL, target and query,
+        // each in plain and HTML form, excluding empty and bare-root values.
+        foreach (string raw in new[] { location, target, query })
+        {
+            foreach (string part in new[] { raw, Uri.UnescapeDataString(raw) })
+            {
+                if (part.Length == 0 || part == "/") continue;
+                _secrets.Add(Encoding.UTF8.GetBytes(part));
+                string html = part.Replace("&", "&amp;", StringComparison.Ordinal)
+                    .Replace("<", "&lt;", StringComparison.Ordinal)
+                    .Replace(">", "&gt;", StringComparison.Ordinal)
+                    .Replace("\"", "&quot;", StringComparison.Ordinal)
+                    .Replace("'", "&#x27;", StringComparison.Ordinal);
+                _secrets.Add(Encoding.UTF8.GetBytes(html));
+            }
+        }
+    }
+
     internal void Save(string name, ReadOnlySpan<byte> content)
     {
         Check(content);
@@ -196,6 +231,9 @@ internal sealed class BoundedHttpHandler : DelegatingHandler
         string[] locations = response.Headers.NonValidated.TryGetValues("Location", out var values)
             ? values.ToArray()
             : [];
+        // Rejected metadata, unsupported package responses and second hops may
+        // introduce a different capability. Protect it before checking fields.
+        foreach (string encountered in locations) RememberLocation(encountered);
         bool redirect = selectedUrl == _request.PackageUrl
             && response.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Found;
         string? location = null;
@@ -206,12 +244,7 @@ internal sealed class BoundedHttpHandler : DelegatingHandler
                 locations.Length == 1, "Missing or ambiguous package Location."
             );
             location = locations[0];
-            Check(location, credentialsOnly: true);
             redirectOrigin = StorageOrigin(location);
-            // Remember both forms before checking any other response field.
-            // A later response must not reflect the capability into evidence.
-            _secrets.Add(Encoding.UTF8.GetBytes(location));
-            _secrets.Add(Encoding.UTF8.GetBytes(Uri.UnescapeDataString(location)));
         }
         foreach (var header in response.Headers.NonValidated.Concat(
             response.Content.Headers.NonValidated

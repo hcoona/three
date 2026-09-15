@@ -459,6 +459,181 @@ public sealed class BoundedHttpTests
         AssertEvidenceOmitsCapabilities(request);
     }
 
+    private const string ReflectionLocation =
+        "https://storage.example.invalid/opaque%2Fpart?sig=a%27b%22c%3Cd%3E&x=1";
+
+    private static readonly string[] ReflectionForms =
+    [
+        ReflectionLocation,
+        "https://storage.example.invalid/opaque%2Fpart?sig=a%27b%22c%3Cd%3E&amp;x=1",
+        "https://storage.example.invalid/opaque/part?sig=a'b\"c<d>&x=1",
+        "https://storage.example.invalid/opaque/part?sig=a&#x27;b&quot;c&lt;d&gt;&amp;x=1",
+        "/opaque%2Fpart?sig=a%27b%22c%3Cd%3E&x=1",
+        "/opaque%2Fpart?sig=a%27b%22c%3Cd%3E&amp;x=1",
+        "/opaque/part?sig=a'b\"c<d>&x=1",
+        "/opaque/part?sig=a&#x27;b&quot;c&lt;d&gt;&amp;x=1",
+        "sig=a%27b%22c%3Cd%3E&x=1",
+        "sig=a%27b%22c%3Cd%3E&amp;x=1",
+        "sig=a'b\"c<d>&x=1",
+        "sig=a&#x27;b&quot;c&lt;d&gt;&amp;x=1",
+    ];
+
+    public static IEnumerable<(string place, string reflected)> AdmittedReflectionCases()
+    {
+        foreach (string place in new[] { "original-header", "storage-header", "storage-body" })
+            foreach (string reflected in ReflectionForms)
+                yield return (place, reflected);
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(AdmittedReflectionCases))]
+    public async Task AdmittedLocationFormsStopBeforeEvidence(string place, string reflected)
+    {
+        ConsumerRequest request = Request();
+        int calls = 0;
+        var transport = new ResponseHandler(_ =>
+        {
+            bool first = ++calls == 1;
+            var response = first ? Redirect(302, ReflectionLocation)
+                : Response(place == "storage-body" ? reflected : "package");
+            if ((first && place == "original-header") || (!first && place == "storage-header"))
+                response.Headers.TryAddWithoutValidation("ETag", "\"" + reflected + "\"");
+            return response;
+        });
+        var bounded = new BoundedHttpHandler(request, Token, transport);
+        using var client = new HttpClient(bounded);
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => client.GetAsync(request.PackageUrl)
+        );
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => client.GetAsync(request.PackageUrl)
+        );
+
+        int expectedCalls = place == "original-header" ? 1 : 2;
+        Assert.AreEqual(expectedCalls, transport.Calls);
+        Assert.AreEqual(expectedCalls, bounded.Requests);
+        Assert.IsFalse(bounded.PackageReturned);
+        Assert.AreEqual(0, bounded.PackageResponseIndex);
+        Assert.HasCount(
+            expectedCalls - 1, Directory.GetFiles(request.EvidencePath, "*-response.json")
+        );
+        Assert.IsEmpty(Directory.GetFiles(request.EvidencePath, "*-body.bin"));
+        AssertEvidenceOmitsReflectionForms(request);
+    }
+
+    public static IEnumerable<(string resource, int status, string reflected)>
+        UnexpectedReflectionCases()
+    {
+        foreach (var shape in new[] {
+            ("service", 302), ("versions", 200), ("package", 307), ("package", 308),
+            ("package", 200), ("storage", 301), ("storage", 302), ("storage", 200),
+            ("storage", 403), ("package-multiple", 307),
+        })
+            foreach (string reflected in ReflectionForms)
+                yield return (shape.Item1, shape.Item2, reflected);
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(UnexpectedReflectionCases))]
+    public async Task UnexpectedLocationFormsStopBeforeEvidence(
+        string resource, int status, string reflected
+    )
+    {
+        ConsumerRequest request = Request();
+        int calls = 0;
+        var transport = new ResponseHandler(_ =>
+        {
+            if (++calls == 1 && resource == "storage") return Redirect(302, StorageUrl);
+            var response = Redirect(
+                status, resource == "package-multiple" ? StorageUrl : ReflectionLocation
+            );
+            if (resource == "package-multiple")
+                response.Headers.TryAddWithoutValidation("Location", ReflectionLocation);
+            response.Headers.TryAddWithoutValidation("X-GitHub-Request-Id", reflected);
+            return response;
+        });
+        var bounded = new BoundedHttpHandler(request, Token, transport);
+        using var client = new HttpClient(bounded);
+        string url = resource switch
+        {
+            "service" => ConsumerRequest.ServiceIndex,
+            "versions" => VersionsUrl,
+            _ => request.PackageUrl,
+        };
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => client.GetAsync(url));
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => client.GetAsync(url));
+
+        int expectedCalls = resource == "storage" ? 2 : 1;
+        Assert.AreEqual(expectedCalls, transport.Calls);
+        Assert.AreEqual(expectedCalls, bounded.Requests);
+        Assert.AreEqual(resource == "storage" ? 8 : 0, bounded.ResponseBytes);
+        Assert.IsFalse(bounded.PackageReturned);
+        Assert.HasCount(
+            expectedCalls - 1, Directory.GetFiles(request.EvidencePath, "*-response.json")
+        );
+        Assert.IsEmpty(Directory.GetFiles(request.EvidencePath, "*-body.bin"));
+        AssertEvidenceOmitsCapabilities(request);
+        AssertEvidenceOmitsReflectionForms(request);
+    }
+
+    [TestMethod]
+    [DataRow("https://storage.example.invalid/")]
+    [DataRow("https://storage.example.invalid/?")]
+    [DataRow("https://storage.example.invalid/?/")]
+    [DataRow("https://storage.example.invalid/?%2F")]
+    [DataRow(StorageUrl)]
+    public async Task BenignLocationExclusionsPreserveOpaqueTarget(string location)
+    {
+        byte[] original = "package / normal body"u8.ToArray();
+        ConsumerRequest request = Request() with
+        {
+            PackageSha256 = ConsumerRequest.Sha256(original)
+        };
+        int calls = 0;
+        var transport = new InspectingHandler((message, _) =>
+        {
+            if (++calls == 1) return Task.FromResult(Redirect(302, location));
+            Assert.AreEqual(location, message.RequestUri!.OriginalString);
+            Assert.AreEqual(location, message.RequestUri.AbsoluteUri);
+            Assert.IsEmpty(message.Headers);
+            var response = Response("package / normal body");
+            response.Headers.TryAddWithoutValidation("ETag", "\"/\"");
+            return Task.FromResult(response);
+        });
+        var bounded = new BoundedHttpHandler(request, Token, transport);
+        using var client = new HttpClient(bounded);
+
+        using HttpResponseMessage response = await client.GetAsync(request.PackageUrl);
+
+        CollectionAssert.AreEqual(original, await response.Content.ReadAsByteArrayAsync());
+        Assert.AreEqual(2, transport.Calls);
+        Assert.AreEqual(8 + original.Length, bounded.ResponseBytes);
+        Assert.IsTrue(bounded.PackageReturned);
+        Assert.AreEqual(2, bounded.PackageResponseIndex);
+        Assert.HasCount(2, Directory.GetFiles(request.EvidencePath, "*-response.json"));
+        Assert.HasCount(1, Directory.GetFiles(request.EvidencePath, "*-body.bin"));
+    }
+
+    private static void AssertEvidenceOmitsReflectionForms(ConsumerRequest request)
+    {
+        foreach (string path in Directory.GetFiles(request.EvidencePath))
+        {
+            string text = File.ReadAllText(path);
+            foreach (string forbidden in ReflectionForms)
+                Assert.DoesNotContain(forbidden, text);
+            if (path.EndsWith("-response.json", StringComparison.Ordinal))
+            {
+                JsonObject headers = JsonNode.Parse(text)!["headers"]!.AsObject();
+                foreach (var header in headers)
+                    foreach (JsonNode? value in header.Value!.AsArray())
+                        foreach (string forbidden in ReflectionForms)
+                            Assert.DoesNotContain(forbidden, value!.GetValue<string>());
+            }
+        }
+    }
+
     [TestMethod]
     public async Task PackageRedirectChargesRequestAllowanceBeforeStorageSend()
     {
