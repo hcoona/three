@@ -80,9 +80,11 @@ state are outside this change. No npm redispatch or reproving is required.
 
 The [independently audited NuGet generation and Governance evidence](./research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
 now supply ready Governance with Live enabled and the exact six-field native
-admission under `WD-NUGET-006`. The separate normal-Live publication remains
-pending; no separate GitHub atomicity statement is required.
-Use complete audited preflight resources for the separately reviewed Windows
+admission under `WD-NUGET-006`. The [separately qualified normal-Live publication
+and fresh destination consumption](./validation/nuget-normal-live-evidence.md)
+are complete. Consumed operations remain spent; no separate GitHub atomicity
+statement is required. For future separately authorized native work, use
+complete audited preflight resources for the separately reviewed Windows
 profile observation before preparing native mutation. Missing evidence cannot
 be replaced by a runtime ledger,
 administrator compensation, or weaker success criteria. Use the existing

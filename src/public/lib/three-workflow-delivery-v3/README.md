@@ -32,8 +32,9 @@ preparation, one-shot execution, and current-DAG finalization. The separate
 and [reusable Attempt](../../../../.github/workflows/workflow-delivery-v3-nuget-live-attempt.yml)
 connect these commands on Windows. The [audited native generation and Governance evidence](docs/research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
 are bound by the exact production admission and ready Governance with Live enabled.
-Normal-Live Windows workflow execution and real publication proving remain
-subsequent work. The [native fixture and operator contract](docs/hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
+Windows normal-Live publication and fresh exact-version destination consumption
+are [independently verified](docs/validation/nuget-normal-live-evidence.md).
+The [native fixture and operator contract](docs/hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
 defines acceptance-tooling preparation and its evidence boundary.
 
 The offline [NuGet fixture component](src/three_workflow_delivery_v3/acceptance/nuget_fixture.py)

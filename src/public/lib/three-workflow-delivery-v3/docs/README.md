@@ -80,8 +80,9 @@ finalization. They reuse the shared terminal admission and resolution commands.
 Separate manual and reusable NuGet workflows connect the native commands on
 Windows with immutable helper/record transport and a build-free publisher.
 The [audited native generation and current Governance evidence](./research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
-are bound by ready Governance with Live enabled. Normal-Live Windows workflow
-execution and real publication proving remain pending. Admission implements
+are bound by ready Governance with Live enabled. Windows normal-Live publication
+and fresh destination consumption are [independently verified](./validation/nuget-normal-live-evidence.md).
+Admission implements
 the `WD-NUGET-006` dependency with the exact accepted six-field generation;
 no separate GitHub concurrent-atomicity statement is required. The
 [credential-free Windows profile observer](../README.md) supplies tooling for
@@ -108,7 +109,8 @@ and exact installed-byte checks before credential-free build and marker
 invocation. Its local controlled evidence supplies no native admission.
 The fixed-suite operator implements the full three-probe sequence and six
 capture/delta integration. Its actual destination consumption and native
-acceptance passed independent audit; normal Live remains pending. Local command availability
+acceptance passed independent audit. The separate [normal-Live evidence](./validation/nuget-normal-live-evidence.md)
+closes publication and consumption of the actual Live package. Local command availability
 and expected HTTP status do not admit native provenance or publication.
 This destination has its own explicit threat/cost decision and cannot inherit
 the npm slice's exceptions or evidence.
