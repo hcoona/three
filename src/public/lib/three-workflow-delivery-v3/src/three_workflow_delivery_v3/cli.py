@@ -4321,7 +4321,7 @@ def _release_evaluate_nuget_live_eligibility_command(
         repository_model=model,
         policy=policy,
         client=client,
-        now=datetime.now(UTC),
+        now=datetime.now(UTC).replace(microsecond=0),
     )
     # Disabled or unadmitted source cannot request native collection.
     if (
@@ -4339,7 +4339,7 @@ def _release_evaluate_nuget_live_eligibility_command(
             workflow_sha=intent.workflow_sha,
             workflow_run_id=intent.workflow_run_id,
             workflow_path=intent.workflow_path,
-            now=datetime.now(UTC),
+            now=datetime.now(UTC).replace(microsecond=0),
         )
         profile = _nuget_live_profile(arguments)
         # Reobserve the source after collection; flag-off still wins.
@@ -4349,7 +4349,7 @@ def _release_evaluate_nuget_live_eligibility_command(
             repository_model=model,
             policy=policy,
             client=client,
-            now=datetime.now(UTC),
+            now=datetime.now(UTC).replace(microsecond=0),
             platform=platform,
             profile=profile,
         )

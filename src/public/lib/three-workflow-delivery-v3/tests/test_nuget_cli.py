@@ -608,8 +608,12 @@ def test_nuget_cli_blocks_before_native_collection(
     case.evaluate.assert_not_called()
 
 
-def test_nuget_cli_eligibility_and_attempt_round_trip(enabled_case):
+@pytest.mark.parametrize("microsecond", [0, 123456, 999999])
+def test_nuget_cli_eligibility_and_attempt_round_trip(
+    enabled_case, monkeypatch, microsecond
+):
     case = enabled_case
+    _clock(monkeypatch, NOW.replace(microsecond=microsecond))
     assert _evaluate(case) == 0
     decision = json.loads(case.output.read_bytes())
     assert decision["result"] == "pass"
@@ -618,6 +622,7 @@ def test_nuget_cli_eligibility_and_attempt_round_trip(enabled_case):
     assert "static-reference" not in decision
     case.platform_reader.assert_called_once()
     read = case.platform_reader.call_args.kwargs
+    assert read["now"] == NOW
     assert (
         read["target"]
         == read["workflow_sha"]
