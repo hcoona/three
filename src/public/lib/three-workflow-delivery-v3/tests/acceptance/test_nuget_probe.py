@@ -548,7 +548,15 @@ def test_probe_marker_failure_prevents_invocation(inputs, monkeypatch):
 
 @pytest.mark.parametrize(
     ("status", "error"),
-    [(201, None), (409, None), (500, None), (None, "lost response")],
+    [
+        (200, None),
+        (201, None),
+        (202, None),
+        (204, None),
+        (409, None),
+        (500, None),
+        (None, "lost response"),
+    ],
 )
 def test_probe_retains_creation_rejection_and_unknown_results(
     inputs, status, error
@@ -558,8 +566,8 @@ def test_probe_retains_creation_rejection_and_unknown_results(
         inputs, status=status, error=error
     )
     result = _read(_invoke(inputs, prepared))
-    assert result["httpCreated"] is (status == 201)
-    assert result["possiblyMutated"] is (status != 201)
+    assert result["httpCreated"] is (status in (200, 201, 202))
+    assert result["possiblyMutated"] is (status not in (200, 201, 202))
     assert result["transportError"] is (error is not None)
     assert result["requestSpent"] is True
     assert result["retryPermitted"] is False
@@ -633,10 +641,16 @@ def test_probe_retains_safe_failure_without_exception_text(inputs):
 @pytest.mark.parametrize(
     ("status", "scenario", "exit_code"),
     [
+        (200, "create", 0),
         (201, "create", 0),
+        (202, "create", 0),
+        (204, "create", 1),
         (409, "create", 1),
         (409, "identical-duplicate", 0),
+        (200, "identical-duplicate", 1),
         (201, "identical-duplicate", 1),
+        (202, "equivalent-duplicate", 1),
+        (409, "equivalent-duplicate", 0),
         (500, "identical-duplicate", 1),
     ],
 )
@@ -653,7 +667,10 @@ def test_probe_cli_reports_only_the_expected_http_observation(
         "GITHUB_TOKEN": TOKEN,
     }.items():
         monkeypatch.setenv(key, value)
-    inputs.publisher.return_value = _invocation(inputs, status=status)
+    inputs.publisher.return_value = replace(
+        _invocation(inputs, status=status),
+        package_sha256=_sha(B if scenario == "equivalent-duplicate" else A),
+    )
     code = probe.main(
         [
             "publish",
@@ -670,7 +687,7 @@ def test_probe_cli_reports_only_the_expected_http_observation(
     assert code == exit_code
     assert inputs.publisher.call_count == 1
     assert _read(inputs.root / "publication/result.json")["httpCreated"] is (
-        status == 201
+        status in (200, 201, 202)
     )
 
 

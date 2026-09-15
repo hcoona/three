@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import http.client
 import inspect
 import platform
 import re
 import ssl
 import sys
+import time
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
@@ -46,10 +48,32 @@ _TIMEOUT_SECONDS = 60
 _METADATA_LIMIT = 8 * 1024 * 1024
 _PACKAGE_LIMIT = 64 * 1024 * 1024
 _RESPONSE_LIMIT = 64 * 1024
+_SUCCESS_STATUSES = (200, 201, 202)
 _MAX_VERSION_PAGES = 100
 _PAGE_SIZE = 100
 _ASCII_GRAPHIC_MIN = 33
 _ASCII_GRAPHIC_MAX = 126
+_DNS_NAME_LIMIT = 253
+_PACKAGE_REDIRECT_STATUSES = (301, 302)
+NUGET_PACKAGE_REDIRECT_POLICY = "nuget-package-location-v1"
+_READ_HEADERS = frozenset(
+    {
+        "cache-control",
+        "content-encoding",
+        "content-length",
+        "content-type",
+        "date",
+        "etag",
+        "last-modified",
+        "link",
+        "retry-after",
+        "x-github-request-id",
+    }
+)
+_STORAGE_HEADERS = (
+    ("Accept", "application/octet-stream"),
+    ("Accept-Encoding", "identity"),
+)
 
 
 class NuGetAdapterError(ValueError):
@@ -160,6 +184,43 @@ def _safe_url(url: str, *, origin: str) -> None:
         raise NuGetAdapterError(msg)
 
 
+def _read_require(condition: bool, message: str) -> None:  # noqa: FBT001
+    if not condition:
+        raise NuGetAdapterError(message)
+
+
+def read_redirect_origin(location: str) -> str:
+    """Validate the original capability before parsing can discard controls."""
+    _read_require(
+        location.startswith("https://")
+        and all(
+            _ASCII_GRAPHIC_MIN <= ord(char) <= _ASCII_GRAPHIC_MAX
+            for char in location
+        )
+        and "\\" not in location
+        and "#" not in location,
+        "invalid storage Location",
+    )
+    parsed = urlsplit(location)
+    host = parsed.hostname
+    _read_require(
+        host is not None
+        and parsed.netloc.lower() == host
+        and len(host) <= _DNS_NAME_LIMIT
+        and all(
+            re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", part)
+            for part in host.split(".")
+        )
+        and not all(
+            re.fullmatch(r"(?:0x[0-9a-f]+|[0-9]+)", part)
+            for part in host.split(".")
+        )
+        and host != "api.github.com",
+        "invalid storage DNS authority",
+    )
+    return "https://" + cast("str", host)
+
+
 def discover_nuget_resources(
     authority: NuGetAuthority, index: bytes
 ) -> NuGetServiceResources:
@@ -210,6 +271,9 @@ class NuGetHttpResponse:
     status: int
     headers: tuple[tuple[str, str], ...] = field(repr=False)
     body: bytes = field(repr=False)
+    omitted_body_bytes: int | None = None
+    storage_origin: str | None = None
+    location_sha256: str | None = None
 
     def header(self, name: str) -> str | None:
         """Read a singleton header, rejecting ambiguous duplicates."""
@@ -234,6 +298,83 @@ class NuGetReadTransport(Protocol):
         """Return one complete read response."""
         ...
 
+    def get_package_storage(
+        self, source: NuGetHttpResponse, *, timeout: float, max_bytes: int
+    ) -> NuGetHttpResponse:
+        """Read this original package response's target without credentials."""
+        ...
+
+
+def package_storage_location(source: NuGetHttpResponse) -> tuple[str, str]:
+    """Admit one package redirect without exposing its capability."""
+    _safe_url(source.url, origin=NUGET_ORIGIN)
+    parsed = urlsplit(source.url)
+    _read_require(
+        parsed.path.endswith(".nupkg")
+        and not parsed.query
+        and source.status in _PACKAGE_REDIRECT_STATUSES,
+        "invalid package redirect source",
+    )
+    location = source.header("location")
+    _read_require(bool(location), "missing package Location")
+    location = cast("str", location)
+    return location, read_redirect_origin(location)
+
+
+def read_location_secrets(location: str) -> tuple[bytes, ...]:
+    """Guard raw, once-decoded and HTML capability forms after URL admission."""
+    parsed = urlsplit(location)
+    target = (parsed.path or "/") + (
+        "?" + parsed.query if "?" in location else ""
+    )
+    return tuple(
+        value.encode()
+        for raw in (location, target, parsed.query)
+        for part in (raw, unquote(raw))
+        if part and part != "/"
+        for value in (part, html.escape(part))
+    )
+
+
+def check_read_secrets(content: bytes, secrets: tuple[bytes, ...]) -> None:
+    """Reject the admitted token, Basic form and temporary capabilities."""
+    decoded = unquote(content.decode("utf-8", errors="replace")).encode()
+    _read_require(
+        not any(secret in content or secret in decoded for secret in secrets),
+        "read evidence contains a request credential or capability",
+    )
+
+
+def safe_read_response(
+    response: NuGetHttpResponse, *, source: NuGetHttpResponse | None = None
+) -> NuGetHttpResponse:
+    """Project admitted hop metadata while preserving successful bytes."""
+    locations = [v for k, v in response.headers if k.lower() == "location"]
+    omitted = (
+        bool(locations)
+        or response.status in _PACKAGE_REDIRECT_STATUSES
+        or (source is not None and response.status != HTTPStatus.OK)
+    )
+    origin = digest = None
+    if source is not None:
+        location, origin = package_storage_location(source)
+        digest = _sha256(location.encode())
+    elif locations:
+        digest = _sha256(locations[0].encode()) if len(locations) == 1 else None
+    return NuGetHttpResponse(
+        source.url if source is not None else response.url,
+        response.status,
+        tuple(
+            (key.lower(), value)
+            for key, value in response.headers
+            if key.lower() in _READ_HEADERS
+        ),
+        b"" if omitted else response.body,
+        len(response.body) if omitted else None,
+        origin,
+        digest,
+    )
+
 
 class NuGetHttpTransport:
     """Direct CPython HTTP transport with no replay-capable handler layer."""
@@ -247,6 +388,7 @@ class NuGetHttpTransport:
         body: bytes | None,
         timeout: float,
         max_bytes: int,
+        package_source: NuGetHttpResponse | None = None,
     ) -> NuGetHttpResponse:
         """Open one TLS connection and issue at most one HTTP request.
 
@@ -259,7 +401,17 @@ class NuGetHttpTransport:
         origin = (
             _API_ORIGIN if url.startswith(_API_ORIGIN + "/") else NUGET_ORIGIN
         )
-        _safe_url(url, origin=origin)
+        if package_source is None:
+            _safe_url(url, origin=origin)
+        else:
+            selected, _ = package_storage_location(package_source)
+            _read_require(
+                method == "GET"
+                and body is None
+                and url == selected
+                and headers == _STORAGE_HEADERS,
+                "invalid package storage request",
+            )
         if method not in ("GET", "PUT") or timeout <= 0 or max_bytes <= 0:
             msg = "Invalid bounded HTTP request."
             raise NuGetAdapterError(msg)
@@ -280,7 +432,7 @@ class NuGetHttpTransport:
         connection.set_debuglevel(0)
         connection.auto_open = 0
         request_target = parsed.path or "/"
-        if parsed.query:
+        if "?" in url:
             request_target += "?" + parsed.query
         try:
             connection.connect()
@@ -321,6 +473,21 @@ class NuGetHttpTransport:
             body=None,
             timeout=timeout,
             max_bytes=max_bytes,
+        )
+
+    def get_package_storage(
+        self, source: NuGetHttpResponse, *, timeout: float, max_bytes: int
+    ) -> NuGetHttpResponse:
+        """Consume only this package response's validated Location, once."""
+        location, _ = package_storage_location(source)
+        return self.request_once(
+            "GET",
+            location,
+            headers=_STORAGE_HEADERS,
+            body=None,
+            timeout=timeout,
+            max_bytes=max_bytes,
+            package_source=source,
         )
 
 
@@ -466,7 +633,7 @@ def _nuget_profile_document(
         "authenticationResubmissions": 0,
         "automaticProxy": False,
         "duplicateSkipping": False,
-        "successStatus": 201,
+        "successStatuses": cast("list[JsonValue]", list(_SUCCESS_STATUSES)),
         "failureReadback": "diagnostic-only-never-success",
         "sourceBasis": "https://github.com/python/cpython/blob/v3.13.12/Lib/http/client.py",
     }
@@ -511,6 +678,11 @@ def validate_nuget_operation_profile(document: JsonValue) -> None:
         raise NuGetAdapterError(msg)
 
 
+def is_nuget_success_status(status: object) -> bool:
+    """Recognize only the selected profile's explicit HTTP success statuses."""
+    return type(status) is int and status in _SUCCESS_STATUSES
+
+
 @dataclass(frozen=True)
 class NuGetPublicationInvocation:
     """Invocation facts; definitive success still requires exact readback."""
@@ -527,7 +699,7 @@ class NuGetPublicationInvocation:
         return (
             self.error_kind is None
             and self.response is not None
-            and self.response.status == HTTPStatus.CREATED
+            and is_nuget_success_status(self.response.status)
         )
 
     @property
@@ -713,8 +885,8 @@ def read_nuget_active_state(  # noqa: C901, PLR0912, PLR0915
 ) -> NuGetActiveState:
     """Read supported complete inventories and the actual selected archive.
 
-    Reads deliberately do not follow redirects. An unadmitted storage origin
-    blocks byte proof; it never receives a credential. Native normalization
+    Only the selected package GET may follow its original 301/302 once, without
+    credentials and within the original call deadline. Native normalization
     reconciles the GitHub active inventory and PackageBaseAddress inventory.
     Public visibility and repository association do not prove Actions grants;
     all exposed package-control fields are retained without such inference.
@@ -724,12 +896,16 @@ def read_nuget_active_state(  # noqa: C901, PLR0912, PLR0915
         raise NuGetAdapterError(msg)
     identity = normalize_nuget_identity(authority, package_id, version)
     exchanges: list[NuGetHttpResponse] = []
+    secrets = (token.encode(), base64.b64encode(("hcoona:" + token).encode()))
 
     def read(
         url: str, *, api: bool = False, package: bool = False
     ) -> NuGetHttpResponse:
+        nonlocal secrets
         _safe_url(url, origin=_API_ORIGIN if api else NUGET_ORIGIN)
+        check_read_secrets(url.encode(), secrets)
         bound = _PACKAGE_LIMIT if package else _METADATA_LIMIT
+        deadline = time.monotonic() + _TIMEOUT_SECONDS
         response = transport.get(
             url,
             headers=_headers(token, api=api),
@@ -739,8 +915,66 @@ def read_nuget_active_state(  # noqa: C901, PLR0912, PLR0915
         if response.url != url:
             msg = "Read transport followed an unadmitted redirect."
             raise NuGetAdapterError(msg)
-        exchanges.append(response)
         _validate_response_body(response, max_bytes=bound)
+        location = response.header("location")
+        selected = None
+        if package and response.status in _PACKAGE_REDIRECT_STATUSES:
+            if location is not None:
+                check_read_secrets(location.encode(), secrets)
+            selected, _ = package_storage_location(response)
+            secrets += read_location_secrets(selected)
+        else:
+            _read_require(location is None, "metadata redirects are forbidden")
+        safe = safe_read_response(response)
+        check_read_secrets(
+            canonicalize(
+                {
+                    "url": safe.url,
+                    "headers": [[key, value] for key, value in safe.headers],
+                }
+            ),
+            secrets,
+        )
+        check_read_secrets(safe.body, secrets)
+        exchanges.append(safe)
+        if selected is not None:
+            remaining = deadline - time.monotonic()
+            _read_require(remaining > 0, "package read deadline expired")
+            source = response
+            try:
+                response = transport.get_package_storage(
+                    source, timeout=remaining, max_bytes=bound
+                )
+            except Exception as error:  # noqa: BLE001 - suppress signed targets
+                raise NuGetTransportError(type(error).__name__) from None
+            _read_require(
+                response.url == selected, "package storage target changed"
+            )
+            _validate_response_body(response, max_bytes=bound)
+            _read_require(
+                response.header("location") is None
+                and response.status == HTTPStatus.OK,
+                "package storage response failed or completed late",
+            )
+            safe = safe_read_response(response, source=source)
+            check_read_secrets(
+                canonicalize(
+                    {
+                        "url": safe.url,
+                        "headers": [
+                            [key, value] for key, value in safe.headers
+                        ],
+                    }
+                ),
+                secrets,
+            )
+            check_read_secrets(safe.body, secrets)
+            exchanges.append(safe)
+            _read_require(
+                time.monotonic() < deadline,
+                "package storage response failed or completed late",
+            )
+            return safe
         if response.status != HTTPStatus.OK:
             msg = f"NuGet observation HTTP status {response.status}."
             raise NuGetAdapterError(msg)

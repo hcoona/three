@@ -35,7 +35,7 @@ inputs = _fixtures.inputs
 
 @pytest.fixture
 def evidence(inputs):
-    def prepare(scenario="create"):
+    def prepare(scenario="create", *, status=None):
         request = replace(inputs.request, scenario=scenario)
         inputs.request = request
         prepared, _ = _prepare(inputs)
@@ -48,8 +48,10 @@ def evidence(inputs):
         path.write_bytes(prepared.read_bytes())
         reference = _reference(path, 201, 81)
         selected = B if scenario == "equivalent-duplicate" else A
+        if status is None:
+            status = 201 if scenario == "create" else 409
         inputs.publisher.return_value = replace(
-            _invocation(inputs, status=201 if scenario == "create" else 409),
+            _invocation(inputs, status=status),
             package_sha256=_sha(selected),
         )
         result = _invoke(inputs, (path, reference))
@@ -145,15 +147,22 @@ def _read(item, limit=1_000_000):
 
 
 @pytest.mark.parametrize(
-    "scenario", ["create", "identical-duplicate", "equivalent-duplicate"]
+    ("scenario", "status"),
+    [
+        ("create", 200),
+        ("create", 201),
+        ("create", 202),
+        ("identical-duplicate", 409),
+        ("equivalent-duplicate", 409),
+    ],
 )
 def test_original_probe_evidence_binds_create_and_both_duplicates(
-    evidence, scenario
+    evidence, scenario, status
 ):
-    original = evidence(scenario)
+    original = evidence(scenario, status=status)
     admitted = _read(original)
     assert admitted.request == original.request
-    assert admitted.status == (201 if scenario == "create" else 409)
+    assert admitted.status == status
     assert admitted.http_created is (scenario == "create")
     assert admitted.possibly_mutated is (scenario != "create")
     assert admitted.response_body == b"created"
@@ -196,6 +205,40 @@ def _change_document(files, name, **updates):
     document = parse_canonical_json(files[name])
     document.update(updates)
     files[name] = canonicalize(document)
+
+
+@pytest.mark.parametrize("status", [204, 409, "200", True, None])
+def test_probe_evidence_rejects_unselected_or_malformed_status(
+    evidence, status
+):
+    item = evidence(status=200)
+
+    def alter(files):
+        _change_document(files, "publish/response.json", status=status)
+        _change_document(
+            files,
+            "publish/result.json",
+            response=parse_canonical_json(files["publish/response.json"]),
+        )
+
+    _change_envelope(item, 2, alter)
+    with pytest.raises(ValueError, match="probe response status"):
+        _read(item)
+    item.producer.publisher.assert_not_called()
+
+
+def test_probe_evidence_rejects_changed_original_success_status(evidence):
+    item = evidence(status=200)
+    _change_envelope(
+        item,
+        2,
+        lambda files: _change_document(
+            files, "publish/response.json", status=201
+        ),
+    )
+    with pytest.raises(ValueError, match="probe original response changed"):
+        _read(item)
+    item.producer.publisher.assert_not_called()
 
 
 @pytest.mark.parametrize(

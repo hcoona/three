@@ -8,12 +8,15 @@ NuGet identity interpretation belongs to the existing official helper.
 from __future__ import annotations
 
 import hashlib
+import math
+import re
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
+from three_workflow_delivery_v3.adapters import nuget_github_packages as native
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
@@ -79,7 +82,7 @@ class NuGetStateEvidence:
     witness: bytes | None
 
 
-def read_capture_evidence(  # noqa: PLR0915
+def read_capture_evidence(  # noqa: C901, PLR0915 - close one ordered transcript
     directory: Path, request: NuGetCaptureRequest
 ) -> NuGetStateEvidence:
     """Require complete originals before exposing facts for delta checks."""
@@ -89,7 +92,7 @@ def read_capture_evidence(  # noqa: PLR0915
     body = _read(directory, "capture.json", _MANIFEST_LIMIT)
     document = _object(parse_canonical_json(body))
     _require(
-        document.get("schema") == "workflow-delivery/v3/nuget-active-capture"
+        document.get("schema") == "workflow-delivery/v3/nuget-active-capture-v2"
         and document.get("requestDigest")
         == canonical_sha256(request.to_document()),
         "capture request binding mismatch",
@@ -135,17 +138,152 @@ def read_capture_evidence(  # noqa: PLR0915
     )
     returned = 0
     pages = 0
+    expected_files = {"request.json", "reader-runtime.json", "requests.jsonl"}
+    package_record = document["scenarioPackage"]
+    coordinate = document["coordinate"]
+    _require(type(coordinate) is str, "missing capture coordinate")
+    parts = cast("str", coordinate).split("@")
+    _require(
+        len(parts) == 2  # noqa: PLR2004 - coordinate has exactly two components
+        and parts[0] == native.NUGET_PACKAGE_ID.lower()
+        and bool(parts[1]),
+        "invalid capture coordinate",
+    )
+    resources = _object(document["resources"])
+    admitted_resources = native.nuget_service_resources_from_projection(
+        {
+            "packageBaseAddress": resources["packageBaseAddress"],
+            "packagePublish": resources["packagePublish"],
+        },
+        index_sha256=cast("str", resources["serviceIndexSha256"]),
+    )
+    root = (
+        admitted_resources.package_base_address + quote(parts[0], safe="") + "/"
+    )
+    package_url = (
+        root
+        + quote(parts[1], safe="")
+        + "/"
+        + quote(parts[0] + "." + parts[1] + ".nupkg", safe="")
+    )
+    storage_seen = False
     for index, response in enumerate(responses, 1):
         name = f"response-{index:03d}"
+        expected_files.add(name + ".json")
+        _require(
+            set(response)
+            == {
+                "request",
+                "requestedUrl",
+                "responseUrl",
+                "status",
+                "headers",
+                "body",
+                "bodyRetention",
+                "bodyOmissionReason",
+                "bodyBytesRead",
+                "bodySha256",
+                "locationSha256",
+                "storageHop",
+            }
+            and type(response["status"]) is int,
+            "capture response shape mismatch",
+        )
+        for header in _array(response["headers"]):
+            pair = _array(header)
+            _require(
+                len(pair) == 2  # noqa: PLR2004 - HTTP header name/value pair
+                and all(type(value) is str for value in pair)
+                and pair[0]
+                in {
+                    "cache-control",
+                    "content-encoding",
+                    "content-length",
+                    "content-type",
+                    "date",
+                    "etag",
+                    "last-modified",
+                    "link",
+                    "retry-after",
+                    "x-github-request-id",
+                },
+                "capture response contains unselected headers",
+            )
+        hop = response.get("storageHop")
+        redirected = response.get("status") in (301, 302)
+        if hop is not None:
+            relation = _object(hop)
+            previous = responses[index - 2] if index > 1 else {}
+            origin = relation.get("origin")
+            _require(
+                not storage_seen
+                and index == len(responses)
+                and package_record is not None
+                and previous.get("status") in (301, 302)
+                and previous.get("requestedUrl") == package_url
+                and previous.get("storageHop") is None
+                and response.get("status") == HTTPStatus.OK
+                and type(origin) is str
+                and native.read_redirect_origin(cast("str", origin)) == origin
+                and relation
+                == {
+                    "sourceRequest": index - 1,
+                    "sourceUrl": package_url,
+                    "origin": origin,
+                    "locationSha256": previous.get("locationSha256"),
+                }
+                and response.get("locationSha256")
+                == previous.get("locationSha256"),
+                "capture storage hop source mismatch",
+            )
+            storage_seen = True
+        if redirected:
+            digest = response.get("locationSha256")
+            _require(
+                package_record is not None
+                and index == len(responses) - 1
+                and response.get("requestedUrl") == package_url
+                and hop is None
+                and type(digest) is str
+                and re.fullmatch(r"[0-9a-f]{64}", cast("str", digest))
+                is not None,
+                "capture has an orphan or unselected redirect",
+            )
         _require(
             response.get("request") == index
-            and response.get("status") == HTTPStatus.OK
+            and (response.get("status") == HTTPStatus.OK or redirected)
             and response.get("requestedUrl") == response.get("responseUrl")
-            and response.get("body") == name + ".body"
+            and response.get("body") == (None if redirected else name + ".body")
+            and response.get("bodyRetention")
+            == ("omitted" if redirected else "original")
+            and response.get("bodyOmissionReason")
+            == ("location" if redirected else None)
             and originals.get(name + ".json") == canonicalize(response),
             "capture response binding mismatch",
         )
-        returned += len(originals[name + ".body"])
+        size = response.get("bodyBytesRead")
+        _require(type(size) is int and size >= 0, "invalid response byte count")
+        if not redirected:
+            expected_files.add(name + ".body")
+            content = originals.get(name + ".body")
+            _require(
+                content is not None
+                and len(content) == size
+                and response.get("bodySha256") == _sha(content),
+                "capture original response body mismatch",
+            )
+        else:
+            _require(
+                name + ".body" not in originals
+                and type(response.get("bodySha256")) is str
+                and re.fullmatch(
+                    r"[0-9a-f]{64}", cast("str", response["bodySha256"])
+                )
+                is not None,
+                "capture redirect omission mismatch",
+            )
+        before = returned
+        returned += cast("int", size)
         url = response["requestedUrl"]
         _require(type(url) is str, "missing capture request URL")
         pages += int(urlsplit(cast("str", url)).path.endswith("/versions"))
@@ -155,10 +293,61 @@ def read_capture_evidence(  # noqa: PLR0915
             and reserved.get("request") == index
             and reserved.get("method") == "GET"
             and reserved.get("url") == url
+            and reserved.get("storageHop") == hop
             and completed.get("event") == "returned"
             and completed.get("request") == index,
             "capture has an outstanding or substituted request",
         )
+        bound, timeout = (
+            reserved.get("maximumBodyBytes"),
+            reserved.get("socketTimeoutSeconds"),
+        )
+        _require(
+            type(bound) is int
+            and bound > 0
+            and cast("int", size) <= bound
+            and before + bound + 1 <= request.limits.response_bytes
+            and type(timeout) in (int, float)
+            and math.isfinite(cast("float", timeout))
+            and 0
+            < cast("float", timeout)
+            <= request.limits.socket_timeout_seconds
+            and reserved.get("counts")
+            == {
+                "requests": index,
+                "versionPages": pages,
+                "chargedResponseBytes": before + bound + 1,
+                "returnedResponseBytes": before,
+            }
+            and completed.get("counts")
+            == {
+                "requests": index,
+                "versionPages": pages,
+                "chargedResponseBytes": returned,
+                "returnedResponseBytes": returned,
+            },
+            "capture per-call accounting mismatch",
+        )
+    control_url = "https://api.github.com/users/hcoona/packages/nuget/" + quote(
+        native.NUGET_PACKAGE_ID, safe=""
+    )
+    expected_urls = [
+        native.NUGET_SERVICE_INDEX,
+        control_url,
+        *(
+            control_url + f"/versions?state=active&per_page=100&page={page}"
+            for page in range(1, pages + 1)
+        ),
+        root + "index.json",
+    ]
+    if package_record is not None:
+        expected_urls.append(package_url)
+        if storage_seen:
+            expected_urls.append(package_url)
+    _require(
+        [response["requestedUrl"] for response in responses] == expected_urls,
+        "capture request sequence differs from its selected subject",
+    )
     counts = {
         "requests": len(responses),
         "versionPages": pages,
@@ -207,6 +396,17 @@ def read_capture_evidence(  # noqa: PLR0915
     scenario = document["scenarioPackage"]
     if scenario is not None:
         record = _object(scenario)
+        expected_files.add("scenario-witness.json")
+        facts = _object(record["nativeFacts"])
+        identity = _object(facts["identity"])
+        _require(
+            record.get("body") == responses[-1]["body"]
+            and responses[-1].get("status") == HTTPStatus.OK
+            and record.get("witness") == "scenario-witness.json"
+            and identity.get("normalizedPackageId") == parts[0]
+            and identity.get("normalizedVersion") == parts[1],
+            "capture scenario is not the terminal package response",
+        )
         package = originals[cast("str", record["body"])]
         witness = originals[cast("str", record["witness"])]
         _require(
@@ -220,6 +420,12 @@ def read_capture_evidence(  # noqa: PLR0915
         _require(
             coordinate not in objects.values(), "capture omitted scenario bytes"
         )
+    _require(
+        set(originals) == expected_files
+        and {path.name for path in directory.iterdir()}
+        == expected_files | {"capture.json"},
+        "capture file inventory is incomplete or unmatched",
+    )
     return NuGetStateEvidence(
         _sha(body),
         cast("str", coordinate),

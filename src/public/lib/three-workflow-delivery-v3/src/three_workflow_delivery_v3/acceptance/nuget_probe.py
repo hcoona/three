@@ -10,6 +10,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from http import HTTPStatus
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, cast
@@ -841,12 +842,16 @@ def main(argv: list[str] | None = None) -> int:
             result = _object(parse_canonical_json(result_path.read_bytes()))
             response = result["response"]
             # The expected HTTP outcome is necessary, never a suite verdict.
-            expected_status = 201 if request.scenario == "create" else 409
             return (
                 0
                 if (
                     type(response) is dict
-                    and response.get("status") == expected_status
+                    and (
+                        native.is_nuget_success_status(response.get("status"))
+                        if request.scenario == "create"
+                        else type(response.get("status")) is int
+                        and response["status"] == HTTPStatus.CONFLICT
+                    )
                     and result["transportError"] is False
                 )
                 else 1

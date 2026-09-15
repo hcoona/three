@@ -1,7 +1,7 @@
 """Bounded original-byte GitHub IO for the local NuGet acceptance operator.
 
 This boundary does not discover credentials or authorize operations. The caller
-must admit the concrete request, existing capability and exact storage origin.
+must admit the concrete request, existing capability and redirect policy.
 Dispatch is never replayed; artifact retrieval permits one unauthenticated hop.
 """
 
@@ -10,6 +10,7 @@ from __future__ import annotations
 import http.client
 import math
 import os
+import re
 import ssl
 import time
 from dataclasses import dataclass
@@ -23,6 +24,10 @@ from three_workflow_delivery_v3.acceptance.nuget_evidence import (
     _read,
     _require,
     _sha,
+)
+from three_workflow_delivery_v3.adapters.nuget_github_packages import (
+    read_location_secrets,
+    read_redirect_origin,
 )
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
@@ -38,6 +43,7 @@ if TYPE_CHECKING:
 _API = "https://api.github.com"
 _REPOSITORY = "/repos/hcoona/three"
 _REQUEST_LIMIT = 65536
+_ARTIFACT_REDIRECT_POLICY = "github-api-location-v1"
 
 
 @dataclass(frozen=True)
@@ -51,7 +57,7 @@ class NuGetGitHubLimits:
     call_timeout_seconds: float
     polls_per_probe: int
     poll_interval_seconds: float
-    storage_origin: str
+    artifact_redirect_policy: str
 
     def __post_init__(self) -> None:
         """Reject incomplete or nonfinite bounds before any network effect."""
@@ -72,16 +78,9 @@ class NuGetGitHubLimits:
                 and value > 0,
                 "invalid GitHub deadline",
             )
-        origin = urlsplit(self.storage_origin)
         _require(
-            origin.scheme == "https"
-            and origin.hostname is not None
-            and origin.netloc == origin.hostname
-            and not origin.path
-            and not origin.query
-            and not origin.fragment
-            and origin.hostname != "api.github.com",
-            "an exact separately admitted artifact storage origin is required",
+            self.artifact_redirect_policy == _ARTIFACT_REDIRECT_POLICY,
+            "invalid GitHub artifact redirect policy",
         )
 
     def to_document(self) -> dict[str, JsonValue]:
@@ -94,7 +93,7 @@ class NuGetGitHubLimits:
             "callTimeoutSeconds": self.call_timeout_seconds,
             "pollsPerProbe": self.polls_per_probe,
             "pollIntervalSeconds": self.poll_interval_seconds,
-            "storageOrigin": self.storage_origin,
+            "artifactRedirectPolicy": self.artifact_redirect_policy,
             "dispatchRedirects": 0,
             "artifactRedirects": 1,
             "retries": 0,
@@ -110,6 +109,8 @@ class _Request:
     body: bytes | None
     maximum_bytes: int
     download: bool
+    artifact_id: int | None
+    call: int
 
 
 def _exchange(  # noqa: PLR0913
@@ -148,7 +149,7 @@ def _exchange(  # noqa: PLR0913
     try:
         connection.connect()
         target = parsed.path or "/"
-        if parsed.query:
+        if "?" in url:
             target += "?" + parsed.query
         connection.request(
             method, target, body=body, headers=headers, encode_chunked=False
@@ -160,6 +161,7 @@ def _exchange(  # noqa: PLR0913
             if location:
                 # A redirect is a temporary capability. Never retain its text,
                 # including reflection in a response body.
+                evidence.check(location.encode())
                 evidence.forbidden += (location.encode(),)
             content = response.read(maximum_bytes + 1)
             read_bytes = len(content)
@@ -267,16 +269,33 @@ def _worker(  # noqa: PLR0913, PLR0917
         count = 1
         if request.download:
             _require(
-                status == HTTPStatus.FOUND and location is not None,
+                status == HTTPStatus.FOUND and bool(location),
                 "missing artifact redirect",
             )
             location = cast("str", location)
-            parsed = urlsplit(location)
-            _require(
-                parsed.scheme + "://" + parsed.netloc == limits.storage_origin
-                and not parsed.fragment
-                and not any(char.isspace() for char in location),
-                "artifact redirect outside admitted origin",
+            origin = read_redirect_origin(location)
+            # The raw Location was checked before it became forbidden. Parse
+            # only after validation, then guard signed target fragments too.
+            evidence.forbidden += read_location_secrets(location)
+            evidence.write(
+                "artifact-origin.json",
+                canonicalize(
+                    {
+                        "evidenceKind": "derived-artifact-origin",
+                        "artifactRedirectPolicy": (
+                            limits.artifact_redirect_policy
+                        ),
+                        "artifactId": request.artifact_id,
+                        "route": request.route,
+                        "call": request.call,
+                        "origin": origin,
+                        "apiResponseFile": "api.json",
+                        "apiResponseSha256": _sha(
+                            _read(directory, "api.json", 4096)
+                        ),
+                        "locationSha256": _sha(location.encode()),
+                    }
+                ),
             )
             remaining = deadline - time.monotonic()
             _require(remaining > 0, "artifact retrieval deadline expired")
@@ -365,6 +384,13 @@ class NuGetGitHubClient:
             body is None or (not download and len(body) <= _REQUEST_LIMIT),
             "invalid dispatch body",
         )
+        artifact_id = None
+        if download:
+            match = re.fullmatch(
+                _REPOSITORY + r"/actions/artifacts/([1-9][0-9]*)/zip", route
+            )
+            _require(match is not None, "unselected GitHub artifact route")
+            artifact_id = int(cast("re.Match[str]", match)[1])
         maximum = (
             self.limits.artifact_bytes
             if download
@@ -394,6 +420,8 @@ class NuGetGitHubClient:
             body,
             maximum,
             download,
+            artifact_id,
+            self.calls,
         )
         evidence.write(
             "reserved.json",
@@ -401,6 +429,13 @@ class NuGetGitHubClient:
                 {
                     "method": request.method,
                     "route": route,
+                    "call": self.calls,
+                    "artifactId": artifact_id,
+                    "artifactRedirectPolicy": (
+                        self.limits.artifact_redirect_policy
+                        if download
+                        else None
+                    ),
                     "requests": reserve_requests,
                     "responseBodyBytes": reserve_bytes,
                 }

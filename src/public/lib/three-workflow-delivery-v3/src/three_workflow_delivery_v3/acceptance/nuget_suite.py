@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import re
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Protocol, cast
 
 from three_workflow_delivery_v3.acceptance import nuget_probe as probe
@@ -290,7 +291,12 @@ def run_nuget_suite(
         _require(
             canonicalize(actual_spec) == spec
             and observed.request.workflow_run_id not in runs
-            and observed.status == (201 if created else 409)
+            and type(observed.status) is int
+            and (
+                native.is_nuget_success_status(observed.status)
+                if created
+                else observed.status == HTTPStatus.CONFLICT
+            )
             and observed.http_created is created
             and observed.possibly_mutated is (not created),
             "suite probe request, run or definitive outcome changed",

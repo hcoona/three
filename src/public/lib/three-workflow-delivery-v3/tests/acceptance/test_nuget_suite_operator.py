@@ -59,7 +59,7 @@ def prepared(inputs, suite, tmp_path, monkeypatch):
             10,
             2,
             0.01,
-            "https://storage.example",
+            "github-api-location-v1",
         ),
         preflight_request,
         _sha(audits["admission"].read_bytes()),
@@ -267,6 +267,27 @@ def test_suite_request_rejects_unbound_inputs(prepared, change):
     else:
         document["admissionSha256"] = ""
     with pytest.raises(ValueError, match=r"closure|subject|admission"):
+        operator.read_suite_request(canonicalize(document))
+    assert not prepared.suite.events
+
+
+@pytest.mark.parametrize(
+    "change", ["old", "mixed", "missing", "unknown", "extra"]
+)
+def test_suite_request_requires_closed_artifact_redirect_policy(
+    prepared, change
+):
+    document = prepared.request.to_document()
+    github = document["github"]
+    if change in {"old", "missing"}:
+        del github["artifactRedirectPolicy"]
+    if change in {"old", "mixed"}:
+        github["storageOrigin"] = "https://earlier-storage.example"
+    elif change == "unknown":
+        github["artifactRedirectPolicy"] = "github-api-location-v2"
+    elif change == "extra":
+        github["rememberPreviousOrigin"] = True
+    with pytest.raises(ValueError, match=r"closure|redirect policy"):
         operator.read_suite_request(canonicalize(document))
     assert not prepared.suite.events
 
