@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from http import HTTPStatus
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, unquote, urlsplit
 
 from three_workflow_delivery_v3.adapters import nuget_github_packages as native
@@ -149,6 +149,7 @@ class NuGetCaptureRequest:
             "packageId": native.NUGET_PACKAGE_ID,
             "version": self.version,
             "serviceIndex": native.NUGET_SERVICE_INDEX,
+            "packageRedirectPolicy": native.NUGET_PACKAGE_REDIRECT_POLICY,
             "scope": (
                 "all active coordinates and object IDs; scenario archive only"
             ),
@@ -163,7 +164,7 @@ class _Audit:
         )
         # Cover the actual API Bearer and NuGet Basic credential forms. This
         # does not claim to recognize arbitrary secrets or encodings.
-        self.secrets = (
+        self.secrets: tuple[bytes, ...] = (
             token.encode(),
             base64.b64encode(("hcoona:" + token).encode()),
         )
@@ -172,10 +173,7 @@ class _Audit:
         self.files: dict[str, JsonValue] = {}
 
     def check(self, content: bytes) -> None:
-        _require(
-            not any(secret in content for secret in self.secrets),
-            "capture evidence contains a request credential",
-        )
+        native.check_read_secrets(content, self.secrets)
 
     def write(self, name: str, content: bytes) -> None:
         self.check(content)
@@ -215,6 +213,7 @@ class _CaptureTransport:
         self.charged_bytes = 0
         self.returned_bytes = 0
         self.responses: list[dict[str, JsonValue]] = []
+        self.last_response: native.NuGetHttpResponse | None = None
 
     def remaining(self) -> float:
         remaining = self.deadline - self.monotonic()
@@ -240,6 +239,41 @@ class _CaptureTransport:
         timeout: float,
         max_bytes: int,
     ) -> native.NuGetHttpResponse:
+        return self._get(
+            url, headers=headers, timeout=timeout, max_bytes=max_bytes
+        )
+
+    def get_package_storage(
+        self,
+        source: native.NuGetHttpResponse,
+        *,
+        timeout: float,
+        max_bytes: int,
+    ) -> native.NuGetHttpResponse:
+        _require(
+            source is self.last_response, "package redirect source changed"
+        )
+        location, _ = native.package_storage_location(source)
+        # Check before extending the confidentiality set with the Location.
+        self.audit.check(location.encode())
+        self.audit.secrets += native.read_location_secrets(location)
+        return self._get(
+            source.url,
+            headers=(),
+            timeout=timeout,
+            max_bytes=max_bytes,
+            source=source,
+        )
+
+    def _get(  # noqa: PLR0915 - one ordered reserve/read/evidence transaction
+        self,
+        url: str,
+        *,
+        headers: tuple[tuple[str, str], ...],
+        timeout: float,
+        max_bytes: int,
+        source: native.NuGetHttpResponse | None = None,
+    ) -> native.NuGetHttpResponse:
         remaining = self.remaining()
         self.audit.check(unquote(url).encode())
         page = urlsplit(url).path.endswith("/versions")
@@ -262,20 +296,36 @@ class _CaptureTransport:
         self.requests += 1
         self.pages += int(page)
         self.charged_bytes += bound + 1
+        hop: JsonValue = None
+        location: str | None = None
+        if source is not None:
+            location, origin = native.package_storage_location(source)
+            hop = {
+                "sourceRequest": self.requests - 1,
+                "sourceUrl": source.url,
+                "origin": origin,
+                "locationSha256": hashlib.sha256(location.encode()).hexdigest(),
+            }
         self.audit.event(
             {
                 "event": "reserved",
                 "request": self.requests,
                 "method": "GET",
                 "url": url,
+                "storageHop": hop,
                 "maximumBodyBytes": bound,
                 "socketTimeoutSeconds": effective_timeout,
                 "counts": self.counts(),
             }
         )
-        response = self.transport.get(
-            url, headers=headers, timeout=effective_timeout, max_bytes=bound
-        )
+        if source is None:
+            response = self.transport.get(
+                url, headers=headers, timeout=effective_timeout, max_bytes=bound
+            )
+        else:
+            response = self.transport.get_package_storage(
+                source, timeout=effective_timeout, max_bytes=bound
+            )
         # Transport contracts are trusted for resource bounds. Returned bytes
         # still require admission, and a bad response never completes capture.
         _require(
@@ -283,7 +333,17 @@ class _CaptureTransport:
         )
         self.charged_bytes -= bound + 1 - len(response.body)
         self.returned_bytes += len(response.body)
-        self.audit.check(unquote(response.url).encode())
+        if source is None:
+            self.audit.check(unquote(response.url).encode())
+            _require(
+                response.url == url, "transport followed an unadmitted redirect"
+            )
+        else:
+            _require(response.url == location, "package storage target changed")
+        location_header = response.header("location")
+        if location_header:
+            self.audit.check(location_header.encode())
+        projected = native.safe_read_response(response, source=source)
         for key, value in response.headers:
             if key.lower() == "link":
                 self.audit.check(unquote(value).encode())
@@ -291,22 +351,36 @@ class _CaptureTransport:
         record: dict[str, JsonValue] = {
             "request": self.requests,
             "requestedUrl": url,
-            "responseUrl": response.url,
+            "responseUrl": projected.url,
             "status": response.status,
             "headers": [
                 [key.lower(), value]
-                for key, value in response.headers
+                for key, value in projected.headers
                 if key.lower() in _RESPONSE_HEADERS
             ],
-            "body": name,
+            "body": name if projected.omitted_body_bytes is None else None,
+            "bodyRetention": "original"
+            if projected.omitted_body_bytes is None
+            else "omitted",
+            "bodyOmissionReason": None
+            if projected.omitted_body_bytes is None
+            else "location"
+            if location_header is not None
+            else "storage-error",
+            "bodyBytesRead": len(response.body),
+            "bodySha256": hashlib.sha256(response.body).hexdigest(),
+            "locationSha256": projected.location_sha256,
+            "storageHop": hop,
         }
         encoded_record = canonicalize(record)
         # Check URL/header metadata before writing even a safe body. Unsafe
         # bodies fail in write(), leaving no artifact for this response.
         self.audit.check(encoded_record)
-        self.audit.write(name, response.body)
+        if projected.omitted_body_bytes is None:
+            self.audit.write(name, response.body)
         self.audit.write(f"response-{self.requests:03d}.json", encoded_record)
         self.responses.append(record)
+        self.last_response = response
         self.audit.event(
             {
                 "event": "returned",
@@ -417,7 +491,7 @@ def capture_nuget_state(  # noqa: PLR0913
             "bytes": len(journal),
         }
         capture: dict[str, JsonValue] = {
-            "schema": "workflow-delivery/v3/nuget-active-capture",
+            "schema": "workflow-delivery/v3/nuget-active-capture-v2",
             "requestDigest": canonical_sha256(document),
             "startedAt": started.isoformat(),
             "completedAt": ended.isoformat(),
@@ -428,16 +502,21 @@ def capture_nuget_state(  # noqa: PLR0913
                 "packagePublish": state.resources.package_publish,
             },
             "packageControl": state.package_control,
-            "activeCoordinates": sorted(
-                identity.coordinate for identity in state.active_versions
+            "activeCoordinates": cast(
+                "list[JsonValue]",
+                sorted(
+                    identity.coordinate for identity in state.active_versions
+                ),
             ),
-            "githubVersions": list(state.github_versions),
+            "githubVersions": cast(
+                "list[JsonValue]", list(state.github_versions)
+            ),
             "githubCoordinates": [
                 {"id": identity, "coordinate": coordinate}
                 for identity, coordinate in state.github_coordinates
             ],
             "scenarioPackage": package,
-            "responses": bounded.responses,
+            "responses": cast("list[JsonValue]", bounded.responses),
             "counts": bounded.counts(),
             "files": audit.files,
             "evidenceLevel": (
@@ -464,7 +543,9 @@ def capture_nuget_state(  # noqa: PLR0913
                     "completedCapture": False,
                     "errorType": type(error).__name__,
                     "counts": bounded.counts(),
-                    "returnedResponses": bounded.responses,
+                    "returnedResponses": cast(
+                        "list[JsonValue]", bounded.responses
+                    ),
                 }
             ),
         )

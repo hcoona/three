@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 
 # ruff: noqa: D103, PLR2004
@@ -18,6 +19,8 @@ from three_workflow_delivery_v3.canonical import parse_canonical_json
 TOKEN = "controlled-github-token"  # noqa: S105 - controlled test credential
 ORIGIN = "https://artifact-storage.example"
 ROUTE = "/repos/hcoona/three/actions/runs/81"
+ARTIFACT_ROUTE = "/repos/hcoona/three/actions/artifacts/91/zip"
+POLICY = "github-api-location-v1"
 
 
 class _Response(io.BytesIO):
@@ -92,7 +95,7 @@ def transport(tmp_path, monkeypatch):  # noqa: C901 - controlled transport seam
                 10,
                 2,
                 0.001,
-                ORIGIN,
+                POLICY,
             ),
             **overrides,
         )
@@ -134,7 +137,7 @@ def test_artifact_redirect_omits_credentials_and_retains_no_capability(
         [_response(redirect_body, 302, capability), _response(original)]
     )
     actual = item.client.request(
-        ROUTE, download=True, deadline=time.monotonic() + 10
+        ARTIFACT_ROUTE, download=True, deadline=time.monotonic() + 10
     )
     assert actual == original
     assert len(item.calls) == 2
@@ -244,10 +247,10 @@ def test_actor_failure_never_retains_raw_profile(transport, failure):
 
 
 @pytest.mark.parametrize(
-    "failure", ["status", "foreign", "overflow", "second-hop"]
+    "failure", ["status", "api-origin", "overflow", "second-hop"]
 )
 def test_location_body_is_omitted_on_failure(transport, failure):
-    origin = "https://other.example" if failure == "foreign" else ORIGIN
+    origin = "https://api.github.com" if failure == "api-origin" else ORIGIN
     capability = origin + "/artifact?sig=controlled&se=2030"
     escaped = capability.replace("&", "&amp;").encode()
     body = b'<a href="' + escaped + b'">download</a>'
@@ -261,7 +264,7 @@ def test_location_body_is_omitted_on_failure(transport, failure):
     item = transport(responses, metadata_bytes=1000)
     with pytest.raises(ValueError, match="GitHub call failed"):
         item.client.request(
-            ROUTE, download=True, deadline=time.monotonic() + 10
+            ARTIFACT_ROUTE, download=True, deadline=time.monotonic() + 10
         )
     directory = item.client.directory / "call-0001"
     retained = b"".join(path.read_bytes() for path in directory.iterdir())
@@ -287,12 +290,12 @@ def test_location_body_is_omitted_on_failure(transport, failure):
         "overflow",
         "encoding",
         "reflection",
-        "foreign",
+        "api-origin",
         "second-hop",
     ],
 )
 def test_http_failure_is_bounded_and_retained(transport, failure):
-    download = failure in {"foreign", "second-hop"}
+    download = failure in {"api-origin", "second-hop"}
     responses = {
         "lost": [OSError("controlled lost response")],
         "status": [_response(b"failed", 503)],
@@ -300,16 +303,16 @@ def test_http_failure_is_bounded_and_retained(transport, failure):
         "overflow": [_response(b"x" * 101)],
         "encoding": [_response(b"encoded", Content_Encoding="gzip")],
         "reflection": [_response(TOKEN.encode())],
-        "foreign": [_response(b"", 302, "https://other.example/artifact")],
+        "api-origin": [_response(b"", 302, "https://api.github.com/artifact")],
         "second-hop": [
-            _response(b"", 302, ORIGIN + "/artifact"),
+            _response(b"", 302, ORIGIN + "/objects/artifact"),
             _response(b"", 302, ORIGIN + "/again"),
         ],
     }[failure]
     item = transport(responses, metadata_bytes=100)
     with pytest.raises(ValueError, match="GitHub call failed"):
         item.client.request(
-            ROUTE,
+            ARTIFACT_ROUTE if download else ROUTE,
             body=None if download else b"{}",
             download=download,
             deadline=time.monotonic() + 10,
@@ -360,12 +363,12 @@ def test_http_budget_stops_before_effects(transport, boundary):
         {"polls_per_probe": -1},
         {"call_timeout_seconds": float("nan")},
         {"poll_interval_seconds": float("inf")},
-        {"storage_origin": "https://user:secret@artifact-storage.example"},
-        {"storage_origin": ORIGIN + "/path"},
+        {"artifact_redirect_policy": ORIGIN},
+        {"artifact_redirect_policy": "github-api-location-v2"},
     ],
 )
 def test_http_limits_reject_invalid_values(transport, change):
-    with pytest.raises(ValueError, match=r"invalid GitHub|storage origin"):
+    with pytest.raises(ValueError, match=r"invalid GitHub"):
         transport([], **change)
 
 
@@ -385,3 +388,252 @@ def test_http_rejects_late_supervised_completion(transport, monkeypatch):
     assert len(item.calls) == 1
     assert item.client.failed
     assert item.client.response_bytes == item.client.limits.metadata_bytes + 1
+
+
+def test_each_artifact_uses_its_own_original_response_origin(transport):
+    locations = [
+        "https://Storage-A.example/objects/A%2Ffile.zip?sig=one&empty=",
+        "https://storage-b.example/objects/B.zip?sig=two",
+    ]
+    originals = [b"PK-first-original", b"PK-second-original"]
+    item = transport(
+        [
+            response
+            for location, body in zip(locations, originals, strict=True)
+            for response in (
+                _response(b"redirect", 302, location),
+                _response(body),
+            )
+        ]
+    )
+    for index, (location, body) in enumerate(
+        zip(locations, originals, strict=True), start=1
+    ):
+        artifact_id = 90 + index
+        route = f"/repos/hcoona/three/actions/artifacts/{artifact_id}/zip"
+        assert (
+            item.client.request(
+                route, download=True, deadline=time.monotonic() + 10
+            )
+            == body
+        )
+        directory = item.client.directory / f"call-{index:04d}"
+        api = (directory / "api.json").read_bytes()
+        projection = parse_canonical_json(
+            (directory / "artifact-origin.json").read_bytes()
+        )
+        assert projection == {
+            "evidenceKind": "derived-artifact-origin",
+            "artifactRedirectPolicy": POLICY,
+            "artifactId": artifact_id,
+            "route": route,
+            "call": index,
+            "origin": location.split("/objects/")[0].lower(),
+            "apiResponseFile": "api.json",
+            "apiResponseSha256": hashlib.sha256(api).hexdigest(),
+            "locationSha256": hashlib.sha256(location.encode()).hexdigest(),
+        }
+        reserved = parse_canonical_json(
+            (directory / "reserved.json").read_bytes()
+        )
+        assert reserved["artifactRedirectPolicy"] == POLICY
+        assert reserved["artifactId"] == artifact_id
+        assert reserved["call"] == index
+        assert reserved["route"] == route
+    assert len(item.calls) == 4
+    for call, location in zip(item.calls[1::2], locations, strict=True):
+        assert call[2] == "/objects/" + location.split("/objects/")[1]
+        assert set(call[3]["headers"]) == {
+            "Accept",
+            "Accept-Encoding",
+            "User-Agent",
+        }
+        assert call[3]["body"] is None
+    assert item.client.requests == 4
+
+
+@pytest.mark.parametrize(
+    ("route", "body"),
+    [
+        (ROUTE, None),
+        ("/user", None),
+        (ARTIFACT_ROUTE + "?token=value", None),
+        (ARTIFACT_ROUTE + "#", None),
+        (ARTIFACT_ROUTE + "/", None),
+        (ARTIFACT_ROUTE.replace("/91/", "/0/"), None),
+        (ARTIFACT_ROUTE.replace("/91/", "/-1/"), None),
+        (ARTIFACT_ROUTE.replace("/91/", "/091/"), None),
+        (ARTIFACT_ROUTE.replace("hcoona/three", "hcoona/other"), None),
+        ("https://api.github.com" + ARTIFACT_ROUTE, None),
+        (ORIGIN + "/archive.zip", None),
+        (ARTIFACT_ROUTE, b"{}"),
+    ],
+)
+def test_artifact_route_is_closed_before_effects(transport, route, body):
+    item = transport([])
+    with pytest.raises(ValueError, match=r"route|body"):
+        item.client.request(
+            route, body=body, download=True, deadline=time.monotonic() + 10
+        )
+    assert item.calls == []
+    assert item.client.requests == 0
+    assert not list(item.client.directory.glob("call-*"))
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        None,
+        "",
+        " " + ORIGIN + "/a",
+        "\t" + ORIGIN + "/a",
+        "\x00" + ORIGIN + "/a",
+        ORIGIN + "/a\r\nb",
+        ORIGIN + "/a b",
+        ORIGIN + "/a\x7f",
+        ORIGIN + "/non-ascii-\u00e9",
+        ORIGIN + "/a\\b",
+        "http://storage.example/a",
+        "//storage.example/a",
+        "https:///a",
+        "https://user@storage.example/a",
+        "https://user:pass@storage.example/a",
+        "https://storage.example:443/a",
+        "https://storage.example:/a",
+        "https://storage.example:8443/a",
+        "https://127.0.0.1/a",
+        "https://127.1/a",
+        "https://2130706433/a",
+        "https://0x7f.1/a",
+        "https://0177.0.0.1/a",
+        "https://[::1]/a",
+        "https://[broken/a",
+        "https://api.github.com/a",
+        "https://API.GITHUB.COM/a",
+        "https://api.github.com./a",
+        "https://storage%2eexample/a",
+        "https://storage_example/a",
+        "https://-storage.example/a",
+        "https://storage-.example/a",
+        "https://storage..example/a",
+        "https://" + "a" * 64 + ".example/a",
+        ORIGIN + "/a#",
+        ORIGIN + "/a#part",
+    ],
+)
+def test_unsafe_artifact_location_never_reaches_storage(transport, location):
+    item = transport([_response(b"redirect", 302, location)])
+    with pytest.raises(ValueError, match="GitHub call failed"):
+        item.client.request(
+            ARTIFACT_ROUTE, download=True, deadline=time.monotonic() + 10
+        )
+    assert len(item.calls) == 1
+    assert item.client.failed
+    assert item.client.requests == 2
+    assert item.client.response_bytes == 1_100_002
+    assert not (item.client.directory / "call-0001/artifact.body").exists()
+
+
+@pytest.mark.parametrize(
+    "status", [200, 201, 301, 303, 307, 308, 401, 403, 503]
+)
+def test_only_original_api_302_can_select_artifact_storage(transport, status):
+    item = transport([_response(b"redirect", status, ORIGIN + "/objects/a")])
+    with pytest.raises(ValueError, match="GitHub call failed"):
+        item.client.request(
+            ARTIFACT_ROUTE, download=True, deadline=time.monotonic() + 10
+        )
+    assert len(item.calls) == 1
+    assert item.client.requests == 2
+    assert item.client.response_bytes == 1_100_002
+
+
+@pytest.mark.parametrize("encoding", ["literal", "percent"])
+@pytest.mark.parametrize("form", ["token", "basic"])
+def test_artifact_location_checks_credentials_before_confidentiality_guard(
+    transport, encoding, form
+):
+    secret = (
+        TOKEN
+        if form == "token"
+        else base64.b64encode(("hcoona:" + TOKEN).encode()).decode()
+    )
+    value = (
+        secret
+        if encoding == "literal"
+        else "".join(f"%{ord(char):02X}" for char in secret)
+    )
+    location = ORIGIN + "/objects/artifact?sig=" + value
+    item = transport([_response(b"", 302, location)])
+    with pytest.raises(ValueError, match="GitHub call failed"):
+        item.client.request(
+            ARTIFACT_ROUTE, download=True, deadline=time.monotonic() + 10
+        )
+    assert len(item.calls) == 1
+    retained = b"".join(
+        path.read_bytes()
+        for path in item.client.directory.rglob("*")
+        if path.is_file()
+    )
+    assert secret.encode() not in retained
+    assert value.encode() not in retained
+    assert location.encode() not in retained
+
+
+@pytest.mark.parametrize(
+    "reflection", ["url", "html", "target", "query", "error"]
+)
+def test_storage_reflection_never_enters_evidence(transport, reflection):
+    target = "/objects/artifact?sig=private-capability&expires=2030"
+    location = ORIGIN + target
+    reflected = {
+        "url": location.encode(),
+        "html": location.replace("&", "&amp;").encode(),
+        "target": target.encode(),
+        "query": target.split("?")[1].encode(),
+        "error": OSError(location),
+    }[reflection]
+    final = (
+        reflected if isinstance(reflected, OSError) else _response(reflected)
+    )
+    item = transport([_response(b"redirect", 302, location), final])
+    with pytest.raises(ValueError, match="GitHub call failed"):
+        item.client.request(
+            ARTIFACT_ROUTE, download=True, deadline=time.monotonic() + 10
+        )
+    assert len(item.calls) == 2
+    assert item.client.requests == 2
+    assert item.client.response_bytes == 1_100_002
+    retained = b"".join(
+        path.read_bytes()
+        for path in item.client.directory.rglob("*")
+        if path.is_file()
+    )
+    assert b"private-capability" not in retained
+    assert not (item.client.directory / "call-0001/artifact.body").exists()
+
+
+def test_duplicate_original_locations_stop_before_storage(transport):
+    response = _response(b"redirect", 302, ORIGIN + "/objects/a")
+    response.headers["Location"] = ORIGIN + "/objects/b"
+    item = transport([response])
+    with pytest.raises(ValueError, match="GitHub call failed"):
+        item.client.request(
+            ARTIFACT_ROUTE, download=True, deadline=time.monotonic() + 10
+        )
+    assert len(item.calls) == 1
+    assert item.client.failed
+    assert item.client.response_bytes == 1_100_002
+
+
+def test_storage_receives_only_remaining_original_deadline(
+    transport, monkeypatch
+):
+    item = transport([_response(b"redirect", 302, ORIGIN + "/objects/a")])
+    moments = iter([100.0, 100.0, 111.0])
+    monkeypatch.setattr(github.time, "monotonic", lambda: next(moments))
+    with pytest.raises(ValueError, match="GitHub call failed"):
+        item.client.request(ARTIFACT_ROUTE, download=True, deadline=110.0)
+    assert len(item.calls) == 1
+    assert item.client.failed
+    assert item.client.response_bytes == 1_100_002

@@ -262,3 +262,89 @@ the preceding dated sections.
   subsequent implementation change after protected design delivery. Changes
   to the relied-on service behavior, profile, or evidence scope reopen the
   affected admission under the Governance MLD.
+
+## [2026-09-14] query | Correct the NuGet push-response contract
+
+- Microsoft's [PackagePublish push response reference](https://learn.microsoft.com/en-us/nuget/api/package-publish-resource#response)
+  lists 201/202 as successfully pushed and states that server implementations
+  vary in the returned success status. The retained source was retrieved at
+  `2026-09-14T23:35:24.602380+00:00`, SHA-256
+  `707b212b2f842f50ade43bfbdea2abfb9d0b58adf6b92a08bf7d5c99f6ec5129`.
+  This generic source does not promise GitHub 200 push behavior; its separate
+  relist operation's 200 is not push evidence.
+- The [independent original-diagnostic audit](https://github.com/hcoona/three/issues/676#issuecomment-5672361782)
+  binds create run `34907316467`, attempt 1, source
+  `c01ab187a8626c7828599991886807efadb1ff5a` and original publish artifact
+  `10373446223`, SHA-256
+  `9f7cf38c57b39a97fdf89073f6c5e1e868c6193471298ec03e2b938b9a95852f`.
+  The recorded one-shot publisher received complete HTTP 200 with the message
+  `Successfully registered nuget package: Hcoona.ReleaseSmoke.GithubPackages (1.0.0-beta.253.g016ea56)`.
+  Its 100-byte response body SHA-256 is
+  `24027875d5b4eb2ba6af941379dda7e661b4630e7d7b922f2b1915d01a856ef5`.
+  This is one server-reported registration observation, not proof of stored
+  archive/witness bytes, complete allowed deltas or clean destination consumption.
+- The [independent finding disposition](https://github.com/hcoona/three/issues/676#issuecomment-5672381419)
+  classified `NUGET-PUSH-STATUS-R1` as a true positive: the frozen profile and
+  four consumers consistently required 201, so the original create stage
+  correctly failed that contract. The revised
+  [LLD profile](../hcoona-release-smoke-github-packages-lld.md#observation-publication-and-terminal-evidence)
+  explicitly selects 200/201/202, retaining actual status and complete-response
+  checks without accepting every 2xx or matching message text. The shared
+  contract still requires exact actual-byte/witness readback and all native
+  evidence; 409, unlisted statuses, incomplete/ambiguous outcomes and failed
+  readback cannot become publication success. No retry or polling is introduced.
+- Original request/result bytes and the failed, spent suite remain unchanged.
+  New profile/source bindings require new applicable profile/native admission;
+  this correction supplies none. The later artifact API 302/ValueError remains
+  a distinct observation with its exact predicate and storage-hop initiation
+  unresolved. A future artifact's host cannot be inferred from earlier origin
+  observations. The next profile/native admission review, or an observed change
+  in server response behavior, triggers recheck of this narrow contract by its
+  implementation and independent evidence reviewers before renewed reliance.
+
+## [2026-09-15] query | Bounded response-selected downloads
+
+- GitHub's [Download an artifact reference](https://docs.github.com/en/rest/actions/artifacts?apiVersion=2022-11-28#download-an-artifact)
+  says the artifact endpoint returns 302 with a Location that expires after one
+  minute. The retained HTML was retrieved at
+  `2026-09-14T23:42:14.424232+00:00`, SHA-256
+  `a68535350aef81722b61a5c4bad88911647d45c7b4747fff16b33611137ab834`.
+  Its sample actually uses API version 2026-03-10; the query parameter does not
+  establish a 2022-11-28-specific guarantee. Independently retained original
+  requests using 2022-11-28 observed 302. No API-version change is selected.
+- The [independent Actions disposition](https://github.com/hcoona/three/issues/676#issuecomment-5672518953)
+  closes `NUGET-ARTIFACT-ORIGIN-R1`: a fixed prospective hostname cannot prove
+  availability of artifacts created later. Earlier sa3/sa5 observations neither
+  reconstruct the original failing Location/predicate nor promise future hosts.
+  The authenticated original response for the selected artifact supplies one
+  validated target under `github-api-location-v1`. No prior observation,
+  wildcard registry, retry, alternate service or forwarded credential is added.
+- Microsoft's [NuGet API overview](https://learn.microsoft.com/en-us/nuget/api/overview#http-status-codes)
+  states that API GETs may return 301/302 and clients should issue a subsequent
+  GET to Location. The retained source was retrieved at
+  `2026-09-14T23:54:17.998488+00:00`, SHA-256
+  `bfd4e1e177b773cae994faeec9f4b67691dd783a3c2c3d9bcccd225ff25cd95d`.
+  Its generic retry advice does not override this project's zero-retry bounds.
+  The [independent package-read disposition](https://github.com/hcoona/three/issues/676#issuecomment-5672542902)
+  closes `NUGET-PACKAGE-READ-REDIRECT-R1`: the original-coordinate diagnostic
+  received four metadata 200 responses and then package-content 302; it did not
+  establish byte mismatch or original stored bytes/witness. Its actual native
+  audit remains a separate evidence consumer. No target is inferred from its
+  unretained Location or redirect body.
+- The [LLD read contract](../hcoona-release-smoke-github-packages-lld.md#observation-publication-and-terminal-evidence)
+  selects one explicit package-content hop under `nuget-package-location-v1`,
+  shared by production observation and native capture. The current original
+  response owns the target; strict HTTPS/DNS and reflection checks precede use.
+  Both requests consume existing finite budgets. Safe projections retain
+  per-hop origin/source/accounting while omitting signed targets and redirect
+  or storage-error bodies. Successful terminal bytes and witness remain exact.
+  The versioned decoder closes the ordered transcript, file inventory and
+  actual terminal package binding; metadata GET and mutating PUT stay direct.
+- These are bounded implementation corrections under the existing delegation,
+  with independent engineering/security and research-evidence review and
+  protected source delivery still required. Tests establish application
+  behavior, not native qualification or future service availability. Old
+  requests remain spent and no production admission or Live state changes.
+  A relied-on REST/NuGet contract change or observed response outside the
+  admitted shape reopens the affected retrieval contract for bounded review;
+  retrieval stays unavailable without retry until that review closes.

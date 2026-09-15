@@ -416,7 +416,9 @@ def test_capture_retains_partial_evidence_without_completion(
     failure = _read(tmp_path / "capture/failure.json")
     assert failure["completedCapture"] is False
     assert failure["counts"]["requests"] == read_count
-    assert len(failure["returnedResponses"]) == read_count
+    assert len(failure["returnedResponses"]) == (
+        0 if defect == "redirect" else read_count
+    )
     assert transport.get.call_count == read_count
     assert not (tmp_path / "capture/capture.json").exists()
 
@@ -572,3 +574,171 @@ def test_capture_narrows_socket_timeout_to_remaining_deadline(
     assert [
         call.kwargs["timeout"] for call in scenario[1].get.call_args_list
     ] == [5.0] * 5
+
+
+STORAGE_LOCATION = (
+    "https://storage.example/objects/package.nupkg?sig=private-capability&v=1"
+)
+
+
+def _package_redirect(scenario, status=302):
+    _, transport, responses = scenario
+    original = responses[ARCHIVE_URL]
+    responses[ARCHIVE_URL] = replace(
+        original,
+        status=status,
+        body=("<a href='" + STORAGE_LOCATION + "'>download</a>").encode(),
+        headers=(("Location", STORAGE_LOCATION),),
+    )
+    transport.get_package_storage.return_value = replace(
+        original, url=STORAGE_LOCATION
+    )
+    return responses[ARCHIVE_URL]
+
+
+@pytest.mark.parametrize("status", [301, 302])
+def test_capture_accounts_for_redirect_and_preserves_only_terminal_package(
+    tmp_path, capture_request, scenario, status
+):
+    from three_workflow_delivery_v3.acceptance.nuget_evidence import (  # noqa: PLC0415
+        read_capture_evidence,
+    )
+
+    source = _package_redirect(scenario, status)
+    output = _capture(tmp_path, capture_request, scenario)
+    document = _read(output)
+    assert document["schema"] == "workflow-delivery/v3/nuget-active-capture-v2"
+    assert document["counts"]["requests"] == 6
+    assert document["counts"]["versionPages"] == 1
+    expected_bytes = sum(len(item.body) for item in scenario[2].values()) + len(
+        ARCHIVE
+    )
+    assert document["counts"]["returnedResponseBytes"] == expected_bytes
+    assert document["counts"]["chargedResponseBytes"] == expected_bytes
+    redirect, terminal = document["responses"][-2:]
+    assert redirect["body"] is None
+    assert redirect["bodyRetention"] == "omitted"
+    assert redirect["bodyOmissionReason"] == "location"
+    assert redirect["bodyBytesRead"] == len(source.body)
+    assert redirect["bodySha256"] == hashlib.sha256(source.body).hexdigest()
+    assert not (output.parent / "response-005.body").exists()
+    assert terminal["storageHop"] == {
+        "sourceRequest": 5,
+        "sourceUrl": ARCHIVE_URL,
+        "origin": "https://storage.example",
+        "locationSha256": hashlib.sha256(STORAGE_LOCATION.encode()).hexdigest(),
+    }
+    assert terminal["requestedUrl"] == terminal["responseUrl"] == ARCHIVE_URL
+    assert document["scenarioPackage"]["body"] == "response-006.body"
+    assert (output.parent / "response-006.body").read_bytes() == ARCHIVE
+    decoded = read_capture_evidence(output.parent, capture_request)
+    assert decoded.package == ARCHIVE
+    assert decoded.witness == WITNESS
+    for path in output.parent.iterdir():
+        assert b"private-capability" not in path.read_bytes()
+    scenario[1].get_package_storage.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "failure", ["requests", "bytes", "deadline", "transport"]
+)
+def test_package_hop_spends_only_shared_capture_allowance(
+    tmp_path, capture_request, scenario, failure
+):
+    _package_redirect(scenario)
+    _, transport, responses = scenario
+    elapsed = [0.0]
+    if failure == "requests":
+        capture_request = replace(
+            capture_request, limits=replace(capture_request.limits, requests=5)
+        )
+    elif failure == "bytes":
+        needed = sum(len(item.body) for item in responses.values())
+        capture_request = replace(
+            capture_request,
+            limits=replace(capture_request.limits, response_bytes=needed + 1),
+        )
+    elif failure == "deadline":
+
+        def direct(url, **_kwargs):
+            if url == ARCHIVE_URL:
+                elapsed[0] = 60.0
+            return responses[url]
+
+        transport.get.side_effect = direct
+    else:
+        transport.get_package_storage.side_effect = OSError(STORAGE_LOCATION)
+    with pytest.raises((ValueError, RuntimeError)) as error:
+        _capture(
+            tmp_path, capture_request, scenario, monotonic=lambda: elapsed[0]
+        )
+    assert "private-capability" not in str(error.value)
+    if failure == "transport":
+        transport.get_package_storage.assert_called_once()
+    else:
+        transport.get_package_storage.assert_not_called()
+    document = _read(tmp_path / "capture/failure.json")
+    assert document["counts"]["requests"] == (
+        6 if failure == "transport" else 5
+    )
+    assert document["counts"]["versionPages"] == 1
+    if failure == "transport":
+        assert (
+            document["counts"]["chargedResponseBytes"]
+            == capture_request.limits.response_bytes
+        )
+    assert not (tmp_path / "capture/capture.json").exists()
+    for path in (tmp_path / "capture").iterdir():
+        assert b"private-capability" not in path.read_bytes()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "second-hop",
+        "error-body",
+        "reflection",
+        "encoded-reflection",
+        "credential-location",
+    ],
+)
+def test_package_failure_keeps_signed_material_out_of_capture(
+    tmp_path, capture_request, scenario, failure
+):
+    _package_redirect(scenario)
+    _, transport, responses = scenario
+    final = transport.get_package_storage.return_value
+    if failure == "second-hop":
+        final = replace(
+            final,
+            status=302,
+            body=STORAGE_LOCATION.encode(),
+            headers=(("Location", STORAGE_LOCATION),),
+        )
+    elif failure == "error-body":
+        final = replace(final, status=403, body=STORAGE_LOCATION.encode())
+    elif failure == "credential-location":
+        responses[ARCHIVE_URL] = replace(
+            responses[ARCHIVE_URL],
+            headers=(
+                ("Location", STORAGE_LOCATION + "&token=" + quote(TOKEN)),
+            ),
+        )
+    else:
+        reflected = (
+            STORAGE_LOCATION
+            if failure == "reflection"
+            else quote(STORAGE_LOCATION, safe="")
+        )
+        final = replace(final, body=reflected.encode())
+    transport.get_package_storage.return_value = final
+    with pytest.raises((ValueError, RuntimeError)):
+        _capture(tmp_path, capture_request, scenario)
+    assert not (tmp_path / "capture/capture.json").exists()
+    assert not (tmp_path / "capture/response-006.body").exists()
+    for path in (tmp_path / "capture").iterdir():
+        assert b"private-capability" not in path.read_bytes()
+        assert TOKEN.encode() not in path.read_bytes()
+    assert transport.get_package_storage.call_count == (
+        0 if failure == "credential-location" else 1
+    )

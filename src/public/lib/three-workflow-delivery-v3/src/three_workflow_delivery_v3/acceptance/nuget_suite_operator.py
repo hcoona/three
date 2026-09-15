@@ -141,6 +141,10 @@ def read_suite_request(content: bytes) -> NuGetSuiteRequest:
         ),
     )
     github = _object(document["github"])
+    _require(
+        "storageOrigin" not in github and "artifactRedirectPolicy" in github,
+        "suite request requires the current artifact redirect policy",
+    )
     result = NuGetSuiteRequest(
         NuGetSuitePlan(
             canonicalize(plan["probeInputs"]),
@@ -155,7 +159,7 @@ def read_suite_request(content: bytes) -> NuGetSuiteRequest:
             cast("float", github["callTimeoutSeconds"]),
             cast("int", github["pollsPerProbe"]),
             cast("float", github["pollIntervalSeconds"]),
-            cast("str", github["storageOrigin"]),
+            cast("str", github["artifactRedirectPolicy"]),
         ),
         reads.read_request(canonicalize(document["preflight"])),
         cast("str", document["admissionSha256"]),

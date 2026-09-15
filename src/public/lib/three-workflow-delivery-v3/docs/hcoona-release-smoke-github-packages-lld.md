@@ -147,6 +147,33 @@ visibility, and exposed access facts. Credential forwarding follows the
 validated resource origin and redirect policy. A guessed download URL or a
 metadata-only response is insufficient.
 
+The closed package-read policy is `nuget-package-location-v1`. Metadata GETs
+remain direct. Only the exact normalized package-content GET derived from the
+selected service index may accept its original 301/302 and issue one subsequent
+GET. Direct package 200 remains valid. The original response's single nonempty
+Location supplies the target; validate its unmodified ASCII HTTPS URL and DNS
+authority before parsing can discard controls. Reject whitespace, controls,
+backslashes, userinfo, explicit ports, fragments, IP-style hosts, malformed
+authorities, the GitHub API origin and credential reflection. Keep the signed
+path/query unchanged in memory. The storage request receives no credentials,
+API key, cookies, referer or forwarded authentication, and must complete with
+200 and no further Location within the original remaining deadline.
+
+The shared production reader and capture transport charge both attempted GETs,
+including overflow sentinels, against finite byte/request/time bounds; the hop
+consumes no version page. A failure preserves its reserved allowance and never
+retries. Capture requests explicitly bind this policy, and the successor
+`nuget-active-capture-v2` transcript records each request, source relationship,
+safe origin, Location digest, status, body-byte accounting and body omission.
+Redirect and storage-error bodies remain unretained. Successful terminal
+package bytes and witness remain original and hash-bound. Safe reader exchanges
+preserve the original selected NuGet URL for existing package-control lookup;
+signed storage URLs and raw response authentication headers do not enter that
+projection. The decoder rejects orphan, missing or substituted hops, unmatched
+files and inconsistent accounting, and binds scenario bytes to the terminal
+response and native coordinate. Earlier source/request/evidence digests remain
+historical and cannot be reinterpreted as this successor contract.
+
 Desired state binds the native-equivalent package/version coordinate, actual
 qualified bytes and digests, and in-package target witness. The resource key
 uses NuGet-native identity so equivalent spellings serialize together. No npm
@@ -194,6 +221,19 @@ potentially mutating request after authentication denial, redirect, conflict,
 throttling, server failure, timeout, or dropped response. One transport API
 call is not by itself that proof. Missing proof keeps publication disabled.
 
+The canonical profile explicitly selects `successStatuses: [200, 201, 202]`.
+The adapter, probe stage, original-probe reader and suite use that same closed
+contract and retain the actual HTTP status. NuGet's protocol documents 201/202
+and varying server success statuses; the independently audited GitHub create
+response supplies the observed 200 basis, as recorded in the
+[response evidence](./research/nuget-smoke-evidence.md#2026-09-14-query--correct-the-nuget-push-response-contract).
+Neither arbitrary 2xx responses nor success-message text is an alternative
+predicate. An unlisted status such as 204, transport error or incomplete
+response remains unsuccessful. Duplicate probes require 409 and retain an
+unsuccessful publication invocation even when the expected probe stage passes.
+The probe's `httpCreated` field denotes this admitted create-response fact;
+it is not an HTTP 201 rewrite or a complete publication verdict.
+
 The publisher persists the existing mutation-may-have-started marker before
 the mutating operation. A successful Publication Result requires definitive
 success and supported actual-byte/witness readback. A duplicate, timeout,
@@ -201,6 +241,9 @@ non-success, ambiguous response, or missing Result remains conservative under
 the existing current-Attempt terminal protocol. Exact post-failure readback is
 diagnostic, not permission to relabel failure as publication success. The
 read-only Finalizer and new-dispatch retry semantics remain unchanged.
+This also applies to 200 or 202 without complete exact readback: no polling or
+retry is added. Changed profile bytes and adapter bindings require fresh profile
+and native admission; old failed runs cannot be reclassified under this contract.
 
 ## Protected Admission and Permissions
 
@@ -329,6 +372,29 @@ the subsequent publication request; neither a flag nor a stored request grants
 its own authorization. The end-to-end delegation described in the handoff may
 supply authority within its scope, but cannot fill missing request values or
 technical evidence.
+
+Actions artifact retrieval uses the explicit request policy
+`artifactRedirectPolicy: github-api-location-v1`; old `storageOrigin`,
+mixed schemas and unknown policies are rejected. A download is only GET
+`/repos/hcoona/three/actions/artifacts/<selected-positive-id>/zip`, without a
+body, query or fragment. Its selected ID still comes from the admitted original
+producer/run/artifact metadata. Bind the policy, route, ID and call position
+before effects. Exactly one nonempty Location from that call's authenticated
+API 302 authorizes one credential-free storage GET. Earlier observations,
+remembered hosts and caller-selected URLs cannot supply a target.
+
+Apply the same strict raw HTTPS/DNS admission described above, checking token
+and Basic-form reflection before adding the signed Location to the forbidden
+evidence set. Retain a derived per-call origin record linked to the original
+API response metadata digest and Location digest; the signed URL, path and
+query remain memory-only, including response/exception reflection. Keep the
+existing two-request/two-body reservation, overflow sentinels, shared deadline,
+worker ceiling and five-second termination grace. Final storage 200 must be
+complete, within encoding/length/byte bounds and without another Location.
+Failure spends the reservation and closes the client without retry. Archive
+admission still verifies exact artifact ID/name, producer run/attempt/source,
+declared size and SHA-256 before copying successful original bytes. The Actions
+policy does not authorize package-feed or mutating PUT redirects.
 
 The read-only preflight identifies the selected existing container, exact
 service index, native reader/profile revision, complete declared inventory

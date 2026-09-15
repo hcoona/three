@@ -696,15 +696,18 @@ def test_native_zero_action_requires_fresh_exact_proof(native_case):
 
 
 @pytest.mark.parametrize(
-    ("invocation", "expected"),
+    ("invocation", "status", "expected"),
     [
-        ("created", "published"),
-        ("conflict", "publication-failed"),
-        ("lost-response", "publication-failed"),
+        ("created", 200, "published"),
+        ("created", 201, "published"),
+        ("created", 202, "published"),
+        ("unselected", 204, "publication-failed"),
+        ("conflict", 409, "publication-failed"),
+        ("lost-response", None, "publication-failed"),
     ],
 )
-def test_native_publisher_uses_durable_marker_once_and_conservative_result(
-    native_case, monkeypatch, tmp_path, invocation, expected
+def test_native_publisher_uses_durable_marker_once_and_conservative_result(  # noqa: PLR0913, PLR0917
+    native_case, monkeypatch, tmp_path, invocation, status, expected
 ):
     case = native_case
     feed = ModeledFeed(case)
@@ -772,7 +775,7 @@ def test_native_publisher_uses_durable_marker_once_and_conservative_result(
             if invocation == "lost-response"
             else native.NuGetHttpResponse(
                 RESOURCES.package_publish,
-                201 if invocation == "created" else 409,
+                status,
                 (),
                 b"modeled-response",
             )
@@ -947,22 +950,30 @@ def test_native_missing_result_preserves_marker_as_unknown(
     assert outcome.direct_predecessor.reference == reference
 
 
+@pytest.mark.parametrize("status", [200, 201, 202])
+@pytest.mark.parametrize("readback", ["missing", "different-bytes"])
 def test_native_success_without_complete_readback_stays_failed(
-    native_case, monkeypatch, tmp_path
+    native_case, monkeypatch, tmp_path, status, readback
 ):
     case = native_case
     inputs, feed, runtime, marker, reference = _prepared(case, tmp_path)
 
     def publish(**_kwargs):
-        feed.get = Mock(
-            side_effect=native.NuGetTransportError("lost post-push readback")
-        )
+        if readback == "missing":
+            feed.get = Mock(
+                side_effect=native.NuGetTransportError(
+                    "lost post-push readback"
+                )
+            )
+        else:
+            feed.present = True
+            feed.content = b"different stored archive"
         return native.NuGetPublicationInvocation(
             case.profile.profile_digest,
             case.artifact.content.content_sha256.removeprefix("sha256:"),
             "f" * 64,
             native.NuGetHttpResponse(
-                RESOURCES.package_publish, 201, (), b"created"
+                RESOURCES.package_publish, status, (), b"created"
             ),
             None,
         )
@@ -986,7 +997,10 @@ def test_native_success_without_complete_readback_stays_failed(
     assert result.command_classification == "definitive-success"
     assert result.result == "failed"
     assert result.mutation_classification == "possibly-mutated"
-    assert result.post_action_readback is None
+    if readback == "missing":
+        assert result.post_action_readback is None
+    else:
+        assert result.post_action_readback.classification == "conflicting"
 
 
 @pytest.mark.parametrize(

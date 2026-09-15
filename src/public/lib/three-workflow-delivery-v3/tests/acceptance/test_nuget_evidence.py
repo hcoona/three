@@ -225,3 +225,77 @@ def test_capture_reader_rejects_incomplete_or_substituted_evidence(
         (directory / "capture.json").write_bytes(canonicalize(document))
     with pytest.raises(ValueError, match=message):
         read_capture_evidence(directory, request)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "source",
+        "origin",
+        "digest",
+        "orphan",
+        "missing-hop",
+        "accounting",
+        "scenario-body",
+        "native-identity",
+        "extra-file",
+        "omission",
+        "old-schema",
+    ],
+)
+def test_capture_reader_rejects_redirect_hop_or_inventory_substitution(  # noqa: C901
+    tmp_path, capture_request, scenario, change
+):
+    _fixtures._package_redirect(scenario)  # noqa: SLF001
+    directory = tmp_path / "capture"
+    capture_nuget_state(
+        capture_request,
+        authority=scenario[0],
+        transport=scenario[1],
+        token=TOKEN,
+        audit_directory=directory,
+        clock=lambda: NOW,
+    )
+    document = json.loads((directory / "capture.json").read_bytes())
+    final = document["responses"][-1]
+    if change == "source":
+        final["storageHop"]["sourceRequest"] = 4
+    elif change == "origin":
+        final["storageHop"]["origin"] = "https://127.0.0.1"
+    elif change == "digest":
+        final["storageHop"]["locationSha256"] = "0" * 64
+    elif change == "orphan":
+        document["responses"][-2]["status"] = 200
+    elif change == "missing-hop":
+        final["storageHop"] = None
+    elif change == "accounting":
+        final["bodyBytesRead"] += 1
+    elif change == "scenario-body":
+        document["scenarioPackage"]["body"] = "response-001.body"
+    elif change == "native-identity":
+        document["scenarioPackage"]["nativeFacts"]["identity"][
+            "normalizedVersion"
+        ] = "9.0.0"
+    elif change == "extra-file":
+        (directory / "unmatched.body").write_bytes(b"unmatched")
+        document["files"]["unmatched.body"] = {
+            "bytes": 9,
+            "sha256": hashlib.sha256(b"unmatched").hexdigest(),
+        }
+    elif change == "omission":
+        document["responses"][-2]["bodyRetention"] = "original"
+    else:
+        document["schema"] = "workflow-delivery/v3/nuget-active-capture"
+    # Rebind edited records so the semantic admission, not only outer hashes,
+    # must reject the changed relationship.
+    for response in document["responses"]:
+        name = f"response-{response['request']:03d}.json"
+        content = canonicalize(response)
+        (directory / name).write_bytes(content)
+        document["files"][name] = {
+            "bytes": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+        }
+    (directory / "capture.json").write_bytes(canonicalize(document))
+    with pytest.raises(ValueError, match=r"capture|storage DNS authority"):
+        read_capture_evidence(directory, capture_request)

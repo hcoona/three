@@ -204,10 +204,24 @@ def _run(suite):
     )
 
 
+@pytest.mark.parametrize("status", [200, 201, 202])
 def test_fixed_suite_preserves_all_six_captures_and_consumes_before_duplicates(
     suite,
+    status,
 ):
+    observe = suite.operations.probe.side_effect
+
+    def response(spec):
+        result = observe(spec)
+        return replace(result, status=status) if result.http_created else result
+
+    suite.operations.probe.side_effect = response
     result = _run(suite)
+    assert [record["status"] for record in result["probes"]] == [
+        status,
+        409,
+        409,
+    ]
     assert suite.events == [
         "capture:before-create",
         "probe:create",
@@ -243,6 +257,52 @@ def test_fixed_suite_preserves_all_six_captures_and_consumes_before_duplicates(
     assert result["consumerSha256"] == "5" * 64
     assert result["nativeAdmissionEstablished"] is False
     assert result["atomicAssuranceEstablished"] is False
+
+
+@pytest.mark.parametrize("status", [200, 202])
+@pytest.mark.parametrize("field", ["package", "witness"])
+def test_suite_success_status_requires_exact_bytes_and_witness(
+    suite, status, field
+):
+    observe = suite.operations.probe.side_effect
+    suite.operations.probe.side_effect = lambda spec: replace(
+        observe(spec), status=status
+    )
+    suite.states["after-create"] = replace(
+        suite.states["after-create"], **{field: b"different original bytes"}
+    )
+    with pytest.raises(ValueError, match="creation"):
+        _run(suite)
+    assert suite.operations.probe.call_count == 1
+    suite.operations.consume.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("scenario", "status", "probes"),
+    [
+        ("create", 204, 1),
+        ("create", 200.0, 1),
+        ("create", 409, 1),
+        ("identical-duplicate", 200, 2),
+        ("equivalent-duplicate", 202, 3),
+    ],
+)
+def test_suite_rejects_unselected_probe_status(suite, scenario, status, probes):
+    observe = suite.operations.probe.side_effect
+
+    def changed(spec):
+        result = observe(spec)
+        return (
+            replace(result, status=status)
+            if result.request.scenario == scenario
+            else result
+        )
+
+    suite.operations.probe.side_effect = changed
+    with pytest.raises(ValueError, match="definitive outcome changed"):
+        _run(suite)
+    assert suite.operations.probe.call_count == probes
+    assert suite.operations.capture.call_count == 2 * probes - 1
 
 
 @pytest.mark.parametrize(

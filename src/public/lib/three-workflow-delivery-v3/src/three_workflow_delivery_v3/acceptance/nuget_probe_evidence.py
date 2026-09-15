@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3.acceptance import nuget_probe as probe
@@ -23,6 +24,7 @@ from three_workflow_delivery_v3.acceptance.nuget_evidence import (
 from three_workflow_delivery_v3.acceptance.nuget_preparation import (
     _archive_files,
 )
+from three_workflow_delivery_v3.adapters import nuget_github_packages as native
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
@@ -237,7 +239,6 @@ def read_probe_evidence(  # noqa: PLR0915
     result_body = publication["publish/result.json"]
     result = _object(parse_canonical_json(result_body))
     created = request.scenario == "create"
-    status = 201 if created else 409
     _matches(
         result,
         {
@@ -270,6 +271,16 @@ def read_probe_evidence(  # noqa: PLR0915
     response = _object(
         parse_canonical_json(publication["publish/response.json"])
     )
+    status = response.get("status")
+    _require(
+        type(status) is int
+        and (
+            native.is_nuget_success_status(status)
+            if created
+            else status == HTTPStatus.CONFLICT
+        ),
+        "probe response status is outside the selected outcome",
+    )
     _matches(
         response,
         {
@@ -289,7 +300,7 @@ def read_probe_evidence(  # noqa: PLR0915
         _sha(raw_run_metadata),
         _sha(raw_artifact_metadata),
         _sha(result_body),
-        status,
+        cast("int", status),
         created,
         not created,
         response_body,

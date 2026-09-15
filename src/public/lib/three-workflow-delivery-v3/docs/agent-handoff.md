@@ -248,6 +248,30 @@ reviewed dispatch; neither a partial preflight nor a self-consistent digest
 establishes resource provenance or permission to run it.
 Close the concrete native request and actual access/profile prerequisites
 before dispatch; source availability supplies no missing gate.
+The [audited first NuGet create-response finding](./research/nuget-smoke-evidence.md#2026-09-14-query--correct-the-nuget-push-response-contract)
+identified HTTP 200 outside the original 201-only profile. The corrected closed
+profile selects 200/201/202 consistently across adapter, probe, original-evidence
+reader and suite, while preserving the raw status, exact readback and duplicate
+409 failures. Original run `34907316467` and its suite remain failed and spent;
+they are not native qualification for the revised profile. A new independently
+audited Windows profile and a separately reviewed native generation remain
+required. The original artifact collector's later 302 failure is distinct;
+its exact predicate and storage-hop initiation are not established by this
+status correction. Earlier storage-origin observations do not guarantee the
+origin of future artifacts.
+The independently disposed
+[Actions artifact-origin and package-download findings](./research/nuget-smoke-evidence.md#2026-09-15-query--bounded-response-selected-downloads)
+use explicit successor contracts. Actions requests bind
+`github-api-location-v1` instead of a preobserved storage host. Package reads
+bind `nuget-package-location-v1` and the versioned capture transcript; only the
+selected package-content GET may follow its original 301/302 once. Both paths
+validate the current response-selected HTTPS target, send no credentials to
+storage, retain no signed capabilities in evidence, charge every
+hop and preserve exact successful bytes. Metadata GET and publication PUT
+redirects remain forbidden. The original suite and subsequent failed
+original-coordinate read stay spent; original stored bytes/witness remain
+unestablished. Protected source delivery, independent review, renewed exact
+request budgets and source/profile/native gates precede further operations.
 NuGet admission and Live stay disabled. `WD-NUGET-006` now relies explicitly
 on GitHub version uniqueness and duplicate non-replacement, with no chosen
 concurrency winner, global read-consistency claim, or serialized-only scope.

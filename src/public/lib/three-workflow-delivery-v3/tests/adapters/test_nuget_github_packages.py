@@ -16,7 +16,7 @@ from dataclasses import replace
 from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from three_workflow_delivery_v3.adapters import nuget_github_packages as nuget
@@ -133,6 +133,187 @@ def _observe(transport, authority):
         package_id=PACKAGE,
         version=VERSION,
     )
+
+
+@pytest.mark.parametrize("status", [301, 302])
+def test_package_read_follows_one_original_location_with_safe_exchanges(
+    authority, status
+):
+    location = (
+        "https://packages-storage.example/objects/a%2Fb.nupkg?sig=private&v=1"
+    )
+    responses = _responses()
+    redirect_body = ("<a href='" + location + "'>download</a>").encode()
+    source = _response(
+        ARCHIVE_URL,
+        body=redirect_body,
+        status=status,
+        headers=(("Location", location),),
+    )
+    responses[ARCHIVE_URL] = source
+    transport = _reader(responses)
+    transport.get_package_storage.return_value = _response(
+        location,
+        body=PACKAGE_BYTES,
+        headers=(
+            ("Content-Length", str(len(PACKAGE_BYTES))),
+            ("Set-Cookie", "unretained-cookie"),
+        ),
+    )
+    state = _observe(transport, authority)
+    assert transport.get.call_count == 5
+    transport.get_package_storage.assert_called_once()
+    call = transport.get_package_storage.call_args
+    assert call.args == (source,)
+    assert set(call.kwargs) == {"timeout", "max_bytes"}
+    assert 0 < call.kwargs["timeout"] <= 60
+    assert state.package.content == PACKAGE_BYTES
+    assert state.package.witness == WITNESS
+    assert len(state.exchanges) == 6
+    assert state.exchanges[-2].body == b""
+    assert state.exchanges[-2].omitted_body_bytes == len(redirect_body)
+    assert (
+        state.exchanges[-2].location_sha256
+        == hashlib.sha256(location.encode()).hexdigest()
+    )
+    assert state.exchanges[-1].url == ARCHIVE_URL
+    assert state.exchanges[-1].body == PACKAGE_BYTES
+    assert (
+        state.exchanges[-1].storage_origin == "https://packages-storage.example"
+    )
+    assert {response.url: response for response in state.exchanges}[
+        CONTROL
+    ].body == responses[CONTROL].body
+    assert location not in repr(state.exchanges)
+    assert all(
+        response.header("location") is None for response in state.exchanges
+    )
+    assert state.exchanges[-1].header("set-cookie") is None
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        None,
+        "",
+        "http://storage.example/a",
+        "https://127.1/a",
+        " https://storage.example/a",
+        "https://storage.example/a#",
+        "https://user@storage.example/a",
+        "https://storage.example:8443/a",
+        "https://storage.example/a?sig=" + TOKEN,
+        "https://storage.example/a?sig="
+        + "".join(f"%{ord(c):02X}" for c in TOKEN),
+    ],
+)
+def test_package_read_rejects_invalid_location_without_storage(
+    authority, location
+):
+    responses = _responses()
+    responses[ARCHIVE_URL] = _response(
+        ARCHIVE_URL,
+        status=302,
+        body=b"redirect",
+        headers=() if location is None else (("Location", location),),
+    )
+    transport = _reader(responses)
+    with pytest.raises(nuget.NuGetAdapterError):
+        _observe(transport, authority)
+    transport.get_package_storage.assert_not_called()
+    authority.inspect_package.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["second-hop", "status", "reflection", "target", "exception", "late"],
+)
+def test_package_storage_failure_never_becomes_byte_proof(
+    authority, monkeypatch, failure
+):
+    location = "https://storage.example/objects/package?sig=private-capability"
+    responses = _responses()
+    responses[ARCHIVE_URL] = _response(
+        ARCHIVE_URL,
+        status=302,
+        body=b"redirect",
+        headers=(("Location", location),),
+    )
+    transport = _reader(responses)
+    terminal = _response(location, body=PACKAGE_BYTES)
+    if failure == "second-hop":
+        terminal = replace(
+            terminal, status=302, headers=(("Location", location),)
+        )
+    elif failure == "status":
+        terminal = replace(terminal, status=403, body=location.encode())
+    elif failure == "reflection":
+        terminal = replace(terminal, body=location.encode())
+    elif failure == "target":
+        terminal = replace(terminal, url="https://other.example/objects/a")
+    if failure == "exception":
+        transport.get_package_storage.side_effect = OSError(location)
+    elif failure == "late":
+        elapsed = [0.0]
+        monkeypatch.setattr(nuget.time, "monotonic", lambda: elapsed[0])
+        transport.get_package_storage.side_effect = lambda *_args, **_kwargs: (
+            elapsed.__setitem__(0, 61.0) or terminal
+        )
+    else:
+        transport.get_package_storage.return_value = terminal
+    with pytest.raises(
+        (nuget.NuGetAdapterError, nuget.NuGetTransportError)
+    ) as error:
+        _observe(transport, authority)
+    assert "private-capability" not in str(error.value)
+    assert transport.get.call_count == 5
+    transport.get_package_storage.assert_called_once()
+    authority.inspect_package.assert_not_called()
+
+
+@pytest.mark.parametrize("suffix", ["?sig=a%2Fb&v=1", "?"])
+def test_storage_transport_sends_one_exact_credential_free_get(
+    monkeypatch, suffix
+):
+    location = "https://Storage.example/objects/a%2Fb.nupkg" + suffix
+    source = _response(
+        ARCHIVE_URL,
+        status=302,
+        body=b"redirect",
+        headers=(("Location", location),),
+    )
+    response = MagicMock()
+    response.__enter__.return_value = response
+    response.status = 200
+    response.getheaders.return_value = [
+        ("Content-Length", str(len(PACKAGE_BYTES)))
+    ]
+    response.read.return_value = PACKAGE_BYTES
+    connection = Mock()
+    connection.getresponse.return_value = response
+    factory = Mock(return_value=connection)
+    monkeypatch.setattr(nuget.http.client, "HTTPSConnection", factory)
+    result = nuget.NuGetHttpTransport().get_package_storage(
+        source, timeout=3.5, max_bytes=128
+    )
+    assert result.url == location
+    assert result.body == PACKAGE_BYTES
+    assert factory.call_args.args == ("storage.example",)
+    assert factory.call_args.kwargs["timeout"] == 3.5
+    connection.connect.assert_called_once_with()
+    connection.request.assert_called_once_with(
+        "GET",
+        "/objects/a%2Fb.nupkg" + suffix,
+        body=None,
+        headers={
+            "Accept": "application/octet-stream",
+            "Accept-Encoding": "identity",
+        },
+        encode_chunked=False,
+    )
+    assert connection.auto_open == 0
+    response.read.assert_called_once_with(129)
+    connection.close.assert_called_once_with()
 
 
 @pytest.mark.parametrize("display_version", [VERSION, VERSION + "+build"])
@@ -367,6 +548,8 @@ def test_profile_pins_source_runtime_endpoint_and_credential_free_auth():
     assert profile["httpClientSha256"] == nuget.NUGET_HTTP_CLIENT_SHA256
     assert profile["packagePublish"] == PUBLISH
     assert profile["resourceType"] == "PackagePublish/2.0.0"
+    assert profile["successStatuses"] == [200, 201, 202]
+    assert "successStatus" not in profile
     assert (
         profile["adapterSha256"]
         == hashlib.sha256(nuget.Path(nuget.__file__).read_bytes()).hexdigest()
@@ -485,6 +668,47 @@ def fault_server(monkeypatch):
     thread.join(timeout=3)
 
 
+@pytest.mark.parametrize(
+    "statuses", [None, [201], [200, 201, 202, 204], ["200", 201, 202]]
+)
+@_REQUIRES_PROFILE_RUNTIME
+def test_profile_rejects_unselected_success_status_contract(statuses):
+    profile = nuget.nuget_operation_profile(RESOURCES)
+    if statuses is None:
+        profile.pop("successStatuses")
+        profile["successStatus"] = 201
+    else:
+        profile["successStatuses"] = statuses
+    with pytest.raises(nuget.NuGetAdapterError, match="closed HTTP contract"):
+        nuget.validate_nuget_operation_profile(profile)
+
+
+@pytest.mark.parametrize(
+    ("status", "error"),
+    [
+        (204, None),
+        (200.0, None),
+        ("200", None),
+        (True, None),
+        (None, None),
+        (200, "incomplete"),
+        (202, "incomplete"),
+    ],
+)
+def test_invocation_rejects_unselected_or_ambiguous_success(status, error):
+    result = nuget.NuGetPublicationInvocation(
+        "a" * 64,
+        "b" * 64,
+        "c" * 64,
+        None
+        if status is None
+        else nuget.NuGetHttpResponse(PUBLISH, status, (), b"registered"),
+        error,
+    )
+    assert not result.definitive_success
+    assert result.possibly_mutated
+
+
 def _publish():
     return nuget.publish_nuget_once(
         resources=RESOURCES,
@@ -497,13 +721,17 @@ def _publish():
     )
 
 
+@pytest.mark.parametrize("status", [200, 201, 202])
 @_REQUIRES_PROFILE_RUNTIME
-def test_local_server_receives_one_exact_multipart_package(fault_server):
-    _behavior, received = fault_server
+def test_local_server_receives_one_exact_multipart_package(
+    fault_server, status
+):
+    behavior, received = fault_server
+    behavior["kind"] = status
     result = _publish()
     assert result.definitive_success
     assert not result.possibly_mutated
-    assert result.response.status == 201
+    assert result.response.status == status
     assert len(received) == 1
     path, headers, body = received[0]
     assert path == "/hcoona/"
@@ -528,8 +756,7 @@ def test_local_server_receives_one_exact_multipart_package(fault_server):
 @pytest.mark.parametrize(
     "fault",
     [
-        200,
-        202,
+        203,
         204,
         301,
         302,
