@@ -110,7 +110,15 @@ Keep these facts in the working context:
   build/marker invocation. It uses a distinct prebuilt restore host and POSIX
   supervision; callers still own original/tooling provenance and current read
   authority. Its controlled local tests are not actual destination consumption
-  or Windows acceptance. The fixed-suite operator now connects the three probes,
+  or Windows acceptance. The [native consumer redirect correction](./research/nuget-smoke-evidence.md#2026-09-15-query--native-consumer-package-redirect)
+  applies the existing package-only one-hop policy to restore, keeps automatic
+  redirects disabled, and binds the successor v2 request/result/HTTP transcript.
+  The coordinator rejects old or inconsistent evidence before build. R3's
+  create/after-create exact bytes passed audit, but consumer package 302 stopped
+  that generation below its request/byte limits. Its missing consumer/duplicate
+  stages cannot be backfilled; all prior spent lifetimes stay unchanged. New
+  consumer host provenance and a fresh bounded request remain separate gates.
+  The fixed-suite operator now connects the three probes,
   all six captures and the clean consumer, retaining original run/upload bytes
   and stopping subsequent mutation on failure. It binds separate finite native
   and GitHub budgets and the prior independent admission carrier; those supplied

@@ -12,6 +12,7 @@ public sealed class ConsumerRestoreTests
 {
     private const string Token = "synthetic-consumer-read-token-12345";
     private const string BaseAddress = "https://nuget.pkg.github.com/hcoona/download/";
+    private const string StorageUrl = "https://storage.example.invalid/package.nupkg?sig=fixture";
     private static readonly byte[] ServiceIndex = Encoding.UTF8.GetBytes(
         "{\"version\":\"3.0.0\",\"resources\":[{\"@id\":\""
             + BaseAddress
@@ -20,13 +21,15 @@ public sealed class ConsumerRestoreTests
     private static readonly Lazy<Task<byte[]>> Package = new(CreatePackageAsync);
 
     [TestMethod]
-    public async Task RestoreUsesBoundedHttpSourceAndWritesExactPackageAssets()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task RestoreUsesBoundedHttpSourceAndWritesExactPackageAssets(bool redirect)
     {
         byte[] original = await Package.Value;
         ConsumerRequest request = await CreateConsumerAsync(original);
         request = ConsumerRequest.Read(Encoding.UTF8.GetBytes(request.ToDocument().ToJsonString()));
         using var environment = new CacheEnvironment(request.Workspace);
-        var transport = new FeedHandler(request, original);
+        var transport = new FeedHandler(request, original) { RedirectPackage = redirect };
 
         JsonObject result = await NativeRestore.RunAsync(request, Token, transport);
 
@@ -38,19 +41,18 @@ public sealed class ConsumerRestoreTests
         int restoreRequests = transport.Urls.Count;
         Assert.IsInRange(minValue: 3, maxValue: request.MaximumRequests, value: restoreRequests);
         CollectionAssert.AreEquivalent(
-            new[]
-            {
+            new[] {
                 ConsumerRequest.ServiceIndex,
                 BaseAddress + ConsumerRequest.NormalizedId + "/index.json",
                 request.PackageUrl,
-            },
+            }.Concat(redirect ? [StorageUrl] : Array.Empty<string>()).ToArray(),
             transport.Urls.Distinct(StringComparer.Ordinal).ToArray()
         );
         Assert.IsTrue(
-            transport.Authorizations.All(value =>
-                value
-                == "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("hcoona:" + Token))
-            )
+            transport.Authorizations.Select((value, index) =>
+                value == (transport.Urls[index] == StorageUrl ? string.Empty
+                    : "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("hcoona:" + Token)))
+            ).All(value => value)
         );
         string installed = Path.Combine(
             request.PackagesPath,
@@ -59,6 +61,12 @@ public sealed class ConsumerRestoreTests
             ConsumerRequest.NormalizedId + "." + request.Version + ".nupkg"
         );
         CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(installed));
+        Assert.AreEqual(
+            "{\"test\":\"native consumer\"}",
+            await File.ReadAllTextAsync(
+                Path.Combine(Path.GetDirectoryName(installed)!, ConsumerRequest.WitnessPath)
+            )
+        );
         Assert.AreEqual(restoreRequests, result["requests"]!.GetValue<int>());
         Assert.AreEqual(transport.ReturnedBytes, result["responseBytes"]!.GetValue<long>());
         byte[] effectiveRequest = await File.ReadAllBytesAsync(
@@ -69,6 +77,20 @@ public sealed class ConsumerRestoreTests
             result["requestSha256"]!.GetValue<string>()
         );
         Assert.IsTrue(JsonNode.DeepEquals(request.ToDocument(), JsonNode.Parse(effectiveRequest)));
+        Assert.AreEqual(
+            "workflow-delivery/v3/nuget-consumer-restore-result-v2",
+            result["schema"]!.GetValue<string>()
+        );
+        Assert.AreEqual(
+            ConsumerRequest.RedirectPolicy, result["packageRedirectPolicy"]!.GetValue<string>()
+        );
+        int terminalIndex = result["packageResponseIndex"]!.GetValue<int>();
+        CollectionAssert.AreEqual(
+            original,
+            await File.ReadAllBytesAsync(
+                Path.Combine(request.EvidencePath, $"{terminalIndex:D3}-body.bin")
+            )
+        );
 
         await RunSdkAsync(
             request.Workspace,
@@ -488,6 +510,7 @@ public sealed class ConsumerRestoreTests
         internal List<string> Authorizations { get; } = [];
         internal long ReturnedBytes { get; private set; }
         internal HttpStatusCode? FailureStatus { get; init; }
+        internal bool RedirectPackage { get; init; }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage message,
@@ -497,19 +520,30 @@ public sealed class ConsumerRestoreTests
             cancellationToken.ThrowIfCancellationRequested();
             string url = message.RequestUri!.AbsoluteUri;
             Urls.Add(url);
-            Authorizations.Add(message.Headers.Authorization!.ToString());
+            Authorizations.Add(message.Headers.Authorization?.ToString() ?? string.Empty);
+            if (url == StorageUrl)
+            {
+                Assert.IsEmpty(message.Headers);
+            }
+            bool redirect = RedirectPackage && url == request.PackageUrl;
             byte[] bytes =
                 FailureStatus is not null ? "read denied"u8.ToArray()
+                : redirect ? "omitted redirect"u8.ToArray()
                 : url == ConsumerRequest.ServiceIndex ? ServiceIndex
-                : url == request.PackageUrl ? package
+                : url == request.PackageUrl || url == StorageUrl ? package
                 : "{\"versions\":[\"1.2.3\"]}"u8.ToArray();
             ReturnedBytes += bytes.Length;
-            return Task.FromResult(
-                new HttpResponseMessage(FailureStatus ?? HttpStatusCode.OK)
-                {
-                    Content = new ByteArrayContent(bytes),
-                }
-            );
+            var response = new HttpResponseMessage(
+                FailureStatus ?? (redirect ? HttpStatusCode.Found : HttpStatusCode.OK)
+            )
+            {
+                Content = new ByteArrayContent(bytes),
+            };
+            if (redirect)
+            {
+                response.Headers.Location = new Uri(StorageUrl);
+            }
+            return Task.FromResult(response);
         }
     }
 }

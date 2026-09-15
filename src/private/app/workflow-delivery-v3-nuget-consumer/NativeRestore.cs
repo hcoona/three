@@ -149,7 +149,10 @@ internal static class NativeRestore
             handler.Check(assets);
             var result = new JsonObject
             {
-                ["schema"] = "workflow-delivery/v3/nuget-consumer-restore-result",
+                ["schema"] = "workflow-delivery/v3/nuget-consumer-restore-result-v2",
+                ["packageRedirectPolicy"] = ConsumerRequest.RedirectPolicy,
+                ["httpEvidenceSchema"] = ConsumerRequest.HttpSchema,
+                ["packageResponseIndex"] = handler.PackageResponseIndex,
                 ["completed"] = true,
                 ["packageId"] = ConsumerRequest.NormalizedId,
                 ["version"] = request.Version,

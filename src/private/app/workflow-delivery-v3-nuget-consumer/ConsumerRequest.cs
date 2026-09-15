@@ -22,7 +22,9 @@ internal sealed record ConsumerRequest(
     internal const string PackageId = "Hcoona.ReleaseSmoke.GithubPackages";
     internal const string NormalizedId = "hcoona.releasesmoke.githubpackages";
     internal const string ServiceIndex = "https://nuget.pkg.github.com/hcoona/index.json";
-    internal const string Schema = "workflow-delivery/v3/nuget-consumer-restore-request";
+    internal const string Schema = "workflow-delivery/v3/nuget-consumer-restore-request-v2";
+    internal const string RedirectPolicy = "nuget-package-location-v1";
+    internal const string HttpSchema = "workflow-delivery/v3/nuget-consumer-http-v2";
     internal const string WitnessPath = "workflow-delivery/provenance.json";
     internal const string Configuration =
         "<configuration><packageSources><clear/>"
@@ -55,6 +57,7 @@ internal sealed record ConsumerRequest(
         new()
         {
             ["schema"] = Schema,
+            ["packageRedirectPolicy"] = RedirectPolicy,
             ["workspace"] = Workspace,
             ["version"] = Version,
             ["packageSha256"] = PackageSha256,
@@ -76,6 +79,7 @@ internal sealed record ConsumerRequest(
         string[] keys =
         [
             "schema",
+            "packageRedirectPolicy",
             "workspace",
             "version",
             "packageSha256",
@@ -90,7 +94,8 @@ internal sealed record ConsumerRequest(
         Require(
             value.Count == keys.Length
                 && keys.All(value.ContainsKey)
-                && Text(value, "schema") == Schema,
+                && Text(value, "schema") == Schema
+                && Text(value, "packageRedirectPolicy") == RedirectPolicy,
             "Invalid consumer request contract."
         );
         var request = new ConsumerRequest(

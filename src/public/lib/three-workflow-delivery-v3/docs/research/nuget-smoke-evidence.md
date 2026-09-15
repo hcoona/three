@@ -348,3 +348,54 @@ the preceding dated sections.
   A relied-on REST/NuGet contract change or observed response outside the
   admitted shape reopens the affected retrieval contract for bounded review;
   retrieval stays unavailable without retry until that review closes.
+
+## [2026-09-15] query | Native consumer package redirect
+
+- The [independently disposed consumer finding](https://github.com/hcoona/three/issues/676#issuecomment-5675296498)
+  and [complete original R3 audit](https://github.com/hcoona/three/issues/676#issuecomment-5675393479)
+  establish a bounded runtime observation: create and after-create captured
+  exact A archive/witness bytes, then the native consumer received service
+  index 200 (1,496 bytes), version index 200 (144 bytes), and selected package
+  302 (557 bytes). The old C# handler disabled automatic redirects and required
+  200, so restore stopped with `InvalidDataException`. Three GETs and 2,197 body
+  bytes were below 12 GETs and 16 MiB; this is not evidence of budget exhaustion.
+  No completed consumer/build/marker or later duplicate probes exist in R3.
+  Its original manifest remains
+  `a8784f829503f8cd16a3a8d301ea3746c1b48e7bbf376c4a82d0a71fa1c114ff`.
+  The old signed Location/body is not inspected or reproduced by this correction.
+- Microsoft's [.NET 10 AllowAutoRedirect reference](https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpclienthandler.allowautoredirect?view=net-10.0)
+  says `false` returns 300–399 responses to the application. Automatic handling
+  clears Authorization but attempts reauthentication, and does not clear other
+  headers or explicitly supplied cookies. The retained reference, read on
+  September 15, 2026, has SHA-256
+  `2af083800d8eb6d676b3a4cda4933a4e1633a8565583974bb6e23375cd18be75`.
+  These are source findings, not observed guarantees about the selected feed.
+- The [.NET 10 nonvalidated header view](https://learn.microsoft.com/en-us/dotnet/api/system.net.http.headers.httpheadersnonvalidated?view=net-10.0)
+  avoids forcing parsing but stringifies values already parsed elsewhere.
+  The host therefore reads raw Location before other validating access.
+  [URI path/query canonicalization control](https://learn.microsoft.com/en-us/dotnet/api/system.uricreationoptions.dangerousdisablepathandquerycanonicalization?view=net-10.0)
+  disables validation as well as normalization, so raw URL admission precedes
+  its use. September 15 retained references have respective SHA-256 values
+  `1c84ef526bd28ea927f60f5f1906a7aca542e2574da6c17afe24d9ac1bfe6fec`
+  and `a279e2dabc46551e25d193d8fe610cee9849610d18fc826f2cff729dccd65bec`.
+- The correction applies the already accepted
+  [package-only LLD policy](../hcoona-release-smoke-github-packages-lld.md#observation-publication-and-terminal-evidence)
+  to this distinct native restore host. Automatic redirects remain disabled.
+  Raw Location admission precedes URI construction; the storage GET preserves
+  its path/query and receives no copied request headers. Both GETs and all
+  consumed body bytes share the original request/byte/deadline allowance.
+  Redirect and error bodies are omitted; raw and decoded credential/capability
+  reflections stop persistence. The v2 request/result/transcript binds policy,
+  ordered source/hop relationships, safe origins, Location digests, accounting
+  and terminal package bytes. Python verifies the complete transcript before
+  product build. Old contracts cannot silently qualify this host.
+- Controlled local cases cover direct/redirected success, original-byte native
+  restore/build/marker, original Location validation, authentication separation,
+  reflected capabilities, omitted bodies, one-hop failures, shared bounds and
+  evidence substitutions. They establish application behavior only. Source
+  delivery, independently admitted consumer build/runtime provenance, a new
+  exact finite native request and actual audit remain separate gates. R3 and
+  earlier lifetimes remain spent; NuGet native admission stays empty and Live
+  stays false. A relied-on .NET header/URI/redirect change or response outside
+  the admitted shape triggers implementation and independent evidence review
+  before renewed reliance; no retry follows from that recheck trigger.

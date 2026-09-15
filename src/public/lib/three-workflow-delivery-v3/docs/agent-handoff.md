@@ -268,10 +268,20 @@ selected package-content GET may follow its original 301/302 once. Both paths
 validate the current response-selected HTTPS target, send no credentials to
 storage, retain no signed capabilities in evidence, charge every
 hop and preserve exact successful bytes. Metadata GET and publication PUT
-redirects remain forbidden. The original suite and subsequent failed
-original-coordinate read stay spent; original stored bytes/witness remain
-unestablished. Protected source delivery, independent review, renewed exact
-request budgets and source/profile/native gates precede further operations.
+redirects remain forbidden. Those original failed lifetimes stay spent. The
+subsequent original-coordinate read independently established A's exact bytes
+and witness; it did not backfill the original generation's missing captures.
+The [successor R3 audit](https://github.com/hcoona/three/issues/676#issuecomment-5675393479)
+also established its fresh create/after-create bytes, then stopped when the
+native consumer rejected selected package 302. Three GETs and 2,197 body bytes
+were below its 12-GET/16-MiB allowance; this was not proved budget exhaustion.
+The [consumer correction](./research/nuget-smoke-evidence.md#2026-09-15-query--native-consumer-package-redirect)
+extends the existing package-only policy to the native restore host and
+versioned consumer evidence. Its local controlled tests do not qualify a
+replacement native generation. R3 remains failed/spent; duplicate probes,
+complete consumer evidence and native admission were not obtained. Protected
+source delivery, separately admitted rebuilt consumer provenance, independent
+review and a renewed exact request precede further operations.
 NuGet admission and Live stay disabled. `WD-NUGET-006` now relies explicitly
 on GitHub version uniqueness and duplicate non-replacement, with no chosen
 concurrency winner, global read-consistency claim, or serialized-only scope.

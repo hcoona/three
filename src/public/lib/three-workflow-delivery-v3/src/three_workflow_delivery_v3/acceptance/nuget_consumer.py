@@ -17,12 +17,17 @@ import shutil
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from http import HTTPStatus
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 from xml.sax.saxutils import quoteattr
 
 from three_workflow_delivery_v3.acceptance import nuget_operator as process
+from three_workflow_delivery_v3.adapters.nuget_github_packages import (
+    NUGET_PACKAGE_REDIRECT_POLICY,
+    read_redirect_origin,
+)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
@@ -44,6 +49,11 @@ _MAX_COMMANDS = 5
 _MAX_RESTORE_SECONDS = 3600
 _ID = "Hcoona.ReleaseSmoke.GithubPackages"
 _INDEX = "https://nuget.pkg.github.com/hcoona/index.json"
+_HTTP_SCHEMA = "workflow-delivery/v3/nuget-consumer-http-v2"
+_RESTORE_REQUEST_SCHEMA = (
+    "workflow-delivery/v3/nuget-consumer-restore-request-v2"
+)
+_RESTORE_RESULT_SCHEMA = "workflow-delivery/v3/nuget-consumer-restore-result-v2"
 _CONFIG = (
     '<configuration><packageSources><clear/><add key="selected" value="'
     + _INDEX
@@ -216,7 +226,8 @@ class NuGetConsumerRequest:
     def to_document(self) -> dict[str, JsonValue]:
         """Record exact caller bindings without treating them as authority."""
         return {
-            "schema": "workflow-delivery/v3/nuget-consumer-request",
+            "schema": "workflow-delivery/v3/nuget-consumer-request-v2",
+            "packageRedirectPolicy": NUGET_PACKAGE_REDIRECT_POLICY,
             "generation": self.generation,
             "callerToolingSha": self.tooling_sha,
             "packageId": _ID,
@@ -230,6 +241,194 @@ class NuGetConsumerRequest:
             "dotnetExecutableSha256": self.dotnet_executable_sha256,
             "limits": self.limits.to_document(),
         }
+
+
+def _validate_restore_http(
+    directory: Path,
+    request: NuGetConsumerRequest,
+    result: dict[str, JsonValue],
+    original: bytes,
+) -> None:
+    """Bind the complete v2 transcript to terminal package bytes and bounds."""
+    _require(
+        result.get("httpEvidenceSchema") == _HTTP_SCHEMA
+        and result.get("packageRedirectPolicy")
+        == NUGET_PACKAGE_REDIRECT_POLICY,
+        "consumer HTTP policy mismatch",
+    )
+    count = result.get("requests")
+    _require(
+        type(count) is int and 0 < count <= request.limits.requests,
+        "consumer HTTP request count mismatch",
+    )
+    assert isinstance(count, int)  # noqa: S101
+    package_url = (
+        request.package_base_address
+        + _ID.lower()
+        + "/"
+        + request.version
+        + "/"
+        + _ID.lower()
+        + "."
+        + request.version
+        + ".nupkg"
+    )
+    selected_urls = {
+        _INDEX,
+        request.package_base_address + _ID.lower() + "/index.json",
+        package_url,
+    }
+    files = {"request.json", "started.json", "result.json"}
+    total = 0
+    terminal_package = None
+    pending: tuple[int, str, str] | None = None
+    for index in range(1, count + 1):
+        prefix = f"{index:03d}"
+        names = (prefix + "-reserved.json", prefix + "-response.json")
+        files.update(names)
+        reservation, response = (
+            _object(parse_json_strict((directory / name).read_bytes()))
+            for name in names
+        )
+        _require(
+            set(reservation)
+            == {
+                "schema",
+                "method",
+                "url",
+                "origin",
+                "redirectedFrom",
+                "locationSha256",
+                "startedAt",
+                "maximumRemainingResponseBytes",
+            }
+            and set(response)
+            == {
+                "schema",
+                "status",
+                "headers",
+                "sha256",
+                "bytes",
+                "bodyRetention",
+                "redirectOrigin",
+                "locationSha256",
+                "completedAt",
+            }
+            and reservation["schema"] == response["schema"] == _HTTP_SCHEMA
+            and reservation["method"] == "GET"
+            and type(reservation["maximumRemainingResponseBytes"]) is int
+            and reservation["maximumRemainingResponseBytes"]
+            == request.limits.response_bytes - total,
+            "consumer HTTP transcript shape or reservation mismatch",
+        )
+        storage = pending is not None
+        if pending is None:
+            _require(
+                reservation["url"] in selected_urls
+                and reservation["origin"] == "https://nuget.pkg.github.com"
+                and reservation["redirectedFrom"] is None
+                and reservation["locationSha256"] is None,
+                "consumer HTTP request outside selected scope",
+            )
+        else:
+            previous, origin, digest = pending
+            _require(
+                reservation["url"] is None
+                and type(reservation["redirectedFrom"]) is int
+                and reservation["redirectedFrom"] == previous
+                and reservation["origin"] == origin
+                and reservation["locationSha256"] == digest,
+                "consumer HTTP storage hop mismatch",
+            )
+            pending = None
+        size = response["bytes"]
+        _require(
+            type(size) is int and size >= 0,
+            "consumer HTTP body accounting mismatch",
+        )
+        assert isinstance(size, int)  # noqa: S101
+        total += size
+        _require(
+            total < request.limits.response_bytes,
+            "consumer HTTP body allowance exhausted",
+        )
+        headers = _object(response["headers"])
+        _require(
+            set(headers)
+            <= {
+                "date",
+                "etag",
+                "content-type",
+                "content-length",
+                "x-github-request-id",
+            }
+            and all(
+                isinstance(values, list)
+                and all(type(value) is str for value in values)
+                for values in headers.values()
+            ),
+            "consumer HTTP unsafe header projection",
+        )
+        status = response["status"]
+        _require(type(status) is int, "consumer HTTP invalid status")
+        if status in {301, 302}:
+            origin, digest = (
+                response["redirectOrigin"],
+                response["locationSha256"],
+            )
+            _require(
+                not storage
+                and reservation["url"] == package_url
+                and response["bodyRetention"] == "omitted"
+                and response["sha256"] is None
+                and type(origin) is str
+                and read_redirect_origin(origin) == origin
+                and type(digest) is str
+                and re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
+                "consumer HTTP invalid package redirect",
+            )
+            assert isinstance(origin, str)  # noqa: S101
+            assert isinstance(digest, str)  # noqa: S101
+            pending = (index, origin, digest)
+        else:
+            _require(
+                status == HTTPStatus.OK
+                and response["bodyRetention"] == "original"
+                and response["redirectOrigin"] is None
+                and response["locationSha256"] is None,
+                "consumer HTTP incomplete terminal response",
+            )
+            body_name = prefix + "-body.bin"
+            files.add(body_name)
+            body = (directory / body_name).read_bytes()
+            _require(
+                len(body) == size and _sha(body) == response["sha256"],
+                "consumer HTTP body binding mismatch",
+            )
+            if storage or reservation["url"] == package_url:
+                _require(
+                    body == original, "consumer HTTP package bytes changed"
+                )
+                terminal_package = index
+            elif reservation["url"] == _INDEX:
+                _require(
+                    _sha(body) == request.service_index_sha256,
+                    "consumer HTTP service index changed",
+                )
+    _require(
+        pending is None
+        and terminal_package is not None
+        and type(result.get("packageResponseIndex")) is int
+        and result["packageResponseIndex"] == terminal_package
+        and type(result.get("responseBytes")) is int
+        and result["responseBytes"] == total
+        and {path.name for path in directory.iterdir()} == files
+        and all(
+            path.is_file() and not path.is_symlink()
+            for path in directory.iterdir()
+        ),
+        "consumer HTTP incomplete transcript or terminal accounting mismatch",
+    )
 
 
 def _steps(  # noqa: PLR0913, PLR0917
@@ -332,7 +531,8 @@ def _steps(  # noqa: PLR0913, PLR0917
         ),
     )
     native_request: dict[str, JsonValue] = {
-        "schema": "workflow-delivery/v3/nuget-consumer-restore-request",
+        "schema": _RESTORE_REQUEST_SCHEMA,
+        "packageRedirectPolicy": NUGET_PACKAGE_REDIRECT_POLICY,
         "workspace": str(workspace),
         "version": request.version,
         "packageSha256": request.package_sha256,
@@ -363,8 +563,7 @@ def _steps(  # noqa: PLR0913, PLR0917
         _object(parse_json_strict(native_bytes)) == native_request
         and result
         == parse_json_strict((native_directory / "result.json").read_bytes())
-        and result.get("schema")
-        == "workflow-delivery/v3/nuget-consumer-restore-result"
+        and result.get("schema") == _RESTORE_RESULT_SCHEMA
         and result.get("completed") is True
         and result.get("requestSha256") == _sha(native_bytes)
         and result.get("graphSha256") == native_request["graphSha256"]
@@ -381,6 +580,7 @@ def _steps(  # noqa: PLR0913, PLR0917
             type(value) is int and 0 < value <= limit,
             "consumer native accounting mismatch",
         )
+    _validate_restore_http(native_directory, request, result, original)
     selected = workspace / "packages" / _ID.lower() / request.version
     package = selected / (_ID.lower() + "." + request.version + ".nupkg")
     actual_witness = selected / "workflow-delivery/provenance.json"
@@ -418,7 +618,7 @@ def _steps(  # noqa: PLR0913, PLR0917
         "consumer.json",
         canonicalize(
             {
-                "schema": "workflow-delivery/v3/nuget-consumer-result",
+                "schema": "workflow-delivery/v3/nuget-consumer-result-v2",
                 "requestDigest": canonical_sha256(request.to_document()),
                 "restoreResultSha256": _sha(
                     (native_directory / "result.json").read_bytes()

@@ -8,7 +8,7 @@ namespace WorkflowDeliveryV3NuGetConsumer;
 internal sealed class BoundedHttpHandler : DelegatingHandler
 {
     private readonly ConsumerRequest _request;
-    private readonly byte[][] _secrets;
+    private readonly List<byte[]> _secrets;
     private readonly string _basic;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _deadline;
@@ -37,22 +37,24 @@ internal sealed class BoundedHttpHandler : DelegatingHandler
     internal int Requests { get; private set; }
     internal long ResponseBytes { get; private set; }
     internal bool PackageReturned { get; private set; }
+    internal int PackageResponseIndex { get; private set; }
 
-    internal void Check(ReadOnlySpan<byte> content)
+    internal void Check(ReadOnlySpan<byte> content, bool credentialsOnly = false)
     {
         byte[] decoded = Encoding.UTF8.GetBytes(
             Uri.UnescapeDataString(Encoding.UTF8.GetString(content))
         );
-        foreach (byte[] secret in _secrets)
+        foreach (byte[] secret in credentialsOnly ? _secrets.Take(2) : _secrets)
         {
             ConsumerRequest.Require(
                 content.IndexOf(secret) < 0 && decoded.AsSpan().IndexOf(secret) < 0,
-                "Read credential reflected in consumer evidence."
+                "Read credential or storage capability reflected in consumer evidence."
             );
         }
     }
 
-    private void Check(string text) => Check(Encoding.UTF8.GetBytes(text));
+    private void Check(string text, bool credentialsOnly = false) =>
+        Check(Encoding.UTF8.GetBytes(text), credentialsOnly);
 
     internal void Save(string name, ReadOnlySpan<byte> content)
     {
@@ -100,110 +102,27 @@ internal sealed class BoundedHttpHandler : DelegatingHandler
                     ),
                 "Consumer HTTP request is outside the selected resource scope."
             );
-            int index = ++Requests;
-            Save(
-                $"{index:D3}-reserved.json",
-                Encoding.UTF8.GetBytes(
-                    new JsonObject
-                    {
-                        ["method"] = "GET",
-                        ["url"] = url,
-                        ["startedAt"] = DateTimeOffset.UtcNow.ToString("O"),
-                        ["maximumRemainingResponseBytes"] =
-                            _request.MaximumResponseBytes - ResponseBytes,
-                    }.ToJsonString()
-                )
-            );
             message.Headers.Authorization = new AuthenticationHeaderValue("Basic", _basic);
             message.Headers.AcceptEncoding.Clear();
-            using HttpResponseMessage response = await base.SendAsync(message, cancellationToken)
-                .ConfigureAwait(false);
-            foreach (
-                KeyValuePair<string, IEnumerable<string>> header in response.Headers.Concat(
-                    response.Content.Headers
-                )
-            )
+            ReadResult result = await ReadOnceAsync(
+                message, url, null, null, null, cancellationToken
+            ).ConfigureAwait(false);
+            if (result.Location is not null)
             {
-                Check(header.Key);
-                foreach (string value in header.Value)
-                {
-                    Check(value);
-                }
-            }
-            Check(response.ReasonPhrase ?? string.Empty);
-            ConsumerRequest.Require(
-                response.Content.Headers.ContentEncoding.Count == 0,
-                "Encoded consumer response is unsupported by the byte allowance."
-            );
-            using Stream content = await response
-                .Content.ReadAsStreamAsync(cancellationToken)
-                .ConfigureAwait(false);
-            using var buffer = new MemoryStream();
-            byte[] chunk = new byte[8192];
-            while (true)
-            {
-                int allowance = (int)
-                    Math.Min(chunk.Length, _request.MaximumResponseBytes - ResponseBytes);
-                int count = await content
-                    .ReadAsync(chunk.AsMemory(0, allowance), cancellationToken)
-                    .ConfigureAwait(false);
-                ResponseBytes += count;
-                // EOF must be established within the declared total. A final
-                // allowance byte is an overflow sentinel, not permission to
-                // read again after exhausting that total.
-                ConsumerRequest.Require(
-                    ResponseBytes < _request.MaximumResponseBytes,
-                    "Consumer response allowance exhausted before complete response."
-                );
-                if (count == 0)
-                {
-                    break;
-                }
-                buffer.Write(chunk, 0, count);
-            }
-            byte[] body = buffer.ToArray();
-            Check(body);
-            cancellationToken.ThrowIfCancellationRequested();
-            Save($"{index:D3}-body.bin", body);
-            var headers = new JsonObject();
-            foreach (
-                string key in new[]
-                {
-                    "Date",
-                    "ETag",
-                    "Content-Type",
-                    "Content-Length",
-                    "X-GitHub-Request-Id",
-                }
-            )
-            {
-                if (
-                    response.Headers.TryGetValues(key, out IEnumerable<string>? values)
-                    || response.Content.Headers.TryGetValues(key, out values)
-                )
-                {
-                    headers[key.ToLowerInvariant()] = new JsonArray(
-                        values.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()
-                    );
-                }
-            }
-            Save(
-                $"{index:D3}-response.json",
-                Encoding.UTF8.GetBytes(
-                    new JsonObject
+                using var storage = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    new Uri(result.Location, new UriCreationOptions
                     {
-                        ["status"] = (int)response.StatusCode,
-                        ["headers"] = headers,
-                        ["sha256"] = ConsumerRequest.Sha256(body),
-                        ["bytes"] = body.Length,
-                        ["completedAt"] = DateTimeOffset.UtcNow.ToString("O"),
-                    }.ToJsonString()
-                )
-            );
-            ConsumerRequest.Require(
-                response.StatusCode == HttpStatusCode.OK,
-                "Consumer read did not return a complete successful response."
-            );
+                        DangerousDisablePathAndQueryCanonicalization = true,
+                    })
+                );
+                result = await ReadOnceAsync(
+                    storage, null, result.Origin, result.Index,
+                    ConsumerRequest.Sha256(Encoding.UTF8.GetBytes(result.Location)),
+                    cancellationToken
+                ).ConfigureAwait(false);
+            }
+            byte[] body = result.Body;
             if (url == ConsumerRequest.ServiceIndex)
             {
                 ConsumerRequest.Require(
@@ -218,21 +137,13 @@ internal sealed class BoundedHttpHandler : DelegatingHandler
                     "Consumer did not receive the admitted original package."
                 );
                 PackageReturned = true;
+                PackageResponseIndex = result.Index;
             }
-            var returned = new HttpResponseMessage(response.StatusCode)
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new ByteArrayContent(body),
                 RequestMessage = message,
             };
-            foreach (KeyValuePair<string, IEnumerable<string>> header in response.Content.Headers)
-            {
-                returned.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-            foreach (KeyValuePair<string, IEnumerable<string>> header in response.Headers)
-            {
-                returned.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-            return returned;
         }
         catch
         {
@@ -243,6 +154,181 @@ internal sealed class BoundedHttpHandler : DelegatingHandler
         {
             _gate.Release();
         }
+    }
+
+    private sealed record ReadResult(byte[] Body, int Index, string? Location, string? Origin);
+
+    private async Task<ReadResult> ReadOnceAsync(
+        HttpRequestMessage message,
+        string? selectedUrl,
+        string? origin,
+        int? redirectedFrom,
+        string? locationSha256,
+        CancellationToken cancellationToken
+    )
+    {
+        ConsumerRequest.Require(
+            Requests < _request.MaximumRequests
+                && ResponseBytes < _request.MaximumResponseBytes,
+            "Consumer HTTP allowance exhausted before request."
+        );
+        cancellationToken.ThrowIfCancellationRequested();
+        int index = ++Requests;
+        Save(
+            $"{index:D3}-reserved.json",
+            Encoding.UTF8.GetBytes(
+                new JsonObject
+                {
+                    ["schema"] = ConsumerRequest.HttpSchema,
+                    ["method"] = "GET",
+                    ["url"] = selectedUrl,
+                    ["origin"] = origin ?? "https://nuget.pkg.github.com",
+                    ["redirectedFrom"] = redirectedFrom,
+                    ["locationSha256"] = locationSha256,
+                    ["startedAt"] = DateTimeOffset.UtcNow.ToString("O"),
+                    ["maximumRemainingResponseBytes"] =
+                        _request.MaximumResponseBytes - ResponseBytes,
+                }.ToJsonString()
+            )
+        );
+        using HttpResponseMessage response = await base.SendAsync(message, cancellationToken)
+            .ConfigureAwait(false);
+        string[] locations = response.Headers.NonValidated.TryGetValues("Location", out var values)
+            ? values.ToArray()
+            : [];
+        bool redirect = selectedUrl == _request.PackageUrl
+            && response.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Found;
+        string? location = null;
+        string? redirectOrigin = null;
+        if (redirect)
+        {
+            ConsumerRequest.Require(
+                locations.Length == 1, "Missing or ambiguous package Location."
+            );
+            location = locations[0];
+            Check(location, credentialsOnly: true);
+            redirectOrigin = StorageOrigin(location);
+            // Remember both forms before checking any other response field.
+            // A later response must not reflect the capability into evidence.
+            _secrets.Add(Encoding.UTF8.GetBytes(location));
+            _secrets.Add(Encoding.UTF8.GetBytes(Uri.UnescapeDataString(location)));
+        }
+        foreach (var header in response.Headers.NonValidated.Concat(
+            response.Content.Headers.NonValidated
+        ))
+        {
+            if (header.Key.Equals("Location", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            Check(header.Key);
+            foreach (string value in header.Value)
+            {
+                Check(value);
+            }
+        }
+        Check(response.ReasonPhrase ?? string.Empty);
+        ConsumerRequest.Require(
+            response.Content.Headers.ContentEncoding.Count == 0,
+            "Encoded consumer response is unsupported by the byte allowance."
+        );
+        bool retain = response.StatusCode == HttpStatusCode.OK && locations.Length == 0;
+        long before = ResponseBytes;
+        using Stream content = await response.Content.ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        byte[] chunk = new byte[8192];
+        while (true)
+        {
+            int allowance = (int)Math.Min(
+                chunk.Length, _request.MaximumResponseBytes - ResponseBytes
+            );
+            int count = await content.ReadAsync(chunk.AsMemory(0, allowance), cancellationToken)
+                .ConfigureAwait(false);
+            ResponseBytes += count;
+            // The last allowance byte is an overflow sentinel. Establish EOF
+            // inside the original total; never read again after exhausting it.
+            ConsumerRequest.Require(
+                ResponseBytes < _request.MaximumResponseBytes,
+                "Consumer response allowance exhausted before complete response."
+            );
+            if (count == 0)
+            {
+                break;
+            }
+            if (retain)
+            {
+                buffer.Write(chunk, 0, count);
+            }
+        }
+        byte[] body = buffer.ToArray();
+        Check(body);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (retain)
+        {
+            Save($"{index:D3}-body.bin", body);
+        }
+        var headers = new JsonObject();
+        foreach (string key in new[] {
+            "Date", "ETag", "Content-Type", "Content-Length", "X-GitHub-Request-Id"
+        })
+        {
+            if (response.Headers.TryGetValues(key, out var selected)
+                || response.Content.Headers.TryGetValues(key, out selected))
+            {
+                headers[key.ToLowerInvariant()] = new JsonArray(
+                    selected.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()
+                );
+            }
+        }
+        Save(
+            $"{index:D3}-response.json",
+            Encoding.UTF8.GetBytes(
+                new JsonObject
+                {
+                    ["schema"] = ConsumerRequest.HttpSchema,
+                    ["status"] = (int)response.StatusCode,
+                    ["headers"] = headers,
+                    ["sha256"] = retain ? ConsumerRequest.Sha256(body) : null,
+                    ["bytes"] = ResponseBytes - before,
+                    ["bodyRetention"] = retain ? "original" : "omitted",
+                    ["redirectOrigin"] = redirectOrigin,
+                    ["locationSha256"] = location is null ? null
+                        : ConsumerRequest.Sha256(Encoding.UTF8.GetBytes(location)),
+                    ["completedAt"] = DateTimeOffset.UtcNow.ToString("O"),
+                }.ToJsonString()
+            )
+        );
+        ConsumerRequest.Require(
+            retain || redirect,
+            "Consumer read did not return a complete successful response."
+        );
+        return new ReadResult(body, index, location, redirectOrigin);
+    }
+
+    private static string StorageOrigin(string location)
+    {
+        ConsumerRequest.Require(
+            location.StartsWith("https://", StringComparison.Ordinal)
+                && location.All(value => value is >= (char)33 and <= (char)126)
+                && !location.Contains('\\') && !location.Contains('#'),
+            "Invalid storage Location."
+        );
+        string authority = location[8..].Split('/', '?')[0].ToLowerInvariant();
+        string[] labels = authority.Split('.');
+        ConsumerRequest.Require(
+            authority.Length is > 0 and <= 253
+                && labels.All(label => label.Length is > 0 and <= 63
+                    && char.IsAsciiLetterOrDigit(label[0])
+                    && char.IsAsciiLetterOrDigit(label[^1])
+                    && label.All(value => char.IsAsciiLetterOrDigit(value) || value == '-'))
+                && !labels.All(label => label.All(char.IsAsciiDigit)
+                    || (label.StartsWith("0x", StringComparison.Ordinal)
+                        && label.Length > 2 && label[2..].All(char.IsAsciiHexDigit)))
+                && authority != "api.github.com",
+            "Invalid storage DNS authority."
+        );
+        return "https://" + authority;
     }
 
     protected override void Dispose(bool disposing)

@@ -83,6 +83,71 @@ def inputs(tmp_path, monkeypatch):
     }
 
 
+def _write_http_transcript(directory, request, *, redirect=True):
+    """Model raw response evidence independently of the production decoder."""
+    package_url = (
+        request["packageBaseAddress"]
+        + PACKAGE_ID
+        + "/1.2.3/"
+        + PACKAGE_ID
+        + ".1.2.3.nupkg"
+    )
+    urls = [
+        "https://nuget.pkg.github.com/hcoona/index.json",
+        request["packageBaseAddress"] + PACKAGE_ID + "/index.json",
+        package_url,
+    ]
+    bodies = [b"controlled service index", b'{"versions":["1.2.3"]}', ORIGINAL]
+    if redirect:
+        urls.append(None)
+        bodies[2] = b"redirect"
+        bodies.append(ORIGINAL)
+    total = 0
+    location_digest = _sha(
+        b"https://storage.example.invalid/package?sig=controlled"
+    )
+    for index, (url, body) in enumerate(zip(urls, bodies, strict=True), 1):
+        is_redirect = redirect and index == 3
+        is_storage = redirect and index == 4
+        reserved = {
+            "schema": "workflow-delivery/v3/nuget-consumer-http-v2",
+            "method": "GET",
+            "url": url,
+            "origin": "https://storage.example.invalid"
+            if is_storage
+            else "https://nuget.pkg.github.com",
+            "redirectedFrom": 3 if is_storage else None,
+            "locationSha256": location_digest if is_storage else None,
+            "startedAt": "2026-09-15T00:00:00+00:00",
+            "maximumRemainingResponseBytes": request["maximumResponseBytes"]
+            - total,
+        }
+        response = {
+            "schema": "workflow-delivery/v3/nuget-consumer-http-v2",
+            "status": 302 if is_redirect else 200,
+            "headers": {},
+            "sha256": None if is_redirect else _sha(body),
+            "bytes": len(body),
+            "bodyRetention": "omitted" if is_redirect else "original",
+            "redirectOrigin": "https://storage.example.invalid"
+            if is_redirect
+            else None,
+            "locationSha256": location_digest if is_redirect else None,
+            "completedAt": "2026-09-15T00:00:00+00:00",
+        }
+        total += len(body)
+        prefix = f"{index:03d}"
+        (directory / (prefix + "-reserved.json")).write_bytes(
+            canonicalize(reserved)
+        )
+        (directory / (prefix + "-response.json")).write_bytes(
+            canonicalize(response)
+        )
+        if not is_redirect:
+            (directory / (prefix + "-body.bin")).write_bytes(body)
+    return len(urls), total
+
+
 def _controlled_command(argv, *, cwd, evidence, **_kwargs):
     label = evidence.directory.name
     if label == "sdk":
@@ -96,6 +161,8 @@ def _controlled_command(argv, *, cwd, evidence, **_kwargs):
         directory.mkdir()
         content = canonicalize(request)
         (directory / "request.json").write_bytes(content)
+        (directory / "started.json").write_bytes(b"{}")
+        requests, response_bytes = _write_http_transcript(directory, request)
         selected = cwd / "packages" / PACKAGE_ID / "1.2.3"
         selected.mkdir(parents=True)
         (selected / (PACKAGE_ID + ".1.2.3.nupkg")).write_bytes(ORIGINAL)
@@ -105,7 +172,10 @@ def _controlled_command(argv, *, cwd, evidence, **_kwargs):
         assets = b'{"controlledAssets":true}'
         (cwd / "obj/project.assets.json").write_bytes(assets)
         result = {
-            "schema": "workflow-delivery/v3/nuget-consumer-restore-result",
+            "schema": "workflow-delivery/v3/nuget-consumer-restore-result-v2",
+            "packageRedirectPolicy": "nuget-package-location-v1",
+            "httpEvidenceSchema": "workflow-delivery/v3/nuget-consumer-http-v2",
+            "packageResponseIndex": requests,
             "completed": True,
             "packageId": PACKAGE_ID,
             "version": "1.2.3",
@@ -114,8 +184,8 @@ def _controlled_command(argv, *, cwd, evidence, **_kwargs):
             "graphSha256": request["graphSha256"],
             "requestSha256": _sha(content),
             "assetsSha256": _sha(assets),
-            "requests": 4,
-            "responseBytes": 1000,
+            "requests": requests,
+            "responseBytes": response_bytes,
         }
         output = canonicalize(result)
         (directory / "result.json").write_bytes(output)
@@ -201,6 +271,194 @@ def test_consumer_completes_only_after_restore_build_and_marker(
     with pytest.raises(FileExistsError):
         consumer.run_nuget_consumer(request, **kwargs)
     assert controlled.call_count == 5
+
+
+@pytest.mark.parametrize("redirect", [False, True])
+def test_consumer_validates_direct_and_redirected_native_http_evidence(
+    inputs, controlled, redirect
+):
+    request, kwargs = inputs
+
+    def invoke(argv, **options):
+        output = _controlled_command(argv, **options)
+        if options["evidence"].directory.name != "restore":
+            return output
+        directory = options["cwd"] / "restore-evidence"
+        if not redirect:
+            for path in directory.glob("0*"):
+                path.unlink()
+            count, total = _write_http_transcript(
+                directory, _read(Path(argv[-1])), redirect=False
+            )
+            result = parse_json_strict(output)
+            result.update(
+                requests=count, responseBytes=total, packageResponseIndex=count
+            )
+            output = canonicalize(result)
+            (directory / "result.json").write_bytes(output)
+        return output
+
+    controlled.side_effect = invoke
+    output = consumer.run_nuget_consumer(request, **kwargs)
+    assert (
+        _read(output)["schema"]
+        == "workflow-delivery/v3/nuget-consumer-result-v2"
+    )
+    outer_request = _read(output.parent / "request.json")
+    assert (
+        outer_request["schema"]
+        == "workflow-delivery/v3/nuget-consumer-request-v2"
+    )
+    assert outer_request["packageRedirectPolicy"] == "nuget-package-location-v1"
+    native_request = _read(output.parent / "restore-request.json")
+    assert (
+        native_request["schema"]
+        == "workflow-delivery/v3/nuget-consumer-restore-request-v2"
+    )
+    assert (
+        native_request["packageRedirectPolicy"] == "nuget-package-location-v1"
+    )
+    assert controlled.call_count == 5
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "old-result",
+        "wrong-policy",
+        "old-http",
+        "missing-hop",
+        "orphan-hop",
+        "wrong-origin",
+        "wrong-digest",
+        "wrong-source",
+        "second-hop",
+        "metadata-redirect",
+        "redirect-body",
+        "extra-file",
+        "missing-body",
+        "substituted-package",
+        "substituted-index",
+        "bytes",
+        "reservation",
+        "total",
+        "terminal-index",
+        "unsafe-header",
+        "bool-status",
+    ],
+)
+def test_consumer_rejects_inconsistent_http_evidence_before_build(
+    inputs, controlled, change
+):
+    request, kwargs = inputs
+
+    def invoke(argv, **options):
+        output = _controlled_command(argv, **options)
+        if options["evidence"].directory.name != "restore":
+            return output
+        directory = options["cwd"] / "restore-evidence"
+        result = parse_json_strict(output)
+        result_changes = {
+            "old-result": (
+                "schema",
+                "workflow-delivery/v3/nuget-consumer-restore-result",
+            ),
+            "wrong-policy": ("packageRedirectPolicy", "automatic"),
+            "old-http": (
+                "httpEvidenceSchema",
+                "workflow-delivery/v3/nuget-consumer-http",
+            ),
+            "total": ("responseBytes", result["responseBytes"] + 1),
+            "terminal-index": ("packageResponseIndex", 3),
+        }
+        if change in result_changes:
+            key, value = result_changes[change]
+            result[key] = value
+        elif change in {"missing-hop", "missing-body"}:
+            (
+                directory
+                / (
+                    "004-reserved.json"
+                    if change == "missing-hop"
+                    else "004-body.bin"
+                )
+            ).unlink()
+        elif change in {"redirect-body", "extra-file"}:
+            (
+                directory
+                / (
+                    "003-body.bin"
+                    if change == "redirect-body"
+                    else "005-response.json"
+                )
+            ).write_bytes(b"unmatched bytes")
+        else:
+            name, key, value = {
+                "orphan-hop": ("003-response.json", "status", 200),
+                "wrong-origin": (
+                    "004-reserved.json",
+                    "origin",
+                    "https://other.example.invalid",
+                ),
+                "wrong-digest": (
+                    "004-reserved.json",
+                    "locationSha256",
+                    "a" * 64,
+                ),
+                "wrong-source": ("004-reserved.json", "redirectedFrom", 2),
+                "second-hop": ("004-response.json", "status", 302),
+                "metadata-redirect": (
+                    "003-reserved.json",
+                    "url",
+                    consumer._INDEX,
+                ),
+                "bytes": ("004-response.json", "bytes", len(ORIGINAL) + 1),
+                "reservation": (
+                    "004-reserved.json",
+                    "maximumRemainingResponseBytes",
+                    request.limits.response_bytes,
+                ),
+                "unsafe-header": (
+                    "004-response.json",
+                    "headers",
+                    {"location": ["https://secret.invalid/p"]},
+                ),
+                "bool-status": ("004-response.json", "status", True),
+                "substituted-package": (
+                    "004-response.json",
+                    "sha256",
+                    _sha(b"substituted"),
+                ),
+                "substituted-index": (
+                    "001-response.json",
+                    "sha256",
+                    _sha(b"substituted"),
+                ),
+            }[change]
+            document = _read(directory / name)
+            document[key] = value
+            if change.startswith("substituted-"):
+                body_name = name.replace("response.json", "body.bin")
+                previous = (directory / body_name).stat().st_size
+                (directory / body_name).write_bytes(b"substituted")
+                document["bytes"] = len(b"substituted")
+                result["responseBytes"] += len(b"substituted") - previous
+            (directory / name).write_bytes(canonicalize(document))
+        output = canonicalize(result)
+        (directory / "result.json").write_bytes(output)
+        return output
+
+    controlled.side_effect = invoke
+    with pytest.raises(ValueError, match="consumer process failed"):
+        consumer.run_nuget_consumer(request, **kwargs)
+    assert controlled.call_count == 3
+    assert not (kwargs["audit_directory"] / "consumer.json").exists()
+    assert (
+        _read(kwargs["audit_directory"] / "consumer-failed.json")[
+            "consumerSpent"
+        ]
+        is True
+    )
 
 
 @pytest.mark.parametrize("changed", ["archive", "witness", "runtime", "dotnet"])
