@@ -9,7 +9,8 @@ the publication chain, fresh destination bytes and witness, and a clean
 exact-version restore, build and marker invocation.
 
 This record owns the runtime completion evidence consumed by the project
-README, document index and agent handoffs. Workflow Delivery v3 maintainers
+README, document index, agent handoffs and [migration policy](../migration-strategy.md).
+Workflow Delivery v3 maintainers
 retain its original evidence and update the consuming status when a relevant
 claim changes. [Requirements](../requirements.md#nuget-second-slice) remain
 normative; this observation grants no future operation or broader support claim.
