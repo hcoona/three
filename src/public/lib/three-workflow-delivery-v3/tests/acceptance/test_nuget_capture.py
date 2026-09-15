@@ -582,18 +582,16 @@ STORAGE_LOCATION = (
 )
 
 
-def _package_redirect(scenario, status=302):
+def _package_redirect(scenario, status=302, *, location=STORAGE_LOCATION):
     _, transport, responses = scenario
     original = responses[ARCHIVE_URL]
     responses[ARCHIVE_URL] = replace(
         original,
         status=status,
-        body=("<a href='" + STORAGE_LOCATION + "'>download</a>").encode(),
-        headers=(("Location", STORAGE_LOCATION),),
+        body=("<a href='" + location + "'>download</a>").encode(),
+        headers=(("Location", location),),
     )
-    transport.get_package_storage.return_value = replace(
-        original, url=STORAGE_LOCATION
-    )
+    transport.get_package_storage.return_value = replace(original, url=location)
     return responses[ARCHIVE_URL]
 
 
@@ -699,6 +697,54 @@ def test_capture_redirect_header_reflection_never_persists(
 
 
 @pytest.mark.parametrize(
+    "reflection",
+    [
+        ("first", "ETag", "https://storage.example/a/b.nupkg?sig=x/y&v=1"),
+        ("terminal", "Link", "/a/b.nupkg?sig=x/y&v=1"),
+        ("terminal", None, "sig=x/y&v=1"),
+        (
+            "first",
+            "Link",
+            "https://storage.example/a/b.nupkg?sig=x/y&amp;v=1",
+        ),
+        ("terminal", "ETag", "/a/b.nupkg?sig=x/y&amp;v=1"),
+        ("terminal", None, "sig=x/y&amp;v=1"),
+    ],
+)
+def test_capture_decoded_location_reflection_never_persists(
+    tmp_path, capture_request, scenario, reflection
+):
+    stage, header, reflected = reflection
+    location = "https://storage.example/a%2Fb.nupkg?sig=x%2Fy&v=1"
+    source = _package_redirect(scenario, location=location)
+    authority, transport, responses = scenario
+    if stage == "first":
+        responses[ARCHIVE_URL] = replace(
+            source, headers=(*source.headers, (header, reflected))
+        )
+    else:
+        terminal = transport.get_package_storage.return_value
+        transport.get_package_storage.return_value = (
+            replace(terminal, body=reflected.encode())
+            if header is None
+            else replace(terminal, headers=((header, reflected),))
+        )
+    expected_error = "capability" if stage == "first" else "^NuGetAdapterError$"
+    with pytest.raises((ValueError, RuntimeError), match=expected_error):
+        _capture(tmp_path, capture_request, scenario)
+    _assert_safe_partial_header_failure(
+        tmp_path,
+        scenario,
+        location,
+        requests=5 if stage == "first" else 6,
+        storage_calls=int(stage == "terminal"),
+    )
+    authority.inspect_package.assert_not_called()
+    for path in (tmp_path / "capture").iterdir():
+        assert reflected.encode() not in path.read_bytes(), path.name
+
+
+@pytest.mark.parametrize(
     "stage",
     ["metadata", "invalid-package", "unsupported-package", "second-hop"],
 )
@@ -761,7 +807,8 @@ def test_capture_accounts_for_redirect_and_preserves_only_terminal_package(
         read_capture_evidence,
     )
 
-    source = _package_redirect(scenario, status)
+    location = "https://storage.example/a%2Fb.nupkg?sig=x%2Fy&v=1"
+    source = _package_redirect(scenario, status, location=location)
     output = _capture(tmp_path, capture_request, scenario)
     document = _read(output)
     assert document["schema"] == "workflow-delivery/v3/nuget-active-capture-v2"
@@ -783,7 +830,7 @@ def test_capture_accounts_for_redirect_and_preserves_only_terminal_package(
         "sourceRequest": 5,
         "sourceUrl": ARCHIVE_URL,
         "origin": "https://storage.example",
-        "locationSha256": hashlib.sha256(STORAGE_LOCATION.encode()).hexdigest(),
+        "locationSha256": hashlib.sha256(location.encode()).hexdigest(),
     }
     assert terminal["requestedUrl"] == terminal["responseUrl"] == ARCHIVE_URL
     assert document["scenarioPackage"]["body"] == "response-006.body"
@@ -792,8 +839,10 @@ def test_capture_accounts_for_redirect_and_preserves_only_terminal_package(
     assert decoded.package == ARCHIVE
     assert decoded.witness == WITNESS
     for path in output.parent.iterdir():
-        assert b"private-capability" not in path.read_bytes()
+        assert b"sig=x%2Fy" not in path.read_bytes()
+        assert b"sig=x/y" not in path.read_bytes()
     scenario[1].get_package_storage.assert_called_once()
+    assert scenario[1].get_package_storage.call_args.args == (source,)
 
 
 @pytest.mark.parametrize(

@@ -129,7 +129,7 @@ def test_http_preserves_raw_bytes_without_replay(transport):
 def test_artifact_redirect_omits_credentials_and_retains_no_capability(
     transport,
 ):
-    capability = ORIGIN + "/original.zip?sig=controlled-capability&se=2030"
+    capability = ORIGIN + "/a%2Fb.zip?sig=controlled%2Fcapability&se=2030"
     escaped = capability.replace("&", "&amp;").encode()
     redirect_body = b'<a href="' + escaped + b'">download</a>'
     original = b"PK\x00original-artifact-bytes"
@@ -146,7 +146,7 @@ def test_artifact_redirect_omits_credentials_and_retains_no_capability(
     assert (host, method, target) == (
         "artifact-storage.example",
         "GET",
-        "/original.zip?sig=controlled-capability&se=2030",
+        "/a%2Fb.zip?sig=controlled%2Fcapability&se=2030",
     )
     assert "Authorization" not in supplied["headers"]
     assert supplied["body"] is None
@@ -158,6 +158,7 @@ def test_artifact_redirect_omits_credentials_and_retains_no_capability(
     assert capability.encode() not in retained
     assert escaped not in retained
     assert TOKEN.encode() not in retained
+    assert b"sig=controlled/capability&se=2030" not in retained
     assert b"locationSha256" in retained
     assert item.client.requests == 2
     assert item.client.response_bytes == len(original) + len(redirect_body)
@@ -611,6 +612,48 @@ def test_storage_reflection_never_enters_evidence(transport, reflection):
     )
     assert b"private-capability" not in retained
     assert not (item.client.directory / "call-0001/artifact.body").exists()
+
+
+@pytest.mark.parametrize(
+    "reflected",
+    [
+        ORIGIN + "/a/b.zip?sig=x/y&v=1",
+        "/a/b.zip?sig=x/y&v=1",
+        "sig=x/y&v=1",
+        ORIGIN + "/a/b.zip?sig=x/y&amp;v=1",
+        "/a/b.zip?sig=x/y&amp;v=1",
+        "sig=x/y&amp;v=1",
+    ],
+)
+def test_artifact_decoded_location_reflection_never_persists(
+    transport, reflected
+):
+    target = "/a%2Fb.zip?sig=x%2Fy&v=1"
+    item = transport(
+        [
+            _response(b"redirect", 302, ORIGIN + target),
+            _response(reflected.encode()),
+        ]
+    )
+    with pytest.raises(ValueError, match="GitHub call failed"):
+        item.client.request(
+            ARTIFACT_ROUTE, download=True, deadline=time.monotonic() + 10
+        )
+    assert len(item.calls) == 2
+    assert item.calls[1][2] == target
+    assert "Authorization" not in item.calls[1][3]["headers"]
+    assert item.client.failed
+    assert item.client.requests == 2
+    assert item.client.response_bytes == 1_100_002
+    directory = item.client.directory / "call-0001"
+    assert not (directory / "artifact.body").exists()
+    assert not (directory / "artifact.json").exists()
+    for path in item.client.directory.rglob("*"):
+        if path.is_file():
+            content = path.read_bytes()
+            assert reflected.encode() not in content
+            assert b"sig=x%2Fy" not in content
+            assert TOKEN.encode() not in content
 
 
 def test_duplicate_original_locations_stop_before_storage(transport):

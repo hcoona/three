@@ -322,14 +322,15 @@ def package_storage_location(source: NuGetHttpResponse) -> tuple[str, str]:
 
 
 def read_location_secrets(location: str) -> tuple[bytes, ...]:
-    """Guard full and HTML-escaped capability targets after URL admission."""
+    """Guard raw, once-decoded and HTML capability forms after URL admission."""
     parsed = urlsplit(location)
     target = (parsed.path or "/") + (
         "?" + parsed.query if "?" in location else ""
     )
     return tuple(
         value.encode()
-        for part in (location, target, parsed.query)
+        for raw in (location, target, parsed.query)
+        for part in (raw, unquote(raw))
         if part and part != "/"
         for value in (part, html.escape(part))
     )

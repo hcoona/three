@@ -141,9 +141,7 @@ def _observe(transport, authority):
 def test_package_read_follows_one_original_location_with_safe_exchanges(
     authority, status
 ):
-    location = (
-        "https://packages-storage.example/objects/a%2Fb.nupkg?sig=private&v=1"
-    )
+    location = "https://packages-storage.example/objects/a%2Fb.nupkg?sig=private%2Fone&v=1"
     responses = _responses()
     redirect_body = ("<a href='" + location + "'>download</a>").encode()
     source = _response(
@@ -190,7 +188,8 @@ def test_package_read_follows_one_original_location_with_safe_exchanges(
         [{"url": item.url, "headers": item.headers} for item in state.exchanges]
     ).encode() + b"".join(item.body for item in state.exchanges)
     assert location.encode() not in visible
-    assert b"sig=private&v=1" not in visible
+    assert b"sig=private%2Fone&v=1" not in visible
+    assert b"sig=private/one&v=1" not in visible
     assert state.exchanges[-2].header("etag") == '"package-revision"'
     assert all(
         response.header("location") is None for response in state.exchanges
@@ -246,6 +245,49 @@ def test_package_redirect_header_reflection_stops_before_storage(
     assert transport.get.call_count == 5
     transport.get_package_storage.assert_not_called()
     authority.inspect_package.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("header", "reflected"),
+    [
+        ("ETag", "https://storage.example/a/b.nupkg?sig=x/y&v=1"),
+        ("Link", "/a/b.nupkg?sig=x/y&v=1"),
+        ("ETag", "sig=x/y&v=1"),
+        ("Link", "https://storage.example/a/b.nupkg?sig=x/y&amp;v=1"),
+        ("ETag", "/a/b.nupkg?sig=x/y&amp;v=1"),
+        ("Link", "sig=x/y&amp;v=1"),
+    ],
+)
+def test_package_decoded_location_header_stops_before_storage(
+    authority, header, reflected
+):
+    location = "https://storage.example/a%2Fb.nupkg?sig=x%2Fy&v=1"
+    responses = _responses()
+    responses[ARCHIVE_URL] = _response(
+        ARCHIVE_URL,
+        body=b"redirect",
+        status=302,
+        headers=(("Location", location), (header, reflected)),
+    )
+    transport = _reader(responses)
+    transport.get_package_storage.return_value = _response(
+        location, body=PACKAGE_BYTES
+    )
+    with pytest.raises(nuget.NuGetAdapterError, match="capability"):
+        _observe(transport, authority)
+    assert transport.get.call_count == 5
+    transport.get_package_storage.assert_not_called()
+    authority.inspect_package.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "location", ["https://storage.example/", "https://storage.example/?%2F"]
+)
+def test_location_comparison_excludes_trivial_decoded_forms(location):
+    secrets = nuget.read_location_secrets(location)
+    nuget.check_read_secrets(b"ordinary/path", secrets)
+    with pytest.raises(nuget.NuGetAdapterError, match="capability"):
+        nuget.check_read_secrets(location.encode(), secrets)
 
 
 @pytest.mark.parametrize(
