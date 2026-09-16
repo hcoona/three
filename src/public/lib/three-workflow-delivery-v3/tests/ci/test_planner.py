@@ -314,6 +314,9 @@ def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
         "nested/package.json",
         "nested/pnpm-lock.yaml",
         "nested/packages.lock.json",
+        "src/private/lib/hk/Config.pkl",
+        "src/private/lib/hk/Steps.pkl",
+        "src/private/lib/hk/steps/Typos.pkl",
         *(
             "src/private/app/workflow-delivery-v3-dotnet-provider/" + name
             for name in (
@@ -507,6 +510,11 @@ def test_manual_slice_validation_always_selects_complete_slice() -> None:
         (
             (SHA_A, SHA_B),
             ("src/private/app/unclassified/source.py",),
+            "changed path is unclassified",
+        ),
+        (
+            (SHA_A, SHA_B),
+            ("src/private/lib/hk-other/Config.pkl",),
             "changed path is unclassified",
         ),
         (
