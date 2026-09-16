@@ -1,7 +1,5 @@
 amends "src/private/lib/hk/Config.pkl"
 
-import "package://github.com/jdx/hk/releases/download/v1.56.1/hk@1.56.1#/Builtins.pkl"
-
 import "src/private/lib/hk/Steps.pkl"
 
 min_hk_version = "1.56.1"
@@ -247,13 +245,15 @@ local python_linters = new Mapping<String, Step> {
     fix = "python eng/scripts/hk_exec.py uv run ruff check --force-exclude --fix -- {{files}}"
   }
 
-  ["ruff_format"] = (Builtins.ruff_format) {
+  ["ruff_format"] {
     profiles = List("small")
     exclude = python_exclude_list
     glob = all_python_files
     stage = all_python_files
     check =
       "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude --check -- {{files}}"
+    check_diff =
+      "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude --diff -- {{files}}"
     fix = "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude -- {{files}}"
   }
 }

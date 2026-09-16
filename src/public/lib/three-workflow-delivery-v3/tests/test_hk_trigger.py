@@ -992,6 +992,97 @@ def test_ci_workflows_use_complete_history_for_impact_and_file_checks() -> None:
         ), path
 
 
+@pytest.mark.parametrize("hook", ["pre-commit", "check", "fix"])
+def test_real_hk_formats_tracked_notebook_for_each_hook(
+    tmp_path: Path,
+    hook: str,
+) -> None:
+    """Keep Notebook formatting selected across local validation modes."""
+    notebook = "src/example/main.ipynb"
+    repo = tmp_path / "repo"
+    _initialize_repository(repo, baseline_paths=(notebook,))
+    _write(
+        repo,
+        notebook,
+        json.dumps(
+            {"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}
+        ),
+    )
+    _git(repo, "add", "--", notebook)
+
+    result = _run(
+        (
+            _hk_executable(),
+            "--no-progress",
+            "run",
+            hook,
+            "--plan",
+            "--json",
+            "--step",
+            "ruff_format",
+            "--",
+            notebook,
+        ),
+        cwd=repo,
+    )
+    plan: HkPlanJson = json.loads(result.stdout)
+
+    assert plan["hook"] == hook
+    assert plan["runType"] == ("fix" if hook == "fix" else "check")
+    assert len(plan["steps"]) == 1
+    step = plan["steps"][0]
+    assert step["name"] == "ruff_format"
+    assert step["status"] == "included", (hook, step)
+    assert step["fileCount"] == 1
+
+
+@pytest.mark.parametrize("with_source", [False, True], ids=["removed", "mixed"])
+def test_ruff_format_diff_handles_removed_operands(
+    tmp_path: Path,
+    *,
+    with_source: bool,
+) -> None:
+    """Run the effective diff without reading deleted paths or writing files."""
+    import os  # noqa: PLC0415
+    import shlex  # noqa: PLC0415
+
+    config = json.loads(
+        _run(
+            ("mise", "exec", "--", "pkl", "eval", "--format", "json", "hk.pkl"),
+            cwd=REPO_ROOT,
+        ).stdout
+    )
+    step = config["hooks"]["check"]["steps"]["ruff_format"]
+    command = shlex.split(step["check_diff"])
+    assert command.count("{{files}}") == 1
+    removed = tmp_path / "removed.py"
+    paths = [str(removed)]
+    source = tmp_path / "existing.py"
+    original = "value=  1\n"
+    if with_source:
+        source.write_text(original, encoding="utf-8")
+        paths.append(str(source))
+    file_index = command.index("{{files}}")
+    command[file_index : file_index + 1] = paths
+
+    result = subprocess.run(  # noqa: S603
+        command,
+        cwd=REPO_ROOT,
+        env={**os.environ, **step["env"]},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == int(with_source), result.stderr
+    assert str(removed) not in result.stderr
+    assert not removed.exists()
+    if with_source:
+        assert "-value=  1" in result.stdout
+        assert "+value = 1" in result.stdout
+        assert source.read_text(encoding="utf-8") == original
+
+
 def test_precommit_impact_all_includes_suite_with_an_empty_index(
     tmp_path: Path,
 ) -> None:
