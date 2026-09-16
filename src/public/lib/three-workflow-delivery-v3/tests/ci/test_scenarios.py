@@ -148,7 +148,7 @@ WORKFLOW_RUN_ID = 7001
 RUN_ATTEMPT = 2
 PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 PROJECT_SOURCE = f"{PRODUCT_PATH}/src/index.ts"
-UNRELATED_PRODUCT_SOURCE = "src/public/lib/hcoona-release-smoke/src/index.ts"
+UNRELATED_PRODUCT_SOURCE = "src/public/lib/unrelated-product/src/index.ts"
 GIT_TRANSITIONS = ("add", "modify", "delete", "rename-out", "rename-in")
 
 
@@ -544,7 +544,9 @@ def _hk_step_from_result(
     plan = cast("dict[str, Any]", json.loads(result.stdout))
     steps = cast("list[dict[str, Any]]", plan["steps"])
 
-    assert plan["hook"] == "check"
+    assert plan["hook"] == (
+        "impact-check" if step_name == CONTROL_STEP_NAME else "check"
+    )
     assert plan["runType"] == "check"
     assert "small" in cast("list[str]", plan["profiles"])
     assert len(steps) == 1
@@ -571,7 +573,11 @@ def _hk_step_for_range(
             "--",
             _hk_executable(),
             "--no-progress",
-            "check",
+            *(
+                ("run", "impact-check")
+                if step_name == CONTROL_STEP_NAME
+                else ("check",)
+            ),
             "--plan",
             "--json",
             "--step",
@@ -587,7 +593,11 @@ def _hk_step_for_all(repo: Path, step_name: str) -> dict[str, Any]:
         (
             _hk_executable(),
             "--no-progress",
-            "check",
+            *(
+                ("run", "impact-check")
+                if step_name == CONTROL_STEP_NAME
+                else ("check",)
+            ),
             "--plan",
             "--json",
             "--step",
@@ -1119,6 +1129,27 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
         run: mise run prepare:static-reference-authorities
 
 """
+    base_hk_invocation = b"""\
+          hk check \\
+            --no-progress \\
+            --no-fail-fast \\
+            --from-ref "$BASE" \\
+            --to-ref "$HEAD"
+"""
+    complete_history_hk_invocation = b"""\
+          python eng/scripts/workflow_delivery_v3_hk.py \\
+            --repository . --from-ref "$BASE" --to-ref "$HEAD" --files0 \\
+            -- hk check --check --no-stage --no-progress --no-fail-fast
+"""
+    manual_hk_guard = b"""\
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            hk check --check --no-stage --no-progress --no-fail-fast --all
+            exit 0
+          fi
+
+"""
+    assert ci_bytes.count(manual_hk_guard) == 1
+    assert ci_bytes.count(complete_history_hk_invocation) == 1
     assert ci_bytes.count(pinned_validation_node) == 1
     assert ci_bytes.count(capture_step) == 1
     assert ci_bytes.count(forced_links) == 1
@@ -1156,6 +1187,12 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
             b"",
             1,
         )
+        .replace(
+            complete_history_hk_invocation,
+            base_hk_invocation,
+            1,
+        )
+        .replace(manual_hk_guard, b"", 1)
     )
     assert hashlib.sha256(reconstructed_base).hexdigest() == (
         "a0ca041623f8f90771a35c25bc14ceeb25810111c50dfcb17b6e34d988f62fca"

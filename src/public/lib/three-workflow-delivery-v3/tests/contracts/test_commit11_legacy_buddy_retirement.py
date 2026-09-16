@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import base64
-import fnmatch
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -194,27 +194,33 @@ def _write_workflow(root: Path, name: str, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _v3_hk_globs() -> tuple[str, ...]:
-    content = (REPO_ROOT / "hk.pkl").read_text(encoding="utf-8")
-    block = content.split(
-        "local workflow_delivery_v3_files =",
-        1,
-    )[1].split('  ["v3-control-pytest"] {', 1)[0]
-    return tuple(re.findall(r'"([^"]+)"', block))
-
-
-def _hk_selected_paths(
-    changes: tuple[tuple[str, str, str | None], ...],
-) -> tuple[str, ...]:
-    globs = _v3_hk_globs()
-    paths = {
-        path
-        for _kind, new_path, old_path in changes
-        for path in (old_path, new_path)
-        if path is not None
-        and any(fnmatch.fnmatchcase(path, pattern) for pattern in globs)
-    }
-    return tuple(sorted(paths))
+def _hk_step_for_paths(paths: tuple[str, ...]) -> dict[str, Any]:
+    """Use HK's effective selector rather than reimplementing Pkl globs."""
+    result = subprocess.run(
+        (  # noqa: S607
+            "mise",
+            "exec",
+            "--",
+            "hk",
+            "run",
+            "impact-check",
+            "--plan",
+            "--json",
+            "--files0-from",
+            "-",
+        ),
+        cwd=REPO_ROOT,
+        input="".join(path + "\0" for path in paths),
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    plan = json.loads(result.stdout)
+    assert plan["hook"] == "impact-check"
+    assert len(plan["steps"]) == 1
+    step = cast("dict[str, Any]", plan["steps"][0])
+    assert step["name"] == "v3-control-pytest"
+    return step
 
 
 def _codeowners_rules(content: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
@@ -430,6 +436,27 @@ def test_production_v1_workflows_match_base_contract() -> None:
         run: mise run prepare:static-reference-authorities
 
 """
+    base_hk_invocation = b"""\
+          hk check \\
+            --no-progress \\
+            --no-fail-fast \\
+            --from-ref "$BASE" \\
+            --to-ref "$HEAD"
+"""
+    complete_history_hk_invocation = b"""\
+          python eng/scripts/workflow_delivery_v3_hk.py \\
+            --repository . --from-ref "$BASE" --to-ref "$HEAD" --files0 \\
+            -- hk check --check --no-stage --no-progress --no-fail-fast
+"""
+    manual_hk_guard = b"""\
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            hk check --check --no-stage --no-progress --no-fail-fast --all
+            exit 0
+          fi
+
+"""
+    assert ci_bytes.count(manual_hk_guard) == 1
+    assert ci_bytes.count(complete_history_hk_invocation) == 1
     assert ci_bytes.count(pinned_validation_node) == 1
     assert ci_bytes.count(capture_step) == 1
     assert ci_bytes.count(forced_links) == 1
@@ -467,6 +494,12 @@ def test_production_v1_workflows_match_base_contract() -> None:
             b"",
             1,
         )
+        .replace(
+            complete_history_hk_invocation,
+            base_hk_invocation,
+            1,
+        )
+        .replace(manual_hk_guard, b"", 1)
     )
     assert hashlib.sha256(reconstructed_base).hexdigest() == (
         "a0ca041623f8f90771a35c25bc14ceeb25810111c50dfcb17b6e34d988f62fca"
@@ -679,11 +712,11 @@ def test_root_hk_selects_buddy_retirement_and_compatibility_changes(
     old_path: str | None,
 ) -> None:
     """Trigger v3 validation for deletions and compatibility-route attempts."""
-    selected = _hk_selected_paths(((kind, new_path, old_path),))
+    paths = tuple(path for path in (old_path, new_path) if path is not None)
+    selected = _hk_step_for_paths(paths)
 
-    assert new_path in selected
-    if old_path is not None:
-        assert old_path in selected
+    assert selected["status"] == "included", kind
+    assert selected["fileCount"] == len(paths)
 
 
 def test_codeowners_covers_deleted_and_future_buddy_routes() -> None:

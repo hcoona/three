@@ -183,6 +183,26 @@ def test_workflow_documentation_is_repository_only() -> None:
         assert not is_static_reference_surface_path(workflow)
 
 
+@pytest.mark.parametrize(
+    ("path", "repository_only"),
+    [
+        ("src/private/lib/hk/Config.pkl", True),
+        ("src/private/lib/hk/Steps.pkl", True),
+        ("src/private/lib/hk/steps/Typos.pkl", True),
+        ("src/private/lib/hk-other/Config.pkl", False),
+    ],
+)
+def test_shared_hk_admission_preserves_component_and_scanner_boundaries(
+    path: str,
+    *,
+    repository_only: bool,
+) -> None:
+    """Admit shared HK modules without widening scanner or sibling scope."""
+    assert is_repository_only_path(path) is repository_only
+    assert not is_static_reference_control_path(path)
+    assert not is_static_reference_surface_path(path)
+
+
 def test_scholarly_publication_admission_stays_package_bounded() -> None:
     """Admit scholarly package surfaces without admitting sibling packages."""
     paths = (

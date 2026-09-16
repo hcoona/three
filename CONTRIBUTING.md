@@ -32,16 +32,36 @@ not require a new engineering review or report.
 
 ## Local Checks
 
+Before an expensive validation or commit, inspect the selected checks and
+validate the intended commit message with the existing rules:
+
+```powershell
+git diff --cached --check
+mise exec -- python eng/scripts/workflow_delivery_v3_hk.py --staged --files0 -- `
+  hk --profile small --profile medium --profile large check --plan --json
+mise exec -- python eng/scripts/workflow_delivery_v3_hk.py --staged --files0 -- hk run impact-check --plan --json
+'perf(hk): Select Validation by Consumed Inputs' | pnpm exec -- commitlint --strict
+```
+
+Use your actual intended message in the last command. A passing plan is only
+a selection preview; it does not run checks. The first plan shows file checks
+and the impact dispatcher; the second shows product suite selection. The
+[HK execution guide](docs/engineering/hk-execution.md#selecting-checks-by-their-inputs)
+explains input scope and the checks that remain unconditional. The normal
+pre-commit and commit-msg hooks still apply when committing.
+
 Use the [repository toolchain guidance](README.md#repository-toolchain) and
 existing `hk.pkl` checks. With the pinned tools available, check the intended
 staged files using the CI profile set:
 
 ```powershell
-mise exec -- hk --profile small --profile medium --profile large check --check --no-stage --no-progress --no-fail-fast
+mise exec -- python eng/scripts/workflow_delivery_v3_hk.py --staged --files0 -- `
+  hk --profile small --profile medium --profile large check --check --no-stage --no-progress --no-fail-fast
 ```
 
-This selects staged files by default; explicit files or refs select a different
-scope. Record the snapshot and scope actually checked. CI uses base/head refs;
+The helper retains staged deletions and both rename paths for HK selection;
+file-reading wrappers pass existing operands to their tools. Record the snapshot and scope
+actually checked. CI uses the same helper with explicit base/head refs;
 local pre-commit uses HK's configured stashing. Do not claim staged/worktree
 equivalence without evidence. Existing profile and path exclusions still apply.
 The [checker contract](docs/governance/checker-contract.md) defines record

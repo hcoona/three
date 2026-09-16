@@ -146,6 +146,11 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            hk check --check --no-stage --no-progress --no-fail-fast --all
+            exit 0
+          fi
+
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             BASE="${{ github.event.pull_request.base.sha }}"
             HEAD="${{ github.event.pull_request.head.sha }}"
@@ -155,11 +160,9 @@ jobs:
           fi
 
           echo "hk check from $BASE to $HEAD"
-          hk check \
-            --no-progress \
-            --no-fail-fast \
-            --from-ref "$BASE" \
-            --to-ref "$HEAD"
+          python eng/scripts/workflow_delivery_v3_hk.py \
+            --repository . --from-ref "$BASE" --to-ref "$HEAD" --files0 \
+            -- hk check --check --no-stage --no-progress --no-fail-fast
 
   dotnet-tests:
     name: Build & Test (.NET 10)

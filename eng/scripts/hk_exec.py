@@ -10,6 +10,8 @@ import sys
 import time
 from datetime import datetime
 
+from hk_file_operands import existing_operands
+
 _MIN_QUOTED_LEN = 2
 _DEFAULT_TIMEOUT_SECONDS = 120
 _DEFAULT_HEARTBEAT_SECONDS = 30
@@ -140,7 +142,7 @@ def kill_process_tree(
         return
 
 
-def run_with_watchdog(  # noqa: PLR0913
+def run_with_watchdog(  # noqa: PLR0913, PLR0917
     command: list[str],
     timeout_seconds: int,
     heartbeat_seconds: int,
@@ -224,10 +226,21 @@ def main() -> int:
     norm_files = [
         normalize_path_arg(p) for p in file_args if normalize_path_arg(p)
     ]
+    norm_files = existing_operands(norm_files)
+    if file_args and not norm_files:
+        print("No existing file operands; skipping file check.")
+        return 0
 
     timeout = (
         late_timeout_override or timeout_override or resolve_timeout_seconds()
     )
+    return run_command(cmd_args, norm_files, timeout)
+
+
+def run_command(
+    cmd_args: list[str], norm_files: list[str], timeout: int
+) -> int:
+    """Execute an explicit file batch or an intentionally operand-free tool."""
     heartbeat = resolve_heartbeat_seconds()
     per_file = resolve_per_file_mode()
     cmd_str = " ".join(cmd_args)
