@@ -51,8 +51,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Effects and domain gates:** Normal Git/Issue/PR operations, scoped
   public-source inspection, isolated test work and applicable checks are
   permitted. Preserve independent review and independent disposition of material
-  findings. This grant authorizes no native service probes, workflow dispatch or
-  rerun, publication, administrative, authentication or access changes, and no
+  findings. Rerunning failed required PR-validation jobs in the ordinary
+  [repository CI workflow](../.github/workflows/ci.yml) remains permitted. This
+  does not authorize v3 business-workflow reruns, native service probes, workflow
+  dispatch, publication, administrative, authentication or access changes, or
   replay of completed npm/NuGet proving. Existing domain gates and spent-operation
   boundaries remain in force.
 - **Completion boundary:** Delete or replace this entry through a reviewed Wave
