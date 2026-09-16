@@ -73,6 +73,8 @@ to HK through a temporary NUL-delimited file, preserving empty lists and path
 boundaries without large shell arguments. Both CI callers use this mode with
 explicit refs; `--staged` provides the corresponding local entry. The file
 lasts until the child exits. The helper never guesses CI refs from the index.
+The general CI workflow's manual entry uses `--all` because it has no event
+baseline for a change range.
 
 The file-linter steps set `HK_SKIP_MISSING_FILES=1` only for their subprocesses.
 The existing execution, actionlint, and Pkl wrappers then omit absent file

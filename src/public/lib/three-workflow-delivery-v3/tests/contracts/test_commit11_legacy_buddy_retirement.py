@@ -448,6 +448,14 @@ def test_production_v1_workflows_match_base_contract() -> None:
             --repository . --from-ref "$BASE" --to-ref "$HEAD" --files0 \\
             -- hk check --check --no-stage --no-progress --no-fail-fast
 """
+    manual_hk_guard = b"""\
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            hk check --check --no-stage --no-progress --no-fail-fast --all
+            exit 0
+          fi
+
+"""
+    assert ci_bytes.count(manual_hk_guard) == 1
     assert ci_bytes.count(complete_history_hk_invocation) == 1
     assert ci_bytes.count(pinned_validation_node) == 1
     assert ci_bytes.count(capture_step) == 1
@@ -491,6 +499,7 @@ def test_production_v1_workflows_match_base_contract() -> None:
             base_hk_invocation,
             1,
         )
+        .replace(manual_hk_guard, b"", 1)
     )
     assert hashlib.sha256(reconstructed_base).hexdigest() == (
         "a0ca041623f8f90771a35c25bc14ceeb25810111c50dfcb17b6e34d988f62fca"

@@ -14,7 +14,7 @@ def existing_operands(paths: list[str]) -> list[str]:
     for path in paths:
         try:
             Path(path).lstat()
-        except FileNotFoundError:
+        except (FileNotFoundError, NotADirectoryError):
             continue
         result.append(path)
     return result

@@ -992,6 +992,90 @@ def test_ci_workflows_use_complete_history_for_impact_and_file_checks() -> None:
         ), path
 
 
+@pytest.mark.parametrize("event", ["workflow_dispatch", "pull_request", "push"])
+@pytest.mark.parametrize("child_status", [0, 73], ids=["success", "failure"])
+def test_general_ci_hk_shell_routes_events_and_propagates_child_status(
+    tmp_path: Path,
+    event: str,
+    child_status: int,
+) -> None:
+    """Run the actual CI shell without dispatching or invoking validation."""
+    import os  # noqa: PLC0415
+
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    script = next(
+        step["run"]
+        for step in workflow["jobs"]["validation"]["steps"]
+        if step.get("name") == "Validate with HK"
+    )
+    expressions = {
+        "github.event.pull_request.base.sha": "a" * 40,
+        "github.event.pull_request.head.sha": "b" * 40,
+        "github.event.before": "c" * 40 if event == "push" else "",
+        "github.sha": "d" * 40,
+    }
+    for expression, value in expressions.items():
+        script = script.replace("${{ " + expression + " }}", value)
+    assert "${{" not in script
+    stubs = """\
+hk() {
+  printf '%s\\0' hk "$@" >> "$HK_TEST_TRACE"
+  return "$HK_TEST_CHILD_STATUS"
+}
+python() {
+  printf '%s\\0' python "$@" >> "$HK_TEST_TRACE"
+  return "$HK_TEST_CHILD_STATUS"
+}
+"""
+    trace = tmp_path / "calls.bin"
+    bash = shutil.which("bash")
+    assert bash is not None
+    result = subprocess.run(  # noqa: S603
+        (bash, "-c", stubs + script),
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "GITHUB_EVENT_NAME": event,
+            "HK_TEST_TRACE": str(trace),
+            "HK_TEST_CHILD_STATUS": str(child_status),
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    calls = tuple(trace.read_text().rstrip("\0").split("\0"))
+    hk_arguments = (
+        "hk",
+        "check",
+        "--check",
+        "--no-stage",
+        "--no-progress",
+        "--no-fail-fast",
+    )
+    if event == "workflow_dispatch":
+        expected = (*hk_arguments, "--all")
+    else:
+        base, head = ("a", "b") if event == "pull_request" else ("c", "d")
+        expected = (
+            "python",
+            HK_RANGE_HELPER.as_posix(),
+            "--repository",
+            ".",
+            "--from-ref",
+            base * 40,
+            "--to-ref",
+            head * 40,
+            "--files0",
+            "--",
+            *hk_arguments,
+        )
+
+    assert result.returncode == child_status, result.stderr
+    assert calls == expected
+
+
 @pytest.mark.parametrize("hook", ["pre-commit", "check", "fix"])
 def test_real_hk_formats_tracked_notebook_for_each_hook(
     tmp_path: Path,
@@ -2257,15 +2341,19 @@ sys.exit(73)
 
 @pytest.mark.parametrize("wrapper", ["hk_exec", "hk_actionlint", "hk_pkl_eval"])
 @pytest.mark.parametrize(
+    "replaced_parent", [False, True], ids=["absent", "enotdir"]
+)
+@pytest.mark.parametrize(
     ("skip_missing", "include_existing"),
     [(True, True), (True, False), (False, True)],
     ids=["filtered-mixed", "filtered-all-removed", "unfiltered"],
 )
-def test_file_linter_wrappers_filter_removed_operands_only_when_scoped(
+def test_file_linter_wrappers_filter_removed_operands_only_when_scoped(  # noqa: PLR0913
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     wrapper: str,
     *,
+    replaced_parent: bool,
     skip_missing: bool,
     include_existing: bool,
 ) -> None:
@@ -2284,7 +2372,10 @@ def test_file_linter_wrappers_filter_removed_operands_only_when_scoped(
     spec.loader.exec_module(module)
     existing = tmp_path / "existing input.pkl"
     existing.write_text("value = 1\n", encoding="utf-8")
-    removed = tmp_path / "removed input.pkl"
+    removed_parent = tmp_path / "removed parent"
+    if replaced_parent:
+        removed_parent.write_text("replacement file\n", encoding="utf-8")
+    removed = removed_parent / "removed input.pkl"
     paths = [str(removed)]
     if include_existing:
         paths.append(str(existing))
@@ -2316,10 +2407,40 @@ def test_file_linter_wrappers_filter_removed_operands_only_when_scoped(
         monkeypatch.setattr(module, "run_with_watchdog", capture_watchdog)
 
     assert module.main() == 0
-    expected = [
-        path for path in paths if not skip_missing or Path(path).exists()
-    ]
+    expected = (
+        ([str(existing)] if include_existing else []) if skip_missing else paths
+    )
     assert [command[-1] for command in observed_commands] == expected
+
+
+def test_file_operand_filter_preserves_strict_filesystem_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retain directories and dangling links while propagating access errors."""
+    spec = importlib.util.spec_from_file_location(
+        "_hk_operand_strict_test", REPO_ROOT / "eng/scripts/hk_file_operands.py"
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setenv("HK_SKIP_MISSING_FILES", "1")
+    directory = tmp_path / "actual-directory"
+    directory.mkdir()
+    dangling_link = tmp_path / "dangling-link"
+    dangling_link.symlink_to(tmp_path / "absent-target")
+    strict_paths = [str(directory), str(dangling_link)]
+
+    assert module.existing_operands(strict_paths) == strict_paths
+
+    def denied_lstat(_path: Path) -> None:
+        message = "denied operand"
+        raise PermissionError(message)
+
+    monkeypatch.setattr(module.Path, "lstat", denied_lstat)
+    with pytest.raises(PermissionError, match="denied operand"):
+        module.existing_operands([str(tmp_path / "restricted")])
 
 
 def test_hk_missing_file_filter_is_scoped_to_file_tools() -> None:
