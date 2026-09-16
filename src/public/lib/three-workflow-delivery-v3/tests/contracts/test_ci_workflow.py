@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -95,27 +96,45 @@ def test_concurrency_binds_pr_number_or_manual_target_sha() -> None:
     assert "github.sha" in concurrency["group"]
 
 
-def test_job_dag_is_exactly_request_discovery_plan_lanes_finalizer() -> None:
-    """Keep the approved static topology and one always-run stable final job."""
-    jobs = _document()["jobs"]
+def _dependencies(job: dict[str, Any]) -> set[str]:
+    needs = job.get("needs", [])
+    return {needs} if isinstance(needs, str) else set(needs)
 
-    assert set(jobs) == {
-        "request",
-        "discover-node",
-        "plan",
-        *STATIC_LANES,
-        "required-finalizer",
-    }
-    assert "needs" not in jobs["request"]
-    assert jobs["discover-node"]["needs"] == "request"
-    assert jobs["plan"]["needs"] == "discover-node"
-    assert all(jobs[lane]["needs"] == "plan" for lane in STATIC_LANES)
-    assert set(jobs["required-finalizer"]["needs"]) == {
-        "plan",
-        *STATIC_LANES,
-    }
-    assert jobs["required-finalizer"]["if"] == "always()"
-    assert jobs["required-finalizer"]["name"] == CHECK_NAME
+
+def _ancestors(jobs: dict[str, Any], job_id: str) -> set[str]:
+    ancestors: set[str] = set()
+    pending = _dependencies(jobs[job_id])
+    while pending:
+        dependency = pending.pop()
+        assert dependency in jobs, f"Unknown dependency: {dependency}"
+        assert dependency != job_id, f"Cyclic dependency: {job_id}"
+        if dependency not in ancestors:
+            ancestors.add(dependency)
+            pending.update(_dependencies(jobs[dependency]))
+    return ancestors
+
+
+def test_qualification_precedes_one_stable_always_run_final_check() -> None:
+    """Wait for qualification inputs and results before the stable check."""
+    jobs = _document()["jobs"]
+    final_checks = [
+        job for job in jobs.values() if job.get("name") == CHECK_NAME
+    ]
+
+    assert final_checks == [jobs["required-finalizer"]]
+    assert final_checks[0]["if"] == "always()"
+    assert "request" in _ancestors(jobs, "discover-node")
+    assert {"request", "discover-node"} <= _ancestors(jobs, "plan")
+    for lane in STATIC_LANES:
+        assert "plan" in _ancestors(jobs, lane)
+    assert {"plan", *STATIC_LANES} <= _ancestors(jobs, "required-finalizer")
+
+    # GitHub exposes output/result bindings only for direct dependencies.
+    for job in jobs.values():
+        referenced_jobs = set(
+            re.findall(r"\bneeds\.([\w-]+)\.", json.dumps(job))
+        )
+        assert referenced_jobs <= _dependencies(job)
 
 
 def test_candidate_uses_exact_pr_range_and_tested_merge_target() -> None:
