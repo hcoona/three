@@ -313,6 +313,13 @@ first-slice descriptors; the exact first-slice Release policy; a v3 workflow
 consumer; direct Python workspace or lock inputs; or HK configuration and
 helpers.
 
+Selection follows consumed inputs, including packaged files and native build
+dependencies. Narrative documentation alone does not require the product test
+suite; machine-consumed Markdown remains a contract or fixture input. Root
+`hk.pkl` owns the concrete selectors shared by local hooks and CI. The
+[HK execution guide](../../../../../docs/engineering/hk-execution.md#selecting-checks-by-their-inputs)
+explains their maintenance and regression coverage.
+
 Manual `slice-validation` forces the step to run regardless of changed paths.
 It remains part of the single `SourceTreeConformance` obligation and creates no
 separate CI obligation, Evidence record, or job. Unrelated product source alone

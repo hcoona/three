@@ -311,7 +311,7 @@ jobs:
             install --frozen-lockfile --ignore-scripts
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             uv run --python 3.13 python eng/scripts/workflow_delivery_v3_hk.py \
-              --repository . --from-ref "${BASE_SHA}" --to-ref "${HEAD_SHA}" \
+              --repository . --from-ref "${BASE_SHA}" --to-ref "${HEAD_SHA}" --files0 \
               -- mise exec -- hk --no-progress check \
               --skip-step static-reference-authority-preparation
           else

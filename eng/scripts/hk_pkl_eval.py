@@ -5,6 +5,8 @@ from __future__ import annotations
 import subprocess
 import sys
 
+from hk_file_operands import existing_operands
+
 _MIN_QUOTED_LEN = 2
 
 
@@ -35,6 +37,7 @@ def collect_paths(argv: list[str]) -> list[str]:
 def main() -> int:
     """Evaluate each pkl file and report failures."""
     paths = collect_paths(sys.argv)
+    paths = existing_operands(paths)
     if not paths:
         return 0
 

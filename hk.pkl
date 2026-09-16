@@ -1,10 +1,10 @@
 amends "src/private/lib/hk/Config.pkl"
 
-import "package://github.com/jdx/hk/releases/download/v1.53.0/hk@1.53.0#/Builtins.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.56.1/hk@1.56.1#/Builtins.pkl"
 
 import "src/private/lib/hk/Steps.pkl"
 
-min_hk_version = "1.53.0"
+min_hk_version = "1.56.1"
 display_skip_reasons =
   List(
     "profile-not-enabled",
@@ -256,17 +256,37 @@ local python_linters = new Mapping<String, Step> {
       "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude --check -- {{files}}"
     fix = "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude -- {{files}}"
   }
-
-  ["uv-lock"] = (Steps.uv_lock) {
-    profiles = List("small")
-  }
 }
 
-local workflow_delivery_v3_validation = new Mapping<String, Step> {
-  local workflow_delivery_v3_files =
+local workflow_delivery_v3_impact = new Mapping<String, Step> {
+  // These engineering components own prose separately from executable inputs.
+  // Keep unknown files selected; only their declared prose locations opt out.
+  local engineering_roots =
     List(
-      ".gitattributes",
-      "Directory.Packages.props",
+      "src/public/lib/three-workflow-delivery-v3",
+      "src/private/app/workflow-delivery-v3-nuget-authority",
+      "src/private/app/workflow-delivery-v3-dotnet-provider",
+      "src/private/lib/hk",
+    )
+  local narrative_documents =
+    new Listing<String> {
+      for (root in engineering_roots) {
+        "\(root)/README.md"
+        "\(root)/docs/**/*.md"
+      }
+    }.toList()
+
+  local implementation_inputs =
+    engineering_roots.map((root) -> root + "/**")
+      + List(
+        // Smoke packages and captured fixtures include executable/packaged Markdown.
+        "src/public/lib/hcoona-release-smoke-npm/**",
+        "src/public/lib/hcoona-release-smoke-github-packages/**",
+        "eng/scripts/workflow_delivery_v3_*",
+      )
+
+  local contract_inputs =
+    List(
       ".github/CODEOWNERS",
       ".github/actions/workflow-delivery-v3-*/**",
       ".github/actions/workflow-delivery-v3/**",
@@ -274,48 +294,86 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       ".github/workflow-delivery/governance/hcoona-release-smoke-github-packages.json",
       ".github/workflows/*.yaml",
       ".github/workflows/*.yml",
-      ".github/workflows/workflow-delivery-v3-*.yaml",
-      ".github/workflows/workflow-delivery-v3-*.yml",
-      ".python-version",
-      "conftest.py",
-      "eng/scripts/hk_exec.py",
-      "eng/scripts/workflow_delivery_v3_hk.py",
-      "eng/scripts/workflow_delivery_v3_native_npm.mjs",
-      "eng/scripts/workflow_delivery_v3_prepare_static_reference.py",
-      "eng/scripts/workflow_delivery_v3_run_created_epoch.py",
-      "eng/scripts/workflow_delivery_v3_static_reference.py",
-      "eng/scripts/workflow_delivery_v3_static_reference_node.mjs",
+      // Retirement notices are read by the legacy-boundary contract tests.
+      ".github/workflows/REFACTOR_PLAN.md",
+      ".github/workflows/docs/DESIGN.prompt.md",
+      ".github/workflows/docs/DESIGN.v2.md",
+      ".github/workflows/docs/MEMORY.md",
       "eng/workflow-delivery/v3/**",
-      "hk.pkl",
-      "mise.lock",
-      "mise.toml",
-      "pyproject.toml",
-      "pyrefly.toml",
-      "pytest.ini",
-      "ruff.toml",
       "src/**/workflow-delivery.quality.yml",
       "src/**/workflow-delivery.release-unit.yml",
-      "src/private/app/workflow-delivery-v3-nuget-authority/**",
-      "src/private/app/workflow-delivery-v3-dotnet-provider/**",
-      "src/public/lib/hcoona-release-smoke-github-packages/**",
-      "src/private/lib/hk/**",
-      "src/public/lib/three-workflow-delivery-v3/**",
-      "uv.lock",
-      "uv.toml",
+      // The static-reference regression suite reads this real workspace fixture.
+      "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/package.json",
+      "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/pnpm-lock.yaml",
     )
 
+  // Native helper and smoke builds inherit configuration along these ancestors.
+  local dotnet_configuration_inputs =
+    new Listing<String> {
+      for (
+        directory in
+          List("", "src/", "src/private/", "src/private/app/", "src/public/", "src/public/lib/")
+      ) {
+        "\(directory)Directory.Build.*"
+        "\(directory)Directory.Packages.props"
+        "\(directory).editorconfig"
+        "\(directory)global.json"
+        "\(directory)nuget.config"
+        "\(directory)version.json"
+      }
+    }.toList()
+
+  local execution_inputs =
+    dotnet_configuration_inputs
+      + List(
+        ".config/dotnet-tools.json",
+        ".gitattributes",
+        ".gitignore",
+        ".npmrc",
+        ".python-version",
+        ".typos.toml",
+        "conftest.py",
+        "eng/scripts/hk_*.py",
+        "hk.pkl",
+        "mise.lock",
+        "mise.toml",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "pyproject.toml",
+        "pyrefly.toml",
+        "pytest.ini",
+        "ruff.toml",
+        "stylecop.json",
+        "uv.lock",
+        "uv.toml",
+      )
+
+  ["v3-control-pytest"] {
+    profiles = List("small")
+    allow_binary = true
+    allow_symlinks = true
+    glob = implementation_inputs + contract_inputs + execution_inputs
+    exclude = narrative_documents
+    check =
+      "python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13.12 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests"
+  }
+}
+
+local workflow_delivery_v3_validation = new Mapping<String, Step> {
   ["static-reference-authority-preparation"] {
     profiles = List("small")
     check =
       "python eng/scripts/hk_exec.py --timeout-seconds 300 mise run prepare:static-reference-authorities"
   }
 
-  ["v3-control-pytest"] {
+  ["v3-impact-validation"] {
     profiles = List("small")
+    allow_binary = true
+    allow_symlinks = true
     depends = List("static-reference-authority-preparation")
-    glob = workflow_delivery_v3_files
-    check =
-      "python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13.12 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests"
+    stdin = "{% for file in files_list %}{{file}}\u{0}{% endfor %}"
+    check = "python eng/scripts/workflow_delivery_v3_hk.py --dispatch-impact --hook {{hook}}"
   }
 
   ["node-mise-authority"] {
@@ -422,7 +480,7 @@ local commit_message_linters = new Mapping<String, Step> {
   ["commitlint"] = Steps.commitlint
 }
 
-local all_steps = new Mapping<String, Step> {
+local file_steps = new Mapping<String, Step> {
   ...general_linters
   ...pipeline_linters
   ...markdown_linters
@@ -436,13 +494,34 @@ local all_steps = new Mapping<String, Step> {
   // ...dotnet_linters
   ...javascript_typescript_linters
   ...python_linters
+  ...dotenv_linter
+}
+
+local all_steps = new Mapping<String, Step> {
+  // HK selects against complete history; file readers need extant operands.
+  // Scope this behavior to these steps so product-test subprocesses do not inherit it.
+  for (name, step in file_steps) {
+    [name] = (step) {
+      env {
+        ["HK_SKIP_MISSING_FILES"] = "1"
+      }
+    }
+  }
   ...workflow_delivery_v3_validation
   ...scholarly_publication_validation
-  ...dotenv_linter
   ...code_generation_guard
+  ["uv-lock"] = (Steps.uv_lock) {
+    profiles = List("small")
+  }
 }
 
 hooks = new {
+  // Internal selection only: preparation belongs to the outer hook.
+  ["impact-check"] {
+    fix = false
+    steps = workflow_delivery_v3_impact
+  }
+
   ["pre-commit"] {
     fix = false
     stash = "git"

@@ -10,6 +10,8 @@ import sys
 import time
 from datetime import datetime
 
+from hk_file_operands import existing_operands
+
 _MIN_QUOTED_LEN = 2
 
 
@@ -104,7 +106,7 @@ def kill_process_tree(
         return
 
 
-def run_with_watchdog(  # noqa: PLR0913
+def run_with_watchdog(  # noqa: PLR0913, PLR0917
     command: list[str],
     timeout_seconds: int,
     heartbeat_seconds: int,
@@ -152,6 +154,10 @@ def run_with_watchdog(  # noqa: PLR0913
 def main() -> int:
     """Run actionlint on each file with a watchdog."""
     paths = [normalize_path(p) for p in sys.argv[1:] if normalize_path(p)]
+    paths = existing_operands(paths)
+    if sys.argv[1:] and not paths:
+        print("No existing file operands; skipping file check.")
+        return 0
     timeout = resolve_timeout_seconds()
     heartbeat = resolve_heartbeat_seconds()
 

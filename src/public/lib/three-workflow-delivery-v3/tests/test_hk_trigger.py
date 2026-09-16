@@ -148,6 +148,7 @@ _governed_surface_inventory = (
 HK_SUPPORT = REPO_ROOT / "src/private/lib/hk"
 HK_RANGE_HELPER = Path("eng/scripts/workflow_delivery_v3_hk.py")
 STEP_NAME = "v3-control-pytest"
+IMPACT_STEP_NAME = "v3-impact-validation"
 PREPARATION_STEP_NAME = "static-reference-authority-preparation"
 STATIC_REFERENCE_STEP_NAME = "hcoona-release-smoke-npm-static-reference"
 STATIC_REFERENCE_IMPLEMENTATION = Path(
@@ -221,6 +222,98 @@ GOVERNED_PATHS = (
     HK_RANGE_HELPER.as_posix(),
     "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs",
 )
+NARRATIVE_COMPONENT_ROOTS = (
+    "src/public/lib/three-workflow-delivery-v3",
+    "src/private/app/workflow-delivery-v3-nuget-authority",
+    "src/private/app/workflow-delivery-v3-dotnet-provider",
+    "src/private/lib/hk",
+)
+NARRATIVE_PATHS = tuple(
+    f"{root}/{relative}"
+    for root in NARRATIVE_COMPONENT_ROOTS
+    for relative in ("README.md", "docs/README.md", "docs/design/overview.md")
+)
+BINARY_PACKAGE_FIXTURE = (
+    "src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/"
+    "npm-publish-request/package.tgz"
+)
+CONSUMED_AND_UNKNOWN_INPUTS = (
+    ".gitignore",
+    ".npmrc",
+    ".typos.toml",
+    ".config/dotnet-tools.json",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "global.json",
+    "nuget.config",
+    "version.json",
+    "Directory.Build.props",
+    "Directory.Build.targets",
+    "src/Directory.Build.props",
+    "src/public/Directory.Build.props",
+    "src/public/lib/Directory.Build.props",
+    "src/private/Directory.Build.targets",
+    "src/private/app/Directory.Packages.props",
+    "src/private/app/.editorconfig",
+    "stylecop.json",
+    "eng/scripts/hk_future.py",
+    "eng/scripts/workflow_delivery_v3_future.py",
+    ".github/workflows/REFACTOR_PLAN.md",
+    ".github/workflows/docs/DESIGN.prompt.md",
+    ".github/workflows/docs/DESIGN.v2.md",
+    ".github/workflows/docs/MEMORY.md",
+    "src/public/lib/hcoona-release-smoke-npm/README.md",
+    "src/public/lib/hcoona-release-smoke-npm/src/index.js",
+    "src/public/lib/hcoona-release-smoke-npm/test/index.test.js",
+    "src/public/lib/hcoona-release-smoke-github-packages/README.md",
+    "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/package.json",
+    "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/pnpm-lock.yaml",
+    "src/public/lib/three-workflow-delivery-v3/tests/fixtures/docs/README.md",
+    "src/public/lib/three-workflow-delivery-v3/src/docs/README.md",
+    "src/public/lib/three-workflow-delivery-v3/schemas/README.md",
+    "src/public/lib/three-workflow-delivery-v3/notes.md",
+    BINARY_PACKAGE_FIXTURE,
+    *(f"{root}/docs/contract.future" for root in NARRATIVE_COMPONENT_ROOTS),
+    *(f"{root}/implementation.future" for root in NARRATIVE_COMPONENT_ROOTS),
+)
+_IMPACT_SCOPE_PROBE = """\
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+hk, helper, hook = sys.argv[1:4]
+file_arguments = sys.argv[4:]
+content_paths = []
+if file_arguments == ['--all']:
+    content_paths = subprocess.check_output(
+        ['git', 'ls-files', '-z'], text=True,
+    ).rstrip('\\0').split('\\0')
+elif file_arguments:
+    assert file_arguments[0] == '--files0-from' and len(file_arguments) == 2
+    content_paths = [
+        path.decode('utf-8')
+        for path in Path(file_arguments[1]).read_bytes().split(b'\\0')
+        if path
+    ]
+outer_command = ['run', 'pre-commit'] if hook == 'pre-commit' else ['check']
+outer = subprocess.run(
+    [hk, '--no-progress', *outer_command, '--plan', '--json', *file_arguments],
+    check=True, capture_output=True, text=True,
+)
+impact = subprocess.run(
+    [sys.executable, helper, '--repository', '.', '--dispatch-impact',
+     '--hook', hook, '--plan-impact'],
+    input=''.join(path + '\\0' for path in content_paths),
+    check=True, capture_output=True, text=True,
+)
+print(json.dumps({
+    'outer': json.loads(outer.stdout),
+    'impact': json.loads(impact.stdout),
+    'changedPaths': content_paths,
+}))
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,6 +340,14 @@ class HkPlanJson(TypedDict):
     runType: str
     profiles: list[str]
     steps: list[HkStepJson]
+
+
+class ImpactScopeJson(TypedDict):
+    """Plans observed from the complete-history wrapper's changed names."""
+
+    outer: HkPlanJson
+    impact: HkPlanJson
+    changedPaths: list[str]
 
 
 def _run(
@@ -340,7 +441,9 @@ def _named_step_from_plan(
     required_profile: str = "small",
 ) -> HkStepJson:
     plan: HkPlanJson = json.loads(result.stdout)
-    assert plan["hook"] == "check"
+    assert plan["hook"] == (
+        "impact-check" if step_name == STEP_NAME else "check"
+    )
     assert plan["runType"] == "check"
     assert required_profile in plan["profiles"]
     assert len(plan["steps"]) == 1
@@ -358,7 +461,8 @@ def _step_plan(repo: Path, *arguments: str) -> HkStepJson:
         (
             _hk_executable(),
             "--no-progress",
-            "check",
+            "run",
+            "impact-check",
             "--plan",
             "--json",
             "--step",
@@ -380,7 +484,11 @@ def _named_step_plan(
         (
             _hk_executable(),
             "--no-progress",
-            "check",
+            *(
+                ("run", "impact-check")
+                if step_name == STEP_NAME
+                else ("check",)
+            ),
             "--plan",
             "--json",
             "--step",
@@ -435,7 +543,11 @@ def _named_helper_step_plan(
             "--",
             _hk_executable(),
             "--no-progress",
-            "check",
+            *(
+                ("run", "impact-check")
+                if step_name == STEP_NAME
+                else ("check",)
+            ),
             "--plan",
             "--json",
             "--step",
@@ -448,6 +560,52 @@ def _named_helper_step_plan(
 
 def _helper_step_plan(repo: Path, base: str, head: str) -> HkStepJson:
     return _named_helper_step_plan(repo, base, head, STEP_NAME)
+
+
+def _documentation_scope_plan(
+    repo: Path,
+    base: str,
+    route: str,
+) -> ImpactScopeJson:
+    hook = "pre-commit" if route == "pre-commit" else "check"
+    probe = (
+        sys.executable,
+        "-c",
+        _IMPACT_SCOPE_PROBE,
+        _hk_executable(),
+        str(repo / HK_RANGE_HELPER),
+        hook,
+    )
+    if route in {"pre-commit", "staged-check"}:
+        _git(repo, "add", "--all")
+        refs = ("--staged",)
+    else:
+        assert route == "ci"
+        head = _commit(repo, "documentation scope")
+        refs = ("--from-ref", base, "--to-ref", head)
+    arguments = (
+        probe
+        if route == "pre-commit"
+        else (
+            sys.executable,
+            str(repo / HK_RANGE_HELPER),
+            "--repository",
+            str(repo),
+            *refs,
+            "--files0",
+            "--",
+            *probe,
+        )
+    )
+    scope: ImpactScopeJson = json.loads(_run(arguments, cwd=repo).stdout)
+    for plan, expected_hook in (
+        (scope["outer"], hook),
+        (scope["impact"], "impact-check"),
+    ):
+        assert plan["hook"] == expected_hook
+        assert plan["runType"] == "check"
+        assert "small" in plan["profiles"]
+    return scope
 
 
 def _apply_change(repo: Path, change: HistoryChange) -> None:
@@ -497,6 +655,19 @@ def _commit9_surfaces() -> tuple[str, ...]:
             set(_governed_surface_inventory())
             - RETIRED_CONSUMER_POLICY_SURFACES,
         ),
+    )
+
+
+def _narrative_surfaces(surfaces: Sequence[str]) -> frozenset[str]:
+    """Classify prose independently of the HK implementation's glob list."""
+    return frozenset(
+        path
+        for path in surfaces
+        if any(
+            path == f"{root}/README.md"
+            or (path.startswith(f"{root}/docs/") and path.endswith(".md"))
+            for root in NARRATIVE_COMPONENT_ROOTS
+        )
     )
 
 
@@ -729,29 +900,227 @@ def test_real_hk_plan_runs_for_full_slice_validation_equivalent(
 
 
 def test_real_hk_plan_skips_unrelated_product_source(tmp_path: Path) -> None:
-    """Do not select v3 control tests for unrelated product source alone."""
+    """Do not treat unrelated source or nested manifests as runtime inputs."""
     repo = tmp_path / "repo"
     base = _initialize_repository(repo)
-    unrelated = "src/public/lib/hcoona-release-smoke/src/index.ts"
-    _write(repo, unrelated, "export const value = 1;\n")
+    unrelated = (
+        "src/public/lib/unrelated-product/src/index.ts",
+        "src/lab/unrelated/package.json",
+        "src/lab/unrelated/pnpm-lock.yaml",
+        "src/lab/unrelated/pyproject.toml",
+    )
+    for path in unrelated:
+        _write(repo, path, "unrelated product input\n")
     head = _commit(repo, "unrelated product change")
     paths = _helper_changed_paths(repo, base, head)
 
     step = _helper_step_plan(repo, base, head)
 
-    assert paths == (unrelated,)
+    assert set(paths) == set(unrelated)
     assert step["status"] == "skipped"
     assert step["fileCount"] == 0
 
 
+@pytest.mark.parametrize("route", ["pre-commit", "staged-check", "ci"])
+@pytest.mark.parametrize("with_code", [False, True], ids=["docs", "mixed"])
+def test_real_hk_documentation_scope_preserves_other_checks(
+    tmp_path: Path,
+    route: str,
+    *,
+    with_code: bool,
+) -> None:
+    """Keep prose checks and index feedback on both local and CI routes."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    for path in NARRATIVE_PATHS:
+        _write(repo, path, "# Documentation change\n")
+    if with_code:
+        _write(
+            repo,
+            "src/public/lib/three-workflow-delivery-v3/src/control.py",
+            "value = 1\n",
+        )
+
+    scope = _documentation_scope_plan(repo, base, route)
+    steps = {step["name"]: step for step in scope["outer"]["steps"]}
+    impact_steps = {step["name"]: step for step in scope["impact"]["steps"]}
+
+    assert impact_steps[STEP_NAME]["status"] == (
+        "included" if with_code else "skipped"
+    )
+    assert impact_steps[STEP_NAME]["fileCount"] == int(with_code)
+    assert STEP_NAME not in steps
+    for name in (
+        "typos",
+        "editorconfig-check",
+        "markdownlint-cli2",
+        "markdown-prettier",
+        IMPACT_STEP_NAME,
+        PREPARATION_STEP_NAME,
+        STATIC_REFERENCE_STEP_NAME,
+    ):
+        assert steps[name]["status"] == "included", name
+    for name in ("markdownlint-cli2", "markdown-prettier"):
+        assert steps[name]["fileCount"] == len(NARRATIVE_PATHS), name
+    if with_code:
+        assert steps["ruff"]["status"] == "included"
+
+
+def test_ci_workflows_use_complete_history_for_impact_and_file_checks() -> None:
+    """Route both CI entry points through the complete-history wrapper."""
+    for path in (
+        ".github/workflows/ci.yml",
+        ".github/workflows/workflow-delivery-v3-ci.yml",
+    ):
+        workflow = yaml.safe_load(
+            (REPO_ROOT / path).read_text(encoding="utf-8")
+        )
+        commands = tuple(
+            step["run"]
+            for job in workflow["jobs"].values()
+            for step in job.get("steps", [])
+            if "run" in step and HK_RANGE_HELPER.as_posix() in step["run"]
+        )
+        assert len(commands) == 1, path
+        command = commands[0]
+        assert "--files0" in command, path
+        assert "--from-ref" in command, path
+        assert "--to-ref" in command, path
+        assert any(
+            invocation in command
+            for invocation in ("hk check", "hk --no-progress check")
+        ), path
+
+
+def test_precommit_impact_all_includes_suite_with_an_empty_index(
+    tmp_path: Path,
+) -> None:
+    """Retain explicit all-file validation when no change is staged."""
+    repo = tmp_path / "repo"
+    _initialize_repository(repo)
+    assert _git(repo, "diff", "--cached", "--name-only").stdout == ""
+
+    result = _run(
+        (
+            sys.executable,
+            "-c",
+            _IMPACT_SCOPE_PROBE,
+            _hk_executable(),
+            str(repo / HK_RANGE_HELPER),
+            "pre-commit",
+            "--all",
+        ),
+        cwd=repo,
+    )
+    scope: ImpactScopeJson = json.loads(result.stdout)
+
+    assert "hk.pkl" in scope["changedPaths"]
+    impact_steps = {step["name"]: step for step in scope["impact"]["steps"]}
+    assert impact_steps[STEP_NAME]["status"] == "included"
+    assert impact_steps[STEP_NAME]["fileCount"] > 0
+
+
+def test_real_hk_plan_retains_consumed_and_unknown_inputs(
+    tmp_path: Path,
+) -> None:
+    """Keep contract Markdown, dependencies and future file types selected."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    for path in CONSUMED_AND_UNKNOWN_INPUTS:
+        if path == BINARY_PACKAGE_FIXTURE:
+            destination = repo / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPO_ROOT / path, destination)
+            assert b"\0" in destination.read_bytes()
+        else:
+            _write(repo, path, "consumed or conservatively selected input\n")
+    head = _commit(repo, "retained runtime inputs")
+
+    paths = _helper_changed_paths(repo, base, head)
+    step = _helper_step_plan(repo, base, head)
+
+    assert set(paths) == set(CONSUMED_AND_UNKNOWN_INPUTS)
+    assert step["status"] == "included"
+    assert step["fileCount"] == len(CONSUMED_AND_UNKNOWN_INPUTS)
+
+
+@pytest.mark.parametrize(
+    ("change", "expected_count"),
+    [
+        pytest.param(
+            HistoryChange(
+                "delete", f"{NARRATIVE_COMPONENT_ROOTS[0]}/docs/old.md"
+            ),
+            0,
+            id="delete-prose",
+        ),
+        pytest.param(
+            HistoryChange(
+                "delete",
+                f"{NARRATIVE_COMPONENT_ROOTS[0]}/tests/fixtures/README.md",
+            ),
+            1,
+            id="delete-fixture-markdown",
+        ),
+        *(
+            pytest.param(
+                HistoryChange(
+                    "rename",
+                    f"{NARRATIVE_COMPONENT_ROOTS[0]}/{destination}/README.md",
+                    old_path=f"{NARRATIVE_COMPONENT_ROOTS[0]}/{source}/README.md",
+                ),
+                1,
+                id=f"rename-{source}-to-{destination}",
+            )
+            for source, destination in (
+                ("docs", "src"),
+                ("src", "docs"),
+                ("docs", "tests/fixtures"),
+                ("tests/fixtures", "docs"),
+            )
+        ),
+    ],
+)
+def test_real_hk_plan_preserves_documentation_boundary_history(
+    tmp_path: Path,
+    change: HistoryChange,
+    expected_count: int,
+) -> None:
+    """Use both Git names when prose moves into or out of consumed paths."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(
+        repo,
+        baseline_paths=(change.old_path or change.path,),
+    )
+    _apply_change(repo, change)
+    pre_commit = _documentation_scope_plan(repo, base, "pre-commit")
+    ci = _documentation_scope_plan(repo, base, "ci")
+    expected_paths = (
+        (change.old_path, change.path)
+        if change.old_path is not None
+        else (change.path,)
+    )
+
+    assert tuple(ci["changedPaths"]) == expected_paths
+    for scope in (pre_commit, ci):
+        outer_steps = {step["name"]: step for step in scope["outer"]["steps"]}
+        assert outer_steps[IMPACT_STEP_NAME]["status"] == "included"
+        impact_steps = {step["name"]: step for step in scope["impact"]["steps"]}
+        step = impact_steps[STEP_NAME]
+        assert step["status"] == ("included" if expected_count else "skipped")
+        assert step["fileCount"] == expected_count
+
+
 @pytest.mark.parametrize("kind", ["add", "modify", "delete"])
-def test_real_v3_control_pytest_selects_every_codeowners_surface_for_history_kind(  # noqa: E501
+def test_real_v3_control_pytest_selects_runtime_codeowners_surfaces_for_history_kind(  # noqa: E501
     tmp_path: Path,
     kind: str,
 ) -> None:
-    """Cross-check the shared ownership inventory through real Git and HK."""
+    """Keep ownership coverage and exclude independently classified prose."""
     surfaces = _commit9_surfaces()
     _assert_commit9_inventory(surfaces)
+    narrative_surfaces = _narrative_surfaces(surfaces)
+    assert narrative_surfaces
     repo = tmp_path / "repo"
     if kind == "add":
         base = _initialize_empty_repository(repo)
@@ -776,7 +1145,7 @@ def test_real_v3_control_pytest_selects_every_codeowners_surface_for_history_kin
         for path in surfaces
     )
     assert step["status"] == "included"
-    assert step["fileCount"] == len(surfaces)
+    assert step["fileCount"] == len(set(surfaces) - narrative_surfaces)
     if kind == "delete":
         assert _git(repo, "status", "--porcelain").stdout
 
@@ -786,9 +1155,11 @@ def test_real_v3_control_pytest_selects_governed_side_of_batched_rename(
     tmp_path: Path,
     kind: str,
 ) -> None:
-    """Count only the governed side while retaining both names from Git."""
+    """Count runtime inputs while retaining every owned path and both names."""
     surfaces = _commit9_surfaces()
     _assert_commit9_inventory(surfaces)
+    narrative_surfaces = _narrative_surfaces(surfaces)
+    assert narrative_surfaces
     repo = tmp_path / "repo"
     _initialize_repository(repo, baseline_paths=surfaces)
     execution_copies = _execution_copies(repo)
@@ -819,7 +1190,7 @@ def test_real_v3_control_pytest_selects_governed_side_of_batched_rename(
     assert paths == expected_paths
     assert set(surfaces) <= set(paths)
     assert step["status"] == "included"
-    assert step["fileCount"] == len(surfaces)
+    assert step["fileCount"] == len(set(surfaces) - narrative_surfaces)
     if kind == "rename-out":
         assert _git(repo, "status", "--porcelain").stdout
 
@@ -1031,14 +1402,15 @@ def test_root_mise_path_includes_v3_control_pytest(
     assert step["fileCount"] == 1
 
 
-def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
+def test_v3_collection_roots_include_commit3_contract_boundary_suite(
+    tmp_path: Path,
+) -> None:
     """Keep the relocated commit-3 suite in every managed collection root."""
     import tomllib  # noqa: PLC0415
 
     package_test_root = Path(
         "src/public/lib/three-workflow-delivery-v3/tests",
     )
-    package_root = package_test_root.parent
     destination = (
         package_test_root / "contracts/test_commit3_contract_boundaries.py"
     )
@@ -1064,18 +1436,13 @@ def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
     assert destination.is_relative_to(package_test_root)
     assert pytest_options["addopts"] == "--import-mode=importlib"
 
-    hk_config = HK_CONFIG.read_text(encoding="utf-8")
-    v3_config_start = hk_config.index(
-        "local workflow_delivery_v3_validation",
-    )
-    v3_config_end = hk_config.index(
-        "local dotenv_linter",
-        v3_config_start,
-    )
-    v3_config = hk_config[v3_config_start:v3_config_end]
+    v3_config = _hk_step_block(STEP_NAME)
     assert '["v3-control-pytest"]' in v3_config
-    assert f'"{package_root.as_posix()}/**"' in v3_config
-    assert destination.is_relative_to(package_root)
+    repo = tmp_path / "repo"
+    _initialize_repository(repo, baseline_paths=(destination.as_posix(),))
+    step = _step_plan(repo, "--", destination.as_posix())
+    assert step["status"] == "included"
+    assert step["fileCount"] == 1
     assert (
         "uv run --python 3.13.12 --package three-workflow-delivery-v3 "
         f"pytest -q {package_test_root.as_posix()}"
@@ -1341,7 +1708,7 @@ def test_real_hk_plan_policy_only_selects_v3_control_not_unrelated_product_sourc
 
     product_repo = tmp_path / "product-repo"
     product_base = _initialize_repository(product_repo)
-    product_path = "src/public/lib/hcoona-release-smoke/src/index.ts"
+    product_path = "src/public/lib/unrelated-product/src/index.ts"
     _write(product_repo, product_path, "export const value = 1;\n")
     product_head = _commit(product_repo, "unrelated product source")
     product_control = _named_helper_step_plan(
@@ -1409,7 +1776,8 @@ def test_real_hk_plan_prepares_changed_authority_before_consumers(
     assert control["status"] == "included"
     assert static_reference["status"] == "included"
     expected_dependency = f'depends = List("{PREPARATION_STEP_NAME}")'
-    assert expected_dependency in _hk_step_block(STEP_NAME)
+    assert expected_dependency in _hk_step_block(IMPACT_STEP_NAME)
+    assert expected_dependency not in _hk_step_block(STEP_NAME)
     assert expected_dependency in _static_reference_hk_block()
 
 
@@ -1745,6 +2113,150 @@ def test_hk_helper_propagates_exact_child_exit_code_and_changed_paths(
     assert result.returncode == distinctive_exit_code
     assert result.stderr == ""
     assert tuple(json.loads(result.stdout)) == ("--", *changed_paths)
+
+
+def test_hk_files0_helper_keeps_history_child_status_and_cleanup(
+    tmp_path: Path,
+) -> None:
+    """Keep removed names until the child exits, then remove the NUL file."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(
+        repo, baseline_paths=("deleted.py", "old name.py")
+    )
+    _apply_change(repo, HistoryChange("delete", "deleted.py"))
+    _apply_change(
+        repo,
+        HistoryChange("rename", "new name.py", old_path="old name.py"),
+    )
+    head = _commit(repo, "complete history child lifetime")
+    child_status = 73
+    child_program = """\
+import json
+from pathlib import Path
+import sys
+
+assert sys.argv[1] == '--files0-from' and len(sys.argv) == 3
+paths_file = Path(sys.argv[2])
+print(json.dumps({
+    'paths': paths_file.read_text().rstrip('\\0').split('\\0'),
+    'temporaryFile': str(paths_file),
+}))
+sys.exit(73)
+"""
+
+    result = _run_helper_without_check(
+        repo,
+        "--from-ref",
+        base,
+        "--to-ref",
+        head,
+        "--files0",
+        "--",
+        sys.executable,
+        "-c",
+        child_program,
+    )
+    observed = json.loads(result.stdout)
+
+    assert result.returncode == child_status
+    assert result.stderr == ""
+    assert observed["paths"] == ["deleted.py", "old name.py", "new name.py"]
+    assert not Path(observed["temporaryFile"]).exists()
+
+
+@pytest.mark.parametrize("wrapper", ["hk_exec", "hk_actionlint", "hk_pkl_eval"])
+@pytest.mark.parametrize(
+    ("skip_missing", "include_existing"),
+    [(True, True), (True, False), (False, True)],
+    ids=["filtered-mixed", "filtered-all-removed", "unfiltered"],
+)
+def test_file_linter_wrappers_filter_removed_operands_only_when_scoped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    wrapper: str,
+    *,
+    skip_missing: bool,
+    include_existing: bool,
+) -> None:
+    """Send extant operands to file tools without broadening an empty set."""
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "eng/scripts"))
+    monkeypatch.setenv("HK_EXEC_PER_FILE", "1")
+    spec = importlib.util.spec_from_file_location(
+        f"_hk_file_linter_{wrapper}",
+        REPO_ROOT / "eng/scripts" / f"{wrapper}.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    existing = tmp_path / "existing input.pkl"
+    existing.write_text("value = 1\n", encoding="utf-8")
+    removed = tmp_path / "removed input.pkl"
+    paths = [str(removed)]
+    if include_existing:
+        paths.append(str(existing))
+    if skip_missing:
+        monkeypatch.setenv("HK_SKIP_MISSING_FILES", "1")
+    else:
+        monkeypatch.delenv("HK_SKIP_MISSING_FILES", raising=False)
+    command_prefix = ["stub-file-tool", "--"] if wrapper == "hk_exec" else []
+    monkeypatch.setattr(module.sys, "argv", [wrapper, *command_prefix, *paths])
+    observed_commands: list[list[str]] = []
+
+    def capture_watchdog(
+        command: list[str], *_args: object
+    ) -> tuple[int, float, bool]:
+        observed_commands.append(command)
+        return 0, 0.0, False
+
+    def capture_subprocess(
+        command: list[str], **_kwargs: object
+    ) -> SimpleNamespace:
+        observed_commands.append(command)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    if wrapper == "hk_pkl_eval":
+        monkeypatch.setattr(
+            module, "subprocess", SimpleNamespace(run=capture_subprocess)
+        )
+    else:
+        monkeypatch.setattr(module, "run_with_watchdog", capture_watchdog)
+
+    assert module.main() == 0
+    expected = [
+        path for path in paths if not skip_missing or Path(path).exists()
+    ]
+    assert [command[-1] for command in observed_commands] == expected
+
+
+def test_hk_missing_file_filter_is_scoped_to_file_tools() -> None:
+    """Keep operand filtering out of project checks and their children."""
+    result = _run(
+        ("mise", "exec", "--", "pkl", "eval", "--format", "json", "hk.pkl"),
+        cwd=REPO_ROOT,
+    )
+    config = json.loads(result.stdout)
+    flag = "HK_SKIP_MISSING_FILES"
+    assert flag not in config["env"]
+    for hook_name in ("pre-commit", "check", "fix", "impact-check"):
+        hook = config["hooks"][hook_name]
+        assert flag not in hook["env"]
+        for name, step in hook["steps"].items():
+            if name in {
+                STEP_NAME,
+                IMPACT_STEP_NAME,
+                PREPARATION_STEP_NAME,
+                STATIC_REFERENCE_STEP_NAME,
+                "scholarly-publication-plugin-ci",
+                "node-mise-authority",
+                "global-json",
+                "uv-lock",
+            }:
+                assert flag not in step["env"], (hook_name, name)
+            elif "{{files}}" in (step["check"] or ""):
+                assert step["env"][flag] == "1", (hook_name, name)
 
 
 def test_parse_name_status_preserves_posix_backslash_component() -> None:
