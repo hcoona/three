@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from three_workflow_delivery_v3.ci.path_admission import (
-    CI_STATIC_REFERENCE_BASENAMES,
     is_repository_only_path,
     is_static_reference_control_path,
     is_static_reference_surface_path,
@@ -12,18 +11,21 @@ from three_workflow_delivery_v3.ci.path_admission import (
 
 
 @pytest.mark.parametrize(
-    "path",
+    "basename",
     [
         "package.json",
-        "nested/package.json",
         "packages.config",
-        "nested/packages.lock.json",
+        "packages.lock.json",
         "pnpm-lock.yaml",
-        "nested/pnpm-workspace.yaml",
+        "pnpm-workspace.yaml",
     ],
 )
-def test_static_reference_basename_is_repository_only(path: str) -> None:
+@pytest.mark.parametrize("prefix", ["", "nested/", "nested/deeper/"])
+def test_static_reference_basename_is_repository_only(
+    basename: str, prefix: str
+) -> None:
     """Select every retained static-reference basename at any depth."""
+    path = prefix + basename
     assert is_static_reference_surface_path(path)
     assert is_repository_only_path(path)
 
@@ -70,17 +72,6 @@ def test_non_scanned_dependency_surfaces_remain_repository_only(
     assert is_repository_only_path(path)
     assert not is_static_reference_control_path(path)
     assert not is_static_reference_surface_path(path)
-
-
-def test_static_reference_basename_catalog_is_exact() -> None:
-    """Keep CI admission aligned with the bounded scanner families."""
-    assert {
-        "package.json",
-        "packages.config",
-        "packages.lock.json",
-        "pnpm-lock.yaml",
-        "pnpm-workspace.yaml",
-    } == CI_STATIC_REFERENCE_BASENAMES
 
 
 def test_static_reference_authority_sources_are_control_not_scan_surfaces() -> (

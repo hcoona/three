@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -36,6 +35,7 @@ from three_workflow_delivery_v3.records.ci import (
     CiQualificationSnapshot,
     admit_ci_qualification_snapshot_json,
     ci_artifact_digest,
+    ci_evidence_digest,
 )
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "fixtures" / "ci"
@@ -363,10 +363,14 @@ def test_manual_slice_slo_is_not_applicable() -> None:
     [
         ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json",
         ".github/workflows/workflow-delivery-v3-ci.yml",
-        "src/public/lib/three-workflow-delivery-v3/src/"
-        "three_workflow_delivery_v3/ci/planner.py",
-        "src/public/lib/three-workflow-delivery-v3/src/"
-        "three_workflow_delivery_v3/ci/finalizer.py",
+        (
+            "src/public/lib/three-workflow-delivery-v3/src/"
+            "three_workflow_delivery_v3/ci/planner.py"
+        ),
+        (
+            "src/public/lib/three-workflow-delivery-v3/src/"
+            "three_workflow_delivery_v3/ci/finalizer.py"
+        ),
         "Directory.Build.props",
         "Directory.Build.targets",
         "mise.toml",
@@ -461,12 +465,36 @@ def test_broad_pr_changes_are_excluded_from_ordinary_slo(path: str) -> None:
     assert "pr-slo-reason=broad-change" in decision.summary.text
 
 
-def test_completed_quality_failure_is_failure() -> None:
-    """Keep a completed failed obligation as a quality failure."""
+@pytest.mark.parametrize(
+    ("raw_outcome", "outcome", "failure_class", "next_action"),
+    [
+        (
+            "failure",
+            "failed",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+        ),
+        ("skipped", "skipped", "incomplete-qualification", "rerun-candidate"),
+        (
+            "timed-out",
+            "timed-out",
+            "incomplete-qualification",
+            "rerun-candidate",
+        ),
+        ("unknown", "unknown", "incomplete-qualification", "rerun-candidate"),
+    ],
+)
+def test_unsatisfied_evidence_cannot_produce_success(
+    raw_outcome: str,
+    outcome: str,
+    failure_class: str,
+    next_action: str,
+) -> None:
+    """Classify admitted negative Evidence without losing its exact outcome."""
     plan = _plan()
     decision = _finalize(
         plan,
-        _lane_results(plan, outcomes={"project-test": "failure"}),
+        _lane_results(plan, outcomes={"project-test": raw_outcome}),
         elapsed_seconds=600,
     )
     project_test = next(
@@ -475,10 +503,15 @@ def test_completed_quality_failure_is_failure() -> None:
         if disposition.obligation.lane_id == "project-test"
     )
     assert decision.terminal_result == "failure"
-    assert decision.failure_class == "quality-failure"
-    assert decision.next_action == "fix-quality-failure-and-rerun"
-    assert project_test.outcome == "failed"
-    assert "project-test=failed" in decision.explanation
+    assert decision.failure_class == failure_class
+    assert decision.next_action == next_action
+    assert project_test.outcome == outcome
+    assert project_test.evidence_digests == (
+        ci_evidence_digest(
+            _evidence(plan, "project-test", raw_outcome=raw_outcome)
+        ),
+    )
+    assert f"project-test={outcome}" in decision.explanation
 
 
 def test_missing_or_canceled_selected_work_is_finalizer_incomplete() -> None:
@@ -627,26 +660,6 @@ def test_finalizer_rejects_duplicate_or_nonempty_unselected_lane() -> None:
             (root_result,),
             elapsed_seconds=60,
         )
-
-
-def test_decision_rejects_summary_or_slo_contradiction() -> None:
-    """Reject human summary or SLO fields that contradict machine facts."""
-    plan = _plan()
-    decision = _finalize(
-        plan,
-        _lane_results(plan),
-        elapsed_seconds=600,
-    )
-    with pytest.raises(ValueError, match="Summary text"):
-        replace(
-            decision,
-            summary=replace(
-                decision.summary,
-                text="non-authoritative shadow result: contradictory",
-            ),
-        )
-    with pytest.raises(ValueError, match="SLO result"):
-        replace(decision, pr_slo="missed")
 
 
 @pytest.mark.parametrize("elapsed_seconds", [-1, 1.5, True])

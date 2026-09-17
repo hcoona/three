@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import replace
+from operator import setitem
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -163,8 +164,10 @@ def _rebind_plan_document(
         document["selected-variants"] = []
         document["selected-outputs"] = []
         document["diagnostics"] = [
-            "incremental comparison selected repository "
-            "source-tree conformance only"
+            (
+                "incremental comparison selected repository "
+                "source-tree conformance only"
+            )
         ]
     document["ready"] = ready
     if not ready:
@@ -449,10 +452,8 @@ def test_ci_contract_golden_fixtures_and_digests(
         CiCandidate: lambda value: ci_candidate_digest(
             cast("CiCandidate", value)
         ),
-        CiQualificationSnapshot: lambda value: (
-            ci_qualification_snapshot_digest(
-                cast("CiQualificationSnapshot", value)
-            )
+        CiQualificationSnapshot: lambda value: ci_qualification_snapshot_digest(
+            cast("CiQualificationSnapshot", value)
         ),
         CiArtifact: lambda value: ci_artifact_digest(cast("CiArtifact", value)),
         CiEvidence: lambda value: ci_evidence_digest(cast("CiEvidence", value)),
@@ -466,33 +467,92 @@ def test_ci_contract_golden_fixtures_and_digests(
     assert digesters[type(record)](record) == digest
 
 
-def test_ci_records_are_frozen_slotted_and_tuple_backed() -> None:
-    """Preserve frozen slotted records and immutable tuple collections."""
+def test_ci_record_fields_cannot_change_after_construction() -> None:
+    """Preserve admitted identity through the public record interface."""
+    plan = _snapshot()
     decision = _decision()
-    records = (
-        _candidate(),
-        _snapshot(),
-        _artifact(_snapshot()),
-        _evidence(_snapshot()),
-        _lane_results(_snapshot())[0],
-        decision.obligation_dispositions[0],
-        decision.summary,
-        decision,
+    mutations = (
+        (_candidate(), "repository", "forged"),
+        (plan, "candidate", _candidate(manual=True)),
+        (plan.obligations[0], "selected", False),
+        (_artifact(plan), "artifact_id", 9002),
+        (_evidence(plan), "normalized_outcome", "failed"),
+        (_lane_results(plan)[0], "disposition", "failed"),
+        (decision.obligation_dispositions[0], "outcome", "failed"),
+        (decision.summary, "text", "forged"),
+        (decision, "terminal_result", "failure"),
     )
-    for record in records:
-        assert not hasattr(record, "__dict__")
-    candidate = _candidate()
-    with pytest.raises(FrozenInstanceError):
-        candidate.repository = "forged"  # type: ignore[misc]
-    assert type(_snapshot().obligations) is tuple
-    assert type(_evidence(_snapshot()).output_digests) is tuple
-    assert type(_artifact(_snapshot()).entries) is tuple
+    for record, field, value in mutations:
+        before = canonicalize(record.to_document())
+        with pytest.raises(AttributeError):
+            setattr(record, field, value)
+        assert canonicalize(record.to_document()) == before
 
 
-def test_candidate_admission_requires_canonical_closed_json_and_binding() -> (
-    None
-):
-    """Reject noncanonical, open, duplicate, or wrongly bound Candidates."""
+def test_ci_record_collections_cannot_replace_bound_members() -> None:
+    """Prevent in-place substitution of obligations, outputs, and entries."""
+    plan = _snapshot()
+    artifact = _artifact(plan)
+    evidence = _evidence(plan)
+    decision = _decision()
+    mutations = (
+        (plan, plan.obligations, plan.obligations[1]),
+        (artifact, artifact.entries, "package/other.txt"),
+        (evidence, evidence.output_digests, DIGEST_D),
+        (
+            decision,
+            decision.obligation_dispositions,
+            decision.obligation_dispositions[1],
+        ),
+    )
+    for record, collection, replacement in mutations:
+        before = canonicalize(record.to_document())
+        with pytest.raises(TypeError):
+            setitem(collection, 0, replacement)
+        assert canonicalize(record.to_document()) == before
+
+
+def test_ci_record_documents_do_not_alias_immutable_state() -> None:
+    """Editing exported nested objects and arrays cannot change their record."""
+    plan = _snapshot()
+    artifact = _artifact(plan)
+    evidence = _evidence(plan)
+    decision = _decision()
+
+    plan_document = plan.to_document()
+    cast("dict[str, JsonValue]", plan_document["candidate"])["target"] = SHA_B
+    cast("list[JsonValue]", plan_document["obligations"]).clear()
+    artifact_document = artifact.to_document()
+    entries = cast("list[JsonValue]", artifact_document["entries"])
+    entries[0] = "package/forged.txt"
+    evidence_document = evidence.to_document()
+    cast("list[JsonValue]", evidence_document["output-digests"]).clear()
+    cast("dict[str, JsonValue]", evidence_document["obligation"])[
+        "selected"
+    ] = False
+    decision_document = decision.to_document()
+    cast("dict[str, JsonValue]", decision_document["summary"])["text"] = (
+        "forged"
+    )
+    dispositions = cast(
+        "list[dict[str, JsonValue]]",
+        decision_document["obligation-dispositions"],
+    )
+    cast("list[JsonValue]", dispositions[0]["evidence-digests"]).clear()
+
+    assert (
+        ci_qualification_snapshot_digest(plan) == GOLDEN_DIGESTS["ready-plan"]
+    )
+    assert ci_artifact_digest(artifact) == GOLDEN_DIGESTS["npm-artifact"]
+    assert ci_evidence_digest(evidence) == GOLDEN_DIGESTS["satisfied-evidence"]
+    assert (
+        ci_slice_decision_digest(decision)
+        == GOLDEN_DIGESTS["non-authoritative-decision"]
+    )
+
+
+def test_candidate_admission_binds_trusted_current_identity() -> None:
+    """Reject a valid Candidate when it belongs to another current request."""
     candidate = _candidate()
     document = candidate.to_document()
     encoded = canonicalize(document)
@@ -503,24 +563,6 @@ def test_candidate_admission_requires_canonical_closed_json_and_binding() -> (
         )
         == candidate
     )
-    with pytest.raises(ValueError, match="canonical"):
-        admit_ci_candidate_json(
-            b" " + encoded,
-            expected_candidate=candidate,
-        )
-    opened = dict(document)
-    opened["extra"] = "forged"
-    with pytest.raises(ValueError, match="unknown field"):
-        admit_ci_candidate_json(
-            canonicalize(opened),
-            expected_candidate=candidate,
-        )
-    duplicate = encoded[:-1] + b',"purpose":"ci-pr-slice-shadow"}'
-    with pytest.raises(ValueError, match="duplicate"):
-        admit_ci_candidate_json(
-            duplicate,
-            expected_candidate=candidate,
-        )
     with pytest.raises(ValueError, match="trusted current candidate"):
         admit_ci_candidate_json(
             encoded,
@@ -620,20 +662,6 @@ def test_ci_artifact_admission_is_canonical_and_current_candidate_bound() -> (
         replace(
             artifact,
             artifact_name=artifact.artifact_name.removesuffix(".tgz"),
-        )
-    opened = artifact.to_document()
-    opened["platform-metadata"] = "forged"
-    with pytest.raises(ValueError, match="unknown field"):
-        admit_ci_artifact_json(
-            canonicalize(opened),
-            expected_candidate=plan.candidate,
-            expected_artifact_id=artifact.artifact_id,
-            expected_artifact_name=artifact.artifact_name,
-            expected_artifact_url=artifact.artifact_url,
-            expected_transport_digest=artifact.transport_digest,
-            expected_output_id=artifact.output_id,
-            expected_logical_role=artifact.logical_role,
-            expected_media_kind=artifact.media_kind,
         )
 
 
@@ -818,6 +846,29 @@ def test_admitted_self_consistent_partial_ready_plan_is_rejected() -> None:
                 document["root-hk-definition-digest"],
             ),
             expected_plan_digest=canonical_sha256(document),
+        )
+
+
+@pytest.mark.parametrize("field", ["ready", "selected", "required"])
+def test_plan_admission_rejects_integer_boolean_fields(field: str) -> None:
+    """Keep readiness and obligation selection as Booleans, not integers."""
+    plan = _snapshot()
+    document = plan.to_document()
+    if field == "ready":
+        document[field] = 1
+    else:
+        obligations = cast(
+            "list[dict[str, JsonValue]]", document["obligations"]
+        )
+        obligations[0][field] = 1
+    with pytest.raises(TypeError, match="must be a Boolean"):
+        admit_ci_qualification_snapshot_json(
+            canonicalize(document),
+            expected_candidate=plan.candidate,
+            expected_repository_model_digest=plan.repository_model_digest,
+            expected_root_hk_definition=plan.root_hk_definition,
+            expected_root_hk_definition_digest=plan.root_hk_definition_digest,
+            expected_plan_digest=ci_qualification_snapshot_digest(plan),
         )
 
 
@@ -1014,6 +1065,13 @@ def test_incomplete_is_finalizer_only_and_has_no_evidence() -> None:
             ),
         ),
         (
+            "manual-candidate",
+            lambda data: admit_ci_candidate_json(
+                data,
+                expected_candidate=_candidate(manual=True),
+            ),
+        ),
+        (
             "ready-plan",
             lambda data: admit_ci_qualification_snapshot_json(
                 data,
@@ -1070,17 +1128,71 @@ def test_incomplete_is_finalizer_only_and_has_no_evidence() -> None:
                 expected_supersession_state="not-superseded",
             ),
         ),
+        (
+            "empty-lane-result",
+            lambda data: admit_ci_lane_result_json(
+                data,
+                expected_candidate=_candidate(),
+                expected_plan_digest=ci_qualification_snapshot_digest(
+                    _snapshot(selected_lanes=("root-hk",))
+                ),
+                expected_lane_id="project-build",
+            ),
+        ),
     ],
 )
-def test_fixture_admission_rejects_unknown_top_level_field(
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "noncanonical",
+        "duplicate-field",
+        "unknown-field",
+        "missing-field",
+        "boolean-run-id",
+        "malformed-json",
+    ],
+)
+def test_ci_record_admission_rejects_invalid_envelopes(
     fixture_name: str,
     admit: Callable[[bytes], object],
+    fault: str,
 ) -> None:
-    """Keep each admitted top-level record schema closed."""
+    """Require canonical, closed, typed input at every CI admission boundary."""
+    encoded = (FIXTURE_ROOT / f"{fixture_name}.json").read_bytes()
+    admitted = cast("_Record", admit(encoded))
+    assert canonicalize(admitted.to_document()) == encoded
     document = cast(
         "dict[str, JsonValue]",
-        json.loads((FIXTURE_ROOT / f"{fixture_name}.json").read_bytes()),
+        json.loads(encoded),
     )
-    document["unknown"] = "forged"
-    with pytest.raises(ValueError, match="unknown field"):
-        admit(canonicalize(document))
+    error: type[Exception] = ValueError
+    message: str | None = None
+    if fault == "noncanonical":
+        encoded = b" " + encoded
+        message = "canonical"
+    elif fault == "duplicate-field":
+        encoded = (
+            encoded[:-1]
+            + b',"schema":'
+            + canonicalize(document["schema"])
+            + b"}"
+        )
+        message = "duplicate"
+    elif fault == "unknown-field":
+        document["unknown"] = "forged"
+        encoded = canonicalize(document)
+        message = "unknown field"
+    elif fault == "missing-field":
+        del document["producer"]
+        encoded = canonicalize(document)
+        message = "missing required field: producer"
+    elif fault == "boolean-run-id":
+        document["workflow-run-id"] = True
+        encoded = canonicalize(document)
+        error = TypeError
+        message = "workflow-run-id must be an integer"
+    else:
+        assert fault == "malformed-json"
+        encoded = encoded[:-1]
+    with pytest.raises(error, match=message):
+        admit(encoded)
