@@ -162,6 +162,12 @@ description = "Validate scholarly publication skills with the Agent Skills refer
 depends = ["scholarly-publication-plugin-source-check"]
 shell = "pwsh -NoLogo -Command"
 run = '''
+# The validator fetches another repository, independent of the invoking Git hook.
+$gitLocalVariables = @(git rev-parse --local-env-vars)
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+foreach ($name in $gitLocalVariables) {
+  Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+}
 $source = "git+https://github.com/agentskills/agentskills.git@69ef37e9424c0a7ea9dd2293b559e43ec8176379#subdirectory=skills-ref"
 $skills = @(
   "src/private/lib/scholarly-publication/skills/scholarly-pdf-reconstruction",

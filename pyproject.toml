@@ -190,6 +190,7 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
+tmp_path_retention_policy = "failed"
 testpaths = [
   "src/private/app/azureauth-credprovider/python/tests",
   "src/private/app/git-commit-heatmap/tests",

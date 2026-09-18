@@ -1,4 +1,4 @@
-"""Keep fixture repositories independent of the invoking Git hook."""
+"""Isolate fixture repositories and own native-tool temporary files."""
 
 from __future__ import annotations
 
@@ -9,6 +9,18 @@ import pytest
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolate_native_tool_temporary_files(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[None]:
+    """Include native subprocess scratch and caches in pytest retention."""
+    temporary = tmp_path_factory.mktemp("native-tools")
+    with pytest.MonkeyPatch.context() as environment:
+        for name in ("TMPDIR", "TMP", "TEMP"):
+            environment.setenv(name, str(temporary))
+        yield
 
 
 @pytest.fixture(scope="session", autouse=True)
