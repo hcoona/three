@@ -23,6 +23,31 @@ packages without those scripts. Review needed install scripts with
 under `src/`; there is no separate top-level `OnePython/` workspace. Project
 manifests own their dependencies, supported versions and package contracts.
 
+The root pytest configuration releases successful `tmp_path` fixtures and the
+implicit temporary session directory after a successful run. Failed test-call
+fixtures remain available for diagnosis within pytest's default three-session
+retention window; its existing cleanup locks protect active runs. This applies
+to all tests using the root configuration, including HK and commit hooks.
+Workflow Delivery v3's session fixture also places native subprocess temporary
+files under that session directory, so their scratch files and temporary caches
+share its retention lifecycle. Its environment lasts for the pytest session and
+can also affect later tests from other projects in that process.
+
+Use an executable temporary filesystem with enough free bytes and inodes for
+native integration fixtures. On Linux, check both `df -h` and `df -i` for that
+filesystem. A fresh, task-owned `TMPDIR` (or `TEMP` on Windows) outside the
+workspace ancestry can isolate a run; preserve its logs outside that directory.
+Avoid reusing `--basetemp`: pytest clears that explicit path before a run, and
+successful-session cleanup does not apply to it.
+
+Cleanup is best effort. Forced termination can leave files and cleanup locks;
+pytest considers an abandoned lock eligible after three days, so interrupted
+runs do not have an immediate retention bound. For earlier recovery, preserve
+needed diagnostics and confirm the owning run and its child processes have
+exited before removing only that run's identified temporary directory. Never
+clear shared temporary roots or other runs' data. Native tool caches outside
+pytest's session directory follow their own lifecycle.
+
 ## .NET
 
 [dirs.proj](../../dirs.proj) is the active C# traversal for `src/`, `tests/` and
