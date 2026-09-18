@@ -5,88 +5,76 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
 import yaml
+
+from .contracts.workflow_shell import executable, run_step
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 HK_CONFIG = REPO_ROOT / "hk.pkl"
 
 
-def _hk_step_block(step_name: str) -> str:
-    hk_config = HK_CONFIG.read_text(encoding="utf-8")
-    start = hk_config.index(f'["{step_name}"]')
-    end = hk_config.index("\n  }\n", start) + len("\n  }\n")
-    return hk_config[start:end]
-
-
-def _static_reference_hk_block() -> str:
-    return _hk_step_block("hcoona-release-smoke-npm-static-reference")
-
-
-def test_root_hk_unconditionally_invokes_static_reference_for_index() -> None:
-    """Bind the permanent root-HK step to one explicit index scan."""
-    static_step = _static_reference_hk_block()
-    expected_invocation = (
-        "python eng/scripts/hk_exec.py --timeout-seconds 300 "
-        "uv run --python 3.13 --package three-workflow-delivery-v3 "
-        "python eng/scripts/workflow_delivery_v3_static_reference.py "
-        "--repository-root . --source-kind index"
+@cache
+def _effective_hooks() -> dict[str, Any]:
+    result = _run(
+        (
+            "pkl",
+            "eval",
+            "-x",
+            "new JsonRenderer {}.renderValue(hooks)",
+            str(HK_CONFIG),
+        ),
+        cwd=REPO_ROOT,
     )
+    return json.loads(result.stdout)
 
-    assert f'check =\n      "{expected_invocation}"' in static_step
-    assert (
-        static_step.count(
-            "eng/scripts/workflow_delivery_v3_static_reference.py"
-        )
-        == 1
-    )
-    assert static_step.count("--source-kind index") == 1
-    assert "worktree" not in static_step
-    assert "git-target" not in static_step
-    assert "--target" not in static_step
-    assert "when =" not in static_step
+
+def test_root_hk_consumes_index_scanner_and_preparation() -> None:
+    """Inspect exported hook registrations without constraining Pkl locals."""
+    hooks = _effective_hooks()
+    assert hooks["pre-commit"]["stash"] == "git"
+    for hook in ("check", "pre-commit"):
+        steps = hooks[hook]["steps"]
+        assert "hcoona-release-smoke-npm-consumer-policy" not in steps
+        for name in (STATIC_REFERENCE_STEP_NAME, STEP_NAME):
+            assert PREPARATION_STEP_NAME in steps[name]["depends"]
+        for name in (STATIC_REFERENCE_STEP_NAME, PREPARATION_STEP_NAME):
+            assert not steps[name].get("glob")
+            assert not steps[name].get("when")
+        for step in steps.values():
+            command = step.get("check", "")
+            assert "workflow_delivery_v3_consumer_policy.py" not in command
+            assert "--consumer-policy" not in command
 
 
 def test_manual_worktree_static_reference_is_a_separate_mise_task() -> None:
-    """Keep manual worktree inspection out of permanent root HK."""
-    mise_config = (REPO_ROOT / "mise.toml").read_text(encoding="utf-8")
-    task_start = mise_config.index('[tasks."check:static-reference-worktree"]')
-    task_end = mise_config.index("\n\n", task_start)
-    task = mise_config[task_start:task_end]
-    static_step = _static_reference_hk_block()
-
-    assert 'description = "Check bounded static references' in task
-    assert 'depends = ["prepare:static-reference-authorities"]' in task
-    assert (
-        "workflow_delivery_v3_static_reference.py "
-        "--repository-root . --source-kind worktree"
-    ) in task
-    assert task.count("--source-kind worktree") == 1
-    assert "worktree" not in static_step
-
-
-def test_root_hk_static_reference_step_has_no_consumer_policy_route() -> None:
-    """Do not retain the superseded root-HK policy step or option."""
-    hk_config = HK_CONFIG.read_text(encoding="utf-8")
-    static_step = _static_reference_hk_block()
-
-    assert "hcoona-release-smoke-npm-consumer-policy" not in hk_config
-    assert "workflow_delivery_v3_consumer_policy.py" not in hk_config
-    assert "--consumer-policy" not in hk_config
-    assert "--consumer-policy" not in static_step
+    """Manual inspection keeps its distinct worktree input and preparation."""
+    config = tomllib.loads((REPO_ROOT / "mise.toml").read_text())
+    task = config["tasks"]["check:static-reference-worktree"]
+    assert "prepare:static-reference-authorities" in task["depends"]
+    command = shlex.split(task["run"])
+    assert command[command.index("--source-kind") + 1] == "worktree"
+    assert command[command.index("--repository-root") + 1] == "."
+    assert "--target" not in command
 
 
 def test_root_hk_live_static_reference_uses_git_target_evidence_only() -> None:
     """Keep root-HK feedback out of Live's exact-target evidence boundary."""
-    static_step = _static_reference_hk_block()
+    static_step = _effective_hooks()["check"]["steps"][
+        STATIC_REFERENCE_STEP_NAME
+    ]["check"]
     buddy_workflow = (
         REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
     ).read_text(encoding="utf-8")
@@ -448,6 +436,167 @@ def _named_helper_step_plan(
 
 def _helper_step_plan(repo: Path, base: str, head: str) -> HkStepJson:
     return _named_helper_step_plan(repo, base, head, STEP_NAME)
+
+
+@pytest.mark.parametrize(
+    ("hook_name", "step_name", "child_exit"),
+    [
+        ("check", step_name, child_exit)
+        for child_exit in (0, 73)
+        for step_name in (
+            STATIC_REFERENCE_STEP_NAME,
+            STEP_NAME,
+            PREPARATION_STEP_NAME,
+        )
+    ]
+    + [("pre-commit", STATIC_REFERENCE_STEP_NAME, 0)],
+)
+def test_root_hk_executes_consumed_commands(
+    tmp_path: Path,
+    hook_name: str,
+    step_name: str,
+    child_exit: int,
+) -> None:
+    """Preserve scanner/control inputs and child status through the watchdog."""
+    command = _effective_hooks()[hook_name]["steps"][step_name]["check"]
+    log = tmp_path / "argv.json"
+    recorder = (
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "observation = {'argv': [Path(sys.argv[0]).name, *sys.argv[1:]], "
+        "'isolated': os.getsid(0) == os.getpid() "
+        "if os.name != 'nt' else None}\n"
+        f"Path({str(log)!r}).write_text(json.dumps(observation))\n"
+        f"sys.exit({child_exit})\n"
+    )
+    for name in ("uv", "mise"):
+        executable(tmp_path / "bin" / name, recorder)
+    result = run_step(
+        {"run": command},
+        cwd=REPO_ROOT,
+        env={"PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}"},
+        bindings={},
+    )
+    assert result.returncode == child_exit, result.stderr
+    observation = json.loads(log.read_text())
+    arguments = observation["argv"]
+    assert re.search(r"timeout=[1-9][0-9]*s", result.stdout)
+    if os.name != "nt":
+        assert observation["isolated"] is True
+    if step_name == PREPARATION_STEP_NAME:
+        assert arguments == [
+            "mise",
+            "run",
+            "prepare:static-reference-authorities",
+        ]
+    else:
+        assert arguments[0] == "uv"
+        assert (
+            arguments[arguments.index("--package") + 1]
+            == "three-workflow-delivery-v3"
+        )
+        if step_name == STATIC_REFERENCE_STEP_NAME:
+            assert (
+                "eng/scripts/workflow_delivery_v3_static_reference.py"
+                in arguments
+            )
+            assert arguments[arguments.index("--repository-root") + 1] == "."
+            assert arguments[arguments.index("--source-kind") + 1] == "index"
+            assert "--target" not in arguments
+        else:
+            assert "pytest" in arguments
+            assert (
+                "src/public/lib/three-workflow-delivery-v3/tests" in arguments
+            )
+
+
+@pytest.mark.parametrize("preparation_exit", [0, 73])
+def test_hk_orders_preparation_and_propagates_composite_failure(
+    tmp_path: Path, preparation_exit: int
+) -> None:
+    """Schedule the consumed dependency closure through real HK."""
+    repo = tmp_path / "repo"
+    _initialize_empty_repository(repo)
+    steps = _effective_hooks()["check"]["steps"]
+    closure: set[str] = set()
+
+    def include(name: str) -> None:
+        if name not in closure:
+            closure.add(name)
+            for dependency in steps[name]["depends"]:
+                include(dependency)
+
+    include(STATIC_REFERENCE_STEP_NAME)
+    include(STEP_NAME)
+    log = tmp_path / "events.jsonl"
+    recorder = tmp_path / "record.py"
+    recorder.write_text(
+        "import json, sys\n"
+        f"with open({str(log)!r}, 'a') as stream:\n"
+        "    stream.write(json.dumps(sys.argv[1]) + '\\n')\n"
+        f"sys.exit({preparation_exit} if sys.argv[1] == "
+        f"{PREPARATION_STEP_NAME!r} else 0)\n",
+        encoding="utf-8",
+    )
+    registrations = []
+    for name in sorted(closure):
+        command = shlex.join([sys.executable, str(recorder), name])
+        registrations.append(
+            f"[{json.dumps(name)}] = "
+            f'(root.hooks["check"].steps[{json.dumps(name)}]) '
+            f"{{ check = {json.dumps(command)} }}"
+        )
+    configuration = REPO_ROOT / "src/private/lib/hk/Config.pkl"
+    (repo / "hk.pkl").write_text(
+        f"amends {json.dumps(str(configuration))}\n"
+        f"import {json.dumps(str(HK_CONFIG))} as root\n"
+        'hooks { ["check"] { steps {\n'
+        + "\n".join(registrations)
+        + "\n} } }\n",
+        encoding="utf-8",
+    )
+    _write(
+        repo,
+        "src/public/lib/three-workflow-delivery-v3/tests/boundary.py",
+        "# selected input\n",
+    )
+    _git(repo, "add", "--all")
+    result = subprocess.run(  # noqa: S603
+        [_hk_executable(), "--no-progress", "check", "--all", "--no-fail-fast"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert (result.returncode == 0) is (preparation_exit == 0), result.stderr
+    events = [json.loads(line) for line in log.read_text().splitlines()]
+    assert PREPARATION_STEP_NAME in events
+    for consumer in (STATIC_REFERENCE_STEP_NAME, STEP_NAME):
+        if not preparation_exit:
+            assert consumer in events
+        if consumer in events:
+            assert events.index(PREPARATION_STEP_NAME) < events.index(consumer)
+
+
+@pytest.mark.parametrize("step_name", ["ruff", "ruff_format"])
+def test_real_hk_plan_selects_python_and_notebook_inputs(
+    tmp_path: Path, step_name: str
+) -> None:
+    """Both Ruff consumers receive Python and notebook paths with spaces."""
+    repo = tmp_path / "repo"
+    _initialize_repository(repo)
+    selected = ("src/lab/example script.py", "src/lab/example notebook.ipynb")
+    unrelated = "docs/wiki/example.txt"
+    for path in (*selected, unrelated):
+        _write(repo, path, "fixture\n")
+    _git(repo, "add", "--all")
+    plan = _named_step_plan(repo, step_name, *selected, unrelated)
+    assert plan["status"] == "included"
+    assert plan["fileCount"] == len(selected)
+    excluded = _named_step_plan(repo, step_name, unrelated)
+    assert excluded["status"] == "skipped"
+    assert excluded["fileCount"] == 0
 
 
 def _apply_change(repo: Path, change: HistoryChange) -> None:
@@ -1033,12 +1182,9 @@ def test_root_mise_path_includes_v3_control_pytest(
 
 def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
     """Keep the relocated commit-3 suite in every managed collection root."""
-    import tomllib  # noqa: PLC0415
-
     package_test_root = Path(
         "src/public/lib/three-workflow-delivery-v3/tests",
     )
-    package_root = package_test_root.parent
     destination = (
         package_test_root / "contracts/test_commit3_contract_boundaries.py"
     )
@@ -1062,24 +1208,10 @@ def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
     )
     assert package_test_root in configured_testpaths
     assert destination.is_relative_to(package_test_root)
-    assert pytest_options["addopts"] == "--import-mode=importlib"
-
-    hk_config = HK_CONFIG.read_text(encoding="utf-8")
-    v3_config_start = hk_config.index(
-        "local workflow_delivery_v3_validation",
+    parser = pytest.Config.fromdictargs(
+        {}, shlex.split(pytest_options["addopts"])
     )
-    v3_config_end = hk_config.index(
-        "local dotenv_linter",
-        v3_config_start,
-    )
-    v3_config = hk_config[v3_config_start:v3_config_end]
-    assert '["v3-control-pytest"]' in v3_config
-    assert f'"{package_root.as_posix()}/**"' in v3_config
-    assert destination.is_relative_to(package_root)
-    assert (
-        "uv run --python 3.13.12 --package three-workflow-delivery-v3 "
-        f"pytest -q {package_test_root.as_posix()}"
-    ) in v3_config
+    assert parser.getoption("importmode") == "importlib"
 
     collection = _run(
         (
@@ -1253,7 +1385,6 @@ def test_gitattributes_selects_both_v3_internal_steps(
     assert paths == (path,)
     assert control["status"] == static_reference["status"] == "included"
     assert control["fileCount"] == static_reference["fileCount"] == 1
-    assert "--source-kind index" in _static_reference_hk_block()
 
 
 def test_real_hk_plan_slice_validation_runs_both_internal_steps(
@@ -1273,7 +1404,6 @@ def test_real_hk_plan_slice_validation_runs_both_internal_steps(
     assert control["status"] == static_reference["status"] == "included"
     assert control["fileCount"] > 0
     assert static_reference["fileCount"] == control["fileCount"]
-    assert "--source-kind index" in _static_reference_hk_block()
 
 
 def test_real_hk_plan_retains_complete_v3_control_trigger_inventory(
@@ -1311,7 +1441,6 @@ def test_real_hk_plan_retains_complete_v3_control_trigger_inventory(
     assert control["status"] == static_reference["status"] == "included"
     assert control["fileCount"] == len(governed_paths)
     assert static_reference["fileCount"] == len(governed_paths)
-    assert "--source-kind index" in _static_reference_hk_block()
 
 
 def test_real_hk_plan_policy_only_selects_v3_control_not_unrelated_product_source(  # noqa: E501
@@ -1365,7 +1494,6 @@ def test_real_hk_plan_policy_only_selects_v3_control_not_unrelated_product_sourc
     assert policy_static_reference["fileCount"] == 1
     assert product_static_reference["status"] == "included"
     assert product_static_reference["fileCount"] == 1
-    assert "--source-kind index" in _static_reference_hk_block()
 
 
 @pytest.mark.parametrize(
@@ -1408,9 +1536,6 @@ def test_real_hk_plan_prepares_changed_authority_before_consumers(
     assert preparation["fileCount"] == 1
     assert control["status"] == "included"
     assert static_reference["status"] == "included"
-    expected_dependency = f'depends = List("{PREPARATION_STEP_NAME}")'
-    assert expected_dependency in _hk_step_block(STEP_NAME)
-    assert expected_dependency in _static_reference_hk_block()
 
 
 def test_real_hk_plan_prepares_authority_for_unrelated_root_hk_path(
@@ -1442,7 +1567,6 @@ def test_real_hk_plan_prepares_authority_for_unrelated_root_hk_path(
     assert control["fileCount"] == 0
     assert static_reference["status"] == "included"
     assert static_reference["fileCount"] == 1
-    assert "glob =" not in _hk_step_block(PREPARATION_STEP_NAME)
 
 
 def test_static_reference_is_one_internal_root_hk_step_not_ci_obligation() -> (
@@ -1455,19 +1579,6 @@ def test_static_reference_is_one_internal_root_hk_step_not_ci_obligation() -> (
         CI_LANE_IDS,
     )
 
-    hk_config = HK_CONFIG.read_text(encoding="utf-8")
-    v3_start = hk_config.index("local workflow_delivery_v3_validation")
-    v3_end = hk_config.index("local dotenv_linter", v3_start)
-    v3_config = hk_config[v3_start:v3_end]
-    static_step = _static_reference_hk_block()
-
-    assert v3_config.count(f'["{STATIC_REFERENCE_STEP_NAME}"]') == 1
-    assert (
-        "python eng/scripts/workflow_delivery_v3_static_reference.py "
-        "--repository-root . --source-kind index"
-    ) in static_step
-    assert "--timeout-seconds 300" in static_step
-    assert "worktree" not in static_step
     assert CI_LANE_IDS == (
         "root-hk",
         "project-build",
@@ -1554,7 +1665,6 @@ def test_real_hk_plan_triggers_static_reference_for_definition_changes(
     assert static_reference["fileCount"] == 1
     assert control["status"] == "included"
     assert control["fileCount"] == 1
-    assert "--source-kind index" in _static_reference_hk_block()
 
 
 def test_acceptance_fixture_gitignore_negations_are_exact_and_narrow() -> None:
@@ -1874,8 +1984,6 @@ def test_mise_bootstrap_preparation_chain_and_manual_worktree_are_exact() -> (
     None
 ):
     """Pin authority preparation into bootstrap and the separate manual task."""
-    import tomllib  # noqa: PLC0415
-
     mise_config = tomllib.loads(
         (REPO_ROOT / "mise.toml").read_text(encoding="utf-8"),
     )
