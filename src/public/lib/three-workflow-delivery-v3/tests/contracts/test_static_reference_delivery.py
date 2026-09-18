@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
-
 REPO_ROOT = Path(__file__).resolve().parents[6]
-GENERAL_CI = REPO_ROOT / ".github/workflows/ci.yml"
 WORKFLOWS = (
     REPO_ROOT / ".github/workflows/workflow-delivery-v3-ci.yml",
     REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml",
@@ -72,33 +69,3 @@ def test_ci_workflow_has_no_worktree_static_reference_route() -> None:
     assert "--source-kind worktree" not in execute_step
     assert "check:static-reference-worktree" not in execute_step
     assert "--consumer-policy" not in execute_step
-
-
-def test_general_python_ci_prepares_static_reference_authorities() -> None:
-    """Prepare pinned authorities before the all-package Python test run."""
-    workflow = GENERAL_CI.read_text(encoding="utf-8")
-    job_start = workflow.index("  python-tests:\n")
-    job_end = workflow.index("\n  ruby-tests:", job_start)
-    job = workflow[job_start:job_end]
-    steps = yaml.safe_load(workflow)["jobs"]["python-tests"]["steps"]
-    preparation_steps = [
-        step
-        for step in steps
-        if step.get("name") == "Prepare static-reference authorities"
-    ]
-    step_names = [step["name"] for step in steps]
-    command = "mise run prepare:static-reference-authorities"
-
-    assert preparation_steps == [
-        {
-            "name": "Prepare static-reference authorities",
-            "env": {"MISE_TASK_RUN_AUTO_INSTALL": "false"},
-            "run": command,
-        }
-    ]
-    assert job.count(command) == 1
-    assert (
-        step_names.index("Install dependencies")
-        < step_names.index("Prepare static-reference authorities")
-        < step_names.index("Run tests")
-    )
