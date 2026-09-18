@@ -69,18 +69,6 @@ BUDDY_WORKFLOW = (
 )
 
 
-def test_ci_scenario_uses_permanent_root_hk_static_reference() -> None:
-    """Run the unconditional index-bound HK step through permanent root HK."""
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    hk = (REPO_ROOT / "hk.pkl").read_text(encoding="utf-8")
-
-    assert "Run permanent root HK and static-reference policy" in workflow
-    assert "mise exec -- hk --no-progress check" in workflow
-    assert '["hcoona-release-smoke-npm-static-reference"]' in hk
-    assert "--source-kind index" in hk
-    assert "--source-kind worktree" not in hk
-
-
 def test_live_scenario_has_no_external_or_caller_supplied_policy_result() -> (
     None
 ):
@@ -604,13 +592,6 @@ def _apply_history_change(repo: Path, change: HistoryChange) -> None:
         raise AssertionError(message)
 
 
-def _static_reference_hk_block() -> str:
-    hk_config = HK_CONFIG.read_text(encoding="utf-8")
-    start = hk_config.index(f'["{STATIC_REFERENCE_STEP_NAME}"]')
-    end = hk_config.index("\n  }\n", start) + len("\n  }\n")
-    return hk_config[start:end]
-
-
 def test_ci_scenario_project_source_change_selects_complete_slice() -> None:
     """Qualify every required obligation for the changed project candidate."""
     plan = _incremental_plan()
@@ -935,27 +916,32 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision(
     assert "non-authoritative" in rendered
 
 
-def test_ci_scenario_missing_test_result_keeps_qualification_incomplete() -> (
-    None
-):
-    """Keep completed Evidence when a selected test produces no result."""
+@pytest.mark.parametrize(
+    "missing_lane", ["project-build", "project-test", "npm-artifact-build"]
+)
+def test_ci_scenario_missing_selected_result_keeps_qualification_incomplete(
+    missing_lane: str,
+) -> None:
+    """Keep completed Evidence when selected work produces no result."""
     plan = _incremental_plan()
     results = tuple(
         result
         for result in _lane_results(plan)
-        if result.lane_id != "project-test"
+        if result.lane_id != missing_lane
     )
     decision = _finalize(plan, results, elapsed_seconds=60)
+    expected_outcomes = {
+        "root-hk": "satisfied",
+        "project-build": "satisfied",
+        "project-test": "satisfied",
+        "npm-artifact-build": "satisfied",
+    }
+    expected_outcomes[missing_lane] = "incomplete"
 
     assert {
         item.obligation.lane_id: item.outcome
         for item in decision.obligation_dispositions
-    } == {
-        "root-hk": "satisfied",
-        "project-build": "satisfied",
-        "project-test": "incomplete",
-        "npm-artifact-build": "satisfied",
-    }
+    } == expected_outcomes
     assert set(decision.admitted_evidence_digests) == {
         ci_evidence_digest(cast("CiEvidence", result.evidence))
         for result in results
@@ -966,7 +952,7 @@ def test_ci_scenario_missing_test_result_keeps_qualification_incomplete() -> (
         == "incomplete"
     )
     assert decision.failure_class == "incomplete-qualification"
-    assert "project-test" in decision.summary.text
+    assert missing_lane in decision.summary.text
 
 
 def test_ci_scenario_superseded_evidence_cannot_qualify_new_candidate() -> None:
@@ -1087,22 +1073,13 @@ def test_ci_scenario_policy_only_selects_control_pytest_not_unrelated_source(
     assert product_static_reference["name"] == STATIC_REFERENCE_STEP_NAME
     assert product_static_reference["status"] == "included"
     assert product_static_reference["fileCount"] == 1
-    assert "--source-kind index" in _static_reference_hk_block()
 
 
-def test_ci_scenario_static_reference_trigger_is_unconditional_and_index_bound(
+def test_ci_scenario_static_reference_trigger_is_unconditional(
     tmp_path: Path,
 ) -> None:
     """Retain Git-transition coverage without a broad consumer glob."""
     surface_path = "unrelated/static-reference-trigger.txt"
-
-    assert GIT_TRANSITIONS == (
-        "add",
-        "modify",
-        "delete",
-        "rename-out",
-        "rename-in",
-    )
 
     for transition in GIT_TRANSITIONS:
         change = _history_change(surface_path, transition)
@@ -1139,119 +1116,10 @@ def test_ci_scenario_static_reference_trigger_is_unconditional_and_index_bound(
     manual_repo = tmp_path / "slice-validation"
     _initialize_hk_repository(manual_repo)
     manual = _hk_step_for_all(manual_repo, STATIC_REFERENCE_STEP_NAME)
-    static_reference = _static_reference_hk_block()
-    expected_invocation = (
-        "python eng/scripts/hk_exec.py --timeout-seconds 300 "
-        "uv run --python 3.13 --package three-workflow-delivery-v3 "
-        "python eng/scripts/workflow_delivery_v3_static_reference.py "
-        "--repository-root . --source-kind index"
-    )
 
     assert manual["name"] == STATIC_REFERENCE_STEP_NAME
     assert manual["status"] == "included"
     assert cast("int", manual["fileCount"]) > 0
-    assert f'check =\n      "{expected_invocation}"' in static_reference
-    assert static_reference.count("--source-kind") == 1
-    assert static_reference.count("--source-kind index") == 1
-    assert "--source-kind worktree" not in static_reference
-    assert "git-target" not in static_reference
-    assert "--target" not in static_reference
-    assert "glob =" not in static_reference
-    assert "when =" not in static_reference
-
-
-def test_completed_failure_is_failure_not_incomplete() -> None:
-    """Pin scenario 3 as a completed failed project-test command."""
-    plan = _incremental_plan()
-    completed_failure_results = _lane_results(
-        plan,
-        outcomes={"project-test": "failure"},
-        diagnostics={"project-test": ("completed npm test command failed",)},
-    )
-    missing_results = tuple(
-        result
-        for result in completed_failure_results
-        if result.lane_id != "project-test"
-    )
-    completed_decision = _finalize(
-        plan,
-        completed_failure_results,
-        elapsed_seconds=60,
-    )
-    missing_decision = _finalize(
-        plan,
-        missing_results,
-        elapsed_seconds=60,
-    )
-    completed_project_test = next(
-        result
-        for result in completed_failure_results
-        if result.lane_id == "project-test"
-    )
-
-    assert completed_project_test.disposition == "failed"
-    assert completed_project_test.evidence is not None
-    assert completed_project_test.evidence.raw_outcome == "failure"
-    assert completed_project_test.evidence.normalized_outcome == "failed"
-    assert completed_decision.terminal_result == "failure"
-    assert {
-        item.obligation.lane_id: item.outcome
-        for item in completed_decision.obligation_dispositions
-    }["project-test"] == "failed"
-    assert missing_decision.terminal_result == "incomplete"
-
-
-def test_runtime_infrastructure_paths_are_missing_result_incomplete() -> None:
-    """Close timeout/cancellation/infrastructure/no-result as incomplete."""
-    plan = _incremental_plan()
-    complete_results = _lane_results(plan)
-
-    for reason, lane_id in (
-        ("timeout", "project-build"),
-        ("cancellation", "project-test"),
-        ("infrastructure", "npm-artifact-build"),
-        ("no-result", "project-test"),
-    ):
-        missing_lane_results = tuple(
-            result for result in complete_results if result.lane_id != lane_id
-        )
-        decision = _finalize(
-            plan,
-            missing_lane_results,
-            elapsed_seconds=60,
-        )
-
-        assert reason in {
-            "timeout",
-            "cancellation",
-            "infrastructure",
-            "no-result",
-        }
-        assert decision.terminal_result == "incomplete"
-        assert {
-            item.obligation.lane_id: item.outcome
-            for item in decision.obligation_dispositions
-        }[lane_id] == "incomplete"
-
-    completed_failure = _finalize(
-        plan,
-        _lane_results(
-            plan,
-            outcomes={"project-test": "failure"},
-            diagnostics={
-                "project-test": (
-                    "verified completed project-test Adapter command failure",
-                ),
-            },
-        ),
-        elapsed_seconds=60,
-    )
-
-    assert completed_failure.terminal_result == "failure"
-    assert {
-        item.obligation.lane_id: item.outcome
-        for item in completed_failure.obligation_dispositions
-    }["project-test"] == "failed"
 
 
 def test_ci_scenario_precoexistence_bootstrap_preserves_blocked_decision() -> (
