@@ -389,7 +389,7 @@ def test_python_check_has_consumed_toolchain_prerequisites(
     assert prerequisites["actions/setup-node"]["with"]["node-version"]
     mise = prerequisites["jdx/mise-action"]["with"]
     assert mise["experimental"] is True
-    assert "hk" in mise["install_args"].split()
+    assert {"hk", "pkl"} <= set(mise["install_args"].split())
     assert mise.get("install", True) is not False
     for action in ("actions/setup-python", "astral-sh/setup-uv"):
         assert (
