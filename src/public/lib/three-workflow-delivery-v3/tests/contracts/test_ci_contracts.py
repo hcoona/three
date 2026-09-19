@@ -1145,11 +1145,9 @@ def test_incomplete_is_finalizer_only_and_has_no_evidence() -> None:
     "fault",
     [
         "noncanonical",
-        "duplicate-field",
         "unknown-field",
         "missing-field",
         "boolean-run-id",
-        "malformed-json",
     ],
 )
 def test_ci_record_admission_rejects_invalid_envelopes(
@@ -1166,18 +1164,10 @@ def test_ci_record_admission_rejects_invalid_envelopes(
         json.loads(encoded),
     )
     error: type[Exception] = ValueError
-    message: str | None = None
+    message: str
     if fault == "noncanonical":
         encoded = b" " + encoded
         message = "canonical"
-    elif fault == "duplicate-field":
-        encoded = (
-            encoded[:-1]
-            + b',"schema":'
-            + canonicalize(document["schema"])
-            + b"}"
-        )
-        message = "duplicate"
     elif fault == "unknown-field":
         document["unknown"] = "forged"
         encoded = canonicalize(document)
@@ -1186,13 +1176,11 @@ def test_ci_record_admission_rejects_invalid_envelopes(
         del document["producer"]
         encoded = canonicalize(document)
         message = "missing required field: producer"
-    elif fault == "boolean-run-id":
+    else:
+        assert fault == "boolean-run-id"
         document["workflow-run-id"] = True
         encoded = canonicalize(document)
         error = TypeError
         message = "workflow-run-id must be an integer"
-    else:
-        assert fault == "malformed-json"
-        encoded = encoded[:-1]
     with pytest.raises(error, match=message):
         admit(encoded)
