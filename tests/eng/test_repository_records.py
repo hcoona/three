@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#   "PyYAML==6.0.2", "jsonschema==4.25.1", "markdown-it-py==4.0.0",
+#   "pytest==8.3.4",
+# ]
+# ///
 """Bounded record validation against tiny real Git snapshots."""
 
 from __future__ import annotations
@@ -293,6 +300,59 @@ def test_directory_browsing_and_portal_traversal(repo: Repository) -> None:
     )
     assert repo.check()["diagnostics"] == []
     assert not (repo.root / "eng/component/README.md").exists()
+
+
+def test_repository_root_directory_links(repo: Repository) -> None:
+    """Resolve root README portals while preserving reference boundaries."""
+    repo.write("README.md", "# Root\n")
+    repo.bind("README.md")
+    repo.save()
+    repo.route_all()
+    portal = (
+        (repo.root / "docs/README.md")
+        .read_text()
+        .replace("../README.md", "../#root")
+    )
+    repo.write("docs/README.md", portal)
+    assert repo.check()["diagnostics"] == []
+
+    repo.write("docs/README.md", portal.replace("#root", "#missing"))
+    assert repo.check()["diagnostics"] == [
+        {
+            "severity": "error",
+            "code": "anchor-missing",
+            "path": "docs/README.md",
+            "message": "../#missing",
+        }
+    ]
+
+    (repo.root / "README.md").unlink()
+    repo.catalog["bindings"].pop()
+    repo.save()
+    repo.route_all()
+    portal = (repo.root / "docs/README.md").read_text()
+    repo.write("docs/README.md", portal + "\n[Root](../)\n")
+    assert repo.check()["diagnostics"] == []
+
+    repo.write("docs/README.md", portal + "\n[Root](../#root)\n")
+    assert repo.check()["diagnostics"] == [
+        {
+            "severity": "error",
+            "code": "directory-anchor-unresolved",
+            "path": "docs/README.md",
+            "message": "../#root",
+        }
+    ]
+
+    repo.write("docs/README.md", portal + "\n[Outside](../../)\n")
+    assert repo.check()["diagnostics"] == [
+        {
+            "severity": "error",
+            "code": "unsafe-reference",
+            "path": "docs/README.md",
+            "message": "../../",
+        }
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1350,3 +1410,17 @@ def test_native_root_skill_requires_exact_local_source(
         )
         if mutation == "malformed":
             assert "generated-source-map-invalid" in codes(report)
+
+
+if __name__ == "__main__":
+    raise SystemExit(
+        pytest.main(
+            [
+                "-q",
+                "-o",
+                "addopts=--import-mode=importlib",
+                __file__,
+                *sys.argv[1:],
+            ]
+        )
+    )

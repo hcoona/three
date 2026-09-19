@@ -116,7 +116,7 @@ run = "uv run --script eng/scripts/check_repository_records.py"
 
 [tasks."records:test"]
 description = "Run the bounded repository record checker regression suite"
-run = "uv run --isolated --no-project --with PyYAML==6.0.2 --with jsonschema==4.25.1 --with markdown-it-py==4.0.0 --with pytest==8.3.4 python -m pytest -q -o addopts=--import-mode=importlib tests/eng/test_repository_records.py"
+run = "uv run --script tests/eng/test_repository_records.py"
 
 [tasks.slngen]
 description = "Generate .NET solution file for local development"
