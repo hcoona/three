@@ -135,6 +135,7 @@ def test_present_reviewer_uses_rest_node_then_query_only_graphql() -> None:
     assert document["reviewer"] == "actual-reviewer"
     assert document["deployment-review-id"] == 9001
     assert document["authority"] == "diagnostic-only"
+    assert document["scope"] == "single-acceptance-review-recovery"
     assert runner.calls[0] == (
         "gh",
         "api",
@@ -147,6 +148,7 @@ def test_present_reviewer_uses_rest_node_then_query_only_graphql() -> None:
     assert "deploymentReviews(first:100,after:$cursor)" in " ".join(graphql)
     assert "run=WFR_kwDOexample" in graphql
     assert all(method not in graphql for method in ("PUT", "PATCH", "DELETE"))
+    assert all("mutation" not in part for call in runner.calls for part in call)
 
 
 def test_graphql_paginates_and_matches_exact_environment() -> None:
@@ -262,6 +264,22 @@ def test_exhausted_connection_is_removed_not_universal_negative() -> None:
         "scoped-review-record-no-longer-available"
     ]
     assert "universal-negative-proof" not in document
+    allowed = {
+        "schema",
+        "status",
+        "reviewer",
+        "deployment-review-id",
+        "human-required",
+        "diagnostics",
+        "authority",
+        "scope",
+        "recovery",
+    }
+    assert set(document) <= allowed
+    serialized = str(document).lower()
+    assert "capability" not in serialized
+    assert "live_enabled" not in serialized
+    assert "authorization" not in serialized
 
 
 @pytest.mark.parametrize(
@@ -315,114 +333,6 @@ def test_subprocess_timeout_is_unknown_and_diagnostic_only() -> None:
     assert document["deployment-review-id"] is None
     assert document["human-required"] is True
     assert document["authority"] == "diagnostic-only"
-
-
-@pytest.mark.parametrize(
-    "required",
-    [
-        "status",
-        "reviewer",
-        "deployment-review-id",
-        "authority",
-        "scope",
-    ],
-)
-def test_reviewer_inspection_present_is_read_only_and_scoped(
-    required: str,
-) -> None:
-    runner = RecordingRunner(
-        [
-            {"node_id": "WFR_kwDOexample"},
-            _page(
-                [
-                    {
-                        "node": {
-                            "databaseId": 9001,
-                            "state": "APPROVED",
-                            "user": {"login": "actual-reviewer"},
-                            "environments": [{"name": ENVIRONMENT}],
-                        }
-                    }
-                ]
-            ),
-        ]
-    )
-
-    document = _inspect(runner)
-
-    assert required in document
-    assert document["authority"] == "diagnostic-only"
-    assert all("mutation" not in part for call in runner.calls for part in call)
-
-
-@pytest.mark.parametrize("field", ["human-required", "diagnostics"])
-def test_reviewer_inspection_removed_is_not_universal_negative_proof(
-    field: str,
-) -> None:
-    document = _inspect(RecordingRunner([{"node_id": "WFR_node"}, _page([])]))
-
-    assert field in document
-    assert document["status"] == "removed"
-    assert "universal-negative-proof" not in document
-
-
-@pytest.mark.parametrize(
-    "responses",
-    [
-        [{}],
-        [{"node_id": "WFR_node"}, {"data": {}}],
-    ],
-)
-def test_reviewer_inspection_errors_are_unknown_and_human_required(
-    responses: list[dict[str, Any]],
-) -> None:
-    document = _inspect(RecordingRunner(responses))
-
-    assert document["status"] == "unknown"
-    assert document["human-required"] is True
-    assert document["authority"] == "diagnostic-only"
-
-
-def test_reviewer_inspection_cannot_grant_capability_or_enable_live() -> None:
-    document = _inspect(RecordingRunner([{"node_id": "WFR_node"}, _page([])]))
-    serialized = str(document).lower()
-
-    assert "capability" not in serialized
-    assert "live_enabled" not in serialized
-    assert "authorization" not in serialized
-
-
-@pytest.mark.parametrize(
-    "extra",
-    [
-        "capability",
-        "live_enabled",
-        "mutation-started",
-        "authorization",
-        "receipt",
-        "attempt",
-        "universal-negative-proof",
-        "release-lineage",
-    ],
-)
-def test_reviewer_inspection_contract_rejects_every_unrecognized_extra_key(
-    extra: str,
-) -> None:
-    document = _inspect(RecordingRunner([{"node_id": "WFR_node"}, _page([])]))
-    allowed = {
-        "schema",
-        "status",
-        "reviewer",
-        "deployment-review-id",
-        "human-required",
-        "diagnostics",
-        "authority",
-        "scope",
-        "recovery",
-    }
-
-    assert extra not in allowed
-    assert set(document) <= allowed
 
 
 def test_nested_environment_pagination_does_not_skip_later_review_edges() -> (
