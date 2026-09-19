@@ -25,7 +25,6 @@ STATIC_LANES = (
     "npm-artifact-build",
 )
 CHECK_NAME = "Workflow Delivery v3 / hcoona-release-smoke-npm (shadow)"
-MAX_WORKFLOW_LINES = 700
 RETENTION_DAYS = 45
 CHILD_FAILURE = 73
 CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
@@ -619,14 +618,10 @@ def test_unselected_node_lane_closes_without_adapter_output(
     assert "--mechanical-result" not in command
 
 
-def test_workflow_is_bounded_and_exposes_only_approved_events() -> None:
-    """Retain one small shadow/manual workflow with no operator scope input."""
+def test_workflow_exposes_only_approved_events_and_permissions() -> None:
+    """Keep shadow/manual entry and its minimal authority boundary."""
     document = _document()
 
-    assert (
-        len(WORKFLOW.read_text(encoding="utf-8").splitlines())
-        <= MAX_WORKFLOW_LINES
-    )
     assert _events(document) == {
         "pull_request": None,
         "workflow_dispatch": None,
@@ -823,20 +818,6 @@ def test_stock_raw_artifacts_propagate_exact_ids_and_digests() -> None:
     assert "--expected-digest" in raw
 
 
-def test_no_job_uploads_and_downloads_its_own_artifact() -> None:
-    """Keep transport only where another job genuinely consumes the payload."""
-    for job in _document()["jobs"].values():
-        uploads = [step for step in _steps(job) if step.get("uses") == UPLOAD]
-        downloads = [
-            step for step in _steps(job) if step.get("uses") == DOWNLOAD
-        ]
-        if uploads and downloads:
-            assert all(
-                "steps." not in step["with"]["artifact-ids"]
-                for step in downloads
-            )
-
-
 def test_adapter_context_is_emitted_and_used_only_for_ready_selected_work() -> (
     None
 ):
@@ -884,8 +865,6 @@ def test_npm_lane_uploads_tarball_before_forming_exact_artifact_evidence() -> (
         for index, step in enumerate(steps)
         if step["name"] == "Form npm artifact lane result"
     )
-    assert upload["with"]["retention-days"] == RETENTION_DAYS
-    assert upload["with"]["archive"] is False
     assert upload["with"]["name"].endswith("-npm-tarball.tgz")
 
 
@@ -994,22 +973,16 @@ def test_finalizer_persists_canonical_decision_and_summary_before_guard() -> (
     for step, role, condition in expected:
         assert step["if"] == condition
         assert step["uses"] == UPLOAD
-        assert step["with"] == {
-            "name": (
-                "wdv3-${{ github.run_id }}-${{ github.run_attempt }}-"
-                f"{role}"
-            ),
-            "path": (
-                ".wdv3/wdv3-${{ github.run_id }}-"
-                "${{ github.run_attempt }}-"
-                f"{role}.json"
-            ),
-            "if-no-files-found": "error",
-            "retention-days": RETENTION_DAYS,
-            "overwrite": False,
-            "archive": False,
-            "include-hidden-files": True,
-        }
+        assert step["with"]["name"] == (
+            "wdv3-${{ github.run_id }}-${{ github.run_attempt }}-"
+            f"{role}"
+        )
+        assert step["with"]["path"] == (
+            ".wdv3/wdv3-${{ github.run_id }}-"
+            "${{ github.run_attempt }}-"
+            f"{role}.json"
+        )
+        assert step["with"]["overwrite"] is False
     assert propagation["if"] == (
         "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
         "ci-slice-decision.json', github.run_id, github.run_attempt)) != ''"

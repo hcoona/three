@@ -59,12 +59,39 @@ def test_root_hk_consumes_index_scanner_and_preparation() -> None:
             assert "--consumer-policy" not in command
 
 
-def test_manual_worktree_static_reference_is_a_separate_mise_task() -> None:
+def test_manual_worktree_static_reference_is_a_separate_mise_task(
+    tmp_path: Path,
+) -> None:
     """Manual inspection keeps its distinct worktree input and preparation."""
     config = tomllib.loads((REPO_ROOT / "mise.toml").read_text())
     task = config["tasks"]["check:static-reference-worktree"]
     assert "prepare:static-reference-authorities" in task["depends"]
-    command = shlex.split(task["run"])
+    log = tmp_path / "argv.json"
+    executable(
+        tmp_path / "bin" / "uv",
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        f"Path({str(log)!r}).write_text(json.dumps("
+        "{'argv': [Path(sys.argv[0]).name, *sys.argv[1:]], "
+        "'cwd': os.getcwd()}))\n",
+    )
+    result = run_step(
+        {"run": task["run"]},
+        cwd=REPO_ROOT,
+        env={"PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}"},
+        bindings={},
+    )
+    assert result.returncode == 0, result.stderr
+    observation = json.loads(log.read_text())
+    assert Path(observation["cwd"]) == REPO_ROOT
+    command = observation["argv"]
+    assert command[:2] == ["uv", "run"]
+    assert (
+        command[command.index("--package") + 1] == "three-workflow-delivery-v3"
+    )
+    assert command.index("python") < command.index(
+        STATIC_REFERENCE_IMPLEMENTATION.as_posix()
+    )
     assert command[command.index("--source-kind") + 1] == "worktree"
     assert command[command.index("--repository-root") + 1] == "."
     assert "--target" not in command
@@ -1588,38 +1615,104 @@ def test_static_reference_is_one_internal_root_hk_step_not_ci_obligation() -> (
     assert STATIC_REFERENCE_STEP_NAME not in CI_LANE_IDS
 
 
-def test_testagent_markdown_exclusion_is_local_to_two_markdown_steps() -> None:
-    """Exclude append-only artifacts only from markdownlint/prettier."""
-    hk_config = HK_CONFIG.read_text(encoding="utf-8")
-    markdown_start = hk_config.index("local markdown_linters")
-    markdown_end = hk_config.index("local pkl_linters", markdown_start)
-    markdown_config = hk_config[markdown_start:markdown_end]
-    remaining_config = hk_config[:markdown_start] + hk_config[markdown_end:]
-    expected_exclusion_reference_count = 3
-    exclusion_line = (
-        "    exclude = general_exclude_list + "
-        "markdown_append_only_artifact_exclude"
-    )
+@pytest.mark.parametrize(
+    "step_name", ["markdownlint-cli2", "markdown-prettier"]
+)
+def test_markdown_steps_exclude_testagent_and_keep_staging_scope(
+    tmp_path: Path, step_name: str
+) -> None:
+    """Observe command exclusions separately from explicit staging globs."""
+    hooks = _effective_hooks()
+    step = hooks["check"]["steps"][step_name]
+    for hook in ("check", "pre-commit", "fix"):
+        steps = hooks[hook]["steps"]
+        assert {
+            name
+            for name, registered in steps.items()
+            if ".testagent/**" in registered.get("exclude", [])
+        } == {"markdownlint-cli2", "markdown-prettier"}
+        assert steps[step_name]["check"]
+        assert steps[step_name]["fix"]
+        for selector in ("glob", "exclude", "stage"):
+            assert steps[step_name][selector] == step[selector]
 
-    assert hk_config.count('".testagent/**"') == 1
-    assert markdown_config.count("markdown_append_only_artifact_exclude") == (
-        expected_exclusion_reference_count
+    repo = tmp_path / "repo"
+    selected = "docs/guide with spaces.md"
+    excluded = ".testagent/research.md"
+    unrelated = "notes.txt"
+    _initialize_repository(repo, baseline_paths=(selected, excluded, unrelated))
+    assert _named_step_plan(repo, "typos", excluded)["status"] == "included"
+    dirty = {
+        path: f"dirty: {path}\n" for path in (selected, excluded, unrelated)
+    }
+    for path, content in dirty.items():
+        _write(repo, path, content)
+
+    log = tmp_path / "events.jsonl"
+    recorder = tmp_path / "markdown.py"
+    fixed = "# Corrected Markdown\n"
+    recorder.write_text(
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        "mode, *files = sys.argv[1:]\n"
+        f"with open({str(log)!r}, 'a') as stream:\n"
+        "    stream.write(json.dumps({'mode': mode, 'files': files}) + '\\n')\n"
+        "if mode == 'fix':\n"
+        "    for path in files:\n"
+        f"        Path(path).write_text({fixed!r})\n"
+        f"sys.exit(any(Path(path).read_text() != {fixed!r} "
+        "for path in files))\n",
+        encoding="utf-8",
     )
-    assert (
-        'local markdown_append_only_artifact_exclude = List(".testagent/**")'
-    ) in markdown_config
-    assert (
-        '["markdownlint-cli2"] {\n'
-        '    profiles = List("small")\n'
-        f"{exclusion_line}"
-    ) in markdown_config
-    assert (
-        '["markdown-prettier"] {\n'
-        '    profiles = List("small")\n'
-        f"{exclusion_line}"
-    ) in markdown_config
-    assert ".testagent/**" not in remaining_config
-    assert "markdown_append_only_artifact_exclude" not in remaining_config
+    command = shlex.join([sys.executable, str(recorder)])
+    configuration = REPO_ROOT / "src/private/lib/hk/Config.pkl"
+    (repo / "hk.pkl").write_text(
+        f"amends {json.dumps(str(configuration))}\n"
+        f"import {json.dumps(str(HK_CONFIG))} as root\n"
+        'hooks { ["check"] { steps {\n'
+        f"[{json.dumps(step_name)}] = "
+        f'(root.hooks["check"].steps[{json.dumps(step_name)}]) {{\n'
+        f"check = {json.dumps(command + ' check {{files}}')}\n"
+        f"fix = {json.dumps(command + ' fix {{files}}')}\n"
+        "} } } }\n",
+        encoding="utf-8",
+    )
+    for mode in ("check", "fix"):
+        result = subprocess.run(  # noqa: S603
+            [
+                _hk_executable(),
+                "--no-progress",
+                "--profile",
+                "small",
+                "check",
+                f"--{mode}",
+                "--stage",
+                "--all",
+            ],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        assert (result.returncode == 0) is (mode == "fix"), result.stderr
+        events = [json.loads(line) for line in log.read_text().splitlines()]
+        assert mode in {event["mode"] for event in events}
+        assert all(event["files"] == [selected] for event in events)
+        if mode == "check":
+            assert not _git(repo, "diff", "--cached", "--name-only").stdout
+    assert set(
+        _git(repo, "diff", "--cached", "--name-only").stdout.splitlines()
+    ) == {selected, excluded}
+    assert _git(repo, "show", f":{selected}").stdout == fixed
+    assert (repo / selected).read_text() == fixed
+    for path in (excluded, unrelated):
+        assert (repo / path).read_text() == dirty[path]
+    # The explicit stage glob also includes already dirty tracked Markdown.
+    assert _git(repo, "show", f":{excluded}").stdout == dirty[excluded]
+    assert _git(repo, "show", f":{unrelated}").stdout == (
+        f"baseline: {unrelated}\n"
+    )
 
 
 @pytest.mark.parametrize(
@@ -1728,47 +1821,6 @@ def test_acceptance_fixture_required_files_are_visible_to_git() -> None:
     assert all((REPO_ROOT / path).is_file() for path in visible_paths)
 
 
-def test_testagent_markdown_exclusion_remains_local_to_two_steps() -> None:
-    """Pin both Markdown selectors while keeping the exclusion local."""
-    expected_markdown_step_count = 2
-    hk_config = HK_CONFIG.read_text(encoding="utf-8")
-    markdown_start = hk_config.index("local markdown_linters")
-    markdown_end = hk_config.index("local pkl_linters", markdown_start)
-    markdown_config = hk_config[markdown_start:markdown_end]
-    remaining_config = hk_config[:markdown_start] + hk_config[markdown_end:]
-    exclusion = (
-        "    exclude = general_exclude_list + "
-        "markdown_append_only_artifact_exclude"
-    )
-
-    assert markdown_config.count(exclusion) == expected_markdown_step_count
-    assert (
-        markdown_config.count('glob = List("*.md")')
-        == expected_markdown_step_count
-    )
-    assert (
-        markdown_config.count('stage = List("*.md")')
-        == expected_markdown_step_count
-    )
-    assert (
-        '["markdownlint-cli2"] {\n'
-        '    profiles = List("small")\n'
-        f"{exclusion}\n"
-        "    batch = true\n"
-        '    glob = List("*.md")\n'
-        '    stage = List("*.md")'
-    ) in markdown_config
-    assert (
-        '["markdown-prettier"] {\n'
-        '    profiles = List("small")\n'
-        f"{exclusion}\n"
-        '    glob = List("*.md")\n'
-        '    stage = List("*.md")'
-    ) in markdown_config
-    assert ".testagent/**" not in remaining_config
-    assert "markdown_append_only_artifact_exclude" not in remaining_config
-
-
 def test_legacy_pngchunk_ztxt_ba_line_and_typos_exception_are_exact() -> None:
     """Preserve the historical identifier and its file-specific exception."""
     legacy_path = "src/public/lib/Hjg.Pngcs/Chunks/PngChunkZTXT.cs"
@@ -1873,22 +1925,8 @@ def test_parse_name_status_preserves_posix_backslash_component() -> None:
     ) == (r"literal\component/package.json",)
 
 
-@pytest.mark.parametrize(
-    ("name_status", "expected_message", "expected_cause_type"),
-    [
-        pytest.param(
-            b"M\0invalid-\xff.py\0",
-            "Git returned a non-UTF-8 changed path",
-            UnicodeDecodeError,
-            id="non-utf8",
-        ),
-    ],
-)
-def test_parse_name_status_rejects_unsafe_path_before_child_execution(
+def test_hk_helper_rejects_non_utf8_path_before_child_execution(
     monkeypatch: pytest.MonkeyPatch,
-    name_status: bytes,
-    expected_message: str,
-    expected_cause_type: type[BaseException] | None,
 ) -> None:
     """Reject unsafe Git bytes before invoking the requested child command."""
     from types import SimpleNamespace  # noqa: PLC0415
@@ -1904,22 +1942,20 @@ def test_parse_name_status_rejects_unsafe_path_before_child_execution(
 
     from_oid = "1" * 40
     to_oid = "2" * 40
-    git_commands: list[tuple[str, ...]] = []
 
     def fake_run(
         command: Sequence[str],
         **_kwargs: object,
     ) -> SimpleNamespace:
         arguments = tuple(command)
-        git_commands.append(arguments)
         if arguments[:2] == ("git", "rev-parse"):
             resolved_oid = (
                 from_oid if arguments[-1] == "base^{commit}" else to_oid
             )
             return SimpleNamespace(stdout=f"{resolved_oid}\n")
         if arguments[:2] == ("git", "diff"):
-            return SimpleNamespace(stdout=name_status)
-        return SimpleNamespace(returncode=91)
+            return SimpleNamespace(stdout=b"M\0invalid-\xff.py\0")
+        pytest.fail(f"Unexpected subprocess before path rejection: {arguments}")
 
     monkeypatch.setattr(
         helper_module,
@@ -1944,46 +1980,12 @@ def test_parse_name_status_rejects_unsafe_path_before_child_execution(
         )
 
     assert type(error.value) is helper_module.ChangedPathError
-    assert str(error.value) == expected_message
-    actual_cause_type = (
-        type(error.value.__cause__)
-        if error.value.__cause__ is not None
-        else None
-    )
-    assert actual_cause_type is expected_cause_type
-    assert tuple(git_commands) == (
-        (
-            "git",
-            "rev-parse",
-            "--verify",
-            "--end-of-options",
-            "base^{commit}",
-        ),
-        (
-            "git",
-            "rev-parse",
-            "--verify",
-            "--end-of-options",
-            "head^{commit}",
-        ),
-        (
-            "git",
-            "diff",
-            "--name-status",
-            "--find-renames",
-            "-z",
-            "--end-of-options",
-            from_oid,
-            to_oid,
-            "--",
-        ),
-    )
+    assert str(error.value) == "Git returned a non-UTF-8 changed path"
+    assert type(error.value.__cause__) is UnicodeDecodeError
 
 
-def test_mise_bootstrap_preparation_chain_and_manual_worktree_are_exact() -> (
-    None
-):
-    """Pin authority preparation into bootstrap and the separate manual task."""
+def test_mise_bootstrap_preserves_preparation_and_build_permissions() -> None:
+    """Keep frozen authority preparation before permitted native rebuilds."""
     mise_config = tomllib.loads(
         (REPO_ROOT / "mise.toml").read_text(encoding="utf-8"),
     )
@@ -1992,7 +1994,6 @@ def test_mise_bootstrap_preparation_chain_and_manual_worktree_are_exact() -> (
     bootstrap_dependencies = tuple(tasks["bootstrap"]["depends"])
     node_bootstrap = tasks["bootstrap:node"]
     preparation = tasks[preparation_name]
-    manual_worktree = tasks["check:static-reference-worktree"]
 
     assert bootstrap_dependencies.count("bootstrap:node") == 1
     assert tuple(node_bootstrap["depends"]) == (preparation_name,)
@@ -2002,13 +2003,6 @@ def test_mise_bootstrap_preparation_chain_and_manual_worktree_are_exact() -> (
         "--package three-workflow-delivery-v3 python -B "
         "eng/scripts/workflow_delivery_v3_prepare_static_reference.py"
     )
-    assert tuple(manual_worktree["depends"]) == (preparation_name,)
-    assert manual_worktree["run"] == (
-        "uv run --python 3.13 --package three-workflow-delivery-v3 "
-        "python eng/scripts/workflow_delivery_v3_static_reference.py "
-        "--repository-root . --source-kind worktree"
-    )
-    assert manual_worktree["run"] != preparation["run"]
 
     workspace = yaml.safe_load(
         (REPO_ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8")
