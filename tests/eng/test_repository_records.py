@@ -406,7 +406,8 @@ def test_identifier_retirement_and_removal(repo: Repository) -> None:
     assert repo.check()["diagnostics"] == []
     repo.write(
         path,
-        "# REQ-001: Retired - current authority: docs/absent.md\n\nRetired.\n",
+        "# REQ-001: Retired - current authority: docs/absent.md#missing\n"
+        "\nRetired.\n",
     )
     assert "reference-missing" in codes(repo.check())
 
@@ -872,3 +873,271 @@ def test_invalid_base_catalog_preserves_cli_report(
     assert "accepted_record_obligations" not in report
     assert "identifier_comparison" not in report
     assert report["base"]["commit"] == repo.base
+
+
+@pytest.mark.parametrize("version", [None, 2, 3])
+@pytest.mark.parametrize(
+    "mutation", ["missing-list", "missing-state", "root", "id", "path"]
+)
+def test_permissive_schema_preserves_input_boundary(
+    repo: Repository, version: int | None, mutation: str
+) -> None:
+    """Editable policy schemas cannot remove consumed catalog field types."""
+    if version == 2:
+        write_legacy_catalog(repo)
+    path = checker.FAMILY_CATALOG
+    catalog = yaml.safe_load((repo.root / path).read_text())
+    key = "families" if version == 2 else "bindings"
+    if mutation == "missing-list":
+        catalog.pop(key)
+    elif mutation == "missing-state":
+        catalog[key][0].pop("state")
+    elif mutation == "root":
+        catalog = []
+    else:
+        catalog[key][0][mutation] = [] if mutation == "id" else {}
+    repo.write(path, yaml.safe_dump(catalog))
+    repo.write(checker.SCHEMA_BINDINGS[path], "{}\n")
+    if version is not None:
+        repo.base = repo.commit()
+        repo.save()
+    candidate = repo.commit()
+    output = repo.root / "report-output.txt"
+    assert (
+        checker.main(
+            [
+                "--repository-root",
+                str(repo.root),
+                "--base",
+                repo.base,
+                "--candidate",
+                candidate,
+                "--output",
+                str(output),
+            ]
+        )
+        == 1
+    )
+    report = json.loads(output.read_text())
+    expected = (
+        "schema-input-invalid"
+        if version is None
+        else "catalog-version-or-base-invalid"
+    )
+    assert [(d["code"], d["path"]) for d in report["diagnostics"]] == [
+        (expected, path)
+    ]
+    assert report["checks"]["dependent-record-checks"].startswith(
+        "unavailable:"
+    )
+    assert "identifier_comparison" not in report
+    assert report["candidate"]["commit"] == candidate
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["rules-missing", "rule-type", "implementation-null", "value-type"],
+)
+def test_permissive_control_schema_preserves_input_boundary(
+    repo: Repository, mutation: str
+) -> None:
+    """Malformed control fields retain recoverable diagnostics."""
+    path = checker.CONTROL_CATALOG
+    catalog = yaml.safe_load((repo.root / path).read_text())
+    control = catalog["controls"][0]
+    if mutation == "rules-missing":
+        control.pop("governing_rules")
+    elif mutation == "rule-type":
+        control["governing_rules"] = [None]
+    elif mutation == "implementation-null":
+        control["implementation"] = None
+    else:
+        control["implementation"] = {"kind": "repository-path", "value": 42}
+    repo.write(path, yaml.safe_dump(catalog))
+    repo.write(checker.SCHEMA_BINDINGS[path], "{}\n")
+    candidate = repo.commit()
+    output = repo.root / "report-output.txt"
+    assert (
+        checker.main(
+            [
+                "--repository-root",
+                str(repo.root),
+                "--base",
+                repo.base,
+                "--candidate",
+                candidate,
+                "--output",
+                str(output),
+            ]
+        )
+        == 1
+    )
+    report = json.loads(output.read_text())
+    assert [(d["code"], d["path"]) for d in report["diagnostics"]] == [
+        ("schema-input-invalid", path)
+    ]
+    assert report["checks"]["dependent-record-checks"].startswith(
+        "unavailable:"
+    )
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://example.invalid/tool",
+        "//example.invalid/tool",
+        "docs/README.md",
+    ],
+)
+def test_repository_implementation_requires_local_path(
+    repo: Repository, target: str
+) -> None:
+    """Typed implementations require local paths; Markdown permits URLs."""
+    path = checker.CONTROL_CATALOG
+    catalog = yaml.safe_load((repo.root / path).read_text())
+    catalog["controls"][0]["implementation"] = {
+        "kind": "repository-path",
+        "value": target,
+    }
+    repo.write(path, yaml.safe_dump(catalog))
+    with (repo.root / "docs/README.md").open("a") as stream:
+        stream.write("\n[External](https://example.invalid/tool)\n")
+    report = repo.check()
+    expected = (
+        []
+        if target == "docs/README.md"
+        else [
+            {
+                "severity": "error",
+                "code": "repository-reference-required",
+                "path": path,
+                "message": target,
+            }
+        ]
+    )
+    assert report["diagnostics"] == expected
+
+
+@pytest.mark.parametrize(
+    ("target", "expected"),
+    [
+        (
+            "https://example.invalid/tool#records",
+            "repository-reference-required",
+        ),
+        ("//example.invalid/tool#records", "repository-reference-required"),
+        ("docs/README.md", "retirement-target-invalid"),
+        ("#records", "retirement-target-invalid"),
+        ("docs/README.md#records", None),
+        ("REQ-002", None),
+        ("http://[", "reference-invalid"),
+    ],
+)
+def test_retirement_requires_local_path_and_anchor(
+    repo: Repository, target: str, expected: str | None
+) -> None:
+    """Retirements require local anchored authority or a defined ID."""
+    path = "docs/requirements.md"
+    repo.write(
+        path,
+        f"# REQ-001: Retired - current authority: {target}\n"
+        "\n# REQ-002: Current\n",
+    )
+    repo.bind(path)
+    repo.save()
+    repo.route_all()
+    report = repo.check()
+    assert report["diagnostics"] == (
+        []
+        if expected is None
+        else [
+            {
+                "severity": "error",
+                "code": expected,
+                "path": path,
+                "message": target,
+            }
+        ]
+    )
+
+
+@pytest.mark.parametrize("source_kind", ["local", "remote"])
+@pytest.mark.parametrize(
+    "mutation",
+    [None, "orphan", "directory", "owner", "duplicate", "malformed", "missing"],
+)
+def test_generated_interface_requires_exact_source_mapping(
+    repo: Repository, source_kind: str, mutation: str | None
+) -> None:
+    """Only exact deployments with an unambiguous source establish ownership."""
+    path = ".agents/skills/example/SKILL.md"
+    repo.write(path, "# Generated interface\n")
+    owner = "example/skills/plugin"
+    dependency = {
+        "repo_url": "example/skills",
+        "virtual_path": "plugin",
+        "resolved_commit": "a" * 40,
+        "deployed_files": [path],
+    }
+    if source_kind == "local":
+        dependency["local_path"] = "./src/private/lib/example"
+        owner = dependency["local_path"]
+        repo.write("src/private/lib/example/skill.txt", "Source input\n")
+    deployment = {
+        "kind": "project-relative",
+        "value": path,
+        "owners": [owner],
+        "active_owner": owner,
+    }
+    lock = {"dependencies": [dependency], "deployments": [deployment]}
+    if mutation == "orphan":
+        dependency["deployed_files"] = []
+    elif mutation == "directory":
+        deployment["value"] = ".agents/skills/example"
+        dependency["deployed_files"] = [deployment["value"]]
+    elif mutation == "owner":
+        deployment["active_owner"] = "unknown/source"
+    elif mutation == "duplicate":
+        lock["dependencies"].append(dependency.copy())
+    elif mutation == "malformed":
+        dependency["deployed_files"] = None
+    if mutation != "missing":
+        repo.write("apm.lock.yaml", yaml.safe_dump(lock))
+    candidate = repo.commit()
+    output = repo.root / "report-output.txt"
+    assert checker.main(
+        [
+            "--repository-root",
+            str(repo.root),
+            "--base",
+            repo.base,
+            "--candidate",
+            candidate,
+            "--output",
+            str(output),
+        ]
+    ) == (0 if mutation is None else 1)
+    report = json.loads(output.read_text())
+    entry = next(e for e in report["manifest"] if e["path"] == path)
+    if mutation is None:
+        assert report["diagnostics"] == []
+        assert entry["classification"] == "generated-interface"
+        assert entry["canonical_source"] == (
+            {"kind": "local-package", "path": "src/private/lib/example"}
+            if source_kind == "local"
+            else {
+                "kind": "locked-package",
+                "repository": "example/skills",
+                "path": "plugin",
+                "commit": "a" * 40,
+            }
+        )
+    else:
+        assert entry["classification"] == "unresolved"
+        assert "canonical_source" not in entry
+        assert any(
+            d["code"] == "classification-unresolved" and d["path"] == path
+            for d in report["diagnostics"]
+        )
+        if mutation in {"missing", "malformed"}:
+            assert "generated-source-map-invalid" in codes(report)

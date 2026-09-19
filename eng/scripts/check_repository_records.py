@@ -264,12 +264,149 @@ def schema_validator(snapshot: Snapshot, path: str) -> Draft202012Validator:
     return Draft202012Validator(schema)
 
 
+def input_structure(path: str, catalog: Any, *, base: bool = False) -> None:  # noqa: ANN401 - Validate untrusted catalog values before consumption.
+    """Enforce consumed field types independently of editable policy schemas."""
+    text = {"type": "string"}
+
+    def record(**fields: Any) -> dict[str, Any]:  # noqa: ANN401 - JSON Schema values have varied shapes.
+        return {
+            "type": "object",
+            "required": list(fields),
+            "properties": fields,
+        }
+
+    def items(shape: dict[str, Any]) -> dict[str, Any]:
+        return {"type": "array", "items": shape}
+
+    if path == FAMILY_CATALOG:
+        binding = record(id=text, state=text, path=text, namespace=text)
+        if (
+            not base
+            or not isinstance(catalog, dict)
+            or catalog.get("schema_version") != LEGACY_CATALOG_VERSION
+        ):
+            binding["required"] += ["family", "carrier"]
+            binding["properties"].update(family=text, carrier=text, schema=text)
+            shape = record(
+                schema_version={"const": CURRENT_CATALOG_VERSION},
+                families=items(record(id=text)),
+                bindings=items(binding),
+            )
+        else:
+            shape = record(
+                schema_version={"const": LEGACY_CATALOG_VERSION},
+                families=items(binding),
+            )
+    else:
+        implementation = record(kind=text)
+        implementation["properties"]["value"] = text
+        implementation["allOf"] = [
+            {
+                "if": {"properties": {"kind": {"const": "repository-path"}}},
+                "then": {"required": ["value"]},
+            }
+        ]
+        shape = record(
+            schema_version={"const": 2},
+            controls=items(
+                record(
+                    id=text,
+                    governing_rules=items(text),
+                    implementation=implementation,
+                )
+            ),
+        )
+    Draft202012Validator(shape).validate(catalog)
+
+
+def generated_sources(snapshot: Snapshot) -> dict[str, dict[str, str]]:  # noqa: C901 - Validate exact deployment and source boundaries.
+    """Resolve exact APM deployments to their locked source package."""
+    path = "apm.lock.yaml"
+    lock = parse_document(snapshot.read(path), path)
+    text = {"type": "string", "minLength": 1}
+    strings = {"type": "array", "items": text}
+    Draft202012Validator(
+        {
+            "type": "object",
+            "required": ["dependencies", "deployments"],
+            "properties": {
+                "dependencies": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["repo_url", "deployed_files"],
+                        "properties": {
+                            "repo_url": text,
+                            "deployed_files": strings,
+                            "virtual_path": text,
+                            "local_path": text,
+                            "resolved_commit": text,
+                        },
+                    },
+                },
+                "deployments": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["kind", "value", "owners", "active_owner"],
+                        "properties": {
+                            "kind": text,
+                            "value": text,
+                            "owners": strings,
+                            "active_owner": text,
+                        },
+                    },
+                },
+            },
+        }
+    ).validate(lock)
+    dependencies: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for dependency in lock["dependencies"]:
+        identity = dependency.get("local_path", dependency["repo_url"])
+        if "local_path" not in dependency and dependency.get("virtual_path"):
+            identity += "/" + dependency["virtual_path"]
+        dependencies[identity].append(dependency)
+    deployments: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for deployment in lock["deployments"]:
+        if deployment["kind"] == "project-relative":
+            deployments[deployment["value"]].append(deployment)
+    result = {}
+    for path, entries in deployments.items():
+        if len(entries) != 1 or not safe_path(path):
+            continue
+        entry = entries[0]
+        owner = entry["active_owner"]
+        sources = dependencies[owner]
+        if owner not in entry["owners"] or len(sources) != 1:
+            continue
+        source = sources[0]
+        if path not in source["deployed_files"]:
+            continue
+        if "local_path" in source:
+            package = posixpath.normpath(source["local_path"])
+            if (
+                not safe_path(package)
+                or not snapshot.directory(package)
+                or snapshot.symlink_ancestor(package)
+            ):
+                continue
+            result[path] = {"kind": "local-package", "path": package}
+        elif re.fullmatch(r"[0-9a-f]{40}", source.get("resolved_commit", "")):
+            result[path] = {
+                "kind": "locked-package",
+                "repository": source["repo_url"],
+                "path": source.get("virtual_path", ""),
+                "commit": source["resolved_commit"],
+            }
+    return result
+
+
 def classify(path: str) -> str:  # noqa: C901, PLR0911, PLR0912 - Ordered independent classification selectors.
     """Independent selectors; no catalog entries are used by discovery."""
     parts = PurePosixPath(path).parts
     suffix = PurePosixPath(path).suffix.lower()
     if path.startswith((".agents/", ".github/agents/")):
-        return "generated-interface"
+        return "unresolved"
     if (
         "fixtures" in parts
         or "examples" in parts
@@ -536,7 +673,26 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
     report["deleted_paths"] = sorted(
         set(accepted.entries) - set(current.entries)
     )
-    classes = {p: classify(p) for p in current.entries}
+    generated: dict[str, dict[str, str]] = {}
+    if any(
+        p.startswith((".agents/", ".github/agents/")) for p in current.entries
+    ):
+        try:
+            generated = generated_sources(current)
+        except (
+            RecordError,
+            ValueError,
+            TypeError,
+            yaml.YAMLError,
+            ValidationError,
+        ) as exc:
+            error("generated-source-map-invalid", "apm.lock.yaml", str(exc))
+    classes = {
+        p: "generated-interface"
+        if p in generated and p.startswith((".agents/", ".github/agents/"))
+        else classify(p)
+        for p in current.entries
+    }
     report["manifest"] = [
         {
             "path": p,
@@ -544,6 +700,11 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
             "blob": e.oid,
             "classification": classes[p],
             "untracked": e.untracked,
+            **(
+                {"canonical_source": generated[p]}
+                if classes[p] == "generated-interface"
+                else {}
+            ),
         }
         for p, e in sorted(current.entries.items())
     ]
@@ -569,6 +730,7 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
                     f"{list(issue.absolute_path)}: {issue.message}",
                 )
             if not issues:
+                input_structure(path, instance)
                 catalogs[path] = instance
         except (
             ValueError,
@@ -577,6 +739,7 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
             yaml.YAMLError,
             RecordError,
             SchemaError,
+            ValidationError,
             Unresolvable,
         ) as exc:
             error("schema-input-invalid", path, str(exc))
@@ -596,6 +759,7 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
         schema_validator(accepted, SCHEMA_BINDINGS[FAMILY_CATALOG]).validate(
             base_catalog
         )
+        input_structure(FAMILY_CATALOG, base_catalog, base=True)
         base_bindings = bindings(base_catalog, base=True)
     except (
         RecordError,
@@ -711,8 +875,13 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
                     error("markdown-input-invalid", path, str(exc))
     edges: dict[str, set[str]] = defaultdict(set)
 
-    def reference(  # noqa: PLR0911 - Each invalid reference has one diagnostic.
-        source: str, destination: str, *, repository_relative: bool = False
+    def reference(  # noqa: C901, PLR0911, PLR0912 - Each reference boundary has one diagnostic.
+        source: str,
+        destination: str,
+        *,
+        repository_relative: bool = False,
+        local_only: bool = False,
+        require_anchor: bool = False,
     ) -> str | None:
         try:
             url = urlsplit(destination)
@@ -720,6 +889,11 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
             error("reference-invalid", source, destination)
             return None
         if url.scheme or url.netloc:
+            if local_only:
+                error("repository-reference-required", source, destination)
+            return None
+        if require_anchor and (not url.path or not url.fragment):
+            error("retirement-target-invalid", source, destination)
             return None
         decoded = unquote(url.path)
         path = (
@@ -776,6 +950,7 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
                 CONTROL_CATALOG,
                 implementation["value"],
                 repository_relative=True,
+                local_only=True,
             )
     reached: set[str] = set()
     pending = ["docs/README.md"]
@@ -835,7 +1010,13 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
                 if retirement and not is_base:
                     target = retirement.group(1)
                     if "/" in target or "#" in target:
-                        reference(path, target, repository_relative=True)
+                        reference(
+                            path,
+                            target,
+                            repository_relative=True,
+                            local_only=True,
+                            require_anchor=True,
+                        )
                     else:
                         retirements.append(
                             (routes[0]["namespace"], target, path)
