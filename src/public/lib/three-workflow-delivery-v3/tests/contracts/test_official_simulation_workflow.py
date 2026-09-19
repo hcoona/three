@@ -117,14 +117,6 @@ def _uses_steps(document: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _raw_artifact_name(settings: dict[str, Any]) -> str:
-    """Model upload-artifact v7 archive:false physical naming."""
-    assert settings["archive"] is False
-    path = settings["path"]
-    assert isinstance(path, str)
-    return PurePosixPath(path).name
-
-
 def test_official_simulation_event_permissions_and_concurrency_are_exact() -> (
     None
 ):
@@ -230,7 +222,9 @@ def test_official_simulation_uses_only_raw_id_bound_artifact_transport() -> (
             assert settings["include-hidden-files"] is True
             assert settings["if-no-files-found"] == "error"
             name = settings["name"]
-            assert _raw_artifact_name(settings) == name
+            path = settings["path"]
+            assert isinstance(path, str)
+            assert PurePosixPath(path).name == name
             tarball_name = (
                 "${{ needs.plan-simulation.outputs.tarball-artifact-name }}"
             )
@@ -251,9 +245,6 @@ def test_official_simulation_uses_only_raw_id_bound_artifact_transport() -> (
             assert "ra${GITHUB_RUN_ATTEMPT}" in command
             assert "digest" in command.lower()
             assert any(extension in command for extension in (".json", ".md"))
-    for step in upload_steps:
-        settings = step["with"]
-        assert _raw_artifact_name(settings) == settings["name"]
     assert download_steps
     for step in download_steps:
         settings = step["with"]
@@ -291,18 +282,6 @@ def test_official_simulation_uses_only_raw_id_bound_artifact_transport() -> (
         "actions-report.json",
     ):
         assert f".wdv3/input/{stale_basename}" not in raw
-
-
-def test_upload_artifact_v7_raw_mode_ignores_configured_name() -> None:
-    """Regress the v7 behavior that made fixed input basenames unsafe."""
-    settings = {
-        "name": "wdv3-release-simulation-request-r1-ra2-digest.json",
-        "path": ".wdv3/release-intent.json",
-        "archive": False,
-    }
-
-    assert _raw_artifact_name(settings) == "release-intent.json"
-    assert _raw_artifact_name(settings) != settings["name"]
 
 
 def test_build_is_uploaded_before_artifact_and_evidence_are_formed() -> None:

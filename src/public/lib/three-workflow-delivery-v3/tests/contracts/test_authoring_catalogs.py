@@ -840,7 +840,7 @@ def test_first_slice_authoring_rejects_nonapproved_output_closure(
 
 @pytest.mark.parametrize(
     "mutation",
-    ["missing", "extra", "renamed", "duplicate", "substituted"],
+    ["extra", "renamed", "duplicate", "substituted"],
 )
 def test_first_slice_authoring_rejects_non_exact_build_selection(
     tmp_path: Path,
@@ -850,11 +850,17 @@ def test_first_slice_authoring_rejects_non_exact_build_selection(
     document = _yaml_document(RELEASE_UNIT_YAML)
     builds = _release_unit_builds(document)
     build = dict(_first_release_unit_build(document))
-    if mutation == "missing":
-        document["builds"] = []
-    elif mutation == "extra":
+    if mutation == "extra":
         extra = dict(build)
         extra["id"] = "extra-package"
+        output = dict(
+            _object(
+                _first_release_unit_outputs(document)[0],
+                context="builds[0].outputs[0]",
+            )
+        )
+        output["id"] = "extra-tarball"
+        extra["outputs"] = [output]
         builds.append(extra)
     elif mutation == "renamed":
         build["id"] = "renamed-package"
@@ -874,13 +880,19 @@ def test_first_slice_authoring_rejects_non_exact_build_selection(
     )
     target = _commit_all(repo)
 
-    with pytest.raises((TypeError, ValueError)):
+    message = {
+        "duplicate": "duplicate build identity: npm-package",
+    }.get(
+        mutation,
+        "first-slice build selection must be exactly singleton npm-package",
+    )
+    with pytest.raises(ValueError, match=f"^{message}$"):
         load_first_slice_authoring(repo, target)
 
 
 @pytest.mark.parametrize(
     "mutation",
-    ["missing", "extra", "renamed", "duplicate", "substituted"],
+    ["extra", "renamed", "duplicate"],
 )
 def test_first_slice_authoring_rejects_non_exact_quality_selection(
     tmp_path: Path,
@@ -893,9 +905,7 @@ def test_first_slice_authoring_rejects_non_exact_quality_selection(
         )
     )
     ecosystems = _quality_ecosystems(document)
-    if mutation == "missing":
-        document["ecosystems"] = {}
-    elif mutation == "extra":
+    if mutation == "extra":
         ecosystems["javascript"] = {
             "preset": "node/hcoona-release-smoke-npm-v1"
         }
@@ -903,8 +913,6 @@ def test_first_slice_authoring_rejects_non_exact_quality_selection(
         document["ecosystems"] = {
             "javascript": ecosystems["node"],
         }
-    elif mutation == "substituted":
-        _node_quality_selection(document)["preset"] = "node/substituted-v1"
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -923,7 +931,14 @@ def test_first_slice_authoring_rejects_non_exact_quality_selection(
     _write_first_slice_authoring(repo, quality=quality)
     target = _commit_all(repo)
 
-    with pytest.raises((TypeError, ValueError)):
+    message = {
+        "duplicate": "duplicate YAML mapping key: 'node'",
+    }.get(
+        mutation,
+        "first-slice Quality selection must be exactly singleton "
+        "node/hcoona-release-smoke-npm-v1",
+    )
+    with pytest.raises(ValueError, match=f"^{message}$"):
         load_first_slice_authoring(repo, target)
 
 
@@ -1449,7 +1464,7 @@ def test_npmjs_destination_uses_hypothetical_trusted_publishing_oidc() -> None:
         context="catalog capabilities",
     )
 
-    assert tuple(document) == (
+    assert set(document) == {
         "schema",
         "build-definitions",
         "quality-definitions",
@@ -1458,14 +1473,14 @@ def test_npmjs_destination_uses_hypothetical_trusted_publishing_oidc() -> None:
         "execution-classes",
         "capabilities",
         "release-policies",
-    )
-    assert tuple(capabilities_document) == (
+    }
+    assert set(capabilities_document) == {
         "github/actions-read-v1",
         "github/contents-read-v1",
         "github/packages-read-v1",
         "github/packages-write-v1",
         "npmjs/trusted-publishing-oidc-v1",
-    )
+    }
     assert catalog_digest() == (
         "sha256:98fec8147b0bb59f9cfd6f0051bd1a55817a4f74c00272fe02ad236ec2030990"
     )

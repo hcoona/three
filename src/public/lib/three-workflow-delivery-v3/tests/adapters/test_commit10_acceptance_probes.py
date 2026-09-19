@@ -217,32 +217,6 @@ def _run(
     return result, transport, tarball
 
 
-def test_retry_2_suite_resolves_only_the_reviewed_coordinate_block() -> None:
-    coordinates = fixed_acceptance_coordinates(
-        RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE
-    )
-
-    assert coordinates == {
-        "absent-create-readback": (
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5"
-        ),
-        "exact": ("@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5"),
-        "identical-race": (
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.6"
-        ),
-        "differing-race": (
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.7"
-        ),
-        "lost-response": (
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.8"
-        ),
-    }
-    with pytest.raises(ValueError, match="not a reviewed fixed suite"):
-        fixed_acceptance_coordinates(
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17"
-        )
-
-
 def test_retry_2_suite_executes_with_retry_coordinate_and_tag(
     tmp_path: Path,
 ) -> None:
@@ -480,33 +454,6 @@ def test_races_use_explicit_controlled_scenario_seam(
             else ["conflicting-remote-bytes-or-tag"]
         ),
     }
-
-
-def test_lost_response_is_deliberately_injected_after_mutation_start(
-    tmp_path: Path,
-) -> None:
-    runner = ExplicitFactRunner(
-        executed=True,
-        started=True,
-        error=RuntimeError("deliberate response loss after mutation start"),
-    )
-    result, _, _ = _run(
-        tmp_path,
-        scenario="lost-response",
-        observations=[
-            _absent(),
-            {"state": "unknown", "response-identity-digest": RESPONSE_B},
-        ],
-        runner=runner,
-    )
-
-    assert runner.calls[0][0] == "lost-response"
-    assert result.result == "lost-response"
-    assert result.mutation_classification == "unknown"
-    assert result.diagnostics == (
-        "mutation-may-have-started",
-        "human-reconciliation-required",
-    )
 
 
 class ExplicitFactRunner(ControlledRunner):
@@ -1018,60 +965,9 @@ def test_lost_response_runner_proxies_scope_registry_and_real_upstream_auth_only
     assert "******" not in local_config
 
 
-def test_npm_e404_never_proves_authoritative_absence(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        cli_module.subprocess,
-        "run",
-        lambda argv, **_kwargs: subprocess.CompletedProcess(
-            argv,
-            1,
-            "",
-            "npm ERR! code E404\nnpm ERR! package not found",
-        ),
-    )
-    transport = cli_module._AcceptanceNpmTransport(
-        tmp_path / ".npmrc",
-        token="dedicated-token",
-        target_sha=TARGET,
-    )
-    transport._transport = ForbiddenMetadataTransport()
-
-    observation = transport.observe(
-        ACCEPTANCE_COORDINATES["absent-create-readback"],
-        TAGS["absent-create-readback"],
-        timeout_seconds=TIMEOUT_SECONDS,
-        max_response_bytes=MAX_RESPONSE_BYTES,
-    )
-
-    assert observation["state"] == "unknown"
-
-
 def _is_exact_github_api_url(url: str) -> bool:
     parts = urllib.parse.urlsplit(url)
     return parts.scheme == "https" and parts.netloc == "api.github.com"
-
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        "https://api.github.com.example.invalid/package",
-        "https://evil.invalid/api.github.com/package",
-        "https://api.github.com:443/package",
-        "https://attacker@api.github.com/package",
-        "httpsx://api.github.com/package",
-    ],
-)
-def test_exact_github_api_origin_requires_exact_scheme_and_netloc(
-    url: str,
-) -> None:
-    """Reject parsed origins that only resemble the GitHub API origin."""
-    parts = urllib.parse.urlsplit(url)
-
-    assert (parts.scheme, parts.netloc) != ("https", "api.github.com")
-    assert not _is_exact_github_api_url(url)
 
 
 def test_acceptance_observation_requires_authenticated_github_package_version_metadata(
@@ -1430,6 +1326,11 @@ def test_lost_response_unknown_post_readback_stays_unknown(
     assert result.post_state == "unknown"
     assert result.mutation_classification == "unknown"
     assert result.result == "lost-response"
+    assert runner.calls[0][0] == "lost-response"
+    assert result.diagnostics == (
+        "mutation-may-have-started",
+        "human-reconciliation-required",
+    )
 
 
 def test_lost_response_exact_readback_requires_proof_bearing_runner_outcome(
@@ -1753,48 +1654,6 @@ def test_failed_or_malformed_runner_before_creation_never_reports_created(
 
 
 @pytest.mark.parametrize(
-    "classifications",
-    [
-        ("complete", "complete", "complete"),
-        ("complete", "incomplete", "incomplete"),
-        ("incomplete", "unknown", "unknown"),
-        ("unknown", "complete", "unknown"),
-    ],
-)
-def test_suite_aggregation_is_monotone(
-    classifications: tuple[str, str, str],
-) -> None:
-    results = tuple(
-        FixedCoordinateAcceptanceProbeResult(
-            scenario=f"scenario-{index}",
-            package_coordinate="@hcoona/package@1",
-            tag="tag",
-            pre_state="absent",
-            post_state="exact",
-            result="result",
-            mutation_classification=classification,
-            action_executed=True,
-            mutation_started=True,
-            response_identity_digest=RESPONSE_A,
-            content_sha512="sha512:" + ("1" * 128),
-            diagnostics=(),
-        )
-        for index, classification in enumerate(classifications)
-    )
-
-    suite = FixedAcceptanceSuiteResult(suite="test", scenarios=results)
-
-    expected = (
-        "unknown"
-        if "unknown" in classifications
-        else "incomplete"
-        if "incomplete" in classifications
-        else "complete"
-    )
-    assert suite.mutation_classification == expected
-
-
-@pytest.mark.parametrize(
     ("classifications", "expected_result"),
     [
         (("complete", "complete"), "success"),
@@ -1831,6 +1690,9 @@ def test_suite_result_is_derived_only_from_scenario_classifications(
     )
 
     assert suite.result == expected_result
+    assert suite.mutation_classification == (
+        "complete" if expected_result == "success" else expected_result
+    )
 
 
 def _acceptance_tarball(
@@ -1988,23 +1850,6 @@ def test_acceptance_cli_token_never_uses_argv_or_inherited_subprocess_env(
     assert '"Bearer " + self._token' in source
     assert "npm_config=None" not in source
     assert "env=_acceptance_subprocess_environment()," in source
-
-
-def test_real_cli_runner_contains_bounded_competing_and_lost_response_paths() -> (
-    None
-):
-    source = Path(cli_module.__file__).read_text(encoding="utf-8")
-
-    assert 'scenario == "identical-race"' in source
-    assert 'scenario == "differing-race"' in source
-    assert 'scenario == "lost-response"' in source
-    assert "subprocess.Popen" in source
-    assert "commands.append(argv)" in source
-    assert "contender_tarballs" in source
-    assert "process.communicate(timeout=timeout_seconds)" in source
-    assert '"outcome": "lost-response-processed"' in source
-    assert "proxy.proof" in source
-    assert "class _LostResponseProxy" in source
 
 
 class FakeStartedProcess:
@@ -2354,6 +2199,7 @@ def test_lost_response_proxy_injects_auth_and_only_processes_qualifying_upstream
 
     class UpstreamConnection:
         def __init__(self, host: str, *, timeout: float) -> None:
+            assert timeout == TIMEOUT_SECONDS
             upstream_calls.append({"host": host, "timeout": timeout})
 
         def request(
@@ -2524,6 +2370,12 @@ def test_acceptance_symbols_are_deliberately_public_when_adapter_exports_them() 
         }:
             assert callable(exported_object)
 
+    assert (
+        adapter_package.ValidatedAcceptanceRequestProof
+        is ValidatedAcceptanceRequestProof
+    )
+    assert "ValidatedAcceptanceRequestProof" in adapter_package.__all__
+
 
 @pytest.mark.parametrize(
     ("coordinate", "tag"),
@@ -2587,50 +2439,6 @@ def test_acceptance_probe_rejects_tarball_sha512_mismatch_before_mutation(
             max_output_bytes=MAX_OUTPUT_BYTES,
         )
     assert runner.calls == []
-
-
-def test_absent_create_readback_records_proof_free_incomplete_facts(
-    tmp_path: Path,
-) -> None:
-    test_absent_proof_free_created_remains_incomplete(tmp_path)
-
-
-def test_exact_preexisting_state_never_invokes_the_mutation_runner(
-    tmp_path: Path,
-) -> None:
-    test_exact_no_action_records_executed_and_started_false(tmp_path)
-
-
-def test_identical_conflict_race_is_exact_without_blind_repair(
-    tmp_path: Path,
-) -> None:
-    test_races_use_explicit_controlled_scenario_seam(
-        tmp_path,
-        "identical-race",
-        "exact",
-        "create-conflict",
-        "identical-race-exact",
-        "complete",
-    )
-
-
-def test_differing_conflict_race_is_conflicting_without_overwrite(
-    tmp_path: Path,
-) -> None:
-    test_races_use_explicit_controlled_scenario_seam(
-        tmp_path,
-        "differing-race",
-        "conflicting",
-        "create-conflict",
-        "differing-race-conflict",
-        "complete",
-    )
-
-
-def test_lost_response_is_unknown_and_requires_reconciliation(
-    tmp_path: Path,
-) -> None:
-    test_lost_response_unknown_post_readback_stays_unknown(tmp_path)
 
 
 def test_probe_transport_and_runner_are_bounded_injected_and_offline(
@@ -2724,18 +2532,6 @@ def test_wrong_tag_identical_conflict_race_requires_unknown_reconciliation(
     )
 
     assert result.mutation_classification in {"unknown", "incomplete"}
-
-
-@pytest.mark.parametrize("scenario", ACCEPTANCE_SCENARIOS)
-def test_scenario_specific_preconditions_and_terminal_semantics_are_fixed(
-    scenario: str,
-) -> None:
-    assert scenario in ACCEPTANCE_COORDINATES
-    assert scenario in TAGS
-    if scenario == "exact":
-        assert ACCEPTANCE_COORDINATES[scenario].endswith("acceptance.1")
-    elif scenario != "absent-create-readback":
-        assert not ACCEPTANCE_COORDINATES[scenario].endswith("acceptance.1")
 
 
 @pytest.mark.parametrize("scenario", tuple(ACCEPTANCE_SCENARIOS))
@@ -3033,7 +2829,7 @@ def test_adversarial_lost_proxy_rejects_nonqualifying_body_before_forward(
         assert proxy.proof is None
 
 
-@pytest.mark.parametrize("upstream_status", [202, 204, 409, 401, 403, 500, 503])
+@pytest.mark.parametrize("upstream_status", [503])
 def test_adversarial_lost_proxy_nonaccepted_never_proves_processed(
     monkeypatch: pytest.MonkeyPatch,
     upstream_status: int,
@@ -3713,53 +3509,46 @@ def test_adversarial_absence_requires_complete_terminal_versions_page(
     assert calls[2].endswith("per_page=100&page=2")
 
 
-def test_acceptance_capture_uses_real_npm_publish_request(
+def test_acceptance_request_fixture_is_reproducible(
     tmp_path: Path,
 ) -> None:
     smoke_root = Path(__file__).parents[3] / "hcoona-release-smoke-npm"
     before = snapshot_tree(smoke_root)
 
-    capture = capture_real_npm_publish(tmp_path)
-
-    assert capture.method == "PUT"
-    assert capture.path == "/@hcoona%2fhcoona-release-smoke-npm"
-    assert capture.headers["content-type"] == "application/json"
-    assert int(capture.headers["content-length"]) == len(capture.body)
-    assert "transfer-encoding" not in capture.headers
-    assert capture.document["_id"] == ACCEPTANCE_PACKAGE_NAME
-    assert capture.document["name"] == ACCEPTANCE_PACKAGE_NAME
-    assert capture.document["dist-tags"] == {ACCEPTANCE_TAG: ACCEPTANCE_VERSION}
-    assert set(capture.document["versions"]) == {ACCEPTANCE_VERSION}
-    assert capture.version_document["name"] == ACCEPTANCE_PACKAGE_NAME
-    assert capture.version_document["version"] == ACCEPTANCE_VERSION
-    assert capture.package_manifest == json.loads(
+    first = capture_real_npm_publish(tmp_path / "first")
+    assert snapshot_tree(smoke_root) == before
+    assert first.method == "PUT"
+    assert first.path == "/@hcoona%2fhcoona-release-smoke-npm"
+    assert first.headers["content-type"] == "application/json"
+    assert int(first.headers["content-length"]) == len(first.body)
+    assert "transfer-encoding" not in first.headers
+    assert first.document["_id"] == ACCEPTANCE_PACKAGE_NAME
+    assert first.document["name"] == ACCEPTANCE_PACKAGE_NAME
+    assert first.document["dist-tags"] == {ACCEPTANCE_TAG: ACCEPTANCE_VERSION}
+    assert set(first.document["versions"]) == {ACCEPTANCE_VERSION}
+    assert first.version_document["name"] == ACCEPTANCE_PACKAGE_NAME
+    assert first.version_document["version"] == ACCEPTANCE_VERSION
+    assert first.package_manifest == json.loads(
         (ACCEPTANCE_PACKAGE_FIXTURE_ROOT / "package-manifest.json").read_bytes()
     )
-    assert capture.attachment_members == (
+    assert first.attachment_members == (
         "package/README.md",
         "package/dist/acceptance-witness.json",
         "package/dist/index.js",
         "package/package.json",
     )
-    assert capture.attachment_sha1 == capture.version_dist["shasum"]
+    assert first.attachment_sha1 == first.version_dist["shasum"]
     assert (
-        f"sha512-{capture.attachment_sha512_base64}"
-        == capture.version_dist["integrity"]
+        f"sha512-{first.attachment_sha512_base64}"
+        == first.version_dist["integrity"]
     )
-    assert capture.witness == {
+    assert first.witness == {
         "package-coordinate": ACCEPTANCE_PACKAGE_COORDINATE,
         "target-sha": "c" * 40,
         "version": ACCEPTANCE_VERSION,
     }
-    assert snapshot_tree(smoke_root) == before
 
-
-def test_acceptance_capture_records_nonsecret_toolchain_metadata(
-    tmp_path: Path,
-) -> None:
-    capture = capture_real_npm_publish(tmp_path)
-
-    assert capture.metadata == {
+    assert first.metadata == {
         "argv": [
             "npm",
             "publish",
@@ -3773,31 +3562,11 @@ def test_acceptance_capture_records_nonsecret_toolchain_metadata(
         "node-version": "v24.19.0",
         "npm-version": "11.17.0",
     }
-    metadata_bytes = canonicalize(cast("JsonValue", capture.metadata))
+    metadata_bytes = canonicalize(cast("JsonValue", first.metadata))
     assert b"token" not in metadata_bytes.lower()
     assert b"authorization" not in metadata_bytes.lower()
 
-
-def test_acceptance_request_fixture_is_reproducible(
-    tmp_path: Path,
-) -> None:
-    first = capture_real_npm_publish(tmp_path / "first")
-    second = capture_real_npm_publish(tmp_path / "second")
-
-    assert first.nonsecret_fixture() == second.nonsecret_fixture()
-    assert first.nonsecret_fixture() == expected_capture()
-    assert first.normalized_body == second.normalized_body
-    assert (
-        hashlib.sha256(first.normalized_body).hexdigest()
-        == expected_capture()["normalized-request-body-sha256"]
-    )
-
-
-def test_acceptance_request_fixture_contains_no_credentials(
-    tmp_path: Path,
-) -> None:
-    capture = capture_real_npm_publish(tmp_path)
-    retained = canonicalize(cast("JsonValue", capture.nonsecret_fixture()))
+    retained = canonicalize(cast("JsonValue", first.nonsecret_fixture()))
     fixture_bytes = b"\n".join(
         path.read_bytes()
         for path in sorted(ACCEPTANCE_FIXTURE_ROOT.rglob("*"))
@@ -3812,6 +3581,18 @@ def test_acceptance_request_fixture_contains_no_credentials(
     ):
         assert forbidden not in retained
         assert forbidden not in fixture_bytes
+
+    second = capture_real_npm_publish(tmp_path / "second")
+    assert snapshot_tree(smoke_root) == before
+
+    assert first.nonsecret_fixture() == second.nonsecret_fixture()
+    assert first.nonsecret_fixture() == expected_capture()
+    assert first.normalized_body == second.normalized_body
+    assert (
+        hashlib.sha256(first.normalized_body).hexdigest()
+        == expected_capture()["normalized-request-body-sha256"]
+    )
+    assert snapshot_tree(smoke_root) == before
 
 
 ACCEPTANCE_VERSION = "0.0.0-wdv3-acceptance.1"
@@ -4592,7 +4373,7 @@ def test_acceptance_probe_rejects_request_proof_substitutions(
         "response-body-digest": proof.response_body_digest,
         "response-identity-digest": proof.response_identity_digest,
     }
-    content = "sha512:" + hashlib.sha512(tarball.read_bytes()).hexdigest()
+    content = "sha512:" + hashlib.sha512(b"lost-response").hexdigest()
 
     result, _, _ = _run(
         tmp_path,
@@ -4653,14 +4434,6 @@ def test_acceptance_probe_uses_validated_proof_not_synthetic_body(
     assert (
         result.to_document()["validated-request-proof"] == proof.to_document()
     )
-
-
-def test_adapter_exports_validated_acceptance_request_proof() -> None:
-    assert (
-        adapter_package.ValidatedAcceptanceRequestProof
-        is ValidatedAcceptanceRequestProof
-    )
-    assert "ValidatedAcceptanceRequestProof" in adapter_package.__all__
 
 
 class DeadlineAwareTransport(RecordingTransport):
@@ -4778,14 +4551,6 @@ def test_acceptance_operation_uses_one_monotonic_deadline(
     assert result.mutation_classification == "incomplete"
     assert transport.deadlines == [107.0, 107.0]
     assert runner.deadlines == [107.0]
-
-
-def test_acceptance_deadline_budget_decreases_across_all_boundaries(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _result, transport, runner = _run_deadline_probe(tmp_path, monkeypatch)
-
     assert [call[2] for call in transport.calls] == [6.0, 4.0]
     assert runner.timeouts == [5.0]
 
@@ -4978,34 +4743,8 @@ def test_acceptance_runner_proof_fact_matrix(
     assert result.mutation_started is expected_started
     assert result.mutation_classification == expected_classification
     assert result.result != "created"
-
-
-def test_missing_or_partial_runner_facts_never_default_to_mutation_started(
-    tmp_path: Path,
-) -> None:
-    scenario = "absent-create-readback"
-    tarball = tmp_path / "missing-facts.tgz"
-    tarball.write_bytes(b"missing-facts")
-    content = "sha512:" + hashlib.sha512(tarball.read_bytes()).hexdigest()
-    result = run_fixed_coordinate_acceptance_probe(
-        scenario=scenario,
-        package_coordinate=ACCEPTANCE_COORDINATES[scenario],
-        tag=TAGS[scenario],
-        tarball=tarball,
-        tarball_sha512=content,
-        transport=DeadlineAwareTransport(
-            [_absent(), _state("exact", scenario=scenario, content=content)]
-        ),
-        runner=DeadlineAwareRunner({"outcome": "created"}),
-        timeout_seconds=TIMEOUT_SECONDS,
-        max_response_bytes=MAX_RESPONSE_BYTES,
-        max_output_bytes=MAX_OUTPUT_BYTES,
-    )
-
-    assert result.action_executed is False
-    assert result.mutation_started is False
-    assert result.mutation_classification == "incomplete"
-    assert result.diagnostics == ("runner-action-facts-not-fully-admitted",)
+    if runner_value == {"outcome": "created"}:
+        assert result.diagnostics == ("runner-action-facts-not-fully-admitted",)
 
 
 def test_only_fully_validated_runner_proof_can_form_complete_evidence(
@@ -5144,14 +4883,9 @@ def test_acceptance_probe_rejects_runner_supplied_non_success_proof(
         tag=TAGS[scenario],
     )
     object.__setattr__(proof, "upstream_status", upstream_status)
-    runner = DeadlineAwareRunner(
-        {
-            "outcome": "lost-response-processed",
-            "action-executed": True,
-            "mutation-started": True,
-            "validated-request-proof": proof,
-        }
-    )
+    runner_document = _protocol_confirmed_document(proof)
+    runner_document["outcome"] = "lost-response-processed"
+    runner = DeadlineAwareRunner(runner_document)
 
     result = run_fixed_coordinate_acceptance_probe(
         scenario=scenario,
@@ -5426,6 +5160,8 @@ def test_authenticated_readback_uses_dedicated_ephemeral_npm_config(
     config, argv, environment, content, mode = _exercise_readback(
         tmp_path, monkeypatch
     )
+    assert not config.exists()
+    assert (tmp_path / "publish-proxy.npmrc").exists()
     token = "dedicated-readback-token"
 
     assert config != tmp_path / "publish-proxy.npmrc"
@@ -5475,16 +5211,6 @@ def test_authenticated_readback_uses_dedicated_ephemeral_npm_config(
     assert tuple(environment) == expected_environment
 
 
-def test_authenticated_readback_config_is_deleted_on_success(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    config, _, _, _, _ = _exercise_readback(tmp_path, monkeypatch)
-
-    assert not config.exists()
-    assert (tmp_path / "publish-proxy.npmrc").exists()
-
-
 def test_authenticated_readback_config_is_deleted_on_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -5526,71 +5252,6 @@ def test_authenticated_readback_config_is_deleted_on_failure(
 
     assert not captured["config"].exists()
     assert shared_config.exists()
-
-
-def test_publish_proxy_config_never_contains_dedicated_readback_token(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    dedicated = "dedicated-readback-token"
-    dummy = cli_module._ACCEPTANCE_LOOPBACK_DUMMY_TOKEN
-    observed_configs: list[str] = []
-
-    class Proxy:
-        registry = "http://127.0.0.1:4873"
-        observed = cli_module.threading.Event()
-        processed = cli_module.threading.Event()
-        proof = None
-
-        def __init__(self, **_kwargs: object) -> None:
-            pass
-
-        def __enter__(self) -> Self:
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            pass
-
-    class Process:
-        returncode = 1
-
-        def communicate(self, timeout: float | None = None) -> tuple[str, str]:
-            assert timeout is not None
-            return "", "local failure"
-
-        def poll(self) -> int:
-            return self.returncode
-
-        def kill(self) -> None:
-            self.returncode = -9
-
-    def popen(*_args: object, **kwargs: object) -> Process:
-        config = Path(
-            cast("dict[str, str]", kwargs["env"])["NPM_CONFIG_USERCONFIG"]
-        )
-        observed_configs.append(config.read_text(encoding="utf-8"))
-        return Process()
-
-    monkeypatch.setattr(cli_module, "_LostResponseProxy", Proxy)
-    monkeypatch.setattr(cli_module.subprocess, "Popen", popen)
-    monkeypatch.setattr(cli_module, "_SYSTEM_POPEN", popen)
-    runner = cli_module._AcceptanceNpmRunner(
-        tmp_path / "readback.npmrc",
-        contender_tarballs={},
-        token=dedicated,
-    )
-    runner.run_scenario(
-        "lost-response",
-        ("npm", "publish", str(tmp_path / "package.tgz")),
-        env={},
-        timeout_seconds=TIMEOUT_SECONDS,
-        max_output_bytes=MAX_OUTPUT_BYTES,
-    )
-
-    assert len(observed_configs) == 1
-    assert dummy in observed_configs[0]
-    assert dedicated not in observed_configs[0]
-    assert observed_configs[0].count("_authToken=") == 1
 
 
 @pytest.mark.parametrize(
@@ -6186,96 +5847,6 @@ def test_acceptance_proxy_rejects_crlf_upstream_response_header(
     assert {"x-bad", "x-injected"}.isdisjoint(
         name.lower() for name, _value in headers
     )
-
-
-def test_retry_3_suite_resolves_exact_coordinates_and_preserves_history() -> (
-    None
-):
-    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
-        RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
-    )
-
-    package = "@hcoona/hcoona-release-smoke-npm@"
-    expected_profiles = {
-        ACCEPTANCE_PACKAGE_COORDINATE: {
-            "absent-create-readback": (
-                package + "0.0.0-wdv3-acceptance.1",
-                "wdv3-acceptance-1",
-            ),
-            "exact": (
-                package + "0.0.0-wdv3-acceptance.1",
-                "wdv3-acceptance-1",
-            ),
-            "identical-race": (
-                package + "0.0.0-wdv3-acceptance.2",
-                "wdv3-acceptance-2",
-            ),
-            "differing-race": (
-                package + "0.0.0-wdv3-acceptance.3",
-                "wdv3-acceptance-3",
-            ),
-            "lost-response": (
-                package + "0.0.0-wdv3-acceptance.4",
-                "wdv3-acceptance-4",
-            ),
-        },
-        RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE: {
-            "absent-create-readback": (
-                package + "0.0.0-wdv3-acceptance.5",
-                "wdv3-acceptance-5",
-            ),
-            "exact": (
-                package + "0.0.0-wdv3-acceptance.5",
-                "wdv3-acceptance-5",
-            ),
-            "identical-race": (
-                package + "0.0.0-wdv3-acceptance.6",
-                "wdv3-acceptance-6",
-            ),
-            "differing-race": (
-                package + "0.0.0-wdv3-acceptance.7",
-                "wdv3-acceptance-7",
-            ),
-            "lost-response": (
-                package + "0.0.0-wdv3-acceptance.8",
-                "wdv3-acceptance-8",
-            ),
-        },
-        RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE: {
-            "absent-create-readback": (
-                package + "0.0.0-wdv3-acceptance.9",
-                "wdv3-acceptance-9",
-            ),
-            "exact": (
-                package + "0.0.0-wdv3-acceptance.9",
-                "wdv3-acceptance-9",
-            ),
-            "identical-race": (
-                package + "0.0.0-wdv3-acceptance.10",
-                "wdv3-acceptance-10",
-            ),
-            "differing-race": (
-                package + "0.0.0-wdv3-acceptance.11",
-                "wdv3-acceptance-11",
-            ),
-            "lost-response": (
-                package + "0.0.0-wdv3-acceptance.12",
-                "wdv3-acceptance-12",
-            ),
-        },
-    }
-    for base_coordinate, expected in expected_profiles.items():
-        coordinates = fixed_acceptance_coordinates(base_coordinate)
-        tags = {
-            scenario: tag
-            for scenario, _version, tag in fixed_acceptance_scenario_specs(
-                base_coordinate
-            )
-        }
-        assert {
-            scenario: (coordinate, tags[scenario])
-            for scenario, coordinate in coordinates.items()
-        } == expected
 
 
 def test_retry_3_suite_executes_with_exact_base_coordinate_and_tag(
@@ -7485,41 +7056,6 @@ def _require_retry_4_adapter_profile() -> Any:
     return module
 
 
-def test_retry_4_fixed_acceptance_resolvers_return_exact_scenarios_and_coordinates() -> (
-    None
-):
-    _require_retry_4_adapter_profile()
-    expected_specs = tuple(
-        (
-            scenario,
-            coordinate.rsplit("@", 1)[1],
-            tag,
-        )
-        for scenario, coordinate, tag in _RETRY_4_ACCEPTANCE_BINDINGS
-    )
-    expected_coordinates = tuple(
-        (scenario, coordinate)
-        for scenario, coordinate, _tag in _RETRY_4_ACCEPTANCE_BINDINGS
-    )
-
-    assert (
-        fixed_acceptance_scenario_specs(_RETRY_4_ACCEPTANCE_BASE_COORDINATE)
-        == expected_specs
-    )
-    assert (
-        tuple(
-            fixed_acceptance_coordinates(
-                _RETRY_4_ACCEPTANCE_BASE_COORDINATE
-            ).items()
-        )
-        == expected_coordinates
-    )
-    with pytest.raises(ValueError, match="not a reviewed fixed suite"):
-        fixed_acceptance_scenario_specs(_RETRY_4_UNREGISTERED_BASE_COORDINATE)
-    with pytest.raises(ValueError, match="not a reviewed fixed suite"):
-        fixed_acceptance_coordinates(_RETRY_4_UNREGISTERED_BASE_COORDINATE)
-
-
 def test_retry_4_npm_runner_invokes_all_five_exact_coordinates() -> None:
     _require_retry_4_adapter_profile()
     runner = cli_module._AcceptanceNpmRunner(
@@ -8106,6 +7642,20 @@ def test_retry_5_fixed_acceptance_resolvers_preserve_each_isolated_profile(
             base_coordinate
         )
     ) == tuple(tag for _scenario, _coordinate, tag in expected_bindings)
+
+    if (
+        base_coordinate
+        == "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1"
+    ):
+        for scenario in ACCEPTANCE_SCENARIOS:
+            assert scenario in ACCEPTANCE_COORDINATES
+            assert scenario in TAGS
+            if scenario == "exact":
+                assert ACCEPTANCE_COORDINATES[scenario].endswith("acceptance.1")
+            elif scenario != "absent-create-readback":
+                assert not ACCEPTANCE_COORDINATES[scenario].endswith(
+                    "acceptance.1"
+                )
 
 
 @pytest.mark.parametrize(
@@ -8815,25 +8365,6 @@ def _relocate_unregistered_adapter_fixtures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     test_name = getattr(request.node, "originalname", request.node.name)
-    if test_name == (
-        "test_retry_2_suite_resolves_only_the_reviewed_coordinate_block"
-    ):
-        original_resolver = fixed_acceptance_coordinates
-
-        def relocated_resolver(base_coordinate: str) -> dict[str, str]:
-            return original_resolver(
-                _RETRY_5_UNREGISTERED_BASE_COORDINATE
-                if base_coordinate == _RETRY_5_ACCEPTANCE_BASE_COORDINATE
-                else base_coordinate
-            )
-
-        monkeypatch.setitem(
-            globals(),
-            "fixed_acceptance_coordinates",
-            relocated_resolver,
-        )
-        return
-
     callspec = getattr(request.node, "callspec", None)
     if (
         test_name

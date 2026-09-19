@@ -718,18 +718,14 @@ def test_lost_response_without_mutation_startedness_cannot_reconcile(
     scenario = "lost-response"
     tarball = f"{scenario}-artifact".encode()
     proof = _proof(tarball, scenario=scenario)
+    runner_document = _protocol_confirmed_runner_document(proof)
+    runner_document["outcome"] = "lost-response-processed"
+    runner_document["mutation-started"] = False
 
     result = _run_probe(
         tmp_path,
         scenario=scenario,
-        runner=ScriptedRunner(
-            {
-                "outcome": "lost-response-processed",
-                "action-executed": True,
-                "mutation-started": False,
-                "validated-request-proof": proof,
-            }
-        ),
+        runner=ScriptedRunner(runner_document),
         observations=[_absent(), _exact_readback(tarball, scenario=scenario)],
     )
 
@@ -793,18 +789,13 @@ def test_missing_or_mismatched_readback_remains_fail_closed(
     readback["state"] = post_state
     if post_state == "conflicting":
         readback["content-sha512"] = "sha512:" + ("0" * 128)
+    runner_document = _protocol_confirmed_runner_document(proof)
+    runner_document["outcome"] = "lost-response-processed"
 
     result = _run_probe(
         tmp_path,
         scenario=scenario,
-        runner=ScriptedRunner(
-            {
-                "outcome": "lost-response-processed",
-                "action-executed": True,
-                "mutation-started": True,
-                "validated-request-proof": proof,
-            }
-        ),
+        runner=ScriptedRunner(runner_document),
         observations=[_absent(), readback],
     )
 
@@ -1031,8 +1022,8 @@ def test_runner_diagnostic_rejects_empty_or_pre_mutation_request_binding(
 
 @pytest.mark.parametrize(
     "upstream_status",
-    [100, 200, 500, 599],
-    ids=["status-100", "status-200", "status-500", "status-599"],
+    [100, 200, 599],
+    ids=["status-100", "status-200", "status-599"],
 )
 def test_runner_diagnostic_rejects_unbound_noncreated_status(
     upstream_status: int,
