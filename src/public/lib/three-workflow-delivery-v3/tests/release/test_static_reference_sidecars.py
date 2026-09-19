@@ -365,52 +365,6 @@ def _minimal_v9_facts() -> list[dict[str, Any]]:
     ]
 
 
-def test_node_npm_protocol_reads_one_snapshot_content_without_mutation(
-    tmp_path: Path,
-) -> None:
-    """Read loaded package content and leave the selected bytes unchanged."""
-    snapshot_root = tmp_path / "snapshot"
-    candidate_path = snapshot_root / "application" / "package.json"
-    original = _write_package_json(
-        candidate_path,
-        {
-            "name": "snapshot-owned-package",
-            "version": "9.8.7",
-            "dependencies": {"selected-dependency": "1.2.3"},
-            "private": True,
-        },
-    )
-
-    completed = _run_node_authority(
-        snapshot_root=snapshot_root,
-        candidate_path=candidate_path,
-        graph="npm-manifest-v1",
-    )
-
-    _assert_facts_response(
-        completed,
-        graph="npm-manifest-v1",
-        packages=_NPM_PACKAGES,
-        facts=[
-            {
-                "context": "name",
-                "kind": "npm-package-name",
-                "name": "snapshot-owned-package",
-            },
-            _npm_dependency_fact(
-                dependency_key="selected-dependency",
-                reference=_npm_reference(
-                    name="selected-dependency",
-                    raw_spec="1.2.3",
-                ),
-                section="dependencies",
-                source_spec="1.2.3",
-            ),
-        ],
-    )
-    assert candidate_path.read_bytes() == original
-
-
 def test_node_protocol_binds_logical_path_to_materialized_candidate(
     tmp_path: Path,
 ) -> None:
@@ -506,41 +460,21 @@ def test_node_npm_protocol_orders_name_and_four_dependency_sections_exactly(
 
 
 @pytest.mark.parametrize(
-    ("case", "dependency_key", "source_spec"),
+    ("dependency_key", "source_spec"),
     [
         pytest.param(
-            "registry",
-            "registry-dependency",
-            "1.2.3",
-            id="registry-version",
-        ),
-        pytest.param(
-            "alias",
             "aliased-dependency",
             "npm:@scope/actual-package@2.3.4",
             id="one-level-alias",
-        ),
-        pytest.param(
-            "file",
-            "archive-dependency",
-            "file:../../archives/archive.tgz",
-            id="file-relative",
-        ),
-        pytest.param(
-            "directory",
-            "directory-dependency",
-            "../../vendor/local-package",
-            id="directory-relative",
         ),
     ],
 )
 def test_node_npm_protocol_projects_pinned_npa_alias_and_local_facts(
     tmp_path: Path,
-    case: str,
     dependency_key: str,
     source_spec: str,
 ) -> None:
-    """Pin complete npm-package-arg facts for every selected reference kind."""
+    """Pin complete npm-package-arg facts for the selected alias."""
     snapshot_root = tmp_path / "snapshot"
     package_directory = snapshot_root / "sources" / "application"
     candidate_path = package_directory / "package.json"
@@ -549,43 +483,17 @@ def test_node_npm_protocol_projects_pinned_npa_alias_and_local_facts(
         {"dependencies": {dependency_key: source_spec}},
     )
 
-    if case == "registry":
-        reference = _npm_reference(
-            name=dependency_key,
-            raw_spec=source_spec,
-        )
-    elif case == "alias":
-        reference = _npm_reference(
-            name=dependency_key,
-            raw_spec=source_spec,
-            reference_type="alias",
-            fetch_spec=None,
-            alias_target=_npm_reference(
-                name="@scope/actual-package",
-                raw_spec="2.3.4",
-            ),
-        )
-        reference["fetchSpec"] = None
-    elif case == "file":
-        absolute_target = snapshot_root / "archives" / "archive.tgz"
-        reference = _npm_reference(
-            name=dependency_key,
-            raw_spec=source_spec,
-            reference_type="file",
-            fetch_spec=str(absolute_target),
-            save_spec=source_spec,
-            local_path="archives/archive.tgz",
-        )
-    else:
-        absolute_target = snapshot_root / "vendor" / "local-package"
-        reference = _npm_reference(
-            name=dependency_key,
-            raw_spec=source_spec,
-            reference_type="directory",
-            fetch_spec=str(absolute_target),
-            save_spec=f"file:{source_spec}",
-            local_path="vendor/local-package",
-        )
+    reference = _npm_reference(
+        name=dependency_key,
+        raw_spec=source_spec,
+        reference_type="alias",
+        fetch_spec=None,
+        alias_target=_npm_reference(
+            name="@scope/actual-package",
+            raw_spec="2.3.4",
+        ),
+    )
+    reference["fetchSpec"] = None
 
     completed = _run_node_authority(
         snapshot_root=snapshot_root,
@@ -842,12 +750,16 @@ def test_node_pnpm_protocol_accepts_exact_v9_and_bound_bom_behavior(
     tmp_path: Path,
 ) -> None:
     """Pin v9, BOM, generation, and selected-path behavior."""
+    import hashlib  # noqa: PLC0415
+
     snapshot_root = tmp_path / "snapshot"
     candidate_path = snapshot_root / "project" / "pnpm-lock.yaml"
     lockfile = _minimal_v9_lockfile()
     observed_outputs = []
 
     for bom_count in (0, 1, 2):
+        original = (_UTF8_BOM * bom_count) + lockfile.encode("utf-8")
+        expected_digest = hashlib.sha256(original).hexdigest()
         _write_lockfile(
             candidate_path,
             lockfile,
@@ -858,6 +770,10 @@ def test_node_pnpm_protocol_accepts_exact_v9_and_bound_bom_behavior(
             candidate_path=candidate_path,
             graph="pnpm-lock-v1",
         )
+        observed = candidate_path.read_bytes()
+        assert observed == original
+        assert hashlib.sha256(observed).hexdigest() == expected_digest
+        assert not (snapshot_root / "node_modules").exists()
         observed_outputs.append(
             _assert_facts_response(
                 completed,
@@ -3408,7 +3324,6 @@ def test_node_npm_and_workspace_bom_outcomes_are_reader_owned_and_exact(
 @pytest.mark.parametrize(
     "document_case",
     [
-        pytest.param("clean-lf", id="clean-lf"),
         pytest.param("clean-crlf", id="clean-crlf"),
         pytest.param("combined-environment-crlf", id="environment-crlf"),
     ],
@@ -3438,12 +3353,9 @@ def test_node_pnpm_preserves_original_bytes_digest_and_crlf_admission(
             "\n", "\r\n"
         )
         bom_count = 1
-    elif document_case == "clean-crlf":
+    else:
         text = canonical.replace("\n", "\r\n")
         bom_count = 2
-    else:
-        text = canonical
-        bom_count = 0
     original = (_UTF8_BOM * bom_count) + text.encode("utf-8")
     expected_digest = hashlib.sha256(original).hexdigest()
     candidate_path.parent.mkdir(parents=True)

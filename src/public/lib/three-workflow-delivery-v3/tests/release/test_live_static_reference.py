@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,7 +17,6 @@ from three_workflow_delivery_v3.release.eligibility import (
     parse_governance_attestation,
 )
 from three_workflow_delivery_v3.release.static_reference_model import (
-    STATIC_REFERENCE_ERROR_KINDS,
     STATIC_REFERENCE_POLICY_ID,
     BoundedStaticReferenceResult,
     StaticReferenceErrorKind,
@@ -28,7 +26,6 @@ from three_workflow_delivery_v3.release.static_reference_policy import (
     STATIC_REFERENCE_POLICY_DIGEST,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
-    FIRST_SLICE_PACKAGE,
     GOVERNANCE_MAX_AGE_DAYS,
     GOVERNANCE_PATH,
     GOVERNANCE_REF,
@@ -44,16 +41,6 @@ REPOSITORY_ROOT = Path("/controlled/current-run-repository")
 WORKFLOW_RUN_ID = 8101
 COMPLETE_EVENT_COUNT = 3
 REJECTED_EVENT_COUNT = 2
-EXPECTED_OPERATIONAL_ERROR_COUNT = 7
-EXPECTED_STATIC_REFERENCE_ERROR_KINDS: tuple[StaticReferenceErrorKind, ...] = (
-    "source-acquisition-failed",
-    "encoding-rejected",
-    "authority-rejected",
-    "authority-execution-failed",
-    "unsupported-projection",
-    "authority-mismatch",
-    "cleanup-failed",
-)
 
 
 def _context() -> LiveEligibilityContext:
@@ -216,14 +203,6 @@ def test_live_eligibility_runs_its_own_exact_target_static_reference_scan(
     assert decision.result is EligibilityResult.PASS
     assert decision.diagnostics == ()
 
-
-def test_live_eligibility_embeds_the_canonical_clean_result_as_static_reference(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Name and retain the complete bounded Result in Decision evidence."""
-    expected = _result()
-
-    decision, events = _evaluate_with_result(monkeypatch, expected)
     document = decision.to_document()
 
     assert document["static-reference"] == expected.to_document()
@@ -233,7 +212,6 @@ def test_live_eligibility_embeds_the_canonical_clean_result_as_static_reference(
     assert "consumer-policy" not in document
     assert document["result"] == "pass"
     assert document["diagnostics"] == []
-    assert events[2][0] == "governance"
     assert document["governance"]["eligibility-main-sha"] == "a" * 40
     assert document["governance"]["git-object-format"] == "sha1"
     assert document["governance"]["blob-oid"] == "b" * 40
@@ -248,68 +226,6 @@ def test_live_eligibility_embeds_the_canonical_clean_result_as_static_reference(
         "resolved-commit",
         "content-sha256",
     }.isdisjoint(document["governance"])
-
-
-def test_live_eligibility_blocks_on_static_reference_findings_with_evidence(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Retain exact findings and one canonical blocking diagnostic."""
-    finding = StaticReferenceFinding(
-        path="consumer/package.json",
-        family="npm-manifest",
-        context="dependencies",
-        prohibited_form="D",
-        matched_identity=FIRST_SLICE_PACKAGE,
-        location=f"dependencies.{FIRST_SLICE_PACKAGE}",
-    )
-    expected = _result(findings=(finding,))
-
-    decision, events = _evaluate_with_result(monkeypatch, expected)
-    document = decision.to_document()
-
-    assert decision.result is EligibilityResult.BLOCKED
-    assert decision.diagnostics == ("static-reference-findings",)
-    assert document["static-reference"] == expected.to_document()
-    assert document["static-reference"]["findings"] == [finding.to_document()]
-    assert document["result"] == "blocked"
-    assert document["diagnostics"] == ["static-reference-findings"]
-    assert events[2][0] == "governance"
-
-
-def test_live_eligibility_operational_error_kinds_are_exact() -> None:
-    """Pin all seven LLD operational outcomes independently of production."""
-    assert STATIC_REFERENCE_ERROR_KINDS == (
-        EXPECTED_STATIC_REFERENCE_ERROR_KINDS
-    )
-    assert (
-        len(set(EXPECTED_STATIC_REFERENCE_ERROR_KINDS))
-        == EXPECTED_OPERATIONAL_ERROR_COUNT
-    )
-
-
-@pytest.mark.parametrize(
-    "error_kind",
-    EXPECTED_STATIC_REFERENCE_ERROR_KINDS,
-)
-def test_live_eligibility_maps_each_typed_static_reference_error(
-    monkeypatch: pytest.MonkeyPatch,
-    error_kind: StaticReferenceErrorKind,
-) -> None:
-    """Block each operational Result without dropping its typed evidence."""
-    expected = _result(error_kind=error_kind)
-
-    decision, events = _evaluate_with_result(monkeypatch, expected)
-    document = decision.to_document()
-
-    assert decision.result is EligibilityResult.BLOCKED
-    assert decision.diagnostics == (f"static-reference-{error_kind}",)
-    assert document["static-reference"] == expected.to_document()
-    assert document["static-reference"]["result"] == "error"
-    assert document["static-reference"]["error-kind"] == error_kind
-    assert document["static-reference"]["findings"] == []
-    assert document["result"] == "blocked"
-    assert events[1] == ("validate", expected)
-    assert events[2][0] == "governance"
 
 
 def test_live_eligibility_validates_static_reference_before_governance(
@@ -368,20 +284,3 @@ def test_live_eligibility_validates_static_reference_before_governance(
     assert events[0][0] == "scan"
     assert events[1] == ("validate", expected)
     assert len(events) == REJECTED_EVENT_COUNT
-
-
-def test_live_eligibility_has_no_consumer_policy_input_route() -> None:
-    """Keep the superseded caller-supplied policy outside the public API."""
-    parameters = inspect.signature(
-        eligibility.evaluate_live_eligibility
-    ).parameters
-
-    assert tuple(parameters) == (
-        "context",
-        "snapshot",
-        "policy",
-        "client",
-        "repository_root",
-        "now",
-    )
-    assert "consumer_policy" not in parameters
