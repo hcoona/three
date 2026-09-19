@@ -4689,7 +4689,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:bf67716625df9fdaa2afa545de2e115d2129dc8c2e8d8166864773dd999a43ff
+  content_hash: sha256:d1c49125048396aa6e3f33d30aac37eb3d9f7d6a069684282ef9afd0d3fec558
 mcp_servers:
 - binlog
 - io.github.upstash/context7
@@ -4751,4 +4751,4 @@ local_deployed_files:
 - .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md
 local_deployed_file_hashes:
   .agents/skills/migrate-xunit-to-mstest/SKILL.md: sha256:4bc2c092b518734770c8b697c872bf09a86075290a189102c569965fca6a869a
-  .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md: sha256:bf67716625df9fdaa2afa545de2e115d2129dc8c2e8d8166864773dd999a43ff
+  .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md: sha256:d1c49125048396aa6e3f33d30aac37eb3d9f7d6a069684282ef9afd0d3fec558
