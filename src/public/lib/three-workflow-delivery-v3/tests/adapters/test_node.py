@@ -17,7 +17,6 @@ import tarfile
 import types
 from contextlib import contextmanager
 from dataclasses import fields, replace
-from inspect import signature
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from typing import get_type_hints
@@ -715,80 +714,11 @@ def test_node_runtime_version_accepts_only_the_optional_cli_prefix(
     )
 
 
-def test_adapter_identity_is_pinned_and_not_request_forgeable(
-    build_request: BuildRequest,
-    built_result: node_adapter.BuildResult,
-) -> None:
-    assert "adapter_version" not in {
-        field.name for field in fields(BuildRequest)
-    }
-    with pytest.raises(TypeError, match="adapter_version"):
-        cast("Any", replace)(
-            build_request,
-            adapter_version="forged/adapter-v99",
-        )
-    assert ("adapter", "node/npm-package-v1") in built_result.toolchain
-
-
-def test_build_is_deterministic_and_preserves_source_checkout(
-    build_request: BuildRequest,
-) -> None:
-    """Pin two builds' bytes, hashes, manifest, and source preservation."""
-    before = _source_snapshot()
-
-    first = build_node_package(build_request)
-    second = build_node_package(build_request)
-
-    assert first.tarball == second.tarball
-    assert first.manifest.sha256 == (
-        "sha256:" + hashlib.sha256(first.tarball).hexdigest()
-    )
-    assert first.manifest.sha512 == (
-        "sha512:" + hashlib.sha512(first.tarball).hexdigest()
-    )
-    assert first.manifest.entries == (
-        "package/README.md",
-        "package/dist/index.js",
-        "package/package.json",
-        "package/workflow-delivery/provenance.json",
-    )
-    assert first.manifest.lifecycle_scripts == (
-        (
-            "build",
-            "node ./scripts/nbgv-version.mjs stamp && node ./scripts/build.mjs",
-        ),
-        ("postpack", "node ./scripts/nbgv-version.mjs reset"),
-        ("prepack", "node ./scripts/nbgv-version.mjs stamp"),
-        ("test", "node --test"),
-        ("version:reset", "node ./scripts/nbgv-version.mjs reset"),
-        ("version:stamp", "node ./scripts/nbgv-version.mjs stamp"),
-    )
-    assert first.expectation.files_allowlist == (
-        "dist",
-        "README.md",
-        "workflow-delivery/provenance.json",
-    )
-    assert first.witness == build_request.witness.canonical_bytes
-    assert first.toolchain == (
-        ("node", "24.19.0"),
-        ("pnpm", "11.22.0"),
-        ("npm", "11.17.0"),
-        ("adapter", "node/npm-package-v1"),
-    )
-    assert tuple(path for path, _digest in first.source_input_manifest) == (
-        DECLARED_INPUTS
-    )
-    assert all(
-        digest.startswith("sha256:") and len(digest) == PREFIXED_SHA256_LENGTH
-        for _path, digest in first.source_input_manifest
-    )
-    assert _source_snapshot() == before
-
-
 def test_build_is_deterministic_across_process_umasks_and_normalizes_modes(
     build_request: BuildRequest,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    before = _source_snapshot()
     source_manifest = json.loads(
         (build_request.source_root / "package.json").read_text()
     )
@@ -838,6 +768,7 @@ def test_build_is_deterministic_across_process_umasks_and_normalizes_modes(
             with _temporary_process_umask(mask):
                 assert _current_process_umask() == mask
                 results[mask] = build_node_package(build_request)
+                assert _source_snapshot() == before
             umask_restored[mask] = _current_process_umask() == initial_umask
     finally:
         os.umask(initial_umask)
@@ -947,6 +878,44 @@ def test_build_is_deterministic_across_process_umasks_and_normalizes_modes(
         "umask-restored": {0o022: True, 0o077: True},
     }
 
+    assert permissive.manifest.entries == (
+        "package/README.md",
+        "package/dist/index.js",
+        "package/package.json",
+        "package/workflow-delivery/provenance.json",
+    )
+    assert permissive.manifest.lifecycle_scripts == (
+        (
+            "build",
+            "node ./scripts/nbgv-version.mjs stamp && node ./scripts/build.mjs",
+        ),
+        ("postpack", "node ./scripts/nbgv-version.mjs reset"),
+        ("prepack", "node ./scripts/nbgv-version.mjs stamp"),
+        ("test", "node --test"),
+        ("version:reset", "node ./scripts/nbgv-version.mjs reset"),
+        ("version:stamp", "node ./scripts/nbgv-version.mjs stamp"),
+    )
+    assert permissive.expectation.files_allowlist == (
+        "dist",
+        "README.md",
+        "workflow-delivery/provenance.json",
+    )
+    assert permissive.witness == build_request.witness.canonical_bytes
+    assert permissive.toolchain == (
+        ("node", "24.19.0"),
+        ("pnpm", "11.22.0"),
+        ("npm", "11.17.0"),
+        ("adapter", "node/npm-package-v1"),
+    )
+    assert tuple(
+        path for path, _digest in permissive.source_input_manifest
+    ) == (DECLARED_INPUTS)
+    assert all(
+        digest.startswith("sha256:") and len(digest) == PREFIXED_SHA256_LENGTH
+        for _path, digest in permissive.source_input_manifest
+    )
+    assert _source_snapshot() == before
+
 
 def test_lifecycle_evidence_binds_every_manifest_script(
     build_request: BuildRequest,
@@ -983,16 +952,6 @@ def test_lifecycle_evidence_binds_every_manifest_script(
         ).lifecycle_scripts
         == expected_scripts
     )
-
-
-def test_project_build_uses_isolated_inputs_and_preserves_source(
-    build_request: BuildRequest,
-) -> None:
-    before = _source_snapshot()
-
-    run_node_project_build(build_request)
-
-    assert _source_snapshot() == before
 
 
 @pytest.mark.parametrize("failure", ["build", "pack", "test", "install"])
@@ -1311,13 +1270,22 @@ def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: 
 
     monkeypatch.setattr(node_adapter, "_run", record_and_run)
 
+    before = _source_snapshot()
     built_result = build_node_package(build_request)
+    assert _source_snapshot() == before
     run_node_project_build(build_request)
+    assert _source_snapshot() == before
     run_node_project_tests(PROJECT_ROOT, runtime_request)
+    assert _source_snapshot() == before
     result = qualify_npm_install_import(
         built_result.tarball,
         built_result.expectation,
         runtime_request,
+    )
+
+    assert _source_snapshot() == before
+    assert result.witness_sha256 == (
+        "sha256:" + hashlib.sha256(built_result.witness).hexdigest()
     )
 
     missing_global_config = [
@@ -1454,21 +1422,6 @@ def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: 
             environment == operation_environment
             for _, _, environment, *_ in group
         )
-
-
-def test_artifact_contents_accepts_exact_tarball(
-    built_result: node_adapter.BuildResult,
-) -> None:
-    manifest = qualify_npm_artifact_contents(
-        built_result.tarball,
-        built_result.expectation,
-    )
-
-    assert manifest == built_result.manifest
-    assert manifest.byte_size == len(built_result.tarball)
-    assert manifest.basename == (
-        "hcoona-hcoona-release-smoke-npm-1.2.3-beta.42.ge123456.tgz"
-    )
 
 
 def test_artifact_contents_rejects_non_first_slice_expectation_identity(
@@ -1631,32 +1584,6 @@ def test_artifact_contents_rejects_list_backed_expectation(
 
     with pytest.raises(ValueError, match="first-slice closure"):
         qualify_npm_artifact_contents(built_result.tarball, expectation)
-
-
-def test_install_import_uses_tarball_and_verifies_export_and_witness(
-    built_result: node_adapter.BuildResult,
-) -> None:
-    before = _source_snapshot()
-    runtime_request = _make_runtime_request(
-        node_version="v24.19.0",
-        npm_version="11.17.0",
-    )
-    assert (
-        "expected_smoke_message"
-        not in signature(qualify_npm_install_import).parameters
-    )
-
-    result = qualify_npm_install_import(
-        built_result.tarball,
-        built_result.expectation,
-        runtime_request,
-    )
-
-    assert result.smoke_message == "hcoona-release-smoke-npm"
-    assert result.witness_sha256 == (
-        "sha256:" + hashlib.sha256(built_result.witness).hexdigest()
-    )
-    assert _source_snapshot() == before
 
 
 def test_install_import_rejects_mutated_artifact_export(
@@ -2120,6 +2047,10 @@ def test_artifact_contents_accepts_actual_frozen_npm_pack_ustar_profile(
         built_result.expectation,
     )
     assert manifest == built_result.manifest
+    assert manifest.byte_size == len(built_result.tarball)
+    assert manifest.basename == (
+        "hcoona-hcoona-release-smoke-npm-1.2.3-beta.42.ge123456.tgz"
+    )
     assert manifest.sha256 == (
         f"sha256:{hashlib.sha256(built_result.tarball).hexdigest()}"
     )
@@ -3254,7 +3185,9 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
     )
 
 
-def test_adapter_public_api_exports_closed_types_and_functions() -> None:
+def test_adapter_public_api_exports_closed_types_and_functions(
+    build_request: BuildRequest,
+) -> None:
     runtime_request_type = getattr(node_adapter, "RuntimeRequest", None)
     assert runtime_request_type is not None, (
         "node adapter must define RuntimeRequest before exporting it"
@@ -3355,6 +3288,15 @@ def test_adapter_public_api_exports_closed_types_and_functions() -> None:
         for export in adapters_package.__all__
         for forbidden in ("Snapshot", "Evidence", "Finalizer", "Planner")
     )
+
+    assert "adapter_version" not in {
+        field.name for field in fields(BuildRequest)
+    }
+    with pytest.raises(TypeError, match="adapter_version"):
+        cast("Any", replace)(
+            build_request,
+            adapter_version="forged/adapter-v99",
+        )
 
 
 def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_commands(  # noqa: E501, PLR0915
@@ -3549,10 +3491,6 @@ def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_command
     )
 
     assert observed_commands == expected_commands
-    assert observed_commands[0:4] == expected_commands[0:4]
-    assert observed_commands[5:9] == expected_commands[5:9]
-    assert observed_commands[9:12] == expected_commands[9:12]
-    assert observed_commands[12:16] == expected_commands[12:16]
     assert build_output_destinations == [observed_build_output]
     assert observed_build_output.name == "output"
     assert not observed_build_output.is_relative_to(source_root.resolve())

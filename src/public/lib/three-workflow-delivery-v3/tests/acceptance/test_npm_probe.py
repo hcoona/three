@@ -134,6 +134,21 @@ def probe_case(tmp_path):
     }
 
 
+@pytest.fixture(scope="module")
+def original_fixture():
+    return probe.build_npm_fixture(REQUEST.fixture, repository_root=ROOT)
+
+
+@pytest.fixture
+def prepared_fixture(probe_case, monkeypatch, original_fixture):
+    def build_fixture(spec, *, repository_root):
+        assert spec == REQUEST.fixture
+        assert repository_root == probe_case["repository_root"].resolve()
+        return original_fixture
+
+    monkeypatch.setattr(probe, "build_npm_fixture", build_fixture)
+
+
 def _names(directory):
     return {path.name for path in directory.iterdir()}
 
@@ -388,6 +403,7 @@ def test_different_probe_changes_actual_bytes_not_version(probe_case):
     assert len(probe_case["runner"].publications) == 2
 
 
+@pytest.mark.usefixtures("prepared_fixture")
 @pytest.mark.parametrize(
     ("key", "value"),
     [
@@ -413,6 +429,7 @@ def test_wrong_toolchain_or_effective_config_never_publishes(
     assert not probe_case["runtime_directory"].exists()
 
 
+@pytest.mark.usefixtures("prepared_fixture")
 @pytest.mark.parametrize("filename", ["user.npmrc", "fixture.tgz"])
 def test_changed_prepared_config_or_content_blocks_before_publish(
     probe_case, monkeypatch, filename
@@ -473,6 +490,7 @@ def test_unsafe_paths_fail_before_process_or_claim(probe_case, operand):
     assert (checkout / ".npmrc").is_file()
 
 
+@pytest.mark.usefixtures("prepared_fixture")
 @pytest.mark.parametrize(
     "occupied", ["runtime_directory", "evidence_directory"]
 )
@@ -491,6 +509,7 @@ def test_existing_claim_is_never_overwritten_or_cleaned(probe_case, occupied):
         assert not probe_case["runtime_directory"].exists()
 
 
+@pytest.mark.usefixtures("prepared_fixture")
 def test_competing_probe_and_completed_audit_cannot_reinvoke(probe_case):
     runner = probe_case["runner"]
     runtime = probe_case["runtime_directory"]
@@ -512,6 +531,7 @@ def test_competing_probe_and_completed_audit_cannot_reinvoke(probe_case):
     assert not runtime.exists()
 
 
+@pytest.mark.usefixtures("prepared_fixture")
 def test_partial_configuration_failure_cleans_only_owned_runtime(
     probe_case, monkeypatch
 ):
@@ -536,6 +556,7 @@ def test_partial_configuration_failure_cleans_only_owned_runtime(
     }
 
 
+@pytest.mark.usefixtures("prepared_fixture")
 @pytest.mark.parametrize(
     "outcome",
     [
@@ -582,6 +603,7 @@ def test_process_facts_never_claim_mutation_or_acceptance(probe_case, outcome):
     assert not probe_case["runtime_directory"].exists()
 
 
+@pytest.mark.usefixtures("prepared_fixture")
 @pytest.mark.parametrize(
     "error",
     [RuntimeError("uncontrolled process"), OSError("uncontrolled IO")],
@@ -600,6 +622,7 @@ def test_uncontrolled_exception_retains_precommand_evidence_not_result(
     assert not probe_case["runtime_directory"].exists()
 
 
+@pytest.mark.usefixtures("prepared_fixture")
 @pytest.mark.parametrize("failed_file", ["profile-match.json", "result.json"])
 def test_audit_io_failure_is_closed_without_reinvocation(
     probe_case, monkeypatch, failed_file
@@ -627,6 +650,7 @@ def test_audit_io_failure_is_closed_without_reinvocation(
     )
 
 
+@pytest.mark.usefixtures("prepared_fixture")
 @pytest.mark.parametrize(
     ("outcome", "exit_code"),
     [
