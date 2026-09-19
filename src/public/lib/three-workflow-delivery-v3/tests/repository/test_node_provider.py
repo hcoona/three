@@ -1809,71 +1809,6 @@ def test_detached_target_nbgv_facts_ignore_conflicting_ci_environment(
     assert _selected_nbgv_facts(conflicting) == baseline.facts
 
 
-def test_no_tags_clone_preparation_fetches_exact_tag_refspec_without_moving_target(  # noqa: E501
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Prepare complete tags only in isolation and preserve the caller."""
-    topology = _create_local_clone_topology(tmp_path)
-    _configure_local_only_environment(monkeypatch)
-    for variable in (
-        "GITHUB_ACTIONS",
-        "GITHUB_REF",
-        "GITHUB_HEAD_REF",
-        "GITHUB_BASE_REF",
-    ):
-        monkeypatch.delenv(variable, raising=False)
-    complete_tags = _tag_refs(topology.complete_clone)
-    before_tags = _tag_refs(topology.no_tags_clone)
-    expected_head = _DetachedHeadState(
-        commit=topology.target,
-        detached=True,
-    )
-    assert _is_shallow(topology.complete_clone) is False
-    assert _is_shallow(topology.no_tags_clone) is False
-    assert _read_detached_head(topology.complete_clone) == expected_head
-    assert _read_detached_head(topology.no_tags_clone) == expected_head
-    assert complete_tags
-    assert before_tags == ()
-    _assert_local_remote_url(_remote_url(topology.no_tags_clone))
-
-    runner = _RecordingSubprocessRunner()
-    result = provide_node_repository_facts(
-        topology.no_tags_clone,
-        PROJECT_PATH,
-        _binding(topology.target),
-        _materialization(),
-        runner=runner,
-    )
-
-    after_head = _read_detached_head(topology.no_tags_clone)
-    after_tags = _tag_refs(topology.no_tags_clone)
-    fetch_call = _assert_single_isolated_tag_fetch(
-        runner.commands,
-        topology.no_tags_clone,
-    )
-    assert result.checkout.head == topology.target
-    assert result.checkout.authoritative_remote == AUTHORITATIVE_REMOTE
-    assert result.checkout.authoritative_remote_url == _remote_url(
-        topology.no_tags_clone
-    )
-    assert result.checkout.tag_refspec == TAG_REFSPEC
-    checkout_document = result.to_document()["checkout"]
-    assert isinstance(checkout_document, dict)
-    assert checkout_document["authoritative-remote"] == AUTHORITATIVE_REMOTE
-    assert checkout_document["authoritative-remote-url"] == (
-        result.checkout.authoritative_remote_url
-    )
-    assert checkout_document["tag-refspec"] == TAG_REFSPEC
-    assert after_head == expected_head
-    assert fetch_call.count(TAG_REFSPEC) == 1
-    assert after_tags == before_tags
-    installed_calls = _installed_nbgv_calls(runner.commands)
-    assert len(installed_calls) == 1
-    assert installed_calls[0][3].count("getVersion(process.cwd())") == 1
-    _assert_no_nbgv_fallback_calls(runner.commands)
-
-
 def test_no_tags_clone_after_preparation_matches_complete_clone_nbgv_facts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1894,6 +1829,14 @@ def test_no_tags_clone_after_preparation_matches_complete_clone_nbgv_facts(
     )
     complete_tags_before = _tag_refs(topology.complete_clone)
     no_tags_before = _tag_refs(topology.no_tags_clone)
+    assert _is_shallow(topology.complete_clone) is False
+    assert _is_shallow(topology.no_tags_clone) is False
+    assert _read_detached_head(topology.complete_clone) == expected_head
+    assert _read_detached_head(topology.no_tags_clone) == expected_head
+    assert complete_tags_before
+    assert no_tags_before == ()
+    _assert_local_remote_url(_remote_url(topology.no_tags_clone))
+
     complete_runner = _RecordingSubprocessRunner()
     no_tags_runner = _RecordingSubprocessRunner()
     complete = provide_node_repository_facts(
@@ -1911,6 +1854,19 @@ def test_no_tags_clone_after_preparation_matches_complete_clone_nbgv_facts(
         runner=no_tags_runner,
     )
 
+    assert no_tags.checkout.head == topology.target
+    assert no_tags.checkout.authoritative_remote == AUTHORITATIVE_REMOTE
+    assert no_tags.checkout.authoritative_remote_url == _remote_url(
+        topology.no_tags_clone
+    )
+    assert no_tags.checkout.tag_refspec == TAG_REFSPEC
+    checkout_document = no_tags.to_document()["checkout"]
+    assert isinstance(checkout_document, dict)
+    assert checkout_document["authoritative-remote"] == AUTHORITATIVE_REMOTE
+    assert checkout_document["authoritative-remote-url"] == (
+        no_tags.checkout.authoritative_remote_url
+    )
+    assert checkout_document["tag-refspec"] == TAG_REFSPEC
     assert _read_detached_head(topology.complete_clone) == expected_head
     assert _read_detached_head(topology.no_tags_clone) == expected_head
     assert _tag_refs(topology.complete_clone) == complete_tags_before

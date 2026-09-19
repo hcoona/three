@@ -32,7 +32,7 @@ SPEC = fixture.NpmFixtureSpec(
 )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def original():
     """Build local bytes using the actual installed official npm parsers."""
     return fixture.build_npm_fixture(SPEC, repository_root=ROOT)

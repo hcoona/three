@@ -925,16 +925,42 @@ def test_cli_explicit_plan_and_success_output_only(case, monkeypatch, capsys):
         assert "unrecognized arguments: " + retired[0] in output.err
         assert not script.calls
         assert not case["audit_directory"].exists()
-    operator_class = npm_operator.OperatorLocalNpmOperations
+    result_path = case["audit_directory"] / "suite-evidence.json"
+    result_path.parent.mkdir()
+    result_path.write_bytes(b"synthetic CLI result, not native evidence\n")
+    result_digest = (
+        "sha256:" + hashlib.sha256(result_path.read_bytes()).hexdigest()
+    )
+    constructed = []
+    executed = []
+
+    class RecordingOperator:
+        def __init__(self, **kwargs):
+            constructed.append((self, kwargs))
+
+        def execute(self):
+            executed.append(self)
+            return result_path, result_digest
+
     monkeypatch.setattr(
-        npm_operator,
-        "OperatorLocalNpmOperations",
-        lambda **kwargs: operator_class(**kwargs, clock=lambda: NOW),
+        npm_operator, "OperatorLocalNpmOperations", RecordingOperator
     )
     arguments.append("--authorized-disposable")
     assert npm_operator.main(arguments) == 0
+    assert len(constructed) == 1
+    instance, kwargs = constructed[0]
+    assert kwargs == {
+        "plan": PLAN,
+        "expected_tooling_sha": SHA,
+        "repository_root": case["repository_root"],
+        "audit_directory": case["audit_directory"],
+        "authorized_disposable": True,
+    }
+    assert kwargs["authorized_disposable"] is True
+    assert executed == [instance]
     output = json.loads(capsys.readouterr().out)
     path = Path(output["path"])
+    assert path == result_path
     assert path.name == "suite-evidence.json"
     assert path.is_file()
     assert (
