@@ -78,7 +78,7 @@ Apply the common rewrites first:
 | `[MemberData]` | `[DynamicData]` |
 | `[Fact(Skip = "...")]` | `[TestMethod]` + `[Ignore("...")]` |
 | `[Trait("Category", value)]` | `[TestCategory(value)]` |
-| `[Trait("Owner", value)]` | `[Owner(value)]` |
+| `[Trait("Owner", value)]` | Method-only `[Owner(value)]`; resolve effective scope and values as described below |
 | other `[Trait(key, value)]` | `[TestProperty(key, value)]` |
 | `Assert.Equal` / `NotEqual` | `Assert.AreEqual` / `AreNotEqual` |
 | `Assert.True` / `False` | `Assert.IsTrue` / `IsFalse` |
@@ -99,7 +99,7 @@ Load the mapping cheatsheet for every high-risk construct found in Step 1. These
 - `[Ignore]` and `[Timeout]` are modifiers; keep `[TestMethod]` so the test is discovered.
 - `[DataRow]` values must exactly match parameter types.
 - `TestContext.Current.CancellationToken` maps to an injected MSTest `TestContext.CancellationToken`; never replace it with `CancellationToken.None` or a new `CancellationTokenSource`.
-- `Owner` is a reserved VSTest property. Map `[Trait("Owner", value)]` to `[Owner(value)]`, not `[TestProperty("Owner", value)]`.
+- `Owner` is a reserved VSTest property, and MSTest `[Owner]` is method-only and single-valued. Resolve each test's effective method/class/assembly Owner traits before mapping: use `[Owner(value)]` only when that method declaration preserves the effective Owner values of every affected test. Otherwise, including multiple distinct values, require an explicit manual mapping that preserves metadata and filtering behavior. Never silently choose a value or use `[TestProperty("Owner", value)]`. See the [trait mappings](references/mapping-cheatsheet.md#1-test-discovery-class--method-attributes).
 - Assertions with no MSTest equivalent (`Assert.Collection`, `Assert.All`, `Assert.Equivalent`, `Record.Exception`, event assertions) require an explicit manual rewrite. Never delete an assertion without replacing its verification.
 
 Apply the mechanical and semantic rewrites in one edit pass when the inventory makes the required mappings clear. Do not run an intermediate build by default; use compiler errors from final verification to drive only unresolved conversions.

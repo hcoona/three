@@ -41,7 +41,7 @@ Target framework throughout: **MSTest v4** (the few v3-only spellings are explic
 | `[Fact(Skip = "reason")]` | `[TestMethod]` + `[Ignore("reason")]` (the `[Ignore]` attribute alone does not discover a test -- you still need `[TestMethod]`) |
 | `[Fact(Timeout = 5000)]` | `[TestMethod]` + `[Timeout(5000)]` (same -- `[Timeout]` is a modifier, not a discovery attribute) |
 | `[Trait("Category", "Unit")]` | `[TestCategory("Unit")]` |
-| `[Trait("Owner", "alice")]` | `[Owner("alice")]` (`Owner` is a reserved VSTest property and is rejected by `TestPropertyAttribute`) |
+| `[Trait("Owner", "alice")]` | Method-only `[Owner("alice")]` only when the scope rule below preserves every affected test's effective Owner values |
 | `[Collection("Db")]` | **Manual** -- preserve collection sharing and serialization; see Section 4. `[DoNotParallelize]` can serialize more broadly than the source collection. |
 | Custom `FactAttribute` subclass | Custom `TestMethodAttribute` subclass overriding `ExecuteAsync` (MSTest v4). See `writing-mstest-tests` and `migrate-mstest-v3-to-v4` for `CallerInfo` constructor pattern |
 | Custom `TheoryAttribute` subclass | Same -- subclass `TestMethodAttribute`; expose data via `ITestDataSource` |
@@ -51,7 +51,9 @@ Target framework throughout: **MSTest v4** (the few v3-only spellings are explic
 > - `[Owner("alice")]` -> `--filter "Owner=alice"` (VSTest) / `--filter-trait "Owner=alice"` (MTP)
 > - `[TestProperty("Key", "Value")]` -> `--filter "Key=Value"` (VSTest) / `--filter-trait "Key=Value"` (MTP); targets `Class` and `Method` only (no `AttributeTargets.Assembly`)
 >
-> Use `[TestCategory]` for the conventional category trait, `[Owner]` for the reserved owner property, and `[TestProperty]` for other key/value metadata at class/method scope. An `[assembly: Trait("Category", ...)]` in xUnit can be migrated to `[assembly: TestCategory(...)]`. An assembly-level `[Trait]` with an arbitrary key cannot map to `[assembly: TestProperty(...)]` -- collapse it to `[assembly: TestCategory(...)]` or move it down to every class (see Section 8).
+> **Owner scope:** MSTest `[Owner]` targets methods only and permits one value. Determine each test's effective Owner values from applicable method, class, and assembly traits, including inherited metadata. Use `[Owner(value)]` only when that method declaration preserves the effective Owner values of every affected test; do not emit it on classes or assemblies. Otherwise, including multiple distinct values, require an explicit manual mapping that preserves metadata and filtering/reporting behavior; do not silently choose, overwrite, drop, or join values. `Owner` is reserved in VSTest, so `[TestProperty("Owner", value)]` is not a substitute.
+>
+> Use `[TestCategory]` for the conventional category trait and `[TestProperty]` for other keys at class/method scope, excluding Owner as described above. An `[assembly: Trait("Category", ...)]` in xUnit can be migrated to `[assembly: TestCategory(...)]`. An assembly-level `[Trait]` with another key (neither Category nor Owner) cannot map to `[assembly: TestProperty(...)]` -- collapse it to `[assembly: TestCategory(...)]` or move it down to every class (see Section 8).
 >
 > **Conditional skips** (xUnit `[Trait("OS", "Windows")]` patterns that gate execution): MSTest 3.10+ offers dedicated condition attributes -- `[OSCondition]` and `[CICondition]` -- which are usually a better fit than overloading `[TestCategory]` for environmental gating. (There is no `ArchitectureCondition` or `NonParallelizableCondition` attribute in MSTest; for non-parallel intent use `[DoNotParallelize]`, and for architecture gating fall back to `if (RuntimeInformation.OSArchitecture != ...) Assert.Inconclusive(...)`.) See Section 3.9.
 
@@ -338,7 +340,8 @@ xUnit assembly attributes split into two groups: a few have direct MSTest equiva
 | `[assembly: TestFramework(...)]` | Remove |
 | `[assembly: CaptureConsole]` (xUnit v3) | Remove -- MSTest does not capture console by default |
 | `[assembly: Xunit.Trait("Category", "v")]` | `[assembly: TestCategory("v")]` (applies the category to every test in the assembly -- `TestCategoryAttribute` targets `Assembly`, `Class`, and `Method`) |
-| `[assembly: Xunit.Trait("k", "v")]` (non-category key) | **No direct equivalent at assembly scope** -- `TestPropertyAttribute` targets only `Class`/`Method`. Either collapse to `[assembly: TestCategory("v")]` if the value alone filters cleanly, or push down to every test class as `[TestProperty("k", "v")]` |
+| `[assembly: Xunit.Trait("Owner", "v")]` | Apply the Owner scope rule in Section 1 to affected test methods; no assembly/class `[Owner]` or `TestProperty("Owner", ...)` mapping |
+| `[assembly: Xunit.Trait("k", "v")]` (neither Category nor Owner) | **No direct equivalent at assembly scope** -- `TestPropertyAttribute` targets only `Class`/`Method`. Either collapse to `[assembly: TestCategory("v")]` if the value alone filters cleanly, or push down to every test class as `[TestProperty("k", "v")]` |
 
 ## 9. Packages
 
