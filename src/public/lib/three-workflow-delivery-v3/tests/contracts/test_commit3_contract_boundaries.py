@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import inspect
+import hashlib
 import json
 import os
 import subprocess
 from dataclasses import (
     FrozenInstanceError,
-    asdict,
-    dataclass,
     fields,
-    is_dataclass,
     replace,
 )
 from pathlib import Path
@@ -19,8 +16,7 @@ from types import SimpleNamespace
 from typing import Any, Self, cast
 
 import pytest
-from three_workflow_delivery_v3 import repository as repository_module
-from three_workflow_delivery_v3.canonical import canonical_sha256
+from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 from three_workflow_delivery_v3.catalogs import catalog_digest
 from three_workflow_delivery_v3.release import eligibility as eligibility_module
 from three_workflow_delivery_v3.release.eligibility import (
@@ -40,6 +36,7 @@ from three_workflow_delivery_v3.repository.compiler import (
     FactBundleAdmissionContext,
     ProviderRequestManifest,
     RepositoryModelSnapshot,
+    admit_node_provider_fact_bundle,
     compile_release_policy,
     first_slice_provider_manifest,
     provider_binding,
@@ -62,6 +59,7 @@ from three_workflow_delivery_v3.repository.node_provider import (
     CheckoutMaterialization,
     GlobalInput,
     NbgvFacts,
+    NodeProviderFactBundle,
     NodeProviderResult,
     ProjectNode,
     create_node_provider_fact_bundle,
@@ -170,7 +168,7 @@ def _provider_result(
         manifest_digest=SHA256_B,
         configuration_digest=canonical_sha256(
             {
-                "schema": "workflow-delivery/v3/node-provider-configuration",
+                "schema": ("workflow-delivery/v3/node-provider-configuration"),
                 "global-inputs": [item.to_document() for item in global_inputs],
             }
         ),
@@ -1076,350 +1074,163 @@ def test_node_provider_result_schema_contains_every_approved_field() -> None:
     assert result.result_digest.startswith("sha256:")
 
 
-@dataclass(frozen=True, slots=True)
-class _FactBundleBoundary:
-    bundle_type: Any
-    admission: Any
-    field_by_role: dict[str, str]
-
-
-def _normalized(value: object) -> str:
-    return "".join(
-        character for character in str(value).casefold() if character.isalnum()
-    )
-
-
-def _public_boundary_objects() -> dict[str, object]:
-    modules = (repository_module, node_provider_module, compiler_module)
-    objects: dict[str, object] = {}
-    for module in modules:
-        exported = getattr(module, "__all__", None)
-        if exported is None:
-            names = tuple(
-                name for name in vars(module) if not name.startswith("_")
-            )
-        else:
-            names = tuple(exported)
-        for name in names:
-            if hasattr(module, name):
-                objects[f"{module.__name__}.{name}"] = getattr(module, name)
-    return objects
-
-
-def _semantic_role(name: str, annotation: object) -> str | None:
-    text = _normalized(f"{name} {annotation!r}")
-    role_conditions = (
-        ("binding", "binding" in text),
-        ("manifest_digest", "manifest" in text and "digest" in text),
-        (
-            "manifest_entry",
-            "manifest" in text and ("entry" in text or "request" in text),
-        ),
-        ("request_artifact_digest", "artifact" in text and "digest" in text),
-        ("request_artifact_id", "artifact" in text and "id" in text),
-        (
-            "provider_result_digest",
-            "provider" in text and "result" in text and "digest" in text,
-        ),
-        ("provider_result", "provider" in text and "result" in text),
-        ("transport_digest", "transport" in text and "digest" in text),
-        ("transport_id", "transport" in text and "id" in text),
-    )
-    for role, condition in role_conditions:
-        if condition:
-            return role
-    return None
-
-
-def _fact_bundle_field_roles(bundle_type: Any) -> dict[str, str]:
-    role_to_field: dict[str, str] = {}
-    for field in fields(bundle_type):
-        role = _semantic_role(field.name, field.type)
-        if role is not None:
-            role_to_field[role] = field.name
-    return role_to_field
-
-
-def _fact_bundle_boundary() -> _FactBundleBoundary:
-    required_roles = {
-        "binding",
-        "manifest_digest",
-        "manifest_entry",
-        "request_artifact_id",
-        "request_artifact_digest",
-        "provider_result",
-        "provider_result_digest",
-        "transport_id",
-        "transport_digest",
-    }
-    public_objects = _public_boundary_objects()
-    bundle_candidates: list[tuple[str, Any, dict[str, str]]] = []
-    for name, value in public_objects.items():
-        if not isinstance(value, type) or not is_dataclass(value):
-            continue
-        roles = _fact_bundle_field_roles(value)
-        semantic_text = _normalized(
-            f"{name} {inspect.getdoc(value) or ''} {sorted(roles)}",
-        )
-        if (
-            "fact" in semantic_text and "bundle" in semantic_text
-        ) or required_roles.issubset(roles):
-            bundle_candidates.append((name, value, roles))
-    for _, bundle_type, roles in bundle_candidates:
-        if required_roles.issubset(roles):
-            admission = _find_fact_bundle_admission(public_objects, bundle_type)
-            return _FactBundleBoundary(bundle_type, admission, roles)
-    candidates = ", ".join(sorted(public_objects)) or "<none>"
-    message = (
-        "No public immutable Fact Bundle semantic boundary carries the "
-        f"approved roles {sorted(required_roles)}. Public repository "
-        f"boundaries: {candidates}"
-    )
-    raise AssertionError(message)
-
-
-def _find_fact_bundle_admission(
-    public_objects: dict[str, object],
-    bundle_type: Any,
-) -> Any:
-    bundle_type_name = _normalized(bundle_type.__name__)
-    for name, value in public_objects.items():
-        if inspect.isclass(value) or not callable(value):
-            continue
-        try:
-            signature = str(inspect.signature(value))
-        except (TypeError, ValueError):
-            signature = ""
-        semantic_text = _normalized(
-            f"{name} {inspect.getdoc(value) or ''} {signature}",
-        )
-        has_bundle = (
-            "bundle" in semantic_text or bundle_type_name in semantic_text
-        )
-        has_admission = any(
-            token in semantic_text
-            for token in ("admit", "admission", "consume", "validate")
-        )
-        if has_bundle and has_admission:
-            return value
-    message = (
-        "No public Fact Bundle admission boundary accepts the discovered "
-        f"{bundle_type.__name__} semantic bundle"
-    )
-    raise AssertionError(message)
-
-
 def _fact_bundle(
-    boundary: _FactBundleBoundary,
     manifest: ProviderRequestManifest,
     result: NodeProviderResult,
-) -> object:
-    values_by_role: dict[str, object] = {
-        "binding": result.binding,
-        "manifest_digest": manifest.manifest_digest,
-        "manifest_entry": manifest.requests[0].entry_id,
-        "request_artifact_id": 101,
-        "request_artifact_digest": SHA256_A,
-        "provider_result": result,
-        "provider_result_digest": result.result_digest,
-        "transport_id": TRANSPORT_ID,
-        "transport_digest": SHA256_B,
-    }
-    values = {
-        field: values_by_role[role]
-        for role, field in boundary.field_by_role.items()
-    }
-    if "schema" in {field.name for field in fields(boundary.bundle_type)}:
-        values["schema"] = "workflow-delivery/v3/node-provider-fact-bundle"
-    return boundary.bundle_type(**values)
-
-
-def _semantic_document(value: object) -> object:
-    to_document = getattr(value, "to_document", None)
-    if callable(to_document):
-        return to_document()
-    if is_dataclass(value):
-        return asdict(cast("Any", value))
-    return value
-
-
-def _semantic_leaf_values(value: object) -> tuple[object, ...]:
-    if isinstance(value, dict):
-        leaves: list[object] = []
-        for item in value.values():
-            leaves.extend(_semantic_leaf_values(item))
-        return tuple(leaves)
-    if isinstance(value, list | tuple):
-        leaves = []
-        for item in value:
-            leaves.extend(_semantic_leaf_values(item))
-        return tuple(leaves)
-    return (value,)
-
-
-def _admission_argument(
-    parameter: inspect.Parameter,
-    boundary: _FactBundleBoundary,
-    bundle: object,
-    context: CompilationContext,
-    manifest: ProviderRequestManifest,
-) -> object:
-    text = _normalized(f"{parameter.name} {parameter.annotation!r}")
-    bundle_type_name = _normalized(boundary.bundle_type.__name__)
-    if "admission" in text:
-        baseline_result = _provider_result(context, manifest)
-        baseline_bundle = create_node_provider_fact_bundle(
-            baseline_result,
-            manifest_digest=manifest.manifest_digest,
-            manifest_entry_id=manifest.requests[0].entry_id,
-            request_artifact_id=101,
-            request_artifact_digest=SHA256_A,
-            transport_id=TRANSPORT_ID,
-            transport_digest=SHA256_B,
-        )
-        return FactBundleAdmissionContext(
-            request_artifact_id=101,
-            request_artifact_digest=SHA256_A,
-            transport_id=TRANSPORT_ID,
-            transport_digest=SHA256_B,
-            bundle_digest=baseline_bundle.bundle_digest,
-        )
-    if parameter.name == "bundle" or bundle_type_name in text:
-        return bundle
-    if "context" in text or "compilation" in text:
-        return context
-    if "manifest" in text:
-        return manifest
-    message = (
-        f"Fact Bundle admission parameter is not semantic: {parameter.name}"
+) -> NodeProviderFactBundle:
+    return create_node_provider_fact_bundle(
+        result,
+        manifest_digest=manifest.manifest_digest,
+        manifest_entry_id=manifest.requests[0].entry_id,
+        request_artifact_id=101,
+        request_artifact_digest=SHA256_A,
+        transport_id=TRANSPORT_ID,
+        transport_digest=SHA256_B,
     )
-    raise AssertionError(message)
 
 
-def _admit_fact_bundle(
-    boundary: _FactBundleBoundary,
-    bundle: object,
-    *,
-    context: CompilationContext,
-    manifest: ProviderRequestManifest,
-) -> object:
-    try:
-        signature = inspect.signature(boundary.admission)
-    except (TypeError, ValueError):
-        return boundary.admission(bundle, context=context, manifest=manifest)
-    positional: list[object] = []
-    keywords: dict[str, object] = {}
-    for parameter in signature.parameters.values():
-        if parameter.kind in {
-            inspect.Parameter.VAR_POSITIONAL,
-            inspect.Parameter.VAR_KEYWORD,
-        }:
-            continue
-        if (
-            parameter.default is not inspect.Parameter.empty
-            and _semantic_role(parameter.name, parameter.annotation) is None
-            and "context" not in _normalized(parameter.name)
-            and "manifest" not in _normalized(parameter.name)
-            and "bundle" not in _normalized(parameter.name)
-        ):
-            continue
-        argument = _admission_argument(
-            parameter,
-            boundary,
-            bundle,
-            context,
-            manifest,
-        )
-        if parameter.kind is inspect.Parameter.POSITIONAL_ONLY:
-            positional.append(argument)
-        else:
-            keywords[parameter.name] = argument
-    return boundary.admission(*positional, **keywords)
-
-
-def _extract_admitted_result(admitted: object) -> NodeProviderResult:
-    if isinstance(admitted, NodeProviderResult):
-        return admitted
-    if is_dataclass(admitted):
-        for field in fields(admitted):
-            value = getattr(admitted, field.name)
-            if isinstance(value, NodeProviderResult):
-                return value
-    for name in ("provider_result", "result"):
-        value = getattr(admitted, name, None)
-        if isinstance(value, NodeProviderResult):
-            return value
-    message = "Fact Bundle admission did not expose Provider Result"
-    raise AssertionError(message)
-
-
-def _bundle_role_value(
-    boundary: _FactBundleBoundary,
-    bundle: object,
-    role: str,
-) -> object:
-    return getattr(bundle, boundary.field_by_role[role])
-
-
-def _replace_bundle_role(
-    boundary: _FactBundleBoundary,
-    bundle: object,
-    role: str,
-    value: object,
-) -> object:
-    return replace(
-        cast("Any", bundle),
-        **{boundary.field_by_role[role]: value},
+def _admission_context(
+    bundle: NodeProviderFactBundle,
+) -> FactBundleAdmissionContext:
+    return FactBundleAdmissionContext(
+        request_artifact_id=101,
+        request_artifact_digest=SHA256_A,
+        transport_id=TRANSPORT_ID,
+        transport_digest=SHA256_B,
+        bundle_digest=bundle.bundle_digest,
     )
 
 
 def test_fact_bundle_schema_binds_complete_approved_contract() -> None:
-    """Require every approved Fact Bundle authority and integrity semantic."""
+    """Bind literal wire fields and canonical values, allowing value copies."""
     context = _context()
     manifest = _manifest(context)
     result = _provider_result(context, manifest)
-    boundary = _fact_bundle_boundary()
+    bundle = _fact_bundle(manifest, result)
+    admission = _admission_context(bundle)
 
-    bundle = _fact_bundle(boundary, manifest, result)
-    document = _semantic_document(bundle)
-    admitted = _admit_fact_bundle(
-        boundary,
+    admitted = admit_node_provider_fact_bundle(
         bundle,
         context=context,
         manifest=manifest,
+        admission=admission,
     )
-    leaves = set(_semantic_leaf_values(document))
-    required_values = {
-        context.request_id,
-        context.purpose,
-        context.workflow_run_id,
-        context.run_attempt,
-        context.target,
-        result.binding.producer,
-        context.control,
-        context.catalog_digest,
-        manifest.manifest_digest,
-        manifest.requests[0].entry_id,
-        manifest.requests[0].request_digest,
-        result.provider_logical_id,
-        result.provider_implementation_id,
-        result.execution_mode,
-        result.execution_class,
-        "v24.14.0",
-        "11.21.0",
-        result.result_digest,
-        SHA256_A,
-        101,
-        SHA256_B,
-        TRANSPORT_ID,
-    }
 
-    assert required_values <= leaves
-    assert _extract_admitted_result(admitted) is result
-    assert _bundle_role_value(boundary, bundle, "binding") == result.binding
-    assert _bundle_role_value(boundary, bundle, "transport_id") == TRANSPORT_ID
-    with pytest.raises((AttributeError, FrozenInstanceError)):
-        setattr(bundle, boundary.field_by_role["transport_id"], 203)
+    expected_binding = {
+        "request-id": "release-request-42",
+        "purpose": "live-release",
+        "workflow-run-id": 7101,
+        "target": TARGET,
+        "producer": "discover-node",
+        "control": f"workflow-delivery-v3:{TARGET}",
+        "catalog-digest": context.catalog_digest,
+        "request-digest": manifest.requests[0].request_digest,
+    }
+    expected_inputs = [
+        {
+            "path": path,
+            "content-digest": SHA256_A,
+            "project-ids": ["@hcoona/hcoona-release-smoke-npm"],
+        }
+        for path in (
+            "package.json",
+            "pnpm-lock.yaml",
+            "pnpm-workspace.yaml",
+            f"{PRODUCT_PATH}/version.json",
+            "version.json",
+        )
+    ]
+    expected_result = {
+        "schema": "workflow-delivery/v3/node-provider-result",
+        "binding": expected_binding,
+        "provider": {
+            "logical-id": "node/pnpm-nbgv-v1",
+            "implementation-id": "three-workflow-delivery-v3/node-pnpm-nbgv-v1",
+            "execution-mode": "target-evaluating",
+            "execution-class": "target-evaluation/unprivileged-v1",
+            "toolchain": {"node": "v24.14.0", "pnpm": "11.21.0"},
+        },
+        "input-digests": {
+            "manifest": SHA256_B,
+            "configuration": canonical_sha256(
+                {
+                    "schema": (
+                        "workflow-delivery/v3/node-provider-configuration"
+                    ),
+                    "global-inputs": expected_inputs,
+                }
+            ),
+        },
+        "checkout": {
+            "target": TARGET,
+            "head": TARGET,
+            "shallow": False,
+            "ancestry-complete": True,
+            "tags-complete": True,
+            "credentials-persisted": False,
+            "authoritative-remote": "origin",
+            "authoritative-remote-url": "file:///authoritative-remote.git",
+            "tag-refspec": "refs/tags/*:refs/tags/*",
+        },
+        "project-nodes": [
+            {
+                "project-id": "@hcoona/hcoona-release-smoke-npm",
+                "package-name": "@hcoona/hcoona-release-smoke-npm",
+                "path": PRODUCT_PATH,
+                "manifest-path": f"{PRODUCT_PATH}/package.json",
+                "private": False,
+                "workspace-dependencies": [],
+            }
+        ],
+        "global-inputs": expected_inputs,
+        "build-capabilities": ["node/npm-package-v1"],
+        "nbgv": {
+            "canonical": {
+                "version": "1.2.3",
+                "semVer1": "1.2.3-beta-0042-e123456",
+                "semVer2": NPM_VERSION,
+                "versionHeight": 42,
+                "gitCommitId": TARGET,
+                "publicRelease": False,
+            },
+            "native": {"npmPackageVersion": NPM_VERSION},
+            "node-api-result-digest": SHA256_A,
+        },
+        "unresolved": [],
+        "conflicts": [],
+        "outcome": "success",
+        "diagnostic-reference": None,
+    }
+    expected_document = {
+        "schema": "workflow-delivery/v3/node-provider-fact-bundle",
+        "binding": expected_binding,
+        "provider-request-manifest-digest": manifest.manifest_digest,
+        "provider-request-entry-id": "node-first-slice",
+        "request-artifact": {"artifact-id": 101, "artifact-digest": SHA256_A},
+        "provider-result": {
+            "payload": expected_result,
+            "payload-canonical-digest": canonical_sha256(expected_result),
+        },
+        "transport": {"artifact-id": TRANSPORT_ID, "artifact-digest": SHA256_B},
+    }
+    expected_bytes = json.dumps(
+        expected_document,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    assert bundle.to_document() == expected_document
+    assert canonicalize(bundle.to_document()) == expected_bytes
+    assert (
+        bundle.bundle_digest
+        == f"sha256:{hashlib.sha256(expected_bytes).hexdigest()}"
+    )
+    assert admitted.provider_result.to_document() == expected_result
+    assert admitted.bundle.to_document() == expected_document
+    assert admitted.admission == admission
+    assert not hasattr(bundle, "__dict__")
+    with pytest.raises(FrozenInstanceError):
+        setattr(bundle, "transport_id", 203)  # noqa: B010
 
 
 @pytest.mark.parametrize(
@@ -1452,8 +1263,8 @@ def test_fact_bundle_admission_rejects_binding_type_digest_and_result_substituti
     context = _context()
     manifest = _manifest(context)
     result = _provider_result(context, manifest)
-    boundary = _fact_bundle_boundary()
-    bundle = _fact_bundle(boundary, manifest, result)
+    bundle = _fact_bundle(manifest, result)
+    admission = _admission_context(bundle)
     binding_mutations: dict[str, tuple[str, object]] = {
         "binding-request": ("request_id", "other-request"),
         "binding-purpose": ("purpose", "release-simulation"),
@@ -1468,90 +1279,40 @@ def test_fact_bundle_admission_rejects_binding_type_digest_and_result_substituti
     }
     if mutation in binding_mutations:
         field, value = binding_mutations[mutation]
-        bundle = _replace_bundle_role(
-            boundary,
+        bundle = replace(
             bundle,
-            "binding",
-            replace(
-                cast("Any", _bundle_role_value(boundary, bundle, "binding")),
-                **{field: cast("Any", value)},
-            ),
+            binding=replace(bundle.binding, **{field: cast("Any", value)}),
         )
     elif mutation == "type-artifact-id":
-        bundle = _replace_bundle_role(
-            boundary,
-            bundle,
-            "request_artifact_id",
-            BOOLEAN_ID_SURROGATE,
-        )
+        bundle = replace(bundle, request_artifact_id=BOOLEAN_ID_SURROGATE)
     elif mutation == "type-transport-id":
-        bundle = _replace_bundle_role(
-            boundary,
-            bundle,
-            "transport_id",
-            BOOLEAN_ID_SURROGATE,
-        )
+        bundle = replace(bundle, transport_id=BOOLEAN_ID_SURROGATE)
     elif mutation == "manifest-digest":
-        bundle = _replace_bundle_role(
-            boundary,
-            bundle,
-            "manifest_digest",
-            SHA256_C,
-        )
+        bundle = replace(bundle, manifest_digest=SHA256_C)
     elif mutation == "manifest-entry":
-        bundle = _replace_bundle_role(
-            boundary,
-            bundle,
-            "manifest_entry",
-            "other-entry",
-        )
+        bundle = replace(bundle, manifest_entry_id="other-entry")
     elif mutation == "artifact-digest":
-        bundle = _replace_bundle_role(
-            boundary,
-            bundle,
-            "request_artifact_digest",
-            SHA256_C,
-        )
+        bundle = replace(bundle, request_artifact_digest=SHA256_C)
     elif mutation == "provider-result-digest":
-        bundle = _replace_bundle_role(
-            boundary,
-            bundle,
-            "provider_result_digest",
-            SHA256_C,
-        )
+        bundle = replace(bundle, provider_result_digest=SHA256_C)
     elif mutation == "transport-digest":
-        bundle = _replace_bundle_role(
-            boundary,
-            bundle,
-            "transport_digest",
-            SHA256_C,
-        )
+        bundle = replace(bundle, transport_digest=SHA256_C)
     else:
         forged_result = replace(result, outcome="blocked")
         assert forged_result.result_digest != result.result_digest
-        bundle = _replace_bundle_role(
-            boundary,
+        bundle = replace(
             bundle,
-            "provider_result",
-            forged_result,
-        )
-        bundle = _replace_bundle_role(
-            boundary,
-            bundle,
-            "provider_result_digest",
-            forged_result.result_digest,
+            provider_result=forged_result,
+            provider_result_digest=forged_result.result_digest,
         )
 
-    admitted = None
     with pytest.raises((TypeError, ValueError)):
-        admitted = _admit_fact_bundle(
-            boundary,
+        admit_node_provider_fact_bundle(
             bundle,
             context=context,
             manifest=manifest,
+            admission=admission,
         )
-
-    assert admitted is None
 
 
 def _write_authoritative_compiler_fixture(repo: Path) -> str:
