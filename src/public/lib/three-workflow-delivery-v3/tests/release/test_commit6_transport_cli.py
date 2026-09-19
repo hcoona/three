@@ -694,26 +694,26 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
 def test_release_cli_intent_is_stable_across_simulation_reruns(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
-    qualified_simulation,
+    intent: ReleaseIntent,
+    binding: SimulationBinding,
 ) -> None:
     """Keep Release Intent stable while platform attempt inputs change."""
-    scenario = qualified_simulation
-    run_attempt = scenario.binding.simulation.run_attempt
+    run_attempt = binding.simulation.run_attempt
     first_path = tmp_path / "attempt-3.json"
     rerun_path = tmp_path / "attempt-4.json"
     base = [
         "release",
         "normalize-simulation-request",
         "--repository",
-        scenario.intent.repository,
+        intent.repository,
         "--selected-ref",
-        scenario.intent.selected_ref,
+        intent.selected_ref,
         "--actor",
-        scenario.intent.actor,
+        intent.actor,
         "--workflow-run-id",
-        str(scenario.intent.workflow_run_id),
+        str(intent.workflow_run_id),
         "--target",
-        scenario.intent.target,
+        intent.target,
     ]
     assert (
         cli_module.main(
@@ -751,15 +751,15 @@ def test_release_cli_intent_is_stable_across_simulation_reruns(
             "release",
             "admit-intent",
             "--workflow-run-id",
-            str(scenario.intent.workflow_run_id),
+            str(intent.workflow_run_id),
             "--run-attempt",
             str(run_attempt + 1),
             "--target",
-            scenario.intent.target,
+            intent.target,
             *_uploaded_arguments(
                 "intent",
                 first_path,
-                scenario.intent.intent_digest,
+                intent.intent_digest,
                 301,
             ),
         ]
@@ -793,6 +793,11 @@ def test_simulation_finalizer_preserves_non_successful_qualification(
         (scenario.artifact,),
     )
 
+    assert failed.terminal_result == "failure"
+    assert failed.failure_class == "quality-failure"
+    assert incomplete.terminal_result == "incomplete"
+    assert incomplete.failure_class == "incomplete-qualification"
+
     for decision in (failed, incomplete):
         outcome = finalize_simulation(
             scenario.snapshot,
@@ -802,3 +807,5 @@ def test_simulation_finalizer_preserves_non_successful_qualification(
         assert outcome.failure_class == decision.failure_class
         assert outcome.next_action == decision.next_action
         assert outcome.failure_class != "unknown-observation"
+        assert outcome.observation_digests == ()
+        assert outcome.hypothetical_actions == ()

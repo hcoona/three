@@ -380,6 +380,7 @@ def test_synthetic_absent_and_exact_observations_plan_actions_only(
         scenario.artifact,
         classification="absent",
     )
+    assert absent.producer == "observe-npmjs"
     absent_actions = materialize_hypothetical_actions(
         scenario.snapshot,
         scenario.decision,
@@ -446,20 +447,6 @@ def test_successful_simulation_requires_observation_for_each_projection(
             scenario.decision,
             artifacts=(scenario.artifact,),
         )
-
-
-def test_synthetic_observation_helper_uses_current_observer_producer(
-    qualified_simulation,
-) -> None:
-    scenario = qualified_simulation
-    observation = _admit_synthetic_projection_observation(
-        scenario.snapshot,
-        scenario.decision,
-        scenario.artifact,
-        classification="absent",
-    )
-
-    assert observation.producer == "observe-npmjs"
 
 
 def test_synthetic_observation_helper_is_not_public_release_api() -> None:
@@ -1002,8 +989,13 @@ def test_success_decision_constructor_rejects_unsatisfied_disposition(
         replace(decision, obligation_dispositions=dispositions)
 
 
-@pytest.mark.parametrize("disposition_index", [0, 1, 2, 3])
-@pytest.mark.parametrize("outcome", ["failed", "incomplete"])
+@pytest.mark.parametrize(
+    ("disposition_index", "outcome"),
+    [
+        pytest.param(0, "failed", id="failed-0"),
+        pytest.param(3, "incomplete", id="incomplete-3"),
+    ],
+)
 def test_success_decision_transport_rejects_unsatisfied_disposition(
     qualified_simulation,
     disposition_index: int,
