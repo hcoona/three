@@ -342,7 +342,7 @@ xUnit assembly attributes split into two groups: a few have direct MSTest equiva
 
 ## 9. Packages
 
-**Remove** every xUnit package from `.csproj`, `Directory.Build.props`, `Directory.Packages.props`:
+**Remove** xUnit references from the migrated projects. For shared `Directory.Build.props` references and `Directory.Packages.props` versions, preserve entries and conditions needed by other projects; remove them only when no remaining consumer needs them. Scope shared-props changes to the migrated projects. Packages to inspect:
 
 - `xunit`, `xunit.abstractions`, `xunit.assert`, `xunit.core`
 - `xunit.extensibility.core`, `xunit.extensibility.execution`
@@ -353,8 +353,18 @@ xUnit assembly attributes split into two groups: a few have direct MSTest equiva
 
 **Add** MSTest v4 -- pick exactly one of:
 
+Option A is the metapackage (TestFramework, TestAdapter, Analyzers, and Microsoft.NET.Test.Sdk). Preserve the effective package-management mode. With `ManagePackageVersionsCentrally=true`:
+
 ```xml
-<!-- Option A: metapackage (pulls in TestFramework + TestAdapter + Analyzers + Microsoft.NET.Test.Sdk) -->
+<!-- Project ItemGroup -->
+<PackageReference Include="MSTest" />
+<!-- Applicable Directory.Packages.props ItemGroup -->
+<PackageVersion Include="MSTest" Version="4.1.0" />
+```
+
+Reuse a compatible central item, preserving its conditions and import ownership; do not duplicate or downgrade it. Only for non-CPM projects:
+
+```xml
 <PackageReference Include="MSTest" Version="4.1.0" />
 ```
 

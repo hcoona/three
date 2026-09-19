@@ -58,13 +58,9 @@ Use an existing CI/test result as the parity baseline when available. Run a new 
 
 ### 2. Replace packages without switching runners
 
-Remove xUnit packages from project files and central package files. This includes `xunit*`, `xunit.v3.*`, `xunit.runner.visualstudio`, `YTest.MTP.XUnit2`, and xUnit-specific companion packages that are being replaced.
+Remove xUnit references from the projects being migrated. Preserve shared references and central versions while other projects still need them; scope edits to shared props accordingly. Remove shared entries only after their remaining consumers are gone. This includes `xunit*`, `xunit.v3.*`, `xunit.runner.visualstudio`, `YTest.MTP.XUnit2`, and xUnit-specific companion packages that are being replaced.
 
-Default to the MSTest v4 metapackage for an incremental conversion:
-
-```xml
-<PackageReference Include="MSTest" Version="4.1.0" />
-```
+Default to the MSTest v4 metapackage for an incremental conversion. Preserve the effective package-management mode: when `ManagePackageVersionsCentrally` is `true`, use a versionless `PackageReference` and the applicable central `PackageVersion`; otherwise use a versioned project reference. Follow the [package examples](references/mapping-cheatsheet.md#9-packages), preserving existing compatible versions and conditions.
 
 This keeps VSTest available through the metapackage's compatible `Microsoft.NET.Test.Sdk` dependency. Remove a stale explicit `Microsoft.NET.Test.Sdk` reference or update it to the minimum required by the chosen MSTest version (MSTest 4.1.0 requires 18.0.1+); otherwise restore fails with `NU1605`. Use `MSTest.Sdk` only when the project already uses it elsewhere or the user explicitly requests it. `MSTest.Sdk` defaults to MTP, so add `<UseVSTest>true</UseVSTest>` when preserving VSTest.
 
@@ -132,7 +128,7 @@ Do not use `ExecutionScope.MethodLevel` to emulate collection mode. If the sourc
    - changed exception behavior -> exact-vs-derived assertion mapping
    - shared-state failures or large duration changes -> fixture scope and parallelization
    - silently skipped tests -> missing `[TestMethod]` or incorrect runtime-skip conversion
-4. Confirm no xUnit package, namespace, attribute, runner configuration, or fixture interface remains unless explicitly documented for manual follow-up.
+4. Confirm no xUnit package, namespace, attribute, runner configuration, or fixture interface remains in the migrated projects unless explicitly documented for manual follow-up. Shared entries required by unmigrated projects remain valid.
 
 ## Completion Criteria
 
