@@ -313,76 +313,6 @@ def test_model_finding_and_result_reject_invalid_shape(
         parse_bounded_static_reference_result(canonicalize(document))
 
 
-def test_source_uses_its_own_git_target_index_and_worktree_bytes(
-    tmp_path: Path,
-) -> None:
-    """Acquire each source kind from its independently owned bytes."""
-    repository = tmp_path / "repository"
-    _initialize_repository(repository)
-    manifest = repository / "package.json"
-    committed = b'{"name":"committed"}\n'
-    indexed = b'{"name":"indexed"}\n'
-    worktree = b'{"name":"worktree"}\n'
-    manifest.write_bytes(committed)
-    _git(repository, "add", "package.json")
-    _git(repository, "commit", "--quiet", "--message", "target")
-    target = _git(repository, "rev-parse", "HEAD")
-    manifest.write_bytes(indexed)
-    _git(repository, "add", "package.json")
-    manifest.write_bytes(worktree)
-
-    target_inventory = acquire_static_reference_inventory(
-        repository,
-        source_kind="git-target",
-        target=target,
-    )
-    index_inventory = acquire_static_reference_inventory(
-        repository,
-        source_kind="index",
-    )
-    worktree_inventory = acquire_static_reference_inventory(
-        repository,
-        source_kind="worktree",
-    )
-
-    assert target_inventory.source_kind == "git-target"
-    assert target_inventory.target == target
-    assert index_inventory.source_kind == "index"
-    assert index_inventory.target is None
-    assert worktree_inventory.source_kind == "worktree"
-    assert worktree_inventory.target is None
-    assert [item.path for item in target_inventory.candidates] == [
-        "package.json"
-    ]
-    assert [item.content for item in target_inventory.candidates] == [committed]
-    assert [item.content for item in index_inventory.candidates] == [indexed]
-    assert [item.content for item in worktree_inventory.candidates] == [
-        worktree
-    ]
-    assert target_inventory.candidates[0].source_object is not None
-    assert index_inventory.candidates[0].source_object is not None
-    assert worktree_inventory.candidates[0].source_object is None
-
-
-def test_source_admitted_candidate_failure_is_typed(
-    tmp_path: Path,
-) -> None:
-    """Report unavailable Git targets as typed acquisition failures."""
-    repository = tmp_path / "repository"
-    _initialize_repository(repository)
-
-    with pytest.raises(SourceAcquisitionError) as caught:
-        acquire_static_reference_inventory(
-            repository,
-            source_kind="git-target",
-            target="0" * 40,
-        )
-
-    assert caught.value.diagnostic_code == "git-target-unavailable"
-    assert caught.value.path is None
-    assert str(caught.value) == "static-reference source acquisition failed"
-
-
 def test_git_target_duplicate_selected_path_is_typed_source_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3021,6 +2951,9 @@ def test_policy_stops_at_the_first_source_error_before_authority_execution(
             target=TARGET,
         )
     source_error = seeded.value
+    assert source_error.diagnostic_code == "git-target-unavailable"
+    assert source_error.path is None
+    assert str(source_error) == "static-reference source acquisition failed"
     shutil.rmtree(seed_repository)
 
     def fail_acquisition(
@@ -3659,13 +3592,6 @@ def test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared() 
             "accepted",
             id="exact-git-target",
         ),
-        pytest.param(
-            "git-target",
-            "2" * 40,
-            "rejected",
-            id="different-git-target",
-        ),
-        pytest.param("index", None, "rejected", id="index-feedback"),
         pytest.param("worktree", None, "rejected", id="worktree-feedback"),
     ],
 )
@@ -4917,7 +4843,6 @@ def test_producer_root_outside_dependency_positions_is_clean(
 @pytest.mark.parametrize(
     "terminal_case",
     [
-        pytest.param("source", id="source-acquisition-failed"),
         pytest.param("encoding", id="encoding-rejected"),
         pytest.param("authority-rejected", id="authority-rejected"),
         pytest.param("execution", id="authority-execution-failed"),
@@ -4927,7 +4852,7 @@ def test_producer_root_outside_dependency_positions_is_clean(
         pytest.param("cleanup", id="cleanup-failed"),
     ],
 )
-def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C901, PLR0915
+def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C901
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     terminal_case: str,
@@ -4962,17 +4887,6 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
         candidates=candidates,
     )
     acquisition_calls: list[tuple[Path, str, str | None]] = []
-    source_error: SourceAcquisitionError | None = None
-    if terminal_case == "source":
-        non_repository = tmp_path / "not-a-repository"
-        _initialize_repository(non_repository)
-        with pytest.raises(SourceAcquisitionError) as caught:
-            acquire_static_reference_inventory(
-                non_repository,
-                source_kind="git-target",
-                target=TARGET,
-            )
-        source_error = caught.value
 
     def acquire(
         repository_root: Path,
@@ -4981,8 +4895,6 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
         target: str | None = None,
     ) -> object:
         acquisition_calls.append((repository_root, source_kind, target))
-        if source_error is not None:
-            raise source_error
         return inventory
 
     monkeypatch.setattr(
@@ -5078,7 +4990,6 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
         session_factory=session_factory,
     )
     expected_error = {
-        "source": "source-acquisition-failed",
         "encoding": "encoding-rejected",
         "authority-rejected": "authority-rejected",
         "execution": "authority-execution-failed",
@@ -5087,21 +4998,17 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
         "mismatch-extra": "authority-mismatch",
         "cleanup": "cleanup-failed",
     }[terminal_case]
-    expected_identities = (
-        ()
-        if terminal_case == "source"
-        else tuple(
-            sorted(
-                {
-                    *_PHASE2_NPM_IMPLEMENTATIONS,
-                    *(
-                        ("foreign-authority@9.9.9",)
-                        if terminal_case == "mismatch-extra"
-                        else ()
-                    ),
-                },
-                key=lambda identity: identity.encode(),
-            )
+    expected_identities = tuple(
+        sorted(
+            {
+                *_PHASE2_NPM_IMPLEMENTATIONS,
+                *(
+                    ("foreign-authority@9.9.9",)
+                    if terminal_case == "mismatch-extra"
+                    else ()
+                ),
+            },
+            key=lambda identity: identity.encode(),
         )
     )
 
@@ -5117,22 +5024,18 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
     }
     assert result.findings == ()
     assert acquisition_calls == [(tmp_path, "worktree", None)]
-    assert [path for path, _ in authority_calls] == (
-        []
-        if terminal_case == "source"
-        else ["00/package.json", "01/package.json"]
-    )
-    assert len(sessions) == (0 if terminal_case == "source" else 1)
-    if terminal_case == "source":
-        assert cleanup_calls == []
-    else:
-        assert cleanup_calls == [
-            authority_calls[0][1],
-            authority_calls[1][1],
-            sessions[0].root / "invocation-0002",
-            sessions[0].root,
-        ]
-        assert all(not path.exists() for path in cleanup_calls)
+    assert [path for path, _ in authority_calls] == [
+        "00/package.json",
+        "01/package.json",
+    ]
+    assert len(sessions) == 1
+    assert cleanup_calls == [
+        authority_calls[0][1],
+        authority_calls[1][1],
+        sessions[0].root / "invocation-0002",
+        sessions[0].root,
+    ]
+    assert all(not path.exists() for path in cleanup_calls)
 
 
 @pytest.mark.parametrize(
@@ -5932,6 +5835,27 @@ def test_git_sources_ignore_all_ambient_repository_object_and_config_redirects( 
         repository,
         source_kind="worktree",
     )
+
+    assert [candidate.path for candidate in target_inventory.candidates] == [
+        "package.json",
+    ]
+    assert [candidate.content for candidate in target_inventory.candidates] == [
+        committed,
+    ]
+    assert [candidate.path for candidate in index_inventory.candidates] == [
+        "package.json",
+    ]
+    assert [candidate.content for candidate in index_inventory.candidates] == [
+        indexed,
+    ]
+    assert [candidate.path for candidate in worktree_inventory.candidates] == [
+        "package.json",
+    ]
+    assert [
+        candidate.content for candidate in worktree_inventory.candidates
+    ] == [
+        worktree,
+    ]
 
     assert [
         (

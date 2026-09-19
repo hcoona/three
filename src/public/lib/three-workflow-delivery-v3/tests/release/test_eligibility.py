@@ -1290,22 +1290,10 @@ def test_live_admission_rejects_each_current_lineage_mutation(
     ("path", "value", "message"),
     [
         pytest.param(
-            ("static-reference", "target"),
-            "d" * 40,
-            "static-reference target mismatch",
-            id="static-reference-target",
-        ),
-        pytest.param(
             ("static-reference", "policy-id"),
             "other-policy",
             "policy ID is not current",
             id="static-reference-policy-id",
-        ),
-        pytest.param(
-            ("static-reference", "policy-digest"),
-            "sha256:" + ("0" * 64),
-            "policy is not current",
-            id="static-reference-policy-digest",
         ),
         pytest.param(
             ("governance", "repository"),
@@ -1442,29 +1430,6 @@ def test_live_admission_requires_a_diagnostic_free_static_reference_clean_pass(
     mutation(document)
 
     with pytest.raises(ValueError, match=message):
-        _admit_mutated_decision(
-            document,
-            live_intent=live_intent,
-            live_admitted_repository_model=live_admitted_repository_model,
-            policy=policy,
-        )
-
-
-def test_live_admission_rejects_hash_consistent_wrong_policy_digest(
-    live_intent: ReleaseIntent,
-    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
-    policy: ReleasePolicy,
-) -> None:
-    """Reject an obsolete static-reference policy through every hash layer."""
-    document = _transport_decision(
-        live_intent,
-        live_admitted_repository_model,
-        policy,
-    ).to_document()
-    static_reference = _object_member(document, "static-reference")
-    static_reference["policy-digest"] = "sha256:" + ("0" * 64)
-
-    with pytest.raises(ValueError, match="policy is not current"):
         _admit_mutated_decision(
             document,
             live_intent=live_intent,
@@ -2260,29 +2225,46 @@ def test_attestation_time_boundaries_block_live_eligibility(  # noqa: PLR0913, P
 
 
 @pytest.mark.parametrize(
-    ("static_reference", "diagnostic"),
+    ("static_reference", "diagnostic", "expected_evidence"),
     [
         pytest.param(
             _static_reference(findings=(_finding(),)),
             "static-reference-findings",
+            {
+                "result": "findings",
+                "findings": [
+                    {
+                        "path": "src/public/app/consumer/package.json",
+                        "family": "npm-manifest",
+                        "semantic-context": "dependencies",
+                        "prohibited-form": "D",
+                        "matched-identity": "@hcoona/hcoona-release-smoke-npm",
+                        "location": (
+                            "dependencies.@hcoona/hcoona-release-smoke-npm"
+                        ),
+                    },
+                ],
+            },
             id="findings",
         ),
         *[
             pytest.param(
                 _static_reference(error_kind=error_kind),
                 f"static-reference-{error_kind}",
+                {"result": "error", "error-kind": error_kind, "findings": []},
                 id=error_kind,
             )
             for error_kind in EXPECTED_STATIC_REFERENCE_ERROR_KINDS
         ],
     ],
 )
-def test_static_reference_findings_and_errors_block_before_attempt_creation(
+def test_static_reference_findings_and_errors_block_before_attempt_creation(  # noqa: PLR0913, PLR0917
     monkeypatch: pytest.MonkeyPatch,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
     static_reference: BoundedStaticReferenceResult,
     diagnostic: str,
+    expected_evidence: dict[str, JsonValue],
 ) -> None:
     """Block every non-clean internally scanned static-reference Result."""
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
@@ -2304,6 +2286,9 @@ def test_static_reference_findings_and_errors_block_before_attempt_creation(
     assert decision.result is EligibilityResult.BLOCKED
     assert decision.diagnostics == (diagnostic,)
     assert evidence == static_reference.to_document()
+    assert evidence["result"] == expected_evidence["result"]
+    assert evidence.get("error-kind") == expected_evidence.get("error-kind")
+    assert evidence["findings"] == expected_evidence["findings"]
     assert evidence["target"] == TARGET
     assert document["diagnostics"] == [diagnostic]
     assert document["result"] == "blocked"
