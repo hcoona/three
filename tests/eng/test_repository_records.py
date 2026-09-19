@@ -448,7 +448,27 @@ def test_hidden_untracked_and_symlink_candidates(repo: Repository) -> None:
     assert repo.check()["diagnostics"] == []
     (repo.root / path).unlink()
     (repo.root / path).symlink_to(repo.root / "docs/README.md")
-    assert "canonical-symlink" in codes(repo.check())
+    assert [
+        d["path"]
+        for d in repo.check()["diagnostics"]
+        if d["code"] == "canonical-symlink"
+    ] == [path]
+    repo.catalog["bindings"] = [
+        binding
+        for binding in repo.catalog["bindings"]
+        if binding["path"] != path
+    ]
+    repo.save()
+    report = repo.check()
+    assert [
+        d["path"]
+        for d in report["diagnostics"]
+        if d["code"] == "canonical-symlink"
+    ] == [path]
+    assert any(
+        d["path"] == path and d["code"] == "record-coverage"
+        for d in report["diagnostics"]
+    )
 
 
 def test_v2_base_and_v3_candidate_boundary(repo: Repository) -> None:

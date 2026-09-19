@@ -1,12 +1,12 @@
 ---
 name: migrate-xunit-to-mstest
 description: >
-  Convert .NET test projects from xUnit.net v2 or v3 to MSTest v4. Use for
-  replacing xunit packages, [Fact]/[Theory], xUnit assertions, fixtures,
-  ITestOutputHelper, traits, skips, and xUnit parallelization with MSTest
-  equivalents while preserving the current VSTest or MTP runner.
-  DO NOT USE FOR: xUnit v2 to v3 upgrades, MSTest version upgrades, migrations
-  from NUnit/TUnit, or runner-only VSTest to MTP migrations.
+    Convert .NET test projects from xUnit.net v2 or v3 to MSTest v4. Use for
+    replacing xunit packages, [Fact]/[Theory], xUnit assertions, fixtures,
+    ITestOutputHelper, traits, skips, and xUnit parallelization with MSTest
+    equivalents while preserving the current VSTest or MTP runner.
+    DO NOT USE FOR: xUnit v2 to v3 upgrades, MSTest version upgrades, migrations
+    from NUnit/TUnit, or runner-only VSTest to MTP migrations.
 license: MIT
 ---
 
@@ -45,16 +45,16 @@ Use an existing CI/test result as the parity baseline when available. Run a new 
 
 1. In one discovery pass, batch-read the test projects plus `Directory.Build.props`, `Directory.Packages.props`, `global.json`, and runner configuration, and search the source for the high-risk constructs below.
 2. State the detected source version:
-   - `xunit` 2.x and related packages -> xUnit v2
-   - `xunit.v3` or `xunit.v3.*` -> xUnit v3
+    - `xunit` 2.x and related packages -> xUnit v2
+    - `xunit.v3` or `xunit.v3.*` -> xUnit v3
 3. Identify VSTest or MTP from the project and repository configuration. Use `platform-detection` only when the platform is ambiguous, and preserve the detected platform.
 4. Record the target frameworks and platform, and check compatibility with the selected MSTest version as described above.
 5. If the Fast Path requires a new baseline, run the existing test command once and record discovered, passed, failed, and skipped counts.
 6. Inventory high-risk constructs before editing:
-   - `IClassFixture`, `ICollectionFixture`, `CollectionDefinition`, custom `FactAttribute`/`TheoryAttribute`/`DataAttribute`
-   - `Assert.Throws`, `ThrowsAny`, `IsType`, `Record.Exception`, event assertions
-   - `ITestOutputHelper`, `TestContext.Current`, `IAsyncLifetime`
-   - `CollectionBehavior`, `xunit.runner.json`, shared static or external state
+    - `IClassFixture`, `ICollectionFixture`, `CollectionDefinition`, custom `FactAttribute`/`TheoryAttribute`/`DataAttribute`
+    - `Assert.Throws`, `ThrowsAny`, `IsType`, `Record.Exception`, event assertions
+    - `ITestOutputHelper`, `TestContext.Current`, `IAsyncLifetime`
+    - `CollectionBehavior`, `xunit.runner.json`, shared static or external state
 
 ### 2. Replace packages without switching runners
 
@@ -70,19 +70,19 @@ Do not change `TargetFramework`. Remove `xunit.runner.json` only after porting i
 
 Apply the common rewrites first:
 
-| xUnit | MSTest |
-|---|---|
-| no class attribute | `[TestClass]` |
-| `[Fact]` | `[TestMethod]` |
-| `[Theory]` + `[InlineData]` | `[TestMethod]` + `[DataRow]` |
-| `[MemberData]` | `[DynamicData]` |
-| `[Fact(Skip = "...")]` | `[TestMethod]` + `[Ignore("...")]` |
-| `[Trait("Category", value)]` | `[TestCategory(value)]` |
-| `[Trait("Owner", value)]` | Method-only `[Owner(value)]`; resolve effective scope and values as described below |
-| other `[Trait(key, value)]` | `[TestProperty(key, value)]` |
-| `Assert.Equal` / `NotEqual` | `Assert.AreEqual` / `AreNotEqual` |
-| `Assert.True` / `False` | `Assert.IsTrue` / `IsFalse` |
-| `Assert.Null` / `NotNull` | `Assert.IsNull` / `IsNotNull` |
+| xUnit                        | MSTest                                                                              |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| no class attribute           | `[TestClass]`                                                                       |
+| `[Fact]`                     | `[TestMethod]`                                                                      |
+| `[Theory]` + `[InlineData]`  | `[TestMethod]` + `[DataRow]`                                                        |
+| `[MemberData]`               | `[DynamicData]`                                                                     |
+| `[Fact(Skip = "...")]`       | `[TestMethod]` + `[Ignore("...")]`                                                  |
+| `[Trait("Category", value)]` | `[TestCategory(value)]`                                                             |
+| `[Trait("Owner", value)]`    | Method-only `[Owner(value)]`; resolve effective scope and values as described below |
+| other `[Trait(key, value)]`  | `[TestProperty(key, value)]`                                                        |
+| `Assert.Equal` / `NotEqual`  | `Assert.AreEqual` / `AreNotEqual`                                                   |
+| `Assert.True` / `False`      | `Assert.IsTrue` / `IsFalse`                                                         |
+| `Assert.Null` / `NotNull`    | `Assert.IsNull` / `IsNotNull`                                                       |
 
 Remove `using Xunit;` and `using Xunit.Abstractions;`. Add `using Microsoft.VisualStudio.TestTools.UnitTesting;` for the metapackage option; `MSTest.Sdk` supplies it as an implicit global using.
 
@@ -95,7 +95,8 @@ Load the mapping cheatsheet for every high-risk construct found in Step 1. These
 - xUnit `Assert.Throws<T>` is exact-type and maps to MSTest `Assert.ThrowsExactly<T>`.
 - xUnit `Assert.ThrowsAny<T>` permits derived types and maps to MSTest `Assert.Throws<T>`.
 - xUnit `Assert.IsType<T>` is exact-type and maps to `Assert.IsExactInstanceOfType<T>`; `Assert.IsAssignableFrom<T>` maps to `Assert.IsInstanceOfType<T>`.
-- xUnit `Assert.Equal` on sequences compares elements. Use `Assert.AreSequenceEqual` on MSTest 4.3+ or `CollectionAssert.AreEqual` with materialized lists on earlier v4; never replace sequence equality with reference-based `Assert.AreEqual`.
+- xUnit `Assert.Equal` on sequences compares elements. Use `Assert.AreSequenceEqual` on MSTest 4.3+ or `CollectionAssert.AreEqual` with materialized lists on earlier v4 for the default-comparer case; earlier custom-comparer cases require the manual mapping in the cheatsheet. Never replace sequence equality with reference-based `Assert.AreEqual`.
+- Numeric precision and tolerance overloads are distinct. Preserve decimal-place rounding through the cheatsheet's precision mapping; do not replace it with an absolute delta.
 - `[Ignore]` and `[Timeout]` are modifiers; keep `[TestMethod]` so the test is discovered.
 - `[DataRow]` values must exactly match parameter types.
 - `TestContext.Current.CancellationToken` maps to an injected MSTest `TestContext.CancellationToken`; never replace it with `CancellationToken.None` or a new `CancellationTokenSource`.
@@ -124,10 +125,10 @@ Do not use `ExecutionScope.MethodLevel` to emulate collection mode. If the sourc
 1. Run tests once with the same platform, filter, and configuration used for the baseline. `dotnet test` builds by default; run a separate build only when needed to isolate a compilation failure.
 2. Compare discovered, passed, failed, and skipped counts.
 3. Investigate every difference before declaring completion:
-   - missing cases -> discovery attributes, `DynamicData`, or `DataRow` literal types
-   - changed exception behavior -> exact-vs-derived assertion mapping
-   - shared-state failures or large duration changes -> fixture scope and parallelization
-   - silently skipped tests -> missing `[TestMethod]` or incorrect runtime-skip conversion
+    - missing cases -> discovery attributes, `DynamicData`, or `DataRow` literal types
+    - changed exception behavior -> exact-vs-derived assertion mapping
+    - shared-state failures or large duration changes -> fixture scope and parallelization
+    - silently skipped tests -> missing `[TestMethod]` or incorrect runtime-skip conversion
 4. Confirm no xUnit package, namespace, attribute, runner configuration, or fixture interface remains in the migrated projects unless explicitly documented for manual follow-up. Shared entries required by unmigrated projects remain valid.
 
 ## Completion Criteria

@@ -834,12 +834,6 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
             error("binding-empty", path, binding["id"])
         for selected_path in selected:
             owners[selected_path].append(binding)
-            if current.symlink_ancestor(selected_path):
-                error(
-                    "canonical-symlink",
-                    selected_path,
-                    "Canonical records require direct files and ancestors",
-                )
         schema_path = binding.get("schema")
         if schema_path and (
             not safe_path(schema_path) or schema_path not in current.entries
