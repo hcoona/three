@@ -939,15 +939,15 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
             if decoded
             else source
         )
-        if not safe_path(path):
+        if path != "." and not safe_path(path):
             error("unsafe-reference", source, destination)
             return None
         if current.symlink_ancestor(path):
             error("symlink-reference", source, destination)
             return None
         if path not in current.entries:
-            if current.directory(path):
-                readme = path.rstrip("/") + "/README.md"
+            if path == "." or current.directory(path):
+                readme = posixpath.normpath(posixpath.join(path, "README.md"))
                 if readme in current.entries:
                     path = readme
                 elif not url.fragment:
