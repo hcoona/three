@@ -27,7 +27,7 @@ from urllib.parse import unquote, urlsplit
 
 import yaml
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import SchemaError
+from jsonschema.exceptions import SchemaError, ValidationError
 from markdown_it import MarkdownIt
 from referencing.exceptions import Unresolvable
 
@@ -254,7 +254,17 @@ class Snapshot:
         }
 
 
-def classify(path: str) -> str:  # noqa: C901, PLR0911 - Ordered independent classification selectors.
+def schema_validator(snapshot: Snapshot, path: str) -> Draft202012Validator:
+    """Load a valid, local-only schema from the selected snapshot."""
+    schema = parse_document(snapshot.read(path), path)
+    Draft202012Validator.check_schema(schema)
+    if re.search(r'"\$(?:ref|dynamicRef)"\s*:\s*"(?!#)', json.dumps(schema)):
+        message = "only local schema references are supported"
+        raise RecordError(message)
+    return Draft202012Validator(schema)
+
+
+def classify(path: str) -> str:  # noqa: C901, PLR0911, PLR0912 - Ordered independent classification selectors.
     """Independent selectors; no catalog entries are used by discovery."""
     parts = PurePosixPath(path).parts
     suffix = PurePosixPath(path).suffix.lower()
@@ -272,6 +282,11 @@ def classify(path: str) -> str:  # noqa: C901, PLR0911 - Ordered independent cla
         return "domain-owned-package-interface"
     if path.startswith("schemas/governance/") or path in SCHEMA_BINDINGS:
         return "canonical-record"
+    if path == (
+        "src/public/lib/asciidoctor-latexmath/docs/research/"
+        "processor-selection-input.txt"
+    ):
+        return "human-source-input"
     if suffix in {".md", ".rst", ".adoc", ".asciidoc"}:
         return "canonical-record"
     if PurePosixPath(path).name.lower().startswith(
@@ -379,9 +394,9 @@ def bindings(
 ) -> list[dict[str, Any]]:
     """Read current bindings or the explicitly accepted legacy base."""
     if catalog.get("schema_version") == CURRENT_CATALOG_VERSION:
-        return catalog.get("bindings", [])
+        return catalog["bindings"]
     if base and catalog.get("schema_version") == LEGACY_CATALOG_VERSION:
-        return catalog.get("families", [])
+        return catalog["families"]
     message = (
         "Candidate family catalog must use schema_version 3; "
         "version 2 is accepted only for the explicit base"
@@ -544,15 +559,9 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
     catalogs: dict[str, Any] = {}
     for path, schema_path in SCHEMA_BINDINGS.items():
         try:
-            schema = parse_document(current.read(schema_path), schema_path)
-            Draft202012Validator.check_schema(schema)
+            validator = schema_validator(current, schema_path)
             instance = parse_document(current.read(path), path)
-            # Bundled schemas use local references; never fetch remote schemas.
-            serialized = json.dumps(schema)
-            if re.search(r'"\$(?:ref|dynamicRef)"\s*:\s*"(?!#)', serialized):
-                message = "only local schema references are supported"
-                raise RecordError(message)  # noqa: TRY301 - Report schema errors uniformly.
-            issues = list(Draft202012Validator(schema).iter_errors(instance))
+            issues = list(validator.iter_errors(instance))
             for issue in issues:
                 error(
                     "schema-invalid",
@@ -581,13 +590,29 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
     controls = catalogs[CONTROL_CATALOG]
     try:
         active_bindings = bindings(family_catalog)
-        base_bindings = bindings(
-            parse_document(accepted.read(FAMILY_CATALOG), FAMILY_CATALOG),
-            base=True,
+        base_catalog = parse_document(
+            accepted.read(FAMILY_CATALOG), FAMILY_CATALOG
         )
-    except (RecordError, ValueError, TypeError, yaml.YAMLError) as exc:
+        schema_validator(accepted, SCHEMA_BINDINGS[FAMILY_CATALOG]).validate(
+            base_catalog
+        )
+        base_bindings = bindings(base_catalog, base=True)
+    except (
+        RecordError,
+        ValueError,
+        TypeError,
+        yaml.YAMLError,
+        SchemaError,
+        ValidationError,
+        Unresolvable,
+    ) as exc:
         error("catalog-version-or-base-invalid", FAMILY_CATALOG, str(exc))
+        report["checks"]["accepted-family-catalog"] = "failed"
+        report["checks"]["dependent-record-checks"] = (
+            "unavailable: accepted catalog/schema validation failed"
+        )
         return report
+    report["checks"]["accepted-family-catalog"] = "executed"
     for path, key in (
         (FAMILY_CATALOG, "families"),
         (FAMILY_CATALOG, "bindings"),
@@ -645,7 +670,11 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
             not safe_path(schema_path) or schema_path not in current.entries
         ):
             error("schema-reference-missing", path, schema_path)
-    canonical = {p for p, c in classes.items() if c == "canonical-record"}
+    canonical = {
+        p
+        for p, c in classes.items()
+        if c in {"canonical-record", "human-source-input"}
+    }
     # Accepted record obligations survive candidate catalog deletion.
     inherited = {
         p
@@ -678,7 +707,7 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
             try:
                 parsed[path] = markdown(current.read(path))
             except (UnicodeError, RecordError) as exc:
-                if path in canonical:
+                if path in canonical or path in owners:
                     error("markdown-input-invalid", path, str(exc))
     edges: dict[str, set[str]] = defaultdict(set)
 
@@ -779,11 +808,7 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
         found: dict[tuple[str, str], list[str]] = defaultdict(list)
         complete = True
         for path in snapshot.entries:
-            if (
-                not path.endswith(".md")
-                or classify(path) != "canonical-record"
-                or snapshot.symlink_ancestor(path)
-            ):
+            if not path.endswith(".md") or snapshot.symlink_ancestor(path):
                 continue
             routes = [
                 b

@@ -175,6 +175,38 @@ def codes(report: dict) -> set[str]:
     return {d["code"] for d in report["diagnostics"]}
 
 
+def write_legacy_catalog(repo: Repository) -> None:
+    """Pair legacy family instances with their version-2 schema."""
+    family = repo.catalog["families"][0]
+    legacy = {
+        "schema_version": 2,
+        "families": [
+            {**family, **{k: v for k, v in b.items() if k != "family"}}
+            for b in repo.catalog["bindings"]
+        ],
+    }
+    schema_path = checker.SCHEMA_BINDINGS[checker.FAMILY_CATALOG]
+    schema = json.loads((ROOT / schema_path).read_text())
+    schema["required"].remove("bindings")
+    schema["properties"].pop("bindings")
+    schema["properties"]["schema_version"]["const"] = 2
+    binding = schema["$defs"].pop("binding")
+    family_schema = schema["$defs"]["family"]
+    family_schema["required"] += [
+        k for k in binding["required"] if k not in {"id", "family"}
+    ]
+    family_schema["properties"].update(
+        {
+            k: v
+            for k, v in binding["properties"].items()
+            if k not in {"family", "purpose"}
+        }
+    )
+    family_schema["allOf"] = binding["allOf"]
+    repo.write(schema_path, json.dumps(schema))
+    repo.write(checker.FAMILY_CATALOG, yaml.safe_dump(legacy))
+
+
 def test_readme_admission_and_deleted_binding(repo: Repository) -> None:
     """Verify readme admission and deleted binding."""
     path = "src/private/app/new-project/README.md"
@@ -420,20 +452,14 @@ def test_hidden_untracked_and_symlink_candidates(repo: Repository) -> None:
 
 def test_v2_base_and_v3_candidate_boundary(repo: Repository) -> None:
     """Verify v2 base and v3 candidate boundary."""
-    original = repo.catalog
-    family = original["families"][0]
-    old = {
-        "schema_version": 2,
-        "families": [
-            {**family, **{k: v for k, v in binding.items() if k != "family"}}
-            for binding in original["bindings"]
-        ],
-    }
-    repo.write(checker.FAMILY_CATALOG, yaml.safe_dump(old))
+    write_legacy_catalog(repo)
+    old = (repo.root / checker.FAMILY_CATALOG).read_text()
     repo.base = repo.commit()
     repo.save()
+    schema_path = checker.SCHEMA_BINDINGS[checker.FAMILY_CATALOG]
+    repo.write(schema_path, (ROOT / schema_path).read_text())
     assert repo.check()["diagnostics"] == []
-    repo.write(checker.FAMILY_CATALOG, yaml.safe_dump(old))
+    repo.write(checker.FAMILY_CATALOG, old)
     assert "schema-invalid" in codes(repo.check())
 
 
@@ -711,3 +737,138 @@ def test_malformed_reference_preserves_cli_report(
     )
     assert report["command"] == arguments
     assert report["candidate"]["commit"] == candidate
+
+
+def test_human_source_retains_independent_classification_and_coverage(
+    repo: Repository,
+) -> None:
+    """Original source input remains visible without a candidate binding."""
+    owner = "src/public/lib/asciidoctor-latexmath"
+    path = owner + "/docs/research/processor-selection-input.txt"
+    repo.write(path, "Original question and assistant discussion.\n")
+    report = repo.check()
+    assert (
+        next(e for e in report["manifest"] if e["path"] == path)[
+            "classification"
+        ]
+        == "human-source-input"
+    )
+    assert any(
+        d["code"] == "record-coverage" and d["path"] == path
+        for d in report["diagnostics"]
+    )
+    repo.bind(path, "text", namespace=owner)
+    repo.save()
+    repo.route_all()
+    assert repo.check()["diagnostics"] == []
+    repo.base = repo.commit()
+    repo.catalog["bindings"].pop()
+    repo.save()
+    assert any(
+        d["code"] == "record-coverage" and d["path"] == path
+        for d in repo.check()["diagnostics"]
+    )
+    assert checker.classify(owner + "/docs/research/other-input.txt") == (
+        "source-or-other-asset"
+    )
+
+
+@pytest.mark.parametrize("scenario", ["new", "candidate", "base", "removal"])
+def test_bound_fixture_markdown_validation(
+    repo: Repository, scenario: str
+) -> None:
+    """Explicit fixture ownership retains parse and identifier obligations."""
+    path = "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md"
+    valid = "# REQ-001: Example contract\n"
+    repo.write(path, valid)
+    repo.bind(path, namespace="src/public/lib/hexo-renderer-asciidoc")
+    repo.save()
+    repo.route_all()
+    if scenario == "base":
+        (repo.root / path).write_bytes(b"# Invalid \xff\n")
+    if scenario != "new":
+        repo.base = repo.commit()
+    if scenario == "base":
+        repo.write(path, valid)
+    elif scenario == "removal":
+        repo.write(path, "# Example without its established identifier\n")
+    else:
+        (repo.root / path).write_bytes(b"# Invalid \xff\n")
+    report = repo.check()
+    expected = {
+        "new": "markdown-input-invalid",
+        "candidate": "markdown-input-invalid",
+        "base": "base-markdown-input-invalid",
+        "removal": "established-identifier-removed",
+    }[scenario]
+    assert [(d["code"], d["path"]) for d in report["diagnostics"]] == [
+        (expected, path)
+    ]
+    assert report["checks"]["requirement-heading-identifiers"].startswith(
+        "executed:" if scenario == "removal" else "unavailable:"
+    )
+    assert (
+        next(e for e in report["manifest"] if e["path"] == path)[
+            "classification"
+        ]
+        == "fixture-product-asset"
+    )
+
+
+def test_unbound_fixture_markdown_remains_asset(repo: Repository) -> None:
+    """Binary example input without record ownership is not a broken record."""
+    path = "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md"
+    repo.write(path, "Placeholder\n")
+    (repo.root / path).write_bytes(b"# Invalid \xff\n")
+    assert repo.check()["diagnostics"] == []
+
+
+@pytest.mark.parametrize("version", [2, 3])
+@pytest.mark.parametrize("mutation", ["missing-list", "missing-field", "root"])
+def test_invalid_base_catalog_preserves_cli_report(
+    repo: Repository, version: int, mutation: str
+) -> None:
+    """The accepted schema prevents malformed bases from losing obligations."""
+    if version == 2:
+        write_legacy_catalog(repo)
+    catalog = yaml.safe_load((repo.root / checker.FAMILY_CATALOG).read_text())
+    key = "families" if version == 2 else "bindings"
+    if mutation == "missing-list":
+        catalog.pop(key)
+    elif mutation == "missing-field":
+        catalog[key][0].pop("state")
+    else:
+        catalog = None
+    repo.write(checker.FAMILY_CATALOG, yaml.safe_dump(catalog))
+    repo.base = repo.commit()
+    repo.save()
+    # Candidate schema changes cannot weaken validation of the accepted base.
+    repo.write(checker.SCHEMA_BINDINGS[checker.FAMILY_CATALOG], "{}\n")
+    candidate = repo.commit()
+    output = repo.root / "report-output.txt"
+    assert (
+        checker.main(
+            [
+                "--repository-root",
+                str(repo.root),
+                "--base",
+                repo.base,
+                "--candidate",
+                candidate,
+                "--output",
+                str(output),
+            ]
+        )
+        == 1
+    )
+    report = json.loads(output.read_text())
+    assert [(d["code"], d["path"]) for d in report["diagnostics"]] == [
+        ("catalog-version-or-base-invalid", checker.FAMILY_CATALOG)
+    ]
+    assert report["checks"]["accepted-family-catalog"] == "failed"
+    assert report["checks"]["dependent-record-checks"].startswith(
+        "unavailable:"
+    )
+    assert "accepted_record_obligations" not in report
+    assert "identifier_comparison" not in report
+    assert report["base"]["commit"] == repo.base
