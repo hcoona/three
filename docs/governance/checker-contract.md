@@ -48,7 +48,9 @@ The report carries the discovered paths and their classifications, snapshot
 identities and file digests, diagnostics, dependency versions and explicit check
 limits. A worktree report describes the bytes read, including intended untracked
 inputs; it is not proof of index equivalence. Commit input reads the selected Git
-tree. An unavailable base is an error, never permission to substitute `HEAD`.
+tree. Worktree regular-file modes follow `core.fileMode`: use the owner execute
+bit when trusted, otherwise retain the index mode (new files default to
+`100644`). Other filesystem permission bits are outside this identity. An unavailable base is an error, never permission to substitute `HEAD`.
 Run again after changing the candidate or any relied-on prerequisite.
 
 The tool is a prospective implementation of this contract. The original #670

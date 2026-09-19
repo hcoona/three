@@ -30,14 +30,14 @@ For detailed mappings and examples, search [`references/mapping-cheatsheet.md`](
 
 ## Fast Path
 
-For a routine project migration, converge in four phases: one batched discovery read/search, one edit pass, one `dotnet test`, and one concise result. Do not:
+For a routine project migration, converge in four phases: one batched discovery read/search, one edit pass, one post-edit `dotnet test`, and one concise result. Establish the source baseline before editing as described below. Do not:
 
 - list a directory and then reread the same files through another tool
 - try `dotnet test --no-restore` unless restore is already known to be current
 - run separate restore, build, and test commands when `dotnet test` is sufficient
 - rerun a passing test command or inspect unchanged files for confirmation
 
-Use an existing CI/test result as the parity baseline when available. Run a new pre-edit baseline only when counts are unavailable and the migration contains data-driven tests, fixtures, skips, custom extensions, shared state, or other behavior whose parity cannot be established from source alone.
+For a full migration, reuse a trustworthy source CI/test result that matches the source revision, platform, filter, and configuration. When no applicable result is available, run the existing test command once before editing, within the authorized test scope, and retain discovery and outcome counts. If a baseline cannot be obtained, report source runtime parity as unverified and do not claim full parity completion. Source inspection alone does not establish runtime outcomes.
 
 ## Workflow
 
@@ -49,7 +49,7 @@ Use an existing CI/test result as the parity baseline when available. Run a new 
     - `xunit.v3` or `xunit.v3.*` -> xUnit v3
 3. Identify VSTest or MTP from the project and repository configuration. Use `platform-detection` only when the platform is ambiguous, and preserve the detected platform.
 4. Record the target frameworks and platform, and check compatibility with the selected MSTest version as described above.
-5. If the Fast Path requires a new baseline, run the existing test command once and record discovered, passed, failed, and skipped counts.
+5. Establish the Fast Path baseline before editing; record the source revision, command/configuration, and discovered, passed, failed, and skipped counts, or explicitly record why runtime parity remains unverified.
 6. Inventory high-risk constructs before editing:
     - `IClassFixture`, `ICollectionFixture`, `CollectionDefinition`, custom `FactAttribute`/`TheoryAttribute`/`DataAttribute`
     - `Assert.Throws`, `ThrowsAny`, `IsType`, `Record.Exception`, event assertions
@@ -138,7 +138,7 @@ Do not use `ExecutionScope.MethodLevel` to emulate collection mode. If the sourc
 - Target framework and test platform stayed unchanged
 - Fixture scope and parallelization decisions are explicit
 - Build succeeds
-- Test discovery and result counts match the baseline
+- Test discovery and result counts match an applicable source baseline; without one, runtime parity remains unverified and full migration completion cannot be claimed
 - Any unsupported custom extension point is called out rather than approximated
 
 ## Follow-up

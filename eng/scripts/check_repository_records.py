@@ -15,6 +15,7 @@ import json
 import os
 import posixpath
 import re
+import stat
 import subprocess
 import sys
 import unicodedata
@@ -132,7 +133,7 @@ class Entry:
 class Snapshot:
     """One immutable Git tree, or an explicitly captured bounded worktree."""
 
-    def __init__(self, root: Path, revision: str | None = None) -> None:  # noqa: C901 - Separate commit and worktree capture branches.
+    def __init__(self, root: Path, revision: str | None = None) -> None:  # noqa: C901, PLR0912 - Bounded commit/worktree and Git file-mode capture branches.
         """Capture the requested Git tree or nonignored working tree."""
         self.root = root.resolve()
         actual_root = Path(
@@ -171,7 +172,22 @@ class Snapshot:
                 "--others",
                 "--exclude-standard",
             ).split(b"\0")
-            tracked = set(git(root, "ls-files", "-z").split(b"\0"))
+            tracked = {}
+            for item in git(root, "ls-files", "--stage", "-z").split(b"\0"):
+                if item:
+                    metadata, name = item.split(b"\t", 1)
+                    tracked[name] = metadata.split()[0].decode()
+            trust_filemode = (
+                git(
+                    root,
+                    "config",
+                    "--bool",
+                    "--default",
+                    "true",
+                    "core.fileMode",
+                ).strip()
+                == b"true"
+            )
             for raw in paths:
                 if not raw:
                     continue
@@ -203,7 +219,19 @@ class Snapshot:
                     data, mode = str(target.readlink()).encode(), "120000"
                 elif target.is_file():
                     # Capture once: validation never rereads a mutable file.
-                    data, mode = target.read_bytes(), "100644"
+                    data = target.read_bytes()
+                    if trust_filemode:
+                        mode = (
+                            "100755"
+                            if target.stat().st_mode & stat.S_IXUSR
+                            else "100644"
+                        )
+                    else:
+                        mode = (
+                            "100755"
+                            if tracked.get(raw) == "100755"
+                            else "100644"
+                        )
                 elif target.is_dir():
                     continue
                 else:

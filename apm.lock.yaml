@@ -4680,7 +4680,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:4bc2c092b518734770c8b697c872bf09a86075290a189102c569965fca6a869a
+  content_hash: sha256:32e0196f8a06c5ccd9aa9b77a90401731a7e166f2f7fbfa9f161f39b6c451c35
 - kind: project-relative
   target: agents
   value: .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md
@@ -4750,5 +4750,5 @@ local_deployed_files:
 - .agents/skills/migrate-xunit-to-mstest/SKILL.md
 - .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md
 local_deployed_file_hashes:
-  .agents/skills/migrate-xunit-to-mstest/SKILL.md: sha256:4bc2c092b518734770c8b697c872bf09a86075290a189102c569965fca6a869a
+  .agents/skills/migrate-xunit-to-mstest/SKILL.md: sha256:32e0196f8a06c5ccd9aa9b77a90401731a7e166f2f7fbfa9f161f39b6c451c35
   .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md: sha256:d1c49125048396aa6e3f33d30aac37eb3d9f7d6a069684282ef9afd0d3fec558

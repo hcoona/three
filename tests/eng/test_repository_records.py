@@ -433,6 +433,77 @@ def test_commit_and_worktree_snapshots(repo: Repository) -> None:
     assert worktree["checks"]["hk-plan-execution"].startswith("unavailable:")
 
 
+@pytest.mark.parametrize("tracked", [False, True])
+def test_worktree_executable_mode_changes_identity(
+    repo: Repository, *, tracked: bool
+) -> None:
+    """A trusted owner-execute change alters identity without changing bytes."""
+    path = "scripts/check.sh"
+    repo.write(path, "#!/bin/sh\nexit 0\n")
+    target = repo.root / path
+    target.chmod(0o644)
+    run_git(repo.root, "config", "core.fileMode", "true")
+    if tracked:
+        repo.commit()
+    before = repo.check()
+    target.chmod(0o744)
+    if not target.stat().st_mode & 0o100:
+        pytest.skip("Filesystem does not support the owner-execute bit")
+    after = repo.check()
+    first = next(e for e in before["manifest"] if e["path"] == path)
+    second = next(e for e in after["manifest"] if e["path"] == path)
+    assert before["diagnostics"] == after["diagnostics"] == []
+    assert (first["mode"], second["mode"]) == ("100644", "100755")
+    assert first["blob"] == second["blob"]
+    assert second["untracked"] is not tracked
+    assert (
+        before["candidate"]["manifest_sha256"]
+        != after["candidate"]["manifest_sha256"]
+    )
+    target.chmod(0o644)
+    assert (
+        repo.check()["candidate"]["manifest_sha256"]
+        == before["candidate"]["manifest_sha256"]
+    )
+
+
+def test_worktree_modes_when_filemode_is_untrusted(repo: Repository) -> None:
+    """Untrusted filesystem bits retain index modes and default new files."""
+    run_git(repo.root, "config", "core.fileMode", "false")
+    plain, executable, untracked = (
+        "scripts/plain.sh",
+        "scripts/executable.sh",
+        "scripts/new.sh",
+    )
+    repo.write(plain, "plain\n")
+    repo.write(executable, "executable\n")
+    repo.commit()
+    run_git(repo.root, "update-index", "--chmod=+x", executable)
+    repo.write(untracked, "untracked\n")
+    (repo.root / plain).chmod(0o744)
+    (repo.root / executable).chmod(0o644)
+    (repo.root / untracked).chmod(0o744)
+    before = repo.check()
+    entries = {e["path"]: e for e in before["manifest"]}
+    assert before["diagnostics"] == []
+    assert {p: entries[p]["mode"] for p in (plain, executable, untracked)} == {
+        plain: "100644",
+        executable: "100755",
+        untracked: "100644",
+    }
+    assert entries[untracked]["untracked"] is True
+    run_git(repo.root, "update-index", "--chmod=-x", executable)
+    after = repo.check()
+    changed = next(e for e in after["manifest"] if e["path"] == executable)
+    assert after["diagnostics"] == []
+    assert changed["mode"] == "100644"
+    assert changed["blob"] == entries[executable]["blob"]
+    assert (
+        before["candidate"]["manifest_sha256"]
+        != after["candidate"]["manifest_sha256"]
+    )
+
+
 def test_hidden_untracked_and_symlink_candidates(repo: Repository) -> None:
     """Verify hidden untracked and symlink candidates."""
     path = "src/private/app/project/.AGENT/docs/hidden.md"
