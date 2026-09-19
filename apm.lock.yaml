@@ -1,6 +1,6 @@
 lockfile_version: '1'
 generated_at: '2026-08-24T19:17:11.263740+00:00'
-apm_version: 0.28.0
+apm_version: 0.29.0
 dependencies:
 - repo_url: _local/enterprise-translation-team
   name: enterprise-translation-team
@@ -733,18 +733,18 @@ dependencies:
   - .agents/skills/migrate-xunit-to-xunit-v3
   - .agents/skills/migrate-xunit-to-xunit-v3/SKILL.md
   - .github/agents/test-migration.agent.md
-  - .agents/skills/migrate-xunit-to-mstest
-  - .agents/skills/migrate-xunit-to-mstest/SKILL.md
-  - .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md
   deployed_file_hashes:
     .agents/skills/migrate-mstest-v1v2-to-v3/SKILL.md: sha256:d6257dadf5c604ff85f52a3ad5835659e740be8392e9bfb937c9de3084cc9035
     .agents/skills/migrate-mstest-v3-to-v4/SKILL.md: sha256:20efaa1256c5aae30ee03e810f7f5ac328c94b20b0853773ee928ce8493ab25c
     .agents/skills/migrate-vstest-to-mtp/SKILL.md: sha256:cfd50c87a6a35623ba88743f9b0da120e5691ff77bb4c90d2565b41d9c30f700
     .agents/skills/migrate-xunit-to-xunit-v3/SKILL.md: sha256:0481be42764236a4bf8aa67d1e8ff75f7000913dbdcb80312b0d612c2ceaeb34
     .github/agents/test-migration.agent.md: sha256:e6ad811429bb33306bc803ba52b87308160d0a8e972e6e0574bb514f1169fc18
-    .agents/skills/migrate-xunit-to-mstest/SKILL.md: sha256:c48c616ba5e1cd541901a1e37cff2e48c4be829f5b0c08c3f309e0776dde8c2e
-    .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md: sha256:dd1365ec40985e48afd38410db9573668f0fa830593d30a9e880ade7a30a8d22
-  content_hash: sha256:d0b2779376e88cc51b51320b4524b3d9a4a2e23124c9dd69f8f841f0a127b79e
+  content_hash: sha256:041f592d96002097911f99183ff9dadb937ed07633c44d75f7be3b123971959f
+  skill_subset:
+  - migrate-mstest-v1v2-to-v3
+  - migrate-mstest-v3-to-v4
+  - migrate-vstest-to-mtp
+  - migrate-xunit-to-xunit-v3
 - repo_url: dotnet/skills
   name: dotnet-upgrade
   host: github.com
@@ -4664,32 +4664,32 @@ deployments:
   active_owner: .
   content_hash: null
 - kind: project-relative
-  target: copilot
+  target: agents
   value: .agents/skills/migrate-xunit-to-mstest
   runtime: null
   scope: project
   owners:
-  - dotnet/skills/plugins/dotnet-test-migration
-  active_owner: dotnet/skills/plugins/dotnet-test-migration
+  - .
+  active_owner: .
   content_hash: null
 - kind: project-relative
-  target: copilot
+  target: agents
   value: .agents/skills/migrate-xunit-to-mstest/SKILL.md
   runtime: null
   scope: project
   owners:
-  - dotnet/skills/plugins/dotnet-test-migration
-  active_owner: dotnet/skills/plugins/dotnet-test-migration
-  content_hash: sha256:c48c616ba5e1cd541901a1e37cff2e48c4be829f5b0c08c3f309e0776dde8c2e
+  - .
+  active_owner: .
+  content_hash: sha256:b021cb9b69acfff3bdda54d73d5d862ef0e504fe71c7166989cff32acfa5aa1c
 - kind: project-relative
-  target: copilot
+  target: agents
   value: .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md
   runtime: null
   scope: project
   owners:
-  - dotnet/skills/plugins/dotnet-test-migration
-  active_owner: dotnet/skills/plugins/dotnet-test-migration
-  content_hash: sha256:dd1365ec40985e48afd38410db9573668f0fa830593d30a9e880ade7a30a8d22
+  - .
+  active_owner: .
+  content_hash: sha256:16700a3be706d6c5a82dbe795bca0728b70d20abdeb30f1dda7444b608eec8ff
 mcp_servers:
 - binlog
 - io.github.upstash/context7
@@ -4745,3 +4745,10 @@ lsp_configs:
     - csharp-ls
     extensionToLanguage:
       .cs: csharp
+local_deployed_files:
+- .agents/skills/migrate-xunit-to-mstest
+- .agents/skills/migrate-xunit-to-mstest/SKILL.md
+- .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md
+local_deployed_file_hashes:
+  .agents/skills/migrate-xunit-to-mstest/SKILL.md: sha256:b021cb9b69acfff3bdda54d73d5d862ef0e504fe71c7166989cff32acfa5aa1c
+  .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md: sha256:16700a3be706d6c5a82dbe795bca0728b70d20abdeb30f1dda7444b608eec8ff

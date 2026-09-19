@@ -142,6 +142,15 @@ families:
     creation_trigger: Shared principles need an agent entry point at the relevant project decision.
     failure_mode: Agents miss shared principles or apply them without the owning project's accepted context.
     review_point: Changes to shared principles, this interface, or its project routing
+  - id: test-migration-guidance-source
+    concern: Canonical guidance preserving test semantics during framework migration
+    producer: Repository engineering authors
+    maintainer: Repository owner
+    consumers:
+      - Agents migrating existing xUnit tests to MSTest
+    creation_trigger: Installed migration guidance requires corrections unavailable in the pinned upstream source.
+    failure_mode: Migration changes collection scheduling or turns diagnostics into failing timeouts.
+    review_point: Changes to migration semantics, upstream source, or generated deployment
   - id: review-procedures
     concern: Canonical independent review procedures
     producer: Repository owner and record authors
@@ -488,6 +497,13 @@ bindings:
     state: current
     carrier: repository-file
     path: .github/skills/engineering-guidance/SKILL.md
+    format: markdown
+  - id: xunit-to-mstest-guidance-source
+    family: test-migration-guidance-source
+    namespace: repository
+    state: current
+    carrier: repository-files
+    path: .apm/skills/migrate-xunit-to-mstest/**/*.md
     format: markdown
   - id: record-system-review-source
     family: review-procedures

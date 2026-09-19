@@ -1141,3 +1141,81 @@ def test_generated_interface_requires_exact_source_mapping(
         )
         if mutation in {"missing", "malformed"}:
             assert "generated-source-map-invalid" in codes(report)
+
+
+@pytest.mark.parametrize("empty_argument", ["base", "candidate"])
+def test_empty_explicit_revision_is_not_replaced(
+    repo: Repository, empty_argument: str
+) -> None:
+    """Explicit empty revisions fail instead of adopting the current commit."""
+    output = repo.root / "report-output.txt"
+    arguments = ["--repository-root", str(repo.root), "--output", str(output)]
+    arguments += (
+        ["--base", "", "--worktree"]
+        if empty_argument == "base"
+        else ["--base", repo.base, "--candidate", ""]
+    )
+    assert checker.main(arguments) == 1
+    report = json.loads(output.read_text())
+    assert codes(report) == {"snapshot-unavailable"}
+    assert report["checks"] == {"snapshot": "failed"}
+    assert report["candidate"] is None
+    assert report["command"] == arguments
+    if empty_argument == "base":
+        assert report["base"] is None
+    else:
+        assert report["base"]["commit"] == repo.base
+
+
+@pytest.mark.parametrize(
+    "mutation", [None, "unlisted", "missing-source", "wrong-owner", "malformed"]
+)
+def test_native_root_skill_requires_exact_local_source(
+    repo: Repository, mutation: str | None
+) -> None:
+    """Native root deployments require explicit membership and a real source."""
+    path = ".agents/skills/example/SKILL.md"
+    source = ".apm/skills/example/SKILL.md"
+    repo.write(path, "# Generated skill\n")
+    if mutation != "missing-source":
+        repo.write(source, "# Canonical skill\n")
+        repo.bind(source)
+        repo.save()
+        repo.route_all()
+    lock = {
+        "dependencies": [],
+        "local_deployed_files": [path],
+        "deployments": [
+            {
+                "kind": "project-relative",
+                "value": path,
+                "owners": ["."],
+                "active_owner": ".",
+            }
+        ],
+    }
+    if mutation == "unlisted":
+        lock["local_deployed_files"] = [".agents/skills/example"]
+    elif mutation == "wrong-owner":
+        lock["deployments"][0]["active_owner"] = "unknown/source"
+    elif mutation == "malformed":
+        lock["local_deployed_files"] = 42
+    repo.write("apm.lock.yaml", yaml.safe_dump(lock))
+    report = repo.check()
+    entry = next(e for e in report["manifest"] if e["path"] == path)
+    if mutation is None:
+        assert report["diagnostics"] == []
+        assert entry["classification"] == "generated-interface"
+        assert entry["canonical_source"] == {
+            "kind": "local-file",
+            "path": source,
+        }
+    else:
+        assert entry["classification"] == "unresolved"
+        assert "canonical_source" not in entry
+        assert any(
+            d["code"] == "classification-unresolved" and d["path"] == path
+            for d in report["diagnostics"]
+        )
+        if mutation == "malformed":
+            assert "generated-source-map-invalid" in codes(report)

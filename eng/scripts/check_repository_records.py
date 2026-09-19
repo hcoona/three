@@ -148,7 +148,7 @@ class Snapshot:
                 root,
                 "rev-parse",
                 "--verify",
-                f"{revision or 'HEAD'}^{{commit}}",
+                f"{'HEAD' if revision is None else revision}^{{commit}}",
             )
             .decode()
             .strip()
@@ -319,7 +319,7 @@ def input_structure(path: str, catalog: Any, *, base: bool = False) -> None:  # 
     Draft202012Validator(shape).validate(catalog)
 
 
-def generated_sources(snapshot: Snapshot) -> dict[str, dict[str, str]]:  # noqa: C901 - Validate exact deployment and source boundaries.
+def generated_sources(snapshot: Snapshot) -> dict[str, dict[str, str]]:  # noqa: C901, PLR0912 - Validate native root, local and remote source boundaries.
     """Resolve exact APM deployments to their locked source package."""
     path = "apm.lock.yaml"
     lock = parse_document(snapshot.read(path), path)
@@ -330,6 +330,7 @@ def generated_sources(snapshot: Snapshot) -> dict[str, dict[str, str]]:  # noqa:
             "type": "object",
             "required": ["dependencies", "deployments"],
             "properties": {
+                "local_deployed_files": strings,
                 "dependencies": {
                     "type": "array",
                     "items": {
@@ -376,6 +377,16 @@ def generated_sources(snapshot: Snapshot) -> dict[str, dict[str, str]]:  # noqa:
             continue
         entry = entries[0]
         owner = entry["active_owner"]
+        if owner == "." and owner in entry["owners"]:
+            source_path = path.replace(".agents/skills/", ".apm/skills/", 1)
+            if (
+                path.startswith(".agents/skills/")
+                and path in lock.get("local_deployed_files", [])
+                and source_path in snapshot.entries
+                and not snapshot.symlink_ancestor(source_path)
+            ):
+                result[path] = {"kind": "local-file", "path": source_path}
+            continue
         sources = dependencies[owner]
         if owner not in entry["owners"] or len(sources) != 1:
             continue
