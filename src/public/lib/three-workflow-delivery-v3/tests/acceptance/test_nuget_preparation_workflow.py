@@ -188,14 +188,15 @@ def test_fixture_shell_preserves_inputs_and_command_failure(
         if step["name"] == "Prepare offline original fixture pair"
     )
     environment = {"GITHUB_WORKSPACE": str(tmp_path / "workspace with spaces")}
-    for role in ("REQUEST", "HELPER", "SETUP"):
+    for artifact_id, role in enumerate(("REQUEST", "HELPER", "SETUP"), 101):
         environment.update(
             {
                 f"WDV3_{role}_NAME": role.lower() + ".zip",
-                f"WDV3_{role}_ID": "123",
+                f"WDV3_{role}_ID": str(artifact_id),
                 f"WDV3_{role}_TRANSPORT_DIGEST": "sha256:" + "a" * 64,
                 f"WDV3_{role}_URL": (
-                    "https://github.com/hcoona/three/actions/runs/71/artifacts/123"
+                    "https://github.com/hcoona/three/actions/runs/71/artifacts/"
+                    f"{artifact_id}"
                 ),
             }
         )
@@ -220,7 +221,7 @@ def test_fixture_shell_preserves_inputs_and_command_failure(
             + f"/.wdv3/input/{role}/{role}.zip"
         )
         index = arguments.index("--" + role + "-id")
-        assert arguments[index + 1] == "123"
+        assert arguments[index + 1] == environment[f"WDV3_{role.upper()}_ID"]
     assert arguments[arguments.index("--output") + 1].endswith(
         "/.wdv3/prepare.zip"
     )
