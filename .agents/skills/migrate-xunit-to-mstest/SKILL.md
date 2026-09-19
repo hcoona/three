@@ -24,7 +24,7 @@ Do not combine this framework conversion with a target-framework upgrade or VSTe
 
 - **Full migration request:** inspect the project, make the edits, build, and run tests. Do not stop after giving a plan.
 - **Focused compile error or API question:** inspect the relevant code and apply only that mapping. Do not narrate the entire workflow.
-- **Unsupported target framework:** stop before changing packages. MSTest v4 requires .NET 8+ or .NET Framework 4.6.2+ for test applications; offer a separately approved TFM upgrade or MSTest v3 as the intermediate target.
+- **Target compatibility:** check the detected target frameworks and platform against the selected MSTest release's supported platforms before changing packages ([MSTest 4.1.0 list](https://github.com/microsoft/testfx/blob/v4.1.0/src/Adapter/MSTest.TestAdapter/MSTest.TestAdapter.csproj#L29-L34); use the matching release for another version). Stop only for an unsupported target; offer a separately approved TFM upgrade or a compatible earlier MSTest version.
 
 For detailed mappings and examples, search [`references/mapping-cheatsheet.md`](references/mapping-cheatsheet.md) for constructs actually present in the project and read only the matching sections. Do not load or reproduce the whole reference.
 
@@ -48,7 +48,7 @@ Use an existing CI/test result as the parity baseline when available. Run a new 
    - `xunit` 2.x and related packages -> xUnit v2
    - `xunit.v3` or `xunit.v3.*` -> xUnit v3
 3. Identify VSTest or MTP from the project and repository configuration. Use `platform-detection` only when the platform is ambiguous, and preserve the detected platform.
-4. Record the target frameworks and stop if MSTest v4 does not support them.
+4. Record the target frameworks and platform, and check compatibility with the selected MSTest version as described above.
 5. If the Fast Path requires a new baseline, run the existing test command once and record discovered, passed, failed, and skipped counts.
 6. Inventory high-risk constructs before editing:
    - `IClassFixture`, `ICollectionFixture`, `CollectionDefinition`, custom `FactAttribute`/`TheoryAttribute`/`DataAttribute`
@@ -152,8 +152,8 @@ Run `migrate-vstest-to-mtp` separately if the user also wants MTP. Use `writing-
 
 Adapted from `dotnet/skills` at `7d5106946f95cc16948e372990a090b56d98a90b`,
 `plugins/dotnet-test-migration/skills/migrate-xunit-to-mstest`.
-This repository maintains collection serialization, assembly scheduling, and
-long-running diagnostic corrections in this canonical skill and its reference.
+This repository maintains migration compatibility and execution-semantics
+corrections in this canonical skill and its reference.
 APM deploys this root skill after dependencies; edit this source and regenerate
 its installed interface rather than editing `.agents/skills/`.
 
