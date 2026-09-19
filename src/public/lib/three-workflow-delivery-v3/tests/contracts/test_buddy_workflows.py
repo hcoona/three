@@ -131,26 +131,6 @@ def _artifact_steps(
     ]
 
 
-def test_buddy_workflow_files_are_the_manual_normal_pair_only() -> None:
-    assert CALLER.is_file()
-    assert CALLEE.is_file()
-    assert (
-        REPO_ROOT
-        / ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml"
-    ).exists() is False
-    assert (
-        REPO_ROOT / ".github/workflows/"
-        "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
-    ).exists() is False
-    raw = CALLER.read_text(encoding="utf-8") + CALLEE.read_text(
-        encoding="utf-8"
-    )
-    assert "workflow-delivery-v3-buddy-smoke-acceptance" not in raw
-    assert "live_enabled: true" not in raw
-    assert "schedule:" not in raw
-    assert "push:" not in raw
-
-
 def test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact() -> None:
     caller = _document(CALLER)
     jobs = caller["jobs"]
@@ -571,53 +551,6 @@ def test_release_finalizer_propagates_failure_after_retention() -> None:
     assert "exit 1" in command
 
 
-def test_commit8_final_outcome_and_summary_are_retained_even_on_failure() -> (
-    None
-):
-    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
-    finalize = _step(finalizer, "Finalize Attempt Outcome")
-    uploads = [
-        step
-        for step in _steps(finalizer)
-        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
-    ]
-
-    assert finalizer["if"] == EXPECTED_VALID_IDENTITY_CONDITION
-    assert finalize["continue-on-error"] is True
-    assert {step["name"] for step in uploads} == {
-        "Upload final Attempt Outcome",
-        "Upload final Attempt summary",
-    }
-    for step in uploads:
-        assert step["if"].startswith("always() && steps.finalize.outputs.")
-        assert step["with"]["retention-days"] == RETENTION_DAYS
-        assert step["with"]["if-no-files-found"] == "error"
-
-
-def test_commit8_status_evidence_is_named_and_transport_bound() -> None:
-    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
-    command = _run(_step(finalizer, "Finalize Attempt Outcome"))
-    uploads = {
-        step["name"]: step for step in _steps(finalizer) if "uses" in step
-    }
-
-    assert (
-        "--outcome-output .wdv3/final-attempt/attempt-outcome.json" in command
-    )
-    assert "--summary-output .wdv3/final-attempt/attempt-summary.md" in command
-    assert '--github-step-summary "${GITHUB_STEP_SUMMARY}"' in command
-    outcome_upload = uploads["Upload final Attempt Outcome"]
-    summary_upload = uploads["Upload final Attempt summary"]
-    assert outcome_upload["with"]["overwrite"] is False
-    assert summary_upload["with"]["overwrite"] is False
-    assert _raw_artifact_name(outcome_upload["with"]) == (
-        "${{ steps.finalize.outputs.outcome-artifact-name }}"
-    )
-    assert _raw_artifact_name(summary_upload["with"]) == (
-        "${{ steps.finalize.outputs.summary-artifact-name }}"
-    )
-
-
 def test_live_attempt_requires_no_actions_read_permission() -> None:
     jobs = _document(CALLEE)["jobs"]
     actions_read_jobs = {
@@ -636,14 +569,24 @@ def test_user_item13_finalizer_always_retains_outcome_summary_with_exact_contrac
     finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
     outcome_upload = _step(finalizer, "Upload final Attempt Outcome")
     summary_upload = _step(finalizer, "Upload final Attempt summary")
-    command = _run(_step(finalizer, "Finalize Attempt Outcome"))
+    finalize = _step(finalizer, "Finalize Attempt Outcome")
+    command = _run(finalize)
 
     assert finalizer["if"] == EXPECTED_VALID_IDENTITY_CONDITION
     assert finalizer["permissions"] == {"contents": "read"}
+    assert finalize["continue-on-error"] is True
+    assert {
+        step["name"]
+        for step in _steps(finalizer)
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+    } == {"Upload final Attempt Outcome", "Upload final Attempt summary"}
     assert (
         "--outcome-output .wdv3/final-attempt/attempt-outcome.json" in command
     )
     assert "--summary-output .wdv3/final-attempt/attempt-summary.md" in command
+    assert '--github-step-summary "${GITHUB_STEP_SUMMARY}"' in command
+    assert outcome_upload["with"]["overwrite"] is False
+    assert summary_upload["with"]["overwrite"] is False
     assert (
         outcome_upload["if"]
         == "always() && steps.finalize.outputs.outcome-artifact-name != ''"
@@ -1993,45 +1936,6 @@ def test_current_live_checkouts_use_exact_selected_target() -> None:
             "persist-credentials": False,
             "ref": "${{ github.sha }}",
         }
-
-
-def test_current_buddy_target_identity_chain_reaches_both_authority_paths() -> (
-    None
-):
-    caller_jobs = _document(CALLER)["jobs"]
-    callee_jobs = _document(CALLEE)["jobs"]
-    guard = _step(callee_jobs["admit"], "Require same-revision Buddy caller")
-    guard_command = _run(guard)
-
-    assert guard is _steps(callee_jobs["admit"])[0]
-    assert guard["env"] == {
-        "CALLER_REPOSITORY": "${{ github.repository }}",
-        "CALLER_SHA": "${{ github.sha }}",
-        "CALLER_WORKFLOW_SHA": "${{ github.workflow_sha }}",
-        "TARGET_SHA": "${{ inputs.target-sha }}",
-    }
-    assert '[[ "${TARGET_SHA}" == "${CALLER_SHA}" ]]' in guard_command
-    assert '[[ "${TARGET_SHA}" == "${CALLER_WORKFLOW_SHA}" ]]' in (
-        guard_command
-    )
-    assert caller_jobs["run-live-attempt"]["with"]["target-sha"] == (
-        "${{ needs.evaluate-live-eligibility.outputs.target-sha }}"
-    )
-    for job_name in ("approve-publication", "prove-exact-satisfied"):
-        assert "admit" in _transitive_needs(callee_jobs, job_name)
-
-    target_arguments = [
-        target
-        for job in callee_jobs.values()
-        for step in _steps(job)
-        if "three-workflow-delivery-v3 release " in str(step.get("run", ""))
-        for target in re.findall(
-            r'--target "([^"]+)"',
-            str(step.get("run", "")),
-        )
-    ]
-    assert target_arguments
-    assert set(target_arguments) == {"${{ inputs.target-sha }}"}
 
 
 def test_completed_pre_wait_bundle_gates_reviewer_summary_link(

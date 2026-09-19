@@ -255,11 +255,6 @@ def test_legacy_buddy_entry_files_are_exactly_retired() -> None:
     assert (WORKFLOWS / "ci.yml").is_file()
 
 
-def test_real_workflow_topology_has_no_legacy_buddy_route() -> None:
-    """Reject every dispatch-reachable route into the retired Buddy channel."""
-    assert _legacy_buddy_routes(WORKFLOWS) == ()
-
-
 @pytest.mark.parametrize(
     ("documents", "expected"),
     [
@@ -570,60 +565,3 @@ def test_temporary_acceptance_workflows_are_retired() -> None:
 
     assert temporary_workflows == ()
     assert _legacy_buddy_routes(WORKFLOWS) == ()
-
-
-@pytest.mark.parametrize(
-    "basename",
-    [
-        pytest.param(
-            "workflow-delivery-v3-buddy-smoke-acceptance.yml",
-            id="original",
-        ),
-        pytest.param(
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-1.yml",
-            id="retry-1",
-        ),
-        pytest.param(
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml",
-            id="retry-2",
-        ),
-        pytest.param(
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml",
-            id="retry-3",
-        ),
-        pytest.param(
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml",
-            id="retry-4",
-        ),
-        pytest.param(
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml",
-            id="retry-5",
-        ),
-        pytest.param(
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-6.yml",
-            id="future-retry",
-        ),
-        pytest.param(
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yaml",
-            id="exact-stem-wrong-yaml-suffix",
-        ),
-        pytest.param(
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-5-copy.yml",
-            id="suffix-lookalike",
-        ),
-        pytest.param(
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-05.yml",
-            id="numeric-lookalike",
-        ),
-        pytest.param("buddy.yml", id="legacy-buddy"),
-        pytest.param("release-buddy.yml", id="legacy-release-buddy"),
-        pytest.param("legacy-buddy.yml", id="renamed-legacy-buddy"),
-    ],
-)
-def test_legacy_buddy_retirement_rejects_original_prior_future_and_lookalikes(
-    basename: str,
-) -> None:
-    """Keep every retired Buddy and acceptance workflow identity absent."""
-    candidate = WORKFLOWS / basename
-
-    assert not candidate.exists()

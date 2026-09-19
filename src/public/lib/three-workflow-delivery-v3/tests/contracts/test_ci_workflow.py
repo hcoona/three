@@ -945,6 +945,11 @@ def test_finalizer_persists_canonical_decision_and_summary_before_guard() -> (
             < steps.index(propagation)
         )
     assert steps.index(propagation) < steps.index(guard)
+    assert steps.index(guard) == len(steps) - 1
+    assert guard["if"] == (
+        "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
+        "ci-slice-decision.json', github.run_id, github.run_attempt)) == ''"
+    )
     assert finalize["id"] == "finalize"
     assert not finalize.get("continue-on-error", False)
     assert {"BASE_SHA", "HEAD_SHA", "TESTED_MERGE_SHA"}.isdisjoint(
@@ -990,22 +995,6 @@ def test_finalizer_persists_canonical_decision_and_summary_before_guard() -> (
     assert propagation["env"] == {
         "FINALIZER_EXIT": "${{ steps.finalize.outputs.finalizer-exit }}"
     }
-
-
-def test_decision_absence_always_writes_noncanonical_contract_summary() -> None:
-    """Explain every pre-Decision failure without fabricating a Decision."""
-    job = _document()["jobs"]["required-finalizer"]
-    step = next(
-        item
-        for item in _steps(job)
-        if item["name"]
-        == "Report noncanonical contract failure without a Decision"
-    )
-    assert _steps(job).index(step) == len(_steps(job)) - 1
-    assert step["if"] == (
-        "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
-        "ci-slice-decision.json', github.run_id, github.run_attempt)) == ''"
-    )
 
 
 def test_workflow_has_no_transport_credentials_or_commit6_authority() -> None:
