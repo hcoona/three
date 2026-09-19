@@ -8,47 +8,53 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Analyze Remaining Workflow Delivery v3 Test Responsibilities
+### Repair Workflow Delivery v3 Failure Owners and Consolidate Their Callers
 
-- **Work carrier:** [Issue #738](https://github.com/hcoona/three/issues/738) and its delivery and review carriers.
-- **Authorized outcome:** Substantively assess the test functions and cases
-  left inventory-only by the independently reviewed
-  [#732 report](https://github.com/hcoona/three/issues/732#issuecomment-5740359945), reconciled
-  against accepted current source after
-  [#735](https://github.com/hcoona/three/issues/735) and
-  [#737](https://github.com/hcoona/three/pull/737). Produce a reviewed, prioritized
-  keep/consolidate/remove plan with exact candidate identities, credible fault
-  models, sufficient surviving owners and explicit residual uncertainty.
-  Approximate count reductions are diagnostic evidence, never quotas.
+- **Work carrier:** [Issue #740](https://github.com/hcoona/three/issues/740) and its delivery and review carriers.
+- **Authorized outcome:** Implement the finite first slice selected from the
+  independently reviewed [#738 analysis](https://github.com/hcoona/three/issues/738):
+  `authoring-workflow-review.json:AW-01/02/03`,
+  `exchange-proof-review.json:ER-01` and
+  `commit10-review.json:CP-01` through `CP-14`, with the five count-neutral
+  corrections `AW-CN-01/02`, `ER-CN01`, `CP-CN01` and the separately adopted
+  `NE-CN01`. Use the exact candidate and owner identities retained in the work
+  carrier. Preserve independent failure, caller and real-integration boundaries;
+  conditional counts are not quotas or delivered gains.
 - **Prerequisites and governing inputs:** Follow the current
   [v3 handoff](../src/public/lib/three-workflow-delivery-v3/docs/agent-handoff.md),
   [requirements](../src/public/lib/three-workflow-delivery-v3/docs/requirements.md),
-  relevant design and validation authorities, and
+  relevant design and validation authorities and
   [shared testing principles](engineering/engineering-principles.md#testing).
-  Use #732's assessed-function manifest and accepted #735 implementation to
-  distinguish prior assessment from newly inspected scope. Refresh dependent
-  evidence when current source or a relied-on authority changes.
-- **Validation and review:** Reconcile exact collected-node and function
-  inventories without double counting. Inspect ordinary scenarios and CLI
-  orchestration as well as matrices; establish layers from assertions and
-  dependency responsibilities. Name assertion transfers, shared-rule owners
-  and required consumer/integration coverage for every candidate. Independently
-  review each concern and the combined plan, and independently dispose material
-  findings. State substantive versus inventory-only coverage and residual
-  assumptions; do not extrapolate to unassessed cases or book conditional gains.
-  Follow the [agent-execution guidance](engineering/agent-execution.md).
-- **Scope and effects:** Permit source and retained-evidence inspection,
-  ordinary pytest collection under the accepted #721 lifecycle, task-owned
-  temporary roots, external local analysis scripts and normal Git/Issue/PR
-  delivery. Preserve failed/interrupted evidence. Do not execute test bodies
-  solely for inventory. Production, tests, fixtures, workflows/HK, resource
-  limits and historical/native evidence remain unchanged. Conditional NBGV
-  and shared-secrecy redesigns from #732, other v3 development, native probes,
-  dispatch/rerun, publication, administrative or authentication/access changes,
-  process termination and host-wide cleanup are excluded. Existing npm/NuGet
-  gates and spent-operation boundaries remain in force.
-- **Completion boundary:** Retain the reviewed plan, scope and next finite
-  implementation proposal in the Issue and delivery carriers, then delete or
-  replace this entry through a reviewed Wave change. A partial assessment must
-  identify its remainder. Analysis completion grants no implementation or native
-  work; those require their own accepted bounded authorization.
+  Bind the reviewed #738 report, exact-byte recovery evidence, finite selection,
+  independent dispositions and all applicable assertion transfers and residuals.
+  Refresh dependent evidence when source or relied-on authorities change.
+- **Validation and review:** Repair intended negative boundaries first;
+  `AW-CN-01` precedes `AW-02/03`. Transfer every unique assertion atomically,
+  including `CP-F01`'s original imported scenario/coordinate/TAGS loop before
+  `CP-12` deletion. Preserve `CP-04`'s retained unknown-post owner as `CP-01`'s
+  alias target. Reconcile exact pre/post node sets and all retained owners,
+  reporting renames separately. Run affected owners and caller/integration
+  boundaries together, then required existing full v3 and repository checks.
+  Independently review implementation and combined domain/evidence boundaries;
+  independently dispose material findings. Failed assumptions retain the test
+  and require refreshed analysis, not compensating deletions. Follow the
+  [agent-execution guidance](engineering/agent-execution.md).
+- **Scope and effects:** Permit only the specified tests and their existing
+  test-only helpers/fixtures, ordinary existing validation and dependency/tool
+  operations, task-owned evidence and normal Git/Issue/PR delivery. Preserve
+  #721's temporary-resource ownership, bounded lifecycle and failed/interrupted
+  evidence. Existing isolated loopback publication and owned-process lifetime
+  tests remain ordinary validation; they confer no external publication or
+  service authority. Stop on resource exhaustion or an unreaped task session;
+  retain diagnostics and resolve ownership before further execution. Production,
+  workflow/HK configuration, resource limits and historical/native evidence stay
+  unchanged. Other #738 candidates, NBGV/shared-secrecy redesigns, other v3
+  development, native service probes, dispatch/rerun, external publication,
+  administrative or authentication/access changes, host-wide cleanup and
+  termination outside existing test-owned lifecycles are excluded. Existing
+  npm/NuGet gates and spent-operation boundaries remain in force.
+- **Completion boundary:** Retain actual node deltas, validation and cleanup
+  observations, independent reviews and disposed findings in the work carrier.
+  End or replace this finite grant through a reviewed Wave change after
+  implementation and evidence are accepted. Other analysis proposals require
+  their own accepted finite authorization.
