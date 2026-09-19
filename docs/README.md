@@ -101,3 +101,8 @@ product requirements. Workspace membership remains in the manifests linked
 from [shared setup](engineering/workspaces.md); this portal is not a second
 project registry. Fixtures, examples, licenses, captures and runtime skill assets
 retain their actual consumers and provenance even when they are not policy.
+
+## Test Migration Guidance
+
+The [xUnit-to-MSTest skill](../.apm/skills/migrate-xunit-to-mstest/SKILL.md)
+preserves fixture and scheduling semantics during requested framework migrations.

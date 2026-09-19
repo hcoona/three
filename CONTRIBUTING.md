@@ -44,8 +44,15 @@ This selects staged files by default; explicit files or refs select a different
 scope. Record the snapshot and scope actually checked. CI uses base/head refs;
 local pre-commit uses HK's configured stashing. Do not claim staged/worktree
 equivalence without evidence. Existing profile and path exclusions still apply.
-The [checker contract](docs/governance/checker-contract.md) defines record
-validation interfaces; no new general checker is installed.
+For record changes, run `mise run records:check -- --base <accepted-commit>
+--worktree --output ../three-record-review.json` and retain its report with the reviewed
+snapshot. Use `--candidate <commit>` instead of `--worktree` for an immutable
+candidate. The [checker contract](docs/governance/checker-contract.md) defines
+the advisory tool's scope, limitations and separate contextual review. Run
+`mise run records:test` when changing that implementation. Preserve the report
+bytes or a retrievable artifact, not only a temporary path or digest.
+Write the report outside the worktree so it does not become an input to the
+next validation run.
 
 ## Pull Requests and Review
 
