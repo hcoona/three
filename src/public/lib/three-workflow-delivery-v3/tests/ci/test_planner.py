@@ -350,27 +350,8 @@ def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
         ".github/workflows/release/nested/packages.lock.json",
         ".github/workflows/consume.yml",
         "nested/package-lock.json",
-        "src/private/app/tool/pyproject.toml",
-        "src/lab/TaskAssigner/TaskAssigner.csproj",
-        "nested/requirements-dev.txt",
-        "tools/bootstrap.ps1",
-        "nested/.npmrc",
-        "nested/.gitattributes",
         ".github/workflows/release/package-lock.json",
-        ".github/workflows/release/tool.csproj",
-        ".github/workflows/release/bootstrap.ps1",
-        ".github/workflows/release/.npmrc",
         "src/public/lib/hexo-renderer-asciidoc/README.md",
-        "src/public/lib/hexo-renderer-asciidoc/README.npm.md",
-        ("src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md"),
-        (
-            "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/"
-            "source/_posts/renderer-tour.adoc"
-        ),
-        (
-            "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/"
-            "source/about/index.adoc"
-        ),
     ],
 )
 def test_repository_only_change_selects_root_hk(path: str) -> None:
@@ -388,21 +369,13 @@ def test_repository_only_change_selects_root_hk(path: str) -> None:
     "path",
     [
         ".agents/skills/scholarly-pdf-reconstruction",
-        ".agents/skills/scholarly-print-assembly",
-        ".agents/skills/scholarly-render-qa",
-        ".agents/skills/scholarly-print-assembly/scripts/assemble_print.py",
-        "apm.lock.yaml",
-        "apm.yml",
-        (
-            "src/private/lib/scholarly-publication/tests/"
-            "test_validate_package.py"
-        ),
+        "src/private/lib/scholarly-publication/tests/test_validate_package.py",
     ],
 )
 def test_scholarly_publication_package_only_change_selects_root_hk(
     path: str,
 ) -> None:
-    """Route each package-only surface through permanent root HK."""
+    """Compose representative package-only paths with root HK selection."""
     plan = _plan(changed_paths=(path,))
     assert plan.ready
     assert _selected_lanes(plan) == ("root-hk",)

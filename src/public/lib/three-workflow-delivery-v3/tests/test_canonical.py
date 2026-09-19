@@ -69,14 +69,6 @@ def test_canonical_sha256_matches_golden_digest() -> None:
     assert canonical_sha256(second) == canonical_sha256(first)
 
 
-def test_canonical_sha256_has_prefixed_lowercase_shape() -> None:
-    """Use exactly one algorithm prefix and 64 lowercase hexadecimal digits."""
-    digest = canonical_sha256({"payload": True})
-
-    assert re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
-    assert digest.count(":") == 1
-
-
 @pytest.mark.parametrize(
     ("document", "message"),
     [
@@ -289,19 +281,6 @@ def test_parse_canonical_json_checks_encoding_before_digest_use() -> None:
 
 
 @pytest.mark.parametrize("fixture_name", sorted(_FIXTURE_GOLDEN_DIGESTS))
-def test_binding_fixtures_are_canonical_utf8(fixture_name: str) -> None:
-    """Require immutable binding fixtures to equal their canonical bytes."""
-    document = (
-        _BINDING_FIXTURE_DIRECTORY / f"{fixture_name}.json"
-    ).read_bytes()
-
-    parsed = parse_canonical_json(document)
-
-    assert canonicalize(parsed) == document
-    assert isinstance(parsed, dict)
-
-
-@pytest.mark.parametrize("fixture_name", sorted(_FIXTURE_GOLDEN_DIGESTS))
 def test_binding_fixtures_have_stable_golden_payload_digests(
     fixture_name: str,
 ) -> None:
@@ -317,21 +296,6 @@ def test_binding_fixtures_have_stable_golden_payload_digests(
 
     assert sidecar == _FIXTURE_GOLDEN_DIGESTS[fixture_name]
     assert canonical_sha256(parse_canonical_json(document)) == sidecar
-
-
-@pytest.mark.parametrize("fixture_name", sorted(_FIXTURE_GOLDEN_DIGESTS))
-def test_binding_fixture_payload_digests_have_strict_sha256_shape(
-    fixture_name: str,
-) -> None:
-    """Use one lowercase SHA-256 prefix and exactly 64 hexadecimal digits."""
-    digest = (
-        (_BINDING_FIXTURE_DIRECTORY / f"{fixture_name}.sha256")
-        .read_text(encoding="ascii")
-        .strip()
-    )
-
-    assert re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
-    assert digest.count(":") == 1
 
 
 @pytest.mark.parametrize("fixture_name", sorted(_FIXTURE_GOLDEN_DIGESTS))

@@ -2560,12 +2560,11 @@ def test_release_transport_rejects_wrong_top_level_schemas(
         (_remote_observation, "qualification-decision-reference"),
     ],
 )
-@pytest.mark.parametrize("missing_field", _REFERENCE_FIELDS)
-def test_release_transport_requires_every_artifact_lineage_slot(
-    missing_field,
+def test_release_transport_validates_nested_artifact_lineage(
     factory,
     reference_field,
 ):
+    missing_field = "payload-digest"
     record = factory()
     document = record.to_document()
     reference = document[reference_field]

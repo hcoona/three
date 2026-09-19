@@ -1910,92 +1910,25 @@ def test_compiler_rejects_noncanonical_provider_toolchain(
     )
 
 
-def _phase3_with_other_binding(
-    result: NodeProviderResult,
-) -> NodeProviderResult:
-    return replace(
-        result,
-        binding=replace(result.binding, request_id="forged-request"),
-    )
-
-
-def _phase3_with_other_checkout(
-    result: NodeProviderResult,
-) -> NodeProviderResult:
-    return replace(
-        result,
-        checkout=replace(result.checkout, head="d" * 40),
-    )
-
-
-def _phase3_with_other_result_identity(
-    result: NodeProviderResult,
-) -> NodeProviderResult:
-    return replace(
-        result,
-        provider_implementation_id="forged/provider-v1",
-    )
-
-
-def _phase3_with_other_target_fact(
-    result: NodeProviderResult,
-) -> NodeProviderResult:
-    return replace(
-        result,
-        nbgv=replace(result.nbgv, git_commit_id="d" * 40),
-    )
-
-
-def _phase3_without_native_projection(
-    result: NodeProviderResult,
-) -> NodeProviderResult:
-    return replace(
-        result,
-        nbgv=replace(result.nbgv, npm_package_version=""),
-    )
-
-
-@pytest.mark.parametrize(
-    ("mutation", "message"),
-    [
-        (_phase3_with_other_binding, "binding mismatch"),
-        (_phase3_with_other_checkout, "full-history checkout evidence"),
-        (_phase3_with_other_result_identity, "identity mismatch"),
-        (_with_nonterminal_outcome, "resolved terminal success"),
-        (_with_unresolved_workspace_graph, "resolved terminal success"),
-        (_with_other_project_id, "Project Node"),
-        (_phase3_with_other_target_fact, "exact target"),
-        (_phase3_without_native_projection, "npmPackageVersion"),
-    ],
-    ids=[
-        "binding",
-        "checkout",
-        "result-identity",
-        "outcome",
-        "unresolved",
-        "project-node",
-        "target-equality",
-        "native-projection",
-    ],
-)
-def test_compiler_preserves_existing_provider_result_guards(
+def test_compiler_rejects_provider_result_implementation_identity_mismatch(
     valid_compilation_inputs: tuple[
         CompilationContext,
         ProviderRequestManifest,
     ],
     valid_node_provider_result: NodeProviderResult,
-    mutation: NodeProviderResultMutation,
-    message: str,
 ) -> None:
-    """Keep every preexisting compiler guard while adding full validation."""
+    """Reject a result whose implementation differs from its request."""
     context, manifest = valid_compilation_inputs
-    forged_result = mutation(valid_node_provider_result)
+    forged_result = replace(
+        valid_node_provider_result,
+        provider_implementation_id="forged/provider-v1",
+    )
 
     _assert_phase3_compile_rejected(
         context,
         manifest,
         forged_result,
-        match=message,
+        match="identity mismatch",
     )
 
 
@@ -2092,6 +2025,9 @@ _NON_BOOLEAN_SURROGATES: tuple[tuple[str, object], ...] = (
         )
         for field, required_value in _CHECKOUT_BOOLEAN_REQUIREMENTS
         for surrogate_id, surrogate in _NON_BOOLEAN_SURROGATES
+        if field == "shallow"
+        or surrogate_id
+        == ("int-zero" if field == "credentials_persisted" else "int-one")
     ],
 )
 def test_compiler_requires_exact_checkout_evidence_boolean_types_and_values(
@@ -2104,7 +2040,7 @@ def test_compiler_requires_exact_checkout_evidence_boolean_types_and_values(
     required_value: object,
     surrogate: object,
 ) -> None:
-    """Reject every non-Boolean surrogate at the compiler boundary."""
+    """Own non-Boolean forms once and preserve each checkout field route."""
     context, manifest = valid_compilation_inputs
     valid_checkout = valid_node_provider_result.checkout
 

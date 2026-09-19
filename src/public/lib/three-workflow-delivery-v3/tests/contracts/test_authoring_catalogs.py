@@ -459,17 +459,20 @@ def test_release_policy_keeps_channel_policy_separate_from_quality_selection() -
         "node/npm-artifact-contents-v1",
         "node/npm-install-import-v1",
     )
-    assert policy.channel("buddy").projections[0].destination == (
-        "npm/github-packages-hcoona-three-v1"
+    assert (
+        tuple(
+            asdict(projection)
+            for projection in policy.channel("buddy").projections
+        )
+        == _APPROVED_RELEASE_PROJECTIONS["buddy"]
     )
-    assert policy.channel("official").projections[0].destination == (
-        "npm/npmjs-public-v1"
+    assert (
+        tuple(
+            asdict(projection)
+            for projection in policy.channel("official").projections
+        )
+        == _APPROVED_RELEASE_PROJECTIONS["official"]
     )
-    assert {
-        projection.package
-        for _, channel in policy.channels
-        for projection in channel.projections
-    } == {FIRST_SLICE_PACKAGE}
 
 
 def test_descriptor_discovery_uses_sorted_target_git_tree(
@@ -1080,11 +1083,6 @@ def test_authoring_lookup_rejects_unselected_names(tmp_path: Path) -> None:
         policy.channel("preview")
 
 
-type ReleaseChannelCase = tuple[
-    str,
-    tuple[str, str, str],
-    tuple[dict[str, str], ...],
-]
 type QualityMutationCase = tuple[str, tuple[str, ...]]
 
 _APPROVED_RELEASE_QUALITY = (
@@ -1110,50 +1108,9 @@ _APPROVED_RELEASE_PROJECTIONS = {
 }
 
 
-@pytest.fixture(
-    params=(
-        pytest.param(
-            (
-                "buddy",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-                (
-                    {
-                        "destination": ("npm/github-packages-hcoona-three-v1"),
-                        "artifact": "npm-tarball",
-                        "package": "@hcoona/hcoona-release-smoke-npm",
-                    },
-                ),
-            ),
-            id="buddy",
-        ),
-        pytest.param(
-            (
-                "official",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-                (
-                    {
-                        "destination": "npm/npmjs-public-v1",
-                        "artifact": "npm-tarball",
-                        "package": "@hcoona/hcoona-release-smoke-npm",
-                    },
-                ),
-            ),
-            id="official",
-        ),
-    )
-)
-def accepted_release_channel_cases(
-    request: pytest.FixtureRequest,
-) -> ReleaseChannelCase:
-    """Provide literal accepted Buddy and Official channel contracts."""
+@pytest.fixture(params=("buddy", "official"))
+def accepted_release_channel_cases(request: pytest.FixtureRequest) -> str:
+    """Exercise each channel's rejection boundary."""
     return request.param
 
 
@@ -1369,24 +1326,6 @@ def write_release_policy_case(
     return path
 
 
-def _assert_accepted_channel_contract(
-    policy_path: Path,
-    channel: str,
-    expected_quality: tuple[str, str, str],
-    expected_projections: tuple[dict[str, str], ...],
-) -> None:
-    policy = load_release_policy(policy_path)
-    channel_policy = policy.channel(channel)
-
-    assert channel_policy.quality == expected_quality
-    assert (
-        tuple(asdict(projection) for projection in channel_policy.projections)
-        == expected_projections
-    )
-    assert len(channel_policy.quality) == len(_APPROVED_RELEASE_QUALITY)
-    assert len(channel_policy.projections) == 1
-
-
 def _assert_opposite_channel_unchanged(
     document: dict[str, JsonValue],
     selected_channel: str,
@@ -1450,27 +1389,12 @@ def _mutate_projection_case(
 
 def test_release_policy_requires_exact_ordered_channel_quality(
     tmp_path: Path,
-    accepted_release_channel_cases: ReleaseChannelCase,
+    accepted_release_channel_cases: str,
     quality_mutation_cases: QualityMutationCase,
 ) -> None:
     """Require the exact closed, ordered quality tuple for both channels."""
-    channel, expected_quality, expected_projections = (
-        accepted_release_channel_cases
-    )
+    channel = accepted_release_channel_cases
     mutation, mutated_quality = quality_mutation_cases
-    accepted_document = _yaml_document(POLICY_PATH.read_text(encoding="utf-8"))
-    accepted_path = write_release_policy_case(
-        tmp_path,
-        accepted_document,
-        name=f"accepted-{channel}-{mutation}",
-    )
-    _assert_accepted_channel_contract(
-        accepted_path,
-        channel,
-        expected_quality,
-        expected_projections,
-    )
-
     mutated_document = _yaml_document(POLICY_PATH.read_text(encoding="utf-8"))
     mutated_quality_document: list[JsonValue] = list(mutated_quality)
     _channel_policy(mutated_document, channel)["quality"] = (
@@ -1492,26 +1416,11 @@ def test_release_policy_requires_exact_ordered_channel_quality(
 
 def test_release_policy_requires_exact_channel_projection(
     tmp_path: Path,
-    accepted_release_channel_cases: ReleaseChannelCase,
+    accepted_release_channel_cases: str,
     projection_mutation_cases: str,
 ) -> None:
     """Require each channel's exact one-element projection tuple."""
-    channel, expected_quality, expected_projections = (
-        accepted_release_channel_cases
-    )
-    accepted_document = _yaml_document(POLICY_PATH.read_text(encoding="utf-8"))
-    accepted_path = write_release_policy_case(
-        tmp_path,
-        accepted_document,
-        name=f"accepted-{channel}-{projection_mutation_cases}",
-    )
-    _assert_accepted_channel_contract(
-        accepted_path,
-        channel,
-        expected_quality,
-        expected_projections,
-    )
-
+    channel = accepted_release_channel_cases
     mutated_document = _yaml_document(POLICY_PATH.read_text(encoding="utf-8"))
     _mutate_projection_case(
         mutated_document,

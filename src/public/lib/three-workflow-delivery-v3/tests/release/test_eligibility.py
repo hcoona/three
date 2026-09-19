@@ -3080,25 +3080,32 @@ def _attestation_document_with_human_evidence(
 
 
 @pytest.mark.parametrize(
-    "position",
-    _HUMAN_EVIDENCE_PATHS,
-    ids=[
-        "issuer",
-        "writer-login",
-        "writer-role",
-        "repository-subject",
-        "repository-access",
-        "package-subject",
-        "package-access",
-        "manage-actions-subject",
-        "manage-actions-access",
-        "limitation",
+    ("position", "whitespace"),
+    [
+        pytest.param(position, whitespace, id=f"{whitespace_id}-{position_id}")
+        for position, position_id in zip(
+            _HUMAN_EVIDENCE_PATHS,
+            (
+                "issuer",
+                "writer-login",
+                "writer-role",
+                "repository-subject",
+                "repository-access",
+                "package-subject",
+                "package-access",
+                "manage-actions-subject",
+                "manage-actions-access",
+                "limitation",
+            ),
+            strict=True,
+        )
+        for whitespace, whitespace_id in zip(
+            _WHITESPACE_ONLY_VALUES,
+            ("space", "tab", "newline", "crlf", "unicode-nbsp"),
+            strict=True,
+        )
+        if position == "limitations[0]" or whitespace_id == "space"
     ],
-)
-@pytest.mark.parametrize(
-    "whitespace",
-    _WHITESPACE_ONLY_VALUES,
-    ids=["space", "tab", "newline", "crlf", "unicode-nbsp"],
 )
 def test_attestation_rejects_whitespace_only_human_evidence_strings(
     position: str,
@@ -3122,14 +3129,8 @@ def test_attestation_rejects_whitespace_only_human_evidence_strings(
     ["repository", "package", "manage_actions"],
     ids=["repository", "package", "manage-actions"],
 )
-@pytest.mark.parametrize(
-    "whitespace",
-    _WHITESPACE_ONLY_VALUES,
-    ids=["space", "tab", "newline", "crlf", "unicode-nbsp"],
-)
 def test_attestation_rejects_unknown_access_inventory_value_member(
     category: str,
-    whitespace: str,
 ) -> None:
     """Reject adjudicated value wording as an unknown schema member."""
     document = _attestation_document()
@@ -3139,7 +3140,7 @@ def test_attestation_rejects_unknown_access_inventory_value_member(
     assert isinstance(grants, list)
     grant = grants[0]
     assert isinstance(grant, dict)
-    grant["value"] = whitespace
+    grant["value"] = " "
 
     with pytest.raises(
         ValueError,

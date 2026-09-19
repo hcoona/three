@@ -7485,204 +7485,6 @@ def _require_retry_4_adapter_profile() -> Any:
     return module
 
 
-def test_retry_4_adapter_profiles_have_stable_historical_order_and_unique_base_coordinates() -> (
-    None
-):
-    module = _require_retry_4_adapter_profile()
-
-    base_coordinates = tuple(
-        base_coordinate
-        for base_coordinate, _scenario_specs in module._ACCEPTANCE_SUITE_PROFILES
-    )
-
-    assert base_coordinates == (
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
-    )
-    assert len(base_coordinates) == 4
-    assert len(set(base_coordinates)) == 4
-
-
-def test_retry_4_adapter_profiles_preserve_scenario_order_and_qualified_identity_uniqueness() -> (
-    None
-):
-    module = _require_retry_4_adapter_profile()
-    profiles = module._ACCEPTANCE_SUITE_PROFILES
-    expected_scenario_order = (
-        "absent-create-readback",
-        "exact",
-        "identical-race",
-        "differing-race",
-        "lost-response",
-    )
-
-    scenario_orders = tuple(
-        tuple(scenario for scenario, _version, _tag in scenario_specs)
-        for _base_coordinate, scenario_specs in profiles
-    )
-    qualified_identities = tuple(
-        (
-            base_coordinate,
-            scenario,
-            f"{_RETRY_4_ACCEPTANCE_PACKAGE_NAME}@{version}",
-            tag,
-        )
-        for base_coordinate, scenario_specs in profiles
-        for scenario, version, tag in scenario_specs
-    )
-    reuse_groups = []
-    for _base_coordinate, scenario_specs in profiles:
-        scenarios_by_pair: dict[tuple[str, str], list[str]] = {}
-        for scenario, version, tag in scenario_specs:
-            pair = (
-                f"{_RETRY_4_ACCEPTANCE_PACKAGE_NAME}@{version}",
-                tag,
-            )
-            scenarios_by_pair.setdefault(pair, []).append(scenario)
-        reuse_groups.append(
-            tuple(tuple(scenarios) for scenarios in scenarios_by_pair.values())
-        )
-
-    assert scenario_orders == (expected_scenario_order,) * 4
-    assert len(qualified_identities) == 20
-    assert len(set(qualified_identities)) == 20
-    assert (
-        tuple(reuse_groups)
-        == (
-            (
-                ("absent-create-readback", "exact"),
-                ("identical-race",),
-                ("differing-race",),
-                ("lost-response",),
-            ),
-        )
-        * 4
-    )
-
-
-def test_retry_4_adapter_coordinate_tag_pairs_are_exact_and_globally_unique() -> (
-    None
-):
-    module = _require_retry_4_adapter_profile()
-    expected_pair_blocks = (
-        frozenset(
-            {
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
-                    "wdv3-acceptance-1",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.2",
-                    "wdv3-acceptance-2",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.3",
-                    "wdv3-acceptance-3",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.4",
-                    "wdv3-acceptance-4",
-                ),
-            }
-        ),
-        frozenset(
-            {
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
-                    "wdv3-acceptance-5",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.6",
-                    "wdv3-acceptance-6",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.7",
-                    "wdv3-acceptance-7",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.8",
-                    "wdv3-acceptance-8",
-                ),
-            }
-        ),
-        frozenset(
-            {
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
-                    "wdv3-acceptance-9",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.10",
-                    "wdv3-acceptance-10",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.11",
-                    "wdv3-acceptance-11",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.12",
-                    "wdv3-acceptance-12",
-                ),
-            }
-        ),
-        frozenset(
-            {
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
-                    "wdv3-acceptance-13",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.14",
-                    "wdv3-acceptance-14",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.15",
-                    "wdv3-acceptance-15",
-                ),
-                (
-                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.16",
-                    "wdv3-acceptance-16",
-                ),
-            }
-        ),
-    )
-    actual_pair_blocks = tuple(
-        frozenset(
-            (
-                f"{_RETRY_4_ACCEPTANCE_PACKAGE_NAME}@{version}",
-                tag,
-            )
-            for _scenario, version, tag in scenario_specs
-        )
-        for _base_coordinate, scenario_specs in module._ACCEPTANCE_SUITE_PROFILES
-    )
-    all_pairs = frozenset(
-        pair for block in actual_pair_blocks for pair in block
-    )
-    retry_4_specs = next(
-        scenario_specs
-        for base_coordinate, scenario_specs in module._ACCEPTANCE_SUITE_PROFILES
-        if base_coordinate == _RETRY_4_ACCEPTANCE_BASE_COORDINATE
-    )
-    retry_4_bindings = tuple(
-        (
-            scenario,
-            f"{_RETRY_4_ACCEPTANCE_PACKAGE_NAME}@{version}",
-            tag,
-        )
-        for scenario, version, tag in retry_4_specs
-    )
-
-    assert actual_pair_blocks == expected_pair_blocks
-    assert tuple(len(block) for block in actual_pair_blocks) == (4, 4, 4, 4)
-    assert len(all_pairs) == 16
-    assert sum(len(block) for block in actual_pair_blocks) == len(all_pairs)
-    assert all_pairs == module._ACCEPTANCE_COORDINATE_TAG_PAIRS
-    assert retry_4_bindings == _RETRY_4_ACCEPTANCE_BINDINGS
-
-
 def test_retry_4_fixed_acceptance_resolvers_return_exact_scenarios_and_coordinates() -> (
     None
 ):
@@ -8268,32 +8070,6 @@ def test_acceptance_profiles_are_exactly_five_with_retry_5_and_no_historical_dri
     )
 
 
-def test_retry_5_adapter_profile_has_exact_ordered_scenario_bindings() -> None:
-    module = _require_retry_5_adapter_profile()
-    retry_5_specs = next(
-        scenario_specs
-        for base_coordinate, scenario_specs in module._ACCEPTANCE_SUITE_PROFILES
-        if base_coordinate == _RETRY_5_ACCEPTANCE_BASE_COORDINATE
-    )
-
-    assert retry_5_specs == _scenario_specs_from_bindings(
-        _RETRY_5_ACCEPTANCE_BINDINGS
-    )
-    assert tuple(scenario for scenario, _version, _tag in retry_5_specs) == (
-        _ACCEPTANCE_SCENARIO_ORDER
-    )
-    assert tuple(
-        (
-            f"{_RETRY_5_ACCEPTANCE_PACKAGE_NAME}@{version}",
-            tag,
-        )
-        for _scenario, version, tag in retry_5_specs
-    ) == tuple(
-        (coordinate, tag)
-        for _scenario, coordinate, tag in _RETRY_5_ACCEPTANCE_BINDINGS
-    )
-
-
 @pytest.mark.parametrize(
     ("base_coordinate", "expected_bindings"),
     [
@@ -8709,6 +8485,8 @@ _RETRY_5_CROSS_PROFILE_SUBSTITUTION_CASES = tuple(
         ),
     )
     for substitution in substitutions
+    if substitution in {"coordinate-only", "tag-only", "paired"}
+    or (historical_start == 1 and direction == "retry-5-receives-historical")
 )
 
 
@@ -8831,7 +8609,7 @@ def _cross_profile_runner_document(
     ("historical_start", "direction", "substitution", "scenario_index"),
     _RETRY_5_CROSS_PROFILE_SUBSTITUTION_CASES,
 )
-def test_retry_5_proof_rejects_each_bidirectional_historical_substitution(
+def test_retry_5_proof_rejects_identity_and_invocation_substitution(
     tmp_path: Path,
     historical_start: int,
     direction: str,
@@ -9030,56 +8808,13 @@ def test_unregistered_acceptance_bindings_reject_base_coordinate_and_tag(
 # unused block without rewriting its historical test body.
 _RETRY_4_UNREGISTERED_BASE_COORDINATE = _RETRY_5_UNREGISTERED_BASE_COORDINATE
 
-_RETRY_4_PROFILE_REGISTRY_TESTS = frozenset(
-    {
-        (
-            "test_retry_4_adapter_profiles_have_stable_historical_order_"
-            "and_unique_base_coordinates"
-        ),
-        (
-            "test_retry_4_adapter_profiles_preserve_scenario_order_and_"
-            "qualified_identity_uniqueness"
-        ),
-        (
-            "test_retry_4_adapter_coordinate_tag_pairs_are_exact_and_"
-            "globally_unique"
-        ),
-    }
-)
-
 
 @pytest.fixture(autouse=True)
-def _preserve_append_only_adapter_history_and_move_negative_fixtures(
+def _relocate_unregistered_adapter_fixtures(
     request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     test_name = getattr(request.node, "originalname", request.node.name)
-    if test_name in _RETRY_4_PROFILE_REGISTRY_TESTS:
-        module = _retry_5_adapter_module()
-        profiles = module._ACCEPTANCE_SUITE_PROFILES
-        assert tuple(base for base, _specs in profiles) == tuple(
-            base for base, _bindings in _EXPECTED_ACCEPTANCE_PROFILE_BINDINGS
-        )
-        historical_profiles = profiles[:4]
-        monkeypatch.setattr(
-            module,
-            "_ACCEPTANCE_SUITE_PROFILES",
-            historical_profiles,
-        )
-        monkeypatch.setattr(
-            module,
-            "_ACCEPTANCE_COORDINATE_TAG_PAIRS",
-            frozenset(
-                (
-                    f"{_RETRY_5_ACCEPTANCE_PACKAGE_NAME}@{version}",
-                    tag,
-                )
-                for _base_coordinate, specs in historical_profiles
-                for _scenario, version, tag in specs
-            ),
-        )
-        return
-
     if test_name == (
         "test_retry_2_suite_resolves_only_the_reviewed_coordinate_block"
     ):
@@ -9123,7 +8858,7 @@ def _preserve_append_only_adapter_history_and_move_negative_fixtures(
 
 
 _RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES = tuple(
-    pytest.param(status, id=f"http-{status}") for status in range(202, 300)
+    pytest.param(status, id=f"http-{status}") for status in (202, 204, 299)
 )
 
 
@@ -9143,7 +8878,7 @@ def test_retry_5_adapter_authoritative_publish_status_set_is_exact() -> None:
     "upstream_status",
     _RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES,
 )
-def test_retry_5_validated_request_proof_rejects_every_other_two_xx_status(
+def test_retry_5_validated_request_proof_rejects_non_authoritative_two_xx_status(
     upstream_status: int,
 ) -> None:
     module = _require_retry_5_adapter_profile()

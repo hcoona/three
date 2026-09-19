@@ -40,6 +40,7 @@ def test_rest_client_sends_bearer_token_to_fake_transport() -> None:
     def opener(request, timeout: int) -> bytes:
         assert timeout == DEFAULT_TIMEOUT
         seen.append(request.get_header("Authorization"))
+        assert request.full_url.endswith("/repos/hcoona/three/branches/main")
         return json.dumps({"protected": True}).encode()
 
     client = GitHubRestClient(
@@ -48,7 +49,7 @@ def test_rest_client_sends_bearer_token_to_fake_transport() -> None:
         opener=opener,
     )
 
-    assert client.is_ref_protected("hcoona/three", "refs/heads/main")
+    assert client.is_ref_protected("hcoona/three", "refs/heads/main") is True
     assert seen == [f"Bearer {TOKEN}"]
 
 
@@ -90,21 +91,6 @@ def test_ref_protection_false_is_authoritative(
     monkeypatch.setattr(client, "_json", not_protected)
 
     assert client.is_ref_protected("hcoona/three", "refs/heads/main") is False
-
-
-def test_ref_protection_success_is_authoritative_true() -> None:
-    def opener(request, timeout: int) -> bytes:
-        del timeout
-        assert request.full_url.endswith("/repos/hcoona/three/branches/main")
-        return json.dumps({"protected": True}).encode()
-
-    client = GitHubRestClient(
-        repository="hcoona/three",
-        token=TOKEN,
-        opener=opener,
-    )
-
-    assert client.is_ref_protected("hcoona/three", "refs/heads/main") is True
 
 
 @pytest.mark.parametrize(
