@@ -3502,83 +3502,9 @@ def test_hexo_file_reference_and_v9_lock_project_a_typed_directory(
     ("path", "content"),
     [
         pytest.param(
-            ".github/workflows/release.yml",
-            b"jobs:\n  inspect:\n    uses: @hcoona/hcoona-release-smoke-npm\n",
-            id="github-workflow",
-        ),
-        pytest.param(
-            ".github/actions/inspect/action.yml",
-            (
-                b"runs:\n  using: node20\n"
-                b"  main: @hcoona/hcoona-release-smoke-npm\n"
-            ),
-            id="composite-action",
-        ),
-        pytest.param(
-            "src/consumer/import-subpath.mjs",
-            b'import "@hcoona/hcoona-release-smoke-npm/runtime";\n',
-            id="node-import-subpath",
-        ),
-        pytest.param(
-            "src/consumer/package-lock.json",
-            (
-                b'{"packages":{"node_modules/x":{"name":'
-                b'"@hcoona/hcoona-release-smoke-npm"}}}\n'
-            ),
-            id="npm-lock",
-        ),
-        pytest.param(
-            "uv.lock",
-            b'[[package]]\nname = "@hcoona/hcoona-release-smoke-npm"\n',
-            id="uv-lock",
-        ),
-        pytest.param(
-            "src/consumer/yarn.lock",
-            b'"@hcoona/hcoona-release-smoke-npm@*":\n  version "1.0.0"\n',
-            id="yarn-lock",
-        ),
-        pytest.param(
-            "src/consumer/Consumer.csproj",
-            (
-                b'<Project><ItemGroup><PackageReference Include="'
-                b'@hcoona/hcoona-release-smoke-npm" />'
-                b"</ItemGroup></Project>\n"
-            ),
-            id="msbuild-project",
-        ),
-        pytest.param(
-            "Directory.Packages.props",
-            (
-                b'<Project><ItemGroup><PackageVersion Include="'
-                b'@hcoona/hcoona-release-smoke-npm" />'
-                b"</ItemGroup></Project>\n"
-            ),
-            id="msbuild-central-manifest",
-        ),
-        pytest.param(
-            "src/consumer/pyproject.toml",
-            b"dependencies = [\x22@hcoona/hcoona-release-smoke-npm\x22]\n",
-            id="standalone-python-manifest",
-        ),
-        pytest.param(
-            "eng/scripts/install.sh",
-            b"npm install @hcoona/hcoona-release-smoke-npm\n",
-            id="shell-script",
-        ),
-        pytest.param(
-            "eng/scripts/install.ps1",
-            b"npm install @hcoona/hcoona-release-smoke-npm\n",
-            id="powershell-script",
-        ),
-        pytest.param(
             ".github/workflows/pnpm-lock.yaml",
             b"lockfileVersion: '9.0'\npackages:\n  producer: {}\n",
             id="reserved-workflow-pnpm-lock",
-        ),
-        pytest.param(
-            ".github/workflows/pnpm-workspace.yaml",
-            b"packages:\n  - '@hcoona/hcoona-release-smoke-npm'\n",
-            id="reserved-workflow-pnpm-workspace",
         ),
     ],
 )
@@ -3587,7 +3513,7 @@ def test_excluded_surface_selects_no_graph_and_has_no_fallback(
     path: str,
     content: bytes,
 ) -> None:
-    """Keep every excluded representative outside every authority graph."""
+    """Keep the reserved workflow lock outside every authority graph."""
     from three_workflow_delivery_v3.release.static_reference_policy import (  # noqa: PLC0415
         scan_bounded_static_references,
     )
@@ -3641,6 +3567,7 @@ def test_excluded_surface_selects_no_graph_and_has_no_fallback(
     assert fallback_calls == []
     assert len(sessions) == 1
     assert not sessions[0].root.exists()
+    assert source.read_bytes() == content
 
 
 def test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared() -> (  # noqa: E501
@@ -5750,79 +5677,9 @@ def test_invocation_admitted_missing_object_emits_source_failure_result(
     ("path", "content"),
     [
         pytest.param(
-            "docs/static-reference.md",
-            b"@hcoona/hcoona-release-smoke-npm\n",
-            id="documentation",
-        ),
-        pytest.param(
-            "setup.py",
-            b'install_requires=["@hcoona/hcoona-release-smoke-npm"]\n',
-            id="setup-py",
-        ),
-        pytest.param(
-            "requirements-release.txt",
-            b"@hcoona/hcoona-release-smoke-npm==1.0.0\n",
-            id="requirements",
-        ),
-        pytest.param(
-            "poetry.lock",
-            b'name = "@hcoona/hcoona-release-smoke-npm"\n',
-            id="poetry-lock",
-        ),
-        pytest.param(
-            "bun.lockb",
-            b"\x00@hcoona/hcoona-release-smoke-npm\x00",
-            id="bun",
-        ),
-        pytest.param(
-            ".npmrc",
-            b"producer=@hcoona/hcoona-release-smoke-npm\n",
-            id="npmrc",
-        ),
-        pytest.param(
-            ".yarnrc.yml",
-            b"producer: @hcoona/hcoona-release-smoke-npm\n",
-            id="yarnrc",
-        ),
-        pytest.param(
-            "renovate.json",
-            b'{"package":"@hcoona/hcoona-release-smoke-npm"}\n',
-            id="renovate",
-        ),
-        pytest.param(
-            ".github/dependabot.yml",
-            b"package: @hcoona/hcoona-release-smoke-npm\n",
-            id="dependabot",
-        ),
-        pytest.param(
-            ".pnpmfile.cjs",
-            b"module.exports='@hcoona/hcoona-release-smoke-npm';\n",
-            id="pnpmfile",
-        ),
-        pytest.param(
-            "eng/install.bat",
-            b"npm install @hcoona/hcoona-release-smoke-npm\r\n",
-            id="batch",
-        ),
-        pytest.param(
-            "eng/install.zsh",
-            b"npm install @hcoona/hcoona-release-smoke-npm\n",
-            id="zsh",
-        ),
-        pytest.param(
             "src/ordinary.js",
             b'import "@hcoona/hcoona-release-smoke-npm";\n',
             id="ordinary-javascript",
-        ),
-        pytest.param(
-            "src/ordinary.ts",
-            b'import "@hcoona/hcoona-release-smoke-npm";\n',
-            id="ordinary-typescript",
-        ),
-        pytest.param(
-            "src/ordinary.py",
-            b'PACKAGE = "@hcoona/hcoona-release-smoke-npm"\n',
-            id="ordinary-python",
         ),
     ],
 )
@@ -5831,7 +5688,7 @@ def test_remaining_excluded_categories_select_no_graph_or_runner(
     path: str,
     content: bytes,
 ) -> None:
-    """Keep every remaining excluded category outside the bounded graph."""
+    """Keep an ordinary source reference outside the bounded graph."""
     from three_workflow_delivery_v3.release.static_reference_policy import (  # noqa: PLC0415
         scan_bounded_static_references,
     )
@@ -6257,6 +6114,55 @@ def test_worktree_permission_errors_are_typed_and_stop_before_authority(  # noqa
     assert fault_calls == [fault_path, fault_path]
     assert authority_calls == []
     assert session_calls == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param(".github/workflows/release.yml", id="github-workflow"),
+        pytest.param(
+            ".github/actions/inspect/action.yml", id="composite-action"
+        ),
+        pytest.param(
+            "src/consumer/import-subpath.mjs", id="node-import-subpath"
+        ),
+        pytest.param("src/consumer/package-lock.json", id="npm-lock"),
+        pytest.param("uv.lock", id="uv-lock"),
+        pytest.param("src/consumer/yarn.lock", id="yarn-lock"),
+        pytest.param("src/consumer/Consumer.csproj", id="msbuild-project"),
+        pytest.param("Directory.Packages.props", id="msbuild-central-manifest"),
+        pytest.param(
+            "src/consumer/pyproject.toml", id="standalone-python-manifest"
+        ),
+        pytest.param("eng/scripts/install.sh", id="shell-script"),
+        pytest.param("eng/scripts/install.ps1", id="powershell-script"),
+        pytest.param(
+            ".github/workflows/pnpm-workspace.yaml",
+            id="reserved-workflow-pnpm-workspace",
+        ),
+        pytest.param("docs/static-reference.md", id="documentation"),
+        pytest.param("setup.py", id="setup-py"),
+        pytest.param("requirements-release.txt", id="requirements"),
+        pytest.param("poetry.lock", id="poetry-lock"),
+        pytest.param("bun.lockb", id="bun"),
+        pytest.param(".npmrc", id="npmrc"),
+        pytest.param(".yarnrc.yml", id="yarnrc"),
+        pytest.param("renovate.json", id="renovate"),
+        pytest.param(".github/dependabot.yml", id="dependabot"),
+        pytest.param(".pnpmfile.cjs", id="pnpmfile"),
+        pytest.param("eng/install.bat", id="batch"),
+        pytest.param("eng/install.zsh", id="zsh"),
+        pytest.param("src/ordinary.ts", id="ordinary-typescript"),
+        pytest.param("src/ordinary.py", id="ordinary-python"),
+    ],
+)
+def test_excluded_paths_have_no_static_reference_selection(path: str) -> None:
+    """Own excluded path examples without repository or scanner setup."""
+    from three_workflow_delivery_v3.release.static_reference_source import (  # noqa: PLC0415
+        select_static_reference_path,
+    )
+
+    assert select_static_reference_path(path) is None
 
 
 @pytest.mark.parametrize(

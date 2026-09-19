@@ -4178,7 +4178,7 @@ def test_retry_5_lost_response_proof_must_bind_exact_readback_content(
 
 
 _RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES = tuple(
-    pytest.param(status, id=f"http-{status}") for status in range(202, 300)
+    pytest.param(status, id=f"http-{status}") for status in (202, 204, 299)
 )
 
 

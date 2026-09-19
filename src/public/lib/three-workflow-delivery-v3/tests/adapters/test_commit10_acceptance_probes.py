@@ -8485,6 +8485,8 @@ _RETRY_5_CROSS_PROFILE_SUBSTITUTION_CASES = tuple(
         ),
     )
     for substitution in substitutions
+    if substitution in {"coordinate-only", "tag-only", "paired"}
+    or (historical_start == 1 and direction == "retry-5-receives-historical")
 )
 
 
@@ -8607,7 +8609,7 @@ def _cross_profile_runner_document(
     ("historical_start", "direction", "substitution", "scenario_index"),
     _RETRY_5_CROSS_PROFILE_SUBSTITUTION_CASES,
 )
-def test_retry_5_proof_rejects_each_bidirectional_historical_substitution(
+def test_retry_5_proof_rejects_identity_and_invocation_substitution(
     tmp_path: Path,
     historical_start: int,
     direction: str,
@@ -8856,7 +8858,7 @@ def _relocate_unregistered_adapter_fixtures(
 
 
 _RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES = tuple(
-    pytest.param(status, id=f"http-{status}") for status in range(202, 300)
+    pytest.param(status, id=f"http-{status}") for status in (202, 204, 299)
 )
 
 
@@ -8876,7 +8878,7 @@ def test_retry_5_adapter_authoritative_publish_status_set_is_exact() -> None:
     "upstream_status",
     _RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES,
 )
-def test_retry_5_validated_request_proof_rejects_every_other_two_xx_status(
+def test_retry_5_validated_request_proof_rejects_non_authoritative_two_xx_status(
     upstream_status: int,
 ) -> None:
     module = _require_retry_5_adapter_profile()

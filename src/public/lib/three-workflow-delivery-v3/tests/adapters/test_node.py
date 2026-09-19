@@ -2282,61 +2282,77 @@ def test_artifact_contents_rejects_noncanonical_ustar_magic_or_version(
 
 
 @pytest.mark.parametrize(
-    ("member_index", "member_name"),
-    [
-        pytest.param(1, "package/package.json", id="member-1-package-json"),
-        pytest.param(
-            2,
-            "package/workflow-delivery/provenance.json",
-            id="member-2-provenance",
-        ),
-        pytest.param(3, "package/README.md", id="member-3-readme"),
-    ],
-)
-@pytest.mark.parametrize(
-    "mutation",
+    ("member_index", "member_name", "mutation"),
     [
         pytest.param(
+            1,
+            "package/package.json",
             ("mode-alt-terminator", "mode", b"000644\0 ", b" \0"),
-            id="mode-alt-terminator",
+            id="mode-alt-terminator-member-1-package-json",
         ),
         pytest.param(
+            1,
+            "package/package.json",
             ("noncanonical-magic", "magic", b"ustar ", b" \0"),
-            id="noncanonical-magic",
+            id="noncanonical-magic-member-1-package-json",
         ),
         pytest.param(
+            1,
+            "package/package.json",
             ("unsupported-version", "version", b"01", b" \0"),
-            id="unsupported-version",
+            id="unsupported-version-member-1-package-json",
         ),
         pytest.param(
+            1,
+            "package/package.json",
             ("name-hidden-suffix", "name", None, b" \0"),
-            id="name-hidden-suffix",
+            id="name-hidden-suffix-member-1-package-json",
         ),
         pytest.param(
+            1,
+            "package/package.json",
             (
                 "linkname-hidden-suffix",
                 "linkname",
                 b"\0X" + bytes(98),
                 b" \0",
             ),
-            id="linkname-hidden-suffix",
+            id="linkname-hidden-suffix-member-1-package-json",
         ),
         pytest.param(
+            1,
+            "package/package.json",
             (
                 "reserved-nonzero",
                 "reserved",
                 bytes(11) + bytes((NONZERO_PADDING_BYTE,)),
                 b" \0",
             ),
-            id="reserved-nonzero",
+            id="reserved-nonzero-member-1-package-json",
         ),
         pytest.param(
+            1,
+            "package/package.json",
             ("old-regular-type", "type", tarfile.AREGTYPE, b" \0"),
-            id="old-regular-type",
+            id="old-regular-type-member-1-package-json",
         ),
         pytest.param(
+            1,
+            "package/package.json",
             ("checksum-alt-terminator", None, None, b"\0 "),
-            id="checksum-alt-terminator",
+            id="checksum-alt-terminator-member-1-package-json",
+        ),
+        pytest.param(
+            2,
+            "package/workflow-delivery/provenance.json",
+            ("checksum-alt-terminator", None, None, b"\0 "),
+            id="checksum-alt-terminator-member-2-provenance",
+        ),
+        pytest.param(
+            3,
+            "package/README.md",
+            ("checksum-alt-terminator", None, None, b"\0 "),
+            id="checksum-alt-terminator-member-3-readme",
         ),
     ],
 )

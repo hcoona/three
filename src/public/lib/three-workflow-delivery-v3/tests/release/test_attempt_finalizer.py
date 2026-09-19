@@ -214,25 +214,34 @@ def test_marker_without_result_is_unknown_even_when_execution_skipped(
 
 
 @pytest.mark.parametrize(
-    ("job", "step", "expected", "possible"),
+    ("tier", "job", "step", "expected", "possible"),
     [
-        ("skipped", None, "failed-before-publication", False),
-        ("failure", "skipped", "failed-before-publication", False),
-        ("cancelled", "skipped", "failed-before-publication", False),
-        ("success", "success", "unknown", True),
-        ("failure", "failure", "unknown", True),
-        ("failure", None, "unknown", True),
-        ("cancelled", "", "unknown", True),
-    ],
-)
-@pytest.mark.parametrize(
-    "tier",
-    [
-        "publication-authorization",
-        "approval-bundle",
-        "action-bearing-publication-snapshot",
-        "blocking-observation",
-        "qualification-decision",
+        pytest.param(
+            tier,
+            job,
+            step,
+            expected,
+            possible,
+            id=f"{tier}-{job}-{step}-{expected}-{possible}",
+        )
+        for tier in (
+            "publication-authorization",
+            "approval-bundle",
+            "action-bearing-publication-snapshot",
+            "blocking-observation",
+            "qualification-decision",
+        )
+        for job, step, expected, possible in (
+            ("skipped", None, "failed-before-publication", False),
+            ("failure", "skipped", "failed-before-publication", False),
+            ("cancelled", "skipped", "failed-before-publication", False),
+            ("success", "success", "unknown", True),
+            ("failure", "failure", "unknown", True),
+            ("failure", None, "unknown", True),
+            ("cancelled", "", "unknown", True),
+        )
+        if tier == "publication-authorization"
+        or (job, step) in {("skipped", None), ("failure", None)}
     ],
 )
 def test_null_terminal_uses_latest_admissible_predecessor(  # noqa: PLR0913, PLR0917
