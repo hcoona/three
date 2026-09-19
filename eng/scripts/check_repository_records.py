@@ -675,7 +675,7 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
         report["base"] = accepted.describe()
         current = Snapshot(root, candidate)
         report["candidate"] = current.describe()
-    except (RecordError, OSError) as exc:
+    except (RecordError, OSError, UnicodeError) as exc:
         error("snapshot-unavailable", "", str(exc))
         report["checks"]["snapshot"] = "failed"
         return report

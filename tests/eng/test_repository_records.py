@@ -1163,6 +1163,46 @@ def test_generated_interface_requires_exact_source_mapping(
             assert "generated-source-map-invalid" in codes(report)
 
 
+@pytest.mark.parametrize("snapshot", ["base", "candidate", "worktree"])
+def test_non_utf8_paths_preserve_cli_report(
+    repo: Repository, snapshot: str
+) -> None:
+    """Unsupported Git path bytes fail through the snapshot report boundary."""
+    blob = run_git(repo.root, "rev-parse", "HEAD:docs/README.md")
+    subprocess.run(  # noqa: S603 - Fixed Git CLI on an isolated fixture.
+        ["git", "-C", str(repo.root), "update-index", "-z", "--index-info"],  # noqa: S607 - Fixture Git uses the installed executable.
+        input=b"100644 " + blob.encode() + b"\tinvalid-\xff.md\0",
+        env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+        check=True,
+        capture_output=True,
+    )
+    tree = run_git(repo.root, "write-tree")
+    candidate = run_git(repo.root, "commit-tree", tree, "-m", "Raw path")
+    output = repo.root / "report-output.txt"
+    arguments = [
+        "--repository-root",
+        str(repo.root),
+        "--base",
+        candidate if snapshot == "base" else repo.base,
+        "--output",
+        str(output),
+    ]
+    arguments += (
+        ["--worktree"] if snapshot == "worktree" else ["--candidate", candidate]
+    )
+    assert checker.main(arguments) == 1
+    report = json.loads(output.read_text())
+    assert len(report["diagnostics"]) == 1
+    assert codes(report) == {"snapshot-unavailable"}
+    assert report["checks"] == {"snapshot": "failed"}
+    assert report["candidate"] is None
+    assert report["command"] == arguments
+    if snapshot == "base":
+        assert report["base"] is None
+    else:
+        assert report["base"]["commit"] == repo.base
+
+
 @pytest.mark.parametrize("empty_argument", ["base", "candidate"])
 def test_empty_explicit_revision_is_not_replaced(
     repo: Repository, empty_argument: str

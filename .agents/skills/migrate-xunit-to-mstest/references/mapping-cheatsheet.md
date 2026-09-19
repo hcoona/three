@@ -94,8 +94,8 @@ Target framework throughout: **MSTest v4** (the few v3-only spellings are explic
 | `Assert.Equal(expected, actual)`                        | `Assert.AreEqual(expected, actual)`                                                                                                                                                                                                |
 | `Assert.Equal(expected, actual, comparer)`              | `Assert.AreEqual(expected, actual, comparer)`                                                                                                                                                                                      |
 | `Assert.Equal(expected, actual, precision[, rounding])` | **Manual** -- preserve the numeric overload, decimal-place precision, and default or explicit rounding mode; round both operands as the source assertion does and compare the results exactly. Precision is not an absolute delta. |
-| `Assert.Equal("a", "A", ignoreCase: true)`              | `Assert.AreEqual("a", "A", ignoreCase: true)`                                                                                                                                                                                      |
-| `Assert.NotEqual(a, b)`                                 | `Assert.AreNotEqual(a, b)`                                                                                                                                                                                                         |
+| `Assert.Equal("a", "A", ignoreCase: true)`              | See the [string equality mapping](#35-string).                                                                                                                                                                                     |
+| `Assert.NotEqual(a, b)` (scalar equality)               | `Assert.AreNotEqual(a, b)`                                                                                                                                                                                                         |
 | `Assert.Same(a, b)`                                     | `Assert.AreSame(a, b)`                                                                                                                                                                                                             |
 | `Assert.NotSame(a, b)`                                  | `Assert.AreNotSame(a, b)`                                                                                                                                                                                                          |
 | `Assert.Null(x)`                                        | `Assert.IsNull(x)`                                                                                                                                                                                                                 |
@@ -124,26 +124,34 @@ Target framework throughout: **MSTest v4** (the few v3-only spellings are explic
 
 ### 3.4 Numeric / comparison
 
-| xUnit                                 | MSTest                                  |
-| ------------------------------------- | --------------------------------------- |
-| `Assert.InRange(value, low, high)`    | `Assert.IsInRange(value, low, high)`    |
-| `Assert.NotInRange(value, low, high)` | `Assert.IsNotInRange(value, low, high)` |
-| _(no direct API)_                     | `Assert.IsGreaterThan(low, value)`      |
-| _(no direct API)_                     | `Assert.IsLessThan(high, value)`        |
+| xUnit                                 | MSTest                                                                                                                                                                              |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Assert.InRange(value, low, high)`    | `Assert.IsInRange(low, high, value)` for supported value types, valid bounds, and the same comparison; otherwise **Manual** -- preserve the source comparison and inclusive bounds. |
+| `Assert.NotInRange(value, low, high)` | **Manual** -- assert that the value compares below `low` or above `high` using the source comparison; preserve custom comparers and inclusive-bound behavior.                       |
+| _(no direct API)_                     | `Assert.IsGreaterThan(low, value)`                                                                                                                                                  |
+| _(no direct API)_                     | `Assert.IsLessThan(high, value)`                                                                                                                                                    |
+
+Manual range mappings must retain the source overload's null-argument contract.
 
 ### 3.5 String
 
-| xUnit                                      | MSTest                                                                                       |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `Assert.Contains("sub", str)`              | `Assert.Contains("sub", str)` (MSTest 3.8+); fallback `StringAssert.Contains(str, "sub")`    |
-| `Assert.DoesNotContain("sub", str)`        | `Assert.DoesNotContain("sub", str)` (MSTest 3.8+); fallback `StringAssert.DoesNotMatch(...)` |
-| `Assert.StartsWith("p", str)`              | `Assert.StartsWith("p", str)` (MSTest 3.8+); fallback `StringAssert.StartsWith(str, "p")`    |
-| `Assert.EndsWith("s", str)`                | `Assert.EndsWith("s", str)` (MSTest 3.8+); fallback `StringAssert.EndsWith(str, "s")`        |
-| `Assert.Matches("\\d+", str)`              | `Assert.MatchesRegex(@"\d+", str)`                                                           |
-| `Assert.DoesNotMatch("\\d+", str)`         | `Assert.DoesNotMatchRegex(@"\d+", str)`                                                      |
-| `Assert.Equal("a", "A", ignoreCase: true)` | `Assert.AreEqual("a", "A", ignoreCase: true)`                                                |
+The default source substring/prefix/suffix overloads use `CurrentCulture`; carry over an explicit source `StringComparison` instead when present.
+
+| xUnit                                      | MSTest                                                                                                                                                                                                |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Assert.Contains("sub", str)`              | `Assert.Contains("sub", str, StringComparison.CurrentCulture)`                                                                                                                                        |
+| `Assert.DoesNotContain("sub", str)`        | `Assert.DoesNotContain("sub", str, StringComparison.CurrentCulture)`                                                                                                                                  |
+| `Assert.StartsWith("p", str)`              | `Assert.StartsWith("p", str, StringComparison.CurrentCulture)`                                                                                                                                        |
+| `Assert.EndsWith("s", str)`                | `Assert.EndsWith("s", str, StringComparison.CurrentCulture)`                                                                                                                                          |
+| `Assert.Matches("\\d+", str)`              | `Assert.MatchesRegex(@"\d+", str)`                                                                                                                                                                    |
+| `Assert.DoesNotMatch("\\d+", str)`         | `Assert.DoesNotMatchRegex(@"\d+", str)`                                                                                                                                                               |
+| `Assert.Equal("a", "A", ignoreCase: true)` | **Manual** -- preserve the source case-folding and other string-comparison options. MSTest `ignoreCase` uses linguistic comparison and is not a general equivalent of xUnit's character-wise folding. |
 
 ### 3.6 Collection
+
+Direct equality and membership mappings require the same effective element equality as the source. For nested/structural elements or differing comparers, use an explicit manual mapping preserving that equality; a default target comparer is not a general replacement for xUnit's assertion comparer.
+
+Sequence `Assert.NotEqual` requires a manual ordered element/count inequality check using the source comparison and null semantics; scalar `Assert.AreNotEqual` can accept equal-content sequences by reference.
 
 | xUnit                                                               | MSTest                                                                                                                                                                                                                                                                                                       |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -159,7 +167,7 @@ Target framework throughout: **MSTest v4** (the few v3-only spellings are explic
 | `Assert.Equal(expected, actual)` on `IEnumerable<T>` (element-wise) | `Assert.AreSequenceEqual(expected, actual)` (MSTest 4.3+); pre-4.3: `CollectionAssert.AreEqual(expected.ToList(), actual.ToList())` (`IList` required). Plain `Assert.AreEqual` does **not** compare element-wise (MSTEST0065).                                                                              |
 | `Assert.Equal(expected, actual, comparer)` on collections           | `Assert.AreSequenceEqual(expected, actual, comparer)` (MSTest 4.3+); pre-4.3: **Manual** -- compare lengths and elements in order using the original `IEqualityComparer<T>`, preserving null behavior. `CollectionAssert` requires a non-generic ordering comparer and cannot accept this comparer directly. |
 | `Assert.Distinct(collection)`                                       | **Manual** -- `var seen = new HashSet<T>(); foreach (var item in collection) Assert.IsTrue(seen.Add(item));`, where `T` is the source element type. For the explicit-comparer overload, pass the original comparer to the set and preserve the source overload's null contract.                              |
-| `Assert.Superset(expected, actual)`                                 | **Manual** -- `Assert.IsTrue(expected.IsSubsetOf(actual))` if both are `HashSet<T>`                                                                                                                                                                                                                          |
+| `Assert.Superset(expected, actual)`                                 | **Manual** -- `Assert.IsTrue(actual.IsSupersetOf(expected))` for non-null sets; retain the source receiver and its comparer.                                                                                                                                                                                 |
 
 ### 3.7 Exceptions
 

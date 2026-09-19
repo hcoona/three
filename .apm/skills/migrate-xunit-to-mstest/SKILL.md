@@ -70,19 +70,19 @@ Do not change `TargetFramework`. Remove `xunit.runner.json` only after porting i
 
 Apply the common rewrites first:
 
-| xUnit                        | MSTest                                                                              |
-| ---------------------------- | ----------------------------------------------------------------------------------- |
-| no class attribute           | `[TestClass]`                                                                       |
-| `[Fact]`                     | `[TestMethod]`                                                                      |
-| `[Theory]` + `[InlineData]`  | `[TestMethod]` + `[DataRow]`                                                        |
-| `[MemberData]`               | `[DynamicData]`                                                                     |
-| `[Fact(Skip = "...")]`       | `[TestMethod]` + `[Ignore("...")]`                                                  |
-| `[Trait("Category", value)]` | `[TestCategory(value)]`                                                             |
-| `[Trait("Owner", value)]`    | Method-only `[Owner(value)]`; resolve effective scope and values as described below |
-| other `[Trait(key, value)]`  | `[TestProperty(key, value)]`                                                        |
-| `Assert.Equal` / `NotEqual`  | `Assert.AreEqual` / `AreNotEqual`                                                   |
-| `Assert.True` / `False`      | `Assert.IsTrue` / `IsFalse`                                                         |
-| `Assert.Null` / `NotNull`    | `Assert.IsNull` / `IsNotNull`                                                       |
+| xUnit                                         | MSTest                                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| no class attribute                            | `[TestClass]`                                                                       |
+| `[Fact]`                                      | `[TestMethod]`                                                                      |
+| `[Theory]` + `[InlineData]`                   | `[TestMethod]` + `[DataRow]`                                                        |
+| `[MemberData]`                                | `[DynamicData]`                                                                     |
+| `[Fact(Skip = "...")]`                        | `[TestMethod]` + `[Ignore("...")]`                                                  |
+| `[Trait("Category", value)]`                  | `[TestCategory(value)]`                                                             |
+| `[Trait("Owner", value)]`                     | Method-only `[Owner(value)]`; resolve effective scope and values as described below |
+| other `[Trait(key, value)]`                   | `[TestProperty(key, value)]`                                                        |
+| `Assert.Equal` / `NotEqual` (scalar equality) | `Assert.AreEqual` / `AreNotEqual`                                                   |
+| `Assert.True` / `False`                       | `Assert.IsTrue` / `IsFalse`                                                         |
+| `Assert.Null` / `NotNull`                     | `Assert.IsNull` / `IsNotNull`                                                       |
 
 Remove `using Xunit;` and `using Xunit.Abstractions;`. Add `using Microsoft.VisualStudio.TestTools.UnitTesting;` for the metapackage option; `MSTest.Sdk` supplies it as an implicit global using.
 
@@ -95,7 +95,7 @@ Load the mapping cheatsheet for every high-risk construct found in Step 1. These
 - xUnit `Assert.Throws<T>` is exact-type and maps to MSTest `Assert.ThrowsExactly<T>`.
 - xUnit `Assert.ThrowsAny<T>` permits derived types and maps to MSTest `Assert.Throws<T>`.
 - xUnit `Assert.IsType<T>` is exact-type and maps to `Assert.IsExactInstanceOfType<T>`; `Assert.IsAssignableFrom<T>` maps to `Assert.IsInstanceOfType<T>`.
-- xUnit `Assert.Equal` on sequences compares elements. Use `Assert.AreSequenceEqual` on MSTest 4.3+ or `CollectionAssert.AreEqual` with materialized lists on earlier v4 for the default-comparer case; earlier custom-comparer cases require the manual mapping in the cheatsheet. Never replace sequence equality with reference-based `Assert.AreEqual`.
+- xUnit `Assert.Equal` on sequences compares elements. Use `Assert.AreSequenceEqual` on MSTest 4.3+ or `CollectionAssert.AreEqual` with materialized lists on earlier v4 for the default-comparer case; earlier custom-comparer cases require the manual mapping in the cheatsheet. Never replace sequence equality with reference-based `Assert.AreEqual`; sequence inequality also requires the cheatsheet's manual mapping, not scalar `Assert.AreNotEqual`.
 - Numeric precision and tolerance overloads are distinct. Preserve decimal-place rounding through the cheatsheet's precision mapping; do not replace it with an absolute delta.
 - `[Ignore]` and `[Timeout]` are modifiers; keep `[TestMethod]` so the test is discovered.
 - `[DataRow]` values must exactly match parameter types.
