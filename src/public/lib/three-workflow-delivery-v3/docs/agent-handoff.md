@@ -134,7 +134,7 @@ The selected C# smoke project's verified go-live is complete. The
 its own Windows publication, current-run authority, fresh destination bytes and
 clean consumer. Its consumed operation allowances grant no further execution.
 
-The accepted [Delivery Wave](../../../../../docs/delivery-wave.md#advance-workflow-delivery-v3)
+The accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
 supplies repository work authorization. [Issue #676](https://github.com/hcoona/three/issues/676)
 coordinates the concrete NuGet advancement and retains delivery evidence;
 neither this handoff nor the Issue enlarges the Wave or domain effect bounds.
