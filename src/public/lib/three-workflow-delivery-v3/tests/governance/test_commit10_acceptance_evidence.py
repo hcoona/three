@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import itertools
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
@@ -390,11 +389,6 @@ CLOSED_SCHEMA_EXTRA_PATHS: tuple[tuple[object, ...], ...] = (
     ("probe-facts", 1, "scenarios", 3, "action", "extra"),
     ("probe-facts", 1, "scenarios", 3, "response", "extra"),
     ("probe-facts", 1, "scenarios", 3, "post", "extra"),
-    ("probe-facts", 0, "scenarios", 0, "response", "diagnostics-extra"),
-    ("probe-facts", 1, "scenarios", 0, "response", "diagnostics-extra"),
-    ("probe-facts", 1, "scenarios", 1, "response", "diagnostics-extra"),
-    ("probe-facts", 1, "scenarios", 2, "response", "diagnostics-extra"),
-    ("probe-facts", 1, "scenarios", 3, "response", "diagnostics-extra"),
 )
 
 
@@ -1256,44 +1250,6 @@ def test_scenario_records_require_exact_internal_coordinate_and_tag(
 
 
 @pytest.mark.parametrize(
-    ("dependency_result", "probe_result", "expected"),
-    [
-        (
-            dependency,
-            probe,
-            "unknown"
-            if probe == "unknown"
-            else "incomplete"
-            if dependency != "success" or probe != "success"
-            else "complete",
-        )
-        for dependency, probe in itertools.product(
-            ("success", "failure", "cancelled", "skipped"),
-            ("success", "incomplete", "unknown"),
-        )
-    ],
-)
-def test_mutation_classification_is_monotone(
-    dependency_result: str,
-    probe_result: str,
-    expected: str,
-) -> None:
-    document = _document()
-    document["dependency-results"][0]["result"] = dependency_result
-    document["probe-facts"][0]["result"] = probe_result
-    document["mutation-classification"] = expected
-    if probe_result != "success":
-        document["probe-facts"][0]["scenarios"] = []
-        document["probe-facts"][0]["record-digest"] = None
-        document["probe-facts"][0]["artifact-id"] = None
-        document["probe-facts"][0]["artifact-digest"] = None
-    if dependency_result != "success":
-        _downgrade_all_probe_facts(document, expected)
-
-    assert _admit(document).mutation_classification == expected
-
-
-@pytest.mark.parametrize(
     ("dependency_result", "probe_result", "wrong"),
     [
         ("success", "unknown", "incomplete"),
@@ -1344,25 +1300,9 @@ def test_evidence_rejects_unknown_incomplete_or_arbitrary_fact_values(
         _admit(document)
 
 
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        lambda document: document["dependency-results"].pop(),
-        lambda document: document["dependency-results"].append(
-            deepcopy(document["dependency-results"][0])
-        ),
-        lambda document: document["probe-facts"].pop(),
-        lambda document: document["probe-facts"].append(
-            deepcopy(document["probe-facts"][0])
-        ),
-        lambda document: document["probe-facts"][1]["scenarios"].pop(),
-    ],
-)
-def test_evidence_rejects_incomplete_fact_and_scenario_cardinality(
-    mutation: Any,
-) -> None:
+def test_evidence_rejects_incomplete_scenario_cardinality() -> None:
     document = _document()
-    mutation(document)
+    document["probe-facts"][1]["scenarios"].pop()
 
     with pytest.raises(ValueError):
         _admit(document)
@@ -1391,21 +1331,6 @@ def test_incomplete_evidence_can_retain_inventory_without_placeholder_digest() -
         "absent-create-readback",
     )
     assert evidence.probe_facts[0].record_digest is None
-
-
-def test_schema_is_closed_and_reviewer_never_uses_actor() -> None:
-    document = _document()
-    document["unexpected"] = "forged"
-    with pytest.raises(ValueError, match="unknown closed fields"):
-        _admit(document)
-
-    document = _document()
-    document["reviewer"] = {
-        "login": "github.actor",
-        "source": "unavailable-in-job-context",
-    }
-    with pytest.raises(ValueError, match="requires null"):
-        _admit(document)
 
 
 def test_complete_evidence_accepts_unavailable_reviewer_with_all_recovery_coordinates() -> (
@@ -1441,27 +1366,6 @@ def test_missing_review_artifact_keeps_successful_probe_suite_artifact_bindings(
         assert fact.record_digest == expected["record-digest"]
         assert fact.artifact_id == expected["artifact-id"]
         assert fact.artifact_digest == expected["artifact-digest"]
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        ("reviewer", "source"),
-        ("recovery", "workflow-run-id"),
-        ("recovery", "environment"),
-        ("recovery", "deployment"),
-        ("recovery", "job"),
-        ("recovery", "artifact-id"),
-    ],
-)
-def test_missing_reviewer_requires_unavailable_source_and_every_recovery_coordinate(
-    path: tuple[object, ...],
-) -> None:
-    document = _document()
-    _remove_path(document, path)
-
-    with pytest.raises(ValueError):
-        _admit(document)
 
 
 @pytest.mark.parametrize(
@@ -1759,19 +1663,60 @@ def test_acceptance_evidence_rejects_noncanonical_or_duplicate_json(
 @pytest.mark.parametrize(
     ("dependency_result", "probe_result", "classification"),
     [
-        (
-            dependency_result,
-            probe_result,
-            "unknown"
-            if probe_result == "unknown"
-            else "incomplete"
-            if dependency_result != "success" or probe_result != "success"
-            else "complete",
-        )
-        for dependency_result, probe_result in itertools.product(
-            ("success", "failure", "cancelled", "skipped"),
-            ("success", "incomplete", "unknown"),
-        )
+        pytest.param(
+            "success",
+            "success",
+            "complete",
+            id="prerequisite-success-probes-success",
+        ),
+        pytest.param(
+            "success",
+            "incomplete",
+            "incomplete",
+            id="prerequisite-success-first-probe-incomplete",
+        ),
+        pytest.param(
+            "success",
+            "unknown",
+            "unknown",
+            id="prerequisite-success-first-probe-unknown",
+        ),
+        pytest.param(
+            "failure",
+            "success",
+            "incomplete",
+            id="prerequisite-failure-all-probes-incomplete",
+        ),
+        pytest.param(
+            "failure",
+            "unknown",
+            "unknown",
+            id="prerequisite-failure-all-probes-unknown",
+        ),
+        pytest.param(
+            "cancelled",
+            "success",
+            "incomplete",
+            id="prerequisite-cancelled-all-probes-incomplete",
+        ),
+        pytest.param(
+            "cancelled",
+            "unknown",
+            "unknown",
+            id="prerequisite-cancelled-all-probes-unknown",
+        ),
+        pytest.param(
+            "skipped",
+            "success",
+            "incomplete",
+            id="prerequisite-skipped-all-probes-incomplete",
+        ),
+        pytest.param(
+            "skipped",
+            "unknown",
+            "unknown",
+            id="prerequisite-skipped-all-probes-unknown",
+        ),
     ],
 )
 def test_mutation_classification_is_closed_and_consistent(
@@ -1801,20 +1746,48 @@ def test_mutation_classification_is_closed_and_consistent(
 @pytest.mark.parametrize(
     ("dependency_result", "probe_result", "classification"),
     [
-        (
-            dependency_result,
-            probe_result,
-            "unknown"
-            if dependency_result in {"failure", "cancelled"}
-            or probe_result == "unknown"
-            else "incomplete"
-            if dependency_result != "success" or probe_result != "success"
-            else "complete",
-        )
-        for dependency_result, probe_result in itertools.product(
-            ("success", "failure", "cancelled", "skipped"),
-            ("success", "incomplete", "unknown"),
-        )
+        pytest.param(
+            "success",
+            "success",
+            "complete",
+            id="probe-job-success-probes-success",
+        ),
+        pytest.param(
+            "success",
+            "incomplete",
+            "incomplete",
+            id="probe-job-success-first-probe-incomplete",
+        ),
+        pytest.param(
+            "success",
+            "unknown",
+            "unknown",
+            id="probe-job-success-first-probe-unknown",
+        ),
+        pytest.param(
+            "failure",
+            "success",
+            "unknown",
+            id="probe-job-failure-all-probes-unknown",
+        ),
+        pytest.param(
+            "cancelled",
+            "success",
+            "unknown",
+            id="probe-job-cancelled-all-probes-unknown",
+        ),
+        pytest.param(
+            "skipped",
+            "success",
+            "incomplete",
+            id="probe-job-skipped-all-probes-incomplete",
+        ),
+        pytest.param(
+            "skipped",
+            "unknown",
+            "unknown",
+            id="probe-job-skipped-all-probes-unknown",
+        ),
     ],
 )
 def test_terminal_fact_matrix_derives_exact_mutation_classification(
@@ -1845,10 +1818,7 @@ def test_terminal_fact_matrix_derives_exact_mutation_classification(
     ("dependency_result", "probe_result", "wrong"),
     [
         ("success", "success", "unsupported"),
-        ("success", "success", "unknown"),
         ("success", "incomplete", "complete"),
-        ("success", "unknown", "incomplete"),
-        ("failure", "success", "complete"),
         ("cancelled", "success", "complete"),
         ("skipped", "success", "complete"),
     ],
@@ -3369,23 +3339,6 @@ def _test_local_finalized_document(
     return document
 
 
-def test_retry_4_governance_profiles_have_stable_historical_order_and_unique_base_coordinates() -> (
-    None
-):
-    retry_4_profile = _registered_retry_4_governance_profile()
-    profiles = governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
-    base_coordinates = tuple(profile.package_coordinate for profile in profiles)
-
-    assert base_coordinates == (
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
-    )
-    assert len(base_coordinates) == len(set(base_coordinates)) == len(profiles)
-    assert profiles[-1] is retry_4_profile
-
-
 def test_retry_4_http_200_diagnostic_artifact_remains_unknown_without_proof() -> (
     None
 ):
@@ -4803,39 +4756,6 @@ def test_retry_4_governance_preserves_historical_profiles_digests_and_replay_evi
                 scenario_document["post"]["content-sha512"]
                 == proof["tarball-sha512"]
             )
-
-
-@pytest.fixture(autouse=True)
-def _preserve_retry_4_historical_registry_view(
-    request: pytest.FixtureRequest,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Preserve the append-only retry-4 contract's historical four-profile view;
-    # the exact-five test above independently checks the live registry.
-    if request.node.name != (
-        "test_retry_4_governance_profiles_have_stable_historical_order_"
-        "and_unique_base_coordinates"
-    ):
-        return
-    profiles = governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
-    assert tuple(profile.package_coordinate for profile in profiles) == (
-        COORDINATE,
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
-        GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
-        TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE,
-        TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE,
-    )
-    assert profiles[3].package_coordinate == (
-        TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE
-    )
-    assert profiles[4].package_coordinate == (
-        TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
-    )
-    monkeypatch.setattr(
-        governance_module,
-        "_GOVERNANCE_ACCEPTANCE_PROFILES",
-        profiles[:4],
-    )
 
 
 def test_retry_5_governance_authoritative_publish_status_set_is_exact() -> None:

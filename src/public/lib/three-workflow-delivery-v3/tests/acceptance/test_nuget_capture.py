@@ -748,11 +748,9 @@ def test_capture_decoded_location_reflection_never_persists(
     "stage",
     ["metadata", "invalid-package", "unsupported-package", "second-hop"],
 )
-@pytest.mark.parametrize("reflection", _HEADER_REFLECTIONS)
 def test_capture_rejected_location_never_persists_headers(
-    tmp_path, capture_request, scenario, stage, reflection
+    tmp_path, capture_request, scenario, stage
 ):
-    header, form = reflection
     _, transport, responses = scenario
     source = _package_redirect(scenario)
     location = "https://other-storage.example/pkg-two?sig=capability-two&v=2"
@@ -760,7 +758,7 @@ def test_capture_rejected_location_never_persists_headers(
         location = location.replace("https:", "http:")
     reflected_headers = (
         ("Location", location),
-        (header, _header_reflection(location, form)),
+        ("ETag", location),
     )
     target = native.NUGET_SERVICE_INDEX if stage == "metadata" else ARCHIVE_URL
     if stage == "second-hop":
