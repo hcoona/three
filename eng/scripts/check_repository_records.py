@@ -418,6 +418,7 @@ def markdown(data: bytes) -> dict[str, Any]:
     """Extract real Markdown destinations, headings and explicit anchors."""
     tokens = MARKDOWN.parse(data.decode("utf-8"))
     links: list[str] = []
+    images: list[str] = []
     anchors: set[str] = set()
     headings: list[str] = []
     counts: Counter[str] = Counter()
@@ -428,7 +429,9 @@ def markdown(data: bytes) -> dict[str, Any]:
             if token.type == "link_open":
                 links.append(token.attrGet("href"))
             if token.type == "image":
-                links.append(token.attrGet("src"))
+                images.append(token.attrGet("src"))
+                # Image children render as alt text, not navigation or anchors.
+                continue
             if token.type in {"html_inline", "html_block"}:
                 html.feed(token.content)
             if token.children:
@@ -453,6 +456,7 @@ def markdown(data: bytes) -> dict[str, Any]:
         counts[slug] += 1
     return {
         "links": links,
+        "images": images,
         "anchors": anchors | html.anchors,
         "headings": headings,
     }
@@ -728,6 +732,8 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
             target = reference(path, destination)
             if target:
                 edges[path].add(target)
+        for destination in parsed[path]["images"]:
+            reference(path, destination)
     for control in controls["controls"]:
         for destination in control["governing_rules"]:
             reference(CONTROL_CATALOG, destination, repository_relative=True)
@@ -756,10 +762,18 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
 
     retirements: list[tuple[str, str, str]] = []
 
+    def base_document(path: str) -> dict[str, Any] | None:
+        try:
+            return markdown(accepted.read(path))
+        except (UnicodeError, RecordError) as exc:
+            error("base-markdown-input-invalid", path, str(exc))
+            return None
+
     def identifiers(
         snapshot: Snapshot, definitions: list[dict[str, Any]], *, is_base: bool
-    ) -> dict[tuple[str, str], list[str]]:
+    ) -> dict[tuple[str, str], list[str]] | None:
         found: dict[tuple[str, str], list[str]] = defaultdict(list)
+        complete = True
         for path in snapshot.entries:
             if (
                 not path.endswith(".md")
@@ -774,7 +788,10 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
             ]
             if len(routes) != 1:
                 continue
-            document = markdown(snapshot.read(path))
+            document = base_document(path) if is_base else parsed.get(path)
+            if document is None:
+                complete = False
+                continue
             for heading in document["headings"]:
                 match = REQUIREMENT_ID.match(heading)
                 if not match:
@@ -794,35 +811,42 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
                         retirements.append(
                             (routes[0]["namespace"], target, path)
                         )
-        return found
+        return found if complete else None
 
     old_ids = identifiers(accepted, base_bindings, is_base=True)
     new_ids = identifiers(current, active_bindings, is_base=False)
-    report["identifier_comparison"] = {
-        "base_definition_count": sum(map(len, old_ids.values())),
-        "candidate_definition_count": sum(map(len, new_ids.values())),
-        "recognized_syntax": REQUIREMENT_ID.pattern,
-    }
-    for namespace, target, path in retirements:
-        if (namespace, target) not in new_ids:
-            error("retirement-target-missing", path, f"{namespace}:{target}")
-    for key in sorted(old_ids.keys() - new_ids.keys()):
-        error(
-            "established-identifier-removed",
-            old_ids[key][0],
-            f"{key[0]}:{key[1]}",
+    if old_ids is None or new_ids is None:
+        report["checks"]["requirement-heading-identifiers"] = (
+            "unavailable: canonical Markdown input could not be parsed"
         )
-    for key, paths in sorted(new_ids.items()):
-        if len(paths) > 1:
+    else:
+        report["identifier_comparison"] = {
+            "base_definition_count": sum(map(len, old_ids.values())),
+            "candidate_definition_count": sum(map(len, new_ids.values())),
+            "recognized_syntax": REQUIREMENT_ID.pattern,
+        }
+        for namespace, target, path in retirements:
+            if (namespace, target) not in new_ids:
+                error(
+                    "retirement-target-missing", path, f"{namespace}:{target}"
+                )
+        for key in sorted(old_ids.keys() - new_ids.keys()):
             error(
-                "duplicate-requirement-definition",
-                paths[0],
-                f"{key[0]}:{key[1]}: {paths}",
+                "established-identifier-removed",
+                old_ids[key][0],
+                f"{key[0]}:{key[1]}",
             )
-    report["checks"]["requirement-heading-identifiers"] = (
-        "executed: REQ/FR/NFR/AC numeric heading definitions only; "
-        "semantic meaning and other syntax require review"
-    )
+        for key, paths in sorted(new_ids.items()):
+            if len(paths) > 1:
+                error(
+                    "duplicate-requirement-definition",
+                    paths[0],
+                    f"{key[0]}:{key[1]}: {paths}",
+                )
+        report["checks"]["requirement-heading-identifiers"] = (
+            "executed: REQ/FR/NFR/AC numeric heading definitions only; "
+            "semantic meaning and other syntax require review"
+        )
     for path in sorted(set(current.entries) | set(accepted.entries)):
         previous = (
             [

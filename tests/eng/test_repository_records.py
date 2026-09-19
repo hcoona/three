@@ -565,3 +565,102 @@ def test_portal_cycle_does_not_establish_reachability(repo: Repository) -> None:
     }
     assert missing == {"docs/a.md", "docs/b.md"}
     assert "reference-missing" not in codes(report)
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "![Diagram](orphan.md)",
+        "![Diagram][record]\n\n[record]: orphan.md",
+        "![See [record](orphan.md)](diagram.svg)",
+    ],
+)
+def test_images_do_not_establish_portal_reachability(
+    repo: Repository, image: str
+) -> None:
+    """Image destinations and alt text cannot admit an unlinked record."""
+    repo.write("docs/orphan.md", "# Orphan\n")
+    repo.write("docs/diagram.svg", "<svg/>\n")
+    repo.bind("docs/orphan.md")
+    repo.save()
+    with (repo.root / "docs/README.md").open("a") as stream:
+        stream.write(f"\n{image}\n")
+    assert repo.check()["diagnostics"] == [
+        {
+            "severity": "error",
+            "code": "portal-unreachable",
+            "path": "docs/orphan.md",
+            "message": "No explicit link chain from docs/README.md",
+        }
+    ]
+
+
+def test_linked_images_preserve_navigation_and_asset_validation(
+    repo: Repository,
+) -> None:
+    """A linked image retains its outer link and validates its asset."""
+    repo.write("docs/reader.md", "# Reader\n")
+    repo.write("docs/diagram.svg", "<svg/>\n")
+    repo.bind("docs/reader.md")
+    repo.save()
+    with (repo.root / "docs/README.md").open("a") as stream:
+        stream.write("\n[![Diagram](diagram.svg)](reader.md)\n")
+    assert repo.check()["diagnostics"] == []
+    (repo.root / "docs/diagram.svg").unlink()
+    assert repo.check()["diagnostics"] == [
+        {
+            "severity": "error",
+            "code": "reference-missing",
+            "path": "docs/README.md",
+            "message": "diagram.svg",
+        }
+    ]
+
+
+@pytest.mark.parametrize("invalid_snapshot", ["base", "candidate", "both"])
+def test_invalid_markdown_preserves_cli_report(
+    repo: Repository, invalid_snapshot: str
+) -> None:
+    """Malformed Markdown keeps JSON recoverable and ID checks unavailable."""
+    path = "docs/requirements.md"
+    valid = "# REQ-001: Retained behavior\n"
+    repo.write(path, valid)
+    repo.bind(path)
+    repo.save()
+    repo.route_all()
+    if invalid_snapshot in {"base", "both"}:
+        (repo.root / path).write_bytes(b"# REQ-001: Invalid \xff\n")
+    repo.base = repo.commit()
+    if invalid_snapshot == "base":
+        repo.write(path, valid)
+    elif invalid_snapshot == "candidate":
+        (repo.root / path).write_bytes(b"# REQ-001: Invalid \xff\n")
+    candidate = repo.base if invalid_snapshot == "both" else repo.commit()
+    output = repo.root / "report-output.txt"
+    arguments = [
+        "--repository-root",
+        str(repo.root),
+        "--base",
+        repo.base,
+        "--candidate",
+        candidate,
+        "--output",
+        str(output),
+    ]
+    assert checker.main(arguments) == 1
+    report = json.loads(output.read_text())
+    expected = {
+        "base": {"base-markdown-input-invalid"},
+        "candidate": {"markdown-input-invalid"},
+        "both": {"base-markdown-input-invalid", "markdown-input-invalid"},
+    }[invalid_snapshot]
+    assert codes(report) == expected
+    assert {d["path"] for d in report["diagnostics"]} == {path}
+    assert report["checks"]["requirement-heading-identifiers"].startswith(
+        "unavailable:"
+    )
+    assert "identifier_comparison" not in report
+    assert report["checks"]["portal-reachability"] == "executed"
+    assert report["command"] == arguments
+    assert report["base"]["commit"] == repo.base
+    assert report["candidate"]["commit"] == candidate
