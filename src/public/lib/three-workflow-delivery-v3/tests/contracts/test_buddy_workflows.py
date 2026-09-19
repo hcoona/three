@@ -131,23 +131,43 @@ def _artifact_steps(
     ]
 
 
-def test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact() -> None:
+def _compiler_output_step(job: dict[str, Any]) -> dict[str, Any]:
+    expression = job["outputs"]["execution-concurrency-key"]
+    producer = re.fullmatch(
+        r"\$\{\{\s*steps\.([\w-]+)\.outputs\.execution-concurrency-key\s*\}\}",
+        expression,
+    )
+    assert producer is not None
+    matches = [
+        step for step in _steps(job) if step.get("id") == producer.group(1)
+    ]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_buddy_caller_preserves_authority_and_execution_concurrency() -> None:
     caller = _document(CALLER)
     jobs = caller["jobs"]
 
     assert caller["permissions"] == {}
-    assert set(jobs) == {
-        "request",
-        "discover-node",
-        "compile-model",
-        "evaluate-live-eligibility",
-        "run-live-attempt",
-    }
-    assert jobs["discover-node"]["needs"] == "request"
-    assert jobs["compile-model"]["needs"] == "discover-node"
-    assert jobs["evaluate-live-eligibility"]["needs"] == "compile-model"
+    # These consumers read their producer's outputs through GitHub's needs
+    # context. Extra dependencies are allowed; transitive reachability alone
+    # does not make those outputs available.
+    for consumer, producer in (
+        ("discover-node", "request"),
+        ("compile-model", "discover-node"),
+        ("evaluate-live-eligibility", "compile-model"),
+        ("run-live-attempt", "evaluate-live-eligibility"),
+    ):
+        assert producer in jobs
+        assert producer in _needs(jobs[consumer])
+    for name, job in jobs.items():
+        assert "environment" not in job
+        if name != "run-live-attempt":
+            assert "uses" not in job
+            assert job.get("permissions", {}).items() <= {("contents", "read")}
+
     invoke = jobs["run-live-attempt"]
-    assert invoke["needs"] == "evaluate-live-eligibility"
     assert (
         invoke["uses"]
         == "./.github/workflows/workflow-delivery-v3-live-attempt.yml"
@@ -158,23 +178,8 @@ def test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact() -> None:
         "actions": "read",
         "packages": "write",
     }
-    assert invoke["concurrency"]["cancel-in-progress"] is False
-    assert invoke["concurrency"]["group"].startswith("wdv3-execution-")
-
-    compile_model = jobs["compile-model"]
-    compile_step = _step(
-        compile_model,
-        "Compile without rerunning Provider",
-    )
-    compile_shell = _run(compile_step)
     evaluate = jobs["evaluate-live-eligibility"]
-
-    assert compile_step["id"] == "compile"
-    assert "release compile-live-model \\" in compile_shell
-    assert '--github-output "${GITHUB_OUTPUT}"' in compile_shell
-    assert compile_model["outputs"]["execution-concurrency-key"] == (
-        "${{ steps.compile.outputs.execution-concurrency-key }}"
-    )
+    _compiler_output_step(jobs["compile-model"])
     assert evaluate["outputs"]["execution-concurrency-key"] == (
         "${{ needs.compile-model.outputs.execution-concurrency-key }}"
     )
@@ -195,18 +200,118 @@ def test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact() -> None:
     ):
         assert "concurrency" not in jobs[job_name]
 
-    assert "${{ needs.discover-node.outputs.request-id }}" not in compile_shell
-    assert "printf " not in compile_shell
-    assert [
-        line.strip()
-        for line in compile_shell.splitlines()
-        if "sha256sum" in line
-    ] == ["digest=\"$(sha256sum .wdv3/repository-model.json | cut -d' ' -f1)\""]
-    assert [
-        line.strip()
-        for line in compile_shell.splitlines()
-        if "execution-concurrency-key" in line or "execution_key" in line
-    ] == []
+
+def test_buddy_compilation_transports_model_and_compiler_outputs(
+    tmp_path: Path,
+) -> None:
+    import hashlib  # noqa: PLC0415
+    import json  # noqa: PLC0415
+    import os  # noqa: PLC0415
+
+    job = _document(CALLER)["jobs"]["compile-model"]
+    compile_step = _compiler_output_step(job)
+    run = _run(compile_step)
+    facts = {
+        "needs.discover-node.outputs.intent-artifact-name": "intent.json",
+        "needs.discover-node.outputs.intent-digest": "sha256:" + "1" * 64,
+        "needs.discover-node.outputs.intent-artifact-id": "101",
+        "needs.discover-node.outputs.intent-artifact-digest": "sha256:"
+        + "2" * 64,
+        "needs.discover-node.outputs.provider-artifact-name": "provider.json",
+        "needs.discover-node.outputs.provider-artifact-id": "202",
+        "needs.discover-node.outputs.provider-artifact-digest": "sha256:"
+        + "3" * 64,
+    }
+    bin_directory = tmp_path / "bin"
+    bin_directory.mkdir()
+    uv = bin_directory / "uv"
+    uv.write_text(
+        r"""#!/usr/bin/env python3
+import json
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+with Path("calls.jsonl").open("a", encoding="utf-8") as calls:
+    calls.write(json.dumps(args) + "\n")
+command_start = args.index("release")
+assert args[command_start - 1] == "three-workflow-delivery-v3"
+assert args[command_start:][:2] == ["release", "compile-live-model"]
+output = Path(args[args.index("--output") + 1])
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_bytes(b'{"compiled":"model"}\n')
+with Path(args[args.index("--github-output") + 1]).open("a", encoding="utf-8") as result:
+    result.write("execution-concurrency-key=key-from-admitted-model\n")
+    result.write("repository-model-digest=sha256:" + "4" * 64 + "\n")
+""",
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+    github_output = tmp_path / "github-output.txt"
+    result = _phase3_execute_workflow_run(
+        tmp_path,
+        run,
+        facts,
+        environment={
+            "GITHUB_OUTPUT": str(github_output),
+            "GITHUB_RUN_ID": "424242",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_SHA": "a" * 40,
+            "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
+            "WDV3_PACKAGE": "three-workflow-delivery-v3",
+        },
+    )
+
+    assert result["status"] == 0, result["output"]
+    calls = [
+        json.loads(line)
+        for line in (tmp_path / "calls.jsonl").read_text().splitlines()
+    ]
+    assert calls
+    for args in calls:
+        command = args[args.index("release") :]
+        assert command[:2] == ["release", "compile-live-model"]
+        arguments = command[2:]
+        options = dict(zip(arguments[::2], arguments[1::2], strict=True))
+        # The temporary output path is private to the compile step. Its
+        # observable contract is the bytes ultimately selected for upload.
+        assert options.pop("--output")
+        assert options == {
+            "--workflow-run-id": "424242",
+            "--run-attempt": "1",
+            "--target": "a" * 40,
+            "--intent": ".wdv3/input/intent.json",
+            "--intent-digest": "sha256:" + "1" * 64,
+            "--intent-artifact-id": "101",
+            "--intent-artifact-digest": "sha256:" + "2" * 64,
+            "--provider-result": ".wdv3/input/provider.json",
+            "--provider-artifact-id": "202",
+            "--provider-artifact-digest": "sha256:" + "3" * 64,
+            "--github-output": str(github_output),
+        }
+    outputs = dict(
+        line.split("=", 1)
+        for line in github_output.read_text(encoding="utf-8").splitlines()
+    )
+    assert outputs["execution-concurrency-key"] == "key-from-admitted-model"
+    assert outputs["repository-model-digest"] == "sha256:" + "4" * 64
+    upload = next(step for step in _steps(job) if step.get("uses") == UPLOAD)
+    artifact_fact = {
+        f"steps.{compile_step['id']}.outputs.repository-model-artifact-name": outputs[
+            "repository-model-artifact-name"
+        ],
+    }
+    artifact_name = _phase3_render_workflow_run(
+        upload["with"]["name"], artifact_fact
+    )
+    artifact = tmp_path / _phase3_render_workflow_run(
+        upload["with"]["path"], artifact_fact
+    )
+    assert artifact.name == artifact_name
+    assert artifact.read_bytes() == b'{"compiled":"model"}\n'
+    digest = hashlib.sha256(b'{"compiled":"model"}\n').hexdigest()
+    assert artifact.name.endswith(f"-{digest}.json")
+    assert "424242" in artifact.name
 
 
 def test_live_eligibility_block_is_uploaded_before_status_propagates() -> None:

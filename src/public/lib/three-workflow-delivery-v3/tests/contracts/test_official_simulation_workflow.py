@@ -26,23 +26,24 @@ OPTIONAL_QUALIFICATION_DOWNLOADS = (
     "Download install-import Evidence by artifact ID",
     "Download Release Artifact record by artifact ID",
 )
-EXPECTED_NEEDS: dict[str, str | list[str] | None] = {
-    "request": None,
-    "discover-node": "request",
-    "compile-simulation-model": "discover-node",
-    "create-simulation-identity": "compile-simulation-model",
-    "plan-simulation": "create-simulation-identity",
-    "build-tarball": "plan-simulation",
-    "project-test": "plan-simulation",
-    "npm-artifact-qualification": "build-tarball",
-    "qualification-finalizer": [
+# These are immutable-input producers, not a complete job graph. GitHub's
+# needs context requires a direct dependency to consume their outputs.
+REQUIRED_INPUT_PRODUCERS: dict[str, tuple[str, ...]] = {
+    "discover-node": ("request",),
+    "compile-simulation-model": ("discover-node",),
+    "create-simulation-identity": ("compile-simulation-model",),
+    "plan-simulation": ("create-simulation-identity",),
+    "build-tarball": ("plan-simulation",),
+    "project-test": ("plan-simulation",),
+    "npm-artifact-qualification": ("build-tarball",),
+    "qualification-finalizer": (
         "build-tarball",
         "project-test",
         "npm-artifact-qualification",
-    ],
-    "observe-npmjs": "qualification-finalizer",
-    "materialize-hypothetical-actions": "observe-npmjs",
-    "simulation-finalizer": "materialize-hypothetical-actions",
+    ),
+    "observe-npmjs": ("qualification-finalizer",),
+    "materialize-hypothetical-actions": ("observe-npmjs",),
+    "simulation-finalizer": ("materialize-hypothetical-actions",),
 }
 EXPECTED_TIMEOUTS = {
     "request": 10,
@@ -140,18 +141,18 @@ def test_official_simulation_event_permissions_and_concurrency_are_exact() -> (
     assert "github.ref ==" not in raw
 
 
-def test_official_simulation_dag_runner_and_deadlines_are_exact() -> None:
-    """Pin the approved 12-job topology and LLD deadlines."""
+def test_simulation_preserves_input_dependencies_and_execution_limits() -> None:
+    """Keep input availability and the existing runner/resource constraints."""
     jobs = _document()["jobs"]
 
-    assert set(jobs) == set(EXPECTED_NEEDS)
-    for name, expected_needs in EXPECTED_NEEDS.items():
-        if expected_needs is None:
-            assert "needs" not in jobs[name]
-        else:
-            assert jobs[name]["needs"] == expected_needs
+    for name, producers in REQUIRED_INPUT_PRODUCERS.items():
+        needs = jobs[name].get("needs", [])
+        dependencies = {needs} if isinstance(needs, str) else set(needs)
+        assert set(producers) <= dependencies
+        assert set(producers) <= jobs.keys()
+    for name, timeout in EXPECTED_TIMEOUTS.items():
         assert jobs[name]["runs-on"] == "ubuntu-24.04"
-        assert jobs[name]["timeout-minutes"] == EXPECTED_TIMEOUTS[name]
+        assert jobs[name]["timeout-minutes"] == timeout
 
 
 def test_official_simulation_actions_and_checkouts_are_immutable() -> None:
@@ -177,7 +178,27 @@ def test_official_simulation_actions_and_checkouts_are_immutable() -> None:
         DOWNLOAD,
     }
     checkout_steps = [step for step in uses_steps if step["uses"] == CHECKOUT]
-    assert len(checkout_steps) == len(EXPECTED_NEEDS)
+    # Each existing control/build consumer needs selected-revision code.
+    # Additional jobs need no checkout merely because they exist, but every
+    # checkout they do use must obey the same target/credential contract.
+    for name in (
+        "request",
+        "discover-node",
+        "compile-simulation-model",
+        "create-simulation-identity",
+        "plan-simulation",
+        "build-tarball",
+        "project-test",
+        "npm-artifact-qualification",
+        "qualification-finalizer",
+        "observe-npmjs",
+        "materialize-hypothetical-actions",
+        "simulation-finalizer",
+    ):
+        assert any(
+            step.get("uses") == CHECKOUT
+            for step in _steps(document["jobs"][name])
+        ), f"{name} requires the selected target"
     assert all(
         step["with"]
         == {
