@@ -685,7 +685,11 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
     def reference(  # noqa: PLR0911 - Each invalid reference has one diagnostic.
         source: str, destination: str, *, repository_relative: bool = False
     ) -> str | None:
-        url = urlsplit(destination)
+        try:
+            url = urlsplit(destination)
+        except ValueError:
+            error("reference-invalid", source, destination)
+            return None
         if url.scheme or url.netloc:
             return None
         decoded = unquote(url.path)

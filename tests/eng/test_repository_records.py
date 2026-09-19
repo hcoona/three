@@ -664,3 +664,50 @@ def test_invalid_markdown_preserves_cli_report(
     assert report["command"] == arguments
     assert report["base"]["commit"] == repo.base
     assert report["candidate"]["commit"] == candidate
+
+
+@pytest.mark.parametrize("field", ["governing_rules", "implementation"])
+def test_malformed_reference_preserves_cli_report(
+    repo: Repository, field: str
+) -> None:
+    """Malformed structured URLs fail within the recoverable report boundary."""
+    with (repo.root / "docs/README.md").open("a") as stream:
+        # The pinned Markdown parser normalizes these destinations to http://%5B.
+        stream.write("\n[Link](http://[)\n\n![Image](http://[)\n")
+    assert repo.check()["diagnostics"] == []
+    controls = yaml.safe_load((repo.root / checker.CONTROL_CATALOG).read_text())
+    if field == "governing_rules":
+        controls["controls"][0][field] = ["http://["]
+    else:
+        controls["controls"][0][field] = {
+            "kind": "repository-path",
+            "value": "http://[",
+        }
+    repo.write(checker.CONTROL_CATALOG, yaml.safe_dump(controls))
+    candidate = repo.commit()
+    output = repo.root / "report-output.txt"
+    arguments = [
+        "--repository-root",
+        str(repo.root),
+        "--base",
+        repo.base,
+        "--candidate",
+        candidate,
+        "--output",
+        str(output),
+    ]
+    assert checker.main(arguments) == 1
+    report = json.loads(output.read_text())
+    assert report["diagnostics"] == [
+        {
+            "severity": "error",
+            "code": "reference-invalid",
+            "path": checker.CONTROL_CATALOG,
+            "message": "http://[",
+        }
+    ]
+    assert report["checks"]["requirement-heading-identifiers"].startswith(
+        "executed:"
+    )
+    assert report["command"] == arguments
+    assert report["candidate"]["commit"] == candidate
