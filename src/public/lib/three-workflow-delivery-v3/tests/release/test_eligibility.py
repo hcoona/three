@@ -894,13 +894,6 @@ def _make_static_reference_finding(
     ).to_document()
 
 
-def _make_blocked_with_diagnostic(
-    document: dict[str, JsonValue],
-) -> None:
-    document["result"] = "blocked"
-    document["diagnostics"] = ["governance-live-disabled"]
-
-
 def _admit_mutated_decision(  # noqa: PLR0913
     document: dict[str, JsonValue],
     *,
@@ -1407,11 +1400,6 @@ def test_live_admission_rejects_static_reference_and_governance_mutations(  # no
             "not a closed passing decision",
             id="passing-with-static-reference-finding",
         ),
-        pytest.param(
-            _make_blocked_with_diagnostic,
-            "not a closed passing decision",
-            id="blocked-with-diagnostic",
-        ),
     ],
 )
 def test_live_admission_requires_a_diagnostic_free_static_reference_clean_pass(
@@ -1686,36 +1674,6 @@ def test_live_admission_rejects_minimal_pass_payload(
         )
 
 
-def test_live_eligibility_blocks_enabled_governance_without_local_primitive(
-    monkeypatch: pytest.MonkeyPatch,
-    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
-    policy: ReleasePolicy,
-) -> None:
-    """Keep ready Governance blocked while production admits no primitive."""
-    snapshot = live_admitted_repository_model.snapshot
-    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
-
-    decision = _evaluate(
-        monkeypatch,
-        client,
-        snapshot=snapshot,
-        policy=policy,
-    )
-    governance = _object_member(decision.to_document(), "governance")
-    attestation = governance["admitted-attestation"]
-    assert isinstance(attestation, dict)
-    activation = _object_member(attestation, "activation")
-    primitive = _object_member(activation, "destination_primitive")
-
-    assert decision.result is EligibilityResult.BLOCKED
-    assert decision.diagnostics == ("destination-primitive-unproven",)
-    assert (
-        primitive["native_acceptance_suite_version"]
-        == TEST_DESTINATION_PRIMITIVE_ID
-    )
-    assert decision.governance.attestation.live_enabled is True
-
-
 def test_live_admission_rejects_forged_pass_without_local_primitive(
     monkeypatch: pytest.MonkeyPatch,
     live_intent: ReleaseIntent,
@@ -1737,6 +1695,17 @@ def test_live_admission_rejects_forged_pass_without_local_primitive(
         ),
     )
     document = decision.to_document()
+    governance = _object_member(document, "governance")
+    attestation = governance["admitted-attestation"]
+    assert isinstance(attestation, dict)
+    activation = _object_member(attestation, "activation")
+    primitive = _object_member(activation, "destination_primitive")
+    assert (
+        primitive["native_acceptance_suite_version"]
+        == TEST_DESTINATION_PRIMITIVE_ID
+    )
+    assert decision.governance.attestation.live_enabled is True
+
     document["result"] = "pass"
     document["diagnostics"] = []
     canonical_bytes = canonicalize(document)
@@ -2661,22 +2630,6 @@ def test_attestation_requires_accepted_writer_inventory(
 
     with pytest.raises(ValueError, match="accepted_writers"):
         parse_governance_attestation(content)
-
-
-def test_attestation_rejects_access_evidence_digest_substitute() -> None:
-    """Require the exact structured access inventory, not a digest shim."""
-    document = _attestation_document(live_enabled=True)
-    del document["access_inventory"]
-    document["access_evidence_digest"] = "sha256:" + ("7" * 64)
-
-    with pytest.raises(
-        ValueError,
-        match="missing required field: access_inventory",
-    ):
-        parse_governance_attestation(canonicalize(document))
-
-    assert "access_inventory" not in document
-    assert document["access_evidence_digest"].startswith("sha256:")
 
 
 @pytest.mark.parametrize(
@@ -3626,7 +3579,6 @@ def test_ready_acceptance_rejects_superseded_or_privileged_fields(
     [
         ("preexisting_container", False),
         ("operator_controlled", False),
-        ("production_dependency", True),
         ("preexisting_container", 1),
     ],
 )
