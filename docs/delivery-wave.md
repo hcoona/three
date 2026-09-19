@@ -8,79 +8,80 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Correct Node Provider and Repository Model Test Responsibilities
+### Separate Workflow Authority Contracts From Incidental Topology
 
-- **Work carrier:** [Issue #767](https://github.com/hcoona/three/issues/767).
-- **Authorized outcome:** Correct the test abstraction and ownership between
-  Node Provider facts, Fact Bundle admission and Repository Model compilation.
-  Test malformed input at the boundary that rejects it; compiler scenarios must
-  reach the compiler. Replace heuristic discovery of a fixed same-revision
-  API with direct typed fixtures. Reduction is a possible result, not a quota.
+- **Work carrier:** [Issue #770](https://github.com/hcoona/three/issues/770).
+- **Authorized outcome:** Correct the selected Buddy caller and Official
+  simulation tests so they protect authority, immutable transport and critical
+  order without freezing incidental job inventories, immediate edges or shell
+  spelling. Classify each changed assertion by its required behavior, actual
+  owner and credible failure. Reduction is a possible result, not a quota.
 - **Accepted basis:** Reconcile current source with the independently reviewed
   [responsibility assessment](https://github.com/hcoona/three/pull/766#issuecomment-5745485171)
-  and Issue proposal. Follow the current
-  [v3 handoff](../src/public/lib/three-workflow-delivery-v3/docs/agent-handoff.md),
+  and the Issue proposal. Follow `WD-NFR-007` in the current
   [requirements](../src/public/lib/three-workflow-delivery-v3/docs/requirements.md),
-  [repository model design](../src/public/lib/three-workflow-delivery-v3/docs/repository-model-release-unit-mld.md),
-  [Shared Foundation design](../src/public/lib/three-workflow-delivery-v3/docs/shared-foundation-mld.md),
-  [npm design](../src/public/lib/three-workflow-delivery-v3/docs/hcoona-release-smoke-npm-lld.md)
+  the [HLD validation strategy](../src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#validation-strategy),
+  [npm design](../src/public/lib/three-workflow-delivery-v3/docs/hcoona-release-smoke-npm-lld.md),
+  [v3 handoff](../src/public/lib/three-workflow-delivery-v3/docs/agent-handoff.md)
   and [shared testing principles](engineering/engineering-principles.md#testing).
-  Refresh analysis if a relied-on source, contract or owner changes.
+  Refresh analysis when a relied-on source, contract or owner changes.
 - **Bounded implementation:** Modify only these paths under
-  `src/public/lib/three-workflow-delivery-v3/tests/`:
-    - `contracts/test_commit3_contract_boundaries.py`: replace the Fact Bundle
-      API-discovery, argument-synthesis and result-extraction helpers and their
-      callers with explicit current Node APIs. Assert independent literal
-      fields, values and canonical identities; retire instance identity only
-      when no current contract requires it.
-    - `repository/test_compiler.py`: trace and relocate the malformed-NBGV and
-      checkout-primitive families to their actual producer/admission owner.
-      Retain compiler-specific invalid-wrapper, wrong-context, complete and
-      incomplete model, and exact-target scenarios with inputs that reach the
-      compiler. Make real Git setup explicit for scenarios that need it.
-    - `repository/test_node_provider.py`: adjust related direct Provider
-      contracts only as needed to establish the owning tests. Preserve existing
-      real Git/NBGV acquisition tests and their assumptions.
-    - `contracts/test_node_provider_admission.py`: optionally add a focused
-      in-memory owner for the relocated producer/admission contracts.
-      Permit necessary local test fixtures, meaningful owning cases and removal
-      of demonstrably unused local setup/imports within those files. Do not move
-      rows into hidden replay loops, create a generic test framework, share mutable
-      Git state or broaden the change to other test families.
-- **Preserved obligations:** Retain exact schema, canonical bytes/digests,
-  current context, purpose, target, manifest and transport binding; supported
-  model closure/readiness and native projections; frozen/slotted records;
-  no Provider re-execution; and real Git/NBGV integration assumptions. Keep
-  production validation and invalid-wrapper rejection unchanged. Fact Bundle
-  wrappers are publicly constructible; their names are not proof of admission.
-  Classify assertions by required behavior and credible failure, not by their
-  uniqueness or directory. Preserve required assertions atomically when moving
-  ownership; justify any retirement against current contracts and sufficient
-  surviving evidence. An unproven ownership transfer retains the original test
-  until corrected analysis and validation resolve it.
-- **Validation and review:** Record each affected family's rule, actual owner,
-  input boundary and asserted failure. Separate additions, moves, renames and
-  removals against the accepted baseline. Run complete affected modules and
-  any discovered fixture consumers, then the normal full v3/repository gates
-  and hooks. Preserve exact candidate, patches, results and resource evidence.
-  Formal independent domain and evidence reviews follow green validation;
-  independently adjudicate material findings and refresh affected validation
-  and reviews after correction. Follow the handoff's contraction protocol and
-  [agent-execution guidance](engineering/agent-execution.md). Static setup
-  changes and case counts establish no measured runtime or peak-inode saving.
-- **Scope and effects:** Permit ordinary validation/dependency operations,
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/`:
+    - `test_buddy_workflows.py`: correct the caller topology/concurrency/reusable
+      boundary test and its incidental compile-shell assertions.
+    - `test_official_simulation_workflow.py`: correct the topology/runner/deadline
+      test and the topology-derived checkout-count assertion in the immutable
+      action/checkout test.
+
+    Permit necessary local fixtures/helpers, removal of demonstrably unused
+    local setup, and a small owning semantic scenario when needed to retain a
+    demonstrated contract from those assertions. Other test families remain
+    unchanged. Use existing scenario seams and narrow configuration checks;
+    do not build a generic workflow interpreter or relocate domain policy into
+    test helpers.
+
+- **Preserved obligations:** Retain required producer/consumer availability and
+  binding, uses-only same-revision reuse, global permission ceilings and zone
+  separation, exact execution-concurrency source and non-cancellation, current
+  target/ref/request/run/attempt and artifact-ID/digest binding, no Provider
+  re-execution, trusted immutable actions, and exact externally authoritative
+  names/expressions. Preserve independently justified runner/deadline contracts;
+  the topology finding does not establish that these are incidental. Check
+  required target-dependent consumers and every actual checkout so a missing
+  required checkout cannot pass vacuously. Harmless extra jobs must not permit
+  untrusted actions, extra authority or lost data dependencies; retain strict
+  trusted-action selection rather than permissive subset checks.
+  Exact Approval Environment/sentinel and its first executable check,
+  Authorization before publisher start, durable marker before mutation, Result
+  precedence and direct platform-owned publication outcome remain protected by
+  their unchanged owning families. Preserve required assertions atomically;
+  retain an assertion whose transfer or retirement has not been established.
+- **Validation and review:** Explain why behavior-preserving non-authoritative
+  changes can pass while each changed contract still detects its credible
+  violation. Distinguish static reasoning from executed experiments. Record
+  additions, moves/renames and removals separately. Run complete affected modules
+  and any discovered helper consumers, then normal full v3/repository gates and
+  hooks. Retain exact candidates, patches, checks and resource evidence in work
+  carriers, keeping machine-specific process handles local. Formal independent
+  domain/evidence reviews follow green local validation; independently triage
+  material findings and refresh affected validation/reviews after correction.
+  Follow the handoff's contraction protocol and
+  [agent-execution guidance](engineering/agent-execution.md). Test counts and
+  static changes establish no measured runtime or peak-inode saving. Local
+  configuration/shell scenarios establish no new GitHub deployment, token or
+  scheduler behavior.
+- **Scope and effects:** Permit ordinary dependency/validation operations,
   task-owned evidence and normal Git/Issue/PR delivery. Preserve #721 resource
   ownership, bounded child lifetimes and failed/interrupted evidence; stop on
   exhaustion or unreaped task sessions and resolve ownership before continuing.
-  Production, workflows/HK, dependencies, resource limits, schemas, authorities
-  and historical/native evidence remain unchanged. Production extraction,
-  admitted-Snapshot API changes, CI derivation consolidation, other test
-  cleanup, legacy acceptance retirement and other v3 development are excluded.
-  No native probe, dispatch/rerun, external publication, administrative or
-  authentication/access change, host-wide cleanup or unrelated process
-  termination is authorized. Existing npm/NuGet gates and spent-operation
-  boundaries remain in force.
-- **Completion:** Retain the accepted responsibility changes, evidence limits,
+  Production, workflow YAML, HK, dependencies, resource limits, schemas,
+  authorities, historical/native evidence and other test cleanup remain
+  unchanged. Admitted-Snapshot APIs, CI derivation consolidation, legacy
+  acceptance retirement and other v3 development are excluded. No native probe,
+  dispatch/rerun, external publication, administrative or authentication/access
+  change, host-wide cleanup or unrelated process termination is authorized.
+  Existing npm/NuGet gates and spent-operation boundaries remain in force.
+- **Completion:** Retain accepted responsibility changes, evidence limits,
   validation, reviews and dispositions in the Issue and delivery carriers.
   End this finite grant through reviewed Wave deletion or replacement after
   acceptance. Further abstraction work requires its own accepted scope.
