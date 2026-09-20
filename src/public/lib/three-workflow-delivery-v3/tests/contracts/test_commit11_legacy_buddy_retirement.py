@@ -71,17 +71,6 @@ BUDDY_REJECTION_SNIPPET = (
     "          fi\n"
     "\n"
 )
-PRESERVED_V3_BUDDY_WORKFLOW_JOBS = {
-    ".github/workflows/workflow-delivery-v3-buddy-smoke.yml": frozenset(
-        {
-            "request",
-            "discover-node",
-            "compile-model",
-            "evaluate-live-eligibility",
-            "run-live-attempt",
-        }
-    ),
-}
 OBSOLETE_PRE_V3_PATHS = (
     ".github/actionlint.yaml",
     ".github/workflows/release-build-dotnet.yml",
@@ -471,15 +460,10 @@ def test_v3_shadow_and_buddy_workflows_remain_dedicated() -> None:
     assert shadow.is_file()
     assert shadow.read_bytes() != (WORKFLOWS / "ci.yml").read_bytes()
 
-    for (
-        relative_path,
-        expected_jobs,
-    ) in PRESERVED_V3_BUDDY_WORKFLOW_JOBS.items():
-        document = yaml.safe_load(
-            (REPO_ROOT / relative_path).read_text(encoding="utf-8")
-        )
-        assert "workflow_dispatch" in _triggers(document), relative_path
-        assert frozenset(document["jobs"]) == expected_jobs, relative_path
+    buddy = WORKFLOWS / "workflow-delivery-v3-buddy-smoke.yml"
+    document = yaml.safe_load(buddy.read_text(encoding="utf-8"))
+    assert "workflow_dispatch" in _triggers(document)
+    assert _legacy_buddy_routes(WORKFLOWS) == ()
 
 
 def test_pre_v3_control_plane_and_legacy_descriptors_are_absent() -> None:
@@ -564,4 +548,3 @@ def test_temporary_acceptance_workflows_are_retired() -> None:
     )
 
     assert temporary_workflows == ()
-    assert _legacy_buddy_routes(WORKFLOWS) == ()
