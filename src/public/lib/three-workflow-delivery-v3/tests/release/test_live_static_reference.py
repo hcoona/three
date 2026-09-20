@@ -146,7 +146,7 @@ def _evaluate_with_result(
     monkeypatch.setattr(
         eligibility,
         "_validate_live_context",
-        lambda _context, _snapshot, _policy: None,
+        lambda _context, _repository_model, _policy: None,
     )
     monkeypatch.setattr(
         eligibility,
@@ -242,7 +242,7 @@ def test_live_eligibility_validates_static_reference_before_governance(
     monkeypatch.setattr(
         eligibility,
         "_validate_live_context",
-        lambda _context, _snapshot, _policy: None,
+        lambda _context, _repository_model, _policy: None,
     )
     monkeypatch.setattr(
         eligibility,

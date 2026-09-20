@@ -54,6 +54,7 @@ from three_workflow_delivery_v3.repository.compiler import (
     FactBundleAdmissionContext,
     RepositoryModelSnapshot,
     admit_node_provider_fact_bundle,
+    admit_repository_model_snapshot,
     compile_repository_model,
     first_slice_provider_manifest,
     provider_binding,
@@ -61,7 +62,6 @@ from three_workflow_delivery_v3.repository.compiler import (
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
     FIRST_SLICE_POLICY_PATH,
-    FIRST_SLICE_RELEASE_UNIT,
     GOVERNANCE_PATH,
     GOVERNANCE_REF,
     GOVERNANCE_REPOSITORY,
@@ -83,6 +83,11 @@ from three_workflow_delivery_v3.repository.node_provider import (
     create_node_provider_fact_bundle,
 )
 
+from ..repository.test_dotnet_compiler import _compile as _compile_nuget_model
+from ..repository.test_dotnet_compiler import (
+    native_scenario_basis as native_scenario_basis,  # noqa: PLC0414
+)
+
 if TYPE_CHECKING:
     from three_workflow_delivery_v3.records.release import ReleaseIntent
     from three_workflow_delivery_v3.repository.compiler import (
@@ -97,7 +102,7 @@ def test_live_eligibility_api_owns_static_reference_input() -> None:
 
     assert tuple(parameters) == (
         "context",
-        "snapshot",
+        "repository_model",
         "policy",
         "client",
         "repository_root",
@@ -177,14 +182,8 @@ LIVE_STATIC_REFERENCE_IMPLEMENTATIONS = (
     "npm-package-arg@14.0.0",
 )
 
-type SnapshotMutation = Callable[
-    [RepositoryModelSnapshot], RepositoryModelSnapshot
-]
 type LiveContextMutation = Callable[
     [LiveEligibilityContext], LiveEligibilityContext
-]
-type CompilationContextMutation = Callable[
-    [CompilationContext], CompilationContext
 ]
 type GovernanceSourceMutation = Callable[[GovernanceSource], GovernanceSource]
 type DecisionMutation = Callable[[dict[str, JsonValue]], None]
@@ -607,18 +606,6 @@ def _object_member(
     return value
 
 
-def _with_snapshot_channel(
-    context: CompilationContext,
-) -> CompilationContext:
-    return replace(context, channel="official")
-
-
-def _with_snapshot_release_unit(
-    context: CompilationContext,
-) -> CompilationContext:
-    return replace(context, release_unit=FIRST_SLICE_RELEASE_UNIT)
-
-
 def _with_simulation_purpose(
     context: LiveEligibilityContext,
 ) -> LiveEligibilityContext:
@@ -785,7 +772,7 @@ def _evaluate(  # noqa: PLR0913
     monkeypatch: pytest.MonkeyPatch,
     client: RecordingGovernanceClient,
     *,
-    snapshot: RepositoryModelSnapshot,
+    repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
     static_reference: BoundedStaticReferenceResult | None = None,
     context: LiveEligibilityContext | None = None,
@@ -793,7 +780,7 @@ def _evaluate(  # noqa: PLR0913
     now: datetime = NOW,
     admitted_primitive_id: str | None = None,
 ) -> LiveEligibilityDecision:
-    selected_context = context or _context(snapshot, policy)
+    selected_context = context or _context(repository_model.snapshot, policy)
     if context_mutation is not None:
         selected_context = context_mutation(selected_context)
     selected_result = static_reference or _static_reference(
@@ -821,7 +808,7 @@ def _evaluate(  # noqa: PLR0913
     )
     return evaluate_live_eligibility(
         selected_context,
-        snapshot,
+        repository_model,
         policy,
         client,
         repository_root=REPO_ROOT,
@@ -859,7 +846,7 @@ def _transport_decision(
         return _evaluate(
             monkeypatch,
             client,
-            snapshot=model,
+            repository_model=live_admitted_repository_model,
             policy=policy,
             static_reference=_static_reference(target=live_intent.target),
             context=context,
@@ -1686,7 +1673,7 @@ def test_live_admission_rejects_forged_pass_without_local_primitive(
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         context=_context(
             snapshot,
@@ -1756,7 +1743,7 @@ def test_other_primitive_ids_cannot_pass_when_test_primitive_is_admitted(
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         context=_context(
             snapshot,
@@ -1791,6 +1778,76 @@ def test_other_primitive_ids_cannot_pass_when_test_primitive_is_admitted(
         )
 
 
+class _ModelAccessTrap:
+    @property
+    def snapshot(self) -> RepositoryModelSnapshot:
+        pytest.fail(
+            "an unadmitted model must be rejected before property access"
+        )
+
+
+@pytest.mark.parametrize("model_kind", ["raw-snapshot", "wrong-wrapper"])
+def test_live_eligibility_rejects_unadmitted_model_before_use_or_io(
+    monkeypatch: pytest.MonkeyPatch,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+    model_kind: str,
+) -> None:
+    """Reject raw models and wrapper-shaped substitutes at the consumer gate."""
+    snapshot = live_admitted_repository_model.snapshot
+    context = _context(snapshot, policy)
+    unadmitted = (
+        snapshot if model_kind == "raw-snapshot" else _ModelAccessTrap()
+    )
+    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
+
+    with pytest.raises(
+        TypeError, match="requires an admitted Repository Model"
+    ):
+        _evaluate(
+            monkeypatch,
+            client,
+            repository_model=unadmitted,  # type: ignore[arg-type]
+            policy=policy,
+            context=context,
+        )
+
+    assert client.scan_calls == []
+    assert client.calls == []
+
+
+def test_live_eligibility_rejects_admitted_nuget_model_before_io(
+    monkeypatch: pytest.MonkeyPatch,
+    native_scenario_basis,
+    policy: ReleasePolicy,
+) -> None:
+    """Internal model validity does not grant npm consumer applicability."""
+    snapshot = _compile_nuget_model(native_scenario_basis)
+    repository_model = admit_repository_model_snapshot(
+        canonicalize(snapshot.to_document()),
+        expected_context=snapshot.context,
+        expected_digest=snapshot.snapshot_digest,
+    )
+    context = _context(snapshot, policy)
+    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
+
+    with pytest.raises(ValueError, match="cannot admit another ecosystem"):
+        _evaluate(
+            monkeypatch,
+            client,
+            repository_model=repository_model,
+            policy=policy,
+            context=context,
+        )
+
+    assert repository_model.snapshot.ready is True
+    assert repository_model.snapshot.release_units[0].release_unit == (
+        "hcoona-release-smoke-github-packages"
+    )
+    assert client.scan_calls == []
+    assert client.calls == []
+
+
 def test_live_eligibility_passes_with_fresh_exact_target_inputs(
     monkeypatch: pytest.MonkeyPatch,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
@@ -1803,7 +1860,7 @@ def test_live_eligibility_passes_with_fresh_exact_target_inputs(
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
@@ -1838,13 +1895,18 @@ def test_live_eligibility_accepts_an_actual_compiled_repository_model(
 ) -> None:
     """Bind the Decision to the compiler's complete first-slice Snapshot."""
     snapshot = _compiled_snapshot(tmp_path)
+    live_admitted_repository_model = admit_repository_model_snapshot(
+        canonicalize(snapshot.to_document()),
+        expected_context=snapshot.context,
+        expected_digest=snapshot.snapshot_digest,
+    )
     policy = _policy()
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
@@ -1865,126 +1927,6 @@ def test_live_eligibility_accepts_an_actual_compiled_repository_model(
     assert context["repository-model-digest"] == snapshot.snapshot_digest
 
 
-@pytest.mark.parametrize(
-    ("context_mutation", "field_name"),
-    [
-        (_with_snapshot_channel, "channel"),
-        (_with_snapshot_release_unit, "release_unit"),
-    ],
-    ids=["channel-set", "release-unit-set"],
-)
-def test_live_eligibility_rejects_live_snapshot_with_selection(
-    monkeypatch: pytest.MonkeyPatch,
-    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
-    policy: ReleasePolicy,
-    context_mutation: CompilationContextMutation,
-    field_name: str,
-) -> None:
-    """Reject live Repository Model contexts carrying simulation selection."""
-    base_snapshot = live_admitted_repository_model.snapshot
-    snapshot = replace(
-        base_snapshot,
-        context=context_mutation(base_snapshot.context),
-    )
-    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
-
-    with pytest.raises(ValueError, match="simulation selection"):
-        _evaluate(
-            monkeypatch,
-            client,
-            snapshot=snapshot,
-            policy=policy,
-        )
-
-    assert getattr(snapshot.context, field_name) is not None
-    assert snapshot.context.purpose == "live-release"
-    assert client.scan_calls == []
-    assert client.calls == []
-
-
-@pytest.mark.parametrize(
-    ("mutate", "message"),
-    [
-        (
-            lambda snapshot: replace(snapshot, release_units=()),
-            "must contain one Release Unit",
-        ),
-        (
-            lambda snapshot: replace(snapshot, quality=()),
-            "Quality closure mismatch",
-        ),
-        (
-            lambda snapshot: replace(
-                snapshot,
-                project_nodes=(
-                    replace(snapshot.project_nodes[0], path="src/substitute"),
-                ),
-            ),
-            "Project Node closure mismatch",
-        ),
-        (
-            lambda snapshot: replace(
-                snapshot,
-                release_units=(
-                    replace(
-                        snapshot.release_units[0],
-                        builds=(
-                            replace(
-                                snapshot.release_units[0].builds[0],
-                                outputs=(
-                                    replace(
-                                        snapshot.release_units[0]
-                                        .builds[0]
-                                        .outputs[0],
-                                        output_id="substituted-tarball",
-                                    ),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-            "output closure mismatch",
-        ),
-        (
-            lambda snapshot: replace(
-                snapshot,
-                nbgv=replace(snapshot.nbgv, git_commit_id="d" * 40),
-            ),
-            "NBGV facts are incomplete",
-        ),
-    ],
-    ids=[
-        "missing-release-unit",
-        "missing-quality",
-        "substituted-project",
-        "substituted-output",
-        "target-unbound-nbgv",
-    ],
-)
-def test_eligibility_rejects_incomplete_or_substituted_repository_model_closure(
-    monkeypatch: pytest.MonkeyPatch,
-    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
-    policy: ReleasePolicy,
-    mutate: SnapshotMutation,
-    message: str,
-) -> None:
-    """Reject self-consistent Snapshots without first-slice closure."""
-    snapshot = mutate(live_admitted_repository_model.snapshot)
-    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
-
-    with pytest.raises(ValueError, match=message):
-        _evaluate(
-            monkeypatch,
-            client,
-            snapshot=snapshot,
-            policy=policy,
-        )
-
-    assert client.scan_calls == []
-    assert client.calls == []
-
-
 def test_decision_binds_attestation_provenance_and_content_digest(
     monkeypatch: pytest.MonkeyPatch,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
@@ -1998,7 +1940,7 @@ def test_decision_binds_attestation_provenance_and_content_digest(
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
@@ -2046,13 +1988,12 @@ def test_each_evaluation_performs_a_fresh_protected_ref_read(
     policy: ReleasePolicy,
 ) -> None:
     """Do not reuse an earlier enabled observation after source disablement."""
-    snapshot = live_admitted_repository_model.snapshot
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
 
     first = _evaluate(
         monkeypatch,
         client,
-        snapshot=snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
@@ -2061,7 +2002,7 @@ def test_each_evaluation_performs_a_fresh_protected_ref_read(
     second = _evaluate(
         monkeypatch,
         client,
-        snapshot=snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
     )
 
@@ -2097,7 +2038,7 @@ def test_disabled_attestation_blocks_before_attempt_creation(
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=live_admitted_repository_model.snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
     )
     document = decision.to_document()
@@ -2135,7 +2076,7 @@ def test_expired_attestation_blocks_before_attempt_creation(
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=live_admitted_repository_model.snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
@@ -2183,7 +2124,7 @@ def test_attestation_time_boundaries_block_live_eligibility(  # noqa: PLR0913, P
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=live_admitted_repository_model.snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
@@ -2241,7 +2182,7 @@ def test_static_reference_findings_and_errors_block_before_attempt_creation(  # 
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=live_admitted_repository_model.snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         static_reference=static_reference,
         admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
@@ -2428,36 +2369,6 @@ def test_static_reference_result_is_closed_and_deterministic(
         parse_bounded_static_reference_result(canonicalize(document))
 
 
-def test_eligibility_rejects_live_repository_model_with_run_attempt(
-    monkeypatch: pytest.MonkeyPatch,
-    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
-    policy: ReleasePolicy,
-) -> None:
-    """Reject a retired Live Snapshot run-attempt before external reads."""
-    current_snapshot = live_admitted_repository_model.snapshot
-    prior_snapshot = replace(
-        current_snapshot,
-        context=replace(current_snapshot.context, run_attempt=2),
-    )
-    current_context = _context(current_snapshot, policy)
-    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
-
-    with pytest.raises(
-        ValueError,
-        match="live compilation cannot bind run_attempt",
-    ):
-        _evaluate(
-            monkeypatch,
-            client,
-            snapshot=prior_snapshot,
-            policy=policy,
-            context=current_context,
-        )
-
-    assert client.scan_calls == []
-    assert client.calls == []
-
-
 @pytest.mark.parametrize(
     ("context_mutation", "message"),
     [
@@ -2489,6 +2400,12 @@ def test_eligibility_rejects_live_repository_model_with_run_attempt(
             _with_other_release_policy,
             "Release policy digest mismatch",
         ),
+        (
+            lambda context: replace(
+                context, repository_model_digest="sha256:" + "0" * 64
+            ),
+            "Repository Model is not exact and ready",
+        ),
     ],
     ids=[
         "purpose",
@@ -2498,6 +2415,7 @@ def test_eligibility_rejects_live_repository_model_with_run_attempt(
         "control",
         "catalog",
         "policy",
+        "model-digest",
     ],
 )
 def test_eligibility_rejects_wrong_current_binding(
@@ -2514,7 +2432,7 @@ def test_eligibility_rejects_wrong_current_binding(
         _evaluate(
             monkeypatch,
             client,
-            snapshot=live_admitted_repository_model.snapshot,
+            repository_model=live_admitted_repository_model,
             policy=policy,
             context_mutation=context_mutation,
         )
@@ -2554,7 +2472,7 @@ def test_fixed_governance_source_rejects_repository_ref_path_or_age_change(
         _evaluate(
             monkeypatch,
             client,
-            snapshot=live_admitted_repository_model.snapshot,
+            repository_model=live_admitted_repository_model,
             policy=mutated_policy,
         )
 
@@ -2782,7 +2700,7 @@ def test_live_context_rejects_invalid_primitives_before_source_read(
         _evaluate(
             monkeypatch,
             client,
-            snapshot=live_admitted_repository_model.snapshot,
+            repository_model=live_admitted_repository_model,
             policy=policy,
             context_mutation=context_mutation,
         )
@@ -2813,7 +2731,7 @@ def test_missing_unreadable_or_unprotected_source_fails_closed(
         _evaluate(
             monkeypatch,
             client,
-            snapshot=live_admitted_repository_model.snapshot,
+            repository_model=live_admitted_repository_model,
             policy=policy,
         )
 
@@ -2856,7 +2774,7 @@ def test_git_object_format_sha_and_blob_provenance_are_strict(  # noqa: PLR0913,
         _evaluate(
             monkeypatch,
             client,
-            snapshot=live_admitted_repository_model.snapshot,
+            repository_model=live_admitted_repository_model,
             policy=policy,
         )
 
@@ -2869,12 +2787,11 @@ def test_prior_facts_cannot_substitute_for_fresh_input(
     policy: ReleasePolicy,
 ) -> None:
     """Require the live evaluator's client even when prior facts exist."""
-    snapshot = live_admitted_repository_model.snapshot
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
     prior = _evaluate(
         monkeypatch,
         client,
-        snapshot=snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         admitted_primitive_id=TEST_DESTINATION_PRIMITIVE_ID,
     )
@@ -2887,7 +2804,7 @@ def test_prior_facts_cannot_substitute_for_fresh_input(
         _evaluate(
             monkeypatch,
             blocking_client,
-            snapshot=snapshot,
+            repository_model=live_admitted_repository_model,
             policy=policy,
         )
 
@@ -3260,7 +3177,7 @@ def test_enabled_governance_exact_validity_boundaries_evaluate_and_admit(
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         context=context,
         now=inspected_at,
@@ -3492,7 +3409,7 @@ def test_selected_ref_grammar_rejects_invalid_refs_before_any_read(
         _evaluate(
             monkeypatch,
             client,
-            snapshot=snapshot,
+            repository_model=live_admitted_repository_model,
             policy=policy,
             context=context,
         )
@@ -3636,7 +3553,7 @@ def test_ready_disable_reenable_preserves_evidence_and_rejects_old_fresh_proof(
     blocked = _evaluate(
         monkeypatch,
         client,
-        snapshot=live_admitted_repository_model.snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         context=decision.context,
     )
@@ -3681,7 +3598,7 @@ def test_ready_disable_reenable_preserves_evidence_and_rejects_old_fresh_proof(
     new_dispatch = _evaluate(
         monkeypatch,
         client,
-        snapshot=live_admitted_repository_model.snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         context=decision.context,
     )
@@ -3730,7 +3647,7 @@ def test_ready_requires_exact_target_admitted_acceptance_contract(
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=live_admitted_repository_model.snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
     )
     assert decision.result is EligibilityResult.BLOCKED
@@ -3972,7 +3889,7 @@ def test_sha256_governance_provenance_round_trips_through_strict_live_admission(
     decision = _evaluate(
         monkeypatch,
         client,
-        snapshot=snapshot,
+        repository_model=live_admitted_repository_model,
         policy=policy,
         context=_context(
             snapshot,

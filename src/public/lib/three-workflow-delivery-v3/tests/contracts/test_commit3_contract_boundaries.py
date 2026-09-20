@@ -28,6 +28,7 @@ from three_workflow_delivery_v3.repository import (
     node_provider as node_provider_module,
 )
 from three_workflow_delivery_v3.repository.compiler import (
+    AdmittedRepositoryModelSnapshot,
     CompilationContext,
     CompiledBuild,
     CompiledOutput,
@@ -688,14 +689,24 @@ def _live_context(
     )
 
 
+def _admitted_model(
+    snapshot: RepositoryModelSnapshot,
+) -> AdmittedRepositoryModelSnapshot:
+    return AdmittedRepositoryModelSnapshot(
+        snapshot=snapshot,
+        canonical_bytes=canonicalize(snapshot.to_document()),
+        canonical_digest=snapshot.snapshot_digest,
+    )
+
+
 def _validate_live_context(
     context: LiveEligibilityContext,
-    snapshot: RepositoryModelSnapshot,
+    repository_model: AdmittedRepositoryModelSnapshot,
 ) -> None:
     policy = load_release_policy(REPO_ROOT / FIRST_SLICE_POLICY_PATH)
     eligibility_module._validate_live_context(  # noqa: SLF001
         context,
-        snapshot,
+        repository_model,
         policy,
     )
 
@@ -1543,9 +1554,10 @@ def test_live_context_accepts_canonical_selected_refs(
 ) -> None:
     """Accept nonempty canonical branch and tag refs as exact strings."""
     snapshot = _snapshot()
+    repository_model = _admitted_model(snapshot)
     context = replace(_live_context(snapshot), selected_ref=selected_ref)
 
-    _validate_live_context(context, snapshot)
+    _validate_live_context(context, repository_model)
 
     assert context.selected_ref == selected_ref
     assert context.producer == "evaluate-live-eligibility"
@@ -1601,13 +1613,14 @@ def test_live_context_requires_exact_strings_and_valid_selected_ref(
 ) -> None:
     """Reject malformed refs and truthy numeric/Boolean producer surrogates."""
     snapshot = _snapshot()
+    repository_model = _admitted_model(snapshot)
     context = replace(
         _live_context(snapshot),
         **{field: cast("Any", value)},
     )
 
     with pytest.raises((TypeError, ValueError)):
-        _validate_live_context(context, snapshot)
+        _validate_live_context(context, repository_model)
 
     assert snapshot.ready is True
     assert snapshot.context.target == TARGET
@@ -1736,21 +1749,17 @@ def test_repository_model_snapshot_admission_rejects_nested_tuple_substitutions(
         pytest.param(_list_record, id="list"),
     ],
 )
-def test_snapshot_admission_and_live_eligibility_reject_top_level_surrogates(
+def test_repository_model_admission_rejects_top_level_surrogates(
     surrogate_factory: Any,
 ) -> None:
-    """Reject every top-level Snapshot record surrogate at both boundaries."""
+    """Reject top-level Snapshot surrogates at their model owner."""
     snapshot = _snapshot()
-    context = _live_context(snapshot)
     forged = cast("Any", surrogate_factory(snapshot))
 
     with pytest.raises(TypeError, match="wrong runtime type"):
         validate_first_slice_repository_model_snapshot(forged)
-    with pytest.raises(TypeError, match="wrong runtime type"):
-        _validate_live_context(context, forged)
 
     validate_first_slice_repository_model_snapshot(snapshot)
-    _validate_live_context(context, snapshot)
 
 
 @pytest.mark.parametrize(
@@ -1895,66 +1904,57 @@ def test_repository_model_snapshot_admission_rejects_record_surrogates(
     )
 
 
-def test_live_eligibility_validates_snapshot_admission_before_digest_use() -> (
-    None
-):
+def test_repository_model_validation_precedes_digest_use() -> None:
     """Reject an unadmitted record before snapshot digest serialization."""
     snapshot = _snapshot()
-    context = _live_context(snapshot)
     forged = replace(
         snapshot,
         release_units=(cast("Any", _DigestAccessTrap()),),
     )
 
     with pytest.raises(TypeError, match="Release Unit"):
-        _validate_live_context(context, forged)
+        validate_first_slice_repository_model_snapshot(forged)
 
-    assert context.repository_model_digest == snapshot.snapshot_digest
+    validate_first_slice_repository_model_snapshot(snapshot)
     assert snapshot.ready is True
 
 
-def test_live_eligibility_rejects_digest_equivalent_list_backed_snapshot() -> (
+def test_repository_model_rejects_digest_equivalent_list_backed_snapshot() -> (
     None
 ):
     """Block a tuple-to-list TOCTOU mutation that preserves JSON digest."""
     snapshot = _snapshot()
-    context = _live_context(snapshot)
     forged = replace(
         snapshot,
         release_units=cast("Any", [*snapshot.release_units]),
     )
 
-    assert forged.snapshot_digest == context.repository_model_digest
+    assert forged.to_document() == snapshot.to_document()
+    assert forged.snapshot_digest == snapshot.snapshot_digest
     with pytest.raises(TypeError, match=r"release_units.*exact tuple"):
-        _validate_live_context(context, forged)
+        validate_first_slice_repository_model_snapshot(forged)
 
     validate_first_slice_repository_model_snapshot(snapshot)
     assert snapshot.release_units[0].builds[0].build_id == "npm-package"
 
 
-def test_live_eligibility_blocks_toctou_mutation_during_snapshot_admission() -> (  # noqa: E501
-    None
-):
+def test_repository_model_rejects_policy_surrogate_before_equality() -> None:
     """Reject release-policy surrogates before equality can mutate closure."""
     snapshot = _snapshot()
-    context = _live_context(snapshot)
-    valid_digest = snapshot.snapshot_digest
     release_units = snapshot.release_units
 
-    assert context.repository_model_digest == valid_digest
-    _validate_live_context(context, snapshot)
+    validate_first_slice_repository_model_snapshot(snapshot)
 
     trap = _ReleasePolicyPathMutationTrap(snapshot)
     object.__setattr__(snapshot, "release_policy_path", cast("Any", trap))
 
     with pytest.raises(TypeError, match="release_policy_path"):
-        _validate_live_context(context, snapshot)
+        validate_first_slice_repository_model_snapshot(snapshot)
 
     assert trap.comparison_triggered is False
     assert snapshot.release_policy_path is trap
     assert type(snapshot.release_units) is tuple
     assert snapshot.release_units is release_units
-    assert context.repository_model_digest == valid_digest
 
 
 def test_repository_model_valid_tuples_keep_canonical_json_arrays() -> None:

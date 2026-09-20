@@ -3665,10 +3665,10 @@ def test_cli_live_evidence_accepts_git_target_only(  # noqa: PLR0915
 
     def validate_context(
         context: object,
-        actual_snapshot: object,
+        actual_model: object,
         actual_policy: object,
     ) -> None:
-        validation_calls.append((context, actual_snapshot, actual_policy))
+        validation_calls.append((context, actual_model, actual_policy))
 
     def parse_governance(_value: object) -> object:
         return governance
@@ -3767,7 +3767,7 @@ def test_cli_live_evidence_accepts_git_target_only(  # noqa: PLR0915
         assert admitted_calls == []
 
     assert len(validation_calls) == 1
-    assert validation_calls[0][1:] == (snapshot, policy)
+    assert validation_calls[0][1:] == (repository_model, policy)
 
 
 @pytest.mark.parametrize(
