@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # ruff: noqa: D103
 import inspect
+from collections.abc import Callable
 from dataclasses import FrozenInstanceError, fields, replace
 from pathlib import Path
 
@@ -30,7 +31,13 @@ from three_workflow_delivery_v3.release.planner import (
 )
 from three_workflow_delivery_v3.repository.compiler import (
     AdmittedRepositoryModelSnapshot,
+    CompilationContext,
+    RepositoryModelSnapshot,
     admit_repository_model_snapshot,
+    validate_first_slice_repository_model_snapshot,
+)
+from three_workflow_delivery_v3.repository.descriptors import (
+    FIRST_SLICE_RELEASE_UNIT,
 )
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -352,3 +359,159 @@ def test_simulation_identity_document_contains_no_live_identity(
     assert "official-execution-identity" not in serialized
     assert "release-attempt-identity" not in serialized
     assert isinstance(binding.simulation, SimulationIdentity)
+
+
+def _with_snapshot_channel(
+    context: CompilationContext,
+) -> CompilationContext:
+    return replace(context, channel="official")
+
+
+def _with_snapshot_release_unit(
+    context: CompilationContext,
+) -> CompilationContext:
+    return replace(context, release_unit=FIRST_SLICE_RELEASE_UNIT)
+
+
+type CompilationContextMutation = Callable[
+    [CompilationContext], CompilationContext
+]
+
+type SnapshotMutation = Callable[
+    [RepositoryModelSnapshot], RepositoryModelSnapshot
+]
+
+
+@pytest.mark.parametrize(
+    ("context_mutation", "field_name"),
+    [
+        (_with_snapshot_channel, "channel"),
+        (_with_snapshot_release_unit, "release_unit"),
+    ],
+    ids=["channel-set", "release-unit-set"],
+)
+def test_repository_model_admission_rejects_live_selection(
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    context_mutation: CompilationContextMutation,
+    field_name: str,
+) -> None:
+    """Reject live Repository Model contexts carrying simulation selection."""
+    base_snapshot = live_admitted_repository_model.snapshot
+    snapshot = replace(
+        base_snapshot,
+        context=context_mutation(base_snapshot.context),
+    )
+
+    with pytest.raises(ValueError, match="simulation selection"):
+        validate_first_slice_repository_model_snapshot(snapshot)
+
+    assert getattr(snapshot.context, field_name) is not None
+    assert snapshot.context.purpose == "live-release"
+    validate_first_slice_repository_model_snapshot(
+        live_admitted_repository_model.snapshot
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda snapshot: replace(snapshot, release_units=()),
+            "must contain one Release Unit",
+        ),
+        (
+            lambda snapshot: replace(snapshot, quality=()),
+            "Quality closure mismatch",
+        ),
+        (
+            lambda snapshot: replace(
+                snapshot,
+                project_nodes=(
+                    replace(snapshot.project_nodes[0], path="src/substitute"),
+                ),
+            ),
+            "Project Node closure mismatch",
+        ),
+        (
+            lambda snapshot: replace(
+                snapshot,
+                release_units=(
+                    replace(
+                        snapshot.release_units[0],
+                        builds=(
+                            replace(
+                                snapshot.release_units[0].builds[0],
+                                outputs=(
+                                    replace(
+                                        snapshot.release_units[0]
+                                        .builds[0]
+                                        .outputs[0],
+                                        output_id="substituted-tarball",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            "output closure mismatch",
+        ),
+        (
+            lambda snapshot: replace(
+                snapshot,
+                nbgv=replace(snapshot.nbgv, git_commit_id="d" * 40),
+            ),
+            "NBGV facts are incomplete",
+        ),
+    ],
+    ids=[
+        "missing-release-unit",
+        "missing-quality",
+        "substituted-project",
+        "substituted-output",
+        "target-unbound-nbgv",
+    ],
+)
+def test_repository_model_admission_rejects_incomplete_or_substituted_closure(
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    mutate: SnapshotMutation,
+    message: str,
+) -> None:
+    """Reject self-consistent Snapshots without first-slice closure."""
+    snapshot = mutate(live_admitted_repository_model.snapshot)
+
+    with pytest.raises(ValueError, match=message):
+        validate_first_slice_repository_model_snapshot(snapshot)
+
+    validate_first_slice_repository_model_snapshot(
+        live_admitted_repository_model.snapshot
+    )
+
+
+def test_repository_model_admission_rejects_live_run_attempt(
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+) -> None:
+    """Reject the retired run-attempt field at the model boundary."""
+    current_snapshot = live_admitted_repository_model.snapshot
+    prior_snapshot = replace(
+        current_snapshot,
+        context=replace(current_snapshot.context, run_attempt=2),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="live compilation cannot bind run_attempt",
+    ):
+        validate_first_slice_repository_model_snapshot(prior_snapshot)
+
+    validate_first_slice_repository_model_snapshot(
+        live_admitted_repository_model.snapshot
+    )
+
+
+def test_admitted_repository_model_is_frozen_and_slotted(
+    admitted_repository_model: AdmittedRepositoryModelSnapshot,
+) -> None:
+    assert not hasattr(admitted_repository_model, "__dict__")
+    with pytest.raises(FrozenInstanceError):
+        admitted_repository_model.canonical_digest = "sha256:" + "0" * 64  # type: ignore[misc]

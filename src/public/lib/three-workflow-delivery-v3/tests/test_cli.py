@@ -3483,7 +3483,7 @@ def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
 
     def evaluate(  # noqa: PLR0913
         context: object,
-        actual_snapshot: object,
+        actual_model: object,
         actual_policy: object,
         actual_client: object,
         *,
@@ -3493,7 +3493,7 @@ def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
         calls.evaluation.append(
             (
                 context,
-                actual_snapshot,
+                actual_model,
                 actual_policy,
                 actual_client,
                 repository_root,
@@ -3565,7 +3565,7 @@ def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
     assert calls.evaluation == [
         (
             expected_context,
-            snapshot,
+            model,
             policy,
             client,
             resolved_repository_root,

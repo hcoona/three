@@ -35,8 +35,6 @@ from three_workflow_delivery_v3.release.static_reference_policy import (
 from three_workflow_delivery_v3.repository.compiler import (
     AdmittedRepositoryModelSnapshot,
     compile_release_policy,
-    validate_compilation_context,
-    validate_first_slice_repository_model_snapshot,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
@@ -51,14 +49,12 @@ from three_workflow_delivery_v3.repository.descriptors import (
     GovernanceSource,
     ReleasePolicy,
 )
+from three_workflow_delivery_v3.repository.node_provider import NbgvFacts
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
-    from three_workflow_delivery_v3.repository.compiler import (
-        RepositoryModelSnapshot,
-    )
 ATTESTATION_SCHEMA = (
     "workflow-delivery/v3/normal-live-governance-attestation-v2"
 )
@@ -1977,9 +1973,16 @@ def _validate_selected_ref(value: object) -> str:
 
 def _validate_live_context(  # noqa: C901
     context: LiveEligibilityContext,
-    snapshot: RepositoryModelSnapshot,
+    repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
+    if type(repository_model) is not AdmittedRepositoryModelSnapshot:
+        message = "live eligibility requires an admitted Repository Model"
+        raise TypeError(message)
+    snapshot = repository_model.snapshot
+    if type(snapshot.nbgv) is not NbgvFacts:
+        message = "npm Live eligibility cannot admit another ecosystem"
+        raise ValueError(message)
     if type(context) is not LiveEligibilityContext:
         message = "live eligibility context has the wrong runtime type"
         raise TypeError(message)
@@ -2014,8 +2017,7 @@ def _validate_live_context(  # noqa: C901
     if context.release_policy_digest != release_policy_digest(policy):
         message = "live eligibility Release policy digest mismatch"
         raise ValueError(message)
-    validate_first_slice_repository_model_snapshot(snapshot)
-    if context.repository_model_digest != snapshot.snapshot_digest:
+    if context.repository_model_digest != repository_model.canonical_digest:
         message = "live eligibility Repository Model is not exact and ready"
         raise ValueError(message)
     expected_snapshot = (
@@ -2037,7 +2039,6 @@ def _validate_live_context(  # noqa: C901
     if actual_snapshot != expected_snapshot:
         message = "live eligibility Repository Model binding mismatch"
         raise ValueError(message)
-    validate_compilation_context(snapshot.context)
 
 
 def _decision_integer(value: JsonValue, *, field: str) -> int:
@@ -2424,7 +2425,7 @@ def admit_live_eligibility_decision(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if actual_context != expected_context:
         message = "Live Eligibility Decision current lineage mismatch"
         raise ValueError(message)
-    _validate_live_context(context, repository_model.snapshot, policy)
+    _validate_live_context(context, repository_model, policy)
     if repository_model.snapshot.release_policy != compile_release_policy(
         policy
     ):
@@ -2488,7 +2489,7 @@ def admit_live_eligibility_decision(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
 def evaluate_live_eligibility(  # noqa: PLR0913
     context: LiveEligibilityContext,
-    snapshot: RepositoryModelSnapshot,
+    repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
     client: GovernanceSourceClient,
     *,
@@ -2500,7 +2501,7 @@ def evaluate_live_eligibility(  # noqa: PLR0913
     if policy.release_unit != FIRST_SLICE_RELEASE_UNIT:
         message = "npm Live eligibility cannot admit another ecosystem"
         raise ValueError(message)
-    _validate_live_context(context, snapshot, policy)
+    _validate_live_context(context, repository_model, policy)
     static_reference = scan_bounded_static_references(
         repository_root,
         source_kind="git-target",

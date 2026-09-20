@@ -4618,7 +4618,7 @@ def _release_evaluate_live_eligibility_command(
     )
     decision = evaluate_live_eligibility(
         context,
-        model.snapshot,
+        model,
         policy,
         client,
         repository_root=repository_root,

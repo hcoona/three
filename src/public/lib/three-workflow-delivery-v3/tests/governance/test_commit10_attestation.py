@@ -193,7 +193,7 @@ def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
     monkeypatch.setattr(
         eligibility,
         "_validate_live_context",
-        lambda _context, _snapshot, _policy: None,
+        lambda _context, _repository_model, _policy: None,
     )
     monkeypatch.setattr(
         eligibility,
