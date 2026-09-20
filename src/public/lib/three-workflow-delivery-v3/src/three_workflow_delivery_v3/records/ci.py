@@ -12,7 +12,7 @@ from three_workflow_delivery_v3.canonical import (
     canonical_sha256,
     parse_canonical_json,
 )
-from three_workflow_delivery_v3.catalogs import QUALITY_DEFINITIONS
+from three_workflow_delivery_v3.ci import rules
 from three_workflow_delivery_v3.ci.path_admission import (
     is_repository_only_path,
     is_static_reference_control_path,
@@ -20,8 +20,6 @@ from three_workflow_delivery_v3.ci.path_admission import (
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-    from three_workflow_delivery_v3.catalogs import QualityDefinition
 
 CI_CANDIDATE_SCHEMA = "workflow-delivery/v3/ci-candidate"
 CI_OBLIGATION_SCHEMA = "workflow-delivery/v3/ci-obligation"
@@ -38,29 +36,12 @@ CI_SLICE_SUMMARY_SCHEMA = "workflow-delivery/v3/ci-slice-summary"
 CI_SLICE_DECISION_SCHEMA = "workflow-delivery/v3/ci-slice-decision"
 
 CI_WORKFLOW_PATH = ".github/workflows/workflow-delivery-v3-ci.yml"
-CI_LANE_IDS = (
-    "root-hk",
-    "project-build",
-    "project-test",
-    "npm-artifact-build",
-)
-CI_ROOT_HK_DEFINITION = "repository/source-tree-conformance-v1"
+CI_LANE_IDS = rules.CI_LANE_IDS
+CI_ROOT_HK_DEFINITION = rules.CI_ROOT_HK_DEFINITION
 
 type CiOutputIdentity = tuple[str, str, str]
 
 _CI_LANE_ID_SET = frozenset(CI_LANE_IDS)
-_CI_LANE_DEFINITIONS = {
-    "root-hk": CI_ROOT_HK_DEFINITION,
-    "project-build": "node/project-build-v1",
-    "project-test": "node/project-test-v1",
-    "npm-artifact-build": "node/npm-artifact-v1",
-}
-_CI_LANE_PREREQUISITES = {
-    "root-hk": (),
-    "project-build": (),
-    "project-test": (),
-    "npm-artifact-build": (),
-}
 _EVENT_PURPOSES = {
     "pull_request": "ci-pr-slice-shadow",
     "workflow_dispatch": "slice-validation",
@@ -69,14 +50,7 @@ _EVENT_SCOPE_MODES = {
     "pull_request": "incremental",
     "workflow_dispatch": "slice-validation",
 }
-_RAW_TO_NORMALIZED_OUTCOME = {
-    "success": "satisfied",
-    "failure": "failed",
-    "skipped": "skipped",
-    "timed-out": "timed-out",
-    "unknown": "unknown",
-}
-_EVIDENCE_OUTCOMES = frozenset(_RAW_TO_NORMALIZED_OUTCOME.values())
+_EVIDENCE_OUTCOMES = rules.EVIDENCE_OUTCOMES
 _LANE_RESULT_OUTCOMES = _EVIDENCE_OUTCOMES | frozenset({"empty"})
 _FINAL_DISPOSITION_OUTCOMES = _EVIDENCE_OUTCOMES | frozenset(
     {"empty", "incomplete"}
@@ -92,15 +66,7 @@ _PR_SLO_REASONS = frozenset(
         "not-pull-request",
     }
 )
-_SUPERSESSION_STATES = frozenset(
-    {"not-superseded", "superseded", "unsupported", "not-applicable"}
-)
-_SUPERSESSION_REASONS = {
-    "not-superseded": "trusted-current-candidate",
-    "superseded": "trusted-superseded-candidate",
-    "unsupported": "platform-proof-unavailable",
-    "not-applicable": "not-pull-request",
-}
+_SUPERSESSION_STATES = rules.SUPERSESSION_STATES
 _PR_SLO_SECONDS = 12 * 60
 _PAIR_FIELD_COUNT = 2
 _FAILURE_CLASSES = frozenset(
@@ -953,30 +919,6 @@ def _validate_obligation_dag(  # noqa: C901
         visit(obligation_id)
 
 
-def _quality_definition_document(
-    definition: QualityDefinition,
-) -> dict[str, JsonValue]:
-    capability_requirements = cast(
-        "list[JsonValue]",
-        list(definition.capability_requirements),
-    )
-    return {
-        "schema": "workflow-delivery/v3/quality-definition",
-        "logical-id": definition.logical_id,
-        "subject": definition.subject,
-        "operation": definition.operation,
-        "implementation-id": definition.implementation_id,
-        "execution-class": definition.execution_class,
-        "capability-requirements": capability_requirements,
-    }
-
-
-def _fixed_definition_digest(definition_id: str) -> str:
-    return canonical_sha256(
-        _quality_definition_document(QUALITY_DEFINITIONS[definition_id]),
-    )
-
-
 def _expected_obligation_request_digest(  # noqa: PLR0913
     snapshot: CiQualificationSnapshot,
     *,
@@ -986,27 +928,20 @@ def _expected_obligation_request_digest(  # noqa: PLR0913
     prerequisites: tuple[str, ...],
     selected: bool,
 ) -> str:
-    return canonical_sha256(
-        {
-            "schema": "workflow-delivery/v3/ci-obligation-request",
-            "candidate-digest": ci_candidate_digest(snapshot.candidate),
-            "repository-model-digest": snapshot.repository_model_digest,
-            "lane-id": lane_id,
-            "definition-id": definition_id,
-            "definition-digest": definition_digest,
-            "prerequisites": list(prerequisites),
-            "selected": selected,
-            "required": selected,
-            "scope-mode": snapshot.scope_mode,
-            "changed-paths": list(snapshot.changed_paths),
-            "selected-project-nodes": list(snapshot.selected_project_nodes),
-            "selected-release-units": list(snapshot.selected_release_units),
-            "selected-variants": list(snapshot.selected_variants),
-            "selected-outputs": [
-                _output_identity_document(output)
-                for output in snapshot.selected_outputs
-            ],
-        }
+    return rules.ci_obligation_request_digest(
+        candidate_digest=ci_candidate_digest(snapshot.candidate),
+        repository_model_digest=snapshot.repository_model_digest,
+        lane_id=lane_id,
+        definition_id=definition_id,
+        definition_digest=definition_digest,
+        prerequisites=prerequisites,
+        selected=selected,
+        scope_mode=snapshot.scope_mode,
+        changed_paths=snapshot.changed_paths,
+        selected_project_nodes=snapshot.selected_project_nodes,
+        selected_release_units=snapshot.selected_release_units,
+        selected_variants=snapshot.selected_variants,
+        selected_outputs=snapshot.selected_outputs,
     )
 
 
@@ -1021,9 +956,8 @@ def _validate_fixed_plan_obligations(
         snapshot.obligations,
         strict=True,
     ):
-        definition_id = _CI_LANE_DEFINITIONS[lane_id]
-        definition_digest = _fixed_definition_digest(definition_id)
-        prerequisites = _CI_LANE_PREREQUISITES[lane_id]
+        definition_id, prerequisites = rules.CI_LANES[lane_id]
+        definition_digest = rules.ci_definition_digest(definition_id)
         request_digest = _expected_obligation_request_digest(
             snapshot,
             lane_id=lane_id,
@@ -1184,7 +1118,7 @@ def _validate_ci_qualification_snapshot(  # noqa: C901, PLR0915
     if (
         snapshot.root_hk_definition != CI_ROOT_HK_DEFINITION
         or snapshot.root_hk_definition_digest
-        != _fixed_definition_digest(CI_ROOT_HK_DEFINITION)
+        != rules.ci_definition_digest(CI_ROOT_HK_DEFINITION)
     ):
         message = "Qualification Snapshot root-HK definition is not current"
         raise ValueError(message)
@@ -1430,7 +1364,7 @@ def _validate_ci_evidence(  # noqa: C901, PLR0912, PLR0915
     _require_nonempty_string(evidence.runner, field="evidence.runner")
     _require_choice(
         evidence.raw_outcome,
-        _RAW_TO_NORMALIZED_OUTCOME,
+        rules.RAW_OUTCOMES,
         field="evidence.raw_outcome",
     )
     _require_choice(
@@ -1438,7 +1372,7 @@ def _validate_ci_evidence(  # noqa: C901, PLR0912, PLR0915
         _EVIDENCE_OUTCOMES,
         field="evidence.normalized_outcome",
     )
-    expected_outcome = _RAW_TO_NORMALIZED_OUTCOME[evidence.raw_outcome]
+    expected_outcome = rules.normalize_required_outcome(evidence.raw_outcome)
     if evidence.normalized_outcome != expected_outcome:
         message = "Evidence normalized outcome does not match raw mechanics"
         raise ValueError(message)
@@ -1551,63 +1485,6 @@ def _validate_ci_lane_result(result: CiLaneResult) -> None:
         raise ValueError(message)
 
 
-def _disposition_explanation(
-    obligation: CiObligation,
-    outcome: str,
-) -> str:
-    if not obligation.selected:
-        return f"{obligation.lane_id} was not selected"
-    if outcome == "incomplete":
-        return f"{obligation.lane_id} selected work did not emit Evidence"
-    return f"{obligation.lane_id} {outcome}"
-
-
-def _terminal_result(
-    dispositions: tuple[CiObligationDisposition, ...],
-) -> str:
-    selected_outcomes = tuple(
-        disposition.outcome
-        for disposition in dispositions
-        if disposition.obligation.selected
-    )
-    if "incomplete" in selected_outcomes:
-        return "incomplete"
-    if selected_outcomes and all(
-        outcome == "satisfied" for outcome in selected_outcomes
-    ):
-        return "success"
-    return "failure"
-
-
-def _decision_explanation(
-    dispositions: tuple[CiObligationDisposition, ...],
-    terminal_result: str,
-) -> str:
-    if terminal_result == "success":
-        return "all selected CI slice obligations were satisfied"
-    incomplete = tuple(
-        disposition.obligation.lane_id
-        for disposition in dispositions
-        if disposition.obligation.selected
-        and disposition.outcome == "incomplete"
-    )
-    if incomplete:
-        return "selected CI slice obligations are incomplete: " + ", ".join(
-            incomplete
-        )
-    failed = tuple(
-        f"{disposition.obligation.lane_id}={disposition.outcome}"
-        for disposition in dispositions
-        if disposition.obligation.selected
-        and disposition.outcome != "satisfied"
-    )
-    if failed:
-        return "selected CI slice obligations were not satisfied: " + ", ".join(
-            failed
-        )
-    return "CI slice Plan was not ready for required work"
-
-
 def _is_broad_pr_slo_change(path: str) -> bool:
     return (
         path in _SLO_BROAD_CONTROL_PATHS
@@ -1654,15 +1531,7 @@ def derive_ci_failure(
     selected = tuple(
         item.outcome for item in dispositions if item.obligation.selected
     )
-    if not selected:
-        return "incomplete-model-plan", "fix-model-plan-and-rerun"
-    if "incomplete" in selected or any(
-        outcome in {"skipped", "timed-out", "unknown"} for outcome in selected
-    ):
-        return "incomplete-qualification", "rerun-candidate"
-    if "failed" in selected:
-        return "quality-failure", "fix-quality-failure-and-rerun"
-    return "none", "none"
+    return rules.failure_action(selected)
 
 
 def ci_slice_summary_text(  # noqa: PLR0913
@@ -1770,9 +1639,10 @@ def _validate_ci_obligation_disposition(
     elif disposition.outcome != "empty":
         message = "unselected obligation must have empty disposition"
         raise ValueError(message)
-    expected_explanation = _disposition_explanation(
-        disposition.obligation,
-        disposition.outcome,
+    expected_explanation = rules.disposition_explanation(
+        disposition.obligation.lane_id,
+        selected=disposition.obligation.selected,
+        outcome=disposition.outcome,
     )
     if disposition.explanation != expected_explanation:
         message = "obligation disposition explanation is not deterministic"
@@ -1971,12 +1841,19 @@ def _validate_ci_slice_decision(  # noqa: C901, PLR0912, PLR0915
         _TERMINAL_RESULTS,
         field="slice_decision.terminal_result",
     )
-    expected_terminal = _terminal_result(decision.obligation_dispositions)
+    selected_lane_outcomes = tuple(
+        (item.obligation.lane_id, item.outcome)
+        for item in decision.obligation_dispositions
+        if item.obligation.selected
+    )
+    expected_terminal = rules.terminal_result(
+        tuple(outcome for _, outcome in selected_lane_outcomes)
+    )
     if decision.terminal_result != expected_terminal:
         message = "Slice Decision terminal result contradicts dispositions"
         raise ValueError(message)
-    expected_explanation = _decision_explanation(
-        decision.obligation_dispositions,
+    expected_explanation = rules.decision_explanation(
+        selected_lane_outcomes,
         expected_terminal,
     )
     if decision.explanation != expected_explanation:
@@ -2020,12 +1897,12 @@ def _validate_ci_slice_decision(  # noqa: C901, PLR0912, PLR0915
     )
     _require_choice(
         decision.supersession_reason,
-        set(_SUPERSESSION_REASONS.values()),
+        rules.SUPERSESSION_REASONS,
         field="slice_decision.supersession_reason",
     )
-    expected_supersession_reason = _SUPERSESSION_REASONS[
+    expected_supersession_reason = rules.supersession_reason(
         decision.supersession_state
-    ]
+    )
     if decision.supersession_reason != expected_supersession_reason:
         message = "CI Slice Decision supersession reason is not deterministic"
         raise ValueError(message)
@@ -3010,7 +2887,7 @@ def admit_ci_qualification_snapshot_json(  # noqa: PLR0913
     if (
         expected_root_hk_definition != CI_ROOT_HK_DEFINITION
         or expected_root_hk_definition_digest
-        != _fixed_definition_digest(CI_ROOT_HK_DEFINITION)
+        != rules.ci_definition_digest(CI_ROOT_HK_DEFINITION)
     ):
         message = "trusted root-HK definition inputs are not current"
         raise ValueError(message)

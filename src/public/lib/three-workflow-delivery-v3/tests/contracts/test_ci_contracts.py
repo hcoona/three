@@ -813,6 +813,124 @@ def test_plan_admission_binds_trusted_candidate_model_and_digest() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("definition-id", "node/project-test-v1"),
+        ("definition-digest", DIGEST_E),
+        ("prerequisites", ["ci:root-hk"]),
+        ("request-digest", DIGEST_E),
+    ],
+)
+def test_plan_admission_rejects_canonical_fixed_obligation_forgery(
+    field: str,
+    value: JsonValue,
+) -> None:
+    """Reject forged fixed work even with matching request and outer hashes."""
+    source = cast(
+        "dict[str, JsonValue]",
+        json.loads((FIXTURE_ROOT / "ready-plan.json").read_bytes()),
+    )
+    obligations = cast("list[dict[str, JsonValue]]", source["obligations"])
+    obligations[1][field] = value
+    document = _rebind_plan_document(
+        source,
+        selected_lanes=CI_LANE_IDS,
+        ready=True,
+        complete_scope=True,
+    )
+    if field == "request-digest":
+        obligations = cast(
+            "list[dict[str, JsonValue]]", document["obligations"]
+        )
+        obligations[1][field] = value
+        evidence_id = "evidence:project-build:" + ("e" * 64)
+        obligations[1]["expected-evidence-id"] = evidence_id
+        cast("list[JsonValue]", document["expected-evidence-ids"])[1] = (
+            evidence_id
+        )
+
+    plan = _snapshot()
+    with pytest.raises(ValueError, match="does not match fixed definition"):
+        admit_ci_qualification_snapshot_json(
+            canonicalize(document),
+            expected_candidate=plan.candidate,
+            expected_repository_model_digest=plan.repository_model_digest,
+            expected_root_hk_definition=plan.root_hk_definition,
+            expected_root_hk_definition_digest=plan.root_hk_definition_digest,
+            expected_plan_digest=canonical_sha256(document),
+        )
+
+
+def test_evidence_admission_rejects_canonical_outcome_contradiction() -> None:
+    """Reject a transported success claim when raw execution failed."""
+    document = cast(
+        "dict[str, JsonValue]",
+        json.loads((FIXTURE_ROOT / "satisfied-evidence.json").read_bytes()),
+    )
+    document["raw-outcome"] = "failure"
+    plan = _snapshot()
+    with pytest.raises(ValueError, match="does not match raw mechanics"):
+        admit_ci_evidence_json(
+            canonicalize(document),
+            expected_candidate=plan.candidate,
+            expected_plan_digest=ci_qualification_snapshot_digest(plan),
+            expected_obligation=_obligation(plan, "root-hk"),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("terminal-result", "failure", "terminal result contradicts"),
+        ("explanation", "all work passed", "explanation is not deterministic"),
+        ("failure-class", "quality-failure", "failure class or next action"),
+        ("next-action", "rerun-candidate", "failure class or next action"),
+        (
+            "supersession-reason",
+            "platform-proof-unavailable",
+            "supersession reason is not deterministic",
+        ),
+        (
+            "disposition-explanation",
+            "root-hk failed",
+            "disposition explanation is not deterministic",
+        ),
+    ],
+)
+def test_decision_admission_rejects_canonical_rule_contradictions(
+    field: str,
+    value: str,
+    error: str,
+) -> None:
+    """Check verdict semantics at external admission with trusted context."""
+    document = cast(
+        "dict[str, JsonValue]",
+        json.loads(
+            (FIXTURE_ROOT / "non-authoritative-decision.json").read_bytes()
+        ),
+    )
+    if field == "disposition-explanation":
+        dispositions = cast(
+            "list[dict[str, JsonValue]]", document["obligation-dispositions"]
+        )
+        dispositions[0]["explanation"] = value
+    else:
+        document[field] = value
+    plan = _snapshot()
+    with pytest.raises(ValueError, match=error):
+        admit_ci_slice_decision_json(
+            canonicalize(document),
+            expected_plan=plan,
+            expected_evidence=tuple(
+                _evidence(plan, obligation.lane_id)
+                for obligation in plan.obligations
+            ),
+            expected_elapsed_seconds=ELAPSED_SECONDS,
+            expected_supersession_state="not-superseded",
+        )
+
+
 def test_direct_self_consistent_partial_ready_plan_is_rejected() -> None:
     """Reject a directly constructed self-consistent partial ready Plan."""
     document = _plan_document(

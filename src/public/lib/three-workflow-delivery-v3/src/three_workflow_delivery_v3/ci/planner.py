@@ -4,13 +4,9 @@ from __future__ import annotations
 
 import re
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
-from three_workflow_delivery_v3.canonical import (
-    JsonValue,
-    canonical_sha256,
-)
-from three_workflow_delivery_v3.catalogs import QUALITY_DEFINITIONS
+from three_workflow_delivery_v3.ci import rules
 from three_workflow_delivery_v3.ci.path_admission import (
     is_repository_only_path,
     is_static_reference_control_path,
@@ -42,29 +38,14 @@ from three_workflow_delivery_v3.repository.node_provider import (
     node_provider_version_input_candidates,
 )
 
-if TYPE_CHECKING:
-    from three_workflow_delivery_v3.catalogs import QualityDefinition
-
 type ComparisonIdentity = tuple[str, str]
 
-ROOT_HK_DEFINITION = "repository/source-tree-conformance-v1"
+ROOT_HK_DEFINITION = rules.CI_ROOT_HK_DEFINITION
 
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 _DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _COMPARISON_FIELD_COUNT = 2
 _REVERSE_INDEX_FIELD_COUNT = 2
-_LANE_DEFINITIONS = {
-    "root-hk": ROOT_HK_DEFINITION,
-    "project-build": "node/project-build-v1",
-    "project-test": "node/project-test-v1",
-    "npm-artifact-build": "node/npm-artifact-v1",
-}
-_LANE_PREREQUISITES = {
-    "root-hk": (),
-    "project-build": (),
-    "project-test": (),
-    "npm-artifact-build": (),
-}
 _V3_CONTROL_PREFIX = "src/public/lib/three-workflow-delivery-v3/"
 _V3_ACTION_PREFIX = ".github/actions/workflow-delivery-v3"
 _V3_SCRIPT_PREFIX = "eng/scripts/workflow_delivery_v3_"
@@ -414,77 +395,8 @@ def _is_slice_affecting_path(  # noqa: PLR0911
     )
 
 
-def _quality_definition_document(
-    definition: QualityDefinition,
-) -> dict[str, JsonValue]:
-    capability_requirements: list[JsonValue] = list(
-        definition.capability_requirements
-    )
-    return {
-        "schema": "workflow-delivery/v3/quality-definition",
-        "logical-id": definition.logical_id,
-        "subject": definition.subject,
-        "operation": definition.operation,
-        "implementation-id": definition.implementation_id,
-        "execution-class": definition.execution_class,
-        "capability-requirements": capability_requirements,
-    }
-
-
 def _definition_digest(definition_id: str) -> str:
-    return canonical_sha256(
-        _quality_definition_document(QUALITY_DEFINITIONS[definition_id])
-    )
-
-
-def _obligation_request_digest(  # noqa: PLR0913
-    *,
-    candidate_digest: str,
-    repository_model_digest: str,
-    lane_id: str,
-    definition_id: str,
-    definition_digest: str,
-    prerequisites: tuple[str, ...],
-    selected: bool,
-    scope_mode: str,
-    changed_paths: tuple[str, ...],
-    selected_project_nodes: tuple[str, ...],
-    selected_release_units: tuple[str, ...],
-    selected_variants: tuple[str, ...],
-    selected_outputs: tuple[CiOutputIdentity, ...],
-) -> str:
-    changed_path_values: list[JsonValue] = list(changed_paths)
-    prerequisite_values: list[JsonValue] = list(prerequisites)
-    project_values: list[JsonValue] = list(selected_project_nodes)
-    release_unit_values: list[JsonValue] = list(selected_release_units)
-    variant_values: list[JsonValue] = list(selected_variants)
-    output_values: list[JsonValue] = [
-        {
-            "output-id": output_id,
-            "logical-role": logical_role,
-            "media-kind": media_kind,
-        }
-        for output_id, logical_role, media_kind in selected_outputs
-    ]
-    return canonical_sha256(
-        {
-            "schema": "workflow-delivery/v3/ci-obligation-request",
-            "candidate-digest": candidate_digest,
-            "repository-model-digest": repository_model_digest,
-            "lane-id": lane_id,
-            "definition-id": definition_id,
-            "definition-digest": definition_digest,
-            "prerequisites": prerequisite_values,
-            "selected": selected,
-            "required": selected,
-            "scope-mode": scope_mode,
-            "changed-paths": changed_path_values,
-            "selected-project-nodes": project_values,
-            "selected-release-units": release_unit_values,
-            "selected-variants": variant_values,
-            "selected-outputs": output_values,
-        }
-    )
+    return rules.ci_definition_digest(definition_id)
 
 
 def _form_obligations(  # noqa: PLR0913
@@ -502,11 +414,10 @@ def _form_obligations(  # noqa: PLR0913
     candidate_digest = ci_candidate_digest(candidate)
     obligations: list[CiObligation] = []
     for lane_id in CI_LANE_IDS:
-        definition_id = _LANE_DEFINITIONS[lane_id]
-        definition_digest = _definition_digest(definition_id)
-        prerequisites = _LANE_PREREQUISITES[lane_id]
+        definition_id, prerequisites = rules.CI_LANES[lane_id]
+        definition_digest = rules.ci_definition_digest(definition_id)
         selected = lane_id in selected_lanes
-        request_digest = _obligation_request_digest(
+        request_digest = rules.ci_obligation_request_digest(
             candidate_digest=candidate_digest,
             repository_model_digest=repository_model_digest,
             lane_id=lane_id,
@@ -671,7 +582,7 @@ def plan_ci_qualification(  # noqa: PLR0913
         selected_variants=selected_variants,
         selected_outputs=selected_outputs,
     )
-    root_hk_definition_digest = _definition_digest(ROOT_HK_DEFINITION)
+    root_hk_definition_digest = rules.ci_definition_digest(ROOT_HK_DEFINITION)
     return CiQualificationSnapshot(
         candidate=candidate,
         producer="plan",

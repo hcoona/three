@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
+from three_workflow_delivery_v3.ci import rules
 from three_workflow_delivery_v3.records.ci import (
     CiArtifact,
     CiEvidence,
@@ -15,13 +16,6 @@ from three_workflow_delivery_v3.records.ci import (
     ci_qualification_snapshot_digest,
 )
 
-_REQUIRED_OUTCOMES = {
-    "success": "satisfied",
-    "failure": "failed",
-    "skipped": "skipped",
-    "timed-out": "timed-out",
-    "unknown": "unknown",
-}
 _STATIC_LANE_RUNNER = "ubuntu-24.04"
 
 
@@ -119,14 +113,7 @@ def _admit_evidence_for_plan(
 
 def normalize_required_outcome(raw_outcome: str) -> str:
     """Normalize a closed required-work outcome without diagnostic input."""
-    if type(raw_outcome) is not str:
-        message = "required outcome must be an exact string"
-        raise TypeError(message)
-    normalized = _REQUIRED_OUTCOMES.get(raw_outcome)
-    if normalized is None:
-        message = "required outcome has an invalid closed value"
-        raise ValueError(message)
-    return normalized
+    return rules.normalize_required_outcome(raw_outcome)
 
 
 def _validate_success_closure(

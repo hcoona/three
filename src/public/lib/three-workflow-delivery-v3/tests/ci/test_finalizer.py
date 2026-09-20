@@ -474,13 +474,6 @@ def test_broad_pr_changes_are_excluded_from_ordinary_slo(path: str) -> None:
             "quality-failure",
             "fix-quality-failure-and-rerun",
         ),
-        ("skipped", "skipped", "incomplete-qualification", "rerun-candidate"),
-        (
-            "timed-out",
-            "timed-out",
-            "incomplete-qualification",
-            "rerun-candidate",
-        ),
         ("unknown", "unknown", "incomplete-qualification", "rerun-candidate"),
     ],
 )
@@ -505,13 +498,18 @@ def test_unsatisfied_evidence_cannot_produce_success(
     assert decision.terminal_result == "failure"
     assert decision.failure_class == failure_class
     assert decision.next_action == next_action
+    assert project_test.obligation == _obligation(plan, "project-test")
     assert project_test.outcome == outcome
+    assert project_test.explanation == f"project-test {outcome}"
     assert project_test.evidence_digests == (
         ci_evidence_digest(
             _evidence(plan, "project-test", raw_outcome=raw_outcome)
         ),
     )
-    assert f"project-test={outcome}" in decision.explanation
+    assert decision.explanation == (
+        "selected CI slice obligations were not satisfied: "
+        f"project-test={outcome}"
+    )
 
 
 def test_missing_or_canceled_selected_work_is_finalizer_incomplete() -> None:

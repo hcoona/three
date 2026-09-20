@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from three_workflow_delivery_v3.ci import rules
 from three_workflow_delivery_v3.ci.evidence import (
     admit_lane_result_for_plan,
     form_evidence_lane_result,
@@ -212,34 +213,7 @@ def qualifies_precoexistence_bootstrap_projection(
     )
 
 
-def _explanation(
-    dispositions: tuple[CiObligationDisposition, ...],
-    terminal_result: str,
-) -> str:
-    if terminal_result == "success":
-        return "all selected CI slice obligations were satisfied"
-    incomplete = tuple(
-        item.obligation.lane_id
-        for item in dispositions
-        if item.obligation.selected and item.outcome == "incomplete"
-    )
-    if incomplete:
-        return "selected CI slice obligations are incomplete: " + ", ".join(
-            incomplete
-        )
-    failed = tuple(
-        f"{item.obligation.lane_id}={item.outcome}"
-        for item in dispositions
-        if item.obligation.selected and item.outcome != "satisfied"
-    )
-    if failed:
-        return "selected CI slice obligations were not satisfied: " + ", ".join(
-            failed
-        )
-    return "CI slice Plan was not ready for required work"
-
-
-def finalize_ci_slice(  # noqa: C901, PLR0912, PLR0915
+def finalize_ci_slice(
     plan: CiQualificationSnapshot,
     lane_results: tuple[CiLaneResult, ...],
     *,
@@ -303,23 +277,22 @@ def finalize_ci_slice(  # noqa: C901, PLR0912, PLR0915
         if not obligation.selected:
             outcome = "empty"
             evidence_digests: tuple[str, ...] = ()
-            explanation = f"{obligation.lane_id} was not selected"
         elif result is None or evidence is None:
             outcome = "incomplete"
             evidence_digests = ()
-            explanation = (
-                f"{obligation.lane_id} selected work did not emit Evidence"
-            )
         else:
             outcome = result.disposition
             evidence_digests = (ci_evidence_digest(evidence),)
-            explanation = f"{obligation.lane_id} {outcome}"
         dispositions.append(
             CiObligationDisposition(
                 obligation=obligation,
                 outcome=outcome,
                 evidence_digests=evidence_digests,
-                explanation=explanation,
+                explanation=rules.disposition_explanation(
+                    obligation.lane_id,
+                    selected=obligation.selected,
+                    outcome=outcome,
+                ),
             )
         )
 
@@ -327,15 +300,15 @@ def finalize_ci_slice(  # noqa: C901, PLR0912, PLR0915
     selected_outcomes = tuple(
         item.outcome for item in closed_dispositions if item.obligation.selected
     )
-    if "incomplete" in selected_outcomes:
-        terminal_result = "incomplete"
-    elif selected_outcomes and all(
-        outcome == "satisfied" for outcome in selected_outcomes
-    ):
-        terminal_result = "success"
-    else:
-        terminal_result = "failure"
-    explanation = _explanation(closed_dispositions, terminal_result)
+    terminal_result = rules.terminal_result(selected_outcomes)
+    explanation = rules.decision_explanation(
+        tuple(
+            (item.obligation.lane_id, item.outcome)
+            for item in closed_dispositions
+            if item.obligation.selected
+        ),
+        terminal_result,
+    )
     failure_class, next_action = derive_ci_failure(closed_dispositions)
     admitted_evidence_digests = tuple(
         digest
@@ -347,15 +320,7 @@ def finalize_ci_slice(  # noqa: C901, PLR0912, PLR0915
         for evidence in admitted_evidence
         for artifact in evidence.artifacts
     )
-    supersession_reason = {
-        "not-superseded": "trusted-current-candidate",
-        "superseded": "trusted-superseded-candidate",
-        "unsupported": "platform-proof-unavailable",
-        "not-applicable": "not-pull-request",
-    }.get(supersession_state)
-    if supersession_reason is None:
-        message = "supersession_state has an invalid closed value"
-        raise ValueError(message)
+    supersession_reason = rules.supersession_reason(supersession_state)
     summary_text = ci_slice_summary_text(
         candidate=plan.candidate,
         repository_model_digest=plan.repository_model_digest,
