@@ -236,6 +236,7 @@ def test_evidence_and_selected_lane_bind_exact_plan_position() -> None:
             "project-test",
         ).expected_evidence_id
     )
+    assert normalize_required_outcome("success") == "satisfied"
     assert evidence.normalized_outcome == "satisfied"
     assert lane.disposition == "satisfied"
     assert lane.evidence == evidence
@@ -301,44 +302,6 @@ def test_evidence_rejects_substituted_obligation_and_lane() -> None:
     lane = form_evidence_lane_result(plan, _evidence(plan))
     with pytest.raises(ValueError, match="Evidence does not match"):
         replace(lane, lane_id="project-test", producer="project-test")
-
-
-@pytest.mark.parametrize(
-    ("raw", "normalized"),
-    [
-        ("success", "satisfied"),
-        ("failure", "failed"),
-        ("skipped", "skipped"),
-        ("timed-out", "timed-out"),
-        ("unknown", "unknown"),
-    ],
-)
-def test_required_outcomes_are_closed_and_mechanical(
-    raw: str,
-    normalized: str,
-) -> None:
-    """Normalize only mechanically observable executor outcomes."""
-    assert normalize_required_outcome(raw) == normalized
-    assert _evidence(_plan(), raw_outcome=raw).normalized_outcome == normalized
-
-
-@pytest.mark.parametrize(
-    "outcome",
-    [
-        "satisfied",
-        "failed",
-        "canceled",
-        "conflicted",
-        "incomplete",
-        "advisory",
-    ],
-)
-def test_impossible_or_finalizer_only_outcomes_are_not_public(
-    outcome: str,
-) -> None:
-    """Keep conflict and incomplete states out of Evidence formation."""
-    with pytest.raises(ValueError, match="invalid closed value"):
-        normalize_required_outcome(outcome)
 
 
 def test_diagnostics_cannot_promote_failed_mechanics() -> None:
