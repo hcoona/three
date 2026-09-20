@@ -8,71 +8,47 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Preserve the Admitted Model Through npm Live Eligibility
+### Correct the Remaining Workflow Topology Test Responsibilities
 
-- **Work carrier:** [Issue #776](https://github.com/hcoona/three/issues/776).
-- **Authorized outcome:** Implement the independently reviewed
-  [consumer-boundary proposal](https://github.com/hcoona/three/issues/773#issuecomment-5746617807) from #773. Preserve the admitted
-  Repository Model through same-revision npm CLI, Live Eligibility and Decision
-  admission composition. Assign model-shape assertions to their model owner and
-  current-context assertions to the consumer; no test-count target applies.
-- **Accepted basis:** Follow the proposal's source-bound caller inventory and
-  scenario responsibilities with current v3
-  [requirements](../src/public/lib/three-workflow-delivery-v3/docs/requirements.md),
-  [Repository Model MLD](../src/public/lib/three-workflow-delivery-v3/docs/repository-model-release-unit-mld.md),
-  [Release MLD](../src/public/lib/three-workflow-delivery-v3/docs/release-delivery-mld.md),
-  [CI MLD](../src/public/lib/three-workflow-delivery-v3/docs/ci-qualification-mld.md),
-  [npm design](../src/public/lib/three-workflow-delivery-v3/docs/hcoona-release-smoke-npm-lld.md),
-  [handoff](../src/public/lib/three-workflow-delivery-v3/docs/agent-handoff.md)
-  and [shared engineering principles](engineering/engineering-principles.md).
-  Refresh the source inventory if a relied-on prerequisite changes; an Issue
-  proposal cannot amend an accepted contract or resolve an authority conflict.
-- **Bounded implementation:** Under
-  `src/public/lib/three-workflow-delivery-v3/`, change only production
-  `src/three_workflow_delivery_v3/cli.py` and
-  `src/three_workflow_delivery_v3/release/eligibility.py` for the proposed
-  evaluator argument, narrow context helper and two composition calls. Test
-  changes are limited to `tests/release/test_eligibility.py`,
-  `tests/release/test_commit6_contracts.py`,
-  `tests/release/test_live_static_reference.py`,
-  `tests/governance/test_commit10_attestation.py`, `tests/test_cli.py`, and
-  necessary existing fixture support in `tests/release/conftest.py`;
-  `tests/release/test_static_reference.py` is limited to its existing helper
-  substitute and argument expectation; the existing shim, six identified
-  dependent tests and necessary existing fixture support in
-  `tests/contracts/test_commit3_contract_boundaries.py` follow the proposal's
-  explicit case-to-owner mapping. Do not broaden unrelated contract families.
-- **Preserved obligations:** Keep canonical/wire contracts, invalid-wrapper
-  rejection, frozen/slotted model representation, current request/target/purpose/
-  control/digest comparisons, npm support selection, fresh observations and
-  phase/expiry checks. Preserve external artifact/Decision admission and every
-  separate authority/effect boundary. CI retains its identity-valid incomplete
-  model to blocked Plan with no lanes or expected Evidence. Raw-model trap tests
-  remain direct model-validator subjects; do not transfer their ordering
-  promises to the unchanged wrapper constructor. Successfully admit consumer
-  fixtures before expected failures; do not hide admission inside evaluator
-  helpers. No broader hostile in-process mutation model is introduced.
-- **Validation and review:** Retain exact old-case to owner-case mapping and
-  independent semantic oracles, including valid current npm success, raw/wrong
-  wrapper rejection before use or I/O, another admitted ecosystem rejection,
-  wrong-current-context failure, model invalid-construction and unchanged CI
-  blocked behavior. Run complete affected modules, discovered fixture/AST
-  consumers, full v3 tests, root HK and ordinary hooks using #721 resource
-  ownership. Independently review the domain/OCR and evidence after green
-  validation; independently triage material findings and apply contraction.
-  Report added, moved/renamed and removed cases separately. No runtime,
-  platform, performance or inode-saving claim follows from static analysis.
-- **Scope and effects:** Authorize task-owned local implementation, tests,
-  validation evidence and ordinary GitHub delivery only. Preserve
-  [agent execution guidance](engineering/agent-execution.md), failed/interrupted
-  evidence and unrelated resources. Leave compiler/factory, CI, simulation,
-  NuGet implementation/acceptance, workflows, dependencies, schemas, resource
-  limits and accepted authorities unchanged. No native probe, dispatch/rerun,
-  publication, administrative or authentication/access change, host cleanup or
-  unrelated process termination. Existing npm/NuGet gates and spent-operation
-  boundaries remain in force. The held #761–#764 removals, #774 topology work,
-  CI rule consolidation and legacy acceptance retirement are excluded.
-- **Completion:** Deliver the reviewed implementation and exact validation in
-  the Issue/PR, verify the merged tree and checks, then end this finite grant
-  through reviewed Wave deletion or replacement. Further owner-boundary
-  corrections require their own refreshed finite scope.
+- **Work carrier:** [Issue #774](https://github.com/hcoona/three/issues/774).
+- **Authorized outcome:** Resolve the two incidental topology constraints named
+  in the Issue. Establish which owner protects dedicated workflow and legacy
+  isolation, and which protects immutable build input and required ordering.
+  Inventory every existing test family constraining those same workflows before
+  changing assertions; correct abstraction and classification govern the result.
+- **Design before implementation:** Retain a source-bound responsibility map and
+  proposed case dispositions in the Issue. Independently review them against
+  current v3 [requirements](../src/public/lib/three-workflow-delivery-v3/docs/requirements.md),
+  applicable [design authorities](../src/public/lib/three-workflow-delivery-v3/docs/README.md),
+  the [handoff](../src/public/lib/three-workflow-delivery-v3/docs/agent-handoff.md)
+  and [engineering principles](engineering/engineering-principles.md).
+  Resolve material findings before implementation. A proposal cannot amend an
+  accepted contract; any required authority change needs its own finite scope.
+- **Bounded implementation:** Change only
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py`
+  and
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_official_simulation_workflow.py`
+  to replace the exact five-job inventory and sole-predecessor restrictions
+  identified in #774 with their actual owner contracts. If the responsibility
+  map requires edits elsewhere, refresh this grant before those edits.
+- **Preserved obligations:** Protect dedicated identities, actual legacy
+  isolation, trusted actions, caller privilege ceilings, immutable artifact
+  transport and required ordering. Show the behavior-preserving topology
+  changes the complete relevant owner set accepts and the credible contract
+  violations it rejects. Do not weaken these guarantees or replace them with
+  private call inventories, hidden case loops or a deletion quota.
+- **Validation and review:** Report exact added, moved/renamed and removed cases
+  separately. Validate complete affected modules and discovered test consumers,
+  full v3 tests, root HK and ordinary hooks before independent domain/OCR and
+  evidence review. Independently triage material findings and apply contraction.
+  Preserve [agent execution guidance](engineering/agent-execution.md), #721
+  resource ownership and failed/interrupted evidence. Static and local evidence
+  establishes no native-platform, performance or inode-saving claim.
+- **Scope and completion:** Authorize task-owned source analysis, the bounded
+  test correction, validation evidence and ordinary GitHub delivery. Production,
+  workflows, dependencies, schemas and accepted authorities remain outside the
+  implementation scope. The held #761–#764 removals, other owner corrections,
+  native probes, dispatch/rerun, publication, administrative or access changes,
+  host cleanup and unrelated process termination are excluded. Preserve spent
+  operation boundaries. Verify the reviewed delivery's merged tree and checks,
+  then end this finite grant through reviewed Wave deletion or replacement.
