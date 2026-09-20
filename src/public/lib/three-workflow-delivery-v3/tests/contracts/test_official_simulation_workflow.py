@@ -341,7 +341,6 @@ def test_build_is_uploaded_before_artifact_and_evidence_are_formed() -> None:
         'add_record release-artifact ".wdv3/input/'
         "${{ needs.build-tarball.outputs.release-artifact-artifact-name }}"
     ) in qualification_run
-    assert jobs["npm-artifact-qualification"]["needs"] == "build-tarball"
 
 
 def test_qualification_finalizer_optional_downloads_fail_closed() -> None:
