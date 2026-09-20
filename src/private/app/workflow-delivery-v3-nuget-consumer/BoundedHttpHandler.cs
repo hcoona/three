@@ -19,6 +19,16 @@ internal sealed class BoundedHttpHandler : DelegatingHandler
         string credential,
         HttpMessageHandler inner
     )
+        : this(request, credential, inner, TimeProvider.System)
+    {
+    }
+
+    internal BoundedHttpHandler(
+        ConsumerRequest request,
+        string credential,
+        HttpMessageHandler inner,
+        TimeProvider timeProvider
+    )
         : base(inner)
     {
         request.Validate();
@@ -29,7 +39,9 @@ internal sealed class BoundedHttpHandler : DelegatingHandler
             "Invalid read credential."
         );
         _request = request;
-        _deadline = new CancellationTokenSource(TimeSpan.FromSeconds(request.TimeoutSeconds));
+        _deadline = new CancellationTokenSource(
+            TimeSpan.FromSeconds(request.TimeoutSeconds), timeProvider
+        );
         _basic = Convert.ToBase64String(Encoding.UTF8.GetBytes("hcoona:" + credential));
         _secrets = [Encoding.UTF8.GetBytes(credential), Encoding.UTF8.GetBytes(_basic)];
     }

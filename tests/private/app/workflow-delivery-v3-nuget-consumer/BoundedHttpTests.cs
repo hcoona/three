@@ -693,26 +693,59 @@ public sealed class BoundedHttpTests
     public async Task StorageTransportUsesOriginalDeadlineAndStopsWithoutRetry()
     {
         ConsumerRequest request = Request() with { TimeoutSeconds = 1 };
+        var time = new DeadlineTimeProvider();
+        var storageEntered = new TaskCompletionSource<CancellationToken>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        using var transportLifetime = new CancellationTokenSource();
+        TimeSpan watchdog = TimeSpan.FromSeconds(10);
         int calls = 0;
         var transport = new InspectingHandler(async (_, cancellationToken) =>
         {
             if (++calls == 1)
             {
-                await Task.Delay(700, cancellationToken);
+                time.Advance(TimeSpan.FromMilliseconds(700));
                 return Redirect(302, StorageUrl);
             }
-            await Task.Delay(500, cancellationToken);
-            return Response("too late");
+            storageEntered.TrySetResult(cancellationToken);
+            using var pending = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken, transportLifetime.Token
+            );
+            await Task.Delay(Timeout.InfiniteTimeSpan, pending.Token);
+            throw new InvalidOperationException("Unreachable completion.");
         });
-        var bounded = new BoundedHttpHandler(request, Token, transport);
-        using var client = new HttpClient(bounded);
+        var bounded = new BoundedHttpHandler(request, Token, transport, time);
+        using var client = new HttpClient(bounded) { Timeout = Timeout.InfiniteTimeSpan };
+        Task<HttpResponseMessage> operation = client.GetAsync(request.PackageUrl);
 
-        await Assert.ThrowsAsync<OperationCanceledException>(
-            () => client.GetAsync(request.PackageUrl)
-        );
-        await Assert.ThrowsAsync<OperationCanceledException>(
-            () => client.GetAsync(request.PackageUrl)
-        );
+        try
+        {
+            CancellationToken storageToken = await storageEntered.Task.WaitAsync(watchdog);
+            time.Advance(TimeSpan.FromMilliseconds(299));
+            Assert.IsFalse(storageToken.IsCancellationRequested);
+
+            time.Advance(TimeSpan.FromMilliseconds(1));
+            Assert.IsTrue(storageToken.IsCancellationRequested);
+            await Assert.ThrowsAsync<OperationCanceledException>(
+                () => operation.WaitAsync(watchdog)
+            );
+            await Assert.ThrowsAsync<OperationCanceledException>(
+                () => client.GetAsync(request.PackageUrl).WaitAsync(watchdog)
+            );
+        }
+        finally
+        {
+            transportLifetime.Cancel();
+            client.CancelPendingRequests();
+            try
+            {
+                using HttpResponseMessage response = await operation.WaitAsync(watchdog);
+            }
+            catch (OperationCanceledException)
+            {
+                // Observe the canceled test-owned operation before disposing its handler.
+            }
+        }
 
         Assert.AreEqual(2, transport.Calls);
         Assert.HasCount(2, Directory.GetFiles(request.EvidencePath, "*-reserved.json"));
@@ -838,6 +871,64 @@ public sealed class BoundedHttpTests
         {
             Calls++;
             return response(message, cancellationToken);
+        }
+    }
+}
+
+file sealed class DeadlineTimeProvider : TimeProvider
+{
+    private readonly List<DeadlineTimer> _timers = [];
+    private TimeSpan _elapsed;
+
+    public override ITimer CreateTimer(
+        TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period
+    )
+    {
+        var timer = new DeadlineTimer(this, callback, state);
+        timer.Change(dueTime, period);
+        _timers.Add(timer);
+        return timer;
+    }
+
+    internal void Advance(TimeSpan elapsed)
+    {
+        _elapsed += elapsed;
+        foreach (DeadlineTimer timer in _timers.ToArray()) timer.FireIfDue();
+    }
+
+    private sealed class DeadlineTimer(
+        DeadlineTimeProvider owner, TimerCallback callback, object? state
+    ) : ITimer
+    {
+        private TimeSpan? _dueAt;
+        private bool _disposed;
+
+        public bool Change(TimeSpan dueTime, TimeSpan period)
+        {
+            if (period != Timeout.InfiniteTimeSpan)
+                throw new NotSupportedException("This deadline test uses only one-shot timers.");
+            if (_disposed) return false;
+            _dueAt = dueTime == Timeout.InfiniteTimeSpan ? null : owner._elapsed + dueTime;
+            return true;
+        }
+
+        internal void FireIfDue()
+        {
+            if (_dueAt is not { } dueAt || dueAt > owner._elapsed) return;
+            _dueAt = null;
+            callback(state);
+        }
+
+        public void Dispose()
+        {
+            _disposed = true;
+            _dueAt = null;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Dispose();
+            return ValueTask.CompletedTask;
         }
     }
 }
