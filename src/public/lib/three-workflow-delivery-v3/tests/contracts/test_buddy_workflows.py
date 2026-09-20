@@ -296,6 +296,19 @@ with Path(args[args.index("--github-output") + 1]).open("a", encoding="utf-8") a
     assert outputs["execution-concurrency-key"] == "key-from-admitted-model"
     assert outputs["repository-model-digest"] == "sha256:" + "4" * 64
     upload = next(step for step in _steps(job) if step.get("uses") == UPLOAD)
+    for name, producer, field in (
+        ("repository-model-digest", compile_step, "repository-model-digest"),
+        (
+            "repository-model-artifact-name",
+            compile_step,
+            "repository-model-artifact-name",
+        ),
+        ("repository-model-artifact-id", upload, "artifact-id"),
+        ("repository-model-artifact-digest", upload, "artifact-digest"),
+    ):
+        assert job["outputs"][name] == (
+            "${{ steps." + producer["id"] + ".outputs." + field + " }}"
+        )
     artifact_fact = {
         f"steps.{compile_step['id']}.outputs.repository-model-artifact-name": outputs[
             "repository-model-artifact-name"
