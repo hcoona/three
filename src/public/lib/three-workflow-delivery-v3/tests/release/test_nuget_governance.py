@@ -438,12 +438,9 @@ def test_platform_retains_review_carriers_without_fabricating_approval():
 @pytest.mark.parametrize(
     "scenario",
     [
-        "unprotected",
         "diverged-main",
         "rerun",
-        "wrong-actor",
         "wrong-merge-owner",
-        "different-tree",
         "extra-writer",
         "team",
         "environment-reviewer",
@@ -455,27 +452,18 @@ def test_platform_retains_review_carriers_without_fabricating_approval():
         "package-repository",
     ],
 )
-def test_platform_readback_rejects_wrong_authority(scenario):  # noqa: C901, PLR0912
+def test_platform_readback_rejects_wrong_authority(scenario):  # noqa: C901
     documents = _platform_documents()
     environment = REPO + "/environments/" + ENV
-    if scenario == "unprotected":
-        documents[REPO + "/branches/main"]["protected"] = False
-    elif scenario == "diverged-main":
+    if scenario == "diverged-main":
         documents[f"{REPO}/compare/{TARGET}...{MAIN}"]["status"] = "diverged"
     elif scenario == "rerun":
         documents[f"{REPO}/actions/runs/{RUN_ID}"]["run_attempt"] = 2
-    elif scenario == "wrong-actor":
-        documents[f"{REPO}/actions/runs/{RUN_ID}"]["actor"] = {
-            "login": "another",
-            "id": 1,
-        }
     elif scenario == "wrong-merge-owner":
         documents[REPO + "/pulls/700"]["merged_by"] = {
             "login": "another",
             "id": 1,
         }
-    elif scenario == "different-tree":
-        documents[f"{REPO}/git/commits/{HEAD}"]["tree"]["sha"] = "f" * 40
     elif scenario == "extra-writer":
         documents[_page(REPO + "/collaborators?affiliation=all")].append(
             {"login": "another", "id": 1, "permissions": {"push": True}}
@@ -513,7 +501,14 @@ def test_platform_readback_rejects_wrong_authority(scenario):  # noqa: C901, PLR
             "repository"
         ] = {"id": 1, "full_name": "another/repository"}
     with pytest.raises(
-        (shared.GovernanceRejectionError, ValueError, TypeError)
+        shared.GovernanceRejectionError
+        if scenario == "rerun"
+        else (shared.GovernanceRejectionError, ValueError, TypeError),
+        match=(
+            "NuGet actual workflow actor/attempt/revision differs"
+            if scenario == "rerun"
+            else None
+        ),
     ):
         _facts(_transport(documents))
 

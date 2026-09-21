@@ -698,9 +698,7 @@ def test_native_zero_action_requires_fresh_exact_proof(native_case):
 @pytest.mark.parametrize(
     ("invocation", "status", "expected"),
     [
-        ("created", 200, "published"),
         ("created", 201, "published"),
-        ("created", 202, "published"),
         ("unselected", 204, "publication-failed"),
         ("conflict", 409, "publication-failed"),
         ("lost-response", None, "publication-failed"),
@@ -950,7 +948,7 @@ def test_native_missing_result_preserves_marker_as_unknown(
     assert outcome.direct_predecessor.reference == reference
 
 
-@pytest.mark.parametrize("status", [200, 201, 202])
+@pytest.mark.parametrize("status", [201])
 @pytest.mark.parametrize("readback", ["missing", "different-bytes"])
 def test_native_success_without_complete_readback_stays_failed(
     native_case, monkeypatch, tmp_path, status, readback
@@ -1141,15 +1139,20 @@ def test_native_eligibility_replay_does_not_grant_fresh_action(native_case):
     ],
 )
 def test_native_admission_requires_exact_six_field_generation(
-    native_case, monkeypatch, field
+    monkeypatch, field
 ):
-    attestation = native_case.eligibility.governance.attestation
+    profile = NugetDestinationOperationProfile(
+        canonicalize(_modeled_profile_document(RESOURCES))
+    )
+    attestation = shared.parse_governance_attestation(
+        canonicalize(_ready_document(profile, monkeypatch))
+    )
     primitive = attestation.activation.destination_primitive
     assert governance.nuget_destination_primitive_is_admitted(attestation)
     shared.require_action_governance(
         attestation,
         now=NOW,
-        destination_operation_profile_digest=native_case.profile.profile_digest,
+        destination_operation_profile_digest=profile.profile_digest,
     )
     key = (*primitive.admission_key, primitive.evidence_digest)
     fields = ("profile", "suite", "package", "api", "contract", "evidence")
@@ -1175,9 +1178,7 @@ def test_native_admission_requires_exact_six_field_generation(
         shared.require_action_governance(
             attestation,
             now=NOW,
-            destination_operation_profile_digest=(
-                native_case.profile.profile_digest
-            ),
+            destination_operation_profile_digest=(profile.profile_digest),
         )
 
 

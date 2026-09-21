@@ -355,49 +355,6 @@ def _state(case, state):
 
 
 @pytest.mark.parametrize(
-    ("state", "classification", "code"),
-    [
-        ("absent", "absent", 0),
-        ("exact", "exact-satisfied", 0),
-        ("conflicting", "conflicting", 1),
-        ("unknown", "unprovable", 1),
-    ],
-)
-def test_nuget_approval_cli_observes_native_state(
-    approval_case, state, classification, code
-):
-    case = approval_case
-    _state(case, state)
-    assert cli.main(_args(case, COMMANDS[0])) == code
-    observation = _record(case.observation, NugetRemoteStateObservation)
-    assert observation.classification == classification
-    assert observation.attempt == case.qualified.binding.attempt
-    assert (
-        observation.qualification_decision_reference.payload_digest
-        == case.decision_record.decision_digest
-    )
-    assert (
-        observation.desired_content_sha256
-        == case.artifact_record.content.content_sha256
-    )
-    assert (
-        f"observation-digest={observation.observation_digest}"
-        in case.github_output.read_text()
-    )
-    case.evaluate.assert_not_called()
-    case.client_factory.assert_not_called()
-    if state == "exact":
-        assert (
-            observation.active_readback.content_sha256
-            == case.artifact_record.content.content_sha256
-        )
-        assert (
-            observation.active_readback.witness_digest
-            == case.artifact_record.witness_digest
-        )
-
-
-@pytest.mark.parametrize(
     "fault", ["intent", "eligibility-transport", "model", "attempt", "target"]
 )
 def test_nuget_approval_cli_rejects_substituted_authority(
@@ -458,6 +415,40 @@ def test_nuget_approval_cli_materializes_only_ready_action(
     assert cli.main(_args(case, COMMANDS[0])) == (
         0 if state in {"absent", "exact"} else 1
     )
+    observation = _record(case.observation, NugetRemoteStateObservation)
+    assert (
+        observation.classification
+        == {
+            "absent": "absent",
+            "exact": "exact-satisfied",
+            "conflicting": "conflicting",
+            "unknown": "unprovable",
+        }[state]
+    )
+    assert observation.attempt == case.qualified.binding.attempt
+    assert (
+        observation.qualification_decision_reference.payload_digest
+        == case.decision_record.decision_digest
+    )
+    assert (
+        observation.desired_content_sha256
+        == case.artifact_record.content.content_sha256
+    )
+    assert (
+        f"observation-digest={observation.observation_digest}"
+        in case.github_output.read_text()
+    )
+    case.evaluate.assert_not_called()
+    case.client_factory.assert_not_called()
+    if state == "exact":
+        assert (
+            observation.active_readback.content_sha256
+            == case.artifact_record.content.content_sha256
+        )
+        assert (
+            observation.active_readback.witness_digest
+            == case.artifact_record.witness_digest
+        )
     case.github_output.unlink()
     if state in {"conflicting", "unknown"}:
         assert cli.main(_args(case, COMMANDS[1])) == 1
@@ -497,9 +488,9 @@ def test_nuget_approval_cli_materializes_only_ready_action(
         assert "reviewer-digest" not in outputs
 
 
-def test_nuget_approval_cli_renders_native_reviewer_summary(approval_case):
+def test_nuget_approval_cli_forms_bound_approval_bundle(approval_case):
     case = approval_case
-    _prepare(case, COMMANDS[2])
+    arguments = _prepare(case, COMMANDS[2])
     summary = case.summary.read_text()
     for value in (
         case.source.intent.target,
@@ -519,11 +510,7 @@ def test_nuget_approval_cli_renders_native_reviewer_summary(approval_case):
     assert "Lifecycle scripts" not in summary
     assert "target tag" not in summary
     assert "Tarball" not in summary
-
-
-def test_nuget_approval_cli_forms_bound_approval_bundle(approval_case):
-    case = approval_case
-    assert cli.main(_prepare(case, COMMANDS[2])) == 0
+    assert cli.main(arguments) == 0
     bundle = _record(case.bundle, ApprovalBundle)
     publication = _record(case.publication, PublicationSnapshot)
     assert (
