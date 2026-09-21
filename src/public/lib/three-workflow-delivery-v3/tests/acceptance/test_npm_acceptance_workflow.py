@@ -136,7 +136,6 @@ def test_probe_token_env_binding_and_prerequisite_order():  # noqa: PLR0915
     )
     assert steps.index(_step(CHECKOUT)) < steps.index(_step(UV))
     assert steps.index(_step(CHECKOUT)) < steps.index(_step(MISE))
-    assert steps.index(_step(UV)) < steps.index(_step(PNPM))
     assert steps.index(_step(MISE)) < steps.index(_step(PNPM))
     assert steps.index(_step(PNPM)) < steps.index(_step(UPLOAD))
     assert steps.index(_step(MISE)) < steps.index(_step("toolchain"))

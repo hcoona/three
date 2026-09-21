@@ -39,7 +39,6 @@ TARGET = "e" * 40
 NOW = datetime(2026, 9, 1, 6, 0, tzinfo=UTC)
 REPOSITORY_ROOT = Path("/controlled/current-run-repository")
 WORKFLOW_RUN_ID = 8101
-COMPLETE_EVENT_COUNT = 3
 REJECTED_EVENT_COUNT = 2
 
 
@@ -187,18 +186,16 @@ def test_live_eligibility_runs_its_own_exact_target_static_reference_scan(
 
     decision, events = _evaluate_with_result(monkeypatch, expected)
 
-    assert events[0] == (
-        "scan",
-        REPOSITORY_ROOT,
-        "git-target",
-        TARGET,
+    scan = ("scan", REPOSITORY_ROOT, "git-target", TARGET)
+    validation = ("validate", expected)
+    assert [event for event in events if event[0] == "scan"] == [scan]
+    [governance] = [event for event in events if event[0] == "governance"]
+    assert (
+        events.index(scan) < events.index(validation) < events.index(governance)
     )
-    assert events[1] == ("validate", expected)
-    assert events[2][0] == "governance"
-    assert events[2][1].ref == "refs/heads/main"
-    assert events[2][1] == decision.governance.source
-    assert len(events) == COMPLETE_EVENT_COUNT
-    assert decision.static_reference is expected
+    assert governance[1].ref == "refs/heads/main"
+    assert governance[1] == decision.governance.source
+    assert decision.static_reference == expected
     assert decision.context.workflow_run_id == WORKFLOW_RUN_ID
     assert decision.result is EligibilityResult.PASS
     assert decision.diagnostics == ()

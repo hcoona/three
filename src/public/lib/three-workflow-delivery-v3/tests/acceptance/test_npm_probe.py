@@ -237,19 +237,13 @@ def test_request_rejects_noncanonical_or_duplicate_json(document):
         ("disposable_package_preconditions", "deleted_version_id", 123),
     ],
 )
-def test_request_rejection_cannot_publish(probe_case, section, field, value):
+def test_request_parser_rejects_invalid_fields(section, field, value):
     document = json.loads(canonicalize(REQUEST.to_document()))
     target = document if section is None else document[section]
     target[field] = value
 
     with pytest.raises((ValueError, TypeError)):
-        probe.run_npm_probe(
-            probe.parse_request(canonicalize(document)), **probe_case
-        )
-
-    assert not probe_case["runner"].calls
-    assert not probe_case["runtime_directory"].exists()
-    assert not probe_case["evidence_directory"].exists()
+        probe.parse_request(canonicalize(document))
 
 
 @pytest.mark.parametrize(

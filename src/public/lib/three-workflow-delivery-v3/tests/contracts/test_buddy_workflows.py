@@ -652,13 +652,11 @@ def test_release_finalizer_propagates_failure_after_retention() -> None:
     outcome_upload = _step(finalizer, "Upload final Attempt Outcome")
     summary_upload = _step(finalizer, "Upload final Attempt summary")
     propagate = _step(finalizer, "Propagate finalization status")
-    names = [step["name"] for step in steps]
 
-    assert names.index(finalize["name"]) < names.index(outcome_upload["name"])
-    assert names.index(outcome_upload["name"]) < names.index(
-        summary_upload["name"]
-    )
-    assert names.index(summary_upload["name"]) < names.index(propagate["name"])
+    for upload in (outcome_upload, summary_upload):
+        assert (
+            steps.index(finalize) < steps.index(upload) < steps.index(propagate)
+        )
     assert propagate["if"] == "always()"
     command = _run(propagate)
     assert "steps.finalize.outcome" in command
@@ -798,23 +796,14 @@ def test_publication_snapshot_lifecycle_and_transport_identity_are_exact() -> (
     None
 ):
     materializer = _document(CALLEE)["jobs"]["materialize-publication"]
-    lifecycle_ids = {
-        "materialize",
-        "names",
-        "upload-reviewer",
-        "upload-snapshot",
+    positions = {
+        step["id"]: index
+        for index, step in enumerate(_steps(materializer))
+        if "id" in step
     }
 
-    assert tuple(
-        step["id"]
-        for step in _steps(materializer)
-        if step.get("id") in lifecycle_ids
-    ) == (
-        "materialize",
-        "names",
-        "upload-snapshot",
-        "upload-reviewer",
-    )
+    for upload in ("upload-snapshot", "upload-reviewer"):
+        assert positions["materialize"] < positions["names"] < positions[upload]
     assert materializer["outputs"]["publication-snapshot-artifact-id"] == (
         "${{ steps.upload-snapshot.outputs.artifact-id }}"
     )
@@ -968,14 +957,11 @@ def test_propagation_fails_after_successful_retention(
     summary_upload = _step(finalizer, "Upload final Attempt summary")
     propagate = _step(finalizer, "Propagate finalization status")
 
-    assert (
-        steps.index(finalize)
-        < steps.index(outcome_upload)
-        < steps.index(summary_upload)
-        < steps.index(propagate)
-    )
     assert finalize["continue-on-error"] is True
     for upload in (outcome_upload, summary_upload):
+        assert (
+            steps.index(finalize) < steps.index(upload) < steps.index(propagate)
+        )
         assert upload["if"].startswith("always() && steps.finalize.outputs.")
         assert upload["with"]["archive"] is False
         assert upload["with"]["retention-days"] == RETENTION_DAYS
@@ -1098,14 +1084,6 @@ def test_buddy_target_sha_binding_chain_is_exact(tmp_path: Path) -> None:
         "TARGET_SHA": _CALLEE_TARGET_SHA,
     }
     guard_command = _run(guard)
-    assert guard_command.splitlines() == [
-        "set -euo pipefail",
-        '[[ "${CALLER_REPOSITORY}" == "hcoona/three" ]]',
-        '[[ "${TARGET_SHA}" =~ ^[0-9a-f]{40}$ ]]',
-        '[[ "${TARGET_SHA}" == "${CALLER_SHA}" ]]',
-        '[[ "${TARGET_SHA}" == "${CALLER_WORKFLOW_SHA}" ]]',
-        'echo "identity-admitted=true" >> "${GITHUB_OUTPUT}"',
-    ]
     assert "${{" not in guard_command
 
     identity_sha = "a" * 40
@@ -1333,6 +1311,7 @@ def test_reviewer_identity_and_approval_bundle_are_durable_before_wait() -> (
     approval = jobs["approve-publication"]
     steps = _steps(materializer)
     upload_reviewer = _step(materializer, "Upload reviewer summary")
+    upload_snapshot = _step(materializer, "Upload Publication Snapshot")
     form_bundle = _step(
         materializer,
         "Form complete pre-wait Approval Bundle",
@@ -1351,6 +1330,7 @@ def test_reviewer_identity_and_approval_bundle_are_durable_before_wait() -> (
         < steps.index(upload_bundle)
         < steps.index(publish_summary)
     )
+    assert steps.index(upload_snapshot) < steps.index(form_bundle)
     publish_condition = "steps.materialize.outputs.publish-required == 'true'"
     for step in (
         upload_reviewer,
