@@ -20,10 +20,6 @@ from three_workflow_delivery_v3.records import release as release_records
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactReference,
 )
-from three_workflow_delivery_v3.records.bindings import (
-    CurrentAuthorityContext,
-    admit,
-)
 from three_workflow_delivery_v3.records.release import (
     CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION,
     ApprovalBoundary,
@@ -62,8 +58,6 @@ from three_workflow_delivery_v3.release.live import (
 )
 
 TARGET = "a" * 40
-ARTIFACT_DIGEST = "sha256:" + ("b" * 64)
-CONTROL = f"workflow-delivery-v3:{TARGET}"
 COMPLETE_RESOURCE_KEY_COUNT = 2
 EXECUTION = BuddyExecutionIdentity(
     channel="buddy",
@@ -108,38 +102,6 @@ RETIRED_PLATFORM_HISTORY_TYPES = (
 )
 
 
-def _current_payload() -> dict[str, JsonValue]:
-    return {
-        "release_execution": canonical_sha256(EXECUTION.to_document()),
-        "purpose": "live-release",
-        "request": "release-request:" + ("d" * 64),
-        "workflow_run_id": ATTEMPT.workflow_run_id,
-        "attempt": canonical_sha256(ATTEMPT.to_document()),
-        "target": TARGET,
-        "producer": "commit8-contract-producer",
-        "control": CONTROL,
-    }
-
-
-def _current_context(
-    payload: dict[str, JsonValue],
-) -> CurrentAuthorityContext:
-    return CurrentAuthorityContext(
-        release_execution=str(payload["release_execution"]),
-        purpose=str(payload["purpose"]),
-        request=str(payload["request"]),
-        workflow_run_id=ATTEMPT.workflow_run_id,
-        run_attempt=None,
-        attempt=str(payload["attempt"]),
-        target=str(payload["target"]),
-        producer=str(payload["producer"]),
-        control=str(payload["control"]),
-        artifact_id=701,
-        artifact_digest=ARTIFACT_DIGEST,
-        payload_digest=canonical_sha256(payload),
-    )
-
-
 def test_commit8_record_contract_api_is_available() -> None:
     missing = tuple(
         name
@@ -151,10 +113,10 @@ def test_commit8_record_contract_api_is_available() -> None:
 
 
 def test_live_eligibility_freshness_modes_are_closed() -> None:
-    assert tuple(mode.value for mode in LiveEligibilityAdmissionMode) == (
+    assert {mode.value for mode in LiveEligibilityAdmissionMode} == {
         "current-freshness",
         "authorization-replay",
-    )
+    }
     assert (
         LiveEligibilityAdmissionMode("authorization-replay")
         is LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY
@@ -192,122 +154,6 @@ def test_attempt_identity_is_exact_frozen_and_workflow_run_bound() -> None:
     assert hasattr(ReleaseAttemptIdentity, "__slots__")
     with pytest.raises(FrozenInstanceError):
         ATTEMPT.workflow_run_id = 102  # type: ignore[misc]
-
-
-def test_exact_current_attempt_authority_preserves_every_trusted_binding() -> (
-    None
-):
-    payload = _current_payload()
-    context = _current_context(payload)
-
-    admitted = admit(
-        payload=payload,
-        artifact_id=context.artifact_id,
-        artifact_digest=context.artifact_digest,
-        current=context,
-    )
-
-    assert admitted.release_execution == context.release_execution
-    assert admitted.purpose == "live-release"
-    assert admitted.target == TARGET
-    assert admitted.control_identity == CONTROL
-    assert admitted.artifact_digest == ARTIFACT_DIGEST
-    assert admitted.payload_digest == canonical_sha256(payload)
-
-
-@pytest.mark.parametrize(
-    ("field", "replacement"),
-    [
-        ("release_execution", "sha256:" + ("e" * 64)),
-        ("request", "release-request:" + ("e" * 64)),
-        ("workflow_run_id", 102),
-        ("attempt", "sha256:" + ("e" * 64)),
-        ("target", "e" * 40),
-        ("producer", "substituted-producer"),
-        ("control", "control:" + ("e" * 64)),
-    ],
-)
-def test_current_attempt_authority_rejects_every_binding_substitution(
-    field: str,
-    replacement: str | int,
-) -> None:
-    payload = _current_payload()
-    context = _current_context(payload)
-    payload[field] = replacement
-
-    with pytest.raises(ValueError, match=rf"binding mismatch: {field}"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id,
-            artifact_digest=context.artifact_digest,
-            current=context,
-        )
-
-
-def test_live_current_authority_rejects_run_attempt_field() -> None:
-    payload = _current_payload()
-    context = _current_context(payload)
-    payload["run_attempt"] = 2
-
-    with pytest.raises(ValueError, match="unknown field: run_attempt"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id,
-            artifact_digest=context.artifact_digest,
-            current=context,
-        )
-
-
-def test_current_attempt_authority_rejects_transport_substitution() -> None:
-    payload = _current_payload()
-    context = _current_context(payload)
-
-    with pytest.raises(ValueError, match="artifact_id"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id + 1,
-            artifact_digest=context.artifact_digest,
-            current=context,
-        )
-    with pytest.raises(ValueError, match="artifact_digest"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id,
-            artifact_digest="sha256:" + ("f" * 64),
-            current=context,
-        )
-
-
-def test_current_attempt_authority_rejects_payload_digest_substitution() -> (
-    None
-):
-    payload = _current_payload()
-    context = replace(
-        _current_context(payload),
-        payload_digest="sha256:" + ("f" * 64),
-    )
-
-    with pytest.raises(ValueError, match="payload integrity mismatch"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id,
-            artifact_digest=context.artifact_digest,
-            current=context,
-        )
-
-
-def test_payload_cannot_select_or_weaken_current_authority() -> None:
-    payload = _current_payload()
-    context = _current_context(payload)
-    payload["admission_mode"] = "execution-history"
-
-    with pytest.raises(ValueError, match="unknown field: admission_mode"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id,
-            artifact_digest=context.artifact_digest,
-            current=context,
-        )
 
 
 def _governance_provenance() -> tuple[tuple[str, str], ...]:

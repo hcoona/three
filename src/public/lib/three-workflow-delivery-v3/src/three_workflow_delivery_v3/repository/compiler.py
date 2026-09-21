@@ -54,7 +54,6 @@ from three_workflow_delivery_v3.repository.node_provider import (
     validate_node_provider_result,
     validate_project_node,
     validate_provider_binding,
-    validate_provider_toolchain,
 )
 
 if TYPE_CHECKING:
@@ -1889,7 +1888,7 @@ def admit_node_provider_fact_bundle(
         if actual != expected:
             message = f"Fact Bundle {field} binding mismatch"
             raise ValueError(message)
-    _validate_result(context, request, bundle.provider_result)
+    _validate_result_for_request(context, request, bundle.provider_result)
     return AdmittedNodeProviderFactBundle(bundle=bundle, admission=admission)
 
 
@@ -1897,12 +1896,13 @@ def _result_identity(result: NodeProviderResult) -> str:
     return f"{result.provider_logical_id}:{result.binding.request_id}"
 
 
-def _validate_result(
+def _validate_result_for_request(
     context: CompilationContext,
     request: ProviderRequest,
     result: NodeProviderResult,
 ) -> None:
-    validate_node_provider_result(result)
+    """Compare a structurally admitted immutable Result with its request."""
+    # This admission call has already run _validate_fact_bundle_schema.
     expected_binding = ProviderBinding(
         request_id=context.request_id,
         purpose=context.purpose,
@@ -1937,7 +1937,6 @@ def _validate_result(
     if result.execution_class != PROVIDER_EXECUTION_CLASS:
         message = "Provider Result execution class mismatch"
         raise ValueError(message)
-    validate_provider_toolchain(result.toolchain)
     if result.build_capabilities != ("node/npm-package-v1",):
         message = "Provider Result build capability closure mismatch"
         raise ValueError(message)
@@ -1969,7 +1968,6 @@ def _validate_result(
     ):
         message = "Provider Result is missing npmPackageVersion"
         raise ValueError(message)
-    validate_nbgv_facts(result.nbgv, target=context.target)
 
 
 def _git_target_file_bytes(

@@ -47,6 +47,7 @@ from three_workflow_delivery_v3.repository.node_provider import (
     ProjectNode,
     ProviderBinding,
     create_node_provider_fact_bundle,
+    validate_provider_toolchain,
 )
 
 SOURCE_REPO_ROOT = Path(__file__).resolve().parents[6]
@@ -1629,19 +1630,27 @@ def test_compiler_rejects_substituted_provider_execution_class(
         "whitespace-version",
     ],
 )
-def test_compiler_rejects_noncanonical_provider_toolchain(
+def test_provider_toolchain_rejects_noncanonical_values(
+    toolchain: tuple[tuple[str, str], ...],
+) -> None:
+    """Own the closed toolchain value matrix at its intrinsic validator."""
+    with pytest.raises((TypeError, ValueError), match="toolchain"):
+        validate_provider_toolchain(toolchain)
+
+
+def test_compiler_readmits_noncanonical_provider_toolchain(
     valid_compilation_inputs: tuple[
         CompilationContext,
         ProviderRequestManifest,
     ],
     valid_node_provider_result: NodeProviderResult,
-    toolchain: tuple[tuple[str, str], ...],
 ) -> None:
-    """Require the exact closed ordered nonempty Node-then-PNPM tuple."""
+    """Reject unchecked malformed input at the public compiler boundary."""
     context, manifest = valid_compilation_inputs
+    validate_provider_toolchain((("node", "v24.14.0"), ("pnpm", "11.21.0")))
     forged_result = replace(
         valid_node_provider_result,
-        toolchain=toolchain,
+        toolchain=(("pnpm", "11.21.0"), ("node", "v24.14.0")),
     )
 
     _assert_phase3_compile_rejected(

@@ -430,10 +430,9 @@ def test_exact_basis_and_observation_ignore_tag_routing(
         )
         == "ready"
     )
-    assert (
-        admit_remote_state_observation(observation, **case.arguments())
-        is observation
-    )
+    admitted = admit_remote_state_observation(observation, **case.arguments())
+    assert type(admitted) is RemoteStateObservation
+    assert admitted == observation
 
 
 @pytest.mark.parametrize(
@@ -445,12 +444,11 @@ def test_absence_admits_only_current_action_creation(
 ) -> None:
     case = observation_case
     observation = _observation(case, classification="absent")
-    assert (
-        admit_remote_state_observation(
-            observation, **case.arguments(), action_creation_at=NOW
-        )
-        is observation
+    admitted = admit_remote_state_observation(
+        observation, **case.arguments(), action_creation_at=NOW
     )
+    assert type(admitted) is RemoteStateObservation
+    assert admitted == observation
     expiry = case.eligibility.governance.attestation.expires_at
     with pytest.raises(ValueError, match="currently fresh"):
         admit_remote_state_observation(
@@ -519,7 +517,8 @@ def test_control_conflicts_block_ready_but_preserve_observed_facts(
         replace(observation, package_control=proof, classification="unknown")
     )
     admitted = admit_remote_state_observation(blocking, **case.arguments())
-    assert admitted is blocking
+    assert type(admitted) is RemoteStateObservation
+    assert admitted == blocking
     assert admitted.package_control == proof
 
 
@@ -551,10 +550,9 @@ def test_missing_and_unsupported_control_are_unprovable(
                 active_readback=None,
             )
         )
-        assert (
-            admit_remote_state_observation(blocking, **case.arguments())
-            is blocking
-        )
+        admitted = admit_remote_state_observation(blocking, **case.arguments())
+        assert type(admitted) is RemoteStateObservation
+        assert admitted == blocking
     with pytest.raises(ValueError, match="package control"):
         admit_remote_state_observation(
             replace(observation, package_control=unsupported),
@@ -824,9 +822,9 @@ def test_replay_allows_historical_evidence_but_not_fresh_reads_or_actions(
     )
     arguments = case.arguments() | {"eligibility": replay}
     observation = _observation(case, classification=classification)
-    assert (
-        admit_remote_state_observation(observation, **arguments) is observation
-    )
+    admitted = admit_remote_state_observation(observation, **arguments)
+    assert type(admitted) is RemoteStateObservation
+    assert admitted == observation
     with pytest.raises(ValueError, match="currently fresh"):
         validate_remote_state_observation_basis(**arguments, now=later)
     if classification == "absent":
@@ -890,7 +888,9 @@ def test_expired_native_acceptance_blocks_absence_not_exact_state(
         == case.snapshot.destination_projections[0]
     )
     exact = _observation(case)
-    assert admit_remote_state_observation(exact, **case.arguments()) is exact
+    admitted = admit_remote_state_observation(exact, **case.arguments())
+    assert type(admitted) is RemoteStateObservation
+    assert admitted == exact
     absent = _observation(case, classification="absent")
     with pytest.raises(ValueError, match="unexpired native acceptance"):
         admit_remote_state_observation(absent, **case.arguments())
@@ -910,12 +910,11 @@ def test_acceptance_must_remain_fresh_at_action_creation(
 ) -> None:
     case = observation_case
     observation = _observation(case, classification="absent")
-    assert (
-        admit_remote_state_observation(
-            observation, **case.arguments(), action_creation_at=NOW
-        )
-        is observation
+    admitted = admit_remote_state_observation(
+        observation, **case.arguments(), action_creation_at=NOW
     )
+    assert type(admitted) is RemoteStateObservation
+    assert admitted == observation
     with pytest.raises(ValueError, match="unexpired native acceptance"):
         admit_remote_state_observation(
             observation,

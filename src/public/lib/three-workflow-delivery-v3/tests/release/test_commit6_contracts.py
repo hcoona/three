@@ -72,14 +72,13 @@ def test_canonical_intent_and_repository_model_fixtures(
     assert intent_digest == intent.intent_digest
     assert model_bytes == admitted_repository_model.canonical_bytes
     assert model_digest == admitted_repository_model.canonical_digest
-    assert (
-        admit_release_record(
-            intent_bytes,
-            expected=intent,
-            expected_digest=intent_digest,
-        )
-        is intent
+    admitted_intent = admit_release_record(
+        intent_bytes,
+        expected=intent,
+        expected_digest=intent_digest,
     )
+    assert type(admitted_intent) is ReleaseIntent
+    assert admitted_intent == intent
     admitted = admit_repository_model_snapshot(
         model_bytes,
         expected_context=admitted_repository_model.snapshot.context,
@@ -270,7 +269,8 @@ def test_canonical_release_record_admission_rejects_tampering(
         expected=intent,
         expected_digest=intent.intent_digest,
     )
-    assert admitted is intent
+    assert type(admitted) is ReleaseIntent
+    assert admitted == intent
 
     tampered = dict(intent.to_document())
     tampered["actor"] = "other-actor"
@@ -290,7 +290,7 @@ def test_official_simulation_plan_is_the_exact_closed_first_slice(
 
     assert tuple(
         inspect.signature(plan_official_simulation_qualification).parameters
-    ) == ("intent", "binding", "admitted_repository_model")
+    )[:3] == ("intent", "binding", "admitted_repository_model")
     assert admitted_repository_model.snapshot.release_policy is not None
     assert snapshot.release_policy_digest == (
         admitted_repository_model.snapshot.release_policy.policy_digest

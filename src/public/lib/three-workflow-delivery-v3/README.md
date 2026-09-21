@@ -5,6 +5,11 @@ records. Start with the [document set](docs/README.md) and
 [agent handoff](docs/agent-handoff.md) for the authority order, current evidence,
 and operating limits.
 
+Workflow v3 is repository-specific tooling, with no PyPI distribution or
+third-party Python API support commitment. Its Python modules and same-revision
+callers may evolve together. Compatibility obligations follow the CLI/workflow,
+serialized and domain contracts defined in the project records.
+
 New sessions start at the [handoff entry](docs/agent-handoff.md#starting-a-new-session).
 The [NuGet delivery retrospective](docs/research/nuget-delivery-retrospective.md)
 explains reusable integration lessons and the next-task guide.

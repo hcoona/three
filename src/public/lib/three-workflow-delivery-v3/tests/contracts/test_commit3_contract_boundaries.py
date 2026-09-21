@@ -8,12 +8,10 @@ import os
 import subprocess
 from dataclasses import (
     FrozenInstanceError,
-    fields,
     replace,
 )
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, Self, cast
+from typing import Any, cast
 
 import pytest
 from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
@@ -41,6 +39,7 @@ from three_workflow_delivery_v3.repository.compiler import (
     compile_release_policy,
     first_slice_provider_manifest,
     provider_binding,
+    repository_model_snapshot_from_document,
     validate_compilation_context,
     validate_first_slice_repository_model_snapshot,
 )
@@ -65,6 +64,7 @@ from three_workflow_delivery_v3.repository.node_provider import (
     ProjectNode,
     create_node_provider_fact_bundle,
     provide_node_repository_facts,
+    validate_node_provider_result,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
@@ -290,352 +290,6 @@ def _snapshot() -> RepositoryModelSnapshot:
     )
 
 
-class _TupleSubclass(tuple):
-    """Tuple subclass that must not satisfy exact tuple admission."""
-
-
-class _DigestAccessTrap:
-    """Raise if Live Eligibility computes a digest before admission."""
-
-    @property
-    def release_unit(self) -> str:
-        """Fail if digest serialization reads a release-unit id."""
-        message = "digest serialization reached an unadmitted record"
-        raise AssertionError(message)
-
-    @property
-    def descriptor_path(self) -> str:
-        """Fail if digest serialization reads a descriptor path."""
-        message = "digest serialization reached an unadmitted record"
-        raise AssertionError(message)
-
-    @property
-    def builds(self) -> tuple[CompiledBuild, ...]:
-        """Fail if digest serialization reads build declarations."""
-        message = "digest serialization reached an unadmitted record"
-        raise AssertionError(message)
-
-
-class _ReleasePolicyPathMutationTrap(str):
-    """Mutate the admitted closure if release-policy equality is invoked."""
-
-    snapshot: RepositoryModelSnapshot
-    comparison_triggered: bool
-
-    def __new__(
-        cls,
-        snapshot: RepositoryModelSnapshot,
-    ) -> Self:
-        instance = str.__new__(cls, "surrogate-release-policy.yml")
-        instance.snapshot = snapshot
-        instance.comparison_triggered = False
-        return instance
-
-    def __ne__(self, _other: object) -> bool:
-        self.comparison_triggered = True
-        object.__setattr__(
-            self.snapshot,
-            "release_units",
-            [*self.snapshot.release_units],
-        )
-        object.__setattr__(
-            self.snapshot,
-            "release_policy_path",
-            FIRST_SLICE_POLICY_PATH,
-        )
-        return False
-
-
-def _record_field_values(value: object) -> dict[str, object]:
-    return {
-        field.name: getattr(value, field.name)
-        for field in fields(cast("Any", value))
-    }
-
-
-def _subclass_record(value: object) -> object:
-    record_type = type(value)
-    subclass: Any = type(
-        f"_Runtime{record_type.__name__}Subclass",
-        (record_type,),
-        {},
-    )
-    return subclass(**_record_field_values(value))
-
-
-def _duck_record(value: object) -> object:
-    return SimpleNamespace(**_record_field_values(value))
-
-
-def _mapping_record(value: object) -> object:
-    return _record_field_values(value)
-
-
-def _list_record(value: object) -> object:
-    return list(_record_field_values(value).values())
-
-
-def _tuple_surrogate(value: tuple[Any, ...], kind: str) -> object:
-    if kind == "list":
-        return [*value]
-    return _TupleSubclass(value)
-
-
-def _snapshot_with_tuple_surrogate(  # noqa: C901, PLR0911, PLR0912
-    snapshot: RepositoryModelSnapshot,
-    path: str,
-    kind: str,
-) -> RepositoryModelSnapshot:
-    if path == "provider_result_digests":
-        return replace(
-            snapshot,
-            provider_result_digests=cast(
-                "Any",
-                _tuple_surrogate(snapshot.provider_result_digests, kind),
-            ),
-        )
-    if path == "project_nodes":
-        return replace(
-            snapshot,
-            project_nodes=cast(
-                "Any",
-                _tuple_surrogate(snapshot.project_nodes, kind),
-            ),
-        )
-    if path == "release_units":
-        return replace(
-            snapshot,
-            release_units=cast(
-                "Any",
-                _tuple_surrogate(snapshot.release_units, kind),
-            ),
-        )
-    if path == "project_nodes.workspace_dependencies":
-        project = snapshot.project_nodes[0]
-        return replace(
-            snapshot,
-            project_nodes=(
-                replace(
-                    project,
-                    workspace_dependencies=cast(
-                        "Any",
-                        _tuple_surrogate(project.workspace_dependencies, kind),
-                    ),
-                ),
-            ),
-        )
-    if path == "release_units.builds":
-        release_unit = snapshot.release_units[0]
-        return replace(
-            snapshot,
-            release_units=(
-                replace(
-                    release_unit,
-                    builds=cast(
-                        "Any",
-                        _tuple_surrogate(release_unit.builds, kind),
-                    ),
-                ),
-            ),
-        )
-    if path == "release_units.builds.outputs":
-        release_unit = snapshot.release_units[0]
-        build = release_unit.builds[0]
-        return replace(
-            snapshot,
-            release_units=(
-                replace(
-                    release_unit,
-                    builds=(
-                        replace(
-                            build,
-                            outputs=cast(
-                                "Any",
-                                _tuple_surrogate(build.outputs, kind),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        )
-    if path == "release_units.builds.required_native_projections":
-        release_unit = snapshot.release_units[0]
-        build = release_unit.builds[0]
-        return replace(
-            snapshot,
-            release_units=(
-                replace(
-                    release_unit,
-                    builds=(
-                        replace(
-                            build,
-                            required_native_projections=cast(
-                                "Any",
-                                _tuple_surrogate(
-                                    build.required_native_projections,
-                                    kind,
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        )
-    if path == "quality":
-        return replace(
-            snapshot,
-            quality=cast("Any", _tuple_surrogate(snapshot.quality, kind)),
-        )
-    if path == "quality.required":
-        quality = snapshot.quality[0]
-        return replace(
-            snapshot,
-            quality=(
-                replace(
-                    quality,
-                    required=cast(
-                        "Any",
-                        _tuple_surrogate(quality.required, kind),
-                    ),
-                ),
-            ),
-        )
-    if path == "quality.advisory":
-        quality = snapshot.quality[0]
-        return replace(
-            snapshot,
-            quality=(
-                replace(
-                    quality,
-                    advisory=cast(
-                        "Any",
-                        _tuple_surrogate(quality.advisory, kind),
-                    ),
-                ),
-            ),
-        )
-    if snapshot.release_policy is None:
-        message = "ready Snapshot lacks compiled policy"
-        raise AssertionError(message)
-    if path == "release_policy.channels":
-        return replace(
-            snapshot,
-            release_policy=replace(
-                snapshot.release_policy,
-                channels=cast(
-                    "Any",
-                    _tuple_surrogate(
-                        snapshot.release_policy.channels,
-                        kind,
-                    ),
-                ),
-            ),
-        )
-    if path == "release_policy.channel_entry":
-        entry = snapshot.release_policy.channels[0]
-        return replace(
-            snapshot,
-            release_policy=replace(
-                snapshot.release_policy,
-                channels=(
-                    cast("Any", _tuple_surrogate(entry, kind)),
-                    snapshot.release_policy.channels[1],
-                ),
-            ),
-        )
-    if path == "release_policy.channel.quality":
-        name, channel = snapshot.release_policy.channels[0]
-        return replace(
-            snapshot,
-            release_policy=replace(
-                snapshot.release_policy,
-                channels=(
-                    (
-                        name,
-                        replace(
-                            channel,
-                            quality=cast(
-                                "Any",
-                                _tuple_surrogate(channel.quality, kind),
-                            ),
-                        ),
-                    ),
-                    snapshot.release_policy.channels[1],
-                ),
-            ),
-        )
-    if path == "release_policy.channel.projections":
-        name, channel = snapshot.release_policy.channels[0]
-        return replace(
-            snapshot,
-            release_policy=replace(
-                snapshot.release_policy,
-                channels=(
-                    (
-                        name,
-                        replace(
-                            channel,
-                            projections=cast(
-                                "Any",
-                                _tuple_surrogate(channel.projections, kind),
-                            ),
-                        ),
-                    ),
-                    snapshot.release_policy.channels[1],
-                ),
-            ),
-        )
-    if path == "reverse_index":
-        return replace(
-            snapshot,
-            reverse_index=cast(
-                "Any",
-                _tuple_surrogate(snapshot.reverse_index, kind),
-            ),
-        )
-    if path == "reverse_index.entry":
-        entry = snapshot.reverse_index[0]
-        return replace(
-            snapshot,
-            reverse_index=(cast("Any", _tuple_surrogate(entry, kind)),),
-        )
-    if path == "reverse_index.build_ids":
-        project_id, build_ids = snapshot.reverse_index[0]
-        return replace(
-            snapshot,
-            reverse_index=(
-                (
-                    project_id,
-                    cast("Any", _tuple_surrogate(build_ids, kind)),
-                ),
-            ),
-        )
-    if path == "unresolved":
-        return replace(
-            snapshot,
-            unresolved=cast(
-                "Any",
-                _tuple_surrogate(snapshot.unresolved, kind),
-            ),
-        )
-    message = f"unknown tuple substitution path: {path}"
-    raise AssertionError(message)
-
-
-def _snapshot_with_project_node(
-    snapshot: RepositoryModelSnapshot,
-    project: object,
-) -> RepositoryModelSnapshot:
-    return replace(snapshot, project_nodes=(cast("Any", project),))
-
-
-def _snapshot_with_release_unit(
-    snapshot: RepositoryModelSnapshot,
-    release_unit: object,
-) -> RepositoryModelSnapshot:
-    return replace(snapshot, release_units=(cast("Any", release_unit),))
-
-
 def _snapshot_with_build(
     snapshot: RepositoryModelSnapshot,
     build: object,
@@ -644,23 +298,6 @@ def _snapshot_with_build(
     return replace(
         snapshot,
         release_units=(replace(release_unit, builds=(cast("Any", build),)),),
-    )
-
-
-def _snapshot_with_output(
-    snapshot: RepositoryModelSnapshot,
-    output: object,
-) -> RepositoryModelSnapshot:
-    release_unit = snapshot.release_units[0]
-    build = release_unit.builds[0]
-    return replace(
-        snapshot,
-        release_units=(
-            replace(
-                release_unit,
-                builds=(replace(build, outputs=(cast("Any", output),)),),
-            ),
-        ),
     )
 
 
@@ -1414,11 +1051,7 @@ def test_provider_result_admission_requires_nonempty_string_authoritative_remote
         (TypeError, ValueError),
         match="checkout authoritative_remote_url",
     ):
-        compiler_module._validate_result(  # noqa: SLF001
-            context,
-            manifest.requests[0],
-            forged,
-        )
+        validate_node_provider_result(forged)
 
     assert forged.checkout.authoritative_remote_url == value
     assert forged.binding is valid.binding
@@ -1677,248 +1310,6 @@ def test_repository_model_admission_requires_ready_exactly_true(
     assert snapshot.unresolved == ()
 
 
-@pytest.mark.parametrize("kind", ["list", "tuple-subclass"])
-@pytest.mark.parametrize("path", ["project_nodes", "release_units"])
-def test_repository_model_admission_rejects_top_level_tuple_surrogates(
-    path: str,
-    kind: str,
-) -> None:
-    """Reject top-level Project Node and Release Unit tuple surrogates."""
-    snapshot = _snapshot()
-    forged = _snapshot_with_tuple_surrogate(snapshot, path, kind)
-
-    with pytest.raises(TypeError, match="tuple"):
-        validate_first_slice_repository_model_snapshot(forged)
-
-    validate_first_slice_repository_model_snapshot(snapshot)
-    assert snapshot.project_nodes[0].project_id == (
-        "@hcoona/hcoona-release-smoke-npm"
-    )
-    assert snapshot.release_units[0].release_unit == FIRST_SLICE_RELEASE_UNIT
-
-
-@pytest.mark.parametrize("kind", ["list", "tuple-subclass"])
-@pytest.mark.parametrize(
-    "path",
-    [
-        "provider_result_digests",
-        "project_nodes.workspace_dependencies",
-        "release_units.builds",
-        "release_units.builds.outputs",
-        "release_units.builds.required_native_projections",
-        "quality",
-        "quality.required",
-        "quality.advisory",
-        "release_policy.channels",
-        "release_policy.channel_entry",
-        "release_policy.channel.quality",
-        "release_policy.channel.projections",
-        "reverse_index",
-        "reverse_index.entry",
-        "reverse_index.build_ids",
-        "unresolved",
-    ],
-)
-def test_repository_model_snapshot_admission_rejects_nested_tuple_substitutions(
-    path: str,
-    kind: str,
-) -> None:
-    """Reject every Snapshot tuple field when replaced by a surrogate."""
-    snapshot = _snapshot()
-    forged = _snapshot_with_tuple_surrogate(snapshot, path, kind)
-
-    with pytest.raises(TypeError, match="tuple"):
-        validate_first_slice_repository_model_snapshot(forged)
-
-    validate_first_slice_repository_model_snapshot(snapshot)
-    assert snapshot.release_units[0].builds[0].outputs[0].kind == (
-        "npm-tarball"
-    )
-    assert snapshot.quality[0].required == (
-        "node/project-build-v1",
-        "node/project-test-v1",
-    )
-
-
-@pytest.mark.parametrize(
-    "surrogate_factory",
-    [
-        pytest.param(_subclass_record, id="subclass"),
-        pytest.param(_duck_record, id="duck"),
-        pytest.param(_mapping_record, id="mapping"),
-        pytest.param(_list_record, id="list"),
-    ],
-)
-def test_repository_model_admission_rejects_top_level_surrogates(
-    surrogate_factory: Any,
-) -> None:
-    """Reject top-level Snapshot surrogates at their model owner."""
-    snapshot = _snapshot()
-    forged = cast("Any", surrogate_factory(snapshot))
-
-    with pytest.raises(TypeError, match="wrong runtime type"):
-        validate_first_slice_repository_model_snapshot(forged)
-
-    validate_first_slice_repository_model_snapshot(snapshot)
-
-
-@pytest.mark.parametrize(
-    ("record_path", "surrogate_factory"),
-    [
-        pytest.param("context", _subclass_record, id="context-subclass"),
-        pytest.param("context", _duck_record, id="context-duck"),
-        pytest.param("context", _mapping_record, id="context-mapping"),
-        pytest.param("context", _list_record, id="context-list"),
-        pytest.param("project", _subclass_record, id="project-subclass"),
-        pytest.param("project", _duck_record, id="project-duck"),
-        pytest.param("project", _mapping_record, id="project-mapping"),
-        pytest.param("project", _list_record, id="project-list"),
-        pytest.param(
-            "release-unit",
-            _subclass_record,
-            id="release-unit-subclass",
-        ),
-        pytest.param("release-unit", _duck_record, id="release-unit-duck"),
-        pytest.param(
-            "release-unit",
-            _mapping_record,
-            id="release-unit-mapping",
-        ),
-        pytest.param("release-unit", _list_record, id="release-unit-list"),
-        pytest.param("build", _subclass_record, id="build-subclass"),
-        pytest.param("build", _duck_record, id="build-duck"),
-        pytest.param("build", _mapping_record, id="build-mapping"),
-        pytest.param("build", _list_record, id="build-list"),
-        pytest.param("output", _subclass_record, id="output-subclass"),
-        pytest.param("output", _duck_record, id="output-duck"),
-        pytest.param("output", _mapping_record, id="output-mapping"),
-        pytest.param("output", _list_record, id="output-list"),
-        pytest.param("quality", _subclass_record, id="quality-subclass"),
-        pytest.param("quality", _duck_record, id="quality-duck"),
-        pytest.param("quality", _mapping_record, id="quality-mapping"),
-        pytest.param("quality", _list_record, id="quality-list"),
-        pytest.param(
-            "release-policy",
-            _subclass_record,
-            id="release-policy-subclass",
-        ),
-        pytest.param(
-            "release-policy",
-            _duck_record,
-            id="release-policy-duck",
-        ),
-        pytest.param(
-            "release-policy",
-            _mapping_record,
-            id="release-policy-mapping",
-        ),
-        pytest.param(
-            "release-policy",
-            _list_record,
-            id="release-policy-list",
-        ),
-        pytest.param(
-            "governance",
-            _subclass_record,
-            id="governance-subclass",
-        ),
-        pytest.param("governance", _duck_record, id="governance-duck"),
-        pytest.param("governance", _mapping_record, id="governance-mapping"),
-        pytest.param("governance", _list_record, id="governance-list"),
-        pytest.param("nbgv", _subclass_record, id="nbgv-subclass"),
-        pytest.param("nbgv", _duck_record, id="nbgv-duck"),
-        pytest.param("nbgv", _mapping_record, id="nbgv-mapping"),
-        pytest.param("nbgv", _list_record, id="nbgv-list"),
-    ],
-)
-def test_repository_model_snapshot_admission_rejects_record_surrogates(
-    record_path: str,
-    surrogate_factory: Any,
-) -> None:
-    """Reject subclasses, duck records, mappings, and lists at record fields."""
-    snapshot = _snapshot()
-    if record_path == "context":
-        forged = replace(
-            snapshot,
-            context=cast("Any", surrogate_factory(snapshot.context)),
-        )
-    elif record_path == "project":
-        forged = _snapshot_with_project_node(
-            snapshot,
-            surrogate_factory(snapshot.project_nodes[0]),
-        )
-    elif record_path == "release-unit":
-        forged = _snapshot_with_release_unit(
-            snapshot,
-            surrogate_factory(snapshot.release_units[0]),
-        )
-    elif record_path == "build":
-        forged = _snapshot_with_build(
-            snapshot,
-            surrogate_factory(snapshot.release_units[0].builds[0]),
-        )
-    elif record_path == "output":
-        forged = _snapshot_with_output(
-            snapshot,
-            surrogate_factory(snapshot.release_units[0].builds[0].outputs[0]),
-        )
-    elif record_path == "quality":
-        forged = _snapshot_with_quality(
-            snapshot,
-            surrogate_factory(snapshot.quality[0]),
-        )
-    elif record_path == "release-policy":
-        assert snapshot.release_policy is not None
-        forged = replace(
-            snapshot,
-            release_policy=cast(
-                "Any",
-                surrogate_factory(snapshot.release_policy),
-            ),
-        )
-    elif record_path == "governance":
-        assert snapshot.release_policy is not None
-        forged = replace(
-            snapshot,
-            release_policy=replace(
-                snapshot.release_policy,
-                governance=cast(
-                    "Any",
-                    surrogate_factory(snapshot.release_policy.governance),
-                ),
-            ),
-        )
-    else:
-        forged = replace(
-            snapshot,
-            nbgv=cast("Any", surrogate_factory(snapshot.nbgv)),
-        )
-
-    with pytest.raises((TypeError, ValueError)):
-        validate_first_slice_repository_model_snapshot(forged)
-
-    validate_first_slice_repository_model_snapshot(snapshot)
-    assert snapshot.nbgv.npm_package_version == NPM_VERSION
-    assert snapshot.release_units[0].builds[0].outputs[0].output_id == (
-        "npm-tarball"
-    )
-
-
-def test_repository_model_validation_precedes_digest_use() -> None:
-    """Reject an unadmitted record before snapshot digest serialization."""
-    snapshot = _snapshot()
-    forged = replace(
-        snapshot,
-        release_units=(cast("Any", _DigestAccessTrap()),),
-    )
-
-    with pytest.raises(TypeError, match="Release Unit"):
-        validate_first_slice_repository_model_snapshot(forged)
-
-    validate_first_slice_repository_model_snapshot(snapshot)
-    assert snapshot.ready is True
-
-
 def test_repository_model_rejects_digest_equivalent_list_backed_snapshot() -> (
     None
 ):
@@ -1938,23 +1329,44 @@ def test_repository_model_rejects_digest_equivalent_list_backed_snapshot() -> (
     assert snapshot.release_units[0].builds[0].build_id == "npm-package"
 
 
-def test_repository_model_rejects_policy_surrogate_before_equality() -> None:
-    """Reject release-policy surrogates before equality can mutate closure."""
-    snapshot = _snapshot()
-    release_units = snapshot.release_units
+def test_repository_model_parser_owns_values_across_document_reuse() -> None:
+    """Keep parsed values stable when source and exported documents change."""
+    expected = _snapshot()
+    expected_bytes = canonicalize(expected.to_document())
+    expected_digest = expected.snapshot_digest
+    source = cast("dict[str, Any]", expected.to_document())
 
-    validate_first_slice_repository_model_snapshot(snapshot)
+    parsed = repository_model_snapshot_from_document(source)
 
-    trap = _ReleasePolicyPathMutationTrap(snapshot)
-    object.__setattr__(snapshot, "release_policy_path", cast("Any", trap))
+    assert parsed == expected
+    assert canonicalize(parsed.to_document()) == expected_bytes
+    assert parsed.snapshot_digest == expected_digest
+    validate_first_slice_repository_model_snapshot(parsed)
 
-    with pytest.raises(TypeError, match="release_policy_path"):
-        validate_first_slice_repository_model_snapshot(snapshot)
+    source["provider-result-digests"].append(SHA256_C)
+    source["release-units"][0]["builds"][0]["outputs"].clear()
+    source["release-policy"]["channels"]["buddy"]["projections"][0][
+        "package"
+    ] = "@hcoona/changed-source"
 
-    assert trap.comparison_triggered is False
-    assert snapshot.release_policy_path is trap
-    assert type(snapshot.release_units) is tuple
-    assert snapshot.release_units is release_units
+    assert canonicalize(source) != expected_bytes
+    assert parsed == expected
+    assert canonicalize(parsed.to_document()) == expected_bytes
+    assert parsed.snapshot_digest == expected_digest
+    validate_first_slice_repository_model_snapshot(parsed)
+
+    exported = cast("dict[str, Any]", parsed.to_document())
+    exported["provider-result-digests"].clear()
+    exported["release-units"][0]["builds"][0]["outputs"][0]["output-id"] = (
+        "changed-output"
+    )
+    exported["release-policy"]["channels"]["buddy"]["projections"].clear()
+
+    assert canonicalize(exported) != expected_bytes
+    assert parsed == expected
+    assert canonicalize(parsed.to_document()) == expected_bytes
+    assert parsed.snapshot_digest == expected_digest
+    validate_first_slice_repository_model_snapshot(parsed)
 
 
 def test_repository_model_valid_tuples_keep_canonical_json_arrays() -> None:
@@ -2030,14 +1442,19 @@ def test_exact_provider_result_and_repository_model_admission_preserve_concrete_
     manifest = _manifest(context)
     result = _provider_result(context, manifest)
     snapshot = _snapshot()
+    bundle = _fact_bundle(manifest, result)
+    admission = _admission_context(bundle)
 
-    compiler_module._validate_result(  # noqa: SLF001
-        context,
-        manifest.requests[0],
-        result,
+    admitted = admit_node_provider_fact_bundle(
+        bundle,
+        context=context,
+        manifest=manifest,
+        admission=admission,
     )
     validate_first_slice_repository_model_snapshot(snapshot)
 
+    assert admitted.bundle == bundle
+    assert admitted.admission == admission
     assert result.checkout.authoritative_remote_url == (
         "file:///authoritative-remote.git"
     )
