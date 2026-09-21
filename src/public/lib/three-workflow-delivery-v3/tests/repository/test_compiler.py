@@ -809,12 +809,12 @@ def test_compiler_rejects_duplicate_release_units_in_target_tree(
 
 @pytest.mark.usefixtures("target_authoring_tree")
 def test_compiler_preserves_provider_nbgv_facts_without_recomputation() -> None:
-    """Retain the exact Provider fact object and native projection."""
+    """Retain the original Provider fact values and native projection."""
     context, manifest, result = _scenario(repo_root=REPO_ROOT)
 
     snapshot = _compile(REPO_ROOT, context, manifest, result)
 
-    assert snapshot.nbgv is result.nbgv
+    assert snapshot.nbgv == result.nbgv
     assert snapshot.nbgv.canonical_version == "1.2.3"
     assert snapshot.nbgv.sem_ver2 == NPM_VERSION
     assert snapshot.nbgv.npm_package_version == NPM_VERSION

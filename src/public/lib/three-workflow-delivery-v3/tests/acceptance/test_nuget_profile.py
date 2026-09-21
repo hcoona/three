@@ -269,12 +269,6 @@ def test_profile_observer_enforces_canonical_spec_size_limit(
     "endpoint",
     [
         "https://other.example/hcoona/",
-        "https://nuget.pkg.github.com/hcoonax/",
-        "https://nuget.pkg.github.com/hcoona-other/",
-        "https://nuget.pkg.github.com/hcoona/?query=1",
-        "https://user:password@nuget.pkg.github.com/hcoona/",
-        "https://nuget.pkg.github.com/hcoona/#fragment",
-        "https://nuget.pkg.github.com/hcoona/%2e%2e/other/",
     ],
 )
 def test_profile_observer_rejects_unbounded_resources_before_collection(

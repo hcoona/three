@@ -32,6 +32,7 @@ from .observation_fixtures import (
     active_transport,
     current_arguments,
     exact_finalization_arguments,
+    exact_snapshot_arguments,
     publication_authority_arguments,
 )
 from .test_attempt_finalizer import (
@@ -50,14 +51,14 @@ SNAPSHOT_ARTIFACT_ID = 109
 
 
 def _proving_arguments(case):
-    finalized = exact_finalization_arguments(case)
+    closure = exact_snapshot_arguments(case)
     return {
         **case.arguments(),
-        "publication_snapshot": finalized["publication_snapshot"],
-        "publication_snapshot_reference": finalized[
+        "publication_snapshot": closure["publication_snapshot"],
+        "publication_snapshot_reference": closure[
             "publication_snapshot_reference"
         ],
-        "observation": finalized["observations"][0],
+        "observation": closure["observations"][0],
         "publisher_conclusion": "skipped",
         "expectation": case.expectation,
         "governance_client": RecordingGovernanceClient(

@@ -416,20 +416,20 @@ def _decision() -> CiSliceDecision:
     )
 
 
-def _golden_records() -> dict[str, object]:
-    repository_only = _snapshot(selected_lanes=("root-hk",))
-    return {
-        "pr-candidate": _candidate(),
-        "manual-candidate": _candidate(manual=True),
-        "ready-plan": _snapshot(),
-        "npm-artifact": _artifact(_snapshot()),
-        "empty-lane-result": form_empty_lane_result(
-            repository_only,
+def _golden_record(fixture_name: str) -> object:
+    factories: dict[str, Callable[[], object]] = {
+        "pr-candidate": _candidate,
+        "manual-candidate": lambda: _candidate(manual=True),
+        "ready-plan": _snapshot,
+        "npm-artifact": lambda: _artifact(_snapshot()),
+        "empty-lane-result": lambda: form_empty_lane_result(
+            _snapshot(selected_lanes=("root-hk",)),
             lane_id="project-build",
         ),
-        "satisfied-evidence": _evidence(_snapshot()),
-        "non-authoritative-decision": _decision(),
+        "satisfied-evidence": lambda: _evidence(_snapshot()),
+        "non-authoritative-decision": _decision,
     }
+    return factories[fixture_name]()
 
 
 @pytest.mark.parametrize(
@@ -441,7 +441,7 @@ def test_ci_contract_golden_fixtures_and_digests(
     digest: str,
 ) -> None:
     """Keep canonical fixture bytes and public record digests stable."""
-    record = _golden_records()[fixture_name]
+    record = _golden_record(fixture_name)
     fixture = (FIXTURE_ROOT / f"{fixture_name}.json").read_bytes()
     document = cast(
         "dict[str, JsonValue]",

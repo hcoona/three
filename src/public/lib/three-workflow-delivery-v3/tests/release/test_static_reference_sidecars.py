@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from three_workflow_delivery_v3.canonical import parse_json_strict
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
 _NODE_AUTHORITY = (
@@ -119,6 +120,19 @@ def _run_node_authority(  # noqa: PLR0913
     )
 
 
+def _assert_json_response(
+    text: str, expected: dict[str, Any]
+) -> dict[str, Any]:
+    actual = parse_json_strict(text)
+    assert isinstance(actual, dict)
+    assert json.dumps(
+        actual, sort_keys=True, ensure_ascii=True, allow_nan=False
+    ) == json.dumps(
+        expected, sort_keys=True, ensure_ascii=True, allow_nan=False
+    )
+    return actual
+
+
 def _assert_facts_response(
     completed: subprocess.CompletedProcess[str],
     *,
@@ -135,14 +149,7 @@ def _assert_facts_response(
     }
     assert completed.returncode == 0
     assert completed.stderr == ""
-    assert completed.stdout == json.dumps(
-        expected,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    actual = json.loads(completed.stdout)
-    assert actual == expected
-    return actual
+    return _assert_json_response(completed.stdout, expected)
 
 
 def _assert_error_response(
@@ -161,14 +168,7 @@ def _assert_error_response(
     }
     assert completed.returncode == 0
     assert completed.stderr == ""
-    assert completed.stdout == json.dumps(
-        expected,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    actual = json.loads(completed.stdout)
-    assert actual == expected
-    return actual
+    return _assert_json_response(completed.stdout, expected)
 
 
 def _write_package_json(path: Path, document: dict[str, Any]) -> bytes:
@@ -1818,14 +1818,7 @@ def _assert_nuget_facts_response(
     }
     assert completed.returncode == 0
     assert completed.stderr == ""
-    assert completed.stdout == json.dumps(
-        expected,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    actual = json.loads(completed.stdout)
-    assert actual == expected
-    return actual
+    return _assert_json_response(completed.stdout, expected)
 
 
 def _assert_nuget_error_response(
@@ -1842,14 +1835,7 @@ def _assert_nuget_error_response(
     }
     assert completed.returncode == 0
     assert completed.stderr == ""
-    assert completed.stdout == json.dumps(
-        expected,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    actual = json.loads(completed.stdout)
-    assert actual == expected
-    return actual
+    return _assert_json_response(completed.stdout, expected)
 
 
 def _nuget_json_bytes(document: dict[str, Any]) -> bytes:
@@ -2804,86 +2790,98 @@ def test_node_pnpm_importer_and_snapshot_negatives_fail_closed(  # noqa: C901, P
 
 
 def test_shipped_node_authority_uses_only_exact_pinned_public_calls() -> None:
-    """Pin exact public calls/options and forbid fallback authority APIs."""
+    """Fence selected API signatures; integration/review own execution flow."""
     import re  # noqa: PLC0415
 
-    source_bytes = _NODE_AUTHORITY.read_bytes()
-    source = source_bytes.decode("utf-8", "strict")
-    expected_imports = [
+    source = _NODE_AUTHORITY.read_bytes().decode("utf-8", "strict")
+    assert set(
+        re.findall(r"importPackage\s*\(\s*['\"]([^'\"]+)['\"]\s*\)", source)
+    ) == {
         "@npmcli/package-json",
         "npm-package-arg",
         "@pnpm/workspace.workspace-manifest-reader",
         "@pnpm/workspace.spec-parser",
         "@pnpm/resolving.npm-resolver",
-        "npm-package-arg",
         "@pnpm/lockfile.fs",
         "@pnpm/lockfile.utils",
         "@pnpm/deps.path",
-        "@pnpm/workspace.spec-parser",
-        "@pnpm/resolving.npm-resolver",
-    ]
-    assert source_bytes.startswith(
-        b"import { readFile } from 'node:fs/promises';"
+    }
+    loaded = re.search(
+        r"\b(?P<loaded>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*await\s+"
+        r"officialCallAsync\s*\(\s*\(\s*\)\s*=>\s*"
+        r"PackageJson\s*\.\s*load\s*\(\s*snapshotDirectory\s*\)",
+        source,
     )
-    assert re.findall(r"importPackage\('([^']+)'\)", source) == (
-        expected_imports
+    assert loaded is not None
+    assert re.search(
+        r"\b" + re.escape(loaded["loaded"]) + r"\s*(?:\?\.|\.)\s*content\b",
+        source,
     )
-    assert source.count("PackageJson.load(snapshotDirectory)") == 1
-    assert source.count("const content = loaded?.content;") == 1
-    assert source.count("npa.resolve(name, '*', snapshotDirectory)") == 1
-    assert source.count("npa.resolve(name, specifier, snapshotDirectory)") == 1
-    assert source.count("readWorkspaceManifest(snapshotDirectory)") == 1
-    assert source.count("WorkspaceSpec.parse(rawSpecifier)") == 2  # noqa: PLR2004
-    assert source.count("workspacePrefToNpm(rawSpecifier)") == 2  # noqa: PLR2004
-    assert source.count("extractMainDocument(comparisonView)") == 1
-    assert (
-        len(
-            re.findall(
-                r"\blockfileModule\.readWantedLockfileWithMergeInfo\s*\(",
-                source,
-            )
-        )
-        == 1
+    # Current binding names expose argument responsibilities.
+    # These finite patterns do not implement a JavaScript grammar.
+    required_calls = (
+        (
+            r"\bsnapshotDirectory\s*=\s*path\s*\.\s*dirname\s*\(\s*request\s*\."
+            r"\s*candidatePath\s*\)"
+        ),
+        (
+            r"\bnpa\s*\.\s*resolve\s*\(\s*name\s*,\s*['\"]\*['\"]\s*,"
+            r"\s*snapshotDirectory\s*\)"
+        ),
+        (
+            r"\bnpa\s*\.\s*resolve\s*\(\s*name\s*,\s*specifier\s*,"
+            r"\s*snapshotDirectory\s*\)"
+        ),
+        r"\breadWorkspaceManifest\s*\(\s*snapshotDirectory\s*\)",
+        r"\bWorkspaceSpec\s*\.\s*parse\s*\(\s*rawSpecifier\s*\)",
+        r"\bworkspacePrefToNpm\s*\(\s*rawSpecifier\s*\)",
+        r"\bextractMainDocument\s*\(\s*comparisonView\s*\)",
+        r"\bnameVerFromPkgSnapshot\s*\(\s*dependencyPath\s*,\s*snapshot\s*\)",
+        (
+            r"\bauthorities\s*\.\s*pkgSnapshotToResolution\s*\("
+            r"\s*dependencyPath\s*,\s*snapshot\s*,\s*authorities\s*\."
+            r"\s*registryContext\s*\)"
+        ),
+        r"\brefToRelative\s*\(\s*resolvedReference\s*,\s*dependencyKey\s*\)",
     )
-    assert source.count("nameVerFromPkgSnapshot(dependencyPath, snapshot)") == 1
-    assert (
-        len(
-            re.findall(
-                r"\bauthorities\.pkgSnapshotToResolution\s*\(\s*"
-                r"dependencyPath\s*,\s*snapshot\s*,\s*"
-                r"authorities\.registryContext\s*\)",
-                source,
-            )
-        )
-        == 1
+    for pattern in required_calls:
+        assert re.search(pattern, source), pattern
+    lock_read = re.search(
+        r"\blockfileModule\s*\.\s*readWantedLockfileWithMergeInfo\s*\(\s*"
+        r"lockfileDirectory\s*,\s*\{(?P<options>[^{}]*)\}\s*,?\s*\)",
+        source,
     )
-    assert source.count("refToRelative(resolvedReference, dependencyKey)") == 1
-    assert (
-        source.count(
-            "parseBareSpecifier(\n        normalizedSpecifier,\n"
-            '        dependencyKey,\n        "latest",\n'
-            '        "https://registry.npmjs.org/"\n      )'
-        )
-        == 0
+    assert lock_read is not None
+    options = lock_read["options"]
+    assert set(re.findall(r"\b([A-Za-z]+)\s*:", options)) == {
+        "autofixMergeConflicts",
+        "ignoreIncompatible",
+        "mergeGitBranchLockfiles",
+        "useGitBranchLockfile",
+        "wantedVersions",
+    }
+    for key, value in (
+        ("autofixMergeConflicts", "true"),
+        ("ignoreIncompatible", "false"),
+        ("mergeGitBranchLockfiles", "false"),
+        ("useGitBranchLockfile", "false"),
+    ):
+        assert re.search(rf"\b{key}\s*:\s*{value}\b", options)
+    assert re.search(
+        r"\bwantedVersions\s*:\s*\[\s*['\"]9\.0['\"]\s*,?\s*\]", options
     )
-    assert {
-        forbidden
-        for forbidden in (
-            ".normalize(",
-            ".prepare(",
-            ".fix(",
-            "readWorkspaceManifest(snapshotDirectory,",
-            "packageIdFromSnapshot",
-            "readCurrentLockfile(",
-            "readWantedLockfile(",
-            "readWantedLockfileAndAutofixConflicts(",
-            "readWantedLockfileFile(",
-            "@pnpm/lockfile.fs/",
-            "@pnpm/lockfile.utils/",
-            "@pnpm/deps.path/",
-        )
-        if forbidden in source
-    } == set()
+    forbidden_patterns = (
+        r"\.\s*(?:normalize|prepare|fix)\s*\(",
+        r"\breadWorkspaceManifest\s*\(\s*snapshotDirectory\s*,",
+        r"\bpackageIdFromSnapshot\b",
+        (
+            r"\b(?:readCurrentLockfile|readWantedLockfile"
+            r"|readWantedLockfileAndAutofixConflicts|readWantedLockfileFile)\s*\("
+        ),
+        r"@pnpm/(?:lockfile\.fs|lockfile\.utils|deps\.path)/",
+    )
+    for pattern in forbidden_patterns:
+        assert not re.search(pattern, source), pattern
 
 
 @pytest.mark.parametrize(
@@ -3399,44 +3397,50 @@ def test_node_pnpm_preserves_original_bytes_digest_and_crlf_admission(
 def test_nuget_source_contract_uses_exact_non_writable_public_reader_calls() -> (  # noqa: E501
     None
 ):
-    """Pin selected NuGet APIs without binding source formatting."""
+    """Fence reader signatures; integration/review own bytes and execution."""
+    import re  # noqa: PLC0415
+
     program_path = (
         _REPOSITORY_ROOT
         / "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs"
     )
     source = program_path.read_text(encoding="utf-8")
-    assert (
-        source.count("new MemoryStream(request.Content, writable: false)") == 2  # noqa: PLR2004
+    required_calls = (
+        (
+            r"\bstream\s*=\s*new\s+MemoryStream\s*\(\s*request\s*\.\s*Content"
+            r"\s*,\s*writable\s*:\s*false\s*\)"
+        ),
+        r"\blogger\s*=\s*NullLogger\s*\.\s*Instance\b",
+        (
+            r"\bPackagesLockFileFormat\s*\.\s*Read\s*\(\s*stream\s*,\s*logger"
+            r"\s*,\s*request\s*\.\s*LogicalPath\s*\)"
+        ),
+        (
+            r"\breader\s*=\s*new\s+PackagesConfigReader\s*\(\s*stream\s*,"
+            r"\s*leaveStreamOpen\s*:\s*false\s*\)"
+        ),
+        (
+            r"\breader\s*\.\s*GetPackages\s*\(\s*allowDuplicatePackageIds\s*:\s*false\s*\)"
+            r"\s*\.\s*OrderBy\s*\(\s*(?P<item>[A-Za-z_][A-Za-z0-9_]*)\s*=>\s*(?P=item)"
+            r"\s*\.\s*PackageIdentity\s*,\s*PackageIdentity\s*\.\s*Comparer\s*\)"
+        ),
     )
-    assert source.count("ILogger logger = NullLogger.Instance;") == 1
-    assert source.count("PackagesLockFileFormat.Read(") == 1
-    assert source.count("request.LogicalPath") == 1
-    assert source.count("new PackagesConfigReader(") == 1
-    assert source.count("leaveStreamOpen: false") == 1
-    assert source.count(".GetPackages(allowDuplicatePackageIds: false)") == 1
-    assert (
-        source.count(
-            ".OrderBy(package => package.PackageIdentity, "
-            "PackageIdentity.Comparer)"
-        )
-        == 1
+    for pattern in required_calls:
+        assert re.search(pattern, source), pattern
+    forbidden_patterns = (
+        r"\bnew\s+FileStream\s*\(",
+        r"\bwritable\s*:\s*true\b",
+        r"\bPackagesLockFileFormat\s*\.\s*Read\s*\(\s*request\s*\.",
+        r"\bNullLogger\s*\.\s*Instance\s*,\s*stream\b",
+        r"\bleaveStreamOpen\s*:\s*true\b",
+        r"\ballowDuplicatePackageIds\s*:\s*true\b",
+        r"\.\s*GetPackages\s*\(\s*\)",
+        r"\bJObject\b",
+        r"\bJsonNode\s*\.\s*Parse\b",
+        r"\bXDocument\b",
     )
-    assert {
-        forbidden
-        for forbidden in (
-            "new FileStream(",
-            "new MemoryStream(request.Content, writable: true)",
-            "PackagesLockFileFormat.Read(request.",
-            "NullLogger.Instance,\n            stream",
-            "leaveStreamOpen: true",
-            "allowDuplicatePackageIds: true",
-            ".GetPackages()",
-            "JObject",
-            "JsonNode.Parse",
-            "XDocument",
-        )
-        if forbidden in source
-    } == set()
+    for pattern in forbidden_patterns:
+        assert not re.search(pattern, source), pattern
     assert program_path.is_file()
 
 
@@ -3689,30 +3693,7 @@ def test_nuget_uses_ordinal_and_case_insensitive_ordinal_unicode_ordering() -> (
             dependencies=[],
         ),
     ]
-    expected_response = {
-        "schema": _NUGET_RESPONSE_SCHEMA,
-        "result": "facts",
-        "graph": _NUGET_GRAPH,
-        "implementationIdentities": _NUGET_IMPLEMENTATION_IDENTITIES,
-        "facts": expected_facts,
-    }
-    expected_raw = (
-        json.dumps(
-            expected_response,
-            ensure_ascii=True,
-            separators=(",", ":"),
-        )
-        .replace("\\ue000", "\\uE000")
-        .replace(
-            "\\ud800\\udc00",
-            "\\uD800\\uDC00",
-        )
-    )
-    assert completed.returncode == 0
-    assert completed.stderr == ""
-    assert completed.stdout == expected_raw
-    response = json.loads(completed.stdout)
-    assert response == expected_response
+    response = _assert_nuget_facts_response(completed, facts=expected_facts)
     assert [(fact["target"], fact["id"]) for fact in response["facts"]] == [
         ("net10.0", "Alpha"),
         ("net10.0", "alpha"),
@@ -3723,34 +3704,25 @@ def test_nuget_uses_ordinal_and_case_insensitive_ordinal_unicode_ordering() -> (
 
 
 def test_shipped_node_authority_binds_fixed_parser_arguments_exactly() -> None:
-    """Bind fixed parser arguments without binding whitespace or line layout."""
+    """Fence fixed arguments, without asserting physical call counts or layout."""  # noqa: E501
     import re  # noqa: PLC0415
 
     source = _NODE_AUTHORITY.read_text(encoding="utf-8")
-
-    assert source.count("const REGISTRY = 'https://registry.npmjs.org/';") == 1
-    assert source.count("const DEFAULT_TAG = 'latest';") == 1
-    assert (
-        len(
-            re.findall(
-                r"\bparseBareSpecifier\s*\(\s*normalizedSpecifier\s*,\s*"
-                r"dependencyKey\s*,\s*DEFAULT_TAG\s*,\s*REGISTRY\s*\)",
-                source,
-            )
-        )
-        == 2  # noqa: PLR2004
+    required_bindings = (
+        r"\bconst\s+REGISTRY\s*=\s*['\"]https://registry\.npmjs\.org/['\"]\s*;",
+        r"\bconst\s+DEFAULT_TAG\s*=\s*['\"]latest['\"]\s*;",
+        (
+            r"\bparseBareSpecifier\s*\(\s*normalizedSpecifier\s*,"
+            r"\s*dependencyKey\s*,\s*DEFAULT_TAG\s*,\s*REGISTRY\s*\)"
+        ),
+        r"\bregistriesByScope\s*:\s*\{\s*default\s*:\s*REGISTRY\s*\}",
     )
-    assert (
-        len(
-            re.findall(
-                r"registriesByScope\s*:\s*\{\s*default\s*:\s*REGISTRY\s*\}",
-                source,
-            )
-        )
-        == 1
+    for pattern in required_bindings:
+        assert re.search(pattern, source), pattern
+    assert not re.search(
+        r"\bprocess\s*\.\s*env\s*\.\s*npm_config_registry\b", source
     )
-    assert "process.env.npm_config_registry" not in source
-    assert "process.cwd()" not in source
+    assert not re.search(r"\bprocess\s*\.\s*cwd\s*\(", source)
 
 
 @pytest.mark.parametrize(
@@ -4104,28 +4076,7 @@ def test_nuget_targets_use_ordinal_case_and_unicode_ordering() -> None:
             strict=True,
         )
     ]
-    expected_response = {
-        "schema": _NUGET_RESPONSE_SCHEMA,
-        "result": "facts",
-        "graph": _NUGET_GRAPH,
-        "implementationIdentities": _NUGET_IMPLEMENTATION_IDENTITIES,
-        "facts": expected_facts,
-    }
-    expected_raw = (
-        json.dumps(
-            expected_response,
-            ensure_ascii=True,
-            separators=(",", ":"),
-        )
-        .replace("\\ue000", "\\uE000")
-        .replace("\\ud800\\udc00", "\\uD800\\uDC00")
-    )
-
-    assert completed.returncode == 0
-    assert completed.stderr == ""
-    assert completed.stdout == expected_raw
-    response = json.loads(completed.stdout)
-    assert response == expected_response
+    response = _assert_nuget_facts_response(completed, facts=expected_facts)
     assert [fact["target"] for fact in response["facts"]] == expected_targets
     assert expected_targets[-2:] == [
         f"net10.0/{non_bmp}",

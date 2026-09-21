@@ -97,7 +97,6 @@ def test_entry_requires_exact_manual_main_identity_and_confirmation():
     assert inputs["authorized_disposable"]["required"] is True
     assert inputs["authorized_disposable"]["default"] is False
     assert "prior approval" in inputs["authorized_disposable"]["description"]
-    assert set(document["jobs"]) == {"probe"}
     job = document["jobs"]["probe"]
     assert "||" not in job["if"]
     assert {term.strip() for term in job["if"].split("&&")} == {
@@ -121,7 +120,7 @@ def test_entry_requires_exact_manual_main_identity_and_confirmation():
     assert "concurrency" not in job
 
 
-def test_probe_token_env_binding_and_prerequisite_order():
+def test_probe_token_env_binding_and_prerequisite_order():  # noqa: PLR0915
     document = _document()
     job = document["jobs"]["probe"]
     assert document["permissions"] == {"contents": "read"}
@@ -183,6 +182,40 @@ def test_probe_token_env_binding_and_prerequisite_order():
             assert not step.get("env")
         if step != _step(UPLOAD):
             assert "if" not in step
+    for identity, candidate in document["jobs"].items():
+        assert "environment" not in candidate
+        assert "uses" not in candidate
+        assert "secrets" not in candidate
+        for step in candidate.get("steps", []):
+            if "uses" in step:
+                assert step["uses"] in {CHECKOUT, UV, MISE, PNPM, UPLOAD}
+            if step.get("uses") == CHECKOUT:
+                assert step["with"]["ref"] == "${{ github.sha }}"
+                assert step["with"]["persist-credentials"] is False
+        if identity == "probe":
+            continue
+        permissions = candidate.get("permissions", document["permissions"])
+        assert isinstance(permissions, dict)
+        assert all(
+            level == "none" or (scope == "contents" and level == "read")
+            for scope, level in permissions.items()
+        )
+        assert "||" not in candidate["if"]
+        assert {term.strip() for term in job["if"].split("&&")}.issubset(
+            {term.strip() for term in candidate["if"].split("&&")}
+        )
+        candidate_source = json.dumps(candidate)
+        assert not any(
+            route in candidate_source
+            for route in (
+                "github.token",
+                "secrets.",
+                "GITHUB_TOKEN",
+                "GH_TOKEN",
+                "NPM_TOKEN",
+                "NODE_AUTH_TOKEN",
+            )
+        )
     raw = WORKFLOW.read_text(encoding="utf-8")
     assert raw.count("${{ github.token }}") == 1
     assert "secrets." not in raw

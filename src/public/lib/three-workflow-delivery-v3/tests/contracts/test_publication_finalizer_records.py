@@ -1361,9 +1361,10 @@ def test_governance_proof_rejects_non_strict_fractional_interval(
 
 @pytest.mark.parametrize("live_enabled", [False, 1])
 def test_governance_proof_requires_exact_boolean_true(live_enabled):
+    proof = _governance_proof()
     error_type = TypeError if live_enabled == 1 else ValueError
     with pytest.raises(error_type, match=r"Live enabled|runtime type"):
-        replace(_governance_proof(), live_enabled=live_enabled)
+        replace(proof, live_enabled=live_enabled)
 
 
 def test_governance_eligibility_sha_can_be_a_continuity_ancestor():
