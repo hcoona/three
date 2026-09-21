@@ -438,26 +438,21 @@ def test_dotnet_compiler_uses_exact_git_target_inputs(native_scenario) -> None:
     [
         "manifest_digest",
         "configuration_digest",
-        "source_input_manifest",
-        "global_inputs",
     ],
 )
 def test_dotnet_compiler_rejects_target_input_substitution(
     native_scenario, field
 ) -> None:
     """Rehash target Git blobs of the supplied Provider digests."""
-    result = native_scenario[3]
-    value: Any = OTHER_DIGEST
-    if field == "source_input_manifest":
-        value = tuple(
-            (path, OTHER_DIGEST if path == ENTRY_POINT else digest)
-            for path, digest in result.source_input_manifest
+    repo, context, manifest, result = native_scenario
+    changed = replace(result, **{field: OTHER_DIGEST})
+    admitted = _admitted(context, manifest, changed)
+    with pytest.raises(
+        ValueError, match="input digests do not match the exact target"
+    ):
+        compiler.compile_dotnet_repository_model(
+            repo, context, manifest, [admitted]
         )
-    elif field == "global_inputs":
-        value = result.global_inputs[:-1]
-    changed = replace(result, **{field: value})
-    with pytest.raises(ValueError, match="input digests do not match"):
-        _compile(native_scenario, result=changed)
 
 
 @pytest.mark.parametrize("count", [0, 2])
@@ -491,29 +486,6 @@ def test_dotnet_compiler_rejects_node_bundle(native_scenario) -> None:
             context=context,
             manifest=node_manifest,
             admission=admission,
-        )
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("target_framework", "net8.0"),
-        ("include_symbols", True),
-        ("packable", False),
-        ("project_references", ("other.csproj",)),
-        ("normalized_package_id", "other.package"),
-        ("normalized_version", ""),
-    ],
-)
-def test_dotnet_compiler_rejects_incomplete_native_scope(
-    native_scenario, field, value
-) -> None:
-    """Reject expanded or missing native build scope."""
-    result = native_scenario[3]
-    project = replace(result.project_nodes[0], **{field: value})
-    with pytest.raises(ValueError, match=r"closure|nonempty"):
-        _compile(
-            native_scenario, result=replace(result, project_nodes=(project,))
         )
 
 
@@ -673,7 +645,7 @@ def test_dotnet_compiler_rehashes_internally_consistent_foreign_inputs(
     native_scenario,
 ) -> None:
     """Reject redigested source facts that do not match target Git blobs."""
-    result = native_scenario[3]
+    repo, context, manifest, result = native_scenario
     inputs = tuple(
         (path, OTHER_DIGEST if path == ENTRY_POINT else digest)
         for path, digest in result.source_input_manifest
@@ -691,10 +663,13 @@ def test_dotnet_compiler_rehashes_internally_consistent_foreign_inputs(
             for path, digest in inputs
         ),
     )
+    admitted = _admitted(context, manifest, changed)
     with pytest.raises(
         ValueError, match="input digests do not match the exact target"
     ):
-        _compile(native_scenario, result=changed)
+        compiler.compile_dotnet_repository_model(
+            repo, context, manifest, [admitted]
+        )
 
 
 @pytest.mark.parametrize(

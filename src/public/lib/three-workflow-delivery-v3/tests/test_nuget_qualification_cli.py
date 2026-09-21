@@ -301,37 +301,6 @@ def _qualified(case):
     assert cli.main(_quality_args(case, consumer=True)) == 0
 
 
-def test_nuget_qualification_cli_plans_matched_native_facts(qualification_case):
-    case = qualification_case
-    assert cli.main(_plan_args(case)) == 0
-    assert json.loads(case.plan.read_bytes()) == (
-        case.qualified.snapshot.to_document()
-    )
-    assert case.planned_witness.read_bytes() == (
-        case.qualified.witness.canonical_bytes
-    )
-    outputs = dict(
-        line.split("=", 1)
-        for line in case.github_output.read_text().splitlines()
-    )
-    snapshot = case.qualified.snapshot
-    assert outputs["qualification-snapshot-digest"] == snapshot.snapshot_digest
-    assert outputs["package-witness-digest"] == (
-        snapshot.build_requests[0].witness_digest
-    )
-    assert outputs["package-artifact-name"] == release_artifact_transport_name(
-        repository=snapshot.repository,
-        purpose="live-release",
-        output=snapshot.outputs[0],
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-        workflow_run_id=snapshot.subject.workflow_run_id,
-        run_attempt=None,
-        producer="build-nuget-package",
-    )
-    case.evaluate.assert_not_called()
-    case.build.assert_not_called()
-
-
 @pytest.mark.parametrize(
     "fault", ["attempt", "model", "provider", "provider-transport", "npm"]
 )
@@ -385,6 +354,32 @@ def test_nuget_qualification_cli_rejects_substituted_plan_authority(
 def test_nuget_qualification_cli_retains_original_package(qualification_case):
     case = qualification_case
     assert cli.main(_plan_args(case)) == 0
+    assert json.loads(case.plan.read_bytes()) == (
+        case.qualified.snapshot.to_document()
+    )
+    assert case.planned_witness.read_bytes() == (
+        case.qualified.witness.canonical_bytes
+    )
+    outputs = dict(
+        line.split("=", 1)
+        for line in case.github_output.read_text().splitlines()
+    )
+    snapshot = case.qualified.snapshot
+    assert outputs["qualification-snapshot-digest"] == snapshot.snapshot_digest
+    assert outputs["package-witness-digest"] == (
+        snapshot.build_requests[0].witness_digest
+    )
+    assert outputs["package-artifact-name"] == release_artifact_transport_name(
+        repository=snapshot.repository,
+        purpose="live-release",
+        output=snapshot.outputs[0],
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+        workflow_run_id=snapshot.subject.workflow_run_id,
+        run_attempt=None,
+        producer="build-nuget-package",
+    )
+    case.evaluate.assert_not_called()
+    case.build.assert_not_called()
     case.snapshot_args = _uploaded(
         case.root,
         "qualification_snapshot",
@@ -659,35 +654,6 @@ def test_nuget_qualification_cli_rejects_substituted_build_authority(
     case.build.assert_not_called()
 
 
-def test_nuget_qualification_cli_emits_distinct_quality_evidence(
-    qualification_case,
-):
-    case = qualification_case
-    _qualified(case)
-    source = case.qualified
-    case.contents.assert_called_once_with(
-        source.result.package, source.result.expectation, case.helper
-    )
-    case.consumer.assert_called_once_with(
-        source.result.package,
-        source.result.expectation,
-        case.helper,
-        evidence_directory=case.root / "native-consumer",
-    )
-    contents = _record(case.contents_evidence, QualificationEvidence)
-    consumer = _record(case.consumer_evidence, QualificationEvidence)
-    assert contents.obligation.obligation_id == NUGET_CONTENTS_OBLIGATION
-    assert consumer.obligation.obligation_id == NUGET_CONSUMER_OBLIGATION
-    assert (
-        contents.normalized_outcome
-        == consumer.normalized_outcome
-        == "satisfied"
-    )
-    assert contents.evidence_id != consumer.evidence_id
-    assert contents.artifact_digests == consumer.artifact_digests
-    assert case.package.read_bytes() == source.result.package
-
-
 @pytest.mark.parametrize("consumer", [False, True])
 def test_nuget_qualification_cli_preserves_quality_failure(
     qualification_case, consumer
@@ -717,6 +683,29 @@ def test_nuget_qualification_cli_finalizes_required_evidence(
 ):
     case = qualification_case
     _qualified(case)
+    if omitted is None:
+        source = case.qualified
+        case.contents.assert_called_once_with(
+            source.result.package, source.result.expectation, case.helper
+        )
+        case.consumer.assert_called_once_with(
+            source.result.package,
+            source.result.expectation,
+            case.helper,
+            evidence_directory=case.root / "native-consumer",
+        )
+        contents = _record(case.contents_evidence, QualificationEvidence)
+        consumer = _record(case.consumer_evidence, QualificationEvidence)
+        assert contents.obligation.obligation_id == NUGET_CONTENTS_OBLIGATION
+        assert consumer.obligation.obligation_id == NUGET_CONSUMER_OBLIGATION
+        assert (
+            contents.normalized_outcome
+            == consumer.normalized_outcome
+            == "satisfied"
+        )
+        assert contents.evidence_id != consumer.evidence_id
+        assert contents.artifact_digests == consumer.artifact_digests
+        assert case.package.read_bytes() == source.result.package
     assert cli.main(_finalize_args(case, omitted=omitted)) == 0
     decision = _record(case.decision, QualificationDecision)
     assert decision.terminal_result == (

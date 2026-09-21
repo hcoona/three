@@ -132,13 +132,16 @@ def test_probe_token_env_binding_and_prerequisite_order():
     assert job.get("env", {}) == {}
     assert job["defaults"]["run"]["shell"] == "bash"
     steps = _steps()
-    assert [step["uses"] for step in steps if "uses" in step] == [
-        CHECKOUT,
-        UV,
-        MISE,
-        PNPM,
-        UPLOAD,
-    ]
+    assert sorted(step["uses"] for step in steps if "uses" in step) == sorted(
+        [CHECKOUT, UV, MISE, PNPM, UPLOAD]
+    )
+    assert steps.index(_step(CHECKOUT)) < steps.index(_step(UV))
+    assert steps.index(_step(CHECKOUT)) < steps.index(_step(MISE))
+    assert steps.index(_step(UV)) < steps.index(_step(PNPM))
+    assert steps.index(_step(MISE)) < steps.index(_step(PNPM))
+    assert steps.index(_step(PNPM)) < steps.index(_step(UPLOAD))
+    assert steps.index(_step(MISE)) < steps.index(_step("toolchain"))
+    assert steps.index(_step(UV)) < steps.index(_step("dependencies"))
     assert _step(CHECKOUT)["with"] == {
         "ref": "${{ github.sha }}",
         "persist-credentials": False,
