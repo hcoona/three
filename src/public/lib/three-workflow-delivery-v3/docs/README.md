@@ -149,6 +149,8 @@ The first vertical slice is `hcoona-release-smoke-npm`:
 Prior retry-5 destination acceptance is complete historical evidence. Exact
 `.17` through `.20` versions and tags remain intentionally retained, but their
 chronology is not current architecture.
+The [project entry](../README.md) describes the retired fixed-coordinate
+producer surface and the retained historical reader.
 
 ## Current External Boundary
 

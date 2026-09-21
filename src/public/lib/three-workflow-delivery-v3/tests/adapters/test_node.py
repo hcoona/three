@@ -3221,9 +3221,6 @@ def test_adapter_public_api_exports_closed_types_and_functions(
         "observe_npmjs_projection",
     )
     github_packages_exports = (
-        "ACCEPTANCE_PACKAGE_COORDINATE",
-        "ACCEPTANCE_SCENARIOS",
-        "ACCEPTANCE_TAGS",
         "GITHUB_PACKAGES_DESTINATION_ID",
         "GITHUB_PACKAGES_OBSERVATION_CONTRACT_ID",
         "GITHUB_PACKAGES_OPERATION",
@@ -3234,11 +3231,8 @@ def test_adapter_public_api_exports_closed_types_and_functions(
         "GitHubPackagesPolicyError",
         "GitHubPackagesTimeoutError",
         "GitHubPackagesTransport",
-        "FixedCoordinateAcceptanceProbeResult",
-        "ValidatedAcceptanceRequestProof",
         "GitHubPackagesActiveState",
         "read_github_packages_active_state",
-        "run_fixed_coordinate_acceptance_probe",
     )
     for name in expected_exports:
         module_export = getattr(node_adapter, name, None)

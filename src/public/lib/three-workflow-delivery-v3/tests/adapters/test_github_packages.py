@@ -4,8 +4,12 @@ from __future__ import annotations
 
 # ruff: noqa: D103, PLR2004
 import importlib
+from pathlib import Path
 
 import pytest
+from three_workflow_delivery_v3.records.governance import (
+    admit_governance_acceptance_evidence,
+)
 from three_workflow_delivery_v3.records.release import (
     ArtifactVariantIdentity,
     BuddyExecutionIdentity,
@@ -327,42 +331,26 @@ def test_replacement_adapter_contract_api_is_available() -> None:
     assert not hasattr(adapter, "CapabilityAdmissionDecision")
 
 
-def test_normal_live_and_acceptance_operations_remain_distinct() -> None:
+def test_historical_acceptance_remains_distinct_from_normal_live() -> None:
     adapter = _adapter()
-    scenario = adapter.FixedCoordinateAcceptanceProbeResult(
-        scenario="absent-create-readback",
-        package_coordinate=adapter.ACCEPTANCE_COORDINATES[
-            "absent-create-readback"
-        ],
-        tag="wdv3-acceptance-1",
-        pre_state="absent",
-        post_state="exact",
-        result="created",
-        mutation_classification="complete",
-        action_executed=True,
-        mutation_started=True,
-        response_identity_digest=RESPONSE_DIGEST,
-        content_sha512="sha512:" + ("6" * 128),
-        diagnostics=(),
+    fixture = (
+        Path(__file__).parents[1]
+        / "fixtures/acceptance/retry-4-http-200-no-proof-governance.json"
     )
-    acceptance_document = adapter.FixedAcceptanceSuiteResult(
-        suite="absent-create-readback",
-        scenarios=(scenario,),
-    ).to_document()
+    historical = admit_governance_acceptance_evidence(fixture.read_bytes())
+    scenario = historical.probe_facts[0].scenarios[0]
 
     assert (
         adapter.GITHUB_PACKAGES_OPERATION
         == "conditional-create-npm-version-and-target-tag"
     )
-    assert acceptance_document["scenarios"][0]["action"] == {
+    assert scenario["action"] == {
         "operation": "npm-publish-create-only",
         "executed": True,
         "mutation-started": True,
     }
-    assert (
-        acceptance_document["scenarios"][0]["action"]["operation"]
-        != adapter.GITHUB_PACKAGES_OPERATION
-    )
+    assert scenario["action"]["operation"] != adapter.GITHUB_PACKAGES_OPERATION
+    assert historical.to_document()["release-lineage"] == "none"
 
 
 def test_conditional_action_keys_remain_exact_and_conservatively_grouped() -> (
