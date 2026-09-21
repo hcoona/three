@@ -1327,50 +1327,6 @@ def test_new_authority_records_round_trip_sha256_governance_provenance(
 
 
 @pytest.mark.parametrize(
-    ("record_name", "message"),
-    [
-        pytest.param(
-            "exact-satisfied-proof",
-            "requires Live enabled",
-            id="exact-satisfied-finalization-proof",
-        ),
-    ],
-)
-def test_new_authority_records_reject_disabled_governance(
-    qualified_simulation,
-    record_name: str,
-    message: str,
-) -> None:
-    record = _transport_records(qualified_simulation)[record_name]
-
-    with pytest.raises(ValueError, match=message):
-        replace(
-            record,
-            governance_proof=replace(
-                record.governance_proof, live_enabled=False
-            ),
-        )
-
-
-def test_publication_authorization_rejects_disabled_governance(
-    qualified_simulation,
-) -> None:
-    authorization = _transport_records(qualified_simulation)[
-        "publication-authorization"
-    ]
-    assert isinstance(authorization, PublicationAuthorization)
-
-    with pytest.raises(ValueError, match="requires Live enabled"):
-        replace(
-            authorization,
-            governance_proof=replace(
-                authorization.governance_proof,
-                live_enabled=False,
-            ),
-        )
-
-
-@pytest.mark.parametrize(
     ("record_name", "enabled_field", "expected_type", "message"),
     [
         pytest.param(

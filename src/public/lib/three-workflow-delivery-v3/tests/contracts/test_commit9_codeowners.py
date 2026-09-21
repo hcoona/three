@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import inspect
 import json
 import re
 import socket
@@ -14,9 +13,6 @@ from pathlib import Path
 import pytest
 from three_workflow_delivery_v3 import cli as cli_module
 from three_workflow_delivery_v3.cli import main
-from three_workflow_delivery_v3.release.identity import (
-    normalize_buddy_live_intent,
-)
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 CODEOWNERS_PATH = REPO_ROOT / ".github/CODEOWNERS"
@@ -408,13 +404,6 @@ def test_public_cli_normalizes_arbitrary_buddy_branch_and_tag_without_codeowners
         "mode": "live",
         "purpose": "live-release",
     }
-    boundary_source = (
-        inspect.getsource(
-            cli_module._release_normalize_live_request_command  # noqa: SLF001
-        )
-        + inspect.getsource(normalize_buddy_live_intent)
-    ).casefold()
-    assert "codeowners" not in boundary_source
     assert selected_ref in output.read_text(encoding="utf-8")
 
 

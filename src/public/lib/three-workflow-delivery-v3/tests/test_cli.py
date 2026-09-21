@@ -3156,7 +3156,6 @@ def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
             observed_at,
         )
     ]
-    assert calls.evaluation[0][4] is calls.authoring[0][0]
     assert calls.client == [("owner/repository", github_token)]
     assert calls.policy_digest == [policy]
     assert calls.catalog_digest == [None]

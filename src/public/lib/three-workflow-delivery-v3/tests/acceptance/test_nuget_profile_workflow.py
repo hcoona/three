@@ -37,7 +37,6 @@ def test_profile_workflow_is_credential_free_and_attempt_bound(workflow):
         is True
     )
     assert workflow["permissions"] == {}
-    assert set(workflow["jobs"]) == {"observe"}
     assert workflow["concurrency"]["cancel-in-progress"] is False
     assert workflow["defaults"]["run"]["shell"] == "pwsh"
     assert workflow["env"] == {
@@ -63,29 +62,70 @@ def test_profile_workflow_is_credential_free_and_attempt_bound(workflow):
     ):
         assert clause in job["if"]
     assert "||" not in job["if"]
-    assert {step["uses"] for step in job["steps"] if "uses" in step} == {
+    trusted_actions = {
         "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
         "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     }
-    for step in job["steps"]:
-        source = step.get("run", "")
+    assert {
+        step["uses"] for step in job["steps"] if "uses" in step
+    } == trusted_actions
+    for candidate in workflow["jobs"].values():
+        permissions = candidate.get("permissions", workflow["permissions"])
+        assert isinstance(permissions, dict)
+        assert all(
+            level == "none" or (scope == "contents" and level == "read")
+            for scope, level in permissions.items()
+        )
+        assert "environment" not in candidate
+        assert "uses" not in candidate
+        assert "secrets" not in candidate
+        assert "||" not in candidate["if"]
+        assert {term.strip() for term in job["if"].split("&&")}.issubset(
+            {term.strip() for term in candidate["if"].split("&&")}
+        )
+        candidate_source = json.dumps(candidate)
         assert not any(
-            forbidden in source
-            for forbidden in (
-                "dotnet ",
-                "setup-dotnet",
-                "nuget_probe",
-                "nuget_preparation",
-                "nuget_suite",
-                "gh auth",
-                "workflow run",
-                "${{ github.token }}",
+            route in candidate_source
+            for route in (
+                "github.token",
+                "secrets.",
                 "GITHUB_TOKEN",
                 "GH_TOKEN",
                 "NUGET_AUTH_TOKEN",
             )
         )
+        for step in candidate.get("steps", []):
+            if "uses" in step:
+                assert step["uses"] in trusted_actions
+            if step.get("uses", "").startswith("actions/checkout@"):
+                assert step["with"]["ref"] == "${{ github.sha }}"
+                assert step["with"]["persist-credentials"] is False
+            source = step.get("run", "")
+            assert not any(
+                forbidden in source
+                for forbidden in (
+                    "dotnet ",
+                    "setup-dotnet",
+                    "nuget_probe",
+                    "nuget_preparation",
+                    "nuget_suite",
+                    "gh auth",
+                    "workflow run",
+                    "${{ github.token }}",
+                    "GITHUB_TOKEN",
+                    "GH_TOKEN",
+                    "NUGET_AUTH_TOKEN",
+                )
+            )
+    raw = (ROOT / WORKFLOW_PATH).read_text(encoding="utf-8")
+    assert (
+        raw.count(
+            "python -m three_workflow_delivery_v3.acceptance.nuget_profile"
+        )
+        == 1
+    )
+    for step in job["steps"]:
         assert set(step.get("env", {})).issubset({"WDV3_PROFILE_SPEC"})
         if step.get("uses", "").startswith("actions/checkout@"):
             assert step["with"] == {
