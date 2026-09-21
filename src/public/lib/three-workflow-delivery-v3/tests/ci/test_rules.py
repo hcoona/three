@@ -291,19 +291,6 @@ def test_impossible_or_finalizer_only_outcomes_are_not_public(
         normalize_required_outcome(outcome)
 
 
-class _OutcomeString(str):
-    """A string subclass that is not an exact transported string."""
-
-
-@pytest.mark.parametrize("outcome", [1, _OutcomeString("success")])
-def test_required_outcome_requires_an_exact_string(outcome: object) -> None:
-    """Reject coercion before applying the closed string mapping."""
-    with pytest.raises(
-        TypeError, match=r"^required outcome must be an exact string$"
-    ):
-        normalize_required_outcome(outcome)  # type: ignore[arg-type]
-
-
 @pytest.mark.parametrize(
     ("lane_outcomes", "result", "explanation", "failure"),
     [

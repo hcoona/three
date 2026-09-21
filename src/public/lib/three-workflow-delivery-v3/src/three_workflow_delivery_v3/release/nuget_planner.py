@@ -33,7 +33,6 @@ from three_workflow_delivery_v3.repository.descriptors import NUGET_RELEASE_UNIT
 from three_workflow_delivery_v3.repository.dotnet_provider import (
     DotnetNbgvFacts,
     DotnetProjectNode,
-    validate_dotnet_provider_result,
 )
 
 NUGET_BUILD_OBLIGATION = "release:build:nuget-package"
@@ -60,14 +59,11 @@ def _validate_inputs(
     snapshot = model.snapshot
     validate_nuget_repository_model_snapshot(snapshot)
     result = provider.provider_result
-    validate_dotnet_provider_result(result)
     if (
         canonicalize(snapshot.to_document()) != model.canonical_bytes
         or snapshot.snapshot_digest != model.canonical_digest
         or snapshot.provider_result_digests != (result.result_digest,)
         or snapshot.manifest_digest != provider.bundle.manifest_digest
-        or provider.bundle.provider_result_digest != result.result_digest
-        or provider.bundle.bundle_digest != provider.admission.bundle_digest
         or snapshot.nbgv != result.nbgv
         or snapshot.project_nodes != result.project_nodes
     ):

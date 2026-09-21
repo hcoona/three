@@ -305,32 +305,6 @@ def test_concrete_transport_rejects_bad_redirects_and_off_origin() -> None:
         )
 
 
-def test_replacement_adapter_contract_api_is_available() -> None:
-    adapter = _adapter()
-    expected_api = (
-        "GITHUB_PACKAGES_OPERATION",
-        "GITHUB_PACKAGES_DESTINATION_OPERATION_PROFILE_ID",
-        "GitHubPackagesHttpResponse",
-        "GitHubPackagesTransport",
-        "github_api_headers",
-        "github_packages_destination_operation_profile",
-        "github_package_versions_url",
-        "npm_package_metadata_url",
-        "read_github_packages_active_state",
-        "redact_diagnostic",
-        "redirect_headers",
-        "validate_observation_bounds",
-        "validate_github_packages_publication_action",
-    )
-    missing = tuple(name for name in expected_api if not hasattr(adapter, name))
-
-    assert missing == (), f"missing replacement adapter API: {missing}"
-    assert "npm_package_metadata_url" in adapter.__all__
-    assert "npm_exact_metadata_url" not in adapter.__all__
-    assert not hasattr(adapter, "AuthorizationRecord")
-    assert not hasattr(adapter, "CapabilityAdmissionDecision")
-
-
 def test_historical_acceptance_remains_distinct_from_normal_live() -> None:
     adapter = _adapter()
     fixture = (

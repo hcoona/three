@@ -543,12 +543,14 @@ def test_nuget_plan_rejects_stale_or_cross_context_facts(
             workflow_ref="refs/heads/feature",
         )
     elif substitution == "provider":
-        provider = replace(
-            provider,
-            bundle=replace(
-                provider.bundle, provider_result_digest=OTHER_DIGEST
-            ),
+        original = provider.provider_result
+        changed = replace(original, native_evaluation_digest=OTHER_DIGEST)
+        context = model.snapshot.context
+        manifest = compiler.nuget_provider_manifest(
+            context, provider_producer=original.binding.producer
         )
+        provider = _admitted(context, manifest, changed)
+        assert provider.provider_result.result_digest != original.result_digest
     elif substitution == "model":
         context = replace(
             model.snapshot.context, request_id="release-request:" + "5" * 64

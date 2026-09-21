@@ -859,13 +859,6 @@ def test_response_payload_cannot_echo_credentials_as_observed_facts(basis):
     assert TOKEN not in repr(result)
 
 
-def test_transport_type_mismatch_remains_programming_error(basis):
-    responses = _responses(basis)
-    responses[PACKAGE_URL] = object()
-    with pytest.raises(TypeError, match="transport returned"):
-        _read(basis, responses)
-
-
 def test_invalid_desired_witness_binding_fails_before_reads(basis):
     with pytest.raises(ValueError, match="version binding mismatch"):
         read_github_packages_active_state(

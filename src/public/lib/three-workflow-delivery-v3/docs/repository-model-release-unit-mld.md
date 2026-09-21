@@ -491,6 +491,27 @@ Fact Bundle transport and payload identity and digest where applicable.
 Exactly one terminal Provider Result must exist for every request. Missing,
 duplicate, unexpected, or differently bound results block model compilation.
 
+Provider admission establishes intrinsic record validity, the selected terminal
+result and native facts, initial request authority, and canonical payload and
+transport integrity. Successful admission forms an immutable internal value for
+trusted same-revision consumers. Reusing that unchanged value does not require
+repeating its intrinsic validation or comparing its transport against the same
+already-admitted identities.
+
+Each compiler invocation still validates the current canonical Request Manifest
+and compares its digest, selected entry and expected request authority with the
+admitted Fact Bundle. It independently verifies the required facts against the
+actual target Git bytes and resolves target authoring relationships. The NuGet
+Release planner separately checks agreement between admitted Model and Provider
+facts and the current Intent and Attempt. An earlier successful admission does
+not establish these current-context or cross-input relationships.
+
+Every new external acquisition, including a downloaded artifact or a document
+crossing a process boundary, receives complete schema, intrinsic, canonical,
+transport and independently expected current-authority admission. Internal
+admitted values are ordinary immutable composition values; they are not
+unforgeable security tokens or an arbitrary Python-object support interface.
+
 Run-attempt binding follows the owning execution contract:
 
 - **Normal Live:** the request-local Manifest, Fact Bundles, Snapshot, and

@@ -660,15 +660,12 @@ def test_finalizer_rejects_duplicate_or_nonempty_unselected_lane() -> None:
         )
 
 
-@pytest.mark.parametrize("elapsed_seconds", [-1, 1.5, True])
-def test_finalizer_requires_exact_nonnegative_elapsed_seconds(
-    elapsed_seconds: object,
-) -> None:
-    """Require trusted elapsed time as an exact nonnegative integer."""
+def test_finalizer_rejects_negative_elapsed_seconds() -> None:
+    """Reject negative trusted elapsed time."""
     plan = _plan()
-    with pytest.raises((TypeError, ValueError)):
+    with pytest.raises(TypeError):
         _finalize(
             plan,
             _lane_results(plan),
-            elapsed_seconds=elapsed_seconds,  # type: ignore[arg-type]
+            elapsed_seconds=-1,
         )

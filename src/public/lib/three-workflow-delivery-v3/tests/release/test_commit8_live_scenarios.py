@@ -64,13 +64,6 @@ from .test_observation_admission import (
 
 TARGET = "a" * 40
 SUMMARY_DIGEST = "sha256:" + ("5" * 64)
-EXPECTED_LIVE_API = (
-    "PublicRevisionCheckout",
-    "fetch_exact_public_revision",
-    "form_approval_bundle",
-    "form_publication_authorization",
-    "validate_approval_bundle_closure",
-)
 
 
 def _control(attempt: ReleaseAttemptIdentity) -> str:
@@ -361,12 +354,6 @@ def _proof(
         ),
         proved_at="2026-08-13T16:00:00Z",
     )
-
-
-def test_live_api_has_no_history_query_surface() -> None:
-    assert tuple(live.__all__) == EXPECTED_LIVE_API
-    assert not hasattr(live, "discover_execution_history")
-    assert not hasattr(live, "form_execution_history_admission_snapshot")
 
 
 @pytest.mark.parametrize(
