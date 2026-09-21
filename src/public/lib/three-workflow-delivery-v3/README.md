@@ -9,6 +9,13 @@ New sessions start at the [handoff entry](docs/agent-handoff.md#starting-a-new-s
 The [NuGet delivery retrospective](docs/research/nuget-delivery-retrospective.md)
 explains reusable integration lessons and the next-task guide.
 
+The old `governance run-fixed-acceptance-probe` command and fixed-coordinate
+Python producer APIs are retired. `governance admit-acceptance-evidence` and
+reviewer inspection still read historical evidence; the original bytes and
+provenance remain retained. Old producer replay requires its exact historical
+Git revision and separate operation authorization. Current native acceptance
+and Release continue to use their existing commands and contracts.
+
 The [npm smoke package](../hcoona-release-smoke-npm/README.md) owns its small
 package purpose. This project owns the
 [first-slice proving protocol](docs/hcoona-release-smoke-npm-lld.md).

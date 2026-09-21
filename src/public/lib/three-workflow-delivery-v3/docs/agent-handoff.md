@@ -31,6 +31,11 @@ The npm and NuGet GitHub Packages smoke objectives are complete. Use the
 the current checkpoints below; earlier delivery history does not create a
 new task or revive spent operations.
 
+The [retired fixed-coordinate producer boundary](../README.md) preserves
+historical admission and reviewer inspection. Use the current native commands
+for newly authorized acceptance work; the removed producer APIs are not
+compatibility aliases for them.
+
 For the owner's next Workflow Delivery v3 task:
 
 1. Inspect the actual checkout and read the accepted repository instructions,

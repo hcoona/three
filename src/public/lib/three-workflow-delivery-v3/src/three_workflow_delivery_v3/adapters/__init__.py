@@ -36,19 +36,13 @@ _GITHUB_PACKAGES_EXPORTS = frozenset(
         "GITHUB_PACKAGES_OPERATION",
         "GITHUB_PACKAGES_PACKAGE",
         "GITHUB_PACKAGES_REGISTRY",
-        "ACCEPTANCE_PACKAGE_COORDINATE",
-        "ACCEPTANCE_SCENARIOS",
-        "ACCEPTANCE_TAGS",
-        "FixedCoordinateAcceptanceProbeResult",
         "GitHubPackagesHttpResponse",
         "GitHubPackagesNetworkError",
         "GitHubPackagesPolicyError",
         "GitHubPackagesTimeoutError",
         "GitHubPackagesTransport",
-        "ValidatedAcceptanceRequestProof",
         "GitHubPackagesActiveState",
         "read_github_packages_active_state",
-        "run_fixed_coordinate_acceptance_probe",
     }
 )
 
@@ -67,9 +61,6 @@ def __getattr__(name: str) -> object:
 
 
 __all__ = [
-    "ACCEPTANCE_PACKAGE_COORDINATE",
-    "ACCEPTANCE_SCENARIOS",
-    "ACCEPTANCE_TAGS",
     "GITHUB_PACKAGES_DESTINATION_ID",
     "GITHUB_PACKAGES_OBSERVATION_CONTRACT_ID",
     "GITHUB_PACKAGES_OPERATION",
@@ -79,7 +70,6 @@ __all__ = [
     "ArtifactManifest",
     "BuildRequest",
     "BuildResult",
-    "FixedCoordinateAcceptanceProbeResult",
     "GitHubPackagesActiveState",
     "GitHubPackagesHttpResponse",
     "GitHubPackagesNetworkError",
@@ -96,13 +86,11 @@ __all__ = [
     "PackageTargetWitness",
     "RuntimeRequest",
     "StdlibHttpTransport",
-    "ValidatedAcceptanceRequestProof",
     "build_node_package",
     "observe_npmjs_projection",
     "qualify_npm_artifact_contents",
     "qualify_npm_install_import",
     "read_github_packages_active_state",
-    "run_fixed_coordinate_acceptance_probe",
     "run_node_project_build",
     "run_node_project_tests",
 ]
