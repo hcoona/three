@@ -21,7 +21,6 @@ from three_workflow_delivery_v3.release.eligibility import (
     LiveEligibilityContext,
     release_policy_digest,
 )
-from three_workflow_delivery_v3.repository import compiler as compiler_module
 from three_workflow_delivery_v3.repository import (
     node_provider as node_provider_module,
 )
@@ -961,61 +960,6 @@ def test_fact_bundle_admission_rejects_binding_type_digest_and_result_substituti
             manifest=manifest,
             admission=admission,
         )
-
-
-def _write_authoritative_compiler_fixture(repo: Path) -> str:
-    _run(repo, "git", "init", "--quiet")
-    _run(repo, "git", "config", "user.name", "Workflow Delivery Test")
-    _run(
-        repo,
-        "git",
-        "config",
-        "user.email",
-        "workflow-delivery@example.invalid",
-    )
-    source_product = REPO_ROOT / PRODUCT_PATH
-    destination_product = repo / PRODUCT_PATH
-    destination_product.mkdir(parents=True)
-    for name in (
-        "package.json",
-        "workflow-delivery.release-unit.yml",
-        "workflow-delivery.quality.yml",
-    ):
-        (destination_product / name).write_bytes(
-            (source_product / name).read_bytes()
-        )
-    policy_path = repo / FIRST_SLICE_POLICY_PATH
-    policy_path.parent.mkdir(parents=True)
-    policy_path.write_bytes((REPO_ROOT / FIRST_SLICE_POLICY_PATH).read_bytes())
-    _run(repo, "git", "add", "--all")
-    _run(repo, "git", "commit", "--quiet", "--message", "fixture")
-    return _run(repo, "git", "rev-parse", "HEAD")
-
-
-def test_authoritative_compiler_rejects_unadmitted_target_evaluating_result(
-    tmp_path: Path,
-) -> None:
-    """Do not let a raw target-evaluating Result cross the Decision boundary."""
-    repo = tmp_path / "compiler-repository"
-    repo.mkdir()
-    target = _write_authoritative_compiler_fixture(repo)
-    context = _context(target=target)
-    manifest = _manifest(context)
-    raw_result = _provider_result(context, manifest)
-    snapshot = None
-
-    with pytest.raises(
-        (TypeError, ValueError),
-        match="admitted Fact Bundle",
-    ):
-        snapshot = compiler_module.compile_repository_model(
-            repo,
-            context,
-            manifest,
-            cast("Any", [raw_result]),
-        )
-
-    assert snapshot is None
 
 
 @pytest.mark.parametrize(

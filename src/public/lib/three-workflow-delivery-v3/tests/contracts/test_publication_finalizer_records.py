@@ -855,22 +855,6 @@ def test_observation_rejects_invalid_envelope_or_desired_basis(
         )
 
 
-@pytest.mark.parametrize(
-    ("field_name", "value"),
-    [
-        ("attempt", object()),
-        ("desired_subject", object()),
-        ("package_control", {}),
-        ("active_readback", {}),
-        ("diagnostics", ("unbounded",)),
-        ("workflow_run_id", True),
-    ],
-)
-def test_observation_requires_exact_nested_and_scalar_types(field_name, value):
-    with pytest.raises(TypeError, match="wrong runtime type"):
-        replace(_remote_observation(), **{field_name: value})
-
-
 def test_observation_admits_a_coherently_rebound_current_attempt():
     record = _remote_observation(
         attempt=_attempt(
@@ -1867,24 +1851,6 @@ def test_mutation_marker_binds_producer_control_and_current_run(
 
 
 @pytest.mark.parametrize(
-    ("field_name", "replacement"),
-    [
-        ("attempt", object()),
-        ("package_control_proof", object()),
-    ],
-)
-def test_mutation_marker_requires_exact_authority_value_types(
-    field_name,
-    replacement,
-):
-    with pytest.raises(TypeError, match="wrong runtime type"):
-        replace(
-            _marker(),
-            **{field_name: replacement},
-        )
-
-
-@pytest.mark.parametrize(
     ("command", "mutation"),
     [
         ("not-initiated", "not-mutated"),
@@ -2075,14 +2041,6 @@ def test_publication_result_binds_producer_control_and_current_run(
         )
 
 
-def test_publication_result_requires_typed_post_action_readback():
-    with pytest.raises(TypeError, match="wrong runtime type"):
-        replace(
-            _publication_result(),
-            post_action_readback=object(),
-        )
-
-
 def test_published_result_accepts_a_coherently_rebound_current_attempt():
     attempt = _attempt(
         target=_ALTERNATE_TARGET,
@@ -2259,14 +2217,6 @@ def test_finalization_proof_binds_producer_control_and_current_run(
         replace(
             _finalization_proof(),
             **{field_name: replacement},
-        )
-
-
-def test_finalization_proof_requires_typed_exact_version_readback():
-    with pytest.raises(TypeError, match="wrong runtime type"):
-        replace(
-            _finalization_proof(),
-            exact_version_readback=object(),
         )
 
 

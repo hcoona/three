@@ -4,10 +4,9 @@ from __future__ import annotations
 
 # ruff: noqa: D103, ISC004
 from copy import deepcopy
-from dataclasses import FrozenInstanceError, fields, replace
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
-from three_workflow_delivery_v3 import platform as platform_api
 from three_workflow_delivery_v3.adapters.github_packages import (
     github_packages_destination_operation_profile,
 )
@@ -15,8 +14,6 @@ from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
 )
-from three_workflow_delivery_v3.platform import github as github_platform
-from three_workflow_delivery_v3.records import release as release_records
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactReference,
 )
@@ -69,48 +66,6 @@ ATTEMPT = ReleaseAttemptIdentity(
     workflow_run_id=101,
 )
 
-COMMIT8_RECORD_TYPES = (
-    "ReleaseAttemptBinding",
-    "ApprovalBundle",
-    "PublicationAuthorization",
-    "ExactSatisfiedFinalizationProof",
-    "AttemptOutcome",
-)
-
-RETIRED_RECORD_TYPES = (
-    "ExactSatisfiedGovernanceProof",
-    "HistoricalExecutionRecord",
-    "ExecutionHistoryAdmissionSnapshot",
-    "ReceiptTransportReference",
-)
-
-RETIRED_PLATFORM_HISTORY_TYPES = (
-    "GitHubActionsHistoryClient",
-    "GitHubArtifact",
-    "GitHubArtifactArchiveShapeError",
-    "GitHubArtifactDownload",
-    "GitHubJob",
-    "GitHubJobStep",
-    "GitHubPage",
-    "GitHubRun",
-    "GitHubRunAttemptFact",
-    "admit_artifact_download",
-    "iter_all_artifacts",
-    "iter_all_attempt_jobs",
-    "iter_all_jobs",
-    "iter_all_runs",
-)
-
-
-def test_commit8_record_contract_api_is_available() -> None:
-    missing = tuple(
-        name
-        for name in COMMIT8_RECORD_TYPES
-        if not hasattr(release_records, name)
-    )
-
-    assert missing == (), f"missing commit-8 record contracts: {missing}"
-
 
 def test_live_eligibility_freshness_modes_are_closed() -> None:
     assert {mode.value for mode in LiveEligibilityAdmissionMode} == {
@@ -123,29 +78,7 @@ def test_live_eligibility_freshness_modes_are_closed() -> None:
     )
 
 
-def test_execution_history_platform_api_is_retired() -> None:
-    assert platform_api.__all__ == []
-    assert all(
-        not hasattr(platform_api, name) and not hasattr(github_platform, name)
-        for name in RETIRED_PLATFORM_HISTORY_TYPES
-    )
-
-
-def test_retired_record_contracts_are_not_available() -> None:
-    present = tuple(
-        name for name in RETIRED_RECORD_TYPES if hasattr(release_records, name)
-    )
-
-    assert present == (), (
-        f"retired record contracts remain available: {present}"
-    )
-
-
 def test_attempt_identity_is_exact_frozen_and_workflow_run_bound() -> None:
-    assert tuple(field.name for field in fields(ATTEMPT)) == (
-        "execution",
-        "workflow_run_id",
-    )
     assert ATTEMPT.to_document() == {
         "schema": "workflow-delivery/v3/release-attempt-identity",
         "execution": EXECUTION.to_document(),

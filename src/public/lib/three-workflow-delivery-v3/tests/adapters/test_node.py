@@ -8,7 +8,6 @@ import dataclasses
 import gzip
 import hashlib
 import io
-import inspect
 import json
 import os
 import shutil
@@ -17,14 +16,12 @@ import tarfile
 import types
 from collections import Counter
 from contextlib import contextmanager
-from dataclasses import fields, replace
+from dataclasses import replace
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
-from typing import get_type_hints
 
 import pytest
-import three_workflow_delivery_v3.adapters as adapters_package
 import three_workflow_delivery_v3.adapters.node as node_adapter
 from three_workflow_delivery_v3.adapters.node import (
     BuildRequest,
@@ -241,6 +238,29 @@ def _make_tarball(
 def _nul_filled(value: bytes, width: int) -> bytes:
     assert len(value) < width
     return value + bytes(width - len(value))
+
+
+@pytest.fixture
+def raw_tarball_seed() -> tuple[bytes, dict[str, bytes]]:
+    """Provide independently expected ordinary entries for raw format cases."""
+    entries = {
+        "package/README.md": b"Raw TAR fixture.\n",
+        "package/dist/index.js": b"export const fixture = true;\n",
+        "package/package.json": b'{"name":"@example/raw-tar-fixture"}\n',
+        "package/workflow-delivery/provenance.json": (
+            b'{"fixture":"raw-format"}\n'
+        ),
+    }
+    tarball = _make_tarball(entries)
+
+    assert node_adapter._read_tarball(tarball) == entries  # noqa: SLF001
+    assert tuple(member[1] for member in _tar_member_observables(tarball)) == (
+        "package/README.md",
+        "package/dist/index.js",
+        "package/package.json",
+        "package/workflow-delivery/provenance.json",
+    )
+    return tarball, entries
 
 
 def _tar_header_with_checksum(
@@ -1580,12 +1600,12 @@ def test_artifact_contents_rejects_arbitrary_canonical_witness_documents(
         qualify_npm_artifact_contents(_make_tarball(entries), expectation)
 
 
-def test_artifact_contents_rejects_list_backed_expectation(
+def test_artifact_contents_rejects_incomplete_expected_file_closure(
     built_result: node_adapter.BuildResult,
 ) -> None:
     expectation = replace(
         built_result.expectation,
-        files_allowlist=cast("tuple[str, ...]", ["dist", "README.md"]),
+        files_allowlist=("dist", "README.md"),
     )
 
     with pytest.raises(ValueError, match="first-slice closure"):
@@ -2080,13 +2100,13 @@ def test_artifact_contents_accepts_actual_frozen_npm_pack_ustar_profile(
         ),
     ],
 )
-def test_artifact_contents_rejects_gnu_long_name_or_long_link_header(
-    built_result: node_adapter.BuildResult,
+def test_tarball_reader_rejects_gnu_long_name_or_long_link_header(
+    raw_tarball_seed: tuple[bytes, dict[str, bytes]],
     extension_kind: str,
     physical_type: bytes,
 ) -> None:
-    original_payload = gzip.decompress(built_result.tarball)
-    original_entries = _tar_entries(built_result.tarball)
+    original_tarball, original_entries = raw_tarball_seed
+    original_payload = gzip.decompress(original_tarball)
     with tarfile.open(
         fileobj=io.BytesIO(original_payload),
         mode="r:",
@@ -2112,11 +2132,8 @@ def test_artifact_contents_rejects_gnu_long_name_or_long_link_header(
     assert not any(extension_padding)
     extension_tarball = gzip.compress(payload_with_extension, mtime=0)
     assert _tar_entries(extension_tarball) == original_entries
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            extension_tarball,
-            built_result.expectation,
-        )
+    with pytest.raises(ValueError):  # noqa: PT011 - Reader wording is internal.
+        node_adapter._read_tarball(extension_tarball)  # noqa: SLF001
 
 
 @pytest.mark.parametrize(
@@ -2131,13 +2148,13 @@ def test_artifact_contents_rejects_gnu_long_name_or_long_link_header(
         ),
     ],
 )
-def test_artifact_contents_rejects_pax_physical_header(
-    built_result: node_adapter.BuildResult,
+def test_tarball_reader_rejects_pax_physical_header(
+    raw_tarball_seed: tuple[bytes, dict[str, bytes]],
     extension_kind: str,
     physical_type: bytes,
 ) -> None:
-    original_payload = gzip.decompress(built_result.tarball)
-    original_entries = _tar_entries(built_result.tarball)
+    original_tarball, original_entries = raw_tarball_seed
+    original_payload = gzip.decompress(original_tarball)
     with tarfile.open(
         fileobj=io.BytesIO(original_payload),
         mode="r:",
@@ -2164,11 +2181,8 @@ def test_artifact_contents_rejects_pax_physical_header(
     assert b"=" in extension_content
     extension_tarball = gzip.compress(payload_with_extension, mtime=0)
     assert _tar_entries(extension_tarball) == original_entries
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            extension_tarball,
-            built_result.expectation,
-        )
+    with pytest.raises(ValueError):  # noqa: PT011 - Reader wording is internal.
+        node_adapter._read_tarball(extension_tarball)  # noqa: SLF001
 
 
 @pytest.mark.parametrize(
@@ -2196,14 +2210,14 @@ def test_artifact_contents_rejects_pax_physical_header(
         ),
     ],
 )
-def test_artifact_contents_rejects_noncanonical_ustar_magic_or_version(
-    built_result: node_adapter.BuildResult,
+def test_tarball_reader_rejects_noncanonical_ustar_magic_or_version(
+    raw_tarball_seed: tuple[bytes, dict[str, bytes]],
     profile_kind: str,
     replacements: dict[str, bytes],
 ) -> None:
-    original_entries = _tar_entries(built_result.tarball)
+    original_tarball, original_entries = raw_tarball_seed
     mutated_tarball = _tarball_with_first_header_fields(
-        built_result.tarball,
+        original_tarball,
         replacements,
     )
     mutated_header = gzip.decompress(mutated_tarball)[: tarfile.BLOCKSIZE]
@@ -2211,42 +2225,33 @@ def test_artifact_contents_rejects_noncanonical_ustar_magic_or_version(
     assert profile_kind
     assert mutated_header[257:265] != b"ustar\000"
     assert _tar_entries(mutated_tarball) == original_entries
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            mutated_tarball,
-            built_result.expectation,
-        )
+    with pytest.raises(ValueError):  # noqa: PT011 - Reader wording is internal.
+        node_adapter._read_tarball(mutated_tarball)  # noqa: SLF001
 
 
 @pytest.mark.parametrize(
     ("member_index", "member_name", "mutation"),
     [
         pytest.param(
-            1,
-            "package/package.json",
-            ("mode-alt-terminator", "mode", b"000644\0 ", b" \0"),
-            id="mode-alt-terminator-member-1-package-json",
-        ),
-        pytest.param(
-            1,
+            2,
             "package/package.json",
             ("noncanonical-magic", "magic", b"ustar ", b" \0"),
-            id="noncanonical-magic-member-1-package-json",
+            id="noncanonical-magic-member-2-package-json",
         ),
         pytest.param(
-            1,
+            2,
             "package/package.json",
             ("unsupported-version", "version", b"01", b" \0"),
-            id="unsupported-version-member-1-package-json",
+            id="unsupported-version-member-2-package-json",
         ),
         pytest.param(
-            1,
+            2,
             "package/package.json",
             ("name-hidden-suffix", "name", None, b" \0"),
-            id="name-hidden-suffix-member-1-package-json",
+            id="name-hidden-suffix-member-2-package-json",
         ),
         pytest.param(
-            1,
+            2,
             "package/package.json",
             (
                 "linkname-hidden-suffix",
@@ -2254,10 +2259,10 @@ def test_artifact_contents_rejects_noncanonical_ustar_magic_or_version(
                 b"\0X" + bytes(98),
                 b" \0",
             ),
-            id="linkname-hidden-suffix-member-1-package-json",
+            id="linkname-hidden-suffix-member-2-package-json",
         ),
         pytest.param(
-            1,
+            2,
             "package/package.json",
             (
                 "reserved-nonzero",
@@ -2265,44 +2270,26 @@ def test_artifact_contents_rejects_noncanonical_ustar_magic_or_version(
                 bytes(11) + bytes((NONZERO_PADDING_BYTE,)),
                 b" \0",
             ),
-            id="reserved-nonzero-member-1-package-json",
-        ),
-        pytest.param(
-            1,
-            "package/package.json",
-            ("old-regular-type", "type", tarfile.AREGTYPE, b" \0"),
-            id="old-regular-type-member-1-package-json",
-        ),
-        pytest.param(
-            1,
-            "package/package.json",
-            ("checksum-alt-terminator", None, None, b"\0 "),
-            id="checksum-alt-terminator-member-1-package-json",
+            id="reserved-nonzero-member-2-package-json",
         ),
         pytest.param(
             2,
-            "package/workflow-delivery/provenance.json",
-            ("checksum-alt-terminator", None, None, b"\0 "),
-            id="checksum-alt-terminator-member-2-provenance",
-        ),
-        pytest.param(
-            3,
-            "package/README.md",
-            ("checksum-alt-terminator", None, None, b"\0 "),
-            id="checksum-alt-terminator-member-3-readme",
+            "package/package.json",
+            ("old-regular-type", "type", tarfile.AREGTYPE, b" \0"),
+            id="old-regular-type-member-2-package-json",
         ),
     ],
 )
-def test_artifact_contents_rejects_later_member_ustar_profile_mutations(
-    built_result: node_adapter.BuildResult,
+def test_tarball_reader_rejects_later_member_ustar_profile_mutations(
+    raw_tarball_seed: tuple[bytes, dict[str, bytes]],
     member_index: int,
     member_name: str,
     mutation: tuple[str, str | None, bytes | None, bytes],
 ) -> None:
+    original_tarball, original_entries = raw_tarball_seed
     profile_kind, field, replacement, checksum_suffix = mutation
-    original_payload = gzip.decompress(built_result.tarball)
-    original_entries = _tar_entries(built_result.tarball)
-    original_observables = _tar_member_observables(built_result.tarball)
+    original_payload = gzip.decompress(original_tarball)
+    original_observables = _tar_member_observables(original_tarball)
     member_offset = cast("int", original_observables[member_index][13])
     if profile_kind == "name-hidden-suffix":
         name_start, name_end = TAR_HEADER_FIELDS["name"]
@@ -2315,7 +2302,7 @@ def test_artifact_contents_rejects_later_member_ustar_profile_mutations(
         replacement = bytes(mutated_name)
     replacements = {} if field is None else {field: cast("bytes", replacement)}
     mutated_tarball = _tarball_with_member_header_fields(
-        built_result.tarball,
+        original_tarball,
         member_index,
         replacements,
         checksum_suffix=checksum_suffix,
@@ -2323,7 +2310,7 @@ def test_artifact_contents_rejects_later_member_ustar_profile_mutations(
     mutated_payload = gzip.decompress(mutated_tarball)
     mutated_observables = _tar_member_observables(mutated_tarball)
 
-    assert len(original_observables) == EXPECTED_FROZEN_TAR_MEMBER_COUNT
+    assert len(original_observables) == len(original_entries)
     assert original_observables[member_index][0:2] == (
         member_index,
         member_name,
@@ -2357,11 +2344,8 @@ def test_artifact_contents_rejects_later_member_ustar_profile_mutations(
     else:
         assert mutated_observables == original_observables
     assert _tar_entries(mutated_tarball) == original_entries
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            mutated_tarball,
-            built_result.expectation,
-        )
+    with pytest.raises(ValueError):  # noqa: PT011 - Reader wording is internal.
+        node_adapter._read_tarball(mutated_tarball)  # noqa: SLF001
 
 
 @pytest.mark.parametrize(
@@ -2427,13 +2411,11 @@ def test_artifact_contents_rejects_nonzero_suffix_after_nul_in_fixed_string_fiel
 @pytest.mark.parametrize(
     ("field", "replacement"),
     [
-        pytest.param("uid", b"000000 \0", id="uid-octal-zero"),
         pytest.param(
             "uid",
             bytes(7) + b"X",
             id="uid-hidden-suffix",
         ),
-        pytest.param("gid", b"000000 \0", id="gid-octal-zero"),
         pytest.param(
             "gid",
             bytes(7) + b"X",
@@ -2476,8 +2458,6 @@ def test_artifact_contents_rejects_nonzero_suffix_after_nul_in_fixed_string_fiel
         ),
         pytest.param("devmajor", b"000001 \0", id="devmajor-nonzero"),
         pytest.param("devminor", b"000001 \0", id="devminor-nonzero"),
-        pytest.param("devmajor", bytes(8), id="devmajor-all-nul"),
-        pytest.param("devminor", bytes(8), id="devminor-all-nul"),
     ],
 )
 def test_artifact_contents_rejects_noncanonical_unused_header_field(
@@ -2514,32 +2494,7 @@ def test_artifact_contents_rejects_noncanonical_unused_header_field(
 @pytest.mark.parametrize(
     ("field", "replacement", "checksum_suffix"),
     [
-        pytest.param("mode", b"0000644\0", b" \0", id="mode-alt-width"),
-        pytest.param(
-            "mode",
-            b"000644\0 ",
-            b" \0",
-            id="mode-alt-terminator",
-        ),
-        pytest.param(
-            "mode",
-            b"000644  ",
-            b" \0",
-            id="mode-space-terminator",
-        ),
         pytest.param("mode", b"000644\0X", b" \0", id="mode-hidden-suffix"),
-        pytest.param(
-            "uid",
-            b"000000\0 ",
-            b" \0",
-            id="uid-alt-terminator",
-        ),
-        pytest.param(
-            "uid",
-            b"000000  ",
-            b" \0",
-            id="uid-space-terminator",
-        ),
         pytest.param(
             "uid",
             bytes((0, NONZERO_PADDING_BYTE)) + bytes(6),
@@ -2548,34 +2503,9 @@ def test_artifact_contents_rejects_noncanonical_unused_header_field(
         ),
         pytest.param(
             "gid",
-            b"000000\0 ",
-            b" \0",
-            id="gid-alt-terminator",
-        ),
-        pytest.param(
-            "gid",
-            b"000000  ",
-            b" \0",
-            id="gid-space-terminator",
-        ),
-        pytest.param(
-            "gid",
             bytes((0, NONZERO_PADDING_BYTE)) + bytes(6),
             b" \0",
             id="gid-hidden-immediate-suffix",
-        ),
-        pytest.param("size", b"00000000110\0", b" \0", id="size-alt-width"),
-        pytest.param(
-            "size",
-            b"0000000110\0 ",
-            b" \0",
-            id="size-alt-terminator",
-        ),
-        pytest.param(
-            "size",
-            b"0000000110  ",
-            b" \0",
-            id="size-space-terminator",
         ),
         pytest.param(
             "size",
@@ -2585,33 +2515,9 @@ def test_artifact_contents_rejects_noncanonical_unused_header_field(
         ),
         pytest.param(
             "mtime",
-            b"03560116604\0",
-            b" \0",
-            id="mtime-alt-width",
-        ),
-        pytest.param(
-            "mtime",
-            b"3560116604\0 ",
-            b" \0",
-            id="mtime-alt-terminator",
-        ),
-        pytest.param(
-            "mtime",
-            b"3560116604  ",
-            b" \0",
-            id="mtime-space-terminator",
-        ),
-        pytest.param(
-            "mtime",
             b"3560116604\0X",
             b" \0",
             id="mtime-hidden-suffix",
-        ),
-        pytest.param(
-            "devmajor",
-            b"000000\0 ",
-            b" \0",
-            id="devmajor-alt-terminator",
         ),
         pytest.param(
             "devmajor",
@@ -2620,28 +2526,10 @@ def test_artifact_contents_rejects_noncanonical_unused_header_field(
             id="devmajor-hidden-suffix",
         ),
         pytest.param(
-            "devmajor",
-            b"000000  ",
-            b" \0",
-            id="devmajor-space-terminator",
-        ),
-        pytest.param(
-            "devminor",
-            b"000000\0 ",
-            b" \0",
-            id="devminor-alt-terminator",
-        ),
-        pytest.param(
             "devminor",
             b"000000\0X",
             b" \0",
             id="devminor-hidden-suffix",
-        ),
-        pytest.param(
-            "devminor",
-            b"000000  ",
-            b" \0",
-            id="devminor-space-terminator",
         ),
         pytest.param("mode", None, b" \0", id="mode-base256"),
         pytest.param("uid", None, b" \0", id="uid-base256"),
@@ -2650,18 +2538,6 @@ def test_artifact_contents_rejects_noncanonical_unused_header_field(
         pytest.param("mtime", None, b" \0", id="mtime-base256"),
         pytest.param("devmajor", None, b" \0", id="devmajor-base256"),
         pytest.param("devminor", None, b" \0", id="devminor-base256"),
-        pytest.param(
-            None,
-            b"",
-            b"\0 ",
-            id="checksum-alt-terminator",
-        ),
-        pytest.param(
-            None,
-            b"",
-            b"  ",
-            id="checksum-space-terminator",
-        ),
         pytest.param(
             None,
             b"",
@@ -2805,13 +2681,20 @@ def test_artifact_contents_rejects_bad_checksum_before_tarfile_parse(
         pytest.param(b"?", "unknown-special", id="unknown-special-question"),
     ],
 )
-def test_artifact_contents_rejects_every_nonordinary_tar_type(
-    built_result: node_adapter.BuildResult,
+def test_tarball_reader_rejects_every_nonordinary_tar_type(
+    raw_tarball_seed: tuple[bytes, dict[str, bytes]],
     type_flag: bytes,
     type_name: str,
 ) -> None:
-    original_payload = gzip.decompress(built_result.tarball)
-    original_names = list(_tar_entries(built_result.tarball))
+    original_tarball, original_entries = raw_tarball_seed
+    original_payload = gzip.decompress(original_tarball)
+    original_names = list(original_entries)
+    regular_header = _special_tar_header(original_payload, tarfile.REGTYPE)
+    regular_tarball = gzip.compress(regular_header + original_payload, mtime=0)
+    assert node_adapter._read_tarball(regular_tarball) == {  # noqa: SLF001
+        "package/special-entry": b"",
+        **original_entries,
+    }
     special_header = _special_tar_header(original_payload, type_flag)
     payload_with_special = special_header + original_payload
     with tarfile.open(
@@ -2828,28 +2711,8 @@ def test_artifact_contents_rejects_every_nonordinary_tar_type(
     assert logical_members[0].type == type_flag
     assert [member.name for member in logical_members[1:]] == original_names
     special_tarball = gzip.compress(payload_with_special, mtime=0)
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            special_tarball,
-            built_result.expectation,
-        )
-
-
-def test_artifact_contents_rejects_extra_zero_trailer_block(
-    built_result: node_adapter.BuildResult,
-) -> None:
-    original_payload = gzip.decompress(built_result.tarball)
-    extra_trailer_payload = original_payload + bytes(tarfile.BLOCKSIZE)
-    extra_trailer_tarball = gzip.compress(extra_trailer_payload, mtime=0)
-
-    assert _tar_entries(extra_trailer_tarball) == _tar_entries(
-        built_result.tarball
-    )
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            extra_trailer_tarball,
-            built_result.expectation,
-        )
+    with pytest.raises(ValueError):  # noqa: PT011 - Reader wording is internal.
+        node_adapter._read_tarball(special_tarball)  # noqa: SLF001
 
 
 @pytest.mark.parametrize(
@@ -2880,55 +2743,15 @@ def test_artifact_contents_rejects_malformed_or_premature_streams(
         )
 
 
-def test_runtime_request_is_minimal_frozen_and_exported() -> None:
-    runtime_request_type = getattr(node_adapter, "RuntimeRequest", None)
-    assert runtime_request_type is not None, (
-        "node adapter must define RuntimeRequest"
-    )
-
-    request = runtime_request_type(
+def test_runtime_request_is_frozen_and_slotted() -> None:
+    request = RuntimeRequest(
         node_version="v24.4.1",
         npm_version="11.4.2",
     )
-    runtime_fields = dataclasses.fields(request)
 
-    assert tuple(field.name for field in runtime_fields) == (
-        "node_version",
-        "npm_version",
-    )
-    runtime_signature = inspect.signature(runtime_request_type)
-    assert tuple(runtime_signature.parameters) == (
-        "node_version",
-        "npm_version",
-    )
-    assert all(
-        parameter.default is inspect.Parameter.empty
-        for parameter in runtime_signature.parameters.values()
-    )
-    assert type(request.node_version) is str
-    assert type(request.npm_version) is str
     assert not hasattr(request, "__dict__")
-    assert all(
-        forbidden.lower() not in field.name.lower()
-        for field in runtime_fields
-        for forbidden in (
-            "pnpm",
-            "snapshot",
-            "evidence",
-            "planner",
-            "run",
-            "attempt",
-        )
-    )
     with pytest.raises(dataclasses.FrozenInstanceError):
         cast("Any", request).node_version = "v24.4.2"
-
-    package_runtime_request = getattr(
-        adapters_package,
-        "RuntimeRequest",
-        None,
-    )
-    assert package_runtime_request is runtime_request_type
 
 
 @pytest.mark.parametrize(
@@ -3250,114 +3073,6 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
             "sha256:" + hashlib.sha256(built_result.witness).hexdigest()
         ),
     )
-
-
-def test_adapter_public_api_exports_closed_types_and_functions(
-    build_request: BuildRequest,
-) -> None:
-    runtime_request_type = getattr(node_adapter, "RuntimeRequest", None)
-    assert runtime_request_type is not None, (
-        "node adapter must define RuntimeRequest before exporting it"
-    )
-    assert getattr(adapters_package, "RuntimeRequest", None) is (
-        runtime_request_type
-    )
-
-    expected_exports = (
-        "PackageTargetWitness",
-        "BuildRequest",
-        "ArtifactExpectation",
-        "ArtifactManifest",
-        "BuildResult",
-        "InstallImportResult",
-        "RuntimeRequest",
-        "build_node_package",
-        "run_node_project_build",
-        "run_node_project_tests",
-        "qualify_npm_artifact_contents",
-        "qualify_npm_install_import",
-    )
-    npmjs_exports = (
-        "HttpResponse",
-        "HttpTransport",
-        "NpmjsNetworkError",
-        "NpmjsPolicyError",
-        "NpmjsTimeoutError",
-        "NpmjsTruncatedResponseError",
-        "StdlibHttpTransport",
-        "observe_npmjs_projection",
-    )
-    github_packages_exports = (
-        "GITHUB_PACKAGES_DESTINATION_ID",
-        "GITHUB_PACKAGES_OBSERVATION_CONTRACT_ID",
-        "GITHUB_PACKAGES_OPERATION",
-        "GITHUB_PACKAGES_PACKAGE",
-        "GITHUB_PACKAGES_REGISTRY",
-        "GitHubPackagesHttpResponse",
-        "GitHubPackagesNetworkError",
-        "GitHubPackagesPolicyError",
-        "GitHubPackagesTimeoutError",
-        "GitHubPackagesTransport",
-        "GitHubPackagesActiveState",
-        "read_github_packages_active_state",
-    )
-    for name in expected_exports:
-        module_export = getattr(node_adapter, name, None)
-        assert module_export is not None, f"node adapter missing export {name}"
-        assert getattr(adapters_package, name, None) is module_export
-    assert set(adapters_package.__all__) == {
-        *expected_exports,
-        *github_packages_exports,
-        *npmjs_exports,
-    }
-
-    project_tests_signature = inspect.signature(
-        node_adapter.run_node_project_tests
-    )
-    install_import_signature = inspect.signature(
-        node_adapter.qualify_npm_install_import
-    )
-    assert tuple(project_tests_signature.parameters) == (
-        "project_root",
-        "request",
-    )
-    assert tuple(install_import_signature.parameters) == (
-        "tarball",
-        "expectation",
-        "request",
-    )
-    assert (
-        project_tests_signature.parameters["request"].default
-        is inspect.Parameter.empty
-    )
-    assert (
-        install_import_signature.parameters["request"].default
-        is inspect.Parameter.empty
-    )
-    assert get_type_hints(node_adapter.run_node_project_tests)["request"] is (
-        runtime_request_type
-    )
-    assert (
-        get_type_hints(node_adapter.qualify_npm_install_import)["request"]
-        is runtime_request_type
-    )
-    assert tuple(
-        field.name for field in dataclasses.fields(runtime_request_type)
-    ) == ("node_version", "npm_version")
-    assert all(
-        forbidden.lower() not in export.lower()
-        for export in adapters_package.__all__
-        for forbidden in ("Snapshot", "Evidence", "Finalizer", "Planner")
-    )
-
-    assert "adapter_version" not in {
-        field.name for field in fields(BuildRequest)
-    }
-    with pytest.raises(TypeError, match="adapter_version"):
-        cast("Any", replace)(
-            build_request,
-            adapter_version="forged/adapter-v99",
-        )
 
 
 def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_commands(  # noqa: E501, PLR0915

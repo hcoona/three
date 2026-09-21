@@ -7,7 +7,6 @@ from dataclasses import replace
 from typing import cast
 
 import pytest
-import three_workflow_delivery_v3.release as release_api
 from three_workflow_delivery_v3.adapters import node as node_adapter
 from three_workflow_delivery_v3.adapters.github_packages import (
     github_packages_destination_operation_profile,
@@ -447,11 +446,6 @@ def test_successful_simulation_requires_observation_for_each_projection(
             scenario.decision,
             artifacts=(scenario.artifact,),
         )
-
-
-def test_synthetic_observation_helper_is_not_public_release_api() -> None:
-    assert not hasattr(release_api, "admit_synthetic_projection_observation")
-    assert "admit_synthetic_projection_observation" not in release_api.__all__
 
 
 def _live_publication_context(scenario):

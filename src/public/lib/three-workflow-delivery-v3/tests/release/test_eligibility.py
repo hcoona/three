@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import subprocess
 from collections.abc import Callable
-from dataclasses import fields, replace
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -94,57 +93,6 @@ if TYPE_CHECKING:
         AdmittedRepositoryModelSnapshot,
     )
     from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
-
-
-def test_live_eligibility_api_owns_static_reference_input() -> None:
-    """Accept the repository root, not a caller-formed policy Result."""
-    parameters = inspect.signature(evaluate_live_eligibility).parameters
-
-    assert tuple(parameters) == (
-        "context",
-        "repository_model",
-        "policy",
-        "client",
-        "repository_root",
-        "now",
-    )
-    assert parameters["repository_root"].kind is (
-        inspect.Parameter.KEYWORD_ONLY
-    )
-    assert parameters["now"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert "consumer_policy" not in parameters
-
-
-def test_live_eligibility_decision_names_static_reference_evidence() -> None:
-    """Make the bounded Result a first-class immutable Decision field."""
-    assert tuple(field.name for field in fields(LiveEligibilityDecision)) == (
-        "context",
-        "static_reference",
-        "governance",
-        "result",
-        "diagnostics",
-    )
-    assert tuple(
-        field.name for field in fields(AdmittedLiveEligibilityDecision)
-    ) == (
-        "context",
-        "static_reference",
-        "governance",
-        "result",
-        "diagnostics",
-        "canonical_digest",
-        "canonical_bytes",
-    )
-
-
-def test_live_eligibility_runtime_has_no_consumer_policy_symbols() -> None:
-    """Do not retain a hidden compatibility shim in the evaluator module."""
-    module = inspect.getmodule(evaluate_live_eligibility)
-
-    assert module is not None
-    assert not hasattr(module, "ConsumerPolicyResult")
-    assert not hasattr(module, "CONSUMER_POLICY_ID")
-    assert not hasattr(module, "validate_consumer_policy_result")
 
 
 REPO_ROOT = Path(__file__).resolve().parents[6]

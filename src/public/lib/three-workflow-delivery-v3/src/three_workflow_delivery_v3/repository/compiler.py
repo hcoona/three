@@ -2203,7 +2203,6 @@ def compile_repository_model(
     """Compile one complete purpose-bound first-slice Snapshot."""
     validate_compilation_context(context)
     _validate_manifest(context, manifest)
-    request = manifest.requests[0]
     if len(bundles) != 1:
         message = (
             "compilation requires exactly one admitted Fact Bundle and no "
@@ -2214,16 +2213,18 @@ def compile_repository_model(
     if type(admitted) is not AdmittedNodeProviderFactBundle:
         message = "compiler requires an admitted Fact Bundle"
         raise TypeError(message)
-    admitted = admit_node_provider_fact_bundle(
-        admitted.bundle,
-        context=context,
-        manifest=manifest,
-        admission=admitted.admission,
-    )
-    result = admitted.provider_result
-    if result.provider_logical_id != request.provider_logical_id:
-        message = "admitted Fact Bundle Provider identity mismatch"
+    bundle = admitted.bundle
+    request = manifest.requests[0]
+    if bundle.binding != provider_binding(manifest, request.entry_id):
+        message = "Fact Bundle authority binding mismatch"
         raise ValueError(message)
+    if (
+        bundle.manifest_digest != manifest.manifest_digest
+        or bundle.manifest_entry_id != request.entry_id
+    ):
+        message = "Fact Bundle current manifest binding mismatch"
+        raise ValueError(message)
+    result = admitted.provider_result
     _validate_result_input_facts(repo_root, context, result)
     if len(result.project_nodes) != 1:
         message = "first-slice Provider must emit exactly one Project Node"
@@ -2699,12 +2700,17 @@ def compile_dotnet_repository_model(
     if type(admitted) is not AdmittedDotnetProviderFactBundle:
         message = "NuGet compiler requires an admitted .NET Fact Bundle"
         raise TypeError(message)
-    admitted = admit_dotnet_provider_fact_bundle(
-        admitted.bundle,
-        context=context,
-        manifest=manifest,
-        admission=admitted.admission,
-    )
+    bundle = admitted.bundle
+    request = manifest.requests[0]
+    if bundle.binding != provider_binding(manifest, request.entry_id):
+        message = "NuGet Fact Bundle authority binding mismatch"
+        raise ValueError(message)
+    if (
+        bundle.manifest_digest != manifest.manifest_digest
+        or bundle.manifest_entry_id != request.entry_id
+    ):
+        message = "NuGet Fact Bundle current manifest binding mismatch"
+        raise ValueError(message)
     result = admitted.provider_result
     _validate_dotnet_target_inputs(repo_root, context, result)
     if len(result.project_nodes) != 1:

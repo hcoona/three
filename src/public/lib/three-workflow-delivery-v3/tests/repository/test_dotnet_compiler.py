@@ -466,17 +466,10 @@ def test_dotnet_compiler_rejects_bundle_closure(native_scenario, count) -> None:
         )
 
 
-def test_dotnet_compiler_rejects_node_bundle(native_scenario) -> None:
+def test_node_admission_rejects_dotnet_bundle(native_scenario) -> None:
     """Keep Node and Dotnet transport admission mutually exclusive."""
-    repo, context, manifest, result = native_scenario
+    _, context, manifest, result = native_scenario
     bundle, admission = _bundle(manifest, result)
-    masquerading = compiler.AdmittedNodeProviderFactBundle(
-        cast("Any", bundle), admission
-    )
-    with pytest.raises(TypeError, match=r"admitted \.NET Fact Bundle"):
-        compiler.compile_dotnet_repository_model(
-            repo, context, manifest, cast("Any", [masquerading])
-        )
     node_manifest = compiler.first_slice_provider_manifest(
         context, provider_producer="discover-dotnet"
     )
@@ -752,4 +745,37 @@ def test_dotnet_bundle_rejects_previous_simulation_attempt(
             context=current,
             manifest=current_manifest,
             admission=admission,
+        )
+
+
+def test_dotnet_compiler_rejects_previously_admitted_simulation_attempt(
+    native_scenario,
+) -> None:
+    """An intact prior-attempt admission does not supply current authority."""
+    repo, context, _, result = native_scenario
+    previous = replace(
+        context,
+        purpose="release-simulation",
+        run_attempt=1,
+        channel="buddy",
+        release_unit=NUGET_RELEASE_UNIT,
+    )
+    previous_manifest = compiler.nuget_provider_manifest(
+        previous, provider_producer="discover-dotnet"
+    )
+    result = replace(
+        result,
+        binding=compiler.provider_binding(
+            previous_manifest, "dotnet-nuget-slice"
+        ),
+    )
+    admitted = _admitted(previous, previous_manifest, result)
+    current = replace(previous, run_attempt=2)
+    current_manifest = compiler.nuget_provider_manifest(
+        current, provider_producer="discover-dotnet"
+    )
+
+    with pytest.raises(ValueError, match="authority binding"):
+        compiler.compile_dotnet_repository_model(
+            repo, current, current_manifest, [admitted]
         )

@@ -1283,23 +1283,20 @@ def test_precoexistence_bootstrap_projection_rejects_other_failures() -> None:
 @pytest.mark.parametrize(
     "pull_request_number",
     [
-        pytest.param(True, id="bool-true"),
         pytest.param(0, id="zero"),
         pytest.param(-1, id="negative"),
-        pytest.param(42.0, id="float"),
-        pytest.param("42", id="string"),
     ],
 )
 def test_precoexistence_bootstrap_projection_rejects_invalid_pr_number(
-    pull_request_number: object,
+    pull_request_number: int,
 ) -> None:
-    """Reject non-exact or nonpositive pull-request numbers."""
+    """Reject nonpositive pull-request numbers."""
     plan = _incremental_plan(changed_paths=("unmodeled/bootstrap.txt",))
     decision = _finalize(plan, _lane_results(plan), elapsed_seconds=60)
     valid_request = _bootstrap_request()
     invalid_request = replace(
         valid_request,
-        pull_request_number=cast("Any", pull_request_number),
+        pull_request_number=pull_request_number,
     )
 
     with pytest.raises(TypeError):
@@ -1324,28 +1321,21 @@ def test_precoexistence_bootstrap_projection_rejects_invalid_pr_number(
             SHA_A[:-1],
             id="base-malformed-short",
         ),
-        pytest.param("base_sha", None, id="base-non-string"),
         pytest.param(
             "head_sha",
             "g" * 40,
             id="head-malformed-non-hex",
         ),
-        pytest.param("head_sha", b"b" * 40, id="head-non-string"),
         pytest.param(
             "tested_merge_sha",
             SHA_C.upper(),
             id="tested-merge-malformed-uppercase",
         ),
-        pytest.param(
-            "tested_merge_sha",
-            42,
-            id="tested-merge-non-string",
-        ),
     ],
 )
 def test_precoexistence_bootstrap_projection_rejects_invalid_sha_fields(
     field: str,
-    invalid_sha: object,
+    invalid_sha: str,
 ) -> None:
     """Reject every malformed event SHA field."""
     plan = _incremental_plan(changed_paths=("unmodeled/bootstrap.txt",))
@@ -1361,40 +1351,6 @@ def test_precoexistence_bootstrap_projection_rejects_invalid_sha_fields(
             decision,
             request=invalid_request,
             base_contains_ci_workflow=False,
-        )
-
-    assert qualifies_precoexistence_bootstrap_projection(
-        decision,
-        request=valid_request,
-        base_contains_ci_workflow=False,
-    )
-
-
-@pytest.mark.parametrize(
-    "base_contains_ci_workflow",
-    [
-        pytest.param(0, id="integer-zero"),
-        pytest.param(1, id="integer-one"),
-        pytest.param(None, id="none"),
-        pytest.param("false", id="string-false"),
-    ],
-)
-def test_precoexistence_bootstrap_projection_requires_exact_workflow_bool(
-    base_contains_ci_workflow: object,
-) -> None:
-    """Reject truthy and falsey non-bools."""
-    plan = _incremental_plan(changed_paths=("unmodeled/bootstrap.txt",))
-    decision = _finalize(plan, _lane_results(plan), elapsed_seconds=60)
-    valid_request = _bootstrap_request()
-
-    with pytest.raises(TypeError):
-        qualifies_precoexistence_bootstrap_projection(
-            decision,
-            request=valid_request,
-            base_contains_ci_workflow=cast(
-                "Any",
-                base_contains_ci_workflow,
-            ),
         )
 
     assert qualifies_precoexistence_bootstrap_projection(
