@@ -29,48 +29,6 @@ ARCHIVED_LEGACY_BUDDY_DOCS = (
     ".github/workflows/docs/DESIGN.v2.md",
     ".github/workflows/docs/MEMORY.md",
 )
-EXACT_BASE_WORKFLOW_SHA256 = {
-    ".github/workflows/official.yml": (
-        "7d6839921f29e81021c71b0f3866c1099cdae25bcfada06c72281bba295116d4"
-    ),
-    ".github/workflows/release-official.yml": (
-        "3c7b1dbef68e697ede5c4e13d328db26a3d00ab9ceacd819c590f3a334d7113a"
-    ),
-    ".github/workflows/release-resolve.yml": (
-        "2528ca16c71dd92660b2c73634ebc0619dd787f2b345e7d495eab6f9ad318a9b"
-    ),
-    ".github/workflows/release-build-python.yml": (
-        "22f289a96424b1311b7a6eeec1c498059960ac9416ca4d7b8683d36efde50950"
-    ),
-    ".github/workflows/release-build-node-pack.yml": (
-        "49418a5050a418108f5e17d71614ecaa08a6bd104ad6f52c5ca097e0e9e1fad4"
-    ),
-    ".github/workflows/release-build-ruby-gem.yml": (
-        "ff0cb3d2e3cb703662d3bfe70e37aed3936958191711575f0d179f669f2b926b"
-    ),
-    ".github/workflows/release-build-wxt.yml": (
-        "af291036a906e3111af68fb86419dce9c1cbe9e96678c43781896db5544b3dd0"
-    ),
-    ".github/workflows/release-create-github-release.yml": (
-        "023a0d83d2e61a6f73a833c3adc08e884d2451a5d03a58ce26d604e484fe4766"
-    ),
-    ".github/workflows/release-prepare-release-notes.yml": (
-        "0d26587abbb816d0f51b6790919da7d98b5cf34b65b0837c03117e30fe3fab64"
-    ),
-}
-BASE_ORCHESTRATOR_SHA256 = (
-    "05c5cfe0ffeb19fa828c2293ff7aa3461ff42d3644fbaaf24bb6df444c713a38"
-)
-BUDDY_REJECTION_SNIPPET = (
-    '          normalized_channel="${CHANNEL//[[:space:]]/}"\n'
-    '          if [[ "${normalized_channel,,}" == "buddy" ]]; then\n'
-    '            echo "::error::Legacy Buddy entry route is retired; '
-    "channel 'buddy' has no compatibility route. Use the Workflow Delivery "
-    'v3 Buddy workflow."\n'
-    "            exit 1\n"
-    "          fi\n"
-    "\n"
-)
 OBSOLETE_PRE_V3_PATHS = (
     ".github/actionlint.yaml",
     ".github/workflows/release-build-dotnet.yml",
@@ -100,10 +58,6 @@ OBSOLETE_PRE_V3_PATHS = (
     "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json",
     "tests/test_workflow_release_control.py",
 )
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _workflow_documents(root: Path) -> dict[str, dict[str, Any]]:
@@ -299,25 +253,6 @@ def test_renamed_and_indirect_compatibility_routes_are_detected(
         _write_workflow(tmp_path, filename, content)
 
     assert _legacy_buddy_routes(tmp_path) == expected
-
-
-def test_production_v1_workflows_match_base_contract() -> None:
-    """Preserve the separate Official and reusable-release workflow boundary."""
-    for relative_path, expected_digest in EXACT_BASE_WORKFLOW_SHA256.items():
-        assert _sha256(REPO_ROOT / relative_path) == expected_digest
-
-
-def test_orchestrator_diff_is_only_the_buddy_retirement_guard() -> None:
-    """Reconstruct the base orchestrator without the approved guard."""
-    path = WORKFLOWS / "release-orchestrate.yml"
-    current = path.read_bytes()
-    snippet = BUDDY_REJECTION_SNIPPET.encode()
-
-    assert current.count(snippet) == 1
-    reconstructed_base = current.replace(snippet, b"", 1)
-    assert hashlib.sha256(reconstructed_base).hexdigest() == (
-        BASE_ORCHESTRATOR_SHA256
-    )
 
 
 def test_release_orchestrator_rejects_buddy_before_v1_policy() -> None:

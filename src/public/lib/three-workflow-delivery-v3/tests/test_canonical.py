@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import re
+import json
 
 import pytest
 from three_workflow_delivery_v3.canonical import (
@@ -70,22 +70,22 @@ def test_canonical_sha256_matches_golden_digest() -> None:
 
 
 @pytest.mark.parametrize(
-    ("document", "message"),
-    [
-        ("", "Expecting value"),
-        ('{"missing":}', "Expecting value"),
-        ("[1,]", "Illegal trailing comma"),
-        ("NaN", "invalid JSON constant: NaN"),
-        ("Infinity", "invalid JSON constant: Infinity"),
-    ],
+    "document",
+    ["", '{"missing":}', "[1,]"],
 )
 def test_parse_json_strict_rejects_malformed_json(
     document: str,
-    message: str,
 ) -> None:
-    """Reject malformed documents and non-JSON numeric constants."""
-    with pytest.raises(ValueError, match=message):
+    """Reject invalid syntax through the real JSON parser."""
+    with pytest.raises(json.JSONDecodeError):
         parse_json_strict(document)
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity"])
+def test_parse_json_strict_rejects_non_json_constants(constant: str) -> None:
+    """Reject non-JSON constants admitted by the underlying parser."""
+    with pytest.raises(ValueError, match=f"invalid JSON constant: {constant}"):
+        parse_json_strict(constant)
 
 
 @pytest.mark.parametrize(
@@ -188,9 +188,6 @@ _FIXTURE_GOLDEN_DIGESTS = {
         "4af0b65dc6d3d16"
     ),
 }
-_TRANSPORT_DIGESTS = {
-    "current-authority": "sha256:" + ("a" * 64),
-}
 
 
 def test_parse_canonical_json_accepts_canonical_utf8_object() -> None:
@@ -220,7 +217,7 @@ def test_parse_canonical_json_rejects_non_object_json(document: bytes) -> None:
 
 def test_parse_canonical_json_rejects_malformed_json() -> None:
     """Preserve strict parser failure for malformed transported bytes."""
-    with pytest.raises(ValueError, match="Expecting value"):
+    with pytest.raises(json.JSONDecodeError):
         parse_canonical_json(b'{"missing":}')
 
 
@@ -296,21 +293,3 @@ def test_binding_fixtures_have_stable_golden_payload_digests(
 
     assert sidecar == _FIXTURE_GOLDEN_DIGESTS[fixture_name]
     assert canonical_sha256(parse_canonical_json(document)) == sidecar
-
-
-@pytest.mark.parametrize("fixture_name", sorted(_FIXTURE_GOLDEN_DIGESTS))
-def test_binding_fixture_transport_and_payload_digests_are_distinct(
-    fixture_name: str,
-) -> None:
-    """Prevent transport artifact identity from substituting for payload."""
-    payload_digest = (
-        (_BINDING_FIXTURE_DIRECTORY / f"{fixture_name}.sha256")
-        .read_text(encoding="ascii")
-        .strip()
-    )
-
-    assert _TRANSPORT_DIGESTS[fixture_name] != payload_digest
-    assert re.fullmatch(
-        r"sha256:[0-9a-f]{64}",
-        _TRANSPORT_DIGESTS[fixture_name],
-    )

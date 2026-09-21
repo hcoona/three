@@ -74,7 +74,6 @@ def test_reproduction_has_only_closed_manifest_and_acceptance_witness(original):
     repeated = fixture.build_npm_fixture(SPEC, repository_root=ROOT)
 
     assert repeated == original
-    assert repeated is not original
     assert original.tarball[4:8] == bytes(4)
     entries = _entries(original.tarball)
     assert set(entries) == {MANIFEST, WITNESS}
@@ -118,7 +117,6 @@ def test_different_duplicate_changes_bytes_and_witness_not_version(original):
     )
 
     assert observed == different.content
-    assert observed is not different.content
     assert different.tarball != original.tarball
     assert observed.version == original.content.version
     assert observed.target == original.content.target

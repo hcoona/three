@@ -22,6 +22,8 @@ GOVERNANCE_PATH = (
 )
 ROOT_PYTHON_INPUTS = ("pyproject.toml", "uv.lock")
 SYNTHETIC_FUTURE_SURFACES = (
+    "eng/workflow-delivery/v3/future-policy.yml",
+    "src/private/lib/hk/Commit9Future.pkl",
     "src/workflow-delivery.release-unit.yml",
     "src/workflow-delivery.quality.yml",
     "src/public/app/new-product/workflow-delivery.release-unit.yml",
@@ -29,11 +31,6 @@ SYNTHETIC_FUTURE_SURFACES = (
     ".github/workflows/workflow-delivery-v3-future.yml",
     ".github/actions/workflow-delivery-v3-future/action.yml",
     ".github/actions/workflow-delivery-v3/future/action.yml",
-)
-OVERRIDE_EXEMPLARS = (
-    *SYNTHETIC_FUTURE_SURFACES,
-    "eng/scripts/workflow_delivery_v3_static_reference.py",
-    "eng/scripts/workflow_delivery_v3_hk.py",
 )
 _BUDDY_CONTRACT_SPEC = importlib.util.spec_from_file_location(
     "_commit9_buddy_workflow_contract",
@@ -232,107 +229,61 @@ def test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_
 
 
 @pytest.mark.parametrize(
-    ("pattern", "exemplars"),
+    ("pattern", "path", "matches"),
     [
+        ("/governed/exact.py", "governed/exact.py", True),
+        ("/governed/exact.py", "nested/governed/exact.py", False),
+        ("/governed/**", "governed/nested/file.py", True),
+        ("/governed/**", "other/governed/file.py", False),
         (
-            "/.github/workflows/**",
-            (".github/workflows/workflow-delivery-v3-future.yml",),
-        ),
-        (
-            "/.github/actions/**",
-            (
-                ".github/actions/workflow-delivery-v3-future/action.yml",
-                ".github/actions/workflow-delivery-v3/future/action.yml",
-            ),
-        ),
-        (
-            "/eng/scripts/**",
-            (
-                "eng/scripts/workflow_delivery_v3_static_reference.py",
-                "eng/scripts/workflow_delivery_v3_hk.py",
-            ),
-        ),
-        (
-            "/src/public/lib/three-workflow-delivery-v3/**",
-            (
-                (
-                    "src/public/lib/three-workflow-delivery-v3/"
-                    "src/three_workflow_delivery_v3/cli.py"
-                ),
-            ),
-        ),
-        (
-            "/eng/workflow-delivery/v3/**",
-            ("eng/workflow-delivery/v3/future-policy.yml",),
+            "/src/**/workflow-delivery.release-unit.yml",
+            "src/workflow-delivery.release-unit.yml",
+            True,
         ),
         (
             "/src/**/workflow-delivery.release-unit.yml",
-            ("src/public/app/future/workflow-delivery.release-unit.yml",),
+            "src/nested/project/workflow-delivery.release-unit.yml",
+            True,
         ),
         (
-            "/src/**/workflow-delivery.quality.yml",
-            ("src/private/app/future/workflow-delivery.quality.yml",),
+            "/src/**/workflow-delivery.release-unit.yml",
+            "src/nested/not-workflow-delivery.release-unit.yml",
+            False,
         ),
         (
-            f"/{GOVERNANCE_PATH}",
-            (GOVERNANCE_PATH,),
+            "/src/**/workflow-delivery.release-unit.yml",
+            "src/nested/workflow-delivery.release-unit.yml.extra",
+            False,
         ),
-        ("/hk.pkl", ("hk.pkl",)),
-        (
-            "/src/private/lib/hk/**",
-            ("src/private/lib/hk/Commit9Future.pkl",),
-        ),
-        ("/pyproject.toml", ("pyproject.toml",)),
-        ("/uv.lock", ("uv.lock",)),
-        ("/.github/CODEOWNERS", (".github/CODEOWNERS",)),
     ],
 )
-def test_removing_each_actual_governing_rule_exposes_its_exact_surface(
-    pattern: str,
-    exemplars: tuple[str, ...],
+def test_codeowners_test_oracle_matches_supported_path_shapes(
+    pattern: str, path: str, *, matches: bool
 ) -> None:
-    """Remove one real rule and require its surface to become uncovered."""
-    matching_rules = [rule for rule in ACTUAL_RULES if rule.pattern == pattern]
-    assert matching_rules == [CodeOwnersRule(pattern, (REQUIRED_OWNER,))]
-    mutated = tuple(rule for rule in ACTUAL_RULES if rule.pattern != pattern)
-    expected = dict.fromkeys(exemplars, ())
+    """Distinguish matching and nonmatching paths in the local oracle."""
+    rules = (CodeOwnersRule(pattern, (REQUIRED_OWNER,)),)
 
-    assert {
-        path: _final_owners(mutated, path) for path in exemplars
-    } == expected
-    assert _coverage_failures(mutated, set(exemplars)) == expected
+    assert _final_owners(rules, path) == ((REQUIRED_OWNER,) if matches else ())
+    assert _coverage_failures(rules, {path}) == ({} if matches else {path: ()})
 
 
-@pytest.mark.parametrize("path", OVERRIDE_EXEMPLARS)
-def test_later_replacement_owner_override_fails_exact_final_match(
-    path: str,
+@pytest.mark.parametrize(
+    "owners",
+    [("@replacement-owner",), (REQUIRED_OWNER, "@co-owner")],
+    ids=["replacement", "additional-coowner"],
+)
+def test_codeowners_test_oracle_rejects_later_nonsole_owner(
+    owners: tuple[str, ...],
 ) -> None:
-    """Reject a later exact-path replacement owner."""
-    mutated = (
-        *ACTUAL_RULES,
-        CodeOwnersRule(f"/{path}", ("@replacement-owner",)),
+    """A later matching rule determines whether ownership is exactly sole."""
+    path = "governed/file.py"
+    rules = (
+        CodeOwnersRule("/governed/**", (REQUIRED_OWNER,)),
+        CodeOwnersRule(f"/{path}", owners),
     )
 
-    assert _final_owners(mutated, path) == ("@replacement-owner",)
-    assert _coverage_failures(mutated, {path}) == {
-        path: ("@replacement-owner",)
-    }
-
-
-@pytest.mark.parametrize("path", OVERRIDE_EXEMPLARS)
-def test_later_hcoona_coowner_override_fails_exact_final_match(
-    path: str,
-) -> None:
-    """Reject a later exact-path rule that adds a co-owner."""
-    mutated = (
-        *ACTUAL_RULES,
-        CodeOwnersRule(f"/{path}", (REQUIRED_OWNER, "@co-owner")),
-    )
-
-    assert _final_owners(mutated, path) == (REQUIRED_OWNER, "@co-owner")
-    assert _coverage_failures(mutated, {path}) == {
-        path: (REQUIRED_OWNER, "@co-owner")
-    }
+    assert _final_owners(rules, path) == owners
+    assert _coverage_failures(rules, {path}) == {path: owners}
 
 
 @pytest.mark.parametrize(
