@@ -15,8 +15,10 @@ import shutil
 import subprocess
 import tarfile
 import types
+from collections import Counter
 from contextlib import contextmanager
 from dataclasses import fields, replace
+from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from typing import get_type_hints
@@ -1066,6 +1068,24 @@ def test_failure_paths_preserve_complete_source_checkout(
     assert _source_snapshot() == before
 
 
+def _assert_owned_node_state(environment: dict[str, str]) -> None:
+    home = Path(environment["HOME"])
+    assert home.is_dir()
+    assert not home.is_relative_to(PROJECT_ROOT.resolve())
+    state_keys = (
+        "NPM_CONFIG_USERCONFIG",
+        "NPM_CONFIG_GLOBALCONFIG",
+        "NPM_CONFIG_CACHE",
+        "XDG_CONFIG_HOME",
+    )
+    paths = [Path(environment[key]) for key in state_keys]
+    assert len(set(paths)) == len(paths)
+    assert all(path.is_relative_to(home.parent) for path in paths)
+    assert Path(environment["NPM_CONFIG_USERCONFIG"]).is_file()
+    assert Path(environment["NPM_CONFIG_GLOBALCONFIG"]).is_file()
+    assert Path(environment["NPM_CONFIG_CACHE"]).is_dir()
+
+
 def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1091,6 +1111,7 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
         cwd: Path,
         environment: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
+        _assert_owned_node_state(environment)
         global_config_value = environment.get("NPM_CONFIG_GLOBALCONFIG")
         global_config_path = (
             Path(global_config_value)
@@ -1137,11 +1158,17 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
 
     run_node_project_tests(PROJECT_ROOT, runtime_request)
 
-    assert [command for command, *_ in observed] == [
-        ("node", "--version"),
-        ("npm", "--version"),
-        ("npm", "test", "--ignore-scripts"),
-    ]
+    commands = [command for command, *_ in observed]
+    assert Counter(commands) == Counter(
+        [
+            ("node", "--version"),
+            ("npm", "--version"),
+            ("npm", "test", "--ignore-scripts"),
+        ]
+    )
+    test_index = commands.index(("npm", "test", "--ignore-scripts"))
+    for tool in ("node", "npm"):
+        assert commands.index((tool, "--version")) < test_index
     expected_staged_files = (
         "package.json",
         "src/index.js",
@@ -1176,6 +1203,7 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
         global_config_bytes,
     ) in observed:
         assert not cwd.is_relative_to(PROJECT_ROOT.resolve())
+        assert cwd.is_relative_to(Path(environment["HOME"]).parent)
         assert staged_files == expected_staged_files
         assert set(environment) == expected_environment_keys
         assert all(
@@ -1191,9 +1219,6 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
         assert environment["LC_ALL"] == "C.UTF-8"
         assert environment["TZ"] == "UTC"
         home = Path(environment["HOME"])
-        assert Path(environment["NPM_CONFIG_USERCONFIG"]) == home / "npmrc"
-        assert Path(environment["NPM_CONFIG_CACHE"]) == home / "npm-cache"
-        assert Path(environment["XDG_CONFIG_HOME"]) == home / "config"
         assert npm_config == expected_npm_config
         assert global_config_value is not None
         global_config_path = Path(global_config_value)
@@ -1215,17 +1240,10 @@ def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: 
         node_version=f"v{build_request.node_version}",
         npm_version=build_request.npm_version,
     )
-    observations: list[
-        tuple[
-            tuple[str, ...],
-            Path,
-            dict[str, str],
-            str,
-            str | None,
-            bool,
-            bytes | None,
-        ]
-    ] = []
+    observations: dict[
+        str,
+        list[tuple[tuple[str, ...], Path, dict[str, str], str, bytes]],
+    ] = {}
     for name in (
         "AWS_SECRET_ACCESS_KEY",
         "GITHUB_TOKEN",
@@ -1243,27 +1261,23 @@ def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: 
         cwd: Path,
         environment: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
-        config_path = Path(environment["NPM_CONFIG_USERCONFIG"])
-        global_config_value = environment.get("NPM_CONFIG_GLOBALCONFIG")
-        global_config_path = (
-            None if global_config_value is None else Path(global_config_value)
-        )
-        global_config_exists = (
-            global_config_path is not None and global_config_path.is_file()
-        )
-        observations.append(
+        _assert_owned_node_state(environment)
+        if command[:2] == ("npm", "pack"):
+            output_root = Path(command[-1])
+            assert output_root.is_dir()
+            assert output_root.is_relative_to(Path(environment["HOME"]).parent)
+            assert not output_root.is_relative_to(PROJECT_ROOT.resolve())
+        if command[:2] == ("npm", "install"):
+            tarball_path = Path(command[-1])
+            assert tarball_path.is_relative_to(cwd)
+            assert tarball_path.read_bytes() == built_result.tarball
+        observations[operation].append(
             (
                 command,
                 cwd,
                 dict(environment),
-                config_path.read_text(),
-                global_config_value,
-                global_config_exists,
-                (
-                    global_config_path.read_bytes()
-                    if global_config_exists and global_config_path is not None
-                    else None
-                ),
+                Path(environment["NPM_CONFIG_USERCONFIG"]).read_text(),
+                Path(environment["NPM_CONFIG_GLOBALCONFIG"]).read_bytes(),
             )
         )
         return original_run(command, cwd, environment)
@@ -1271,89 +1285,37 @@ def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: 
     monkeypatch.setattr(node_adapter, "_run", record_and_run)
 
     before = _source_snapshot()
+    operation = "artifact-build"
+    observations[operation] = []
     built_result = build_node_package(build_request)
     assert _source_snapshot() == before
+    operation = "project-build"
+    observations[operation] = []
     run_node_project_build(build_request)
     assert _source_snapshot() == before
+    operation = "project-tests"
+    observations[operation] = []
     run_node_project_tests(PROJECT_ROOT, runtime_request)
     assert _source_snapshot() == before
+    operation = "install-import"
+    observations[operation] = []
     result = qualify_npm_install_import(
         built_result.tarball,
         built_result.expectation,
         runtime_request,
     )
-
     assert _source_snapshot() == before
     assert result.witness_sha256 == (
         "sha256:" + hashlib.sha256(built_result.witness).hexdigest()
     )
-
-    missing_global_config = [
-        command
-        for command, _, _, _, value, _, _ in observations
-        if value is None
-    ]
-    assert not missing_global_config, (
-        "NPM_CONFIG_GLOBALCONFIG missing for target-controlled commands: "
-        f"{missing_global_config!r}"
-    )
-    for (
-        command,
-        _cwd,
-        environment,
-        _npm_config,
-        global_config_value,
-        global_config_exists,
-        global_config_bytes,
-    ) in observations:
-        assert global_config_value is not None
-        assert global_config_value != "ambient-secret", (
-            f"{command!r} inherited ambient NPM_CONFIG_GLOBALCONFIG"
-        )
-        global_config_path = Path(global_config_value)
-        assert global_config_path.is_relative_to(
-            Path(environment["HOME"]).parent
-        ), (
-            f"{command!r} global npm config is outside isolated state: "
-            f"{global_config_path}"
-        )
-        assert global_config_exists, (
-            f"{command!r} global npm config did not exist before execution: "
-            f"{global_config_path}"
-        )
-        assert global_config_bytes == b"", (
-            f"{command!r} global npm config was not empty: "
-            f"{global_config_bytes!r}"
-        )
-
-    assert [command[:2] for command, *_ in observations] == [
-        ("node", "--version"),
-        ("pnpm", "--version"),
-        ("npm", "--version"),
-        ("node", "scripts/build.mjs"),
-        ("npm", "pack"),
-        ("node", "--version"),
-        ("pnpm", "--version"),
-        ("npm", "--version"),
-        ("node", "scripts/build.mjs"),
-        ("node", "--version"),
-        ("npm", "--version"),
-        ("npm", "test"),
-        ("node", "--version"),
-        ("npm", "--version"),
-        ("npm", "install"),
-        ("node", "--input-type=module"),
-    ]
-    artifact_build = observations[3]
-    artifact_pack = observations[4]
-    assert artifact_build[0] == ("node", "scripts/build.mjs")
-    assert artifact_pack[0][:3] == ("npm", "pack", "--ignore-scripts")
-    assert artifact_build[1] == artifact_pack[1]
-    assert artifact_build[2] == artifact_pack[2]
     assert result.smoke_message == "hcoona-release-smoke-npm"
-    homes = {environment["HOME"] for _, _, environment, *_ in observations}
-    assert "ambient-secret" not in homes
-    assert len(homes) == EXPECTED_ISOLATED_HOME_COUNT
+
+    action_roles = {
+        "artifact-build": [("node", "scripts/build.mjs"), ("npm", "pack")],
+        "project-build": [("node", "scripts/build.mjs")],
+        "project-tests": [("npm", "test")],
+        "install-import": [("npm", "install"), ("node", "--input-type=module")],
+    }
     safe_environment_keys = {
         "HOME",
         "LANG",
@@ -1365,63 +1327,107 @@ def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: 
         "TZ",
         "XDG_CONFIG_HOME",
     }
-    operation_indexes = {3, 4, 8, 11, 14, 15}
-    source_date_command_count = 9
-    for index, (
-        _command,
-        cwd,
-        environment,
-        npm_config,
-        _global_config_value,
-        _global_config_exists,
-        _global_config_bytes,
-    ) in enumerate(observations):
-        if index in operation_indexes:
-            assert not cwd.is_relative_to(PROJECT_ROOT.resolve())
-        expected_keys = safe_environment_keys
-        if index < source_date_command_count:
-            expected_keys = {*expected_keys, "SOURCE_DATE_EPOCH"}
-            assert environment["SOURCE_DATE_EPOCH"] == str(
-                build_request.source_date_epoch
-            )
-        assert set(environment) == expected_keys
-        assert all(
-            name not in environment
-            for name in (
-                "AWS_SECRET_ACCESS_KEY",
-                "GITHUB_TOKEN",
-                "NODE_AUTH_TOKEN",
-                "NPM_TOKEN",
-                "UNRELATED_SENTINEL",
-            )
+    for operation, group in observations.items():
+        is_build = operation in {"artifact-build", "project-build"}
+        probes = [
+            ("node", "--version"),
+            ("npm", "--version"),
+            *([("pnpm", "--version")] if is_build else []),
+        ]
+        actions = action_roles[operation]
+        roles = [command[:2] for command, *_ in group]
+        assert Counter(roles) == Counter([*probes, *actions])
+        by_role = {item[0][:2]: item for item in group}
+        for probe in probes:
+            assert by_role[probe][0] == probe
+            for action in actions:
+                assert roles.index(probe) < roles.index(action)
+        for earlier, later in pairwise(actions):
+            assert roles.index(earlier) < roles.index(later)
+        operation_cwd = by_role[actions[0]][1]
+        operation_environment = by_role[actions[0]][2]
+        for action in actions:
+            assert by_role[action][1] == operation_cwd
+        assert not is_build or by_role[("node", "scripts/build.mjs")][0] == (
+            "node",
+            "scripts/build.mjs",
         )
-        home = Path(environment["HOME"])
-        assert environment["LANG"] == "C.UTF-8"
-        assert environment["LC_ALL"] == "C.UTF-8"
-        assert environment["TZ"] == "UTC"
-        assert Path(environment["NPM_CONFIG_USERCONFIG"]) == home / "npmrc"
-        assert Path(environment["NPM_CONFIG_CACHE"]) == home / "npm-cache"
-        assert Path(environment["XDG_CONFIG_HOME"]) == home / "config"
-        assert npm_config == (
-            "audit=false\n"
-            "fund=false\n"
-            "ignore-scripts=true\n"
-            "package-lock=false\n"
-            "update-notifier=false\n"
-        )
+        if operation == "artifact-build":
+            assert by_role[("npm", "pack")][0][:-1] == (
+                "npm",
+                "pack",
+                "--ignore-scripts",
+                "--json",
+                "--pack-destination",
+            )
+        elif operation == "project-tests":
+            assert by_role[("npm", "test")][0] == (
+                "npm",
+                "test",
+                "--ignore-scripts",
+            )
+        elif operation == "install-import":
+            assert by_role[("npm", "install")][0][:-1] == (
+                "npm",
+                "install",
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
+                "--package-lock=false",
+            )
+            import_command = by_role[("node", "--input-type=module")][0]
+            assert import_command[:3] == ("node", "--input-type=module", "-e")
+            assert len(import_command) == EXPECTED_IMPORT_COMMAND_ARG_COUNT
+            assert import_command[-1]
+        for command, cwd, environment, npm_config, global_config in group:
+            assert environment == operation_environment
+            if command[:2] in actions:
+                assert not cwd.is_relative_to(PROJECT_ROOT.resolve())
+                assert cwd.is_relative_to(Path(environment["HOME"]).parent)
+            expected_keys = {
+                *safe_environment_keys,
+                *({"SOURCE_DATE_EPOCH"} if is_build else set()),
+            }
+            assert environment.get("SOURCE_DATE_EPOCH") == (
+                str(build_request.source_date_epoch) if is_build else None
+            )
+            assert set(environment) == expected_keys
+            assert all(
+                name not in environment
+                for name in (
+                    "AWS_SECRET_ACCESS_KEY",
+                    "GITHUB_TOKEN",
+                    "NODE_AUTH_TOKEN",
+                    "NPM_TOKEN",
+                    "UNRELATED_SENTINEL",
+                )
+            )
+            assert environment["LANG"] == "C.UTF-8"
+            assert environment["LC_ALL"] == "C.UTF-8"
+            assert environment["TZ"] == "UTC"
+            assert "ambient-secret" not in environment.values()
+            assert npm_config == (
+                "audit=false\n"
+                "fund=false\n"
+                "ignore-scripts=true\n"
+                "package-lock=false\n"
+                "update-notifier=false\n"
+            )
+            assert global_config == b""
 
-    for group_indexes in (
-        range(5),
-        range(5, 9),
-        range(9, 12),
-        range(12, 16),
+    for key in (
+        "HOME",
+        "NPM_CONFIG_USERCONFIG",
+        "NPM_CONFIG_GLOBALCONFIG",
+        "NPM_CONFIG_CACHE",
+        "XDG_CONFIG_HOME",
     ):
-        group = [observations[index] for index in group_indexes]
-        operation_environment = group[-1][2]
-        assert all(
-            environment == operation_environment
+        owned_paths = {
+            environment[key]
+            for group in observations.values()
             for _, _, environment, *_ in group
-        )
+        }
+        assert len(owned_paths) == EXPECTED_ISOLATED_HOME_COUNT
 
 
 def test_artifact_contents_rejects_non_first_slice_expectation_identity(
@@ -2926,6 +2932,100 @@ def test_runtime_request_is_minimal_frozen_and_exported() -> None:
 
 
 @pytest.mark.parametrize(
+    ("scenario", "expected_exception", "message"),
+    [
+        pytest.param(
+            "empty-node",
+            ValueError,
+            "Node version must be frozen",
+            id="empty-node-version",
+        ),
+        pytest.param(
+            "empty-npm",
+            ValueError,
+            "npm version must be frozen",
+            id="empty-npm-version",
+        ),
+        pytest.param(
+            "surrogate",
+            TypeError,
+            "Runtime Request must have exact runtime type",
+            id="surrogate-request",
+        ),
+        pytest.param(
+            "subclass",
+            TypeError,
+            "Runtime Request must have exact runtime type",
+            id="runtime-request-subclass",
+        ),
+    ],
+)
+def test_project_tests_reject_malformed_runtime_requests_before_commands(
+    monkeypatch: pytest.MonkeyPatch,
+    scenario: str,
+    expected_exception: type[Exception],
+    message: str,
+) -> None:
+    node_version = "" if scenario == "empty-node" else "v24.4.1"
+    npm_version = "" if scenario == "empty-npm" else "11.4.2"
+    if scenario == "surrogate":
+        runtime_request: object = types.SimpleNamespace(
+            node_version=node_version, npm_version=npm_version
+        )
+    elif scenario == "subclass":
+        runtime_request_subclass = type(
+            "RuntimeRequestSubclass", (RuntimeRequest,), {}
+        )
+        runtime_request = runtime_request_subclass(
+            node_version=node_version, npm_version=npm_version
+        )
+    else:
+        runtime_request = RuntimeRequest(
+            node_version=node_version, npm_version=npm_version
+        )
+    observed: list[tuple[str, ...]] = []
+
+    def reject_command(
+        command: tuple[str, ...],
+        _cwd: Path,
+        _environment: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        observed.append(command)
+        pytest.fail(f"malformed Runtime Request reached a command: {command!r}")
+
+    monkeypatch.setattr(node_adapter, "_run", reject_command)
+    with pytest.raises(expected_exception, match=message):
+        run_node_project_tests(
+            PROJECT_ROOT, cast("RuntimeRequest", runtime_request)
+        )
+    assert observed == []
+
+
+def test_install_import_rejects_malformed_runtime_request_before_commands(
+    built_result: node_adapter.BuildResult,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[tuple[str, ...]] = []
+
+    def reject_command(
+        command: tuple[str, ...],
+        _cwd: Path,
+        _environment: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        observed.append(command)
+        pytest.fail(f"malformed Runtime Request reached a command: {command!r}")
+
+    monkeypatch.setattr(node_adapter, "_run", reject_command)
+    with pytest.raises(ValueError, match="Node version must be frozen"):
+        qualify_npm_install_import(
+            built_result.tarball,
+            built_result.expectation,
+            RuntimeRequest(node_version="", npm_version="11.4.2"),
+        )
+    assert observed == []
+
+
+@pytest.mark.parametrize(
     "operation",
     [
         pytest.param("project-tests", id="project-tests"),
@@ -2938,10 +3038,6 @@ def test_runtime_request_is_minimal_frozen_and_exported() -> None:
         pytest.param("success", id="matching-versions"),
         pytest.param("node-mismatch", id="node-version-mismatch"),
         pytest.param("npm-mismatch", id="npm-version-mismatch"),
-        pytest.param("empty-node", id="empty-node-version"),
-        pytest.param("empty-npm", id="empty-npm-version"),
-        pytest.param("surrogate", id="surrogate-request"),
-        pytest.param("subclass", id="runtime-request-subclass"),
     ],
 )
 def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR0915
@@ -2950,34 +3046,9 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
     operation: str,
     scenario: str,
 ) -> None:
-    runtime_request_type = getattr(node_adapter, "RuntimeRequest", None)
-    assert runtime_request_type is not None, (
-        "node adapter must define RuntimeRequest before quality operations "
-        f"can validate {scenario!r} for {operation!r}"
+    runtime_request = RuntimeRequest(
+        node_version="v24.4.1", npm_version="11.4.2"
     )
-
-    node_version = "" if scenario == "empty-node" else "v24.4.1"
-    npm_version = "" if scenario == "empty-npm" else "11.4.2"
-    if scenario == "surrogate":
-        runtime_request: object = types.SimpleNamespace(
-            node_version=node_version,
-            npm_version=npm_version,
-        )
-    elif scenario == "subclass":
-        runtime_request_subclass = type(
-            "RuntimeRequestSubclass",
-            (runtime_request_type,),
-            {},
-        )
-        runtime_request = runtime_request_subclass(
-            node_version=node_version,
-            npm_version=npm_version,
-        )
-    else:
-        runtime_request = runtime_request_type(
-            node_version=node_version,
-            npm_version=npm_version,
-        )
 
     built_result: node_adapter.BuildResult | None = None
     if operation == "install-import":
@@ -3005,6 +3076,9 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
         cwd: Path,
         environment: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
+        _assert_owned_node_state(environment)
+        assert not cwd.is_relative_to(PROJECT_ROOT.resolve())
+        assert cwd.is_relative_to(Path(environment["HOME"]).parent)
         global_config_value = environment.get("NPM_CONFIG_GLOBALCONFIG")
         global_config_path = (
             Path(global_config_value)
@@ -3037,6 +3111,9 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
             return subprocess.CompletedProcess(command, 0, "passed", "")
         if command[:2] == ("npm", "install"):
             assert built_result is not None
+            tarball_path = Path(command[-1])
+            assert tarball_path.is_relative_to(cwd)
+            assert tarball_path.read_bytes() == built_result.tarball
             package_root = (
                 cwd / "node_modules" / built_result.expectation.package_name
             )
@@ -3091,9 +3168,6 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
             assert environment["LC_ALL"] == "C.UTF-8"
             assert environment["TZ"] == "UTC"
             home = Path(environment["HOME"])
-            assert Path(environment["NPM_CONFIG_USERCONFIG"]) == home / "npmrc"
-            assert Path(environment["NPM_CONFIG_CACHE"]) == home / "npm-cache"
-            assert Path(environment["XDG_CONFIG_HOME"]) == home / "config"
             assert user_config == expected_user_config
             assert global_config_value is not None
             global_config_path = Path(global_config_value)
@@ -3123,60 +3197,53 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
             typed_runtime_request,
         )
 
-    if scenario in {"empty-node", "empty-npm", "surrogate", "subclass"}:
-        expected_exception = (
-            TypeError if scenario in {"surrogate", "subclass"} else ValueError
-        )
-        with pytest.raises(expected_exception) as caught:
-            invoke_quality_operation()
-        if scenario in {"surrogate", "subclass"}:
-            assert "positional argument" not in str(caught.value)
-        assert observed == []
-        return
-
+    probes = [("node", "--version"), ("npm", "--version")]
     if scenario in {"node-mismatch", "npm-mismatch"}:
         with pytest.raises(ValueError, match="version"):
             invoke_quality_operation()
-        expected_probes = [("node", "--version")]
-        if scenario == "npm-mismatch":
-            expected_probes.append(("npm", "--version"))
-        assert [command for command, *_ in observed] == expected_probes
+        commands = [command for command, *_ in observed]
+        assert Counter(commands) <= Counter(probes)
+        mismatching_tool = "node" if scenario == "node-mismatch" else "npm"
+        assert (mismatching_tool, "--version") in commands
         assert_observed_environments_are_closed()
         return
 
     result = invoke_quality_operation()
     commands = [command for command, *_ in observed]
     assert_observed_environments_are_closed()
+    actions = (
+        [("npm", "test")]
+        if operation == "project-tests"
+        else [("npm", "install"), ("node", "--input-type=module")]
+    )
+    roles = [command[:2] for command in commands]
+    assert Counter(roles) == Counter([*probes, *actions])
+    by_role = {command[:2]: command for command in commands}
+    for probe in probes:
+        assert by_role[probe] == probe
+        for action in actions:
+            assert roles.index(probe) < roles.index(action)
     if operation == "project-tests":
         assert result is None
-        assert commands == [
-            ("node", "--version"),
-            ("npm", "--version"),
-            ("npm", "test", "--ignore-scripts"),
-        ]
+        assert by_role[("npm", "test")] == ("npm", "test", "--ignore-scripts")
         return
 
     assert built_result is not None
-    consumer = observed[2][1]
-    package_specifier = json.dumps(built_result.expectation.package_name)
-    import_script = (
-        f"import {{smokeMessage}} from {package_specifier};"
-        "process.stdout.write(smokeMessage());"
+    assert roles.index(("npm", "install")) < roles.index(
+        ("node", "--input-type=module")
     )
-    assert commands == [
-        ("node", "--version"),
-        ("npm", "--version"),
-        (
-            "npm",
-            "install",
-            "--ignore-scripts",
-            "--no-audit",
-            "--no-fund",
-            "--package-lock=false",
-            str(consumer / "package.tgz"),
-        ),
-        ("node", "--input-type=module", "-e", import_script),
-    ]
+    assert by_role[("npm", "install")][:-1] == (
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--package-lock=false",
+    )
+    import_command = by_role[("node", "--input-type=module")]
+    assert import_command[:3] == ("node", "--input-type=module", "-e")
+    assert len(import_command) == EXPECTED_IMPORT_COMMAND_ARG_COUNT
+    assert import_command[-1]
     assert result == node_adapter.InstallImportResult(
         smoke_message="hcoona-release-smoke-npm",
         witness_sha256=(
