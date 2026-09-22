@@ -240,8 +240,10 @@ for the approved static-reference source kinds:
 
 The mechanical result binds source kind, exact target when applicable, policy
 ID and digest, sorted exact ecosystem-authority implementation identities
-actually loaded, result, canonical error kind when result is error, and sorted
-findings.
+actually loaded for diagnostics, result, canonical error kind when result is
+error, and sorted findings. Dependency versions and lockfile integrity are
+owned by native package management and managed preparation; Foundation adds
+no dependency admission manifest, version allowlist or per-package comparison.
 Index and worktree bytes are never represented as `HEAD` or commit identity.
 
 The typed invocation boundary rejects an omitted or unknown source kind and
@@ -377,7 +379,7 @@ competing authority for cross-validation, reject an official normalized model
 because a local implementation disagrees, or add defensive checks for
 invariants guaranteed by the selected graph. `source-acquisition-failed`,
 `encoding-rejected`, `authority-rejected`, `authority-execution-failed`,
-`unsupported-projection`, and `authority-mismatch` remain distinct typed
+`unsupported-projection` remain distinct typed
 failures. Required Session-owned snapshot or scratch cleanup adds
 `cleanup-failed`.
 
@@ -1147,8 +1149,10 @@ from the selected revision and static catalog.
 Definitions and descriptors may select allowlisted IDs and parameters but
 cannot inject executable paths, packages, commands, or remote code.
 
-Static-reference authority implementations are exact-version dependencies or
-toolchain nodes selected by the static catalog, not target-selected plugins.
+Static-reference authority implementations are ordinary locked dependencies
+and managed toolchain nodes selected by the tooling revision, not plugins
+selected by the scanned data. Preparation owns their installation and helper
+build; the scanner owns its request, source and normalized-fact contracts.
 File-oriented libraries and CLIs see only a Session-owned isolated snapshot
 containing declared exact-source bytes and controlled environment. They receive
 no publication capability, registry credential, undeclared worktree input, or

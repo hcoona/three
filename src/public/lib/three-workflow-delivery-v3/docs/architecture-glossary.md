@@ -333,9 +333,10 @@ catalog.
 
 Supported surfaces are disjoint selectors paired with an exact Ecosystem
 Authority Graph in the first-slice LLD. The graph binds authoritative artifact
-schemas and standards, official library/CLI/runtime identities and versions,
-provenance, public APIs or commands, input mode, admitted format generation,
+schemas and standards, required libraries, public APIs or commands, input mode, admitted format generation,
 required normalized facts, applicable prohibited forms, and unsupported cases.
+Native lockfiles and managed preparation own tooling versions and integrity;
+observed implementation versions are diagnostic, not policy admission.
 Adapters emit package identity, reference kind, local path, and source-location
 facts. The policy rejects only the coordinate and local-dependency forms
 assigned to each selector row. The producer path is not globally prohibited
