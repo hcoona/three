@@ -44,40 +44,7 @@ from three_workflow_delivery_v3.repository.dotnet_provider import (
 )
 from three_workflow_delivery_v3.repository.node_provider import (
     CheckoutMaterialization,
-    ProviderBinding,
 )
-
-
-@pytest.fixture(scope="module")
-def native_helper(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> NativeNuGetHelper:
-    """Build trusted test tooling once, outside any publication operation."""
-    root = Path(__file__).resolve().parents[6]
-    project = (
-        root
-        / "src/private/app/workflow-delivery-v3-dotnet-provider"
-        / "WorkflowDeliveryV3DotnetProvider.csproj"
-    )
-    evidence = tmp_path_factory.mktemp("dotnet-helper")
-    subprocess.run(
-        (
-            "dotnet",
-            "build",
-            str(project),
-            "--configuration",
-            "Release",
-            f"-bl:{evidence / 'helper.binlog'}",
-        ),
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return NativeNuGetHelper(
-        project.parent
-        / "bin/Release/net10.0/WorkflowDeliveryV3DotnetProvider.dll"
-    )
 
 
 @pytest.mark.parametrize(
@@ -153,102 +120,10 @@ def test_official_service_resources_require_exact_supported_resources(
         native_helper.service_resources(payload([*resources, conflict]))
 
 
-@pytest.fixture(scope="module")
-def frozen_package(
-    native_helper: NativeNuGetHelper,
-    tmp_path_factory: pytest.TempPathFactory,
-) -> tuple[DotnetBuildResult, Path]:
-    """Evaluate a disposable exact target with the proposed product."""
-    repo = Path(__file__).resolve().parents[6]
-    root = tmp_path_factory.mktemp("dotnet-native")
-    source = root / "source"
-    subprocess.run(
-        ("git", "clone", "--quiet", "--no-local", str(repo), str(source)),
-        env={**os.environ, "GIT_LFS_SKIP_SMUDGE": "1"},
-        check=True,
-    )
-    for path in (repo / DOTNET_PROJECT_ROOT).iterdir():
-        if path.is_file():
-            destination = source / DOTNET_PROJECT_ROOT / path.name
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(path, destination)
-    subprocess.run(("git", "add", DOTNET_PROJECT_ROOT), cwd=source, check=True)
-    subprocess.run(
-        (
-            "git",
-            "-c",
-            "user.name=Native Test",
-            "-c",
-            "user.email=native-test@example.invalid",
-            "commit",
-            "--quiet",
-            "--no-verify",
-            "--allow-empty",
-            "-m",
-            "Exercise the proposed native smoke target",
-        ),
-        cwd=source,
-        check=True,
-    )
-    subprocess.run(
-        ("git", "checkout", "--quiet", "--detach"),
-        cwd=source,
-        env={**os.environ, "GIT_LFS_SKIP_SMUDGE": "1"},
-        check=True,
-    )
-    target = subprocess.check_output(
-        ("git", "rev-parse", "HEAD"), cwd=source, text=True
-    ).strip()
-    binding = ProviderBinding(
-        "native-test",
-        "release-simulation",
-        1,
-        1,
-        target,
-        "dotnet-provider",
-        target,
-        catalog_digest(),
-        "sha256:" + "c" * 64,
-    )
-    provider = provide_dotnet_repository_facts(
-        source,
-        binding,
-        CheckoutMaterialization(0, credentials_persisted=False),
-        helper=native_helper,
-        evidence_directory=root / "provider",
-        dependency_directory=root / "provider-packages",
-    )
-    assert provider.checkout.head == target
-    assert provider.checkout.ancestry_complete is True
-    assert provider.checkout.tags_complete is True
-    assert provider.checkout.credentials_persisted is False
-    facts = provider.nbgv
-    inputs = provider.source_input_manifest
-    witness = DotnetPackageTargetWitness(
-        facts.git_commit_id,
-        DOTNET_RELEASE_UNIT,
-        facts,
-        BUILD_DEFINITION,
-        "sha256:" + "a" * 64,
-        "sha256:" + "b" * 64,
-        "release-simulation",
-    )
-    result = build_dotnet_package(
-        DotnetBuildRequest(
-            source,
-            tuple(path for path, _ in inputs),
-            inputs,
-            witness,
-            native_helper,
-            root / "build",
-        )
-    )
-    return result, root
-
-
 def test_frozen_native_package_and_clean_consumer(
     native_helper: NativeNuGetHelper,
     frozen_package: tuple[DotnetBuildResult, Path],
+    tmp_path: Path,
 ) -> None:
     """The package consumes frozen versions without NBGV recomputation."""
     result, root = frozen_package
@@ -275,7 +150,7 @@ def test_frozen_native_package_and_clean_consumer(
         result.package,
         result.expectation,
         native_helper,
-        evidence_directory=root / "consumer",
+        evidence_directory=tmp_path / "consumer",
     )
     assert consumer.project_id == DOTNET_RELEASE_UNIT
     assert consumer.package_sha256 == result.manifest.sha256
@@ -372,8 +247,12 @@ def test_frozen_build_rejects_missing_native_inputs(
     tmp_path: Path,
 ) -> None:
     """Frozen mode rejects missing native version inputs."""
-    _, root = frozen_package
-    source = root / "source"
+    package, root = frozen_package
+    source = tmp_path / "source"
+    for path, _ in package.source_input_manifest:
+        destination = source / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(root / "source" / path, destination)
     project = source / DOTNET_PROJECT_ROOT / f"{DOTNET_RELEASE_UNIT}.csproj"
     log = tmp_path / "missing-frozen-inputs.binlog"
     completed = subprocess.run(
@@ -645,6 +524,7 @@ def test_autocrlf_preserves_provider_compiler_and_build_source_bytes(
 def fixture_request(
     frozen_package: tuple[DotnetBuildResult, Path],
     native_helper: NativeNuGetHelper,
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> NuGetFixtureRequest:
     """Reuse admitted native inputs and existing local dependency archives."""
     package, root = frozen_package
@@ -665,7 +545,7 @@ def fixture_request(
             package.source_input_manifest,
             witness,
             native_helper,
-            root / "paired-fixture",
+            tmp_path_factory.mktemp("paired-fixture") / "evidence",
         ),
         archives,
         "local-sdk-scenario",
