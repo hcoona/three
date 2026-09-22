@@ -181,7 +181,7 @@ def _run_validation(
     tmp_path: Path,
     env: dict[str, str],
 ) -> subprocess.CompletedProcess[str]:
-    job = workflow["jobs"]["validation"]
+    job = workflow["jobs"]["conformance"]
     mise = _action(job, "jdx/mise-action")
     assert mise["with"]["experimental"] is True
     assert mise["with"]["install"] is False
@@ -239,13 +239,22 @@ def test_required_general_ci_checks_remain_eligible(
             _required_step(job)
         else:
             assert job["if"] == "always()"
-            assert job["needs"] == "scope"
+            assert job["needs"] == (
+                ["conformance", "scholarly-tests"]
+                if key == "validation"
+                else "scope"
+            )
         permissions = job.get("permissions", workflow["permissions"])
         assert isinstance(permissions, dict)
         assert permissions.get("contents") == "read"
         assert "write" not in permissions.values()
         for step in job["steps"]:
-            if "Retain" not in step["name"] and step.get("if") != "cancelled()":
+            if key == "validation":
+                assert step["if"] in {"always()", "cancelled()"}
+                assert not step.get("continue-on-error", False)
+            elif (
+                "Retain" not in step["name"] and step.get("if") != "cancelled()"
+            ):
                 _required_step(step)
         needs = job.get("needs", [])
         pending.extend([needs] if isinstance(needs, str) else needs)
@@ -662,7 +671,7 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
 ):
     """Distinguish valid non-applicability from lost required work."""
     for name, job in workflow["jobs"].items():
-        if name == "scope":
+        if name in {"scope", "validation"}:
             continue
         assert job["needs"] == "scope"
         assert job["if"] == "always()"
@@ -689,6 +698,41 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
         for step in job["steps"][1:-1]:
             assert "steps.scope.outputs.run == 'true'" in step["if"]
             assert not step.get("continue-on-error", False)
+
+
+def test_required_validate_rejects_missing_or_failed_consumers(
+    workflow, tmp_path
+):
+    """Keep source and scholarly failures inside the required check."""
+    job = workflow["jobs"]["validation"]
+    assert job["name"] == "Validate"
+    assert job["needs"] == ["conformance", "scholarly-tests"]
+    assert job["if"] == "always()"
+    step = job["steps"][0]
+    assert step["if"] == "always()"
+    assert not step.get("continue-on-error", False)
+    successful = {
+        "needs.conformance.result": "success",
+        "needs.scholarly-tests.result": "success",
+    }
+    scenarios = [successful]
+    for dependency in ("conformance", "scholarly-tests"):
+        for result in ("failure", "cancelled", "skipped", ""):
+            scenarios.append(
+                successful | {f"needs.{dependency}.result": result}
+            )
+    for bindings in scenarios:
+        result = run_step(
+            step,
+            cwd=tmp_path,
+            env={},
+            bindings=bindings,
+            workflow=workflow,
+            job=job,
+        )
+        assert (result.returncode == 0) is (bindings == successful)
+        if bindings != successful:
+            assert "Required validation did not complete" in result.stderr
 
 
 def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):

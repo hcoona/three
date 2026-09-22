@@ -59,6 +59,11 @@ The selector runs without repository package restore or full validation.
 Each existing required GitHub context remains present and fails if selection
 fails, is canceled, or omits required output. Successful explicit
 non-applicability may omit work; selected work must complete successfully.
+The stable required `Validate` context consumes both source-conformance and
+scholarly-test job results. Its short result guard rejects failed, skipped,
+missing or canceled results, including workflow cancellation. Both workers
+retain explicit successful non-applicability and run independently; this
+summary does not move project tests back into HK or precede language jobs.
 Required work does not use `continue-on-error`. Jobs wait only for inputs
 they consume, so source checks, selected language tests and independently
 built platform artifacts can run concurrently. Existing supported runner and
