@@ -1098,8 +1098,6 @@ def test_authoring_lookup_rejects_unselected_names(tmp_path: Path) -> None:
         policy.channel("preview")
 
 
-type QualityMutationCase = tuple[str, tuple[str, ...]]
-
 _APPROVED_RELEASE_QUALITY = (
     "node/project-test-v1",
     "node/npm-artifact-contents-v1",
@@ -1126,184 +1124,6 @@ _APPROVED_RELEASE_PROJECTIONS = {
 @pytest.fixture(params=("buddy", "official"))
 def accepted_release_channel_cases(request: pytest.FixtureRequest) -> str:
     """Exercise each channel's rejection boundary."""
-    return request.param
-
-
-@pytest.fixture(
-    params=(
-        pytest.param(
-            (
-                "omit-node-project-test-v1",
-                (
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="omit-node-project-test-v1",
-        ),
-        pytest.param(
-            (
-                "omit-node-npm-artifact-contents-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="omit-node-npm-artifact-contents-v1",
-        ),
-        pytest.param(
-            (
-                "omit-node-npm-install-import-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                ),
-            ),
-            id="omit-node-npm-install-import-v1",
-        ),
-        pytest.param(
-            (
-                "duplicate-node-project-test-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                    "node/project-test-v1",
-                ),
-            ),
-            id="duplicate-node-project-test-v1",
-        ),
-        pytest.param(
-            (
-                "duplicate-node-npm-artifact-contents-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                    "node/npm-artifact-contents-v1",
-                ),
-            ),
-            id="duplicate-node-npm-artifact-contents-v1",
-        ),
-        pytest.param(
-            (
-                "duplicate-node-npm-install-import-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="duplicate-node-npm-install-import-v1",
-        ),
-        pytest.param(("empty", ()), id="empty"),
-        pytest.param(
-            (
-                "extra-node-project-build-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                    "node/project-build-v1",
-                ),
-            ),
-            id="extra-node-project-build-v1",
-        ),
-        pytest.param(
-            (
-                "substitute-node-project-build-v1",
-                (
-                    "node/project-build-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="substitute-node-project-build-v1",
-        ),
-        pytest.param(
-            (
-                "substitute-repository-source-tree-conformance-v1",
-                (
-                    "repository/source-tree-conformance-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="substitute-repository-source-tree-conformance-v1",
-        ),
-        pytest.param(
-            (
-                "substitute-node-npm-artifact-v1",
-                (
-                    "node/npm-artifact-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="substitute-node-npm-artifact-v1",
-        ),
-        pytest.param(
-            (
-                "order-artifact-contents-project-test-install-import",
-                (
-                    "node/npm-artifact-contents-v1",
-                    "node/project-test-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="order-artifact-contents-project-test-install-import",
-        ),
-        pytest.param(
-            (
-                "order-project-test-install-import-artifact-contents",
-                (
-                    "node/project-test-v1",
-                    "node/npm-install-import-v1",
-                    "node/npm-artifact-contents-v1",
-                ),
-            ),
-            id="order-project-test-install-import-artifact-contents",
-        ),
-        pytest.param(
-            (
-                "order-artifact-contents-install-import-project-test",
-                (
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                    "node/project-test-v1",
-                ),
-            ),
-            id="order-artifact-contents-install-import-project-test",
-        ),
-        pytest.param(
-            (
-                "order-install-import-project-test-artifact-contents",
-                (
-                    "node/npm-install-import-v1",
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                ),
-            ),
-            id="order-install-import-project-test-artifact-contents",
-        ),
-        pytest.param(
-            (
-                "order-install-import-artifact-contents-project-test",
-                (
-                    "node/npm-install-import-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/project-test-v1",
-                ),
-            ),
-            id="order-install-import-artifact-contents-project-test",
-        ),
-    )
-)
-def quality_mutation_cases(
-    request: pytest.FixtureRequest,
-) -> QualityMutationCase:
-    """Provide the exact quality-list rejection matrix."""
     return request.param
 
 
@@ -1402,14 +1222,65 @@ def _mutate_projection_case(
         raise AssertionError(message)
 
 
+@pytest.mark.parametrize(
+    ("channel", "mutated_quality"),
+    [
+        pytest.param(
+            "buddy",
+            ("node/npm-artifact-contents-v1", "node/npm-install-import-v1"),
+            id="buddy-omit-node-project-test-v1",
+        ),
+        pytest.param(
+            "buddy",
+            (
+                "node/project-test-v1",
+                "node/npm-artifact-contents-v1",
+                "node/npm-install-import-v1",
+                "node/project-test-v1",
+            ),
+            id="buddy-duplicate-node-project-test-v1",
+        ),
+        pytest.param(
+            "buddy",
+            (
+                "node/project-test-v1",
+                "node/npm-artifact-contents-v1",
+                "node/npm-install-import-v1",
+                "node/project-build-v1",
+            ),
+            id="buddy-extra-node-project-build-v1",
+        ),
+        pytest.param(
+            "buddy",
+            (
+                "node/project-build-v1",
+                "node/npm-artifact-contents-v1",
+                "node/npm-install-import-v1",
+            ),
+            id="buddy-substitute-node-project-build-v1",
+        ),
+        pytest.param(
+            "buddy",
+            (
+                "node/npm-artifact-contents-v1",
+                "node/project-test-v1",
+                "node/npm-install-import-v1",
+            ),
+            id="buddy-order-artifact-contents-project-test-install-import",
+        ),
+        pytest.param(
+            "official",
+            ("node/npm-artifact-contents-v1", "node/npm-install-import-v1"),
+            id="official-omission",
+        ),
+    ],
+)
 def test_release_policy_requires_exact_ordered_channel_quality(
     tmp_path: Path,
-    accepted_release_channel_cases: str,
-    quality_mutation_cases: QualityMutationCase,
+    channel: str,
+    mutated_quality: tuple[str, ...],
 ) -> None:
     """Require the exact closed, ordered quality tuple for both channels."""
-    channel = accepted_release_channel_cases
-    mutation, mutated_quality = quality_mutation_cases
     mutated_document = _yaml_document(POLICY_PATH.read_text(encoding="utf-8"))
     mutated_quality_document: list[JsonValue] = list(mutated_quality)
     _channel_policy(mutated_document, channel)["quality"] = (
@@ -1419,7 +1290,7 @@ def test_release_policy_requires_exact_ordered_channel_quality(
     mutated_path = write_release_policy_case(
         tmp_path,
         mutated_document,
-        name=f"{channel}-{mutation}",
+        name=f"{channel}-quality",
     )
 
     with pytest.raises(
