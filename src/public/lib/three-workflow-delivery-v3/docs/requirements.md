@@ -141,14 +141,18 @@ isolation are separate authority boundaries and remain unchanged.
   active Project Node, Release Unit, and repository obligation.
 - **WD-CI-010:** Whenever root HK SourceTreeConformance runs, its lightweight
   static-reference policy must run in the caller-selected `index` or `worktree`
-  feedback mode. Separately, the expensive v3 control package pytest suite is
-  path-selected for changes to the v3 control package/catalogs/tests,
-  first-slice descriptors, exact first-slice Release policy, any v3 workflow
-  consumer, direct Python workspace/lock input, or HK configuration/helpers.
-  Manual `slice-validation` runs that suite unconditionally. Unrelated
-  product-source changes alone must not select the pytest step. Both remain
-  internal root-HK steps, not separate CI obligations, Evidence records, or
-  jobs.
+  feedback mode. Under the accepted
+  [execution migration](./migration-strategy.md#ci-execution-ownership-cutover),
+  HK owns source/configuration conformance; project unit, scenario and
+  integration tests belong to CI. The v3 control-package suite has one owner
+  in ordinary PR/push CI and is selected by its changed implementation, tests,
+  consumed definitions and actual dependencies. Unrelated product changes and
+  unconsumed documentation must not select it. Explicit local and complete
+  control-package validation remain available. A failed or missing selection,
+  or a missing required test result, cannot become successful non-applicability.
+  The migration contract preserves the existing HK test owner until cutover.
+  Control-package self-tests do not constitute Project Node qualification or
+  Release Evidence; the static-reference policy remains internal to root HK.
 
 ### Release Delivery
 

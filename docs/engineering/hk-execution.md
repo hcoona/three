@@ -27,6 +27,57 @@ source-tree semantics when diagnosing hooks; do not infer the checked tree
 from the editor buffer. Repository-wide checks and any manual file selection
 must report which files and execution mode they actually covered.
 
+## Scheduled CI Execution Cutover
+
+The owner-approved [Issue #817](https://github.com/hcoona/three/issues/817)
+separates source checks from project tests. The implementing PR activates the
+following execution contract, preserving existing required checks until the
+replacement is accepted. The v3
+[migration contract](../../src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#ci-execution-ownership-cutover)
+owns its prerequisite order, cutover and native-runtime boundary. Independent
+implementation review evaluates activation; the authorizing Wave's closure
+is the fallback review.
+
+HK checks source/configuration conformance, including file checks, lock and
+generated-file consistency, deployed-source parity and the existing bounded
+static-reference policy. Project unit, scenario and integration tests run in
+CI or through explicit local test commands. Moving a suite to HK's `large`
+profile does not establish this separation.
+
+General CI selects its test/build work from the actual comparison range and
+the checked-out candidate. Selection uses workspace/build manifests and known
+consumed helpers, configuration and test fixtures. It retains deleted paths
+and both sides of renames. A missing comparison cannot become an empty change.
+An explicitly requested full mode selects all applicable existing work.
+Ordinary unconsumed documentation selects source checks; package READMEs,
+licenses and other consumed metadata are not globally excluded by extension.
+
+Python selects the affected existing test roots and their workspace/build
+dependency consumers. Node and .NET may retain their existing workspace build
+units where dependency selection is conservative; that is workspace-level,
+not exact per-project execution. AzureAuth platform artifacts and Ruby or
+scholarly-publication suites have their own affected inputs. A changed .NET
+product does not by itself require AzureAuth artifacts or v3 self-tests.
+
+The selector runs without repository package restore or full validation.
+Each existing required GitHub context remains present and fails if selection
+fails, is canceled, or omits required output. Successful explicit
+non-applicability may omit work; selected work must complete successfully.
+Required work does not use `continue-on-error`. Jobs wait only for inputs
+they consume, so source checks, selected language tests and independently
+built platform artifacts can run concurrently. Existing supported runner and
+Node matrices remain applicable to selected work.
+
+Normal validation retains the candidate, selection reasons, actual interpreter,
+test result and skip reasons, command/commit elapsed time, CI job/step timing,
+and owned temporary-file/inode observations in the Issue or implementation PR.
+Use ordinary runs to collect JUnit durations; do not repeat complete suites
+solely for timing. Compare equivalent work, identify the critical path, and
+separate test execution from setup, cache handling and dependency/queue waits.
+Parallel job durations are not added as wall time. Integration optimization
+preserves required real-tool proof, immutable preparation reuse, isolated
+writable fixtures, bounded concurrency and owned temporary-file cleanup.
+
 ## Quoted Paths and Watchdogs
 
 [hk_exec.py](../../eng/scripts/hk_exec.py) normalizes quoted file arguments
