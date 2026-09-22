@@ -33,6 +33,8 @@ from three_workflow_delivery_v3.repository.node_provider import (
     ProjectNode,
 )
 
+from .test_dotnet_provider import _admission_scenario
+
 SOURCE_ROOT = Path(__file__).resolve().parents[6]
 PROJECT_ROOT = dotnet_provider.DOTNET_PROJECT_ROOT
 ENTRY_POINT = dotnet_provider.DOTNET_ENTRY_POINT
@@ -64,6 +66,13 @@ def _blob_digest(repo: Path, target: str, path: str) -> str:
 
 def _reject_native(*_args: object, **_kwargs: object) -> None:
     pytest.fail("the compiler must not execute native target code")
+
+
+@pytest.fixture
+def admission_scenario(monkeypatch: pytest.MonkeyPatch):
+    """Supply modeled admission facts while forbidding native execution."""
+    monkeypatch.setattr(dotnet_provider, "run_native", _reject_native)
+    return _admission_scenario()
 
 
 @pytest.fixture(scope="module")
@@ -281,9 +290,9 @@ def test_dotnet_compiler_closes_native_build_and_policy(
     )
 
 
-def test_dotnet_manifest_closes_native_request(native_scenario) -> None:
+def test_dotnet_manifest_closes_native_request(admission_scenario) -> None:
     """Bind the native execution profile and separate it from a Node request."""
-    _, context, manifest, _ = native_scenario
+    context, manifest, _ = admission_scenario
     request = manifest.requests[0]
     context_document = manifest.to_document()["context"]
     expected: dict[str, JsonValue] = {
@@ -330,10 +339,10 @@ def test_dotnet_manifest_closes_native_request(native_scenario) -> None:
     ],
 )
 def test_dotnet_manifest_rejects_substitution(
-    native_scenario, field, value
+    admission_scenario, field, value
 ) -> None:
     """Reject a changed request even with a valid bound Bundle."""
-    _, context, manifest, result = native_scenario
+    context, manifest, result = admission_scenario
     bundle, admission = _bundle(manifest, result)
     changed = replace(
         manifest, requests=(replace(manifest.requests[0], **{field: value}),)
@@ -358,10 +367,10 @@ def test_dotnet_manifest_rejects_substitution(
     ],
 )
 def test_dotnet_bundle_rejects_binding_and_integrity_substitution(
-    native_scenario, field, value
+    admission_scenario, field, value
 ) -> None:
     """Reject substitutions despite a recomputed outer digest."""
-    _, context, manifest, result = native_scenario
+    context, manifest, result = admission_scenario
     bundle, admission = _bundle(manifest, result)
     changed = replace(bundle, **{field: value})
     admission = replace(admission, bundle_digest=changed.bundle_digest)
@@ -385,10 +394,10 @@ def test_dotnet_bundle_rejects_binding_and_integrity_substitution(
     ],
 )
 def test_dotnet_bundle_rejects_other_authority(
-    native_scenario, field, value
+    admission_scenario, field, value
 ) -> None:
     """Reject internally consistent facts belonging to another authority."""
-    _, context, manifest, result = native_scenario
+    context, manifest, result = admission_scenario
     changed = replace(result, binding=replace(result.binding, **{field: value}))
     bundle, admission = _bundle(manifest, changed)
     with pytest.raises(ValueError, match=r"authority binding|catalog digest"):
@@ -397,17 +406,16 @@ def test_dotnet_bundle_rejects_other_authority(
         )
 
 
-@pytest.mark.parametrize(
-    ("purpose", "attempt"), [("slice-validation", 1), ("ci-pr-slice-shadow", 2)]
-)
 def test_dotnet_bundle_rejects_cross_purpose(
-    native_scenario, purpose, attempt
+    admission_scenario,
 ) -> None:
     """Reject qualification facts offered as current live Release evidence."""
-    _, context, manifest, result = native_scenario
+    context, manifest, result = admission_scenario
     changed = replace(
         result,
-        binding=replace(result.binding, purpose=purpose, run_attempt=attempt),
+        binding=replace(
+            result.binding, purpose="ci-pr-slice-shadow", run_attempt=2
+        ),
     )
     bundle, admission = _bundle(manifest, changed)
     with pytest.raises(ValueError, match="authority binding"):
@@ -466,9 +474,9 @@ def test_dotnet_compiler_rejects_bundle_closure(native_scenario, count) -> None:
         )
 
 
-def test_node_admission_rejects_dotnet_bundle(native_scenario) -> None:
+def test_node_admission_rejects_dotnet_bundle(admission_scenario) -> None:
     """Keep Node and Dotnet transport admission mutually exclusive."""
-    _, context, manifest, result = native_scenario
+    context, manifest, result = admission_scenario
     bundle, admission = _bundle(manifest, result)
     node_manifest = compiler.first_slice_provider_manifest(
         context, provider_producer="discover-dotnet"
@@ -695,10 +703,10 @@ def test_dotnet_snapshot_revalidates_qualified_closure(
 
 
 def test_dotnet_bundle_rejects_previous_simulation_attempt(
-    native_scenario,
+    admission_scenario,
 ) -> None:
     """Do not adopt a previous simulation's internally consistent Bundle."""
-    _, context, _, result = native_scenario
+    context, _, result = admission_scenario
     previous = replace(
         context,
         purpose="release-simulation",

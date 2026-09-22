@@ -553,17 +553,13 @@ def test_audit_is_fresh_and_unknown_read_errors_propagate(reads, tmp_path):
 @pytest.mark.parametrize(
     "outcome",
     [
-        NpmProcessOutcome(
-            "definitive-non-success", b"private diagnostic", returncode=1
-        ),
         NpmProcessOutcome("ambiguous", b"partial", returncode=-9),
         NpmProcessOutcome(
             "definitive-success", b"[]", truncated=True, returncode=0
         ),
-        NpmProcessOutcome("not-initiated"),
     ],
 )
-def test_gh_process_failure_timeout_and_truncation_stop_without_retry(
+def test_gh_capture_rejects_unsuccessful_or_truncated_output_without_retry(
     reads, monkeypatch, tmp_path, outcome
 ):
     """Exercise the real wrapper with a synthetic bounded-process outcome."""

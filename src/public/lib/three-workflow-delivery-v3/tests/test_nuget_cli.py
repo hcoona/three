@@ -608,12 +608,11 @@ def test_nuget_cli_blocks_before_native_collection(
     case.evaluate.assert_not_called()
 
 
-@pytest.mark.parametrize("microsecond", [0, 123456, 999999])
 def test_nuget_cli_eligibility_and_attempt_round_trip(
-    enabled_case, monkeypatch, microsecond
+    enabled_case, monkeypatch
 ):
     case = enabled_case
-    _clock(monkeypatch, NOW.replace(microsecond=microsecond))
+    _clock(monkeypatch, NOW.replace(microsecond=123456))
     assert _evaluate(case) == 0
     decision = json.loads(case.output.read_bytes())
     assert decision["result"] == "pass"

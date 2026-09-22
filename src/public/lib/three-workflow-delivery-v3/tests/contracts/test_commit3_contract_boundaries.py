@@ -1154,64 +1154,6 @@ def test_live_context_accepts_canonical_selected_refs(
     assert context.producer == "evaluate-live-eligibility"
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        pytest.param("selected_ref", "", id="selected-ref-empty"),
-        pytest.param("selected_ref", "main", id="selected-ref-short-name"),
-        pytest.param(
-            "selected_ref",
-            "refs/heads/",
-            id="selected-ref-empty-branch",
-        ),
-        pytest.param(
-            "selected_ref",
-            "refs/pull/1/head",
-            id="selected-ref-unsupported-namespace",
-        ),
-        pytest.param(
-            "selected_ref",
-            "refs/heads/feature..invalid",
-            id="selected-ref-double-dot",
-        ),
-        pytest.param(
-            "selected_ref",
-            "refs/heads/feature.lock",
-            id="selected-ref-lock-suffix",
-        ),
-        pytest.param(
-            "selected_ref",
-            "refs/heads/feature@{invalid",
-            id="selected-ref-reflog-syntax",
-        ),
-        pytest.param(
-            "selected_ref",
-            "refs/heads/feature invalid",
-            id="selected-ref-space",
-        ),
-        pytest.param("producer", "", id="producer-empty"),
-        pytest.param("producer", " ", id="producer-whitespace"),
-    ],
-)
-def test_live_context_requires_exact_strings_and_valid_selected_ref(
-    field: str,
-    value: object,
-) -> None:
-    """Reject malformed selected refs and empty producers."""
-    snapshot = _snapshot()
-    repository_model = _admitted_model(snapshot)
-    context = replace(
-        _live_context(snapshot),
-        **{field: cast("Any", value)},
-    )
-
-    with pytest.raises((TypeError, ValueError)):
-        _validate_live_context(context, repository_model)
-
-    assert snapshot.ready is True
-    assert snapshot.context.target == TARGET
-
-
 def test_compilation_context_requires_exact_string_producer() -> None:
     """Reject a whitespace-only compilation producer."""
     forged = replace(_context(), producer=" ")

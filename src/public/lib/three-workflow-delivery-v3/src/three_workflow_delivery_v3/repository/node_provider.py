@@ -525,13 +525,15 @@ def validate_nbgv_facts(facts: NbgvFacts, *, target: str) -> None:
 def validate_provider_toolchain(
     toolchain: tuple[tuple[str, str], ...],
 ) -> None:
-    """Require the exact closed Node-then-PNPM toolchain contract."""
+    """Require exactly one named Node and PNPM toolchain entry."""
     if type(toolchain) is not tuple or len(toolchain) != len(
         _PROVIDER_TOOLCHAIN_NAMES
     ):
-        message = "Provider toolchain must contain exactly node then pnpm"
+        message = (
+            "Provider toolchain must contain exactly one node and one pnpm"
+        )
         raise ValueError(message)
-    for index, entry in enumerate(toolchain):
+    for entry in toolchain:
         if (
             type(entry) is not tuple
             or len(entry) != _TOOLCHAIN_ENTRY_FIELD_COUNT
@@ -540,12 +542,14 @@ def validate_provider_toolchain(
             message = "Provider toolchain entries must be string pairs"
             raise TypeError(message)
         name, version = entry
-        if name != _PROVIDER_TOOLCHAIN_NAMES[index]:
-            message = "Provider toolchain must contain exactly node then pnpm"
-            raise ValueError(message)
         if not version or version != version.strip():
             message = f"Provider toolchain {name} version must be nonempty"
             raise ValueError(message)
+    if {name for name, _ in toolchain} != set(_PROVIDER_TOOLCHAIN_NAMES):
+        message = (
+            "Provider toolchain must contain exactly one node and one pnpm"
+        )
+        raise ValueError(message)
 
 
 def validate_provider_binding(binding: ProviderBinding) -> None:

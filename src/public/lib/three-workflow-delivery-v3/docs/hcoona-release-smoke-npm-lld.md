@@ -1564,11 +1564,11 @@ Redact `GITHUB_TOKEN`, npm auth lines, authorization headers, credential-bearing
 - Prove every npm-package-arg call receives an explicit source-owned base and a
   controlled HOME; changing ambient cwd or home cannot change emitted facts,
   and tilde or repository-escaping paths are `unsupported-projection`.
-- Prove NuGet model versions `1`, `2`, and `3` are admitted, including
-  representative source values that the pinned NuGet model coerces to those
-  versions. Missing or unconvertible versions and parser failures that produce
-  `int.MinValue`, plus model versions below `1` or above `3`, are rejected
-  before facts are emitted.
+- Prove NuGet model versions `1`, `2`, and `3` are admitted. Use one
+  representative source value coerced by the pinned reader to establish that
+  version admission follows the official model rather than the source token
+  type. Prove missing and unconvertible versions, and model versions immediately
+  below `1` or above `3`, are rejected before facts are emitted.
 - Prove the exact NuGet stream/logger/logical-path overload, sole-model version
   admission, target/dependency/edge ordering, selected model fields,
   `PackagesConfigReader(Stream, false)`, duplicate-ID rejection, and

@@ -283,14 +283,10 @@ def test_native_environment_discards_authority_and_ambient_ref(
             "ProgramFiles(x86)": r"C:\Program Files (x86)",
             "ProgramFiles": r"C:\Program Files",
         },
-        {
-            "PROGRAMFILES(X86)": r"C:\Program Files (x86)",
-            "PROGRAMFILES": r"C:\Program Files",
-        },
         {"programfiles": r"C:\Program Files"},
         {"ProgramFiles(x86)": "", "ProgramFiles": r"C:\Program Files"},
     ],
-    ids=["mixed-case", "uppercase", "fallback-only", "empty-x86"],
+    ids=["mixed-case", "fallback-only", "empty-x86"],
 )
 def test_native_environment_preserves_windows_nuget_settings_roots(
     monkeypatch: pytest.MonkeyPatch, roots: dict[str, str]

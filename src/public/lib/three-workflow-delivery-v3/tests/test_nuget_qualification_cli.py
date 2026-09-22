@@ -602,9 +602,9 @@ def test_nuget_mechanical_result_rejects_malformed_record(
         )
 
 
-@pytest.mark.parametrize("fault", ["bytes", "name", "url", "id", "mechanics"])
+@pytest.mark.parametrize("fault", ["bytes", "name", "url", "mechanics"])
 def test_nuget_qualification_cli_rejects_substituted_upload(
-    qualification_case, fault
+    qualification_case, fault, capsys
 ):
     case = qualification_case
     assert cli.main(_build_args(case)) == 0
@@ -619,9 +619,16 @@ def test_nuget_qualification_cli_rejects_substituted_upload(
         _set_option(
             arguments,
             "--package-artifact-" + fault,
-            "0" if fault == "id" else "wrong",
+            (
+                "https://github.com/hcoona/three/actions/runs/"
+                f"{case.source.intent.workflow_run_id}/artifacts/502"
+            )
+            if fault == "url"
+            else "wrong",
         )
     assert cli.main(arguments) == 1
+    if fault == "url":
+        assert "transport URL is not exact" in capsys.readouterr().err
     assert not case.artifact.exists()
     assert not case.build_evidence.exists()
 

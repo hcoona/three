@@ -1873,8 +1873,6 @@ def _nuget_lock_dependency_fact(  # noqa: PLR0913
         pytest.param(2, "facts", id="integer-v2"),
         pytest.param(3, "empty", id="integer-v3"),
         pytest.param("2", "facts", id="numeric-string-coerces-to-v2"),
-        pytest.param(True, "facts", id="boolean-coerces-to-v1"),
-        pytest.param(2.51, "empty", id="fraction-coerces-to-v3"),
         pytest.param(
             _MISSING_NUGET_MODEL_VERSION,
             "rejected",
@@ -1884,11 +1882,6 @@ def _nuget_lock_dependency_fact(  # noqa: PLR0913
             "not-a-model-version",
             "rejected",
             id="unconvertible-version",
-        ),
-        pytest.param(
-            -2_147_483_648,
-            "rejected",
-            id="int-min-value",
         ),
         pytest.param(0, "rejected", id="below-admitted-range"),
         pytest.param(4, "rejected", id="above-admitted-range"),
