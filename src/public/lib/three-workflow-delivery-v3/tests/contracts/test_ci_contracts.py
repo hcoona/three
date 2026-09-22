@@ -883,6 +883,7 @@ def test_manual_and_blocked_plan_shapes_are_exact() -> None:
         "src/public/lib/three-workflow-delivery-v3/src/control.py",
         ".github/workflows/workflow-delivery-v3-ci.yml",
         "mise.toml",
+        ".python-version",
     ],
 )
 def test_broad_change_rules_exclude_ordinary_pr_slo(path: str) -> None:

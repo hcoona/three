@@ -394,12 +394,12 @@ from three_workflow_delivery_v3 import cli
 command = [Path(sys.argv[0]).name, *sys.argv[1:]]
 with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
     stream.write(json.dumps({"argv": command, "cwd": os.getcwd()}) + "\\n")
-if command[:7] != [
-    "uv", "run", "--python", "3.13", "--package", "three-workflow-delivery-v3",
+if command[:5] != [
+    "uv", "run", "--package", "three-workflow-delivery-v3",
     "three-workflow-delivery-v3"
 ]:
     raise SystemExit(f"Unexpected launcher: {command!r}")
-arguments = cli._parser().parse_args(command[7:])
+arguments = cli._parser().parse_args(command[5:])
 if (arguments.context, arguments.release_command) != (
     "release", "normalize-live-request"
 ):
@@ -443,17 +443,15 @@ with open(arguments.github_output, "a", encoding="utf-8") as stream:
     assert len(calls) == 1
     call = calls[0]
     assert call["cwd"] == str(tmp_path)
-    assert call["argv"][:7] == [
+    assert call["argv"][:5] == [
         "uv",
         "run",
-        "--python",
-        "3.13",
         "--package",
         "three-workflow-delivery-v3",
         "three-workflow-delivery-v3",
     ]
     arguments = cli_module._parser().parse_args(  # noqa: SLF001
-        call["argv"][7:]
+        call["argv"][5:]
     )
     expected_inputs = {
         "context": "release",

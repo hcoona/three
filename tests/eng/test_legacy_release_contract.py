@@ -1,4 +1,4 @@
-"""Contracts for logical commit 11 legacy Buddy retirement."""
+"""Retained release helpers and the retired Buddy routing boundary."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any, cast
 import pytest
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[6]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github/workflows"
 LEGACY_ENTRY_PATHS = (
     ".github/workflows/buddy.yml",

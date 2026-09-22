@@ -129,6 +129,7 @@ _SLO_BROAD_CONTROL_PATHS = frozenset(
 )
 _SLO_ROOT_TOOLCHAIN_PATHS = frozenset(
     {
+        ".python-version",
         "Directory.Build.props",
         "Directory.Build.targets",
         "global.json",

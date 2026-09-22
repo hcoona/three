@@ -100,7 +100,6 @@ def test_manual_worktree_scenario_is_isolated_in_mise() -> None:
 HK_CONFIG = REPO_ROOT / "hk.pkl"
 HK_SUPPORT = REPO_ROOT / "src/private/lib/hk"
 HK_RANGE_HELPER = Path("eng/scripts/workflow_delivery_v3_hk.py")
-CONTROL_STEP_NAME = "v3-control-pytest"
 STATIC_REFERENCE_STEP_NAME = "hcoona-release-smoke-npm-static-reference"
 POLICY_PATH = "eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml"
 
@@ -981,66 +980,6 @@ def test_ci_scenario_superseded_evidence_cannot_qualify_new_candidate() -> None:
     assert set(decision.admitted_evidence_digests).isdisjoint(
         old_decision.admitted_evidence_digests,
     )
-
-
-def test_ci_scenario_policy_only_selects_control_pytest_not_unrelated_source(
-    tmp_path: Path,
-) -> None:
-    """Keep control bounded while the explicit index scan stays universal."""
-    policy_repo = tmp_path / "policy-repo"
-    policy_base = _initialize_hk_repository(policy_repo)
-    _write(policy_repo, POLICY_PATH, "policy\n")
-    policy_head = _commit(policy_repo, "policy-only change")
-    policy_paths = _changed_paths(policy_repo, policy_base, policy_head)
-    policy_control = _hk_step_for_range(
-        policy_repo,
-        policy_base,
-        policy_head,
-        CONTROL_STEP_NAME,
-    )
-    policy_static_reference = _hk_step_for_range(
-        policy_repo,
-        policy_base,
-        policy_head,
-        STATIC_REFERENCE_STEP_NAME,
-    )
-
-    product_repo = tmp_path / "unrelated-product-repo"
-    product_base = _initialize_hk_repository(product_repo)
-    _write(
-        product_repo,
-        UNRELATED_PRODUCT_SOURCE,
-        "export const value = 1;\n",
-    )
-    product_head = _commit(product_repo, "unrelated product source")
-    product_paths = _changed_paths(product_repo, product_base, product_head)
-    product_control = _hk_step_for_range(
-        product_repo,
-        product_base,
-        product_head,
-        CONTROL_STEP_NAME,
-    )
-    product_static_reference = _hk_step_for_range(
-        product_repo,
-        product_base,
-        product_head,
-        STATIC_REFERENCE_STEP_NAME,
-    )
-
-    assert policy_paths == (POLICY_PATH,)
-    assert policy_control["name"] == CONTROL_STEP_NAME
-    assert policy_control["status"] == "included"
-    assert policy_control["fileCount"] == 1
-    assert policy_static_reference["name"] == STATIC_REFERENCE_STEP_NAME
-    assert policy_static_reference["status"] == "included"
-    assert policy_static_reference["fileCount"] == 1
-    assert product_paths == (UNRELATED_PRODUCT_SOURCE,)
-    assert product_control["name"] == CONTROL_STEP_NAME
-    assert product_control["status"] == "skipped"
-    assert product_control["fileCount"] == 0
-    assert product_static_reference["name"] == STATIC_REFERENCE_STEP_NAME
-    assert product_static_reference["status"] == "included"
-    assert product_static_reference["fileCount"] == 1
 
 
 def test_ci_scenario_static_reference_trigger_is_unconditional(

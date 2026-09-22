@@ -157,7 +157,7 @@ def test_probe_token_env_binding_and_prerequisite_order():  # noqa: PLR0915
     dependencies = _step("dependencies")
     assert [shlex.split(line) for line in dependencies["run"].splitlines()] == [
         ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"],
-        ["uv", "sync", "--frozen", "--python", "3.13", "--package", PACKAGE],
+        ["uv", "sync", "--frozen", "--package", PACKAGE],
     ]
     assert steps.index(_step("toolchain")) < steps.index(_step(PNPM))
     assert steps.index(_step(PNPM)) < steps.index(dependencies)
@@ -375,8 +375,6 @@ raise SystemExit(int(os.environ["TEST_EXIT"]))
     assert calls[0]["args"] == [
         "run",
         "--no-sync",
-        "--python",
-        "3.13",
         "--package",
         PACKAGE,
         "python",

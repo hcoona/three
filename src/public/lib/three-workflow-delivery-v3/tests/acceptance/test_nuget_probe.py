@@ -186,6 +186,7 @@ def inputs(tmp_path, monkeypatch):
             "tlsLibrary": "controlled TLS",
             "adapterSha256": "c" * 64,
         },
+        native.NUGET_PYTHON_VERSION,
     )
     profile_call = Mock(return_value=profile)
     monkeypatch.setattr(native, "nuget_operation_profile", profile_call)

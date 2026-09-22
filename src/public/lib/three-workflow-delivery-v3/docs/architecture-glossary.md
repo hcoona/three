@@ -323,7 +323,7 @@ internal to Source-Tree Conformance and creates no separate CI obligation or
 Evidence record. Project tests have the separate execution owner defined by
 the [CI MLD](./ci-qualification-mld.md#control-package-tests). The
 [execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
-preserves the existing HK test owner until its replacement is accepted.
+records the replacement of the former HK test owner.
 
 ### Static-Reference Policy
 

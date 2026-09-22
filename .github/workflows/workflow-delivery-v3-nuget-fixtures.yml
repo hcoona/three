@@ -56,13 +56,14 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           version: 0.12.7
+          working-directory: tooling
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           dotnet-version: 10.0.300
       - name: Prepare the locked Python environment
         run: |
-          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          uv sync --directory tooling --locked --package three-workflow-delivery-v3
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Close current preparation request
         env:
@@ -70,7 +71,7 @@ jobs:
           WDV3_TARGET: ${{ inputs.target_sha }}
           WDV3_GENERATION: ${{ inputs.generation }}
         run: |
-          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_preparation request --tooling-sha $env:WDV3_TOOLING --target $env:WDV3_TARGET --generation $env:WDV3_GENERATION --output "${env:GITHUB_WORKSPACE}/.wdv3/request.json"
+          uv run --directory tooling --no-sync --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_preparation request --tooling-sha $env:WDV3_TOOLING --target $env:WDV3_TARGET --generation $env:WDV3_GENERATION --output "${env:GITHUB_WORKSPACE}/.wdv3/request.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Bind request payload bytes
         id: seal-request
@@ -184,13 +185,14 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           version: 0.12.7
+          working-directory: tooling
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           dotnet-version: 10.0.300
       - name: Prepare the locked Python environment
         run: |
-          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          uv sync --directory tooling --locked --package three-workflow-delivery-v3
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Check out exact fixture target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -234,7 +236,7 @@ jobs:
           $arguments = @('setup', '--source-root', "${env:GITHUB_WORKSPACE}/target", '--directory', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/setup", '--output', "${env:GITHUB_WORKSPACE}/.wdv3/setup.zip")
           $arguments += @('--request', "${env:GITHUB_WORKSPACE}/.wdv3/input/request/${env:WDV3_REQUEST_NAME}", '--request-id', $env:WDV3_REQUEST_ID, '--request-digest', $env:WDV3_REQUEST_TRANSPORT_DIGEST, '--request-url', $env:WDV3_REQUEST_URL)
           $arguments += @('--helper', "${env:GITHUB_WORKSPACE}/.wdv3/input/helper/${env:WDV3_HELPER_NAME}", '--helper-id', $env:WDV3_HELPER_ID, '--helper-digest', $env:WDV3_HELPER_TRANSPORT_DIGEST, '--helper-url', $env:WDV3_HELPER_URL)
-          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_preparation @arguments
+          uv run --directory tooling --no-sync --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_preparation @arguments
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Bind setup payload bytes
         id: seal-setup
@@ -315,13 +317,14 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           version: 0.12.7
+          working-directory: tooling
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           dotnet-version: 10.0.300
       - name: Prepare the locked Python environment
         run: |
-          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          uv sync --directory tooling --locked --package three-workflow-delivery-v3
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Check out exact fixture target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -373,7 +376,7 @@ jobs:
           $arguments += @('--request', "${env:GITHUB_WORKSPACE}/.wdv3/input/request/${env:WDV3_REQUEST_NAME}", '--request-id', $env:WDV3_REQUEST_ID, '--request-digest', $env:WDV3_REQUEST_TRANSPORT_DIGEST, '--request-url', $env:WDV3_REQUEST_URL)
           $arguments += @('--helper', "${env:GITHUB_WORKSPACE}/.wdv3/input/helper/${env:WDV3_HELPER_NAME}", '--helper-id', $env:WDV3_HELPER_ID, '--helper-digest', $env:WDV3_HELPER_TRANSPORT_DIGEST, '--helper-url', $env:WDV3_HELPER_URL)
           $arguments += @('--setup', "${env:GITHUB_WORKSPACE}/.wdv3/input/setup/${env:WDV3_SETUP_NAME}", '--setup-id', $env:WDV3_SETUP_ID, '--setup-digest', $env:WDV3_SETUP_TRANSPORT_DIGEST, '--setup-url', $env:WDV3_SETUP_URL)
-          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_preparation @arguments
+          uv run --directory tooling --no-sync --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_preparation @arguments
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Bind prepare payload bytes
         id: seal-prepare

@@ -467,7 +467,8 @@ must be protected-delivered and its bounded five-probe execution confirmed.
 Retired v1 tooling is not an alternative path.
 
 Use a clean POSIX checkout of the exact protected tooling revision, with the
-repository's locked pnpm dependencies and Python 3.13 uv environment prepared.
+repository's locked pnpm dependencies and mise-selected Python uv environment
+prepared with `uv sync --frozen --package three-workflow-delivery-v3`.
 Windows operators need a configured POSIX environment such as WSL. Existing
 classic gh authentication must support package reads, dispatch, and
 `gh run watch`; the revised suite needs no delete/restore capability.
@@ -484,7 +485,7 @@ grant it. Use a fresh lowercase hexadecimal generation and two distinct
 target SHAs whose scenario tags are absent in that package.
 
 ```bash
-uv run --no-sync --python 3.13 --package three-workflow-delivery-v3 \
+uv run --no-sync --package three-workflow-delivery-v3 \
   python -m three_workflow_delivery_v3.acceptance suite \
   --package '@hcoona/<approved-disposable-name>' \
   --generation '<fresh-generation>' \

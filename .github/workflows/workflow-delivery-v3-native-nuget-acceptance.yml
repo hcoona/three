@@ -56,13 +56,14 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           version: 0.12.7
+          working-directory: tooling
       - name: Install pinned helper runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           dotnet-version: 10.0.300
       - name: Prepare the locked Python environment
         run: |
-          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          uv sync --directory tooling --locked --package three-workflow-delivery-v3
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Bind the prospective specification to this run
         id: bind
@@ -70,7 +71,7 @@ jobs:
           WDV3_SPEC: ${{ inputs.probe_spec }}
         run: |
           [IO.File]::WriteAllText("${env:GITHUB_WORKSPACE}/.wdv3/evidence/spec.json", $env:WDV3_SPEC, [Text.UTF8Encoding]::new($false))
-          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_probe bind-spec --spec "${env:GITHUB_WORKSPACE}/.wdv3/evidence/spec.json" --output "${env:GITHUB_WORKSPACE}/.wdv3/evidence/request.json" --checkout "${env:GITHUB_WORKSPACE}/tooling" --evidence "${env:GITHUB_WORKSPACE}/.wdv3/evidence/bind"
+          uv run --directory tooling --no-sync --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_probe bind-spec --spec "${env:GITHUB_WORKSPACE}/.wdv3/evidence/spec.json" --output "${env:GITHUB_WORKSPACE}/.wdv3/evidence/request.json" --checkout "${env:GITHUB_WORKSPACE}/tooling" --evidence "${env:GITHUB_WORKSPACE}/.wdv3/evidence/bind"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $request = Get-Content -LiteralPath '.wdv3/evidence/request.json' -Raw | ConvertFrom-Json
           @("producer-run=$($request.fixture.producerRunId)", "fixture-id=$($request.fixture.reference.'artifact-id')", "fixture-name=$($request.fixture.reference.'payload-path')", "helper-id=$($request.fixture.helperReference.'artifact-id')", "helper-name=$($request.fixture.helperReference.'payload-path')") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
@@ -102,7 +103,7 @@ jobs:
           WDV3_HELPER_NAME: ${{ steps.bind.outputs.helper-name }}
         run: |
           $arguments = @('prepare', '--request', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/request.json", '--fixture', "${env:GITHUB_WORKSPACE}/.wdv3/input/fixture/${env:WDV3_FIXTURE_NAME}", '--helper', "${env:GITHUB_WORKSPACE}/.wdv3/input/helper/${env:WDV3_HELPER_NAME}", '--output', "${env:GITHUB_WORKSPACE}/.wdv3/prepared.zip", '--checkout', "${env:GITHUB_WORKSPACE}/tooling", '--evidence', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/prepare")
-          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_probe @arguments
+          uv run --directory tooling --no-sync --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_probe @arguments
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Bind prepared payload bytes
         id: seal
@@ -183,9 +184,10 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           version: 0.12.7
+          working-directory: tooling
       - name: Prepare the locked Python environment
         run: |
-          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          uv sync --directory tooling --locked --package three-workflow-delivery-v3
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Download exact current-run prepared input
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -211,7 +213,7 @@ jobs:
           WDV3_INPUT_NAME: ${{ needs.prepare.outputs.input-name }}
         run: |
           $arguments = @('publish', '--prepared', "${env:GITHUB_WORKSPACE}/.wdv3/input/prepared/${env:WDV3_INPUT_NAME}", '--reference', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/reference.json", '--checkout', "${env:GITHUB_WORKSPACE}/tooling", '--evidence', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/publish")
-          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_probe @arguments
+          uv run --directory tooling --no-sync --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_probe @arguments
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Archive available probe diagnostics
         if: always()

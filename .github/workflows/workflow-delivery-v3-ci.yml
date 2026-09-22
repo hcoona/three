@@ -59,7 +59,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci candidate \
             --event-kind "${GITHUB_EVENT_NAME}" \
             --repository "${GITHUB_REPOSITORY}" \
@@ -111,7 +111,7 @@ jobs:
           install: true
       - name: Produce exact Provider Result
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 repository provide-node \
             --request-id "${WDV3_REQUEST_ID}" \
             --purpose "${WDV3_PURPOSE}" \
@@ -186,7 +186,7 @@ jobs:
           digest-mismatch: error
       - name: Admit downloaded payloads
         run: |
-          cli="uv run --python 3.13 --package ${WDV3_PACKAGE} three-workflow-delivery-v3 ci admit-payload"
+          cli="uv run --package ${WDV3_PACKAGE} three-workflow-delivery-v3 ci admit-payload"
           ${cli} \
             --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-request.json" \
             --expected-digest "${{ needs.discover-node.outputs.request-artifact-digest }}"
@@ -196,7 +196,7 @@ jobs:
       - name: Compile model and close Plan
         id: plan
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci plan \
             --request ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-request.json" \
             --provider-result ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json" \
@@ -271,11 +271,11 @@ jobs:
           digest-mismatch: error
       - name: Admit root-HK inputs
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci admit-payload \
             --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
             --expected-digest "${{ needs.plan.outputs.plan-artifact-digest }}"
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci admit-payload \
             --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json" \
             --expected-digest "${{ needs.plan.outputs.provider-artifact-digest }}"
@@ -285,7 +285,7 @@ jobs:
         continue-on-error: true
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           actual_node="$(node --version)"
           actual_pnpm="$(pnpm --version)"
@@ -310,7 +310,7 @@ jobs:
           pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site \
             install --frozen-lockfile --ignore-scripts
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            uv run --python 3.13 python eng/scripts/workflow_delivery_v3_hk.py \
+            uv run python eng/scripts/workflow_delivery_v3_hk.py \
               --repository . --from-ref "${BASE_SHA}" --to-ref "${HEAD_SHA}" \
               -- mise exec -- hk --no-progress check \
               --skip-step static-reference-authority-preparation
@@ -325,7 +325,7 @@ jobs:
           if [[ "${{ needs.plan.outputs.root-hk-selected }}" == "true" ]]; then
             args=(--outcome "${{ steps.execute.outcome }}")
           fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci lane-result \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
             --plan-digest "${{ needs.plan.outputs.plan-digest }}" \
@@ -376,7 +376,7 @@ jobs:
           fi
           for item in "${items[@]}"; do
             IFS=: read -r role digest <<< "${item}"
-            uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            uv run --package "${WDV3_PACKAGE}" \
               three-workflow-delivery-v3 ci admit-payload \
               --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${role}.json" \
               --expected-digest "${digest}"
@@ -385,7 +385,7 @@ jobs:
         if: needs.plan.outputs.project-build-selected == 'true'
         continue-on-error: true
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci node-adapter \
             --lane-id project-build \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
@@ -399,7 +399,7 @@ jobs:
           if [[ "${{ needs.plan.outputs.project-build-selected }}" == "true" ]]; then
             args=(--mechanical-result .wdv3/project-build-adapter.json)
           fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci lane-result \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
             --plan-digest "${{ needs.plan.outputs.plan-digest }}" \
@@ -444,14 +444,14 @@ jobs:
           fi
           for item in "${items[@]}"; do
             IFS=: read -r role digest <<< "${item}"
-            uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci admit-payload \
+            uv run --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci admit-payload \
               --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${role}.json" --expected-digest "${digest}"
           done
       - name: Run project test Adapter
         if: needs.plan.outputs.project-test-selected == 'true'
         continue-on-error: true
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci node-adapter \
             --lane-id project-test \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
@@ -463,7 +463,7 @@ jobs:
         run: |
           args=()
           if [[ "${{ needs.plan.outputs.project-test-selected }}" == "true" ]]; then args=(--mechanical-result .wdv3/project-test-adapter.json); fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci lane-result \
+          uv run --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci lane-result \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
             --plan-digest "${{ needs.plan.outputs.plan-digest }}" --lane-id project-test "${args[@]}" \
             --output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-project-test-result.json"
@@ -506,14 +506,14 @@ jobs:
           fi
           for item in "${items[@]}"; do
             IFS=: read -r role digest <<< "${item}"
-            uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci admit-payload \
+            uv run --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci admit-payload \
               --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${role}.json" --expected-digest "${digest}"
           done
       - name: Run npm artifact build Adapter
         if: needs.plan.outputs.npm-artifact-build-selected == 'true'
         continue-on-error: true
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci node-adapter \
             --lane-id npm-artifact-build \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
@@ -547,7 +547,7 @@ jobs:
               )
             fi
           fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci lane-result \
+          uv run --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci lane-result \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
             --plan-digest "${{ needs.plan.outputs.plan-digest }}" --lane-id npm-artifact-build "${args[@]}" \
             --output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-npm-artifact-build-result.json"
@@ -610,7 +610,7 @@ jobs:
           plan=".wdv3/final/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json"
           decision=".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-ci-slice-decision.json"
           summary=".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-ci-slice-summary.json"
-          cli=(uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3)
+          cli=(uv run --package "${WDV3_PACKAGE}" three-workflow-delivery-v3)
           "${cli[@]}" ci admit-payload --input "${plan}" --expected-digest "${PLAN_ARTIFACT_DIGEST}"
           args=()
           for item in "root-hk:${ROOT_DIGEST}" "project-build:${BUILD_DIGEST}" "project-test:${TEST_DIGEST}" "npm-artifact-build:${NPM_DIGEST}"; do

@@ -164,7 +164,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind attempt-binding payload identity
@@ -290,7 +290,7 @@ jobs:
             '--admission-mode',
             'current-freshness'
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Plan from admitted native facts
@@ -359,7 +359,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind qualification-snapshot payload identity
@@ -525,7 +525,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind package payload identity
@@ -606,7 +606,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind release-artifact payload identity
@@ -793,7 +793,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind artifact-contents-evidence payload identity
@@ -887,7 +887,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind consumer-evidence payload identity
@@ -1072,7 +1072,7 @@ jobs:
           if ($env:WDV3_ARG_RELEASE_ARTIFACT_OPTIONAL_ID) {
             $arguments += @('--release-artifact', $env:WDV3_ARG_RELEASE_ARTIFACT, '--release-artifact-digest', $env:WDV3_ARG_RELEASE_ARTIFACT_DIGEST, '--release-artifact-artifact-id', $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_ID, '--release-artifact-artifact-digest', $env:WDV3_ARG_RELEASE_ARTIFACT_ARTIFACT_DIGEST)
           }
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind qualification-decision payload identity
@@ -1292,7 +1292,7 @@ jobs:
             '--github-token',
             $env:GITHUB_TOKEN
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind observation payload identity
@@ -1499,7 +1499,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind publication-snapshot payload identity
@@ -1646,7 +1646,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind approval-bundle payload identity
@@ -1936,7 +1936,7 @@ jobs:
             '--github-token',
             $env:GITHUB_TOKEN
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind publication-authorization payload identity
@@ -2270,7 +2270,7 @@ jobs:
             '--github-token',
             $env:GITHUB_TOKEN
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind mutation-marker payload identity
@@ -2335,7 +2335,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Invoke publication once from the admitted durable marker
@@ -2574,7 +2574,7 @@ jobs:
             '--github-token',
             $env:GITHUB_TOKEN
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind publication-result payload identity
@@ -2643,7 +2643,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Clean only caller-owned prepared runtime
@@ -2900,7 +2900,7 @@ jobs:
             '--github-token',
             $env:GITHUB_TOKEN
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind exact-satisfied-finalization-proof payload identity
@@ -3105,7 +3105,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Download the resolved terminal by immutable ID
@@ -3144,7 +3144,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Download the Result direct marker by immutable ID
@@ -3425,7 +3425,7 @@ jobs:
           if ($env:WDV3_ARG_TERMINAL_DIRECTORY_PRESENT) { $arguments += @('--terminal-directory', '.wdv3/terminal') }
           if ($env:WDV3_ARG_MARKER_DIRECTORY_PRESENT) { $arguments += @('--marker-directory', '.wdv3/marker') }
           if ($env:WDV3_ARG_PUBLICATION_STEP_OUTCOME_PRESENT) { $arguments += @('--publication-step-outcome', $env:WDV3_ARG_PUBLICATION_STEP_OUTCOME) }
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind attempt-outcome payload identity

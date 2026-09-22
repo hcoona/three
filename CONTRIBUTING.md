@@ -41,7 +41,7 @@ mise exec -- hk --profile small --profile medium --profile large check --check -
 ```
 
 This selects staged files by default; explicit files or refs select a different
-scope. Record the snapshot and scope actually checked. CI uses base/head refs;
+scope. Record the snapshot and scope actually checked. CI compares its base with the actual tested checkout;
 local pre-commit uses HK's configured stashing. Do not claim staged/worktree
 equivalence without evidence. Existing profile and path exclusions still apply.
 For record changes, run `mise run records:check -- --base <accepted-commit>
@@ -53,6 +53,16 @@ the advisory tool's scope, limitations and separate contextual review. Run
 bytes or a retrievable artifact, not only a temporary path or digest.
 Write the report outside the worktree so it does not become an input to the
 next validation run.
+
+HK checks source/configuration conformance. Run affected project tests
+explicitly before independent implementation review; `mise run test:v3` runs
+Workflow Delivery v3 and `mise run test:python` runs all configured Python
+roots. General CI selects affected work from its actual Git comparison; its
+explicit full mode selects all suites. See the
+[execution contract](docs/engineering/hk-execution.md#ci-execution-contract).
+Record normal commit/command elapsed time and relevant JUnit/CI step durations
+in the work carrier, along with actual scope and results. For native tests,
+retain the [temporary-file and inode constraints](docs/engineering/workspaces.md#python).
 
 ## Pull Requests and Review
 

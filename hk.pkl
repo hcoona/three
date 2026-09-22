@@ -263,59 +263,23 @@ local python_linters = new Mapping<String, Step> {
 }
 
 local workflow_delivery_v3_validation = new Mapping<String, Step> {
-  local workflow_delivery_v3_files =
-    List(
-      ".gitattributes",
-      "Directory.Packages.props",
-      ".github/CODEOWNERS",
-      ".github/actions/workflow-delivery-v3-*/**",
-      ".github/actions/workflow-delivery-v3/**",
-      ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json",
-      ".github/workflow-delivery/governance/hcoona-release-smoke-github-packages.json",
-      ".github/workflows/*.yaml",
-      ".github/workflows/*.yml",
-      ".github/workflows/workflow-delivery-v3-*.yaml",
-      ".github/workflows/workflow-delivery-v3-*.yml",
-      ".python-version",
-      "conftest.py",
-      "eng/scripts/hk_exec.py",
-      "eng/scripts/workflow_delivery_v3_hk.py",
-      "eng/scripts/workflow_delivery_v3_native_npm.mjs",
-      "eng/scripts/workflow_delivery_v3_prepare_static_reference.py",
-      "eng/scripts/workflow_delivery_v3_run_created_epoch.py",
-      "eng/scripts/workflow_delivery_v3_static_reference.py",
-      "eng/scripts/workflow_delivery_v3_static_reference_node.mjs",
-      "eng/workflow-delivery/v3/**",
-      "hk.pkl",
-      "mise.lock",
-      "mise.toml",
-      "pyproject.toml",
-      "pyrefly.toml",
-      "pytest.ini",
-      "ruff.toml",
-      "src/**/workflow-delivery.quality.yml",
-      "src/**/workflow-delivery.release-unit.yml",
-      "src/private/app/workflow-delivery-v3-nuget-authority/**",
-      "src/private/app/workflow-delivery-v3-dotnet-provider/**",
-      "src/public/lib/hcoona-release-smoke-github-packages/**",
-      "src/private/lib/hk/**",
-      "src/public/lib/three-workflow-delivery-v3/**",
-      "uv.lock",
-      "uv.toml",
-    )
-
   ["static-reference-authority-preparation"] {
     profiles = List("small")
     check =
       "python eng/scripts/hk_exec.py --timeout-seconds 300 mise run prepare:static-reference-authorities"
   }
 
-  ["v3-control-pytest"] {
+  ["python-mise-authority"] {
     profiles = List("small")
-    depends = List("static-reference-authority-preparation")
-    glob = workflow_delivery_v3_files
-    check =
-      "python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13.12 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests"
+    glob =
+      List(
+        "mise.toml",
+        "mise.lock",
+        ".python-version",
+        "eng/scripts/sync_python_version.py",
+        "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_runtime.py",
+      )
+    check = "python eng/scripts/hk_exec.py python eng/scripts/sync_python_version.py"
   }
 
   ["node-mise-authority"] {
@@ -328,14 +292,14 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
         "mise.toml",
       )
     check =
-      "python eng/scripts/hk_exec.py --timeout-seconds 120 uv run --no-project --python 3.13 python eng/scripts/update_node_mise_lock.py"
+      "python eng/scripts/hk_exec.py --timeout-seconds 120 uv run --no-project python eng/scripts/update_node_mise_lock.py"
   }
 
   ["hcoona-release-smoke-npm-static-reference"] {
     profiles = List("small")
     depends = List("static-reference-authority-preparation")
     check =
-      "python eng/scripts/hk_exec.py --timeout-seconds 300 uv run --python 3.13 --package three-workflow-delivery-v3 python eng/scripts/workflow_delivery_v3_static_reference.py --repository-root . --source-kind index"
+      "python eng/scripts/hk_exec.py --timeout-seconds 300 uv run --package three-workflow-delivery-v3 python eng/scripts/workflow_delivery_v3_static_reference.py --repository-root . --source-kind index"
   }
 }
 
@@ -355,11 +319,11 @@ local scholarly_publication_validation = new Mapping<String, Step> {
       "src/private/lib/scholarly-publication/**",
     )
 
-  ["scholarly-publication-plugin-ci"] {
+  ["scholarly-publication-plugin-check"] {
     glob = scholarly_publication_files
     allow_symlinks = true
     check =
-      "python eng/scripts/hk_exec.py --timeout-seconds 720 mise run scholarly-publication-plugin-ci"
+      "python eng/scripts/hk_exec.py --timeout-seconds 720 mise run scholarly-publication-plugin-check"
   }
 }
 

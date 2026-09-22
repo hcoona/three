@@ -55,6 +55,7 @@ _REPOSITORY_ONLY_PREFIXES = (
 )
 _REPOSITORY_ONLY_PATHS = frozenset(
     {
+        ".python-version",
         ".typos.toml",
         "AGENTS.md",
         "CONTRIBUTING.md",

@@ -23,11 +23,27 @@ packages without those scripts. Review needed install scripts with
 under `src/`; there is no separate top-level `OnePython/` workspace. Project
 manifests own their dependencies, supported versions and package contracts.
 
+The root `.python-version` and V3 package runtime constant are generated from
+`mise.lock`, checked against `mise.toml`. After a Python lock update, run
+`mise run sync:python-version`; HK checks projection drift. Synchronize an
+existing environment before using `--no-sync`. For example:
+
+```powershell
+uv sync --frozen --package three-workflow-delivery-v3
+mise run test:v3
+```
+
+`mise run test:python` runs all configured Python test roots. Ordinary commits
+run HK source checks; affected CI owns project tests. The
+[execution contract](hk-execution.md#ci-execution-contract) explains selection,
+required results and timing evidence. Scholarly-publication's standalone
+script runtime remains governed by its own package contract.
+
 The root pytest configuration releases successful `tmp_path` fixtures and the
 implicit temporary session directory after a successful run. Failed test-call
 fixtures remain available for diagnosis within pytest's default three-session
 retention window; its existing cleanup locks protect active runs. This applies
-to all tests using the root configuration, including HK and commit hooks.
+to all tests using the root configuration in explicit local commands and CI.
 Workflow Delivery v3's session fixture also places native subprocess temporary
 files under that session directory, so their scratch files and temporary caches
 share its retention lifecycle. Its environment lasts for the pytest session and

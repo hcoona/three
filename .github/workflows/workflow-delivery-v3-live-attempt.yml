@@ -123,7 +123,7 @@ jobs:
       - name: Admit downloaded Live Eligibility Decision
         id: live-eligibility
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release admit-live-eligibility \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -145,7 +145,7 @@ jobs:
       - name: Bind current live Attempt
         id: bind
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release bind-live-attempt \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -245,7 +245,7 @@ jobs:
       - name: Create Qualification Snapshot
         id: plan
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release plan-live-qualification \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -367,7 +367,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ needs.plan-qualification.outputs.tarball-artifact-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-build \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -404,7 +404,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ steps.build.outputs.tarball-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release form-uploaded-artifact \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -513,7 +513,7 @@ jobs:
       - name: Run project-test mechanics
         id: test
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-project-test \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -633,7 +633,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ needs.build-tarball.outputs.tarball-artifact-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-artifact-contents \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -658,7 +658,7 @@ jobs:
         id: incomplete-contents
         if: needs.build-tarball.outputs.release-artifact-artifact-id == '' || needs.build-tarball.outputs.tarball-artifact-id == ''
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release form-incomplete-evidence \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -678,7 +678,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ needs.build-tarball.outputs.tarball-artifact-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-install-import \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -703,7 +703,7 @@ jobs:
         id: incomplete-install
         if: needs.build-tarball.outputs.release-artifact-artifact-id == '' || needs.build-tarball.outputs.tarball-artifact-id == ''
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release form-incomplete-evidence \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -902,7 +902,7 @@ jobs:
           add_record artifact-contents-evidence ".wdv3/input/${{ needs.npm-artifact-qualification.outputs.contents-evidence-artifact-name }}" "${CONTENTS_DIGEST}" "${CONTENTS_ID}" "${CONTENTS_UPLOAD}"
           add_record install-import-evidence ".wdv3/input/${{ needs.npm-artifact-qualification.outputs.install-evidence-artifact-name }}" "${INSTALL_DIGEST}" "${INSTALL_ID}" "${INSTALL_UPLOAD}"
           add_record release-artifact ".wdv3/input/${{ needs.build-tarball.outputs.release-artifact-artifact-name }}" "${ARTIFACT_DIGEST}" "${ARTIFACT_ID}" "${ARTIFACT_UPLOAD}"
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release finalize-qualification \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1013,7 +1013,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release observe-github-packages \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1194,7 +1194,7 @@ jobs:
       - name: Materialize immutable publication and reviewer payload
         id: materialize
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release materialize-publication \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1271,7 +1271,7 @@ jobs:
         id: form-bundle
         if: steps.materialize.outputs.publish-required == 'true'
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release form-approval-bundle \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1378,7 +1378,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release form-publication-authorization \
             --github-token "${GITHUB_TOKEN}" \
             --workflow-run-id "${GITHUB_RUN_ID}" \
@@ -1503,7 +1503,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release prove-exact-satisfied \
             --publisher-conclusion "${{ needs.publish-github-packages.result }}" \
             --adapter-context ".wdv3/input/${{ needs.plan-qualification.outputs.adapter-context-artifact-name }}" \
@@ -1645,7 +1645,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release prepare-publication \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1740,7 +1740,7 @@ jobs:
       - name: Admit persisted mutation-marker before exposing its reference
         id: admit-marker
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release admit-publication-terminal \
             --workflow-run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \
@@ -1757,7 +1757,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           PUBLICATION_TERMINAL_REFERENCE: ${{ steps.admit-marker.outputs.publication-terminal-reference }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release execute-publication \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1856,7 +1856,7 @@ jobs:
         id: admit-result
         if: always() && steps.download-publication-result.outcome == 'success'
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release admit-publication-terminal \
             --workflow-run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \
@@ -2013,7 +2013,7 @@ jobs:
           PUBLICATION_TERMINAL_REFERENCE: ${{ needs.publish-github-packages.outputs.publication-terminal-reference }}
           PUBLISHER_CONCLUSION: ${{ needs.publish-github-packages.result }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release resolve-publication-terminal \
             --workflow-run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \
@@ -2036,7 +2036,7 @@ jobs:
           PUBLICATION_TERMINAL_REFERENCE: ${{ needs.publish-github-packages.outputs.publication-terminal-reference }}
           PUBLISHER_CONCLUSION: ${{ needs.publish-github-packages.result }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release resolve-publication-terminal \
             --workflow-run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \
@@ -2125,7 +2125,7 @@ jobs:
           fi
           mkdir -p .wdv3/final-attempt
           set +e
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release finalize-live \
             --publisher-conclusion "${{ needs.publish-github-packages.result }}" \
             --publication-terminal-reference "${PUBLICATION_TERMINAL_REFERENCE}" \

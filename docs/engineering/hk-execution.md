@@ -19,7 +19,7 @@ Root HK excludes generated APM interfaces and several specialized surfaces
 from general linters. Workflow YAML has its own actionlint step; general
 Markdown checks exclude `.github` paths. A skipped check is not a validation
 result for the excluded files. v3 static-reference feedback and its
-path-selected product suite have distinct responsibilities; a successful
+CI-selected product suite have distinct responsibilities; a successful
 lint run does not establish publication authority or destination acceptance.
 
 The pre-commit hook uses Git stash and index checking. Preserve its existing
@@ -27,16 +27,12 @@ source-tree semantics when diagnosing hooks; do not infer the checked tree
 from the editor buffer. Repository-wide checks and any manual file selection
 must report which files and execution mode they actually covered.
 
-## Scheduled CI Execution Cutover
+## CI Execution Contract
 
-The owner-approved [Issue #817](https://github.com/hcoona/three/issues/817)
-separates source checks from project tests. The implementing PR activates the
-following execution contract, preserving existing required checks until the
-replacement is accepted. The v3
+[Issue #817](https://github.com/hcoona/three/issues/817) separates source
+checks from project tests. The v3
 [migration contract](../../src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#ci-execution-ownership-cutover)
-owns its prerequisite order, cutover and native-runtime boundary. Independent
-implementation review evaluates activation; the authorizing Wave's closure
-is the fallback review.
+owns its runtime and native-admission boundary.
 
 HK checks source/configuration conformance, including file checks, lock and
 generated-file consistency, deployed-source parity and the existing bounded
@@ -63,10 +59,20 @@ The selector runs without repository package restore or full validation.
 Each existing required GitHub context remains present and fails if selection
 fails, is canceled, or omits required output. Successful explicit
 non-applicability may omit work; selected work must complete successfully.
+The stable required `Validate` context consumes both source-conformance and
+scholarly-test job results. Its short result guard rejects failed, skipped,
+missing or canceled results, including workflow cancellation. Both workers
+retain explicit successful non-applicability and run independently; this
+summary does not move project tests back into HK or precede language jobs.
 Required work does not use `continue-on-error`. Jobs wait only for inputs
 they consume, so source checks, selected language tests and independently
 built platform artifacts can run concurrently. Existing supported runner and
 Node matrices remain applicable to selected work.
+
+The `Select affected validation` job retains `ci-scope.json` with the actual
+candidate, comparison, selected roots and reasons. The Python job retains
+JUnit durations as `python-test-results`. These use ordinary CI artifact
+retention; copy decision-relevant observations into the Issue or PR.
 
 Normal validation retains the candidate, selection reasons, actual interpreter,
 test result and skip reasons, command/commit elapsed time, CI job/step timing,

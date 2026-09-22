@@ -297,6 +297,7 @@ def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
     [
         "docs/wiki/README.md",
         "hk.pkl",
+        ".python-version",
         "nested/package.json",
     ],
 )

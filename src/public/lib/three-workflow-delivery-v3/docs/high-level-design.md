@@ -711,8 +711,7 @@ the opaque root-HK invocation and creates no separate CI obligation or
 Evidence record. Project unit, scenario and integration tests belong to CI;
 the [CI MLD](./ci-qualification-mld.md#control-package-tests) owns v3 self-test
 selection and execution. The [execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
-preserves the existing HK pytest step, including manual `slice-validation`,
-until the implementing PR installs its CI replacement.
+records the replacement of the former HK test owner.
 
 Executors resolve only mechanical details required to perform an immutable
 Plan. They may not add, remove, substitute, or downgrade planned scope.

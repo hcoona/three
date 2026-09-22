@@ -170,22 +170,21 @@ their selected-revision control strictly admits the active Governance schema.
 
 ### CI Execution Ownership Cutover
 
-[Issue #817](https://github.com/hcoona/three/issues/817) changes the execution
-owner of project tests and unifies active Python execution. This accepted
-contract is the prerequisite for its implementation, not a claim that the
-current workflows already implement it.
+[Issue #817](https://github.com/hcoona/three/issues/817) establishes general
+Python CI as the sole ordinary CI owner of the v3 self-test collection.
+Root HK and its pre-commit hook now run source/configuration conformance;
+they do not invoke project pytest or scholarly-publication tests. Manual
+`slice-validation` keeps its first-slice scope without implicitly invoking
+v3 self-tests through HK. Explicit `mise run test:v3` and `mise run test:python`
+retain complete local validation. Required GitHub contexts reject failed or
+missing selection, while successful non-applicability omits unrelated work.
 
-Until the implementation PR is accepted, the existing path-selected root-HK
-v3 pytest step remains required, including its unconditional execution in
-manual `slice-validation`. The implementation PR activates the revised
-`WD-CI-010` ownership by installing the affected CI test owner and removing
-HK project tests together. It also updates active commands, guidance and
-test expectations. Its independent reviewer checks that selected tests remain
-required, existing required GitHub contexts still reject failures, and no
-validation gap or duplicate ordinary CI owner is introduced. Closure of the
-authorizing Delivery Wave is the fallback review of this migration.
+The requirements/design prerequisite was accepted before implementation.
+Independent implementation review verifies the replacement owner and absence
+of a validation gap or duplicate ordinary owner. Wave closure remains the
+fallback review of this cutover.
 
-At the same cutover, active v3 workflows, scripts, local commands and tests
+Active v3 workflows, scripts, local commands and tests
 consume the repository's mise-managed Python 3.14 selection and exact lock
 resolution. A generated root `.python-version` serves uv and `actions/setup-python`;
 a generated package runtime constant serves the installed adapter. These are
