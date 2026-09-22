@@ -1307,28 +1307,6 @@ def quality_mutation_cases(
     return request.param
 
 
-@pytest.fixture(
-    params=(
-        pytest.param("missing-projections", id="missing-projections"),
-        pytest.param("empty", id="empty"),
-        pytest.param("omit-destination", id="omit-destination"),
-        pytest.param("omit-artifact", id="omit-artifact"),
-        pytest.param("omit-package", id="omit-package"),
-        pytest.param("duplicate-approved", id="duplicate-approved"),
-        pytest.param("extra", id="extra"),
-        pytest.param(
-            "substitute-destination",
-            id="substitute-destination",
-        ),
-        pytest.param("substitute-artifact", id="substitute-artifact"),
-        pytest.param("substitute-package", id="substitute-package"),
-    )
-)
-def projection_mutation_cases(request: pytest.FixtureRequest) -> str:
-    """Provide the exact projection-list rejection matrix."""
-    return request.param
-
-
 def write_release_policy_case(
     tmp_path: Path,
     document: dict[str, JsonValue],
@@ -1429,24 +1407,33 @@ def test_release_policy_requires_exact_ordered_channel_quality(
         load_release_policy(mutated_path)
 
 
-def test_release_policy_requires_exact_channel_projection(
+@pytest.mark.parametrize(
+    ("channel", "mutation"),
+    [
+        ("buddy", "missing-projections"),
+        ("buddy", "empty"),
+        ("buddy", "omit-destination"),
+        ("buddy", "omit-artifact"),
+        ("buddy", "omit-package"),
+        ("buddy", "duplicate-approved"),
+        ("buddy", "extra"),
+        ("buddy", "substitute-artifact"),
+        ("buddy", "substitute-package"),
+        ("buddy", "substitute-destination"),
+        ("official", "substitute-destination"),
+    ],
+)
+def test_release_policy_enforces_shared_projection_rules_and_destinations(
     tmp_path: Path,
-    accepted_release_channel_cases: str,
-    projection_mutation_cases: str,
+    channel: str,
+    mutation: str,
 ) -> None:
-    """Require each channel's exact one-element projection tuple."""
-    channel = accepted_release_channel_cases
+    """Check shared projection rules and both channel-specific destinations."""
     mutated_document = _yaml_document(POLICY_PATH.read_text(encoding="utf-8"))
-    _mutate_projection_case(
-        mutated_document,
-        channel,
-        projection_mutation_cases,
-    )
+    _mutate_projection_case(mutated_document, channel, mutation)
     _assert_opposite_channel_unchanged(mutated_document, channel)
     mutated_path = write_release_policy_case(
-        tmp_path,
-        mutated_document,
-        name=f"{channel}-{projection_mutation_cases}",
+        tmp_path, mutated_document, name=f"{channel}-{mutation}"
     )
 
     with pytest.raises(

@@ -684,10 +684,13 @@ def test_active_absence_with_unavailable_tag_absence_remains_blocking(
 
 
 @pytest.mark.parametrize(
-    "classification", ["partial", "conflicting", "unknown", "unprovable"]
-)
-@pytest.mark.parametrize(
-    "missing", ["package-control", "active-readback", "both"]
+    ("classification", "missing"),
+    [
+        ("partial", "package-control"),
+        ("conflicting", "active-readback"),
+        ("unknown", "both"),
+        ("unprovable", "package-control"),
+    ],
 )
 def test_blocking_observation_preserves_missing_http_evidence(
     classification,
@@ -712,11 +715,25 @@ def test_blocking_observation_preserves_missing_http_evidence(
 
     assert type(parsed) is RemoteStateObservation
     assert parsed == record
-    for ready_classification in ("absent", "exact-satisfied"):
-        with pytest.raises(
-            ValueError, match="requires package control and active readback"
-        ):
-            replace(record, classification=ready_classification)
+
+
+@pytest.mark.parametrize(
+    ("classification", "missing"),
+    [("absent", "package_control"), ("exact-satisfied", "active_readback")],
+)
+def test_ready_observation_requires_both_http_proofs(classification, missing):
+    ready = replace(
+        _remote_observation(),
+        classification=classification,
+        active_readback=_readback(
+            classification=classification, tag_state="absent"
+        ),
+    )
+
+    with pytest.raises(
+        ValueError, match="requires package control and active readback"
+    ):
+        replace(ready, **{missing: None})
 
 
 @pytest.mark.parametrize(

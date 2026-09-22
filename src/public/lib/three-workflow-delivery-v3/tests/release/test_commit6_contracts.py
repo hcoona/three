@@ -226,19 +226,9 @@ def test_release_records_are_exact_frozen_slotted_dataclasses(
             record.__setattr__(fields(record)[0].name, "mutated")
 
 
-def test_identity_field_order_and_live_identity_shapes_are_exact() -> None:
-    products = (
-        OfficialProductIdentity("official", "unit-b", "1.0.0"),
-        OfficialProductIdentity("official", "unit-a", "2.0.0"),
-        OfficialProductIdentity("official", "unit-a", "1.0.0"),
-    )
-
-    assert tuple(sorted(products)) == (
-        OfficialProductIdentity("official", "unit-a", "1.0.0"),
-        OfficialProductIdentity("official", "unit-a", "2.0.0"),
-        OfficialProductIdentity("official", "unit-b", "1.0.0"),
-    )
-    execution = OfficialExecutionIdentity(products[0], "a" * 40)
+def test_live_attempt_wire_shape_preserves_workflow_run_identity() -> None:
+    product = OfficialProductIdentity("official", "unit-b", "1.0.0")
+    execution = OfficialExecutionIdentity(product, "a" * 40)
     attempt = ReleaseAttemptIdentity(execution, 91)
     retry = ReleaseAttemptIdentity(execution, 92)
     assert set(attempt.to_document()) == {

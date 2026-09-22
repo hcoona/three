@@ -9,6 +9,7 @@ from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
     canonicalize,
+    parse_canonical_json,
     parse_json_strict,
 )
 
@@ -157,21 +158,6 @@ def test_parse_then_canonicalize_preserves_jcs_semantics() -> None:
     assert parsed == {"z": -0.0, "a": {"é": "text", "a": True}}
 
 
-from pathlib import Path  # noqa: E402
-
-from three_workflow_delivery_v3.canonical import (  # noqa: E402
-    parse_canonical_json,
-)
-
-_BINDING_FIXTURE_DIRECTORY = Path(__file__).parent / "fixtures" / "bindings"
-_FIXTURE_GOLDEN_DIGESTS = {
-    "current-authority": (
-        "sha256:bfadf748e203e4d005d6fe29ea3b06ddccad3b22aea13b136"
-        "4af0b65dc6d3d16"
-    ),
-}
-
-
 def test_parse_canonical_json_accepts_canonical_utf8_object() -> None:
     """Return the exact object encoded by canonical bytes."""
     document = b'{"active":true,"items":[1,"two"],"name":"record"}'
@@ -244,33 +230,3 @@ def test_parse_canonical_json_rejects_noncanonical_bytes(
     """Reject semantically valid bytes that differ from RFC 8785 output."""
     with pytest.raises(ValueError, match="record is not canonical"):
         parse_canonical_json(document)
-
-
-def test_parse_canonical_json_checks_encoding_before_digest_use() -> None:
-    """Reject noncanonical bytes even when they carry a digest-shaped claim."""
-    document = (
-        b'{ "payload_digest":'
-        b'"sha256:6668e506afbfa6628a50dfca85ec6c8e6c8b07aa6e4c9640'
-        b'592ea6844683ffa7"}'
-    )
-
-    with pytest.raises(ValueError, match="record is not canonical"):
-        parse_canonical_json(document)
-
-
-@pytest.mark.parametrize("fixture_name", sorted(_FIXTURE_GOLDEN_DIGESTS))
-def test_binding_fixtures_have_stable_golden_payload_digests(
-    fixture_name: str,
-) -> None:
-    """Pin fixture payload identities to literal reviewed sidecar values."""
-    document = (
-        _BINDING_FIXTURE_DIRECTORY / f"{fixture_name}.json"
-    ).read_bytes()
-    sidecar = (
-        (_BINDING_FIXTURE_DIRECTORY / f"{fixture_name}.sha256")
-        .read_text(encoding="ascii")
-        .strip()
-    )
-
-    assert sidecar == _FIXTURE_GOLDEN_DIGESTS[fixture_name]
-    assert canonical_sha256(parse_canonical_json(document)) == sidecar

@@ -473,6 +473,25 @@ def test_ci_contract_golden_fixtures_and_digests(
     assert digesters[type(record)](record) == digest
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("purpose", "slice-validation", "purpose does not match event kind"),
+        ("producer", "plan", "producer must be the request job"),
+        ("workflow_sha", SHA_B, "control SHA must equal the selected target"),
+        ("tested_merge_sha", SHA_B, "target must be the tested merge SHA"),
+    ],
+)
+def test_candidate_rejects_intrinsic_identity_contradictions(
+    field: str, value: str, message: str
+) -> None:
+    """Reject contradictory Candidate identity at checked construction."""
+    candidate = _candidate()
+
+    with pytest.raises(ValueError, match=message):
+        replace(candidate, **{field: value})
+
+
 def test_ci_record_fields_cannot_change_after_construction() -> None:
     """Preserve admitted identity through the public record interface."""
     plan = _snapshot()
