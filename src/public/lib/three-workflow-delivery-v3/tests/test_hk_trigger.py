@@ -1854,9 +1854,10 @@ def test_typos_legacy_identifier_exceptions_are_file_specific() -> None:
                     key.casefold() for key in value
                 }
             if name in ("extend-ignore-re", "extend-ignore-identifiers-re"):
-                assert rf"\b{legacy_identifier}\b" not in {
-                    pattern.casefold() for pattern in value
-                }
+                assert not any(
+                    rf"\b{legacy_identifier}\b" in pattern.casefold()
+                    for pattern in value
+                )
             if isinstance(value, dict):
                 tables.append(value)
     assert ".testagent/**" not in exclusions
