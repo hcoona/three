@@ -601,11 +601,6 @@ _LOCATION_FORMS = (
     "encoded-target",
     "encoded-query",
 )
-_HEADER_REFLECTIONS = [
-    pytest.param((header, form), id=f"{header}-{form}")
-    for header in ("Link", "ETag")
-    for form in _LOCATION_FORMS
-]
 
 
 def _header_reflection(location, form):
@@ -671,7 +666,9 @@ def _assert_safe_partial_header_failure(
 
 
 @pytest.mark.parametrize("status", [301, 302])
-@pytest.mark.parametrize("reflection", _HEADER_REFLECTIONS)
+@pytest.mark.parametrize(
+    "reflection", [("Link", "encoded-target"), ("ETag", "query")]
+)
 def test_capture_redirect_header_reflection_never_persists(
     tmp_path, capture_request, scenario, status, reflection
 ):

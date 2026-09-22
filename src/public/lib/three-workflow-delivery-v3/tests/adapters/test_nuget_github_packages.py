@@ -5,7 +5,6 @@ from __future__ import annotations
 # ruff: noqa: D103, PLR2004
 import base64
 import hashlib
-import html
 import http.client
 import json
 import platform
@@ -18,7 +17,6 @@ from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import MagicMock, Mock
-from urllib.parse import quote, urlsplit
 
 import pytest
 from three_workflow_delivery_v3.adapters import nuget_github_packages as nuget
@@ -197,38 +195,40 @@ def test_package_read_follows_one_original_location_with_safe_exchanges(
     assert state.exchanges[-1].header("set-cookie") is None
 
 
-@pytest.mark.parametrize("status", [301, 302])
-@pytest.mark.parametrize("header", ["Link", "ETag"])
 @pytest.mark.parametrize(
-    "form",
+    "reflected",
     [
-        "full",
-        "target",
-        "query",
-        "html-full",
-        "html-target",
-        "html-query",
-        "encoded-full",
-        "encoded-target",
-        "encoded-query",
+        "https://storage.example/pkg-one?sig=capability-one&v=1",
+        "/pkg-one?sig=capability-one&v=1",
+        "sig=capability-one&v=1",
+        "https://storage.example/pkg-one?sig=capability-one&amp;v=1",
+        "/pkg-one?sig=capability-one&amp;v=1",
+        "sig=capability-one&amp;v=1",
+        "https%3A%2F%2Fstorage.example%2Fpkg-one%3Fsig%3Dcapability-one%26v%3D1",
+        "%2Fpkg-one%3Fsig%3Dcapability-one%26v%3D1",
+        "sig%3Dcapability-one%26v%3D1",
+    ],
+)
+def test_read_secret_rule_rejects_capability_reflections(reflected):
+    secrets = nuget.read_location_secrets(
+        "https://storage.example/pkg-one?sig=capability-one&v=1"
+    )
+    with pytest.raises(nuget.NuGetAdapterError, match="capability"):
+        nuget.check_read_secrets(reflected.encode(), secrets)
+
+
+@pytest.mark.parametrize("status", [301, 302])
+@pytest.mark.parametrize(
+    ("header", "reflected"),
+    [
+        ("Link", "%2Fpkg-one%3Fsig%3Dcapability-one%26v%3D1"),
+        ("ETag", "sig=capability-one&v=1"),
     ],
 )
 def test_package_redirect_header_reflection_stops_before_storage(
-    authority, status, header, form
+    authority, status, header, reflected
 ):
     location = "https://storage.example/pkg-one?sig=capability-one&v=1"
-    parsed = urlsplit(location)
-    values = {
-        "full": location,
-        "target": parsed.path + "?" + parsed.query,
-        "query": parsed.query,
-    }
-    base_form = form.rsplit("-", 1)[-1]
-    reflected = values[base_form]
-    if form.startswith("html-"):
-        reflected = html.escape(reflected)
-    elif form.startswith("encoded-"):
-        reflected = quote(reflected, safe="")
     responses = _responses()
     responses[ARCHIVE_URL] = _response(
         ARCHIVE_URL,
