@@ -19,8 +19,11 @@ ends a grant. Git and the proposing PR retain the reason and history.
   [v3 requirements and design](../src/public/lib/three-workflow-delivery-v3/docs/README.md).
 - **Bounded advancement:** Align active v3 workflow, script, local and test
   runtime selection with the repository's mise-managed Python 3.14 authority.
-  Atomically revise the affected v3 requirements/design and executable checks
-  so HK owns source/configuration conformance and CI owns project tests.
+  First accept the affected v3 requirements/design and migration contract.
+  Then implement the dependent execution changes, synchronizing directly
+  affected checks and guidance so HK owns source/configuration conformance
+  and CI owns project tests. Preserve existing required validation until its
+  replacement is accepted.
   Select language tests, builds and platform artifacts from actual affected
   inputs and dependencies; eliminate duplicated v3 test execution and
   unnecessary job ordering. Preserve explicit local and full-validation test
