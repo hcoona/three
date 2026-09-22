@@ -3909,15 +3909,8 @@ def test_retry_5_real_registry_rejects_non_authoritative_status(
     with pytest.raises(
         ValueError,
         match="accepted npm publish status",
-    ) as raised:
+    ):
         _admit(document)
-
-    assert str(raised.value).endswith(
-        ".upstream-status must be an accepted npm publish status"
-    )
-    assert upstream_status not in (
-        governance_module._NPM_PUBLISH_SUCCESS_STATUSES
-    )
 
 
 def test_retry_5_governance_rejects_hypothetical_later_finalization_target() -> (

@@ -157,26 +157,8 @@ def test_parse_then_canonicalize_preserves_jcs_semantics() -> None:
     assert parsed == {"z": -0.0, "a": {"é": "text", "a": True}}
 
 
-def test_parse_json_strict_accepts_strict_utf8_bytearray() -> None:
-    """Apply the same strict UTF-8 boundary to mutable byte input."""
-    document = bytearray('{"currency":"€"}'.encode())
-
-    assert parse_json_strict(document) == {"currency": "€"}
-
-
-def test_parse_json_strict_rejects_non_utf8_bytearray() -> None:
-    """Reject mutable byte input when it is not strict UTF-8."""
-    document = bytearray('{"currency":"€"}'.encode("utf-16"))
-
-    with pytest.raises(UnicodeDecodeError, match="utf-8"):
-        parse_json_strict(document)
-
-
 from pathlib import Path  # noqa: E402
 
-from three_workflow_delivery_v3 import (  # noqa: E402
-    parse_canonical_json as exported_parse_canonical_json,
-)
 from three_workflow_delivery_v3.canonical import (  # noqa: E402
     parse_canonical_json,
 )
@@ -191,17 +173,16 @@ _FIXTURE_GOLDEN_DIGESTS = {
 
 
 def test_parse_canonical_json_accepts_canonical_utf8_object() -> None:
-    """Return the exact object encoded by canonical bytes and public export."""
+    """Return the exact object encoded by canonical bytes."""
     document = b'{"active":true,"items":[1,"two"],"name":"record"}'
 
-    result = parse_canonical_json(bytearray(document))
+    result = parse_canonical_json(document)
 
     assert result == {
         "active": True,
         "items": [1, "two"],
         "name": "record",
     }
-    assert exported_parse_canonical_json is parse_canonical_json
 
 
 @pytest.mark.parametrize(

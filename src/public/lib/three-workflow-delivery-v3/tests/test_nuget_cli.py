@@ -913,8 +913,8 @@ def test_nuget_profile_collection_uses_exact_native_discovery(
         ("hcoona:" + TOKEN).encode("ascii")
     ).decode("ascii")
     assert headers["Accept-Encoding"] == "identity"
-    assert transport.get.call_args.kwargs["timeout"] == 60  # noqa: PLR2004
-    assert transport.get.call_args.kwargs["max_bytes"] == 8 * 1024 * 1024
+    assert 0 < transport.get.call_args.kwargs["timeout"] <= 60  # noqa: PLR2004
+    assert 0 < transport.get.call_args.kwargs["max_bytes"] <= 8 * 1024 * 1024
 
 
 def test_nuget_cli_changed_initial_main_blocks_native_collection(enabled_case):

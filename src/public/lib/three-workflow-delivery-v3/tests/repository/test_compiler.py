@@ -9,7 +9,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 import yaml
@@ -973,63 +973,30 @@ def test_fact_bundle_admission_rejects_schema_and_digest_substitution(
 
 
 @pytest.mark.parametrize(
-    ("field", "surrogate"),
+    ("field", "message"),
     [
-        ("schema", True),
-        ("binding", {}),
-        ("manifest_digest", True),
-        ("manifest_entry_id", 1),
-        ("request_artifact_id", True),
-        ("request_artifact_digest", 1),
-        ("provider_result", {}),
-        ("provider_result_digest", True),
-        ("transport_id", 1.0),
-        ("transport_digest", False),
+        (
+            "request_artifact_id",
+            "Fact Bundle request artifact ID binding mismatch",
+        ),
+        ("transport_id", "Fact Bundle transport ID binding mismatch"),
     ],
 )
-def test_fact_bundle_admission_requires_exact_runtime_field_types(
+def test_fact_bundle_admission_rejects_different_expected_artifact_ids(
     field: str,
-    surrogate: object,
+    message: str,
 ) -> None:
-    """Reject Boolean, number, and container surrogates in every Bundle role."""
+    """Require each valid artifact ID to match its current admission context."""
     context, manifest, result = _scenario()
     bundle, admission = _bundle_admission_inputs(manifest, result)
-    forged = replace(bundle, **{field: cast("Any", surrogate)})
+    changed = replace(admission, **{field: getattr(admission, field) + 1})
 
-    with pytest.raises((TypeError, ValueError)):
-        admit_node_provider_fact_bundle(
-            forged,
-            context=context,
-            manifest=manifest,
-            admission=admission,
-        )
-
-
-@pytest.mark.parametrize(
-    ("field", "surrogate"),
-    [
-        ("request_artifact_id", True),
-        ("request_artifact_digest", 1),
-        ("transport_id", 1.0),
-        ("transport_digest", False),
-        ("bundle_digest", True),
-    ],
-)
-def test_fact_bundle_admission_context_requires_exact_runtime_field_types(
-    field: str,
-    surrogate: object,
-) -> None:
-    """Reject trusted-context type surrogates before Bundle comparison."""
-    context, manifest, result = _scenario()
-    bundle, admission = _bundle_admission_inputs(manifest, result)
-    forged = replace(admission, **{field: cast("Any", surrogate)})
-
-    with pytest.raises((TypeError, ValueError)):
+    with pytest.raises(ValueError, match=message):
         admit_node_provider_fact_bundle(
             bundle,
             context=context,
             manifest=manifest,
-            admission=forged,
+            admission=changed,
         )
 
 

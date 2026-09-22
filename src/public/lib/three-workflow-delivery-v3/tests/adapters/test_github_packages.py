@@ -152,7 +152,6 @@ def test_github_packages_requests_exact_escaped_endpoints_headers_and_pages() ->
     assert adapter.npm_package_metadata_url(
         "@hcoona/hcoona-release-smoke-npm"
     ) == ("https://npm.pkg.github.com/@hcoona%2Fhcoona-release-smoke-npm")
-    assert not hasattr(adapter, "npm_exact_metadata_url")
     assert adapter.github_api_headers(TOKEN) == (
         ("Accept", "application/vnd.github+json"),
         ("Authorization", f"Bearer {TOKEN}"),

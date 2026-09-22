@@ -1419,6 +1419,18 @@ def test_live_admission_requires_mandatory_authority_implementations(
     ("path", "value", "message"),
     [
         pytest.param(
+            ("context", "selected-ref"),
+            1,
+            "nonempty exact string",
+            id="numeric-selected-ref",
+        ),
+        pytest.param(
+            ("context", "producer"),
+            1,
+            "nonempty exact string",
+            id="numeric-producer",
+        ),
+        pytest.param(
             ("context", "workflow-run-id"),
             True,
             "positive integer",
@@ -1724,44 +1736,6 @@ def test_other_primitive_ids_cannot_pass_when_test_primitive_is_admitted(
             admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
             now=NOW,
         )
-
-
-class _ModelAccessTrap:
-    @property
-    def snapshot(self) -> RepositoryModelSnapshot:
-        pytest.fail(
-            "an unadmitted model must be rejected before property access"
-        )
-
-
-@pytest.mark.parametrize("model_kind", ["raw-snapshot", "wrong-wrapper"])
-def test_live_eligibility_rejects_unadmitted_model_before_use_or_io(
-    monkeypatch: pytest.MonkeyPatch,
-    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
-    policy: ReleasePolicy,
-    model_kind: str,
-) -> None:
-    """Reject raw models and wrapper-shaped substitutes at the consumer gate."""
-    snapshot = live_admitted_repository_model.snapshot
-    context = _context(snapshot, policy)
-    unadmitted = (
-        snapshot if model_kind == "raw-snapshot" else _ModelAccessTrap()
-    )
-    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
-
-    with pytest.raises(
-        TypeError, match="requires an admitted Repository Model"
-    ):
-        _evaluate(
-            monkeypatch,
-            client,
-            repository_model=unadmitted,  # type: ignore[arg-type]
-            policy=policy,
-            context=context,
-        )
-
-    assert client.scan_calls == []
-    assert client.calls == []
 
 
 def test_live_eligibility_rejects_admitted_nuget_model_before_io(

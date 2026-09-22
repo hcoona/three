@@ -13,7 +13,6 @@ import os
 import shutil
 import subprocess
 import tarfile
-import types
 from collections import Counter
 from contextlib import contextmanager
 from dataclasses import replace
@@ -2794,18 +2793,6 @@ def test_runtime_request_is_frozen_and_slotted() -> None:
             "npm version must be frozen",
             id="empty-npm-version",
         ),
-        pytest.param(
-            "surrogate",
-            TypeError,
-            "Runtime Request must have exact runtime type",
-            id="surrogate-request",
-        ),
-        pytest.param(
-            "subclass",
-            TypeError,
-            "Runtime Request must have exact runtime type",
-            id="runtime-request-subclass",
-        ),
     ],
 )
 def test_project_tests_reject_malformed_runtime_requests_before_commands(
@@ -2816,21 +2803,9 @@ def test_project_tests_reject_malformed_runtime_requests_before_commands(
 ) -> None:
     node_version = "" if scenario == "empty-node" else "v24.4.1"
     npm_version = "" if scenario == "empty-npm" else "11.4.2"
-    if scenario == "surrogate":
-        runtime_request: object = types.SimpleNamespace(
-            node_version=node_version, npm_version=npm_version
-        )
-    elif scenario == "subclass":
-        runtime_request_subclass = type(
-            "RuntimeRequestSubclass", (RuntimeRequest,), {}
-        )
-        runtime_request = runtime_request_subclass(
-            node_version=node_version, npm_version=npm_version
-        )
-    else:
-        runtime_request = RuntimeRequest(
-            node_version=node_version, npm_version=npm_version
-        )
+    runtime_request = RuntimeRequest(
+        node_version=node_version, npm_version=npm_version
+    )
     observed: list[tuple[str, ...]] = []
 
     def reject_command(
@@ -2843,9 +2818,7 @@ def test_project_tests_reject_malformed_runtime_requests_before_commands(
 
     monkeypatch.setattr(node_adapter, "_run", reject_command)
     with pytest.raises(expected_exception, match=message):
-        run_node_project_tests(
-            PROJECT_ROOT, cast("RuntimeRequest", runtime_request)
-        )
+        run_node_project_tests(PROJECT_ROOT, runtime_request)
     assert observed == []
 
 

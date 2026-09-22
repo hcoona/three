@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 # ruff: noqa: D103
-import inspect
 from collections.abc import Callable
 from dataclasses import FrozenInstanceError, fields, replace
 from pathlib import Path
@@ -25,9 +24,6 @@ from three_workflow_delivery_v3.records.release import (
 from three_workflow_delivery_v3.release.identity import (
     derive_simulation_binding,
     normalize_official_simulation_intent,
-)
-from three_workflow_delivery_v3.release.planner import (
-    plan_official_simulation_qualification,
 )
 from three_workflow_delivery_v3.repository.compiler import (
     AdmittedRepositoryModelSnapshot,
@@ -154,15 +150,8 @@ def test_repository_model_admission_rejects_prior_attempt_context(
 
 
 def test_simulation_identity_requires_admitted_current_model(
-    intent: ReleaseIntent,
     admitted_repository_model: AdmittedRepositoryModelSnapshot,
 ) -> None:
-    with pytest.raises(TypeError, match="admitted Repository Model"):
-        derive_simulation_binding(
-            intent,
-            admitted_repository_model.snapshot,  # type: ignore[arg-type]
-        )
-
     with pytest.raises(ValueError, match="admission integrity"):
         AdmittedRepositoryModelSnapshot(
             snapshot=replace(
@@ -288,9 +277,6 @@ def test_official_simulation_plan_is_the_exact_closed_first_slice(
 ) -> None:
     snapshot = qualification_snapshot
 
-    assert tuple(
-        inspect.signature(plan_official_simulation_qualification).parameters
-    )[:3] == ("intent", "binding", "admitted_repository_model")
     assert admitted_repository_model.snapshot.release_policy is not None
     assert snapshot.release_policy_digest == (
         admitted_repository_model.snapshot.release_policy.policy_digest

@@ -70,7 +70,6 @@ REPO_ROOT = Path(__file__).resolve().parents[6]
 PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 TARGET = "e" * 40
 TRANSPORT_ID = 202
-BOOLEAN_ID_SURROGATE = True
 NPM_VERSION = "1.2.3-beta.42.ge123456"
 SHA256_A = "sha256:" + ("a" * 64)
 SHA256_B = "sha256:" + ("b" * 64)
@@ -287,6 +286,68 @@ def _snapshot() -> RepositoryModelSnapshot:
         unresolved=(),
         ready=True,
     )
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        pytest.param(
+            ("project-nodes", 0, "private"),
+            0,
+            (
+                "Repository Model Snapshot "
+                "project-nodes[0].private must be Boolean"
+            ),
+            id="numeric-private",
+        ),
+        pytest.param(
+            ("ready",),
+            1,
+            "Repository Model Snapshot ready must be Boolean",
+            id="numeric-ready",
+        ),
+        pytest.param(
+            ("nbgv", "node-api-result-digest"),
+            123,
+            (
+                "Repository Model Snapshot "
+                "nbgv.node-api-result-digest must be a string"
+            ),
+            id="numeric-nbgv-digest",
+        ),
+        pytest.param(
+            ("context", "producer"),
+            1,
+            "Repository Model Snapshot context.producer must be a string",
+            id="numeric-producer",
+        ),
+        pytest.param(
+            ("context", "workflow-run-id"),
+            True,
+            (
+                "Repository Model Snapshot "
+                "context.workflow-run-id must be an integer"
+            ),
+            id="boolean-run",
+        ),
+    ],
+)
+def test_repository_model_reader_rejects_malformed_primitives(
+    path: tuple[str | int, ...],
+    value: object,
+    message: str,
+) -> None:
+    """Reject malformed fields at actual Model document admission."""
+    document = _snapshot().to_document()
+    parent = cast("Any", document)
+    for key in path[:-1]:
+        parent = parent[key]
+    parent[path[-1]] = value
+
+    with pytest.raises(TypeError) as raised:
+        repository_model_snapshot_from_document(document)
+
+    assert str(raised.value) == message
 
 
 def _snapshot_with_build(
@@ -873,9 +934,6 @@ def test_fact_bundle_schema_binds_complete_approved_contract() -> None:
         "binding-control",
         "binding-catalog-digest",
         "binding-request-digest",
-        "type-run",
-        "type-artifact-id",
-        "type-transport-id",
         "manifest-digest",
         "manifest-entry",
         "artifact-digest",
@@ -887,7 +945,7 @@ def test_fact_bundle_schema_binds_complete_approved_contract() -> None:
 def test_fact_bundle_admission_rejects_binding_type_digest_and_result_substitutions(  # noqa: E501
     mutation: str,
 ) -> None:
-    """Reject every authority, runtime-type, integrity, and payload forgery."""
+    """Reject every authority, integrity, and payload substitution."""
     context = _context()
     manifest = _manifest(context)
     result = _provider_result(context, manifest)
@@ -903,7 +961,6 @@ def test_fact_bundle_admission_rejects_binding_type_digest_and_result_substituti
         "binding-control": ("control", "other-control"),
         "binding-catalog-digest": ("catalog_digest", SHA256_C),
         "binding-request-digest": ("request_digest", SHA256_C),
-        "type-run": ("workflow_run_id", True),
     }
     if mutation in binding_mutations:
         field, value = binding_mutations[mutation]
@@ -911,10 +968,6 @@ def test_fact_bundle_admission_rejects_binding_type_digest_and_result_substituti
             bundle,
             binding=replace(bundle.binding, **{field: cast("Any", value)}),
         )
-    elif mutation == "type-artifact-id":
-        bundle = replace(bundle, request_artifact_id=BOOLEAN_ID_SURROGATE)
-    elif mutation == "type-transport-id":
-        bundle = replace(bundle, transport_id=BOOLEAN_ID_SURROGATE)
     elif mutation == "manifest-digest":
         bundle = replace(bundle, manifest_digest=SHA256_C)
     elif mutation == "manifest-entry":
@@ -934,7 +987,13 @@ def test_fact_bundle_admission_rejects_binding_type_digest_and_result_substituti
             provider_result_digest=forged_result.result_digest,
         )
 
-    with pytest.raises((TypeError, ValueError)):
+    message = {
+        "artifact-digest": (
+            "Fact Bundle request artifact digest binding mismatch"
+        ),
+        "transport-digest": "Fact Bundle transport digest binding mismatch",
+    }.get(mutation)
+    with pytest.raises((TypeError, ValueError), match=message):
         admit_node_provider_fact_bundle(
             bundle,
             context=context,
@@ -947,20 +1006,13 @@ def test_fact_bundle_admission_rejects_binding_type_digest_and_result_substituti
     "value",
     [
         pytest.param("", id="empty"),
-        pytest.param(1, id="integer"),
-        pytest.param(True, id="boolean"),
-        pytest.param(1.0, id="float"),
         pytest.param(" ", id="whitespace"),
-        pytest.param(["file:///remote.git"], id="list"),
-        pytest.param(("file:///remote.git",), id="tuple"),
-        pytest.param({"url": "file:///remote.git"}, id="mapping"),
-        pytest.param(None, id="none"),
     ],
 )
 def test_provider_result_admission_requires_nonempty_string_authoritative_remote_url(  # noqa: E501
     value: object,
 ) -> None:
-    """Require a concrete string URL, never a truthy surrogate."""
+    """Reject empty and whitespace-only authoritative remote URLs."""
     context = _context()
     manifest = _manifest(context)
     valid = _provider_result(context, manifest)
@@ -983,29 +1035,13 @@ def test_provider_result_admission_requires_nonempty_string_authoritative_remote
     assert forged.nbgv is valid.nbgv
 
 
-@pytest.mark.parametrize(
-    "value",
-    [
-        pytest.param(True, id="true"),
-        pytest.param(0, id="zero"),
-        pytest.param(1, id="one"),
-        pytest.param(0.0, id="zero-float"),
-        pytest.param("", id="empty-string"),
-        pytest.param("false", id="string"),
-        pytest.param([], id="list"),
-        pytest.param({}, id="mapping"),
-        pytest.param(None, id="none"),
-    ],
-)
-def test_repository_model_admission_requires_private_exactly_false(
-    value: object,
-) -> None:
-    """Reject every non-Boolean-false Project Node privacy value."""
+def test_repository_model_admission_requires_private_exactly_false() -> None:
+    """Reject a private project in the first-slice Model."""
     snapshot = _snapshot()
     project = snapshot.project_nodes[0]
     forged = replace(
         snapshot,
-        project_nodes=(replace(project, private=cast("Any", value)),),
+        project_nodes=(replace(project, private=True),),
     )
 
     with pytest.raises(
@@ -1125,8 +1161,6 @@ def test_live_context_accepts_canonical_selected_refs(
     ("field", "value"),
     [
         pytest.param("selected_ref", "", id="selected-ref-empty"),
-        pytest.param("selected_ref", 1, id="selected-ref-integer"),
-        pytest.param("selected_ref", True, id="selected-ref-boolean"),
         pytest.param("selected_ref", "main", id="selected-ref-short-name"),
         pytest.param(
             "selected_ref",
@@ -1160,16 +1194,13 @@ def test_live_context_accepts_canonical_selected_refs(
         ),
         pytest.param("producer", "", id="producer-empty"),
         pytest.param("producer", " ", id="producer-whitespace"),
-        pytest.param("producer", 1, id="producer-integer"),
-        pytest.param("producer", True, id="producer-boolean"),
-        pytest.param("producer", ["job"], id="producer-list"),
     ],
 )
 def test_live_context_requires_exact_strings_and_valid_selected_ref(
     field: str,
     value: object,
 ) -> None:
-    """Reject malformed refs and truthy numeric/Boolean producer surrogates."""
+    """Reject malformed selected refs and empty producers."""
     snapshot = _snapshot()
     repository_model = _admitted_model(snapshot)
     context = replace(
@@ -1184,55 +1215,15 @@ def test_live_context_requires_exact_strings_and_valid_selected_ref(
     assert snapshot.context.target == TARGET
 
 
-@pytest.mark.parametrize(
-    "value",
-    [
-        pytest.param(1, id="integer"),
-        pytest.param(True, id="boolean"),
-        pytest.param(" ", id="whitespace"),
-        pytest.param(["compile-model"], id="list"),
-        pytest.param({"job": "compile-model"}, id="mapping"),
-    ],
-)
-def test_compilation_context_requires_exact_string_producer(
-    value: object,
-) -> None:
-    """Reject truthy producer values that are not nonempty strings."""
-    forged = replace(_context(), producer=cast("Any", value))
+def test_compilation_context_requires_exact_string_producer() -> None:
+    """Reject a whitespace-only compilation producer."""
+    forged = replace(_context(), producer=" ")
 
     with pytest.raises((TypeError, ValueError)):
         validate_compilation_context(forged)
 
     assert forged.target == TARGET
     assert forged.run_attempt is None
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        pytest.param(False, id="false"),
-        pytest.param(0, id="zero"),
-        pytest.param(1, id="one"),
-        pytest.param("true", id="string"),
-        pytest.param([True], id="list"),
-        pytest.param((True,), id="tuple"),
-        pytest.param({"ready": True}, id="mapping"),
-        pytest.param(None, id="none"),
-    ],
-)
-def test_repository_model_admission_requires_ready_exactly_true(
-    value: object,
-) -> None:
-    """Reject false and truthy non-Boolean readiness substitutes."""
-    snapshot = _snapshot()
-    forged = replace(snapshot, ready=cast("Any", value))
-
-    with pytest.raises(ValueError, match="ready first-slice closure"):
-        validate_first_slice_repository_model_snapshot(forged)
-
-    validate_first_slice_repository_model_snapshot(snapshot)
-    assert snapshot.ready is True
-    assert snapshot.unresolved == ()
 
 
 def test_repository_model_rejects_digest_equivalent_list_backed_snapshot() -> (

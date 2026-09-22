@@ -404,7 +404,9 @@ raise SystemExit(int(os.environ["TEST_EXIT"]))
 
 def test_audit_is_always_an_immutable_explicit_bundle():
     upload = _step(UPLOAD)
-    assert _steps()[-1] == upload
+    steps = _steps()
+    assert steps.index(_step("request")) < steps.index(upload)
+    assert steps.index(_step("probe")) < steps.index(upload)
     assert upload["if"] == "always()"
     settings = upload["with"]
     prefix = "${{ runner.temp }}/wdv3-native-npm-${{ github.run_id }}/"

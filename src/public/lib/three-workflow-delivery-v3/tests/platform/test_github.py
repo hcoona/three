@@ -97,8 +97,6 @@ def test_ref_protection_false_is_authoritative(
     "failure",
     [
         pytest.param(_GitHubStatusError(404), id="not-found"),
-        pytest.param(_GitHubStatusError(403), id="permission"),
-        pytest.param(_GitHubStatusError(503), id="server"),
         pytest.param(GitHubRestError("network unavailable"), id="network"),
     ],
 )

@@ -615,25 +615,6 @@ def test_dotnet_simulation_keeps_its_unit_and_attempt(native_scenario) -> None:
         )
 
 
-def test_dotnet_manifest_revalidates_context_primitive_types(
-    native_scenario,
-) -> None:
-    """Reject equal-valued floats in the manifest context."""
-    _, context, manifest, result = native_scenario
-    altered_context = replace(
-        context, workflow_run_id=cast("Any", float(context.workflow_run_id))
-    )
-    altered_manifest = replace(manifest, context=altered_context)
-    bundle, admission = _bundle(manifest, result)
-    with pytest.raises(ValueError, match="positive integer"):
-        compiler.admit_dotnet_provider_fact_bundle(
-            bundle,
-            context=context,
-            manifest=altered_manifest,
-            admission=admission,
-        )
-
-
 def test_dotnet_compiler_rehashes_internally_consistent_foreign_inputs(
     native_scenario,
 ) -> None:

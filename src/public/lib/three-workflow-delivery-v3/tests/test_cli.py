@@ -2711,6 +2711,7 @@ def _run_compile_live_model_scenario(
     *,
     target: str = "a" * 40,
     malformed_authoring: str | None = None,
+    provider_mutation: tuple[tuple[str, str], JsonValue] | None = None,
 ) -> tuple[int, Path, Path]:
     repo, actual_target = _target_authoring_repo(
         tmp_path,
@@ -2750,10 +2751,14 @@ def _run_compile_live_model_scenario(
         provider_binding(manifest, "node-first-slice")
     )
     provider_document = provider.to_document()
+    if provider_mutation is not None:
+        (section, field), value = provider_mutation
+        cast("dict[str, JsonValue]", provider_document[section])[field] = value
+    result_digest = canonical_sha256(provider_document)
     provider_document["provider-request-manifest-digest"] = (
         manifest.manifest_digest
     )
-    provider_document["result-digest"] = provider.result_digest
+    provider_document["result-digest"] = result_digest
     provider_path = _write_canonical(
         tmp_path / "live-provider-result.json",
         provider_document,
@@ -2871,6 +2876,43 @@ def test_compile_live_model_does_not_emit_execution_concurrency_key_when_compila
     assert result == 1
     assert captured.out == ""
     assert "malformed YAML authoring" in captured.err
+    assert not model_output.exists()
+    assert not github_output.exists()
+
+
+@pytest.mark.parametrize(
+    ("path", "message"),
+    [
+        pytest.param(
+            ("checkout", "authoritative-remote-url"),
+            "remote URL must be a string",
+            id="boolean-remote-url",
+        ),
+        pytest.param(
+            ("binding", "workflow-run-id"),
+            "run must be an integer",
+            id="boolean-run",
+        ),
+    ],
+)
+def test_compile_live_model_rejects_malformed_provider_primitives(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    path: tuple[str, str],
+    message: str,
+) -> None:
+    """Reject malformed uploaded Provider fields before Model output."""
+    result, model_output, github_output = _run_compile_live_model_scenario(
+        tmp_path,
+        monkeypatch,
+        provider_mutation=(path, True),
+    )
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert captured.out == ""
+    assert message in captured.err
     assert not model_output.exists()
     assert not github_output.exists()
 
