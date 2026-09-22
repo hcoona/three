@@ -168,6 +168,40 @@ their selected-revision control strictly admits the active Governance schema.
 
 ## Implementation-Line Strategy
 
+### CI Execution Ownership Cutover
+
+[Issue #817](https://github.com/hcoona/three/issues/817) changes the execution
+owner of project tests and unifies active Python execution. This accepted
+contract is the prerequisite for its implementation, not a claim that the
+current workflows already implement it.
+
+Until the implementation PR is accepted, the existing path-selected root-HK
+v3 pytest step remains required, including its unconditional execution in
+manual `slice-validation`. The implementation PR activates the revised
+`WD-CI-010` ownership by installing the affected CI test owner and removing
+HK project tests together. It also updates active commands, guidance and
+test expectations. Its independent reviewer checks that selected tests remain
+required, existing required GitHub contexts still reject failures, and no
+validation gap or duplicate ordinary CI owner is introduced. Closure of the
+authorizing Delivery Wave is the fallback review of this migration.
+
+At the same cutover, active v3 workflows, scripts, local commands and tests
+consume the repository's mise-managed Python 3.14 selection and exact lock
+resolution. A generated root `.python-version` serves uv and `actions/setup-python`;
+a generated package runtime constant serves the installed adapter. These are
+projections of `mise.lock`, checked together with the `mise.toml` selector,
+not independently maintained version choices. Trusted `tooling` checkouts
+resolve their own version file. Existing environments are synchronized before
+commands relying on `--no-sync` execute.
+
+The NuGet [HTTP profile contract](./hcoona-release-smoke-github-packages-lld.md#observation-publication-and-terminal-evidence)
+retains exact runtime/source and complete actual-profile comparison. Runtime
+and source migration must execute the real profile and loopback fault proofs
+on the unified interpreter, without runtime-based skips. Original imported
+profiles retain their original identities and remain readable. They do not
+admit the new runtime for native or Live use. Fresh native/profile admission
+retains its existing separate authorization and evidence gates.
+
 ### Static-Reference Policy Contraction
 
 The implementation phase introduces a new schema and policy ID. It must:
@@ -178,8 +212,8 @@ The implementation phase introduces a new schema and policy ID. It must:
   separate HK feedback sources;
 - run the lightweight policy whenever root HK runs in the caller-selected
   feedback mode;
-- preserve the expensive v3 pytest suite as path-selected, except that manual
-  `slice-validation` runs it unconditionally;
+- preserve required v3 self-tests through the
+  [CI execution ownership cutover](#ci-execution-ownership-cutover);
 - remove Tree-sitter and every handwritten ecosystem grammar, lexer, locator
   splitter, and competing-authority hardening layer;
 - introduce one exact Ecosystem Authority Graph per retained selector,

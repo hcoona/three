@@ -63,12 +63,14 @@ CI Qualification proves two different classes of assertion:
 The root HK gate owns source-tree conformance. The CI Planner owns
 affected-system qualification.
 
-Tool names do not define this boundary. A formatter, linter, lock check,
-generated-file synchronization check, or repository scenario test may belong
-to HK when it proves checkout-local conformance. A compiler, type checker,
-analyzer, or test runner belongs to model-driven CI when its applicability or
-meaning depends on a Project Node, dependency graph, native workspace, runner
-matrix, or Release Unit.
+Under the [execution migration](./migration-strategy.md#ci-execution-ownership-cutover),
+HK owns formatting, lint, syntax, lock and generated/configuration consistency
+checks. Project unit, scenario and integration tests belong to CI, including
+the tests of Workflow Delivery v3 itself. A compiler, type checker or analyzer
+also belongs to model-driven CI when its applicability or meaning depends on
+a Project Node, dependency graph, native workspace, runner matrix or Release
+Unit. A fast test is still a project test; an HK profile does not change its
+responsibility.
 
 ## Flow
 
@@ -305,19 +307,31 @@ HK outputs remain internal to `SourceTreeConformance` and are never admissible
 as Live Eligibility authority. Release forms its own exact-target
 `git-target` result.
 
-### First-Slice v3 Control Tests
+### Control-Package Tests
 
-Root HK contains an expensive v3 control-package pytest step. It is
-path-selected when changes affect the v3 control package, catalogs, or tests;
-first-slice descriptors; the exact first-slice Release policy; a v3 workflow
-consumer; direct Python workspace or lock inputs; or HK configuration and
-helpers.
+The [execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
+moves the v3 pytest collection to the general Python CI check. Ordinary
+PR/push CI executes that selected collection once. The v3 shadow workflow
+continues consuming root HK for source conformance without running another
+copy of its own implementation suite.
 
-Manual `slice-validation` forces the step to run regardless of changed paths.
-It remains part of the single `SourceTreeConformance` obligation and creates no
-separate CI obligation, Evidence record, or job. Unrelated product source alone
-does not select this control-test step. Other root HK invocations retain
-path-selected execution.
+Selection includes the package's implementation, tests and catalogs; consumed
+workflows, descriptors, policies and helpers; shared Python inputs; and native
+Node/.NET dependencies used by integration scenarios. The three v3 .NET
+helpers, inherited build configuration and tool locks are dependencies even
+though their files live outside the Python package. A product merely using
+unchanged v3 does not select its self-tests. Unconsumed project documentation
+does not select them; consumed package metadata and fixtures remain inputs.
+
+An explicit local command runs the complete collection, and general CI's
+explicit full mode selects it regardless of changed paths. Manual v3
+`slice-validation` retains its first-slice qualification scope; after cutover,
+it does not implicitly run control-package tests inside HK. These self-tests
+do not add a V3 Qualification obligation or produce Release Evidence.
+
+The repository [HK/CI execution guidance](../../../../../docs/engineering/hk-execution.md#scheduled-ci-execution-cutover)
+owns the general workflow's selection and completion rules. They do not claim
+the deferred canonical repository-wide v3 full-validation capability.
 
 ### Bounded Static-Reference Policy
 
