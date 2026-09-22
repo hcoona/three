@@ -310,19 +310,20 @@ internal dependency and output semantics.
 ### Source-Tree Conformance
 
 The repository-local assertion that an immutable checkout satisfies its
-formatting, linting, static source, lock, generated-file, configuration, and
-path-triggered scenario rules.
+formatting, linting, static source, lock, generated-file and configuration
+rules.
 
 The repository-root HK gate owns this assertion as one opaque composite Quality
 Definition. CI binds the candidate and definition identity but does not inspect
 HK profiles, steps, file applicability, batching, or internal planning.
 
 Whenever root HK runs, its lightweight static-reference policy runs in the
-caller-selected `index` or `worktree` feedback mode. Separately, the first-slice
-root HK implementation includes an expensive path-selected v3 control package
-pytest step and runs that suite unconditionally only for manual
-`slice-validation`. Both remain internal to Source-Tree Conformance and do not
-create separate CI obligations, Evidence records, or jobs.
+caller-selected `index` or `worktree` feedback mode. That policy remains
+internal to Source-Tree Conformance and creates no separate CI obligation or
+Evidence record. Project tests have the separate execution owner defined by
+the [CI MLD](./ci-qualification-mld.md#control-package-tests). The
+[execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
+preserves the existing HK test owner until its replacement is accepted.
 
 ### Static-Reference Policy
 

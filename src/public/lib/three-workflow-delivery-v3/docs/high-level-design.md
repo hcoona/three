@@ -706,14 +706,13 @@ candidate input but does not inspect HK profiles, steps, file applicability, or
 internal planning.
 
 Whenever root HK runs, its lightweight static-reference policy runs in the
-caller-selected `index` or `worktree` feedback mode. Separately, HK includes an
-expensive path-selected v3 control-package pytest step for the complete v3
-control package/catalog/test tree, first-slice descriptors, the exact
-first-slice Release policy, every v3 workflow consumer, direct Python
-workspace/lock inputs, and HK configuration/helpers. Unrelated product source
-alone does not trigger that pytest step. Manual `slice-validation` runs it
-unconditionally. Both remain internal to the opaque root-HK invocation and do
-not create another CI obligation, Evidence record, or job.
+caller-selected `index` or `worktree` feedback mode. It remains internal to
+the opaque root-HK invocation and creates no separate CI obligation or
+Evidence record. Project unit, scenario and integration tests belong to CI;
+the [CI MLD](./ci-qualification-mld.md#control-package-tests) owns v3 self-test
+selection and execution. The [execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
+preserves the existing HK pytest step, including manual `slice-validation`,
+until the implementing PR installs its CI replacement.
 
 Executors resolve only mechanical details required to perform an immutable
 Plan. They may not add, remove, substitute, or downgrade planned scope.

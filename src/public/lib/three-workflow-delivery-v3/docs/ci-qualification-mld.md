@@ -435,11 +435,13 @@ The root gate may include:
 - syntax and source-file static checks;
 - lock consistency;
 - generated or projected configuration synchronization; and
-- path-triggered repository scenario tests.
+- the bounded static-reference policy.
 
 It does not own affected Project Node builds, project or native-workspace type
-checking, graph-derived tests, runner matrices, Release Unit artifact builds,
-or publication-shaped validation.
+checking, project unit/scenario/integration tests, runner matrices, Release
+Unit artifact builds, or publication-shaped validation. The
+[execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
+governs the existing HK test owner's transition to this boundary.
 
 ## Project Quality Policy
 
