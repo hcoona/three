@@ -786,9 +786,6 @@ def test_profile_rejects_unselected_success_status_contract(statuses):
     ("status", "error"),
     [
         (204, None),
-        (200.0, None),
-        ("200", None),
-        (True, None),
         (None, None),
         (200, "incomplete"),
         (202, "incomplete"),

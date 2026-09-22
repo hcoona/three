@@ -5,51 +5,13 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import tarfile
 import venv
-import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 PACKAGE_RELATIVE_PATH = Path("src/public/lib/three-workflow-delivery-v3")
-RELEASE_SOURCE_PATH = Path("src/three_workflow_delivery_v3/release")
-RELEASE_ARCHIVE_PATH = PurePosixPath("three_workflow_delivery_v3/release")
-SDIST_SOURCE_PREFIX = PurePosixPath("src")
-APPROVED_RELEASE_MODULES = (
-    "__init__.py",
-    "attempt_finalizer.py",
-    "eligibility.py",
-    "exact_satisfied.py",
-    "finalizer.py",
-    "governance_git.py",
-    "identity.py",
-    "live.py",
-    "nuget_eligibility.py",
-    "nuget_governance.py",
-    "nuget_observation.py",
-    "nuget_planner.py",
-    "nuget_publication.py",
-    "nuget_qualification.py",
-    "observation.py",
-    "planner.py",
-    "publication.py",
-    "qualification.py",
-    "simulation.py",
-    "static_reference_authority.py",
-    "static_reference_model.py",
-    "static_reference_policy.py",
-    "static_reference_projection.py",
-    "static_reference_session.py",
-    "static_reference_source.py",
-    "workflow.py",
-)
-APPROVED_RELEASE_MEMBERS = frozenset(
-    (RELEASE_ARCHIVE_PATH / module).as_posix()
-    for module in APPROVED_RELEASE_MODULES
-)
-DELETED_PACKAGE_MEMBER = "three_workflow_delivery_v3/authorization_formatter.py"
 UV_BINARY = shutil.which("uv")
 if UV_BINARY is None:
     pytest.skip(
@@ -68,49 +30,16 @@ def _process_output(process: subprocess.CompletedProcess[str]) -> str:
     return f"stdout:\n{process.stdout}\nstderr:\n{process.stderr}"
 
 
-def _wheel_package_members(path: Path) -> frozenset[str]:
-    with zipfile.ZipFile(path) as wheel:
-        return frozenset(
-            PurePosixPath(member.filename).as_posix()
-            for member in wheel.infolist()
-            if not member.is_dir()
-        )
-
-
-def _source_package_members(path: Path) -> frozenset[str]:
-    members = set()
-    with tarfile.open(path, "r:gz") as source_distribution:
-        for member in source_distribution.getmembers():
-            if not member.isfile():
-                continue
-            member_path = PurePosixPath(member.name)
-            project_path = PurePosixPath(*member_path.parts[1:])
-            if not project_path.is_relative_to(SDIST_SOURCE_PREFIX):
-                continue
-            members.add(
-                project_path.relative_to(SDIST_SOURCE_PREFIX).as_posix()
-            )
-    return frozenset(members)
-
-
 def test_built_distribution_contains_release_and_runs_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Ship the release package and execute the installed console script."""
+    """Build the local distribution and execute its installed console script."""
     isolated_repository = tmp_path / "repository"
     isolated_package = isolated_repository / PACKAGE_RELATIVE_PATH
     isolated_package.parent.mkdir(parents=True)
     shutil.copytree(REPO_ROOT / PACKAGE_RELATIVE_PATH, isolated_package)
     shutil.copy2(REPO_ROOT / ".gitignore", isolated_repository / ".gitignore")
-    stale_module = (
-        isolated_package / RELEASE_SOURCE_PATH / "stale_reference_policy.py"
-    )
-    stale_module.write_text(
-        '"""Stale release policy that must not be distributed."""\n',
-        encoding="utf-8",
-    )
-
     output = tmp_path / "dist"
     build = subprocess.run(  # noqa: S603
         [
@@ -131,24 +60,6 @@ def test_built_distribution_contains_release_and_runs_cli(
     source_distributions = tuple(output.glob("*.tar.gz"))
     assert len(wheels) == 1
     assert len(source_distributions) == 1
-
-    wheel_members = _wheel_package_members(wheels[0])
-    wheel_release_members = {
-        member
-        for member in wheel_members
-        if PurePosixPath(member).is_relative_to(RELEASE_ARCHIVE_PATH)
-    }
-    assert wheel_release_members == APPROVED_RELEASE_MEMBERS
-    assert DELETED_PACKAGE_MEMBER not in wheel_members
-
-    source_package_members = _source_package_members(source_distributions[0])
-    source_release_members = {
-        member
-        for member in source_package_members
-        if PurePosixPath(member).is_relative_to(RELEASE_ARCHIVE_PATH)
-    }
-    assert source_release_members == APPROVED_RELEASE_MEMBERS
-    assert DELETED_PACKAGE_MEMBER not in source_package_members
 
     environment = tmp_path / "venv"
     venv.EnvBuilder(

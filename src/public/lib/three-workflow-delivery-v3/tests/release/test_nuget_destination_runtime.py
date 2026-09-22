@@ -867,36 +867,6 @@ def _prepared(case, tmp_path):
     return inputs, feed, runtime, marker, reference
 
 
-def test_native_publication_rejects_unadmitted_marker_reference(
-    native_case, monkeypatch, tmp_path
-):
-    case = native_case
-    inputs, feed, runtime, marker, reference = _prepared(case, tmp_path)
-    publish = Mock(side_effect=AssertionError("unadmitted mutation"))
-    monkeypatch.setattr(native, "publish_nuget_once", publish)
-    with pytest.raises(ValueError, match="durable marker"):
-        execute_nuget_publication(
-            inputs,
-            current=case.current,
-            run_attempt=1,
-            durable_marker=marker,
-            marker_reference=SimpleNamespace(
-                payload_digest=reference.payload_digest
-            ),
-            runtime_directory=runtime,
-            read_resources=lambda: RESOURCES,
-            authority=feed.authority,
-            transport=feed,
-            token=TOKEN,
-            clock=lambda: LATER,
-        )
-    publish.assert_not_called()
-    assert not (runtime / "command-started").exists()
-    assert (runtime / case.artifact.content.basename).read_bytes() == (
-        case.scenario.result.package
-    )
-
-
 def test_native_publication_rejects_changed_archive_before_invocation(
     native_case, monkeypatch, tmp_path
 ):

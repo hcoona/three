@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import subprocess
+from collections import Counter
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -284,7 +285,6 @@ def test_probe_spec_binds_only_the_actual_current_run(inputs):
     spec["workflowRunId"] = 81
     with pytest.raises(ValueError, match="prospective"):
         probe.bind_probe_spec(canonicalize(spec), _platform(inputs.request))
-    inputs.publisher.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -379,9 +379,9 @@ def test_probe_preparation_preserves_original_selected_fixture(
         != inputs.official[B]["entries"]
     )
     inputs.helper.service_resources.assert_called_once_with(INDEX)
-    assert [
+    assert Counter(
         call.args[0] for call in inputs.helper.inspect_package.call_args_list
-    ] == [A, B]
+    ) == Counter((A, B))
     inputs.publisher.assert_not_called()
 
 

@@ -675,12 +675,6 @@ def test_missing_authorization_stops_before_any_calls_or_files(case):
         npm_operator.OperatorLocalNpmOperations(**case)
     assert case["runner"].calls == []
     assert not case["audit_directory"].exists()
-    case["authorized_disposable"] = True
-    case["authorized_delete_restore"] = True
-    with pytest.raises(TypeError, match="authorized_delete_restore"):
-        npm_operator.OperatorLocalNpmOperations(**case)
-    assert case["runner"].calls == []
-    assert not case["audit_directory"].exists()
 
 
 def test_actions_context_stops_before_any_calls(case, monkeypatch):

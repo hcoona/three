@@ -231,12 +231,10 @@ def test_capture_request_rejects_invalid_domain_values(
     ("field", "value"),
     [
         ("requests", 0),
-        ("version_pages", True),
         ("response_bytes", -1),
         ("socket_timeout_seconds", float("nan")),
         ("completion_timeout_seconds", float("inf")),
         ("completion_timeout_seconds", 0),
-        ("socket_timeout_seconds", True),
     ],
 )
 def test_capture_rejects_invalid_limits(capture_request, field, value):

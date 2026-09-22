@@ -1320,12 +1320,9 @@ def test_governance_proof_rejects_non_strict_fractional_interval(
         )
 
 
-@pytest.mark.parametrize("live_enabled", [False, 1])
-def test_governance_proof_requires_exact_boolean_true(live_enabled):
-    proof = _governance_proof()
-    error_type = TypeError if live_enabled == 1 else ValueError
-    with pytest.raises(error_type, match=r"Live enabled|runtime type"):
-        replace(proof, live_enabled=live_enabled)
+def test_governance_proof_requires_live_enabled() -> None:
+    with pytest.raises(ValueError, match="Live enabled"):
+        replace(_governance_proof(), live_enabled=False)
 
 
 def test_governance_proof_preserves_distinct_supplied_eligibility_and_target_shas():  # noqa: E501
@@ -1489,18 +1486,9 @@ def test_package_control_responses_require_canonical_digests(
         )
 
 
-@pytest.mark.parametrize(
-    "digest",
-    ["8" * 64, 8],
-    ids=("missing-prefix", "wrong-type"),
-)
-def test_profile_match_requires_a_canonical_profile_digest(digest):
-    error_type = TypeError if type(digest) is int else ValueError
-    with pytest.raises(error_type, match=r"profile|runtime type"):
-        replace(
-            _profile_match(),
-            destination_operation_profile_digest=digest,
-        )
+def test_profile_match_requires_a_canonical_profile_digest() -> None:
+    with pytest.raises(ValueError, match="profile"):
+        replace(_profile_match(), destination_operation_profile_digest="8" * 64)
 
 
 @pytest.mark.parametrize(
@@ -1791,22 +1779,9 @@ def test_publication_diagnostics_rejects_first_byte_over_each_limit(
         PublicationDiagnostics(entries=entries, truncated=False)
 
 
-@pytest.mark.parametrize(
-    ("entries", "truncated"),
-    [
-        (("",), False),
-        ((101,), False),
-        (("diagnostic",), 0),
-    ],
-    ids=("empty-entry", "non-string-entry", "non-boolean-truncated"),
-)
-def test_publication_diagnostics_rejects_invalid_entry_or_flag_type(
-    entries,
-    truncated,
-):
-    error_type = ValueError if entries == ("",) else TypeError
-    with pytest.raises(error_type, match=r"nonempty|runtime type"):
-        PublicationDiagnostics(entries=entries, truncated=truncated)
+def test_publication_diagnostics_rejects_empty_entry() -> None:
+    with pytest.raises(ValueError, match="nonempty"):
+        PublicationDiagnostics(entries=("",), truncated=False)
 
 
 def test_mutation_marker_projects_a_coherent_alternate_attempt():
@@ -2213,19 +2188,9 @@ def test_finalization_proof_binds_producer_control_and_current_run(
         )
 
 
-@pytest.mark.parametrize(
-    ("proved_at", "error_type"),
-    [
-        ("2026-09-05 01:22:37.500Z", ValueError),
-        (101, TypeError),
-    ],
-)
-def test_finalization_proof_requires_canonical_proved_at(
-    proved_at,
-    error_type,
-):
-    with pytest.raises(error_type, match=r"RFC 3339|runtime type"):
-        replace(_finalization_proof(), proved_at=proved_at)
+def test_finalization_proof_requires_canonical_proved_at() -> None:
+    with pytest.raises(ValueError, match="RFC 3339"):
+        replace(_finalization_proof(), proved_at="2026-09-05 01:22:37.500Z")
 
 
 def test_finalization_proof_projects_a_coherent_alternate_attempt():
@@ -2542,6 +2507,41 @@ def test_release_transport_rejects_representative_nested_schema_openings(  # noq
 @pytest.mark.parametrize(
     ("factory", "record_type", "path", "replacement", "message"),
     [
+        pytest.param(
+            _marker,
+            MutationMayHaveStartedMarker,
+            ("governance-proof", "live-enabled"),
+            1,
+            "Governance proof.live-enabled must be a Boolean",
+            id="governance-numeric-live-enabled",
+        ),
+        pytest.param(
+            _marker,
+            MutationMayHaveStartedMarker,
+            ("profile-match", "destination-operation-profile-digest"),
+            8,
+            (
+                "profile "
+                "match.destination-operation-profile-digest must be a string"
+            ),
+            id="profile-numeric-digest",
+        ),
+        pytest.param(
+            _publication_result,
+            PublicationResult,
+            ("diagnostics", "entries"),
+            [101],
+            r"publication diagnostics.entries\[0\] must be a string",
+            id="diagnostics-numeric-entry",
+        ),
+        pytest.param(
+            _publication_result,
+            PublicationResult,
+            ("diagnostics", "truncated"),
+            0,
+            "publication diagnostics.truncated must be a Boolean",
+            id="diagnostics-numeric-truncated",
+        ),
         (
             _marker,
             MutationMayHaveStartedMarker,

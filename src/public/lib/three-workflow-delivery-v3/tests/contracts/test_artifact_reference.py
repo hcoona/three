@@ -87,14 +87,12 @@ def test_artifact_reference_is_frozen_slotted_and_serializes_exact_contract_fiel
     [
         pytest.param(0, id="zero"),
         pytest.param(-1, id="negative"),
-        pytest.param(True, id="true"),
-        pytest.param(False, id="false"),
     ],
 )
-def test_artifact_reference_rejects_nonpositive_or_boolean_artifact_id(
+def test_artifact_reference_rejects_nonpositive_artifact_id(
     artifact_id: int,
 ) -> None:
-    """Reject the complete nonpositive and Boolean ID boundary."""
+    """Reject zero and negative artifact IDs."""
     arguments = _valid_reference_kwargs()
     arguments["artifact_id"] = artifact_id
 
@@ -298,6 +296,13 @@ def test_artifact_reference_from_document_rejects_unknown_field() -> None:
 @pytest.mark.parametrize(
     ("field_name", "replacement", "error_type", "message_fragments"),
     [
+        pytest.param(
+            "artifact-id",
+            True,
+            ValueError,
+            ("positive non-Boolean integer",),
+            id="artifact-id-boolean",
+        ),
         pytest.param(
             "artifact-id",
             "17",

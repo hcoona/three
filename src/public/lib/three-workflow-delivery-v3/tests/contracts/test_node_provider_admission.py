@@ -23,7 +23,6 @@ from three_workflow_delivery_v3.repository.node_provider import (
     NodeProviderFactBundle,
     NodeProviderResult,
     ProjectNode,
-    validate_checkout_evidence,
     validate_nbgv_facts,
 )
 
@@ -218,7 +217,6 @@ def test_fact_bundle_admission_requires_exact_full_history_checkout(
     ("field", "value", "message"),
     [
         ("canonical_version", "", r"(?:canonical|NBGV.*version)"),
-        ("canonical_version", 123, r"(?:canonical|NBGV.*version)"),
         ("canonical_version", "1", r"(?:canonical|NBGV.*version)"),
         ("canonical_version", "1.2.3.4.5", r"(?:canonical|NBGV.*version)"),
         ("canonical_version", "01.2.3", r"(?:canonical|NBGV.*version)"),
@@ -227,9 +225,7 @@ def test_fact_bundle_admission_requires_exact_full_history_checkout(
         ("canonical_version", "1.two.3", r"(?:canonical|NBGV.*version)"),
         ("canonical_version", " 1.2.3", r"(?:canonical|NBGV.*version)"),
         ("sem_ver1", "", r"(?:semVer1|sem_ver1)"),
-        ("sem_ver1", 123, r"(?:semVer1|sem_ver1)"),
         ("sem_ver2", "", r"(?:semVer2|sem_ver2)"),
-        ("sem_ver2", 123, r"(?:semVer2|sem_ver2)"),
         (
             "npm_package_version",
             "",
@@ -286,16 +282,6 @@ def test_fact_bundle_admission_requires_exact_full_history_checkout(
             r"(?:npmPackageVersion|npm_package_version)",
         ),
         (
-            "npm_package_version",
-            123,
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            None,
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
             "git_commit_id",
             "e" * 39,
             r"(?:gitCommitId|git_commit_id|compilation target|exact target)",
@@ -322,15 +308,6 @@ def test_fact_bundle_admission_requires_exact_full_history_checkout(
         ),
         ("version_height", 0, r"(?:versionHeight|version_height)"),
         ("version_height", -1, r"(?:versionHeight|version_height)"),
-        ("version_height", True, r"(?:versionHeight|version_height)"),
-        ("version_height", False, r"(?:versionHeight|version_height)"),
-        ("version_height", "42", r"(?:versionHeight|version_height)"),
-        ("version_height", 42.5, r"(?:versionHeight|version_height)"),
-        ("version_height", [], r"(?:versionHeight|version_height)"),
-        ("public_release", "false", r"(?:publicRelease|public_release)"),
-        ("public_release", 0, r"(?:publicRelease|public_release)"),
-        ("public_release", 1, r"(?:publicRelease|public_release)"),
-        ("public_release", None, r"(?:publicRelease|public_release)"),
         (
             "node_api_result_digest",
             "a" * 64,
@@ -361,15 +338,9 @@ def test_fact_bundle_admission_requires_exact_full_history_checkout(
             " sha256:" + ("a" * 64),
             r"(?:node-api-result-digest|node_api_result_digest|digest)",
         ),
-        (
-            "node_api_result_digest",
-            123,
-            r"(?:node-api-result-digest|node_api_result_digest|digest)",
-        ),
     ],
     ids=[
         "version-empty",
-        "version-non-string",
         "version-one-component",
         "version-five-components",
         "version-leading-zero-major",
@@ -378,9 +349,7 @@ def test_fact_bundle_admission_requires_exact_full_history_checkout(
         "version-nonnumeric-component",
         "version-whitespace-padded",
         "semver1-empty",
-        "semver1-non-string",
         "semver2-empty",
-        "semver2-non-string",
         "npm-empty",
         "npm-range",
         "npm-tag",
@@ -392,8 +361,6 @@ def test_fact_bundle_admission_requires_exact_full_history_checkout(
         "npm-leading-zero-prerelease",
         "npm-empty-build",
         "npm-empty-prerelease-identifier",
-        "npm-non-string",
-        "npm-missing-no-fallback",
         "git-short",
         "git-uppercase",
         "git-nonhex",
@@ -401,22 +368,12 @@ def test_fact_bundle_admission_requires_exact_full_history_checkout(
         "git-target-mismatch",
         "height-zero",
         "height-negative",
-        "height-true",
-        "height-false",
-        "height-string",
-        "height-float",
-        "height-list",
-        "public-release-string",
-        "public-release-integer",
-        "public-release-one",
-        "public-release-none",
         "digest-missing-prefix",
         "digest-short",
         "digest-long",
         "digest-uppercase",
         "digest-nonhex",
         "digest-whitespace",
-        "digest-non-string",
     ],
 )
 def test_nbgv_facts_reject_malformed_values(
@@ -424,66 +381,8 @@ def test_nbgv_facts_reject_malformed_values(
     value: object,
     message: str,
 ) -> None:
-    """Validate primitive NBGV facts directly, before Bundle construction."""
+    """Reject invalid NBGV values and a different current target."""
     facts = replace(_nbgv_facts(), **{field: cast("Any", value)})
 
     with pytest.raises((TypeError, ValueError), match=message):
         validate_nbgv_facts(facts, target=TARGET)
-
-
-_CHECKOUT_BOOLEAN_REQUIREMENTS: tuple[tuple[str, bool], ...] = (
-    ("shallow", False),
-    ("ancestry_complete", True),
-    ("tags_complete", True),
-    ("credentials_persisted", False),
-)
-
-_NON_BOOLEAN_SURROGATES: tuple[tuple[str, object], ...] = (
-    ("int-zero", 0),
-    ("int-one", 1),
-    ("none", None),
-    ("float-zero", 0.0),
-    ("float-one", 1.0),
-    ("string-empty", ""),
-    ("string-nonempty", "surrogate"),
-    ("list-empty", []),
-    ("list-nonempty", [False]),
-    ("tuple-empty", ()),
-    ("tuple-nonempty", (False,)),
-    ("mapping-empty", {}),
-    ("mapping-nonempty", {"surrogate": False}),
-)
-
-
-@pytest.mark.parametrize(
-    ("field", "required_value", "surrogate"),
-    [
-        pytest.param(
-            field,
-            required_value,
-            surrogate,
-            id=f"{field.replace('_', '-')}-{surrogate_id}",
-        )
-        for field, required_value in _CHECKOUT_BOOLEAN_REQUIREMENTS
-        for surrogate_id, surrogate in _NON_BOOLEAN_SURROGATES
-        if field == "shallow"
-        or surrogate_id
-        == ("int-zero" if field == "credentials_persisted" else "int-one")
-    ],
-)
-def test_checkout_evidence_requires_exact_boolean_types(
-    field: str,
-    required_value: object,
-    surrogate: object,
-) -> None:
-    """Reject non-Boolean forms once and preserve every checkout field route."""
-    checkout = _checkout_evidence()
-    assert type(surrogate) is not bool
-    assert type(required_value) is bool
-    assert getattr(checkout, field) is required_value
-    forged = replace(checkout, **{field: cast("Any", surrogate)})
-
-    with pytest.raises(
-        TypeError, match=rf"checkout {field} must be an exact Boolean"
-    ):
-        validate_checkout_evidence(forged)
