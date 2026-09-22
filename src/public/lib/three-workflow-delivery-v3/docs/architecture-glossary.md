@@ -389,11 +389,12 @@ layer. Repository code validates the normalized fact envelope and applies
 policy; it does not recreate lockfile schemas, descriptor or locator grammars,
 comment handling, case rules, or normalization owned by the graph.
 
-The graph identity includes source schema and standard versions; exact package,
-CLI, runtime, tool, module, or assembly versions; lock or checksum provenance;
-public APIs or commands; input and BOM behavior; admitted format generation;
-required facts; and unsupported cases. A change to any of these changes the
-bounded static-reference policy digest.
+The graph identity includes source schema and standard versions; required
+packages and public APIs or commands; input and BOM behavior; admitted format
+generation; required facts; and unsupported cases. Changes to this semantic
+contract change the bounded static-reference policy digest. Package managers
+and managed preparation own dependency versions and integrity; loaded versions
+are diagnostic and do not independently change policy identity.
 
 ### Affected-System Qualification
 

@@ -279,7 +279,7 @@ an earlier sanitized failure remains diagnostic.
 ### 6.4 Exact Ecosystem Authority Graph
 
 This LLD is the sole normative owner of the first-slice bounded
-static-reference Result schema, policy identity, authority manifest and graph,
+static-reference Result schema, policy identity, authority graph definition,
 source enumeration, snapshot/input contracts, normalized facts, failure
 taxonomy, and semantic scenarios. CI design references these contracts and
 owns only gate integration and CI-local transport.
@@ -308,7 +308,7 @@ publication-profile or approved-package identity requirements.
 | `npm-manifest-v1`   | `package.json`; `@npmcli/package-json`; `npm-package-arg`                                                                                                                                                    | fatal UTF-8 byte preflight; `PackageJson.load(snapshotDirectory)`; `npa.resolve(name, spec, where)`; isolated snapshot                                                                                                                                                | npm manifest, package identity, dependency result type, fetch spec, save spec, and local path                                                                                       |
 | `pnpm-lock-v1`      | `pnpm-lock.yaml` lockfile version exactly `9.0`; `@pnpm/lockfile.fs`; `@pnpm/lockfile.utils`; `@pnpm/deps.path`; `@pnpm/workspace.spec-parser`; `@pnpm/resolving.npm-resolver`                               | fatal UTF-8 byte preflight; exact public `extractMainDocument`, `readWantedLockfileWithMergeInfo`, `WorkspaceSpec.parse`, `workspacePrefToNpm`, `parseBareSpecifier`, `refToRelative`, `nameVerFromPkgSnapshot`, and `pkgSnapshotToResolution` bounded sequence below | pnpm importers, package snapshots and identities, snapshot dependency edges, registry/alias specs, named or ranged workspace specs, and typed lock-owned Git or `file:` resolutions |
 | `pnpm-workspace-v1` | `pnpm-workspace.yaml`; `@pnpm/workspace.workspace-manifest-reader`; `@pnpm/workspace.spec-parser`; `@pnpm/resolving.npm-resolver`; `npm-package-arg`                                                         | fatal UTF-8 byte preflight; exact `readWorkspaceManifest`, `WorkspaceSpec.parse`, `workspacePrefToNpm`, `parseBareSpecifier`, and `npa.resolve` bounded sequence below; isolated snapshot                                                                             | workspace package patterns and catalog dependency specifications                                                                                                                    |
-| `nuget-lock-v1`     | `packages.lock.json` model version exactly `1`, `2`, or `3`; `packages.config` XML; NuGet lock/config models; `NuGet.ProjectModel`; `NuGet.Packaging`; exact sidecar `packages.lock.json` dependency closure | for `packages.lock.json`, fatal UTF-8 byte preflight followed by `PackagesLockFileFormat.Read(Stream, NullLogger.Instance, repositoryLogicalPath)`; for `packages.config`, `new PackagesConfigReader(Stream, false).GetPackages(false)`                               | NuGet package identities, dependency groups, dependency edges, requested ranges, resolved versions, and package entries                                                             |
+| `nuget-lock-v1`     | `packages.lock.json` model version exactly `1`, `2`, or `3`; `packages.config` XML; NuGet lock/config models; `NuGet.ProjectModel`; `NuGet.Packaging`; helper dependencies restored from its native lockfile | for `packages.lock.json`, fatal UTF-8 byte preflight followed by `PackagesLockFileFormat.Read(Stream, NullLogger.Instance, repositoryLogicalPath)`; for `packages.config`, `new PackagesConfigReader(Stream, false).GetPackages(false)`                               | NuGet package identities, dependency groups, dependency edges, requested ranges, resolved versions, and package entries                                                             |
 
 File-oriented graph nodes receive exactly this source snapshot closure:
 
@@ -537,12 +537,13 @@ not call `packageIdFromSnapshot`, `deps.path.parse`, any non-public subpath, or
 any filesystem, registry, Git, tarball, or package resolver after the declared
 lock read.
 
-Changing an authoritative source schema, standard, package, CLI, runtime,
-public API or command, input mode, admitted format generation, or normalized
-fact contract changes the policy digest and requires semantic acceptance.
-Version discovery at runtime is not authority: the adapter must report the
-exact loaded implementation identity, and admission compares it with this
-manifest.
+Changing an authoritative source schema, standard, required package or public
+API or command, input mode, admitted format generation, or normalized fact
+contract changes the policy digest and requires semantic acceptance. Dependency
+versions and lockfile bytes belong to managed preparation; they do not
+independently change this semantic contract. The adapter reports loaded
+implementation versions as diagnostics, without comparing them to a version
+manifest for admission.
 
 ### 6.5 Selector-to-fact and prohibited-form matrix
 
@@ -640,9 +641,9 @@ Result's `error-kind`. Finally-equivalent cleanup still runs, and
 and failure-selection rule is a policy-digest input.
 
 Candidate counts, per-file digests, aggregate inventory digests, snapshot
-paths, and timing are diagnostics only. Live authority is exact target, exact
-policy ID/digest, exact authority identities, successful projections, and an
-empty finding set.
+paths, loaded implementation versions, and timing are diagnostics only. Live
+authority is exact source target, exact policy ID/digest, required successful
+graph projections with complete normalized responses, and an empty finding set.
 
 Root HK runs the lightweight policy whenever HK runs; the step is not skipped
 because the caller-selected file list lacks a candidate. The caller explicitly
