@@ -55,7 +55,7 @@ def _valid_document() -> dict[str, JsonValue]:
     }
 
 
-def test_artifact_reference_is_frozen_slotted_and_serializes_exact_contract_fields() -> (  # noqa: E501
+def test_artifact_reference_is_frozen_and_serializes_exact_contract_fields() -> (  # noqa: E501
     None
 ):
     """Preserve values, closed shape, fresh serialization, and immutability."""
@@ -75,8 +75,6 @@ def test_artifact_reference_is_frozen_slotted_and_serializes_exact_contract_fiel
     assert second_document is not first_document
     assert "schema" not in first_document
 
-    assert hasattr(ArtifactReference, "__slots__")
-    assert not hasattr(reference, "__dict__")
     field_name = "artifact_id"
     with pytest.raises(FrozenInstanceError):
         setattr(reference, field_name, 18)

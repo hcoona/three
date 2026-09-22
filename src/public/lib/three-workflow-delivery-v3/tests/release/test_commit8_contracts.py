@@ -84,7 +84,6 @@ def test_attempt_identity_is_exact_frozen_and_workflow_run_bound() -> None:
         "execution": EXECUTION.to_document(),
         "workflow-run-id": 101,
     }
-    assert hasattr(ReleaseAttemptIdentity, "__slots__")
     with pytest.raises(FrozenInstanceError):
         ATTEMPT.workflow_run_id = 102  # type: ignore[misc]
 

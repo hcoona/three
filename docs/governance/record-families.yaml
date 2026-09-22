@@ -286,16 +286,6 @@ families:
     creation_trigger: The named consumers require this existing concern at its use or review point.
     failure_mode: A required diagnostic interface disappears or the legacy workflow is treated as current authority.
     review_point: Changes to the retained concern or its consumers
-  - id: legacy-workflow-compatibility-interfaces
-    concern: Retained compatibility and retirement interfaces under original diagnostic paths
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - V3 maintainers following the current legacy-boundary evidence
-      - Existing workflow diagnostics and retirement checks
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: Old design authority is revived or current diagnostic consumers lose their path.
-    review_point: Changes to the retained concern or its consumers
   - id: project-interfaces
     concern: Project-local usage, package-reader interfaces, provenance and release history
     producer: Project authors
@@ -629,13 +619,6 @@ bindings:
     state: current
     carrier: repository-file
     path: .github/workflows/REFACTOR_PLAN.md
-    format: markdown
-  - id: legacy-workflow-compatibility-interfaces
-    family: legacy-workflow-compatibility-interfaces
-    namespace: src/public/lib/three-workflow-delivery-v3
-    state: current
-    carrier: repository-files
-    path: .github/workflows/docs/*.md
     format: markdown
   - id: src-private-app-oxforddictextractor-interfaces
     family: project-interfaces

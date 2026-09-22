@@ -649,7 +649,7 @@ It does not adopt HK, CI, caller-provided, index, or worktree output.
 
 ### 7.1 Representation
 
-Authoritative records use strict UTF-8 JSON, duplicate/unknown-field rejection, RFC 8785 JCS, normalized POSIX paths, full lowercase SHAs, `sha256:<64-hex>`, `sha512:<128-hex>`, exact schemas, and sorted duplicate-free semantic sets. Python records remain frozen and slotted.
+Authoritative records use strict UTF-8 JSON, duplicate/unknown-field rejection, RFC 8785 JCS, normalized POSIX paths, full lowercase SHAs, `sha256:<64-hex>`, `sha512:<128-hex>`, exact schemas, and sorted duplicate-free semantic sets. Python records remain frozen; slotted storage is an implementation choice.
 
 If present, `record-digest` is computed over the canonical document before adding that field. Consumers reconstruct and verify it.
 
@@ -996,6 +996,16 @@ The witness binds schema, target, Release Unit, canonical/native NBGV facts, Bui
 Project test independently satisfies `node/project-test-v1`. Tarball qualification may share a physical job but emits distinct Evidence for content and install/import.
 
 Content qualification verifies basename, package/version, deterministic entry manifest, expected files, exact witness path/bytes/bindings, both digests, and lifecycle script names/values. Install/import installs the exact tarball into an isolated fixture with scripts disabled, imports its declared entry point, and validates the installed witness.
+
+Reader compatibility is required for artifacts emitted by the frozen
+first-slice npm Build Adapter and the declared acceptance fixture, including
+exact original-byte readbacks. General TAR compatibility is not promised.
+Readers validate the complete supplied stream within the applicable bounds,
+establish the admitted regular-file member closure and witness, and compare
+original bytes and digests without repair or repacking. Unsupported
+representations block qualification or yield the existing blocking
+observation; producer normalization does not by itself define additional
+mandatory reader rejections.
 
 Evidence Admission checks obligation, producer, target, artifact, Attempt, and digest without rerunning quality. Qualification succeeds only with all three exact Evidence records.
 

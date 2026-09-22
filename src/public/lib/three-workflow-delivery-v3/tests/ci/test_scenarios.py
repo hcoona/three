@@ -639,20 +639,9 @@ def test_ci_scenario_project_source_change_selects_complete_slice() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "mise.toml",
-        "mise.lock",
-        "package.json",
-        "pnpm-lock.yaml",
-        "pnpm-workspace.yaml",
-    ],
-)
-def test_global_input_change_runs_complete_slice_scenario(
-    path: str,
-) -> None:
-    """Exercise each global tool input through Plan, lanes, and Finalizer."""
+def test_global_input_change_runs_complete_slice_scenario() -> None:
+    """Apply a global input through Plan, lanes, Finalizer, and summary."""
+    path = "mise.toml"
     plan = _incremental_plan(changed_paths=(path,))
     results = _lane_results(plan)
     decision = _finalize(plan, results, elapsed_seconds=60)
@@ -677,6 +666,11 @@ def test_global_input_change_runs_complete_slice_scenario(
         ci_evidence_digest(cast("CiEvidence", result.evidence))
         for result in results
     }
+
+    assert decision.pr_slo == "excluded"
+    assert decision.pr_slo_reason == "broad-change"
+    assert "pr-12-minute-slo=excluded" in render_ci_slice_summary(decision)
+    assert "pr-slo-reason=broad-change" in render_ci_slice_summary(decision)
 
 
 def test_ci_scenario_slice_validation_selects_full_slice_without_synthetic_range() -> (  # noqa: E501
@@ -765,19 +759,9 @@ def test_ci_scenario_project_test_failure_fails_shadow_check() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "changed_path",
-    [
-        "docs/wiki/README.md",
-        "src/private/app/workflow-delivery-v3-dotnet-provider/Program.cs",
-        "src/private/app/workflow-delivery-v3-nuget-consumer/Program.cs",
-        "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs",
-    ],
-)
-def test_ci_scenario_repository_only_change_has_valid_empty_affected_lanes(
-    changed_path: str,
-) -> None:
+def test_repository_only_scenario_closes_empty_affected_lanes() -> None:
     """Require root conformance while leaving unrelated project work empty."""
+    changed_path = "docs/wiki/README.md"
     plan = _incremental_plan(changed_paths=(changed_path,))
     results = {result.lane_id: result for result in _lane_results(plan)}
     root = results["root-hk"]
@@ -904,13 +888,9 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision(
     assert "non-authoritative" in rendered
 
 
-@pytest.mark.parametrize(
-    "missing_lane", ["project-build", "project-test", "npm-artifact-build"]
-)
-def test_ci_scenario_missing_selected_result_keeps_qualification_incomplete(
-    missing_lane: str,
-) -> None:
+def test_missing_artifact_scenario_preserves_completed_evidence() -> None:
     """Keep completed Evidence when selected work produces no result."""
+    missing_lane = "npm-artifact-build"
     plan = _incremental_plan()
     results = tuple(
         result

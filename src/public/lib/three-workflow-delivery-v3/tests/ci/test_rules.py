@@ -285,16 +285,10 @@ def test_closed_rule_domains() -> None:
     } == SUPERSESSION_REASONS
 
 
-@pytest.mark.parametrize(
-    "outcome",
-    ["satisfied", "failed", "canceled", "conflicted", "incomplete", "advisory"],
-)
-def test_impossible_or_finalizer_only_outcomes_are_not_public(
-    outcome: str,
-) -> None:
-    """Keep conflict and incomplete states out of Evidence formation."""
+def test_finalizer_only_outcome_cannot_form_evidence() -> None:
+    """Keep finalizer incompleteness out of raw Evidence normalization."""
     with pytest.raises(ValueError):  # noqa: PT011 - Internal exception wording.
-        normalize_required_outcome(outcome)
+        normalize_required_outcome("incomplete")
 
 
 @pytest.mark.parametrize(

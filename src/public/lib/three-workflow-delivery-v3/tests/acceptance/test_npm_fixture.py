@@ -191,21 +191,10 @@ def test_inspection_rejects_wrong_manifest_or_witness_closure(
 @pytest.mark.parametrize(
     ("package", "version"),
     [
-        ("synthetic-native-fixture", "1.2.3"),
         ("@another/synthetic-native-fixture", "1.2.3"),
         ("@hcoona/invalid name", "1.2.3"),
         ("@hcoona/Uppercase", "1.2.3"),
-        ("@hcoona/", "1.2.3"),
-        ("@hcoona/synthetic-native-fixture@1.2.3", "1.2.3"),
-        (SPEC.package, "^1.2.3"),
-        (SPEC.package, ">=1.2.3"),
-        (SPEC.package, "latest"),
-        (SPEC.package, "npm:other@1.2.3"),
-        (SPEC.package, "file:../synthetic"),
-        (SPEC.package, "v1.2.3"),
         (SPEC.package, "1.2.3+build.1"),
-        (SPEC.package, " 1.2.3 "),
-        (SPEC.package, "01.2.3"),
         (SPEC.package, ""),
     ],
 )

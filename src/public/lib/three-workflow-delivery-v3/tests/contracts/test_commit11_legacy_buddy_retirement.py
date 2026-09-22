@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import base64
-import fnmatch
 import hashlib
 import os
-import re
 import subprocess
 from pathlib import Path
 from typing import Any, cast
@@ -22,12 +20,6 @@ LEGACY_ENTRY_PATHS = (
 )
 FORBIDDEN_COMPATIBILITY_BASENAMES = frozenset(
     {"buddy.yml", "release-buddy.yml", "legacy-buddy.yml"}
-)
-ARCHIVED_LEGACY_BUDDY_DOCS = (
-    ".github/workflows/REFACTOR_PLAN.md",
-    ".github/workflows/docs/DESIGN.prompt.md",
-    ".github/workflows/docs/DESIGN.v2.md",
-    ".github/workflows/docs/MEMORY.md",
 )
 OBSOLETE_PRE_V3_PATHS = (
     ".github/actionlint.yaml",
@@ -135,59 +127,6 @@ def _write_workflow(root: Path, name: str, content: str) -> None:
     path = root / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-
-
-def _v3_hk_globs() -> tuple[str, ...]:
-    content = (REPO_ROOT / "hk.pkl").read_text(encoding="utf-8")
-    block = content.split(
-        "local workflow_delivery_v3_files =",
-        1,
-    )[1].split('  ["v3-control-pytest"] {', 1)[0]
-    return tuple(re.findall(r'"([^"]+)"', block))
-
-
-def _hk_selected_paths(
-    changes: tuple[tuple[str, str, str | None], ...],
-) -> tuple[str, ...]:
-    globs = _v3_hk_globs()
-    paths = {
-        path
-        for _kind, new_path, old_path in changes
-        for path in (old_path, new_path)
-        if path is not None
-        and any(fnmatch.fnmatchcase(path, pattern) for pattern in globs)
-    }
-    return tuple(sorted(paths))
-
-
-def _codeowners_rules(content: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
-    rules = []
-    for raw_line in content.splitlines():
-        fields = raw_line.split("#", 1)[0].split()
-        if fields:
-            rules.append((fields[0], tuple(fields[1:])))
-    return tuple(rules)
-
-
-def _codeowners_pattern_matches(pattern: str, path: str) -> bool:
-    normalized = pattern.removeprefix("/")
-    expression = re.escape(normalized)
-    expression = expression.replace(r"\*\*/", "(?:.*/)?")
-    expression = expression.replace(r"\*\*", ".*")
-    expression = expression.replace(r"\*", "[^/]*")
-    expression = expression.replace(r"\?", "[^/]")
-    return re.fullmatch(expression, path) is not None
-
-
-def _final_owners(
-    rules: tuple[tuple[str, tuple[str, ...]], ...],
-    path: str,
-) -> tuple[str, ...]:
-    owners: tuple[str, ...] = ()
-    for pattern, candidate in rules:
-        if _codeowners_pattern_matches(pattern, path):
-            owners = candidate
-    return owners
 
 
 def test_legacy_buddy_entry_files_are_exactly_retired() -> None:
@@ -408,74 +347,6 @@ def test_pre_v3_control_plane_and_legacy_descriptors_are_absent() -> None:
         for relative_path in OBSOLETE_PRE_V3_PATHS
     )
     assert not tuple((REPO_ROOT / "src").glob("**/three.release.yml"))
-
-
-def test_pre_v3_design_docs_cannot_reactivate_legacy_buddy_routes() -> None:
-    """Mark restored pre-v3 guidance as historical and non-authoritative."""
-    for relative_path in ARCHIVED_LEGACY_BUDDY_DOCS:
-        lines = (
-            (REPO_ROOT / relative_path).read_text(encoding="utf-8").splitlines()
-        )
-        assert lines[0].startswith("# "), relative_path
-        index = 1
-        while index < len(lines) and not lines[index].strip():
-            index += 1
-        quoted_lines = []
-        while index < len(lines) and lines[index].startswith(">"):
-            quoted_lines.append(lines[index][1:].strip())
-            index += 1
-        notice = " ".join(" ".join(quoted_lines).split())
-        assert "**Archived and superseded:**" in notice, relative_path
-        assert (
-            "legacy `buddy.yml` and `release-buddy.yml` routes are retired"
-            in notice
-        ), relative_path
-        assert "Do not use this document to recreate either route" in notice, (
-            relative_path
-        )
-
-
-@pytest.mark.parametrize(
-    ("kind", "new_path", "old_path"),
-    [
-        ("delete", ".github/workflows/buddy.yml", None),
-        ("delete", ".github/workflows/release-buddy.yml", None),
-        (
-            "rename",
-            ".github/workflows/compatibility.yml",
-            ".github/workflows/buddy.yml",
-        ),
-        ("add", ".github/workflows/new-buddy-compatibility.yml", None),
-    ],
-)
-def test_root_hk_selects_buddy_retirement_and_compatibility_changes(
-    kind: str,
-    new_path: str,
-    old_path: str | None,
-) -> None:
-    """Trigger v3 validation for deletions and compatibility-route attempts."""
-    selected = _hk_selected_paths(((kind, new_path, old_path),))
-
-    assert new_path in selected
-    if old_path is not None:
-        assert old_path in selected
-
-
-def test_codeowners_covers_deleted_and_future_buddy_routes() -> None:
-    """Protect compatibility paths with final-match ownership."""
-    rules = _codeowners_rules(
-        (REPO_ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
-    )
-    paths = {
-        *LEGACY_ENTRY_PATHS,
-        ".github/workflows/legacy-buddy.yml",
-        ".github/workflows/compatibility.yml",
-        ".github/workflows/new-buddy-compatibility.yml",
-    }
-
-    assert {
-        path: _final_owners(rules, path) for path in paths
-    } == dict.fromkeys(paths, ("@hcoona",))
 
 
 def test_temporary_acceptance_workflows_are_retired() -> None:

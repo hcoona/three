@@ -17,6 +17,9 @@ from email.message import Message
 from pathlib import Path
 
 import pytest
+from three_workflow_delivery_v3.adapters import (
+    github_packages as github_packages_module,
+)
 from three_workflow_delivery_v3.adapters.github_packages import (
     GitHubPackagesHttpResponse,
     GitHubPackagesHttpTransport,
@@ -493,66 +496,358 @@ def test_empty_error_or_malformed_package_response_is_not_absence(
     assert result.package_control is not None
 
 
-@pytest.mark.parametrize("url", [CONTROL_URL, PACKAGE_URL, TARBALL_URL])
 @pytest.mark.parametrize(
-    ("failure", "classification"),
+    ("stage", "url", "change", "status", "detail", "failure"),
     [
-        (401, "unprovable"),
-        (403, "unprovable"),
-        (405, "unprovable"),
-        (503, "unknown"),
-        ("network", "unknown"),
-        ("policy", "unprovable"),
-        ("off-origin", "unprovable"),
-        ("truncated", "unknown"),
-        ("incomplete", "unknown"),
-        ("oversize", "unknown"),
-        ("invalid-body", "unprovable"),
-        ("encoding", "unprovable"),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            {"headers": (("Content-Encoding", "IDENTITY"),)},
+            200,
+            None,
+            None,
+            id="C01-exact-bound-identity-encoding",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            {"status": 404},
+            404,
+            None,
+            None,
+            id="C02-received-not-found",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            {"status": 403},
+            403,
+            "unprovable",
+            "unprovable",
+            id="C03-auth-refusal",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            {"status": 405},
+            405,
+            "unprovable",
+            "unprovable",
+            id="C04-unsupported-status",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            {"status": 429},
+            429,
+            "unknown",
+            "unknown",
+            id="C05-rate-limit",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            {"status": 500},
+            500,
+            "unknown",
+            "unknown",
+            id="C06-server-error-boundary",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            GitHubPackagesNetworkError(TOKEN),
+            "network-error",
+            None,
+            "unknown",
+            id="C07-network-error",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            GitHubPackagesPolicyError(TOKEN),
+            "off-policy",
+            None,
+            "unprovable",
+            id="C08-policy-error",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            {"status": 403, "truncated": True},
+            403,
+            "unknown",
+            "unknown",
+            id="C09-truncated-refusal",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            {"complete": False},
+            200,
+            "unknown",
+            "unknown",
+            id="C10-incomplete",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            {"body": b"x" * 65},
+            200,
+            "unknown",
+            "unknown",
+            id="C11-over-byte-bound",
+        ),
+        pytest.param(
+            "tarball",
+            TARBALL_URL,
+            {"status": 503, "url": "https://outside.invalid/" + TOKEN},
+            503,
+            "unprovable",
+            "unprovable",
+            id="C12-off-origin-tarball",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            {"status": 503, "headers": (("Content-Encoding", "gzip"),)},
+            503,
+            "unprovable",
+            "unprovable",
+            id="C13-encoding-over-unknown",
+        ),
+        pytest.param(
+            "npm-metadata",
+            PACKAGE_URL,
+            {"status": 503, "redirects": (PACKAGE_URL + "/other",)},
+            503,
+            "unprovable",
+            "unprovable",
+            id="C14-route-over-unknown",
+        ),
     ],
 )
-def test_failed_reads_are_classified_without_hiding_independent_facts(
-    basis, url, failure, classification
+def test_active_transport_admission_classifies_bounded_exchanges(  # noqa: PLR0913, PLR0917
+    stage, url, change, status, detail, failure
 ):
-    responses = _responses(basis)
-    response = responses[url]
-    if isinstance(failure, int):
-        response = replace(response, status=failure)
-    elif failure == "network":
-        response = GitHubPackagesNetworkError(TOKEN)
-    elif failure == "policy":
-        response = GitHubPackagesPolicyError(TOKEN)
-    elif failure == "off-origin":
-        response = replace(response, url="https://outside.invalid/" + TOKEN)
-    elif failure == "truncated":
-        response = replace(response, truncated=True)
-    elif failure == "incomplete":
-        response = replace(response, complete=False)
-    elif failure == "oversize":
-        response = replace(response, body=b"x" * 1001)
-    elif failure == "invalid-body":
-        response = replace(response, body=b"{")
-    elif failure == "encoding":
-        response = replace(response, headers=(("Content-Encoding", "gzip"),))
-    responses[url] = response
-    result = _read(
-        basis, responses, metadata_limit_bytes=1000, tarball_limit_bytes=1000
+    response = (
+        change
+        if isinstance(change, BaseException)
+        else replace(
+            GitHubPackagesHttpResponse(
+                url=url,
+                status=200,
+                headers=(("Content-Encoding", "identity"),),
+                body=b"x" * 64,
+            ),
+            **change,
+        )
+    )
+    transport = ScenarioTransport({url: response})
+    admitted, exchange = github_packages_module._active_get(
+        url,
+        stage=stage,
+        token=TOKEN,
+        transport=transport,
+        timeout=7,
+        max_bytes=64,
     )
 
-    assert (result.package_control is None) == (url == CONTROL_URL)
-    assert result.readback.classification == (
-        classification
-        if url in {PACKAGE_URL, TARBALL_URL}
-        else "exact-satisfied"
+    assert [
+        (request[0], request[2], request[3]) for request in transport.requests
+    ] == [(url, 7.0, 64)]
+    assert exchange.stage == stage
+    assert exchange.requested_url == url
+    assert exchange.status == status
+    assert exchange.detail == detail
+    assert TOKEN not in repr(exchange)
+    if isinstance(response, BaseException):
+        assert (
+            exchange.final_url,
+            exchange.redirects,
+            exchange.selected_headers,
+            exchange.truncated,
+            exchange.complete,
+            exchange.body_sha256,
+        ) == (None, (), (), None, None, None)
+    else:
+        assert exchange.final_url == response.url.replace(TOKEN, "******")
+        assert exchange.redirects == response.redirects
+        assert exchange.selected_headers == ()
+        assert (exchange.truncated, exchange.complete) == (
+            response.truncated,
+            response.complete,
+        )
+        assert exchange.body_sha256 == (
+            "sha256:" + hashlib.sha256(response.body).hexdigest()
+        )
+    if failure is None:
+        assert admitted == response
+    else:
+        assert admitted is None
+        assert github_packages_module._active_read_failure(exchange) == failure
+
+
+@pytest.mark.parametrize(
+    (
+        "url",
+        "status",
+        "classification",
+        "tag",
+        "diagnostics",
+        "expected_reads",
+        "expected_stages",
+    ),
+    [
+        pytest.param(
+            CONTROL_URL,
+            503,
+            "exact-satisfied",
+            ("present", VERSION),
+            ("package-control: unknown",),
+            (CONTROL_URL, PACKAGE_URL, TARBALL_URL),
+            ("npm-metadata", "tarball"),
+            id="control-unknown",
+        ),
+        pytest.param(
+            CONTROL_URL,
+            403,
+            "exact-satisfied",
+            ("present", VERSION),
+            ("package-control: unprovable",),
+            (CONTROL_URL, PACKAGE_URL, TARBALL_URL),
+            ("npm-metadata", "tarball"),
+            id="control-unprovable",
+        ),
+        pytest.param(
+            PACKAGE_URL,
+            503,
+            "unknown",
+            ("unreadable", None),
+            ("exact-version: unknown", "target-tag: unreadable"),
+            (CONTROL_URL, PACKAGE_URL),
+            ("npm-metadata",),
+            id="metadata-unknown",
+        ),
+        pytest.param(
+            PACKAGE_URL,
+            403,
+            "unprovable",
+            ("unreadable", None),
+            ("exact-version: unprovable", "target-tag: unreadable"),
+            (CONTROL_URL, PACKAGE_URL),
+            ("npm-metadata",),
+            id="metadata-unprovable",
+        ),
+        pytest.param(
+            TARBALL_URL,
+            503,
+            "unknown",
+            ("present", VERSION),
+            ("exact-version: unknown",),
+            (CONTROL_URL, PACKAGE_URL, TARBALL_URL),
+            ("npm-metadata", "tarball"),
+            id="tarball-unknown",
+        ),
+        pytest.param(
+            TARBALL_URL,
+            403,
+            "unprovable",
+            ("present", VERSION),
+            ("exact-version: unprovable",),
+            (CONTROL_URL, PACKAGE_URL, TARBALL_URL),
+            ("npm-metadata", "tarball"),
+            id="tarball-unprovable",
+        ),
+    ],
+)
+def test_failed_endpoint_reads_preserve_independent_facts(  # noqa: PLR0913, PLR0917
+    basis,
+    url,
+    status,
+    classification,
+    tag,
+    diagnostics,
+    expected_reads,
+    expected_stages,
+):
+    responses = _responses(basis)
+    responses[PACKAGE_URL] = _response(
+        PACKAGE_URL, _packument(tags={TAG: VERSION})
     )
-    assert result.readback.tag_state == (
-        "unreadable" if url == PACKAGE_URL else "absent"
+    responses[url] = replace(responses[url], status=status)
+    transport = ScenarioTransport(responses)
+    result = read_github_packages_active_state(
+        basis.artifact,
+        basis.expectation,
+        token=TOKEN,
+        observed_at=OBSERVED_AT,
+        transport=transport,
     )
-    assert result.diagnostics.entries
-    assert len(result.diagnostics.entries) <= 3
-    assert not result.diagnostics.truncated
+
+    assert tuple(request[0] for request in transport.requests) == expected_reads
+    assert result.readback.classification == classification
+    assert (result.readback.tag_state, result.readback.tag_version) == tag
+    assert result.diagnostics.entries == diagnostics
+    assert result.diagnostics.truncated is False
     assert TOKEN not in repr(result)
-    assert result.response_identity.startswith("sha256:")
+    digests = dict(result.readback.response_digests)
+    assert set(digests) == set(expected_stages)
+    assert result.response_identity == digests[expected_stages[-1]]
+    content = (
+        result.readback.content_sha256,
+        result.readback.content_sha512,
+        result.readback.witness_digest,
+        result.readback.witness_target,
+    )
+    if url == CONTROL_URL:
+        assert result.package_control is None
+        assert content == (
+            "sha256:" + hashlib.sha256(basis.tarball).hexdigest(),
+            "sha512:" + hashlib.sha512(basis.tarball).hexdigest(),
+            "sha256:"
+            + hashlib.sha256(basis.expectation.witness_bytes).hexdigest(),
+            TARGET,
+        )
+    else:
+        assert content == (None, None, None, None)
+        assert result.package_control is not None
+        assert result.package_control.facts == (
+            ("exposed-access", ()),
+            ("owner", ("hcoona",)),
+            ("repository-association", ("hcoona/three",)),
+            ("visibility", ("public",)),
+        )
+
+
+def test_malformed_control_json_preserves_exact_content_and_present_tag(basis):
+    responses = _responses(basis)
+    responses[CONTROL_URL] = _response(CONTROL_URL, body=b"{")
+    responses[PACKAGE_URL] = _response(
+        PACKAGE_URL, _packument(tags={TAG: VERSION})
+    )
+    result = _read(basis, responses)
+
+    assert result.package_control is None
+    assert result.readback.classification == "exact-satisfied"
+    assert (
+        result.readback.content_sha256,
+        result.readback.content_sha512,
+        result.readback.witness_digest,
+        result.readback.witness_target,
+    ) == (
+        "sha256:" + hashlib.sha256(basis.tarball).hexdigest(),
+        "sha512:" + hashlib.sha512(basis.tarball).hexdigest(),
+        "sha256:" + hashlib.sha256(basis.expectation.witness_bytes).hexdigest(),
+        TARGET,
+    )
+    assert (result.readback.tag_state, result.readback.tag_version) == (
+        "present",
+        VERSION,
+    )
+    assert result.diagnostics.entries == ("package-control: unprovable",)
+    assert result.diagnostics.truncated is False
+    assert TOKEN not in repr(result)
 
 
 @pytest.mark.parametrize(

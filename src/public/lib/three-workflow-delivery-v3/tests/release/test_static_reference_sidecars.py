@@ -3678,31 +3678,74 @@ def test_node_npm_rejects_unprojectable_selected_values_without_partial_facts(
     assert candidate_path.read_bytes() == original
 
 
-def test_pnpm_importer_specifier_reverse_membership_guard_behavior() -> None:
-    """Reject a specifier not referenced by any selected importer section."""
-    program = f"""
-import {{ validateImporterSpecifierMembership }} from {
-        json.dumps(_NODE_AUTHORITY.as_uri())
-    };
-validateImporterSpecifierMembership({{ used: '1.0.0' }}, new Set(['used']));
-try {{
-  validateImporterSpecifierMembership({{ orphan: '1.0.0' }}, new Set());
-  process.exitCode = 2;
-}} catch (error) {{
-  process.stdout.write(error.kind ?? '');
-}}
+def test_pnpm_reader_owns_importer_specifier_membership(tmp_path: Path) -> None:
+    """Read specifiers from selected sections, ignoring raw orphan values."""
+    lock_path = tmp_path / "pnpm-lock.yaml"
+    original = _yaml(
+        """
+        lockfileVersion: '9.0'
+        importers:
+          .:
+            specifiers:
+              orphan: '9.9.9'
+              runtime: 'incorrect-raw-value'
+            dependencies:
+              runtime:
+                specifier: '^1.0.0'
+                version: '1.2.3'
+            devDependencies:
+              development:
+                specifier: '~2.0.0'
+                version: '2.0.1'
+            optionalDependencies:
+              optional:
+                specifier: '3.0.0'
+                version: '3.0.0'
+        """
+    )
+    _write_lockfile(lock_path, original)
+    original_bytes = lock_path.read_bytes()
+    program = """
+import { readWantedLockfileWithMergeInfo } from '@pnpm/lockfile.fs';
+const result = await readWantedLockfileWithMergeInfo(process.argv[1], {
+  autofixMergeConflicts: true,
+  ignoreIncompatible: false,
+  mergeGitBranchLockfiles: false,
+  useGitBranchLockfile: false,
+  wantedVersions: ['9.0'],
+});
+process.stdout.write(JSON.stringify({
+  importer: result.lockfile.importers['.'],
+  hadConflicts: result.hadConflicts,
+  hasPreMergeImporters: result.preMergeImporters !== undefined,
+}));
 """
     completed = subprocess.run(  # noqa: S603
-        ("node", "--input-type=module", "--eval", program),  # noqa: S607
+        ("node", "--input-type=module", "--eval", program, str(tmp_path)),  # noqa: S607
         cwd=_REPOSITORY_ROOT,
         check=False,
         capture_output=True,
         text=True,
+        timeout=15,
     )
 
-    assert completed.returncode == 0
+    assert completed.returncode == 0, completed.stderr
     assert completed.stderr == ""
-    assert completed.stdout == "unsupported-projection"
+    assert json.loads(completed.stdout) == {
+        "importer": {
+            "specifiers": {
+                "runtime": "^1.0.0",
+                "development": "~2.0.0",
+                "optional": "3.0.0",
+            },
+            "dependencies": {"runtime": "1.2.3"},
+            "devDependencies": {"development": "2.0.1"},
+            "optionalDependencies": {"optional": "3.0.0"},
+        },
+        "hadConflicts": False,
+        "hasPreMergeImporters": False,
+    }
+    assert lock_path.read_bytes() == original_bytes
 
 
 def test_node_pnpm_snapshot_dependency_edges_use_utf8_byte_order(

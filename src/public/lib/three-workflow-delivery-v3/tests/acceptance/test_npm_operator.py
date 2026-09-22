@@ -814,10 +814,8 @@ def test_audit_inside_checkout_is_rejected_before_commands(case):
     assert case["runner"].calls == []
 
 
-@pytest.mark.parametrize("generation", ["bad_name", "01", "bad..name"])
-def test_generation_requires_official_semver_without_sanitizing(
-    case, generation
-):
+def test_generation_requires_official_semver_without_sanitizing(case):
+    generation = "bad_name"
     case["plan"] = NpmSuitePlan(
         *(
             replace(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # ruff: noqa: D103, E501, S607
+import hashlib
 import json
 import os
 import re
@@ -41,6 +42,43 @@ EXPECTED_CALLER_JOB_CONDITIONS = {
     "run-live-attempt": (
         "github.run_attempt == 1 && "
         "needs.evaluate-live-eligibility.outputs.live-result == 'admitted'"
+    ),
+}
+
+REQUIRED_CALLER_ADMISSION_STEPS = {
+    "request": (
+        "Check out exact selected target",
+        "Install uv",
+        "Normalize fixed live request",
+        "Upload Release Intent",
+    ),
+    "discover-node": (
+        "Check out exact selected target",
+        "Install uv",
+        "Install exact toolchain",
+        "Download Release Intent by artifact ID",
+        "Admit current Release Intent",
+        "Run Node Provider once",
+        "Bind Provider payload digest",
+        "Upload Provider Result",
+    ),
+    "compile-model": (
+        "Check out exact selected target",
+        "Install uv",
+        "Download Release Intent by artifact ID",
+        "Download Provider Result by artifact ID",
+        "Compile without rerunning Provider",
+        "Upload admitted Repository Model",
+    ),
+    "evaluate-live-eligibility": (
+        "Check out exact selected target",
+        "Install uv",
+        "Install exact toolchain",
+        "Download Repository Model by artifact ID",
+        "Download Release Intent by artifact ID",
+        "Prepare static-reference authorities",
+        "Evaluate fixed-source live eligibility",
+        "Upload Live Eligibility Decision",
     ),
 }
 
@@ -102,6 +140,45 @@ def _condition_conjuncts(job: dict[str, Any]) -> set[str]:
     return {term.strip() for term in condition.split("&&")}
 
 
+def _assert_buddy_caller_arbitrary_ref_admission(
+    jobs: dict[str, Any],
+) -> None:
+    """Check current admission roles and their finite causal prerequisites."""
+    missing = EXPECTED_CALLER_JOB_CONDITIONS.keys() - jobs.keys()
+    assert not missing, f"Missing authoritative Buddy jobs: {sorted(missing)}"
+    causal_jobs = set(EXPECTED_CALLER_JOB_CONDITIONS)
+    for job_name in EXPECTED_CALLER_JOB_CONDITIONS:
+        causal_jobs.update(_transitive_needs(jobs, job_name))
+    for job_name in sorted(causal_jobs):
+        condition = jobs[job_name].get("if", "success()")
+        assert isinstance(condition, str), job_name
+        assert "||" not in condition, (
+            f"{job_name}: unsupported admission condition {condition!r}"
+        )
+        terms = _condition_conjuncts({"if": condition}) - {"success()"}
+        if job_name in EXPECTED_CALLER_JOB_CONDITIONS:
+            expected = _condition_conjuncts(
+                {"if": EXPECTED_CALLER_JOB_CONDITIONS[job_name]}
+            )
+            assert terms == expected, (
+                f"{job_name}: admission terms {terms!r} != {expected!r}"
+            )
+        else:
+            assert terms <= {ATTEMPT_ONE_CONDITION}, (
+                f"{job_name}: extra causal prerequisite gate {terms!r}"
+            )
+    # These names locate required roles, not a complete step inventory.
+    # Failure/status propagation has separate always() evidence.
+    for job_name, step_names in REQUIRED_CALLER_ADMISSION_STEPS.items():
+        for step_name in step_names:
+            step = _step(jobs[job_name], step_name)
+            condition = step.get("if", "success()")
+            assert isinstance(condition, str), f"{job_name}:{step_name}"
+            assert condition.strip() == "success()", (
+                f"{job_name}:{step_name}: extra admission gate {condition!r}"
+            )
+
+
 def _raw_artifact_name(settings: dict[str, Any]) -> str:
     """Model upload-artifact v7 archive:false physical naming."""
     assert settings["archive"] is False
@@ -146,6 +223,86 @@ def _compiler_output_step(job: dict[str, Any]) -> dict[str, Any]:
     ]
     assert len(matches) == 1
     return matches[0]
+
+
+def test_buddy_caller_preserves_arbitrary_ref_admission() -> None:
+    _assert_buddy_caller_arbitrary_ref_admission(_document(CALLER)["jobs"])
+
+
+@pytest.mark.parametrize(
+    ("boundary", "diagnostic"),
+    [
+        ("authoritative-job", "discover-node"),
+        ("required-step", "discover-node:Bind Provider payload digest"),
+        ("setup-prerequisite", "ref-gated-setup"),
+    ],
+)
+def test_buddy_caller_admission_rejects_added_causal_gates(
+    boundary: str,
+    diagnostic: str,
+) -> None:
+    jobs = _document(CALLER)["jobs"]
+    main_only = "github.ref == 'refs/heads/main'"
+    if boundary == "authoritative-job":
+        jobs["discover-node"]["if"] += f" && {main_only}"
+    elif boundary == "required-step":
+        _step(jobs["discover-node"], "Bind Provider payload digest")["if"] = (
+            "steps.ownership.outputs.allowed == 'true'"
+        )
+    else:
+        assert boundary == "setup-prerequisite"
+        jobs["ref-gated-setup"] = {
+            "if": main_only,
+            "runs-on": "ubuntu-24.04",
+            "steps": [{"run": "true"}],
+        }
+        jobs["discover-node"]["needs"] = [
+            *_needs(jobs["discover-node"]),
+            "ref-gated-setup",
+        ]
+
+    with pytest.raises(AssertionError, match=diagnostic):
+        _assert_buddy_caller_arbitrary_ref_admission(jobs)
+
+
+@pytest.mark.parametrize(
+    "setup_condition",
+    [None, ATTEMPT_ONE_CONDITION],
+    ids=["ordinary-success", "attempt-one"],
+)
+def test_buddy_caller_admission_allows_diagnostics_and_setup(
+    setup_condition: str | None,
+) -> None:
+    jobs = _document(CALLER)["jobs"]
+    jobs["setup"] = {
+        "runs-on": "ubuntu-24.04",
+        "steps": [{"run": "true"}],
+    }
+    if setup_condition is not None:
+        jobs["setup"]["if"] = setup_condition
+    jobs["discover-node"]["needs"] = [
+        *_needs(jobs["discover-node"]),
+        "setup",
+    ]
+    jobs["ref-diagnostic"] = {
+        "if": "github.ref == 'refs/heads/main'",
+        "runs-on": "ubuntu-24.04",
+        "steps": [{"run": "echo diagnostic"}],
+    }
+    _steps(jobs["request"]).append(
+        {
+            "name": "Optional ref diagnostic",
+            "if": "github.ref == 'refs/heads/main'",
+            "run": "echo diagnostic",
+        }
+    )
+    for job_name in EXPECTED_CALLER_JOB_CONDITIONS:
+        jobs[job_name]["if"] = f"success() && {jobs[job_name]['if']}"
+    for job_name, step_names in REQUIRED_CALLER_ADMISSION_STEPS.items():
+        for step_name in step_names:
+            _step(jobs[job_name], step_name)["if"] = "success()"
+
+    _assert_buddy_caller_arbitrary_ref_admission(jobs)
 
 
 def test_buddy_caller_preserves_authority_and_execution_concurrency() -> None:
@@ -202,6 +359,147 @@ def test_buddy_caller_preserves_authority_and_execution_concurrency() -> None:
         "evaluate-live-eligibility",
     ):
         assert "concurrency" not in jobs[job_name]
+
+
+@pytest.mark.parametrize(
+    "selected_ref",
+    [
+        "refs/heads/contributor/arbitrary-buddy-source",
+        "refs/tags/arbitrary-buddy-candidate",
+    ],
+    ids=["branch", "tag"],
+)
+def test_buddy_request_normalization_passes_selected_identity_and_retains_payload(
+    tmp_path: Path,
+    selected_ref: str,
+) -> None:
+    """Observe real Bash wiring with a synthetic parser-boundary payload."""
+    import hashlib  # noqa: PLC0415
+
+    from .workflow_shell import executable, resolve, run_step  # noqa: PLC0415
+
+    document = _document(CALLER)
+    job = document["jobs"]["request"]
+    normalization = _step(job, "Normalize fixed live request")
+    upload = _step(job, "Upload Release Intent")
+    assert upload["uses"] == UPLOAD
+    command_log = tmp_path / "commands.jsonl"
+    github_output = tmp_path / "github-output"
+    payload = b'{"synthetic":"WH04 shell wiring fixture"}\n'
+    fixture_digest = "sha256:" + "4" * 64
+    fixture_request_id = "wh04-synthetic-request-id"
+    recorder = """import json, os, sys
+from pathlib import Path
+from three_workflow_delivery_v3 import cli
+command = [Path(sys.argv[0]).name, *sys.argv[1:]]
+with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
+    stream.write(json.dumps({"argv": command, "cwd": os.getcwd()}) + "\\n")
+if command[:7] != [
+    "uv", "run", "--python", "3.13", "--package", "three-workflow-delivery-v3",
+    "three-workflow-delivery-v3"
+]:
+    raise SystemExit(f"Unexpected launcher: {command!r}")
+arguments = cli._parser().parse_args(command[7:])
+if (arguments.context, arguments.release_command) != (
+    "release", "normalize-live-request"
+):
+    raise SystemExit(f"Unexpected operation: {command!r}")
+output = Path(arguments.output)
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_bytes(os.environ["FIXTURE_PAYLOAD"].encode("utf-8"))
+with open(arguments.github_output, "a", encoding="utf-8") as stream:
+    stream.write("intent-digest=" + os.environ["FIXTURE_DIGEST"] + "\\n")
+    stream.write("request-id=" + os.environ["FIXTURE_REQUEST_ID"] + "\\n")
+"""
+    executable(tmp_path / "bin" / "uv", recorder)
+    target = "1234567890abcdef1234567890abcdef12345678"
+    result = run_step(
+        normalization,
+        cwd=tmp_path,
+        env={
+            "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+            "PYTHONPATH": str(Path(cli_module.__file__).resolve().parents[1]),
+            "GITHUB_REPOSITORY": "hcoona/three",
+            "GITHUB_REF": selected_ref,
+            "GITHUB_SHA": target,
+            "GITHUB_ACTOR": "wh04-test",
+            "GITHUB_RUN_ID": "9040",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_OUTPUT": str(github_output),
+            "COMMAND_LOG": str(command_log),
+            "FIXTURE_PAYLOAD": payload.decode("utf-8"),
+            "FIXTURE_DIGEST": fixture_digest,
+            "FIXTURE_REQUEST_ID": fixture_request_id,
+        },
+        bindings={},
+        workflow=document,
+        job=job,
+    )
+    assert result.returncode == 0, result.stderr
+    calls = [
+        json.loads(line)
+        for line in command_log.read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["cwd"] == str(tmp_path)
+    assert call["argv"][:7] == [
+        "uv",
+        "run",
+        "--python",
+        "3.13",
+        "--package",
+        "three-workflow-delivery-v3",
+        "three-workflow-delivery-v3",
+    ]
+    arguments = cli_module._parser().parse_args(  # noqa: SLF001
+        call["argv"][7:]
+    )
+    expected_inputs = {
+        "context": "release",
+        "release_command": "normalize-live-request",
+        "repository": "hcoona/three",
+        "selected_ref": selected_ref,
+        "target": target,
+        "actor": "wh04-test",
+        "workflow_run_id": 9040,
+        "run_attempt": 1,
+        "github_output": str(github_output),
+    }
+    assert {
+        key: getattr(arguments, key) for key in expected_inputs
+    } == expected_inputs
+    assert arguments.output
+
+    emitted = github_output.read_text(encoding="utf-8")
+    assert emitted.endswith("\n")
+    outputs = {}
+    for line in emitted.splitlines():
+        key, separator, value = line.partition("=")
+        assert separator, line
+        assert key, line
+        assert key not in outputs, line
+        outputs[key] = value
+    assert {
+        key: outputs[key]
+        for key in ("selected-ref", "target-sha", "intent-digest", "request-id")
+    } == {
+        "selected-ref": selected_ref,
+        "target-sha": target,
+        "intent-digest": fixture_digest,
+        "request-id": fixture_request_id,
+    }
+    artifact_name = outputs["intent-artifact-name"]
+    digest = hashlib.sha256(payload).hexdigest()
+    assert artifact_name == f"wdv3-live-buddy-request-r9040-{digest}.json"
+    bindings = {
+        f"steps.{normalization['id']}.outputs.{key}": value
+        for key, value in outputs.items()
+    }
+    assert resolve(upload["with"]["name"], bindings) == artifact_name
+    artifact = tmp_path / resolve(upload["with"]["path"], bindings)
+    assert artifact.name == artifact_name
+    assert artifact.read_bytes() == payload
 
 
 def test_buddy_compilation_transports_model_and_compiler_outputs(
@@ -330,198 +628,249 @@ with Path(args[args.index("--github-output") + 1]).open("a", encoding="utf-8") a
     assert "424242" in artifact.name
 
 
-def test_buddy_live_eligibility_uses_current_run_cli_inputs(
+@pytest.mark.parametrize(
+    ("producer_status", "payload", "live_result", "shell_status", "retained"),
+    [
+        pytest.param(
+            0, b'{"result":"pass"}\n', "admitted", 0, True, id="E1-pass"
+        ),
+        pytest.param(
+            1, b'{"result":"blocked"}\n', "blocked", 0, True, id="E2-blocked"
+        ),
+        pytest.param(
+            0,
+            b'{"result":"blocked"}\n',
+            "blocked",
+            2,
+            False,
+            id="E3-disagreement",
+        ),
+        pytest.param(
+            1,
+            b'{"result":"pass"}\n',
+            "admitted",
+            2,
+            False,
+            id="E4-disagreement",
+        ),
+        pytest.param(
+            17,
+            b'{"result":"pass"}\n',
+            "admitted",
+            17,
+            False,
+            id="E5-producer-failure",
+        ),
+        pytest.param(0, None, "", None, False, id="E6-missing-payload"),
+    ],
+)
+def test_buddy_live_eligibility_uses_current_run_cli_inputs(  # noqa: PLR0913
     tmp_path: Path,
+    producer_status: int,
+    payload: bytes | None,
+    live_result: str,
+    shell_status: int | None,
+    *,
+    retained: bool,
 ) -> None:
-    """Observe current workflow inputs through the real eligibility step."""
-    # Existing consumers load this module's older helpers without a package.
+    """Read actual producer bytes before retaining a consistent Decision."""
     from .workflow_shell import executable, resolve, run_step  # noqa: PLC0415
 
     document = _document(CALLER)
     job = document["jobs"]["evaluate-live-eligibility"]
-    eligibility_steps = [
-        step for step in _steps(job) if step.get("id") == "eligibility"
-    ]
-    upload_steps = [step for step in _steps(job) if step.get("id") == "upload"]
-    assert len(eligibility_steps) == 1
-    assert len(upload_steps) == 1
-    eligibility = eligibility_steps[0]
-    upload = upload_steps[0]
-    assert upload["uses"] == UPLOAD
-
+    eligibility = _step(job, "Evaluate fixed-source live eligibility")
+    upload = _step(job, "Upload Live Eligibility Decision")
     command_log = tmp_path / "commands.jsonl"
     github_output = tmp_path / "github-output"
-    recorder = """import json, os, subprocess, sys
+    source = tmp_path / "producer.json"
+    if payload is not None:
+        source.write_bytes(payload)
+    recorder = """import hashlib, json, os, subprocess, sys
 from pathlib import Path
-command = [Path(sys.argv[0]).name, *sys.argv[1:]]
-with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
-    stream.write(json.dumps({"argv": command, "cwd": os.getcwd()}) + "\\n")
-if command[:6] != [
-    "uv", "run", "--python", "3.13", "--package", "three-workflow-delivery-v3"
-]:
-    raise SystemExit(f"Unexpected launcher: {command!r}")
-operation = command[6:]
-if operation[:3] == [
-    "three-workflow-delivery-v3", "release", "evaluate-live-eligibility"
-]:
-    output = Path(operation[operation.index("--output") + 1])
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(b'{"result":"pass"}\\n')
-elif (
-    len(operation) == 4
-    and operation[:2] == ["python", "-c"]
-    and operation[2] == (
-        'import json, sys; print(json.load(open(sys.argv[1], '
-        'encoding="utf-8"))["result"])'
-    )
-):
-    result = subprocess.run(
-        [sys.executable, *operation[1:]], check=False, timeout=10
-    )
-    raise SystemExit(result.returncode)
-else:
-    raise SystemExit(f"Unexpected operation: {operation!r}")
+args = sys.argv[1:]
+if "release" in args:
+    command = args[args.index("release"):]
+    if command[:2] != ["release", "evaluate-live-eligibility"]:
+        raise SystemExit(f"Unexpected CLI operation: {command!r}")
+    with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
+        stream.write(json.dumps({"argv": command, "cwd": os.getcwd()}) + "\\n")
+    source = Path(os.environ["PRODUCER_PAYLOAD"])
+    if source.is_file():
+        content = source.read_bytes()
+        output = Path(command[command.index("--output") + 1])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(content)
+        digest = hashlib.sha256(content).hexdigest()
+        with open(command[command.index("--github-output") + 1], "a", encoding="utf-8") as stream:
+            stream.write(f"live-eligibility-digest=sha256:{digest}\\n")
+            stream.write(f"live-eligibility-digest-hex={digest}\\n")
+            stream.write(f"live-result={os.environ['PRODUCER_LIVE_RESULT']}\\n")
+    raise SystemExit(int(os.environ["PRODUCER_STATUS"]))
+python_command = next((name for name in ("python", "python3") if name in args), None)
+if python_command is not None:
+    operation = args[args.index(python_command) + 1:]
+    raise SystemExit(subprocess.run([sys.executable, *operation], check=False, timeout=10).returncode)
+raise SystemExit(f"Unexpected uv operation: {args!r}")
 """
     executable(tmp_path / "bin" / "uv", recorder)
     bindings = {
         "github.token": "workflow-fixture-token",
-        "needs.compile-model.outputs.intent-artifact-name": "fixture-intent.json",
+        "needs.compile-model.outputs.intent-artifact-name": "fixture intent.json",
         "needs.compile-model.outputs.intent-digest": "sha256:" + "1" * 64,
         "needs.compile-model.outputs.intent-artifact-id": "4101",
         "needs.compile-model.outputs.intent-artifact-digest": "sha256:"
         + "2" * 64,
-        "needs.compile-model.outputs.repository-model-artifact-name": (
-            "fixture-model.json"
-        ),
+        "needs.compile-model.outputs.repository-model-artifact-name": "fixture model.json",
         "needs.compile-model.outputs.repository-model-digest": "sha256:"
         + "3" * 64,
         "needs.compile-model.outputs.repository-model-artifact-id": "5202",
-        "needs.compile-model.outputs.repository-model-artifact-digest": (
-            "sha256:" + "4" * 64
-        ),
+        "needs.compile-model.outputs.repository-model-artifact-digest": "sha256:"
+        + "4" * 64,
+    }
+    environment = {
+        "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_RUN_ID": "9031",
+        "GITHUB_RUN_ATTEMPT": "1",
+        "GITHUB_SHA": "e" * 40,
+        "GITHUB_OUTPUT": str(github_output),
+        "COMMAND_LOG": str(command_log),
+        "PRODUCER_PAYLOAD": str(source),
+        "PRODUCER_STATUS": str(producer_status),
+        "PRODUCER_LIVE_RESULT": live_result,
     }
     result = run_step(
         eligibility,
         cwd=tmp_path,
-        env={
-            "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
-            "GITHUB_RUN_ID": "9031",
-            "GITHUB_RUN_ATTEMPT": "1",
-            "GITHUB_SHA": "e" * 40,
-            "GITHUB_OUTPUT": str(github_output),
-            "COMMAND_LOG": str(command_log),
-        },
+        env=environment,
         bindings=bindings,
         workflow=document,
         job=job,
     )
-    assert result.returncode == 0, result.stderr
-    calls = [
-        json.loads(line)
-        for line in command_log.read_text(encoding="utf-8").splitlines()
-    ]
-    assert len(calls) == 2  # noqa: PLR2004 - evaluator and local reader
-    evaluation, reader = calls
-    launcher = [
-        "uv",
-        "run",
-        "--python",
-        "3.13",
-        "--package",
-        "three-workflow-delivery-v3",
-    ]
-    assert all(call["argv"][:6] == launcher for call in calls)
-    assert all(call["cwd"] == str(tmp_path) for call in calls)
-    assert evaluation["argv"][6] == "three-workflow-delivery-v3"
-    assert reader["argv"][6:8] == ["python", "-c"]
-    for call in calls:
-        assert "--consumer-policy" not in call["argv"]
-        assert all(
-            not argument.startswith("--consumer-policy=")
-            for argument in call["argv"]
-        )
-    arguments = cli_module._parser().parse_args(  # noqa: SLF001
-        evaluation["argv"][7:]
-    )
-    expected_inputs = {
-        "context": "release",
-        "release_command": "evaluate-live-eligibility",
-        "repo_root": ".",
-        "github_token": "workflow-fixture-token",
-        "workflow_run_id": 9031,
-        "run_attempt": 1,
-        "target": "e" * 40,
-        "intent": ".wdv3/input/fixture-intent.json",
-        "intent_digest": "sha256:" + "1" * 64,
-        "intent_artifact_id": 4101,
-        "intent_artifact_digest": "sha256:" + "2" * 64,
-        "repository_model": ".wdv3/input/fixture-model.json",
-        "repository_model_digest": "sha256:" + "3" * 64,
-        "repository_model_artifact_id": 5202,
-        "repository_model_artifact_digest": "sha256:" + "4" * 64,
-        "github_output": str(github_output),
-    }
-    assert {
-        key: getattr(arguments, key) for key in expected_inputs
-    } == expected_inputs
-    assert arguments.output
-    assert reader["argv"][-1] == arguments.output
+    if shell_status is None:
+        assert result.returncode != 0
+    else:
+        assert result.returncode == shell_status, result.stderr
+    outputs = _shell_outputs(github_output)
+    if not retained:
+        assert not outputs.get("live-eligibility-artifact-name")
+        return
 
-    output_text = github_output.read_text(encoding="utf-8")
-    assert output_text.endswith("\n")
-    outputs: dict[str, str] = {}
-    for assignment in output_text[:-1].split("\n"):
-        name, separator, value = assignment.partition("=")
-        assert name
-        assert separator == "="
-        assert name not in outputs
-        outputs[name] = value
-    assert outputs["eligibility-status"] == "0"
+    assert payload is not None
+    digest = hashlib.sha256(payload).hexdigest()
+    assert outputs["eligibility-status"] == str(producer_status)
+    assert outputs["live-eligibility-digest"] == f"sha256:{digest}"
+    assert outputs["live-result"] == live_result
     artifact_name = outputs["live-eligibility-artifact-name"]
-    assert artifact_name
+    assert digest in artifact_name
+    assert "r9031" in artifact_name
     upload_bindings = {
         **bindings,
         "steps.eligibility.outputs.live-eligibility-artifact-name": artifact_name,
     }
     assert resolve(upload["with"]["name"], upload_bindings) == artifact_name
     uploaded_path = tmp_path / resolve(upload["with"]["path"], upload_bindings)
-    assert uploaded_path.read_bytes() == b'{"result":"pass"}\n'
+    assert uploaded_path.read_bytes() == payload
+
+    if producer_status == 0:
+        calls = [
+            json.loads(line) for line in command_log.read_text().splitlines()
+        ]
+        evaluation = next(
+            call
+            for call in calls
+            if call["argv"][:2] == ["release", "evaluate-live-eligibility"]
+        )
+        arguments = cli_module._parser().parse_args(evaluation["argv"])  # noqa: SLF001
+        expected = {
+            "context": "release",
+            "release_command": "evaluate-live-eligibility",
+            "repo_root": ".",
+            "github_token": "workflow-fixture-token",
+            "workflow_run_id": 9031,
+            "run_attempt": 1,
+            "target": "e" * 40,
+            "intent": ".wdv3/input/fixture intent.json",
+            "intent_digest": "sha256:" + "1" * 64,
+            "intent_artifact_id": 4101,
+            "intent_artifact_digest": "sha256:" + "2" * 64,
+            "repository_model": ".wdv3/input/fixture model.json",
+            "repository_model_digest": "sha256:" + "3" * 64,
+            "repository_model_artifact_id": 5202,
+            "repository_model_artifact_digest": "sha256:" + "4" * 64,
+            "output": ".wdv3/live-eligibility-decision.json",
+            "github_output": str(github_output),
+        }
+        assert {key: getattr(arguments, key) for key in expected} == expected
+        assert Path(evaluation["cwd"]) == tmp_path
+
+    propagation = run_step(
+        _step(job, "Propagate Live Eligibility status"),
+        cwd=tmp_path,
+        env=environment,
+        bindings={
+            "steps.eligibility.outcome": "success",
+            "steps.upload.outcome": "success",
+            "steps.eligibility.outputs.eligibility-status": outputs[
+                "eligibility-status"
+            ],
+        },
+        workflow=document,
+        job=job,
+    )
+    assert propagation.returncode == producer_status, propagation.stderr
+
+
+@pytest.mark.parametrize(
+    ("producer", "upload", "status", "exit_status"),
+    [
+        pytest.param("failure", "success", "0", 1, id="producer-only"),
+        pytest.param("success", "failure", "0", 1, id="upload-only"),
+        pytest.param("success", "success", "", 2, id="missing-status-only"),
+    ],
+)
+def test_live_eligibility_propagation_rejects_incomplete_retention(
+    tmp_path: Path,
+    producer: str,
+    upload: str,
+    status: str,
+    exit_status: int,
+) -> None:
+    """Each unsuccessful retention fact independently prevents success."""
+    from .workflow_shell import run_step  # noqa: PLC0415
+
+    document = _document(CALLER)
+    job = document["jobs"]["evaluate-live-eligibility"]
+    result = run_step(
+        _step(job, "Propagate Live Eligibility status"),
+        cwd=tmp_path,
+        env={},
+        bindings={
+            "steps.eligibility.outcome": producer,
+            "steps.upload.outcome": upload,
+            "steps.eligibility.outputs.eligibility-status": status,
+        },
+        workflow=document,
+        job=job,
+    )
+    assert result.returncode == exit_status, result.stderr
 
 
 def test_live_eligibility_block_is_uploaded_before_status_propagates() -> None:
-    """Retain a valid blocked Decision before surfacing domain exit one."""
-    caller = _document(CALLER)
-    job = caller["jobs"]["evaluate-live-eligibility"]
-    steps = job["steps"]
+    """Actions retains the Decision before propagating its domain status."""
+    job = _document(CALLER)["jobs"]["evaluate-live-eligibility"]
+    steps = _steps(job)
     evaluate = _step(job, "Evaluate fixed-source live eligibility")
     upload = _step(job, "Upload Live Eligibility Decision")
     propagate = _step(job, "Propagate Live Eligibility status")
-    command = _run(evaluate)
-    propagation = _run(propagate)
-    domain_command_count = 1
-
-    assert command.count("set +e") == domain_command_count
-    assert command.count("set -e") == domain_command_count
-    assert "eligibility_status=$?" in command
-    assert '"${eligibility_status}" != "0"' in command
-    assert '"${eligibility_status}" != "1"' in command
-    assert '"${decision_result}" != "pass"' in command
-    assert '"${decision_result}" != "blocked"' in command
-    assert 'echo "eligibility-status=${eligibility_status}"' in command
-    assert "--consumer-policy" not in command
-    assert "consumer_status" not in command
-    assert "consumer_result" not in command
-    assert command.index("eligibility_status=$?") < command.index(
-        'echo "live-eligibility-artifact-name=${artifact_name}"'
-    )
     assert steps.index(evaluate) < steps.index(upload) < steps.index(propagate)
+    assert upload["uses"] == UPLOAD
+    assert upload["with"]["archive"] is False
+    assert upload["with"]["overwrite"] is False
+    assert upload["with"]["if-no-files-found"] == "error"
     assert propagate["if"] == "always()"
-    assert "steps.eligibility.outcome" in propagation
-    assert "steps.upload.outcome" in propagation
-    assert "steps.eligibility.outputs.eligibility-status" in propagation
-    assert "1) exit 1" in propagation
-    assert job["outputs"]["live-result"] == (
-        "${{ steps.eligibility.outputs.live-result }}"
+    assert (
+        job["outputs"]["live-result"]
+        == "${{ steps.eligibility.outputs.live-result }}"
     )
 
 
@@ -564,151 +913,329 @@ def test_destination_observer_maps_the_effective_github_token() -> None:
     assert '--github-token "${GITHUB_TOKEN}"' in _run(observer)
 
 
+def _shell_outputs(path: Path) -> dict[str, str]:
+    """Read single-line output assignments emitted by the selected shell."""
+    if not path.exists():
+        return {}
+    outputs: dict[str, str] = {}
+    for assignment in path.read_text(encoding="utf-8").splitlines():
+        name, separator, value = assignment.partition("=")
+        assert name
+        assert separator == "="
+        assert name not in outputs
+        outputs[name] = value
+    return outputs
+
+
+def _observation_input_bindings() -> dict[str, str]:
+    """Give distinct current authority inputs to the two consuming shells."""
+    return {
+        "github.token": "workflow-observer-token",
+        "inputs.target-sha": "a" * 40,
+        "inputs.intent-artifact-name": "intent.json",
+        "inputs.intent-digest": "sha256:" + "01" * 32,
+        "inputs.intent-artifact-id": "6101",
+        "inputs.intent-artifact-digest": "sha256:" + "02" * 32,
+        "inputs.repository-model-artifact-name": "model.json",
+        "inputs.repository-model-digest": "sha256:" + "03" * 32,
+        "inputs.repository-model-artifact-id": "6102",
+        "inputs.repository-model-artifact-digest": "sha256:" + "04" * 32,
+        "inputs.live-eligibility-artifact-name": "eligibility.json",
+        "inputs.live-eligibility-digest": "sha256:" + "05" * 32,
+        "inputs.live-eligibility-artifact-id": "6103",
+        "inputs.live-eligibility-artifact-digest": "sha256:" + "06" * 32,
+        "needs.admit.outputs.attempt-artifact-name": "attempt.json",
+        "needs.admit.outputs.attempt-digest": "sha256:" + "07" * 32,
+        "needs.admit.outputs.attempt-artifact-id": "6104",
+        "needs.admit.outputs.attempt-artifact-digest": "sha256:" + "08" * 32,
+        "needs.qualification-finalizer.outputs.qualification-snapshot-artifact-name": "qualification.json",
+        "needs.qualification-finalizer.outputs.qualification-snapshot-digest": "sha256:"
+        + "09" * 32,
+        "needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id": "6105",
+        "needs.qualification-finalizer.outputs.qualification-snapshot-artifact-digest": "sha256:"
+        + "0a" * 32,
+        "needs.qualification-finalizer.outputs.decision-artifact-name": "decision.json",
+        "needs.qualification-finalizer.outputs.decision-digest": "sha256:"
+        + "0b" * 32,
+        "needs.qualification-finalizer.outputs.decision-artifact-id": "6106",
+        "needs.qualification-finalizer.outputs.decision-artifact-digest": "sha256:"
+        + "0c" * 32,
+        "needs.qualification-finalizer.outputs.decision-artifact-url": "https://example.invalid/artifacts/6106",
+        "needs.qualification-finalizer.outputs.adapter-context-artifact-name": "adapter.json",
+        "needs.qualification-finalizer.outputs.adapter-context-digest": "sha256:"
+        + "0d" * 32,
+        "needs.qualification-finalizer.outputs.adapter-context-artifact-id": "6107",
+        "needs.qualification-finalizer.outputs.adapter-context-artifact-digest": "sha256:"
+        + "0e" * 32,
+        "needs.qualification-finalizer.outputs.release-artifact-artifact-name": "release.json",
+        "needs.qualification-finalizer.outputs.release-artifact-digest": "sha256:"
+        + "0f" * 32,
+        "needs.qualification-finalizer.outputs.release-artifact-artifact-id": "6108",
+        "needs.qualification-finalizer.outputs.release-artifact-artifact-digest": "sha256:"
+        + "10" * 32,
+    }
+
+
 def test_blocking_observation_is_retained_before_status_propagation() -> None:
+    """Actions uploads failed Observation before its independent finalizer use."""
     jobs = _document(CALLEE)["jobs"]
     observer = jobs["observe-github-packages"]
     observe = _step(observer, "Observe exact GitHub Packages state")
     upload = _step(observer, "Upload Observation Record set")
     propagate = _step(observer, "Propagate observation status")
-    step_names = tuple(step["name"] for step in _steps(observer))
-
+    steps = _steps(observer)
     assert observe["continue-on-error"] is True
-    observe_run = _run(observe)
-    assert observe_run.index("set +e") < observe_run.index(
-        "three-workflow-delivery-v3 release observe-github-packages"
-    )
-    assert observe_run.index("observation_status=$?") < observe_run.index(
-        "sha256sum .wdv3/observation-set.json"
-    )
-    assert observe_run.index("mv .wdv3/observation-set.json") < (
-        observe_run.index("observation-set-artifact-name=${artifact_name}")
-    )
-    assert observe_run.rstrip().endswith('exit "${observation_status}"')
     assert upload["if"] == (
         "always() && steps.observe.outputs.observation-set-artifact-name != ''"
     )
+    assert upload["uses"] == UPLOAD
+    assert upload["with"]["archive"] is False
+    assert upload["with"]["overwrite"] is False
+    assert upload["with"]["if-no-files-found"] == "error"
     assert propagate["if"] == "always()"
-    propagate_run = _run(propagate)
-    for fact in (
-        "steps.observe.outcome",
-        "steps.upload.outcome",
-        "steps.observe.outputs.observation-status",
-    ):
-        assert fact in propagate_run
-    assert (
-        step_names.index("Observe exact GitHub Packages state")
-        < (step_names.index("Upload Observation Record set"))
-        < step_names.index("Propagate observation status")
-    )
+    assert steps.index(observe) < steps.index(upload) < steps.index(propagate)
 
     finalizer = jobs["release-finalizer"]
-    download = _step(
-        finalizer,
-        "Download Observation Record by artifact ID",
-    )
+    assert "observe-github-packages" in _needs(finalizer)
+    download = _step(finalizer, "Download Observation Record by artifact ID")
     assert download["if"] == (
         "always() && needs.observe-github-packages.outputs."
         "observation-set-artifact-id != ''"
     )
-    command = _run(_step(finalizer, "Finalize Attempt Outcome"))
-    assert (
-        'add_reference observation ".wdv3/input/${{ '
-        "needs.observe-github-packages.outputs."
-        "observation-set-artifact-name }}"
-    ) in command
-    assert 'if [[ -z "${snapshot_id}" ]]' not in command
-    assert command.count("add_reference observation ") == 1
+    assert download["uses"] == DOWNLOAD
+    assert download["with"]["artifact-ids"] == (
+        "${{ needs.observe-github-packages.outputs.observation-set-artifact-id }}"
+    )
 
 
+@pytest.mark.parametrize(
+    ("producer_status", "payload", "shell_status"),
+    [
+        pytest.param(
+            17,
+            b'{"observations":[],"diagnostic":"blocked"}\n',
+            17,
+            id="O1-failure-with-bytes",
+        ),
+        pytest.param(0, None, 1, id="O2-success-without-bytes"),
+        pytest.param(17, None, 17, id="O3-failure-without-bytes"),
+    ],
+)
 def test_blocking_observation_shell_names_record_before_failure(
     tmp_path: Path,
+    producer_status: int,
+    payload: bytes | None,
+    shell_status: int,
 ) -> None:
-    import hashlib  # noqa: PLC0415
-    import os  # noqa: PLC0415
-    import subprocess  # noqa: PLC0415
+    """Retain original failure bytes and never fabricate successful evidence."""
+    from .workflow_shell import executable, resolve, run_step  # noqa: PLC0415
 
-    run = _run(
-        _step(
-            _document(CALLEE)["jobs"]["observe-github-packages"],
-            "Observe exact GitHub Packages state",
-        )
-    )
-    expression = re.compile(r"\$\{\{\s*(?P<fact>.*?)\s*\}\}")
-    rendered = expression.sub(
-        lambda match: (
-            "a" * 40
-            if match.group("fact").strip() == "inputs.target-sha"
-            else (
-                "input.json"
-                if match.group("fact").strip().endswith("artifact-name")
-                else (
-                    "1"
-                    if match.group("fact").strip().endswith("artifact-id")
-                    else "sha256:" + ("b" * 64)
-                )
-            )
-        ),
-        run,
-    )
-    bin_directory = tmp_path / "bin"
-    bin_directory.mkdir()
-    uv = bin_directory / "uv"
-    uv.write_text(
-        r"""#!/usr/bin/env python3
-import os
-import pathlib
-import sys
-
+    document = _document(CALLEE)
+    job = document["jobs"]["observe-github-packages"]
+    source = tmp_path / "producer.json"
+    if payload is not None:
+        source.write_bytes(payload)
+    recorder = """import os, sys
+from pathlib import Path
 args = sys.argv[1:]
-output = pathlib.Path(args[args.index("--output") + 1])
-output.parent.mkdir(parents=True, exist_ok=True)
-output.write_text('{"schema":"workflow-delivery/v3/projection-observation"}\n', encoding="utf-8")
-github_output = pathlib.Path(args[args.index("--github-output") + 1])
-with github_output.open("a", encoding="utf-8") as handle:
-    handle.write("observation-set-digest=sha256:" + ("c" * 64) + "\n")
-raise SystemExit(1)
-""",
-        encoding="utf-8",
-    )
-    uv.chmod(0o755)
-    github_output = tmp_path / "github-output.txt"
-    environment = os.environ | {
-        "GITHUB_OUTPUT": str(github_output),
-        "GITHUB_RUN_ATTEMPT": "3",
-        "GITHUB_RUN_ID": "424242",
-        "GITHUB_TOKEN": "test-token",
-        "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
-        "WDV3_PACKAGE": "three-workflow-delivery-v3",
-    }
-
-    completed = subprocess.run(  # noqa: S603
-        (
-            "bash",
-            "--noprofile",
-            "--norc",
-            "-euo",
-            "pipefail",
-            "-c",
-            rendered,
-        ),
-        check=False,
+command = args[args.index("release"):]
+if command[:2] != ["release", "observe-github-packages"]:
+    raise SystemExit(f"Unexpected operation: {command!r}")
+source = Path(os.environ["PRODUCER_PAYLOAD"])
+if source.is_file():
+    output = Path(command[command.index("--output") + 1])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(source.read_bytes())
+raise SystemExit(int(os.environ["PRODUCER_STATUS"]))
+"""
+    executable(tmp_path / "bin" / "uv", recorder)
+    github_output = tmp_path / "github-output"
+    bindings = _observation_input_bindings()
+    result = run_step(
+        _step(job, "Observe exact GitHub Packages state"),
         cwd=tmp_path,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=10,
+        env={
+            "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+            "GITHUB_RUN_ID": "9031",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_OUTPUT": str(github_output),
+            "PRODUCER_PAYLOAD": str(source),
+            "PRODUCER_STATUS": str(producer_status),
+        },
+        bindings=bindings,
+        workflow=document,
+        job=job,
     )
-
-    outputs = {
-        key: value
-        for line in github_output.read_text(encoding="utf-8").splitlines()
-        for key, value in (line.split("=", 1),)
+    assert result.returncode == shell_status, result.stderr
+    outputs = _shell_outputs(github_output)
+    assert outputs["observation-status"] == str(producer_status)
+    if payload is None:
+        assert not outputs.get("observation-set-artifact-name")
+        return
+    digest = hashlib.sha256(payload).hexdigest()
+    artifact_name = outputs["observation-set-artifact-name"]
+    assert digest in artifact_name
+    assert "r9031" in artifact_name
+    upload = _step(job, "Upload Observation Record set")
+    upload_bindings = {
+        **bindings,
+        "steps.observe.outputs.observation-set-artifact-name": artifact_name,
     }
-    artifact = tmp_path / ".wdv3" / outputs["observation-set-artifact-name"]
-    payload_digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
-    assert completed.returncode == 1
-    assert outputs["observation-status"] == "1"
-    assert artifact.name.endswith(f"-{payload_digest}.json")
+    assert resolve(upload["with"]["name"], upload_bindings) == artifact_name
+    assert (
+        tmp_path / resolve(upload["with"]["path"], upload_bindings)
+    ).read_bytes() == payload
+
+
+@pytest.mark.parametrize(
+    ("observe", "upload", "status", "exit_status"),
+    [
+        pytest.param("success", "success", "0", 0, id="all-success"),
+        pytest.param("failure", "success", "0", 1, id="observer-only"),
+        pytest.param("success", "failure", "0", 1, id="upload-only"),
+        pytest.param("success", "success", "17", 1, id="status-only"),
+    ],
+)
+def test_observation_propagation_requires_all_success(
+    tmp_path: Path,
+    observe: str,
+    upload: str,
+    status: str,
+    exit_status: int,
+) -> None:
+    """Exercise the observer's three independent propagation vetoes."""
+    from .workflow_shell import run_step  # noqa: PLC0415
+
+    document = _document(CALLEE)
+    job = document["jobs"]["observe-github-packages"]
+    result = run_step(
+        _step(job, "Propagate observation status"),
+        cwd=tmp_path,
+        env={},
+        bindings={
+            "steps.observe.outcome": observe,
+            "steps.upload.outcome": upload,
+            "steps.observe.outputs.observation-status": status,
+        },
+        workflow=document,
+        job=job,
+    )
+    assert result.returncode == exit_status, result.stderr
+
+
+def test_finalizer_receives_failed_observation_without_publication_snapshot(
+    tmp_path: Path,
+) -> None:
+    """The receiving shell retains all Observation bindings without a Snapshot."""
+    from .workflow_shell import executable, run_step  # noqa: PLC0415
+
+    document = _document(CALLEE)
+    job = document["jobs"]["release-finalizer"]
+    bindings = {
+        **_observation_input_bindings(),
+        "needs.observe-github-packages.outputs.observation-set-artifact-name": "blocking observation.json",
+        "needs.observe-github-packages.outputs.observation-set-digest": "sha256:"
+        + "11" * 32,
+        "needs.observe-github-packages.outputs.observation-set-artifact-id": "6201",
+        "needs.observe-github-packages.outputs.observation-set-artifact-digest": "sha256:"
+        + "12" * 32,
+        "needs.observe-github-packages.outputs.observation-set-artifact-url": "https://example.invalid/artifacts/6201",
+        "needs.observe-github-packages.result": "failure",
+        "needs.publish-github-packages.result": "skipped",
+        "needs.publish-github-packages.outputs.publication-terminal-reference": "",
+        "needs.publish-github-packages.outputs.publication-step-outcome": "skipped",
+        "steps.terminal.outputs.terminal-artifact-id": "",
+        "steps.marker-lineage.outputs.marker-artifact-id": "",
+        "needs.materialize-publication.outputs.reviewer-digest": "",
+        "needs.materialize-publication.outputs.reviewer-artifact-id": "",
+        "needs.materialize-publication.outputs.reviewer-artifact-digest": "",
+        "needs.materialize-publication.outputs.reviewer-artifact-url": "",
+    }
+    # These are explicit absent fixture inputs, not discovered expression defaults.
+    for prefix in (
+        "needs.qualification-finalizer.outputs.build-evidence",
+        "needs.qualification-finalizer.outputs.project-test-evidence",
+        "needs.qualification-finalizer.outputs.artifact-contents-evidence",
+        "needs.qualification-finalizer.outputs.install-import-evidence",
+        "needs.qualification-finalizer.outputs.release-artifact",
+        "needs.materialize-publication.outputs.publication-snapshot",
+        "needs.materialize-publication.outputs.approval-bundle",
+        "needs.approve-publication.outputs.publication-authorization",
+        "needs.prove-exact-satisfied.outputs.exact-satisfied-finalization-proof",
+    ):
+        for suffix in (
+            "artifact-name",
+            "digest",
+            "artifact-id",
+            "artifact-digest",
+            "artifact-url",
+        ):
+            bindings[f"{prefix}-{suffix}"] = ""
+    observation = tmp_path / ".wdv3/input/blocking observation.json"
+    observation.parent.mkdir(parents=True)
+    observation.write_bytes(b'{"observations":[],"diagnostic":"blocked"}\n')
+    command_log = tmp_path / "finalizer.json"
+    recorder = """import json, os, sys
+from pathlib import Path
+args = sys.argv[1:]
+command = args[args.index("release"):]
+if command[:2] != ["release", "finalize-live"]:
+    raise SystemExit(f"Unexpected operation: {command!r}")
+Path(os.environ["COMMAND_LOG"]).write_text(json.dumps(command))
+for option, content in (("--outcome-output", b'{}\\n'), ("--summary-output", b'summary\\n')):
+    output = Path(command[command.index(option) + 1])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(content)
+"""
+    executable(tmp_path / "bin" / "uv", recorder)
+    result = run_step(
+        _step(job, "Finalize Attempt Outcome"),
+        cwd=tmp_path,
+        env={
+            "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+            "GITHUB_RUN_ID": "9031",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_OUTPUT": str(tmp_path / "github-output"),
+            "GITHUB_STEP_SUMMARY": str(tmp_path / "github-summary"),
+            "COMMAND_LOG": str(command_log),
+        },
+        bindings=bindings,
+        workflow=document,
+        job=job,
+    )
+    assert result.returncode == 0, result.stderr
+    argv = json.loads(command_log.read_text())
+    arguments = cli_module._parser().parse_args(argv)  # noqa: SLF001
+    expected = {
+        "context": "release",
+        "release_command": "finalize-live",
+        "workflow_run_id": 9031,
+        "run_attempt": 1,
+        "target": "a" * 40,
+        "intent": ".wdv3/input/intent.json",
+        "repository_model": ".wdv3/input/model.json",
+        "live_eligibility_decision": ".wdv3/input/eligibility.json",
+        "attempt_binding": ".wdv3/input/attempt.json",
+        "qualification_snapshot": ".wdv3/input/qualification.json",
+        "qualification_decision": ".wdv3/input/decision.json",
+        "observation": ".wdv3/input/blocking observation.json",
+        "observation_digest": "sha256:" + "11" * 32,
+        "observation_artifact_id": 6201,
+        "observation_artifact_digest": "sha256:" + "12" * 32,
+        "observation_artifact_url": "https://example.invalid/artifacts/6201",
+        "observation_payload_path": "blocking observation.json",
+        "observation_conclusion": "failure",
+        "publication_snapshot": None,
+        "publication_snapshot_digest": None,
+        "publication_snapshot_artifact_id": None,
+        "publication_snapshot_artifact_digest": None,
+        "publication_snapshot_artifact_url": None,
+        "publication_snapshot_payload_path": None,
+    }
+    assert {key: getattr(arguments, key) for key in expected} == expected
+    assert not any(
+        argument.startswith("--publication-snapshot") for argument in argv
+    )
 
 
 def test_shared_qualification_commands_admit_live_purpose_explicitly() -> None:
@@ -804,28 +1331,6 @@ def test_workflows_forbid_secrets_oidc_publication_bypasses_and_later_scope() ->
         "pypi",
     ):
         assert forbidden not in raw
-
-
-def test_release_finalizer_propagates_failure_after_retention() -> None:
-    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
-    steps = _steps(finalizer)
-    finalize = _step(finalizer, "Finalize Attempt Outcome")
-    outcome_upload = _step(finalizer, "Upload final Attempt Outcome")
-    summary_upload = _step(finalizer, "Upload final Attempt summary")
-    propagate = _step(finalizer, "Propagate finalization status")
-
-    for upload in (outcome_upload, summary_upload):
-        assert (
-            steps.index(finalize) < steps.index(upload) < steps.index(propagate)
-        )
-    assert propagate["if"] == "always()"
-    command = _run(propagate)
-    assert "steps.finalize.outcome" in command
-    assert "steps.upload-final-outcome.outcome" in command
-    assert "steps.upload-final-summary.outcome" in command
-    assert "steps.finalize.outputs.finalizer-status" in command
-    assert '!= "0"' in command
-    assert "exit 1" in command
 
 
 def test_live_attempt_requires_no_actions_read_permission() -> None:
@@ -1190,14 +1695,6 @@ def test_live_attempt_has_only_local_same_commit_buddy_caller() -> None:
 
 def test_buddy_target_sha_binding_chain_is_exact(tmp_path: Path) -> None:
     caller_jobs = _document(CALLER)["jobs"]
-    request = _run(
-        _step(caller_jobs["request"], "Normalize fixed live request")
-    )
-
-    assert re.findall(r'--target "([^"]+)"', request) == ["${GITHUB_SHA}"]
-    assert re.findall(r'echo "target-sha=([^"]+)"', request) == [
-        "${GITHUB_SHA}"
-    ]
     assert {
         "request": caller_jobs["request"]["outputs"]["target-sha"],
         "discover-node": caller_jobs["discover-node"]["outputs"]["target-sha"],
@@ -1360,7 +1857,13 @@ def test_current_authoritative_buddy_jobs_each_guard_attempt_one() -> None:
     }
 
     for document_name, document in documents.items():
-        for job_name, job in document["jobs"].items():
+        job_names = (
+            EXPECTED_CALLER_JOB_CONDITIONS
+            if document_name == "caller"
+            else document["jobs"]
+        )
+        for job_name in job_names:
+            job = document["jobs"][job_name]
             assert ATTEMPT_ONE_CONDITION in _condition_conjuncts(job), (
                 f"{document_name}:{job_name} must independently reject reruns"
             )

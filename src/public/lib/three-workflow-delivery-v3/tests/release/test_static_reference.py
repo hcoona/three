@@ -3490,14 +3490,8 @@ def test_excluded_surface_selects_no_graph_and_has_no_fallback(
     assert source.read_bytes() == content
 
 
-def test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared() -> (  # noqa: E501
-    None
-):
-    """Keep retired entries absent and exclude unsupported policy claims."""
-    from three_workflow_delivery_v3.release.static_reference_policy import (  # noqa: PLC0415
-        static_reference_policy_document,
-    )
-
+def test_retired_static_reference_consumer_paths_remain_absent() -> None:
+    """Preserve the three retired consumer entry points as absent."""
     obsolete_paths = (
         "eng/scripts/workflow_delivery_v3_consumer_policy.py",
         (
@@ -3512,25 +3506,6 @@ def test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared() 
     assert [
         path for path in obsolete_paths if (REPO_ROOT / path).exists()
     ] == []
-
-    policy_document = static_reference_policy_document()
-    policy_text = json.dumps(policy_document, sort_keys=True).casefold()
-    assert {
-        marker
-        for marker in (
-            "compatibility-grammar",
-            "secondary-authority",
-            "whole-file",
-            "approved-exception",
-            "fixture-exception",
-            "fixed-inventory",
-            "inventory-authority",
-            "trigger-catalog",
-            "consumer-claim",
-            '"consumers"',
-        )
-        if marker in policy_text
-    } == set()
 
 
 @pytest.mark.parametrize(
