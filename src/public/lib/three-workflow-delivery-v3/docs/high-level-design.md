@@ -482,12 +482,21 @@ The catalog covers only disjoint path selectors paired with an exact Ecosystem
 Authority Graph in the first-slice LLD. Git Source Authority supplies exact
 bytes directly or materializes only declared exact-source files into a
 Session-owned isolated snapshot for file-oriented APIs or commands. Each graph
-binds authoritative artifact schemas and standards, exact library/CLI/runtime
-identities and versions, lock or checksum provenance, public APIs or commands,
+binds authoritative artifact schemas and standards, required libraries and
+public APIs or commands,
 input mode, admitted format generation, required normalized facts, applicable
 prohibited forms, and unsupported cases. Raw-byte, strict-UTF-8, and XML input
 modes are explicit; no adapter performs replacement decoding or hidden
 normalization.
+
+Native package managers own dependency resolution, locked installation and
+integrity. Managed preparation selects the configured tools, restores locked
+dependencies and builds the helper before scanning; failure stops execution.
+Static-reference policy contains no duplicate lockfile hash or dependency
+version admission. Actual loaded versions are diagnostic observations, not
+an independent compatibility or completeness proof. Tool upgrades use the
+existing affected validation. The separate publication profile and approved
+artifact identity remain Release-owned requirements.
 
 Authoritative manifests or lockfiles, official ecosystem libraries or CLIs,
 and published standards own manifest, lock, descriptor, locator, workspace,
@@ -513,8 +522,8 @@ digest binds the full authority graph. The invocation schema rejects an omitted
 or unknown source kind and malformed required source parameters before Result
 construction. Once the source request is admitted, exact-source acquisition
 failure is `source-acquisition-failed`; encoding or authority rejection,
-authority execution failure, inability to project a required fact, authority
-mismatch, and required-root cleanup failure are distinct fail-closed errors.
+authority execution failure, inability to project a required fact, and
+required-root cleanup failure are distinct fail-closed errors.
 Candidate paths and graph-owned projections follow one deterministic declared
 traversal. The first typed non-cleanup failure is canonical; required cleanup
 failure overrides it and preserves the earlier sanitized cause only as

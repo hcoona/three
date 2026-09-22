@@ -352,10 +352,12 @@ The closed supported surface is the first-slice LLD's selector-to-fact matrix.
 Each retained disjoint selector has one exact Ecosystem Authority Graph. Git
 Source Authority supplies exact bytes directly or through a Session-owned
 isolated snapshot containing only declared files from one source kind. The
-graph binds authoritative artifact schemas and standards, exact
-library/CLI/runtime identities and versions, lock or checksum provenance,
+graph binds authoritative artifact schemas and standards, required libraries,
 public APIs or commands, input mode, admitted format generation, required
 facts, applicable prohibited forms, and unsupported cases.
+Native locked installation and managed preparation own tooling dependencies;
+CI does not add dependency version or lockfile-hash admission. Loaded versions
+are diagnostics. The first-slice LLD owns this shared preparation contract.
 
 Authoritative artifacts, official ecosystem libraries or CLIs, and published
 standards emit normalized manifest, lock, descriptor, locator, workspace, and
@@ -385,8 +387,8 @@ contract. The invocation schema rejects an omitted or unknown feedback mode and
 malformed required source parameters before Result construction; HK propagates
 that nonzero failure without synthesizing a Result.
 `source-acquisition-failed`, `encoding-rejected`, `authority-rejected`,
-`authority-execution-failed`, `unsupported-projection`,
-`authority-mismatch`, and `cleanup-failed` are distinct fail-closed errors. The
+`authority-execution-failed`, `unsupported-projection`, and `cleanup-failed`
+are distinct fail-closed errors. The
 policy requires no evaluator, dataflow model, Tree-sitter dependency, trigger
 catalog, whole-file digest exception, scanned-surface digest, or fixed inventory
 count. It also forbids handwritten ecosystem grammars or schemas,

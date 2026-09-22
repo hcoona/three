@@ -279,24 +279,36 @@ an earlier sanitized failure remains diagnostic.
 ### 6.4 Exact Ecosystem Authority Graph
 
 This LLD is the sole normative owner of the first-slice bounded
-static-reference Result schema, policy identity, authority manifest and graph,
+static-reference Result schema, policy identity, authority graph definition,
 source enumeration, snapshot/input contracts, normalized facts, failure
 taxonomy, and semantic scenarios. CI design references these contracts and
 owns only gate integration and CI-local transport.
 
-The checked-in authority manifest binds these graph nodes. Source artifact
-format generations are part of the graph. Node packages are direct dependencies
-resolved by `pnpm-lock.yaml`, including lockfile integrity. .NET packages are
-centrally pinned and resolved by the adapter project's `packages.lock.json`.
-CLI and runtime nodes bind their exact backend and version provenance in
-`mise.lock`, plus an artifact checksum when that backend records one.
+The checked-in graph definition binds the required packages, APIs, source
+formats and normalized-fact contracts. Package manifests and native lockfiles
+own resolved versions and integrity; mise and the native .NET configuration
+own tool selection. Preparation uses `pnpm install --frozen-lockfile
+--ignore-scripts`, `dotnet restore --locked-mode` and the existing helper build.
+The supported entry points must complete preparation before scanning and stop
+on failure. The scanner does not install packages or execute scanned code.
 
-| Graph node          | Authoritative artifacts, models, and exact implementation                                                                                                                                                                   | Public API or command and input mode                                                                                                                                                                                                                                  | Normalized model owned by the graph                                                                                                                                                 |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm-manifest-v1`   | `package.json`; `@npmcli/package-json@8.0.0`; `npm-package-arg@14.0.0`                                                                                                                                                      | fatal UTF-8 byte preflight; `PackageJson.load(snapshotDirectory)`; `npa.resolve(name, spec, where)`; isolated snapshot                                                                                                                                                | npm manifest, package identity, dependency result type, fetch spec, save spec, and local path                                                                                       |
-| `pnpm-lock-v1`      | `pnpm-lock.yaml` lockfile version exactly `9.0`; `@pnpm/lockfile.fs@1100.2.5`; `@pnpm/lockfile.utils@1102.1.0`; `@pnpm/deps.path@1101.0.1`; `@pnpm/workspace.spec-parser@1100.0.1`; `@pnpm/resolving.npm-resolver@1104.1.0` | fatal UTF-8 byte preflight; exact public `extractMainDocument`, `readWantedLockfileWithMergeInfo`, `WorkspaceSpec.parse`, `workspacePrefToNpm`, `parseBareSpecifier`, `refToRelative`, `nameVerFromPkgSnapshot`, and `pkgSnapshotToResolution` bounded sequence below | pnpm importers, package snapshots and identities, snapshot dependency edges, registry/alias specs, named or ranged workspace specs, and typed lock-owned Git or `file:` resolutions |
-| `pnpm-workspace-v1` | `pnpm-workspace.yaml`; `@pnpm/workspace.workspace-manifest-reader@1100.1.8`; `@pnpm/workspace.spec-parser@1100.0.1`; `@pnpm/resolving.npm-resolver@1104.1.0`; `npm-package-arg@14.0.0`                                      | fatal UTF-8 byte preflight; exact `readWorkspaceManifest`, `WorkspaceSpec.parse`, `workspacePrefToNpm`, `parseBareSpecifier`, and `npa.resolve` bounded sequence below; isolated snapshot                                                                             | workspace package patterns and catalog dependency specifications                                                                                                                    |
-| `nuget-lock-v1`     | `packages.lock.json` model version exactly `1`, `2`, or `3`; `packages.config` XML; NuGet lock/config models; `NuGet.ProjectModel@7.9.0`; `NuGet.Packaging@7.9.0`; exact sidecar `packages.lock.json` dependency closure    | for `packages.lock.json`, fatal UTF-8 byte preflight followed by `PackagesLockFileFormat.Read(Stream, NullLogger.Instance, repositoryLogicalPath)`; for `packages.config`, `new PackagesConfigReader(Stream, false).GetPackages(false)`                               | NuGet package identities, dependency groups, dependency edges, requested ranges, resolved versions, and package entries                                                             |
+Policy contains no pinned whole-lockfile digest, dependency version allowlist,
+generated admission manifest or package-by-package runtime verification.
+Preparation and package managers own stale installation and build handling.
+Recorded loaded implementation versions are diagnostics; they neither prove
+graph completion nor gate admission. Required graph execution and complete
+normalized responses remain the scanner's responsibility. A dependency update
+uses affected behavior and native integration validation; it changes the policy
+digest only when the graph's behavior contract changes. An API failure retains
+the ordinary execution/rejection outcome. This boundary does not relax native
+publication-profile or approved-package identity requirements.
+
+| Graph node          | Authoritative artifacts, models, and required packages                                                                                                                                                       | Public API or command and input mode                                                                                                                                                                                                                                  | Normalized model owned by the graph                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm-manifest-v1`   | `package.json`; `@npmcli/package-json`; `npm-package-arg`                                                                                                                                                    | fatal UTF-8 byte preflight; `PackageJson.load(snapshotDirectory)`; `npa.resolve(name, spec, where)`; isolated snapshot                                                                                                                                                | npm manifest, package identity, dependency result type, fetch spec, save spec, and local path                                                                                       |
+| `pnpm-lock-v1`      | `pnpm-lock.yaml` lockfile version exactly `9.0`; `@pnpm/lockfile.fs`; `@pnpm/lockfile.utils`; `@pnpm/deps.path`; `@pnpm/workspace.spec-parser`; `@pnpm/resolving.npm-resolver`                               | fatal UTF-8 byte preflight; exact public `extractMainDocument`, `readWantedLockfileWithMergeInfo`, `WorkspaceSpec.parse`, `workspacePrefToNpm`, `parseBareSpecifier`, `refToRelative`, `nameVerFromPkgSnapshot`, and `pkgSnapshotToResolution` bounded sequence below | pnpm importers, package snapshots and identities, snapshot dependency edges, registry/alias specs, named or ranged workspace specs, and typed lock-owned Git or `file:` resolutions |
+| `pnpm-workspace-v1` | `pnpm-workspace.yaml`; `@pnpm/workspace.workspace-manifest-reader`; `@pnpm/workspace.spec-parser`; `@pnpm/resolving.npm-resolver`; `npm-package-arg`                                                         | fatal UTF-8 byte preflight; exact `readWorkspaceManifest`, `WorkspaceSpec.parse`, `workspacePrefToNpm`, `parseBareSpecifier`, and `npa.resolve` bounded sequence below; isolated snapshot                                                                             | workspace package patterns and catalog dependency specifications                                                                                                                    |
+| `nuget-lock-v1`     | `packages.lock.json` model version exactly `1`, `2`, or `3`; `packages.config` XML; NuGet lock/config models; `NuGet.ProjectModel`; `NuGet.Packaging`; helper dependencies restored from its native lockfile | for `packages.lock.json`, fatal UTF-8 byte preflight followed by `PackagesLockFileFormat.Read(Stream, NullLogger.Instance, repositoryLogicalPath)`; for `packages.config`, `new PackagesConfigReader(Stream, false).GetPackages(false)`                               | NuGet package identities, dependency groups, dependency edges, requested ranges, resolved versions, and package entries                                                             |
 
 File-oriented graph nodes receive exactly this source snapshot closure:
 
@@ -525,12 +537,13 @@ not call `packageIdFromSnapshot`, `deps.path.parse`, any non-public subpath, or
 any filesystem, registry, Git, tarball, or package resolver after the declared
 lock read.
 
-Changing an authoritative source schema, standard, package, CLI, runtime,
-public API or command, input mode, admitted format generation, or normalized
-fact contract changes the policy digest and requires semantic acceptance.
-Version discovery at runtime is not authority: the adapter must report the
-exact loaded implementation identity, and admission compares it with this
-manifest.
+Changing an authoritative source schema, standard, required package or public
+API or command, input mode, admitted format generation, or normalized fact
+contract changes the policy digest and requires semantic acceptance. Dependency
+versions and lockfile bytes belong to managed preparation; they do not
+independently change this semantic contract. The adapter reports loaded
+implementation versions as diagnostics, without comparing them to a version
+manifest for admission.
 
 ### 6.5 Selector-to-fact and prohibited-form matrix
 
@@ -593,9 +606,7 @@ the declared input is `encoding-rejected`; rejection by an official artifact
 schema, library, CLI, or standard model is `authority-rejected`; inability to
 start or complete an executable authority node is
 `authority-execution-failed`; successful authority processing that cannot emit
-a required fact is `unsupported-projection`; a loaded implementation, API,
-command, or schema identity that differs from the authority manifest is
-`authority-mismatch`; failure to remove required Session-owned materialization
+a required fact is `unsupported-projection`; failure to remove required Session-owned materialization
 or scratch roots is `cleanup-failed`. Together with
 `source-acquisition-failed`, these are distinct fail-closed errors. An
 explicitly unsupported selector or field is outside the bounded claim; it must
@@ -607,13 +618,12 @@ sanitized matched identity. `result` is `clean`, `findings`, or `error`. Every
 Result contains the sorted exact implementation identities actually loaded.
 `error-kind` is required exactly when `result` is `error` and is one of
 `source-acquisition-failed`, `encoding-rejected`, `authority-rejected`,
-`authority-execution-failed`, `unsupported-projection`,
-`authority-mismatch`, or `cleanup-failed`; it is forbidden for `clean` and
+`authority-execution-failed`, `unsupported-projection`, or `cleanup-failed`; it is forbidden for `clean` and
 `findings`. If cleanup fails after an earlier failure, `cleanup-failed` is
 authoritative and the earlier sanitized cause is diagnostic. The policy
-document binds the expected authority manifest and graph; a Result binds the
-resulting policy digest and observed implementation identities rather than
-reproducing foreign authority models.
+document binds the graph's behavior contract; a Result binds the resulting
+policy digest and records observed implementation identities for diagnostics
+rather than reproducing foreign authority models or admitting package versions.
 
 The invocation schema first admits exactly one source kind and its required
 parameters. An omitted or unknown source kind or malformed required parameter
@@ -631,9 +641,9 @@ Result's `error-kind`. Finally-equivalent cleanup still runs, and
 and failure-selection rule is a policy-digest input.
 
 Candidate counts, per-file digests, aggregate inventory digests, snapshot
-paths, and timing are diagnostics only. Live authority is exact target, exact
-policy ID/digest, exact authority identities, successful projections, and an
-empty finding set.
+paths, loaded implementation versions, and timing are diagnostics only. Live
+authority is exact source target, exact policy ID/digest, required successful
+graph projections with complete normalized responses, and an empty finding set.
 
 Root HK runs the lightweight policy whenever HK runs; the step is not skipped
 because the caller-selected file list lacks a candidate. The caller explicitly
@@ -1556,9 +1566,12 @@ Redact `GITHUB_TOKEN`, npm auth lines, authorization headers, credential-bearing
   and path-form workspace references, unexplained null snapshot keys, or
   required missing snapshots cannot produce a clean pnpm-lock Result. No path
   invokes the local, Git, tarball, or registry resolver.
-- Prove exact artifact schemas, library/CLI/runtime identities and versions,
-  public APIs or commands, lock/checksum provenance, source-snapshot closure,
-  byte-input modes, and stable normalized fact projection.
+- Prove required public APIs or commands, source-snapshot closure, byte-input
+  modes and normalized fact projection. Validate preparation failure propagation
+  and representative scans after native locked installation. Formatting-only
+  lockfile changes and unrelated dependency updates must not require policy
+  edits. Retain compatibility checks for the parsing behavior consumed by V3;
+  do not duplicate package-manager resolution or integrity tests.
 - Prove npm manifests reject unsupported `workspace:` dependency values and npm
   lockfiles remain outside the selector.
 - Prove every npm-package-arg call receives an explicit source-owned base and a
@@ -1591,7 +1604,7 @@ Redact `GITHUB_TOKEN`, npm auth lines, authorization headers, credential-bearing
   bytes and digests remain unchanged.
 - Prove distinct `source-acquisition-failed`, `encoding-rejected`,
   `authority-rejected`, `authority-execution-failed`,
-  `unsupported-projection`, `authority-mismatch`, and `cleanup-failed` Results.
+  `unsupported-projection`, and `cleanup-failed` Results.
 - Prove source candidates, graph nodes, arrays, and selected mappings follow
   their bound deterministic order; the first source-acquisition failure becomes
   the sole `error-kind` before graph execution, otherwise the first typed

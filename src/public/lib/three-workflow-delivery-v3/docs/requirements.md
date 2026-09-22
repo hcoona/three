@@ -407,10 +407,18 @@ isolation are separate authority boundaries and remain unchanged.
     Source Authority supplies exact bytes directly or materializes only the
     declared files into a Session-owned isolated snapshot when an official
     library or CLI requires paths. The graph binds authoritative source
-    artifact schemas, ecosystem standards, exact package, CLI, runtime, tool,
-    module, or assembly identities; exact versions and lock/integrity
-    provenance; public APIs or commands; input modes; admitted format
+    artifact schemas, ecosystem standards, required packages and public APIs
+    or commands; input modes; admitted format
     generations; required normalized facts; and explicitly unsupported cases.
+    Tool versions, dependency resolution and integrity belong to the selected
+    revision's package manifests, native lockfiles and managed initialization.
+    Preparation must complete native locked installation before scanning;
+    failed preparation prevents execution. The scanner must not duplicate
+    lockfile hashes, dependency version allowlists, generated dependency
+    admission manifests or per-package runtime verification. Actual loaded
+    versions may be retained as diagnostics, not admission authority. This
+    tooling boundary does not change publication-profile qualification or
+    approved-artifact identity requirements.
     File-oriented authorities may read only that snapshot. No graph may fall
     back to the real worktree, resolve an undeclared import or preset, expand
     ambient environment, access a registry or network, evaluate GitHub
@@ -454,11 +462,13 @@ isolation are separate authority boundaries and remain unchanged.
     forbidden. Strict byte-to-text behavior, BOM handling, snapshot inputs,
     loaded authority identities, normalized fact contracts, and distinct
     `source-acquisition-failed`, `encoding-rejected`, `authority-rejected`,
-    `authority-execution-failed`, `unsupported-projection`,
-    `authority-mismatch`, and `cleanup-failed` failures are part of the policy
-    contract. Changing any source schema, standard, authority identity, version,
-    API or command, input mode, format generation, or fact contract changes the
-    policy digest. Source candidates and graph-owned projections must follow
+    `authority-execution-failed`, `unsupported-projection`, and
+    `cleanup-failed` failures are part of the policy contract. Changing a
+    source schema, standard, selected API or command, input mode, format
+    generation, or fact contract changes the policy digest. Tooling versions
+    and lockfile bytes do not independently change policy identity; affected
+    behavior and native integration checks establish upgrade compatibility.
+    Source candidates and graph-owned projections must follow
     one deterministic declared traversal. The first typed non-cleanup failure
     is the canonical error; required-root cleanup failure overrides it and
     retains the earlier sanitized cause only as diagnostic.
