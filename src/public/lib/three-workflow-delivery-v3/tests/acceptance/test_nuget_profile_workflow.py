@@ -215,7 +215,7 @@ def test_profile_workflow_preserves_spec_bytes_and_failure(
             arguments[arguments.index(argument) + 1] == str(workspace) + suffix
         )
     assert "--no-sync" in arguments
-    assert arguments[arguments.index("--python") + 1] == "3.13.12"
+    assert "--python" not in arguments
     assert not (workspace / ".wdv3/evidence/observation").exists()
 
 

@@ -5,7 +5,7 @@ description = "Root uv workspace manifest for the Three monorepo."
 authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
 dependencies = []
 readme = "README.md"
-requires-python = ">= 3.13"
+requires-python = ">= 3.14"
 license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
 classifiers = ["Private :: Do Not Upload"]
 
@@ -192,6 +192,8 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
 addopts = "--import-mode=importlib"
 tmp_path_retention_policy = "failed"
 testpaths = [
+  "tests/eng/test_ci_scope.py",
+  "tests/eng/test_python_runtime.py",
   "src/private/app/azureauth-credprovider/python/tests",
   "src/private/app/git-commit-heatmap/tests",
   "src/private/app/llm-text-splitter/tests",

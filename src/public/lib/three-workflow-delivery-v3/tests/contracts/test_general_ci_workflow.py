@@ -79,6 +79,7 @@ def _required_step(scope: dict[str, Any]) -> None:
         "true",
         "success()",
         "${{ success() }}",
+        "steps.scope.outputs.run == 'true'",
     )
     assert scope.get("continue-on-error", False) is False
 
@@ -91,14 +92,27 @@ def _bindings(tmp_path: Path) -> dict[str, str]:
         "github.event.pull_request.head.sha": "b" * 40,
         "github.event.before": "c" * 40,
         "github.sha": "d" * 40,
-        "env.PYTHON_VERSION": "3.14",
+        "needs.scope.outputs.base": "a" * 40,
+        "needs.scope.outputs.candidate": "d" * 40,
+        "needs.scope.outputs.full": "true",
+        "needs.scope.outputs.python_roots": json.dumps(
+            ["tests/eng/test_ci_scope.py"]
+        ),
     }
 
 
 def _commands(tmp_path: Path, *, missing: str | None = None) -> dict[str, str]:
     tools = tmp_path / "setup tools"
     tools.mkdir()
-    for name in {*TOOL_COMMANDS.values(), "mise", "pnpm", "npm", "uv", "hk"}:
+    for name in {
+        *TOOL_COMMANDS.values(),
+        "mise",
+        "pnpm",
+        "npm",
+        "uv",
+        "hk",
+        "python",
+    }:
         if name != missing:
             executable(tools / name, COMMAND_RECORDER)
     bash = shutil.which("bash")
@@ -133,14 +147,15 @@ def _run_bash_steps(
 ) -> subprocess.CompletedProcess[str]:
     result = None
     for step in steps:
-        if "run" not in step:
+        if "run" not in step or step.get("id") == "scope":
             continue
         _required_step(step)
         result = run_step(
             step,
             cwd=tmp_path,
             env=env,
-            bindings=_bindings(tmp_path),
+            bindings=_bindings(tmp_path)
+            | {"needs.scope.outputs.full": env.get("CI_MODE", "true")},
             workflow=workflow,
             job=job,
         )
@@ -216,13 +231,18 @@ def test_required_general_ci_checks_remain_eligible(
             continue
         visited.add(key)
         job = jobs[key]
-        _required_step(job)
+        if key == "scope":
+            _required_step(job)
+        else:
+            assert job["if"] == "always()"
+            assert job["needs"] == "scope"
         permissions = job.get("permissions", workflow["permissions"])
         assert isinstance(permissions, dict)
         assert permissions.get("contents") == "read"
         assert "write" not in permissions.values()
         for step in job["steps"]:
-            _required_step(step)
+            if "Retain" not in step["name"]:
+                _required_step(step)
         needs = job.get("needs", [])
         pending.extend([needs] if isinstance(needs, str) else needs)
 
@@ -276,29 +296,32 @@ def test_validation_bootstrap_failure_stops_hk(
         assert not any(command[:2] == ["mise", "install"] for command in calls)
 
 
-@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("full", [True, False])
 @pytest.mark.parametrize("exit_code", [0, 73])
-def test_validation_hk_uses_event_revisions_and_propagates_failure(
-    workflow: dict[str, Any],
-    tmp_path: Path,
-    event: str,
-    exit_code: int,
-) -> None:
-    """Deliver event-specific revisions and full profiles to required HK."""
+def test_validation_hk_uses_tested_comparison_and_propagates_failure(
+    workflow,
+    tmp_path,
+    full,
+    exit_code,
+):
+    """The tested candidate and explicit full mode reach the HK boundary."""
     env = _commands(tmp_path)
-    env["GITHUB_EVENT_NAME"] = event
+    env["CI_MODE"] = str(full).lower()
+    child = "hk" if full else "python"
     if exit_code:
-        env["FAIL_COMMAND"] = json.dumps(["hk", "check"])
+        env["FAIL_COMMAND"] = json.dumps([child])
     result = _run_validation(workflow, tmp_path, env)
     assert result.returncode == exit_code, result.stderr
     observed = next(
-        item for item in _observations(env) if item["command"][0] == "hk"
+        item for item in _observations(env) if item["command"][0] == child
     )
     command = observed["command"]
-    assert command[1] == "check"
-    base, head = ("a", "b") if event == "pull_request" else ("c", "d")
-    assert command[command.index("--from-ref") + 1] == base * 40
-    assert command[command.index("--to-ref") + 1] == head * 40
+    if full:
+        assert "--all" in command
+    else:
+        assert command[1] == "eng/scripts/workflow_delivery_v3_hk.py"
+        assert command[command.index("--from-ref") + 1] == "a" * 40
+        assert command[command.index("--to-ref") + 1] == "d" * 40
     assert {"small", "medium", "large"} <= set(observed["profile"].split(","))
 
 
@@ -366,7 +389,11 @@ def test_python_check_has_consumed_toolchain_prerequisites(
     """Bind the setup inputs consumed by Python bootstrap and preparation."""
     job = workflow["jobs"]["python-tests"]
     steps = job["steps"]
-    first_run = next(index for index, step in enumerate(steps) if "run" in step)
+    first_run = next(
+        index
+        for index, step in enumerate(steps)
+        if "run" in step and step.get("id") != "scope"
+    )
     prerequisites = {
         name: _action(job, name)
         for name in (
@@ -391,16 +418,11 @@ def test_python_check_has_consumed_toolchain_prerequisites(
     assert mise["experimental"] is True
     assert {"hk", "pkl"} <= set(mise["install_args"].split())
     assert mise.get("install", True) is not False
-    for action in ("actions/setup-python", "astral-sh/setup-uv"):
-        assert (
-            resolve(
-                prerequisites[action]["with"]["python-version"],
-                {
-                    "env.PYTHON_VERSION": job["env"]["PYTHON_VERSION"],
-                },
-            )
-            == "3.14"
-        )
+    assert (
+        prerequisites["actions/setup-python"]["with"]["python-version-file"]
+        == ".python-version"
+    )
+    assert "python-version" not in prerequisites["astral-sh/setup-uv"]["with"]
 
 
 def test_general_python_ci_prepares_static_reference_authorities(
@@ -425,7 +447,7 @@ def test_general_python_ci_prepares_static_reference_authorities(
         assert calls.index(prerequisite) < preparation
     assert observations[preparation]["auto_install"] == "false"
     assert preparation < calls.index(
-        ["uv", "run", "--frozen", "--all-packages", "pytest"]
+        ["uv", "run", "--frozen", "--all-packages", "python", "-"]
     )
 
 
@@ -490,7 +512,7 @@ def _run_dotnet(
     assert pwsh is not None, "The managed CI toolchain must provide PowerShell."
     result = None
     for step in job["steps"]:
-        if "run" not in step:
+        if "run" not in step or step.get("id") == "scope":
             continue
         _required_step(step)
         process_env = {**os.environ, **env}
@@ -614,3 +636,96 @@ def test_dotnet_check_propagates_test_failure(
     # The Actions PowerShell -Command wrapper maps failed script exits to 1.
     assert result.returncode == 1, result.stderr
     assert _observations(env)[-1]["command"][:2] == ["dotnet", command]
+
+
+@pytest.mark.parametrize(
+    ("selection", "applicable", "run"),
+    [
+        ("success", "true", "true"),
+        ("success", "false", "false"),
+        ("failure", "false", None),
+        ("cancelled", "false", None),
+        ("skipped", "", None),
+        ("success", "", None),
+    ],
+)
+def test_ci_scope_guard_rejects_missing_or_failed_selection(
+    workflow, tmp_path, selection, applicable, run
+):
+    """Distinguish valid non-applicability from lost required work."""
+    for name, job in workflow["jobs"].items():
+        if name == "scope":
+            continue
+        assert job["needs"] == "scope"
+        assert job["if"] == "always()"
+        guard = job["steps"][0]
+        assert guard["id"] == "scope"
+        output = tmp_path / name
+        key = (
+            guard["env"]["APPLICABLE"].removeprefix("${{ ").removesuffix(" }}")
+        )
+        result = run_step(
+            guard,
+            cwd=tmp_path,
+            env={"GITHUB_OUTPUT": str(output)},
+            bindings=_bindings(tmp_path)
+            | {"needs.scope.result": selection, key: applicable},
+            workflow=workflow,
+            job=job,
+        )
+        assert (result.returncode == 0) is (run is not None), result.stderr
+        if run is not None:
+            assert output.read_text().strip() == f"run={run}"
+        else:
+            assert not output.exists()
+        for step in job["steps"][1:]:
+            assert "steps.scope.outputs.run == 'true'" in step["if"]
+            assert not step.get("continue-on-error", False)
+
+
+def test_python_test_entry_runs_only_selected_roots_and_propagates_failure(
+    workflow, tmp_path
+):
+    """Execute the embedded entry point with passing and failing roots."""
+    job = workflow["jobs"]["python-tests"]
+    step = next(item for item in job["steps"] if item["name"] == "Run tests")
+    executable(
+        tmp_path / "bin" / "uv",
+        "import os, sys\n"
+        "assert sys.argv[1:5] == ['run', '--frozen', "
+        "'--all-packages', 'python']\n"
+        "os.execv(sys.executable, [sys.executable, *sys.argv[5:]])\n",
+    )
+    selected = tmp_path / "selected"
+    selected.mkdir()
+    (selected / "test_example.py").write_text(
+        "def test_selected():\n    assert True\n"
+    )
+    unrelated = tmp_path / "unrelated"
+    unrelated.mkdir()
+    (unrelated / "test_unrelated.py").write_text(
+        "raise RuntimeError('must not collect')\n"
+    )
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.pytest.ini_options]\ntestpaths = ["selected", "unrelated"]\n'
+    )
+    for failing in (False, True):
+        if failing:
+            (selected / "test_example.py").write_text(
+                "def test_selected():\n    assert False\n"
+            )
+        result = run_step(
+            step,
+            cwd=tmp_path,
+            env={
+                "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+                "PYTEST_ADDOPTS": "-p no:cacheprovider",
+            },
+            bindings=_bindings(tmp_path)
+            | {"needs.scope.outputs.python_roots": '["selected"]'},
+            workflow=workflow,
+            job=job,
+        )
+        assert (result.returncode != 0) is failing, result.stderr
+        assert "must not collect" not in result.stdout + result.stderr
+        assert (tmp_path / "artifacts/test-results/python.xml").is_file()

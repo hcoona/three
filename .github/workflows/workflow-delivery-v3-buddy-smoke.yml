@@ -40,7 +40,7 @@ jobs:
       - name: Normalize fixed live request
         id: request
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release normalize-live-request \
             --repository "${GITHUB_REPOSITORY}" \
             --selected-ref "${GITHUB_REF}" \
@@ -114,7 +114,7 @@ jobs:
           digest-mismatch: error
       - name: Admit current Release Intent
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release admit-intent \
             --purpose "${WDV3_PURPOSE}" \
             --workflow-run-id "${GITHUB_RUN_ID}" \
@@ -126,7 +126,7 @@ jobs:
             --intent-artifact-digest "${{ needs.request.outputs.intent-artifact-digest }}"
       - name: Run Node Provider once
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 repository provide-node \
             --request-id "${{ needs.request.outputs.request-id }}" \
             --purpose "${WDV3_PURPOSE}" \
@@ -213,7 +213,7 @@ jobs:
       - name: Compile without rerunning Provider
         id: compile
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release compile-live-model \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -311,7 +311,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release evaluate-live-eligibility \
             --github-token "${GITHUB_TOKEN}" \
             --workflow-run-id "${GITHUB_RUN_ID}" \
@@ -334,7 +334,7 @@ jobs:
             exit "${eligibility_status}"
           fi
           decision_result="$(
-            uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            uv run --package "${WDV3_PACKAGE}" \
               python -c \
               'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["result"])' \
               .wdv3/live-eligibility-decision.json

@@ -6,12 +6,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import sys
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
-from platform import python_version
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -873,13 +871,10 @@ def test_nuget_profile_collection_uses_exact_native_discovery(
     }
     helper_factory = Mock(return_value=helper)
     monkeypatch.setattr(dotnet_provider, "NativeNuGetHelper", helper_factory)
-    if (
-        sys.implementation.name != "cpython"
-        or python_version() != native.NUGET_PYTHON_VERSION
-    ):
-        monkeypatch.setattr(
-            native, "nuget_operation_profile", _modeled_profile_document
-        )
+    # Application scenarios model the adapter; its suite owns runtime proof.
+    monkeypatch.setattr(
+        native, "nuget_operation_profile", _modeled_profile_document
+    )
     if fault == "profile-mismatch":
         monkeypatch.setattr(
             native,

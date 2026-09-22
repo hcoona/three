@@ -82,6 +82,24 @@ HK_PROFILE = "small,medium"
 description = "Bootstrap the external tools"
 depends = ["bootstrap:pwsh", "bootstrap:node", "bootstrap:dotnet-tools"]
 
+[tasks."sync:python-version"]
+description = "Regenerate Python version projections from mise.lock"
+run = "python eng/scripts/sync_python_version.py --write"
+
+[tasks."check:python-version"]
+description = "Check Python version projections against mise"
+run = "python eng/scripts/sync_python_version.py"
+
+[tasks."test:v3"]
+description = "Run the complete Workflow Delivery v3 self-test suite"
+depends = ["prepare:static-reference-authorities"]
+run = "uv run --frozen --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests"
+
+[tasks."test:python"]
+description = "Run all Python workspace test roots"
+depends = ["prepare:static-reference-authorities"]
+run = "uv run --frozen --all-packages pytest"
+
 [tasks."bootstrap:pwsh"]
 description = "Bootstrap the PowerShell modules"
 run = '''
@@ -99,12 +117,12 @@ run = "dotnet tool restore"
 
 [tasks."prepare:static-reference-authorities"]
 description = "Prepare bounded static-reference authority runtimes"
-run = "uv run --isolated --frozen --python 3.13 --package three-workflow-delivery-v3 python -B eng/scripts/workflow_delivery_v3_prepare_static_reference.py"
+run = "uv run --isolated --frozen --package three-workflow-delivery-v3 python -B eng/scripts/workflow_delivery_v3_prepare_static_reference.py"
 
 [tasks."check:static-reference-worktree"]
 description = "Check bounded static references in the explicit worktree source"
 depends = ["prepare:static-reference-authorities"]
-run = "uv run --python 3.13 --package three-workflow-delivery-v3 python eng/scripts/workflow_delivery_v3_static_reference.py --repository-root . --source-kind worktree"
+run = "uv run --package three-workflow-delivery-v3 python eng/scripts/workflow_delivery_v3_static_reference.py --repository-root . --source-kind worktree"
 
 #
 # Tasks
@@ -216,13 +234,19 @@ uv run --isolated --no-project --with defusedxml==0.7.1 --with pymupdf==1.26.6 -
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 '''
 
-[tasks.scholarly-publication-plugin-ci]
-description = "Run the scholarly publication CI validation suite"
+[tasks.scholarly-publication-plugin-check]
+description = "Check scholarly publication source and runtime conformance"
 depends = [
   "scholarly-publication-plugin-runtime-check",
   "scholarly-publication-plugin-spec",
-  "scholarly-publication-plugin-test",
   "scholarly-publication-plugin-lint",
+]
+
+[tasks.scholarly-publication-plugin-ci]
+description = "Run all scholarly publication checks and tests explicitly"
+depends = [
+  "scholarly-publication-plugin-check",
+  "scholarly-publication-plugin-test",
 ]
 
 [tasks.scholarly-publication-plugin-install]

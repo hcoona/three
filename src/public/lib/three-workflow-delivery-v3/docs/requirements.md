@@ -150,7 +150,6 @@ isolation are separate authority boundaries and remain unchanged.
   unconsumed documentation must not select it. Explicit local and complete
   control-package validation remain available. A failed or missing selection,
   or a missing required test result, cannot become successful non-applicability.
-  The migration contract preserves the existing HK test owner until cutover.
   Control-package self-tests do not constitute Project Node qualification or
   Release Evidence; the static-reference policy remains internal to root HK.
 

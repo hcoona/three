@@ -52,7 +52,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind intent payload identity
@@ -224,7 +224,7 @@ jobs:
             '--purpose',
             'live-release'
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Restore pinned NBGV tooling
@@ -265,7 +265,7 @@ jobs:
             '0',
             '--no-persist-credentials'
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind provider payload identity
@@ -365,7 +365,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind repository-model payload identity
@@ -501,7 +501,7 @@ jobs:
             '--github-token',
             $env:GITHUB_TOKEN
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -notin @(0, 1)) { exit $commandStatus }
           $decision = Get-Content -LiteralPath '.wdv3/eligibility.json' -Raw | ConvertFrom-Json

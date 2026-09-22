@@ -40,7 +40,7 @@ jobs:
       - name: Normalize fixed request
         id: request
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release normalize-simulation-request \
             --repository "${GITHUB_REPOSITORY}" \
             --selected-ref "${GITHUB_REF}" \
@@ -105,7 +105,7 @@ jobs:
           digest-mismatch: error
       - name: Admit current Release Intent
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release admit-intent \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -116,7 +116,7 @@ jobs:
             --intent-artifact-digest "${{ needs.request.outputs.intent-artifact-digest }}"
       - name: Run Node Provider once
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 repository provide-node \
             --request-id "${{ needs.request.outputs.request-id }}" \
             --purpose "${WDV3_PURPOSE}" \
@@ -197,7 +197,7 @@ jobs:
       - name: Compile without rerunning Provider
         id: compile
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release compile-simulation-model \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -273,7 +273,7 @@ jobs:
       - name: Derive Simulation Identity
         id: identity
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release create-simulation-identity \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -359,7 +359,7 @@ jobs:
       - name: Close exact qualification Plan
         id: plan
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release plan-qualification \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -471,7 +471,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ needs.plan-simulation.outputs.tarball-artifact-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-build \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -506,7 +506,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ needs.plan-simulation.outputs.tarball-artifact-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release form-uploaded-artifact \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -621,7 +621,7 @@ jobs:
       - name: Run project-test mechanics
         id: test
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-project-test \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -719,7 +719,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ needs.build-tarball.outputs.tarball-artifact-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-artifact-contents \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -743,7 +743,7 @@ jobs:
         id: incomplete-contents
         if: needs.build-tarball.outputs.release-artifact-artifact-id == '' || needs.build-tarball.outputs.tarball-artifact-id == ''
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release form-incomplete-evidence \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -762,7 +762,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ needs.build-tarball.outputs.tarball-artifact-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-install-import \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -786,7 +786,7 @@ jobs:
         id: incomplete-install
         if: needs.build-tarball.outputs.release-artifact-artifact-id == '' || needs.build-tarball.outputs.tarball-artifact-id == ''
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release form-incomplete-evidence \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -962,7 +962,7 @@ jobs:
           add_record artifact-contents-evidence ".wdv3/input/${{ needs.npm-artifact-qualification.outputs.contents-evidence-artifact-name }}" "${CONTENTS_DIGEST}" "${CONTENTS_ID}" "${CONTENTS_UPLOAD}"
           add_record install-import-evidence ".wdv3/input/${{ needs.npm-artifact-qualification.outputs.install-evidence-artifact-name }}" "${INSTALL_DIGEST}" "${INSTALL_ID}" "${INSTALL_UPLOAD}"
           add_record release-artifact ".wdv3/input/${{ needs.build-tarball.outputs.release-artifact-artifact-name }}" "${ARTIFACT_DIGEST}" "${ARTIFACT_ID}" "${ARTIFACT_UPLOAD}"
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release finalize-qualification \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1074,7 +1074,7 @@ jobs:
               --release-artifact-artifact-digest "${RELEASE_ARTIFACT_UPLOAD}"
             )
           fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release observe-npmjs \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1193,7 +1193,7 @@ jobs:
               --release-artifact-artifact-digest "${RELEASE_ARTIFACT_UPLOAD}"
             )
           fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release materialize-hypothetical-actions \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1301,7 +1301,7 @@ jobs:
             )
           fi
           set +e
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release finalize-simulation \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \

@@ -90,6 +90,7 @@ class WorkflowBoundary:
             ): "pr-712",
             "github.event.pull_request.base.sha": "a" * 40,
             "github.event.pull_request.head.sha": "b" * 40,
+            "github.sha": "c" * 40,
             "github.event.pull_request.number": "712",
             "github.run_id": "9031",
             "github.run_attempt": "2",
@@ -290,7 +291,7 @@ def test_root_hk_executes_admitted_toolchain_and_selected_mode(
         assert "eng/scripts/workflow_delivery_v3_hk.py" in hk
         assert _option(hk, "--repository") == "."
         assert _option(hk, "--from-ref") == "a" * 40
-        assert _option(hk, "--to-ref") == "b" * 40
+        assert _option(hk, "--to-ref") == "c" * 40
         assert hk[hk.index("--") + 1 : hk.index("--") + 5] == [
             "mise",
             "exec",

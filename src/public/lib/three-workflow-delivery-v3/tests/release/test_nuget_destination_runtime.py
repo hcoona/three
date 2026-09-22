@@ -6,10 +6,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import sys
 from dataclasses import replace
 from datetime import datetime, timedelta
-from platform import python_version
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -139,15 +137,10 @@ def native_case(nuget_scenario, monkeypatch, tmp_path):
         scenario.request.source_root / NUGET_POLICY_PATH,
         _target_path=NUGET_POLICY_PATH,
     )
-    if (
-        sys.implementation.name != "cpython"
-        or python_version() != native.NUGET_PYTHON_VERSION
-    ):
-        # Higher-layer scenarios model the adapter on unpinned test hosts.
-        # The pinned HK host retains actual runtime/source profile checks.
-        monkeypatch.setattr(
-            native, "nuget_operation_profile", _modeled_profile_document
-        )
+    # Application scenarios model the adapter; its suite owns runtime proof.
+    monkeypatch.setattr(
+        native, "nuget_operation_profile", _modeled_profile_document
+    )
     profile = NugetDestinationOperationProfile(
         canonicalize(native.nuget_operation_profile(RESOURCES))
     )

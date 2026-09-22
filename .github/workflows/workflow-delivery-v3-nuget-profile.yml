@@ -54,9 +54,10 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           version: 0.12.7
+          working-directory: tooling
       - name: Prepare the locked Python environment
         run: |
-          uv sync --directory tooling --locked --python 3.13.12 --package three-workflow-delivery-v3
+          uv sync --directory tooling --locked --package three-workflow-delivery-v3
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Observe the current profile without package credentials
         env:
@@ -64,7 +65,7 @@ jobs:
         run: |
           [IO.File]::WriteAllText("${env:GITHUB_WORKSPACE}/.wdv3/evidence/spec.json", $env:WDV3_PROFILE_SPEC, [Text.UTF8Encoding]::new($false))
           $arguments = @('--spec', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/spec.json", '--checkout', "${env:GITHUB_WORKSPACE}/tooling", '--evidence', "${env:GITHUB_WORKSPACE}/.wdv3/evidence/observation")
-          uv run --directory tooling --no-sync --python 3.13.12 --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_profile @arguments
+          uv run --directory tooling --no-sync --package three-workflow-delivery-v3 python -m three_workflow_delivery_v3.acceptance.nuget_profile @arguments
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Seal available profile evidence
         id: seal

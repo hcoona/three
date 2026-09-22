@@ -489,7 +489,6 @@ class WorkflowRoles:
         role, operands = _unique(candidates, "profile sync")
         expected = {
             "--directory": "tooling",
-            "--python": "3.13.12",
             "--package": "three-workflow-delivery-v3",
         }
         assert operands.count("--locked") == 1, operands

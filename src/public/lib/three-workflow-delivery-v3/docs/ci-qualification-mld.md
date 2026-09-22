@@ -325,11 +325,11 @@ does not select them; consumed package metadata and fixtures remain inputs.
 
 An explicit local command runs the complete collection, and general CI's
 explicit full mode selects it regardless of changed paths. Manual v3
-`slice-validation` retains its first-slice qualification scope; after cutover,
+`slice-validation` retains its first-slice qualification scope;
 it does not implicitly run control-package tests inside HK. These self-tests
 do not add a V3 Qualification obligation or produce Release Evidence.
 
-The repository [HK/CI execution guidance](../../../../../docs/engineering/hk-execution.md#scheduled-ci-execution-cutover)
+The repository [HK/CI execution guidance](../../../../../docs/engineering/hk-execution.md#ci-execution-contract)
 owns the general workflow's selection and completion rules. They do not claim
 the deferred canonical repository-wide v3 full-validation capability.
 
@@ -441,7 +441,7 @@ It does not own affected Project Node builds, project or native-workspace type
 checking, project unit/scenario/integration tests, runner matrices, Release
 Unit artifact builds, or publication-shaped validation. The
 [execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
-governs the existing HK test owner's transition to this boundary.
+records the former HK test owner's replacement.
 
 ## Project Quality Policy
 
