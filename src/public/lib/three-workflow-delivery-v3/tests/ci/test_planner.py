@@ -314,38 +314,16 @@ def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
         "nested/package.json",
         "nested/pnpm-lock.yaml",
         "nested/packages.lock.json",
-        *(
-            "src/private/app/workflow-delivery-v3-dotnet-provider/" + name
-            for name in (
-                "Program.cs",
-                "README.md",
-                "WorkflowDeliveryV3DotnetProvider.csproj",
-                "packages.lock.json",
-                "readers/PackageReader.cs",
-            )
+        "src/private/app/workflow-delivery-v3-dotnet-provider/Program.cs",
+        "src/private/app/workflow-delivery-v3-nuget-consumer/Program.cs",
+        "src/public/lib/hcoona-release-smoke-github-packages/version.json",
+        (
+            "src/public/lib/hcoona-release-smoke-github-packages/"
+            "workflow-delivery.quality.yml"
         ),
-        *(
-            "src/private/app/workflow-delivery-v3-nuget-consumer/" + name
-            for name in (
-                "BoundedHttpHandler.cs",
-                "ConsumerRequest.cs",
-                "NativeRestore.cs",
-                "Program.cs",
-                "README.md",
-            )
-        ),
-        *(
-            "src/public/lib/hcoona-release-smoke-github-packages/" + name
-            for name in (
-                "README.md",
-                "Smoke.cs",
-                "hcoona-release-smoke-github-packages.csproj",
-                "packages.lock.json",
-                "version.json",
-                "workflow-delivery.quality.yml",
-                "workflow-delivery.release-unit.yml",
-                "Properties/AssemblyInfo.cs",
-            )
+        (
+            "src/public/lib/hcoona-release-smoke-github-packages/"
+            "workflow-delivery.release-unit.yml"
         ),
         ".github/workflows/release/nested/packages.lock.json",
         ".github/workflows/consume.yml",
@@ -485,36 +463,6 @@ def test_manual_slice_validation_always_selects_complete_slice() -> None:
         (
             (SHA_A, SHA_B),
             (".github/workflows/helper.py",),
-            "changed path is unclassified",
-        ),
-        (
-            (SHA_A, SHA_B),
-            (
-                (
-                    "src/private/app/workflow-delivery-v3-dotnet-provider-other/"
-                    "Program.cs"
-                ),
-            ),
-            "changed path is unclassified",
-        ),
-        (
-            (SHA_A, SHA_B),
-            (
-                (
-                    "src/private/app/workflow-delivery-v3-nuget-consumer-other/"
-                    "Program.cs"
-                ),
-            ),
-            "changed path is unclassified",
-        ),
-        (
-            (SHA_A, SHA_B),
-            (
-                (
-                    "src/public/lib/hcoona-release-smoke-github-packages-other/"
-                    "Smoke.cs"
-                ),
-            ),
             "changed path is unclassified",
         ),
         (

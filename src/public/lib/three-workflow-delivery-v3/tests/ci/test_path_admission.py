@@ -11,6 +11,26 @@ from three_workflow_delivery_v3.ci.path_admission import (
 
 
 @pytest.mark.parametrize(
+    "prefix",
+    [
+        "src/private/app/workflow-delivery-v3-dotnet-provider",
+        "src/private/app/workflow-delivery-v3-nuget-consumer",
+        "src/public/lib/hcoona-release-smoke-github-packages",
+    ],
+)
+@pytest.mark.parametrize("sibling", [False, True])
+def test_native_package_prefix_admission_is_directory_bounded(
+    prefix: str, *, sibling: bool
+) -> None:
+    """Admit package descendants without accepting a similarly named package."""
+    directory = prefix + ("-other" if sibling else "")
+    path = f"{directory}/nested/Program.cs"
+    assert is_repository_only_path(path) is (not sibling)
+    assert not is_static_reference_control_path(path)
+    assert not is_static_reference_surface_path(path)
+
+
+@pytest.mark.parametrize(
     "basename",
     [
         "package.json",

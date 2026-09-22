@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
 from three_workflow_delivery_v3.canonical import canonical_sha256
@@ -108,32 +108,14 @@ def artifact_reference_from_document(value: JsonValue) -> ArtifactReference:
         name = sorted(unknown)[0]
         message = f"artifact reference unknown field: {name}"
         raise ValueError(message)
-    reference = ArtifactReference(
-        artifact_id=_positive_integer(
-            value["artifact-id"],
-            field="artifact reference.artifact-id",
-        ),
-        artifact_digest=_digest(
-            value["artifact-digest"],
-            field="artifact reference.artifact-digest",
-        ),
-        artifact_url=_nonempty(
-            value["artifact-url"],
-            field="artifact reference.artifact-url",
-        ),
-        payload_path=_payload_path(
-            value["payload-path"],
-            field="artifact reference.payload-path",
-        ),
-        payload_digest=_digest(
-            value["payload-digest"],
-            field="artifact reference.payload-digest",
-        ),
+    # Checked construction owns intrinsic validity; casts do not coerce input.
+    return ArtifactReference(
+        artifact_id=cast("int", value["artifact-id"]),
+        artifact_digest=cast("str", value["artifact-digest"]),
+        artifact_url=cast("str", value["artifact-url"]),
+        payload_path=cast("str", value["payload-path"]),
+        payload_digest=cast("str", value["payload-digest"]),
     )
-    if reference.to_document() != value:
-        message = "artifact reference is not normalized"
-        raise ValueError(message)
-    return reference
 
 
 @dataclass(frozen=True, slots=True)
