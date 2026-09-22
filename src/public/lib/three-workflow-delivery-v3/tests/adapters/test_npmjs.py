@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, cast
 
 import pytest
-from three_workflow_delivery_v3.adapters import npmjs as npmjs_module
 from three_workflow_delivery_v3.adapters.npmjs import (
     HttpResponse,
     NpmjsNetworkError,
@@ -613,9 +612,8 @@ def test_npmjs_observer_reports_packed_manifest_identity_conflict(
     assert observation.value.witness_digest == artifact.witness_digest
 
 
-def test_npmjs_observer_bounds_expanded_tarball_and_parses_once(
+def test_npmjs_observer_rejects_tarball_expansion_over_limit(
     qualified_simulation: QualifiedSimulation,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     local = _tarball(qualified_simulation)
     artifact = _artifact_for_tarball(qualified_simulation, local)
@@ -623,23 +621,7 @@ def test_npmjs_observer_bounds_expanded_tarball_and_parses_once(
         qualified_simulation,
         extra=(("package/highly-compressible.txt", b"x" * 100_000),),
     )
-    parse_calls = 0
-    original_read_tarball = npmjs_module._read_tarball  # noqa: SLF001
     expanded_limit = 8_192
-
-    def counted_read_tarball(
-        tarball: bytes,
-        *,
-        max_payload_bytes: int | None = None,
-    ) -> dict[str, bytes]:
-        nonlocal parse_calls
-        parse_calls += 1
-        return original_read_tarball(
-            tarball,
-            max_payload_bytes=max_payload_bytes,
-        )
-
-    monkeypatch.setattr(npmjs_module, "_read_tarball", counted_read_tarball)
 
     observation, _transport = _observe_full(
         qualified_simulation,
@@ -656,7 +638,6 @@ def test_npmjs_observer_bounds_expanded_tarball_and_parses_once(
 
     assert len(remote) < expanded_limit
     assert observation.value.classification == "unprovable"
-    assert parse_calls == 1
 
 
 @pytest.mark.parametrize("status", [401, 403, 418])

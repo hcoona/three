@@ -14,6 +14,7 @@ from three_workflow_delivery_v3.acceptance.nuget_preparation import (
 )
 
 from ..contracts.test_nuget_workflows import _assert_success, _pwsh
+from .nuget_workflow_projection import project_workflow
 
 ROOT = Path(__file__).resolve().parents[6]
 RETENTION_DAYS = 45
@@ -23,6 +24,14 @@ RETENTION_DAYS = 45
 def workflow():
     """Read the actual workflow as the contract under test."""
     return yaml.safe_load((ROOT / WORKFLOW_PATH).read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def workflow_roles(workflow, tmp_path_factory):
+    """Project official parser facts once for this workflow module."""
+    return project_workflow(
+        workflow, tmp_path_factory.mktemp("nuget-preparation-roles")
+    )
 
 
 def test_fixture_workflow_requires_protected_current_unprivileged_windows(
@@ -65,7 +74,9 @@ def test_fixture_workflow_requires_protected_current_unprivileged_windows(
                 }
 
 
-def test_fixture_workflow_binds_prebuilt_helper_and_immutable_inputs(workflow):
+def test_fixture_workflow_binds_prebuilt_helper_and_immutable_inputs(
+    workflow, workflow_roles
+):
     """Setup and offline preparation consume current ID-selected raw bytes."""
     for name in ("setup", "prepare"):
         job = workflow["jobs"][name]
@@ -93,14 +104,17 @@ def test_fixture_workflow_binds_prebuilt_helper_and_immutable_inputs(workflow):
         if name == "prepare":
             assert "dotnet tool restore" not in source
             assert "--setup-digest" in source
-    for job in workflow["jobs"].values():
-        for step in job["steps"]:
+    for job_name, job in workflow["jobs"].items():
+        diagnostic_upload = workflow_roles.select(
+            "fixture.diagnostics", job_name
+        ).upload
+        for step_index, step in enumerate(job["steps"]):
             if step.get("uses", "").startswith("actions/upload-artifact@"):
                 assert step["with"]["overwrite"] is False
                 assert step["with"]["archive"] is False
                 assert step["with"]["retention-days"] == RETENTION_DAYS
                 assert step["with"]["if-no-files-found"] == "error"
-                if "diagnostics" in step["name"]:
+                if step_index == diagnostic_upload.index:
                     assert step["if"] == "always()"
                 else:
                     assert "if" not in step
@@ -140,27 +154,20 @@ def test_fixture_seal_preserves_payload_and_reports_exact_digest(
 
 
 def test_fixture_diagnostics_keep_distinct_raw_artifact_names(
-    workflow, tmp_path
+    workflow, workflow_roles, tmp_path
 ):
     """Raw uploads use file basenames; every job retains its own diagnostics."""
     names = []
     configured_names = []
-    for job_name, job in workflow["jobs"].items():
+    for job_name in workflow["jobs"]:
         workspace = tmp_path / job_name
         evidence = workspace / ".wdv3" / "evidence"
         evidence.mkdir(parents=True)
         content = f"{job_name}: retained partial native diagnostics\n".encode()
         (evidence / "native-command.log").write_bytes(content)
-        archive_step = next(
-            step
-            for step in job["steps"]
-            if step["name"] == "Archive available preparation diagnostics"
-        )
-        upload_step = next(
-            step
-            for step in job["steps"]
-            if step["name"] == "Retain immutable preparation diagnostics"
-        )
+        diagnostics = workflow_roles.select("fixture.diagnostics", job_name)
+        archive_step = diagnostics.archive.step
+        upload_step = diagnostics.upload.step
         result = _pwsh(workspace, archive_step["run"], {"GITHUB_RUN_ID": "71"})
         _assert_success(result)
         path = workspace / upload_step["with"]["path"].replace(
@@ -179,14 +186,10 @@ def test_fixture_diagnostics_keep_distinct_raw_artifact_names(
 
 @pytest.mark.parametrize("status", [0, 17])
 def test_fixture_shell_preserves_inputs_and_command_failure(
-    workflow, tmp_path, status
+    workflow_roles, tmp_path, status
 ):
     """Pass exact paths and identities, preserving a failed command."""
-    step = next(
-        step
-        for step in workflow["jobs"]["prepare"]["steps"]
-        if step["name"] == "Prepare offline original fixture pair"
-    )
+    step = workflow_roles.select("fixture.prepare").step
     environment = {"GITHUB_WORKSPACE": str(tmp_path / "workspace with spaces")}
     for artifact_id, role in enumerate(("REQUEST", "HELPER", "SETUP"), 101):
         environment.update(

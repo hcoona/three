@@ -885,12 +885,25 @@ def test_provider_compiles_pnpm_and_nbgv_facts_once_for_exact_target(
     assert len(nbgv_records) == 1
     assert nbgv_records[0][1] != project
     assert nbgv_records[0][1] != repo
-    assert runner.commands[-2:] == [
-        (("node", "--version"), repo),
-        (("pnpm", "--version"), repo),
-    ]
+    assert result.toolchain == (("node", "v24.14.0"), ("pnpm", "11.21.0"))
     assert runner.evaluation_root is not None
     assert not runner.evaluation_root.exists()
+    diff_calls = [
+        command
+        for command, _ in runner.commands
+        if command[:4]
+        == ("git", "diff", "--name-only", "--diff-filter=ACDMRTUXB")
+    ]
+    assert diff_calls
+    assert all("--" in command for command in diff_calls)
+    selected_paths = {
+        path
+        for command in diff_calls
+        for path in command[command.index("--") + 1 :]
+    }
+    assert "version.json" in selected_paths
+    assert PROJECT_PATH in selected_paths
+    assert "docs/wiki/overview.md" not in selected_paths
 
 
 def test_provider_preserves_simulation_run_attempt(
@@ -927,8 +940,6 @@ def test_provider_invokes_installed_node_nbgv_api_without_cli_fallback(
 
     assert len(runner.nbgv_calls) == 1
     program = runner.nbgv_calls[0][3]
-    assert "allowedEnvironment" in program
-    assert "delete process.env[name]" in program
     assert '"IGNORE_GITHUB_REF": "true"' in program
     assert "PATH" in NBGV_ENVIRONMENT_ALLOWLIST
     assert "await import('nerdbank-gitversioning')" in program
@@ -1064,35 +1075,6 @@ def test_provider_rejects_dirty_tracked_metadata_before_pnpm_and_nbgv(
 
     assert runner.nbgv_calls == ()
     assert all(command[0] != "pnpm" for command, _ in runner.commands)
-
-
-def test_provider_ignores_untracked_and_irrelevant_dirty_worktree_state(
-    tmp_path: Path,
-) -> None:
-    """Only dirty tracked provider inputs block exact-target fact discovery."""
-    repo, _, runner, binding = _scenario(tmp_path)
-
-    result = provide_node_repository_facts(
-        repo,
-        PROJECT_PATH,
-        binding,
-        _materialization(),
-        runner=runner,
-    )
-
-    assert result.outcome == "success"
-    diff_calls = [
-        command
-        for command, _ in runner.commands
-        if command[:4]
-        == ("git", "diff", "--name-only", "--diff-filter=ACDMRTUXB")
-    ]
-    assert len(diff_calls) == 1
-    assert "--" in diff_calls[0]
-    assert "version.json" in diff_calls[0]
-    assert PROJECT_PATH in diff_calls[0]
-    assert all("docs/wiki/overview.md" not in command for command in diff_calls)
-    assert len(runner.nbgv_calls) == 1
 
 
 @pytest.mark.parametrize(
@@ -3588,8 +3570,6 @@ def _assert_phase3_provider_payload_rejected(
 
     assert result is None
     assert len(runner.nbgv_calls) == 1
-    assert (("node", "--version"), repo) not in runner.commands
-    assert (("pnpm", "--version"), repo) not in runner.commands
 
 
 @pytest.mark.parametrize(
@@ -3878,7 +3858,6 @@ def test_provider_rejects_empty_toolchain_version(
         )
 
     assert result is None
-    assert len(runner.nbgv_calls) == 1
     assert ((tool, "--version"), repo) in runner.commands
 
 

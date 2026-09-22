@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import zipfile
@@ -393,9 +394,17 @@ def test_frozen_build_rejects_missing_native_inputs(
     assert completed.returncode != 0
     audit = native_helper.audit_binlog(log)
     assert audit["succeeded"] is False
-    assert audit["errors"] == [
-        "Frozen Workflow Delivery version inputs are required."
-    ]
+    assert any(
+        all(
+            re.search(pattern, error, flags=re.IGNORECASE)
+            for pattern in (
+                r"\bfrozen\b",
+                r"\bversion\W+inputs\b",
+                r"\brequired\b",
+            )
+        )
+        for error in audit["errors"]
+    )
 
 
 def test_build_rejects_substituted_source_before_native_execution(

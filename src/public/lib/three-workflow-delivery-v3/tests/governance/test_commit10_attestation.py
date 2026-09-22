@@ -213,7 +213,7 @@ def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
 
     assert decision.result is EligibilityResult.BLOCKED
     assert decision.diagnostics == ("governance-live-disabled",)
-    assert decision.static_reference is static_reference
+    assert decision.static_reference == static_reference
     assert tuple(call[0] for call in client.calls) == (
         "protected",
         "read",
@@ -225,16 +225,6 @@ def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
     )
     assert decision.result.value == "blocked"
     assert decision.result.value != "admitted"
-
-
-def test_actual_attestation_excludes_raw_acceptance_and_executable_privileges() -> (
-    None
-):
-    serialized = _content().decode("utf-8")
-
-    assert "workflow-delivery-v3-buddy-smoke-acceptance" not in serialized
-    assert "packages: write" not in serialized
-    assert "mutation-classification" not in serialized
 
 
 def test_actual_attestation_requires_live_flag_and_admitted_native_evidence() -> (

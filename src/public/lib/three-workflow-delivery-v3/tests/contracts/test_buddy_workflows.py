@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 # ruff: noqa: D103, E501, S607
+import json
+import os
 import re
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 import pytest
 import yaml
+from three_workflow_delivery_v3 import cli as cli_module
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 CALLER = REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
@@ -325,6 +328,164 @@ with Path(args[args.index("--github-output") + 1]).open("a", encoding="utf-8") a
     digest = hashlib.sha256(b'{"compiled":"model"}\n').hexdigest()
     assert artifact.name.endswith(f"-{digest}.json")
     assert "424242" in artifact.name
+
+
+def test_buddy_live_eligibility_uses_current_run_cli_inputs(
+    tmp_path: Path,
+) -> None:
+    """Observe current workflow inputs through the real eligibility step."""
+    # Existing consumers load this module's older helpers without a package.
+    from .workflow_shell import executable, resolve, run_step  # noqa: PLC0415
+
+    document = _document(CALLER)
+    job = document["jobs"]["evaluate-live-eligibility"]
+    eligibility_steps = [
+        step for step in _steps(job) if step.get("id") == "eligibility"
+    ]
+    upload_steps = [step for step in _steps(job) if step.get("id") == "upload"]
+    assert len(eligibility_steps) == 1
+    assert len(upload_steps) == 1
+    eligibility = eligibility_steps[0]
+    upload = upload_steps[0]
+    assert upload["uses"] == UPLOAD
+
+    command_log = tmp_path / "commands.jsonl"
+    github_output = tmp_path / "github-output"
+    recorder = """import json, os, subprocess, sys
+from pathlib import Path
+command = [Path(sys.argv[0]).name, *sys.argv[1:]]
+with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
+    stream.write(json.dumps({"argv": command, "cwd": os.getcwd()}) + "\\n")
+if command[:6] != [
+    "uv", "run", "--python", "3.13", "--package", "three-workflow-delivery-v3"
+]:
+    raise SystemExit(f"Unexpected launcher: {command!r}")
+operation = command[6:]
+if operation[:3] == [
+    "three-workflow-delivery-v3", "release", "evaluate-live-eligibility"
+]:
+    output = Path(operation[operation.index("--output") + 1])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b'{"result":"pass"}\\n')
+elif (
+    len(operation) == 4
+    and operation[:2] == ["python", "-c"]
+    and operation[2] == (
+        'import json, sys; print(json.load(open(sys.argv[1], '
+        'encoding="utf-8"))["result"])'
+    )
+):
+    result = subprocess.run(
+        [sys.executable, *operation[1:]], check=False, timeout=10
+    )
+    raise SystemExit(result.returncode)
+else:
+    raise SystemExit(f"Unexpected operation: {operation!r}")
+"""
+    executable(tmp_path / "bin" / "uv", recorder)
+    bindings = {
+        "github.token": "workflow-fixture-token",
+        "needs.compile-model.outputs.intent-artifact-name": "fixture-intent.json",
+        "needs.compile-model.outputs.intent-digest": "sha256:" + "1" * 64,
+        "needs.compile-model.outputs.intent-artifact-id": "4101",
+        "needs.compile-model.outputs.intent-artifact-digest": "sha256:"
+        + "2" * 64,
+        "needs.compile-model.outputs.repository-model-artifact-name": (
+            "fixture-model.json"
+        ),
+        "needs.compile-model.outputs.repository-model-digest": "sha256:"
+        + "3" * 64,
+        "needs.compile-model.outputs.repository-model-artifact-id": "5202",
+        "needs.compile-model.outputs.repository-model-artifact-digest": (
+            "sha256:" + "4" * 64
+        ),
+    }
+    result = run_step(
+        eligibility,
+        cwd=tmp_path,
+        env={
+            "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+            "GITHUB_RUN_ID": "9031",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_SHA": "e" * 40,
+            "GITHUB_OUTPUT": str(github_output),
+            "COMMAND_LOG": str(command_log),
+        },
+        bindings=bindings,
+        workflow=document,
+        job=job,
+    )
+    assert result.returncode == 0, result.stderr
+    calls = [
+        json.loads(line)
+        for line in command_log.read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(calls) == 2  # noqa: PLR2004 - evaluator and local reader
+    evaluation, reader = calls
+    launcher = [
+        "uv",
+        "run",
+        "--python",
+        "3.13",
+        "--package",
+        "three-workflow-delivery-v3",
+    ]
+    assert all(call["argv"][:6] == launcher for call in calls)
+    assert all(call["cwd"] == str(tmp_path) for call in calls)
+    assert evaluation["argv"][6] == "three-workflow-delivery-v3"
+    assert reader["argv"][6:8] == ["python", "-c"]
+    for call in calls:
+        assert "--consumer-policy" not in call["argv"]
+        assert all(
+            not argument.startswith("--consumer-policy=")
+            for argument in call["argv"]
+        )
+    arguments = cli_module._parser().parse_args(  # noqa: SLF001
+        evaluation["argv"][7:]
+    )
+    expected_inputs = {
+        "context": "release",
+        "release_command": "evaluate-live-eligibility",
+        "repo_root": ".",
+        "github_token": "workflow-fixture-token",
+        "workflow_run_id": 9031,
+        "run_attempt": 1,
+        "target": "e" * 40,
+        "intent": ".wdv3/input/fixture-intent.json",
+        "intent_digest": "sha256:" + "1" * 64,
+        "intent_artifact_id": 4101,
+        "intent_artifact_digest": "sha256:" + "2" * 64,
+        "repository_model": ".wdv3/input/fixture-model.json",
+        "repository_model_digest": "sha256:" + "3" * 64,
+        "repository_model_artifact_id": 5202,
+        "repository_model_artifact_digest": "sha256:" + "4" * 64,
+        "github_output": str(github_output),
+    }
+    assert {
+        key: getattr(arguments, key) for key in expected_inputs
+    } == expected_inputs
+    assert arguments.output
+    assert reader["argv"][-1] == arguments.output
+
+    output_text = github_output.read_text(encoding="utf-8")
+    assert output_text.endswith("\n")
+    outputs: dict[str, str] = {}
+    for assignment in output_text[:-1].split("\n"):
+        name, separator, value = assignment.partition("=")
+        assert name
+        assert separator == "="
+        assert name not in outputs
+        outputs[name] = value
+    assert outputs["eligibility-status"] == "0"
+    artifact_name = outputs["live-eligibility-artifact-name"]
+    assert artifact_name
+    upload_bindings = {
+        **bindings,
+        "steps.eligibility.outputs.live-eligibility-artifact-name": artifact_name,
+    }
+    assert resolve(upload["with"]["name"], upload_bindings) == artifact_name
+    uploaded_path = tmp_path / resolve(upload["with"]["path"], upload_bindings)
+    assert uploaded_path.read_bytes() == b'{"result":"pass"}\n'
 
 
 def test_live_eligibility_block_is_uploaded_before_status_propagates() -> None:

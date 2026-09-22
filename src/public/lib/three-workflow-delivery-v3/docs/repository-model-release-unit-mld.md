@@ -498,6 +498,11 @@ trusted same-revision consumers. Reusing that unchanged value does not require
 repeating its intrinsic validation or comparing its transport against the same
 already-admitted identities.
 
+Repository Model admission closes the supported Snapshot and its canonical
+bytes and digest, forming an immutable value with owned nested records.
+Same-revision consumers reuse those intrinsic guarantees while selecting the
+required ecosystem and purpose and checking current cross-input relationships.
+
 Each compiler invocation still validates the current canonical Request Manifest
 and compares its digest, selected entry and expected request authority with the
 admitted Fact Bundle. It independently verifies the required facts against the

@@ -184,67 +184,6 @@ def test_graphql_paginates_and_matches_exact_environment() -> None:
     assert "cursor=cursor-1" in runner.calls[2]
 
 
-def test_graphql_paginates_nested_environment_connection_to_later_node() -> (
-    None
-):
-    runner = RecordingRunner(
-        [
-            {"node_id": "WFR_node"},
-            _page_with_environment_nodes(
-                [
-                    {
-                        "node": {
-                            "id": "DR_review",
-                            "databaseId": 2,
-                            "state": "APPROVED",
-                            "user": {"login": "reviewer"},
-                            "environments": {
-                                "nodes": [{"name": "other-environment"}],
-                                "pageInfo": {
-                                    "hasNextPage": True,
-                                    "endCursor": "environment-cursor-1",
-                                },
-                            },
-                        }
-                    }
-                ],
-            ),
-            {
-                "data": {
-                    "node": {
-                        "environments": {
-                            "nodes": [{"name": ENVIRONMENT}],
-                            "pageInfo": {
-                                "hasNextPage": False,
-                                "endCursor": None,
-                            },
-                        }
-                    }
-                }
-            },
-        ]
-    )
-
-    document = _inspect(runner)
-    first_graphql = " ".join(runner.calls[1])
-    second_graphql = " ".join(runner.calls[2])
-
-    assert document["status"] == "present"
-    assert document["reviewer"] == "reviewer"
-    assert document["deployment-review-id"] == 2
-    assert "environments(first:100,after:$environmentCursor)" in first_graphql
-    assert "environments{name}" not in first_graphql
-    assert "nodes{name}" in first_graphql
-    assert "pageInfo{hasNextPage endCursor}" in first_graphql
-    assert "environmentCursor=null" in runner.calls[1]
-    assert "cursor=null" in runner.calls[1]
-    assert "environmentCursor=environment-cursor-1" in runner.calls[2]
-    assert "cursor=environment-cursor-1" not in runner.calls[2]
-    assert "review=DR_review" in runner.calls[2]
-    assert "node(id:$review)" in second_graphql
-    assert "deploymentReviews(first:100,after:$cursor)" not in second_graphql
-
-
 def test_exhausted_connection_is_removed_not_universal_negative() -> None:
     runner = RecordingRunner([{"node_id": "WFR_node"}, _page([])])
 
@@ -513,6 +452,14 @@ def test_nested_environment_pagination_is_scoped_to_one_specific_review() -> (
     nested_call = runner.calls[2]
     query = " ".join(nested_call)
 
+    first_graphql = " ".join(runner.calls[1])
+    assert document["deployment-review-id"] == 1
+    assert "environments(first:100,after:$environmentCursor)" in first_graphql
+    assert "environments{name}" not in first_graphql
+    assert "nodes{name}" in first_graphql
+    assert "pageInfo{hasNextPage endCursor}" in first_graphql
+    assert "environmentCursor=null" in runner.calls[1]
+    assert "cursor=null" in runner.calls[1]
     assert document["status"] == "present"
     assert document["reviewer"] == "first-reviewer"
     assert "review=DR_first" in nested_call

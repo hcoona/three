@@ -216,7 +216,7 @@ def test_governance_client_delegates_source_to_isolated_git_authority(
         eligibility_main_sha=eligibility_main_sha,
     )
 
-    assert actual is expected
+    assert actual == expected
     assert (actual.main_sha, actual.blob_oid, actual.content) == (
         "c" * 40,
         "b" * 40,
@@ -301,5 +301,4 @@ def test_governance_client_rejects_repository_mismatch_before_delegation(
     with pytest.raises(GitHubRestError, match="repository mismatch"):
         invoke()
 
-    assert calls == []
     assert calls == []

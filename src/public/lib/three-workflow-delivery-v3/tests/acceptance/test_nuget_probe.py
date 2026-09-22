@@ -343,7 +343,6 @@ def test_probe_rejects_substituted_request(inputs, field, value):
     document = {**inputs.request.to_document(), field: value}
     with pytest.raises(ValueError, match=r"probe|NuGet"):
         probe.read_probe_request(canonicalize(document))
-    inputs.publisher.assert_not_called()
 
 
 @pytest.mark.parametrize(

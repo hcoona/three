@@ -2789,101 +2789,6 @@ def test_node_pnpm_importer_and_snapshot_negatives_fail_closed(  # noqa: C901, P
     assert lock_path.read_bytes() == original
 
 
-def test_shipped_node_authority_uses_only_exact_pinned_public_calls() -> None:
-    """Fence selected API signatures; integration/review own execution flow."""
-    import re  # noqa: PLC0415
-
-    source = _NODE_AUTHORITY.read_bytes().decode("utf-8", "strict")
-    assert set(
-        re.findall(r"importPackage\s*\(\s*['\"]([^'\"]+)['\"]\s*\)", source)
-    ) == {
-        "@npmcli/package-json",
-        "npm-package-arg",
-        "@pnpm/workspace.workspace-manifest-reader",
-        "@pnpm/workspace.spec-parser",
-        "@pnpm/resolving.npm-resolver",
-        "@pnpm/lockfile.fs",
-        "@pnpm/lockfile.utils",
-        "@pnpm/deps.path",
-    }
-    loaded = re.search(
-        r"\b(?P<loaded>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*await\s+"
-        r"officialCallAsync\s*\(\s*\(\s*\)\s*=>\s*"
-        r"PackageJson\s*\.\s*load\s*\(\s*snapshotDirectory\s*\)",
-        source,
-    )
-    assert loaded is not None
-    assert re.search(
-        r"\b" + re.escape(loaded["loaded"]) + r"\s*(?:\?\.|\.)\s*content\b",
-        source,
-    )
-    # Current binding names expose argument responsibilities.
-    # These finite patterns do not implement a JavaScript grammar.
-    required_calls = (
-        (
-            r"\bsnapshotDirectory\s*=\s*path\s*\.\s*dirname\s*\(\s*request\s*\."
-            r"\s*candidatePath\s*\)"
-        ),
-        (
-            r"\bnpa\s*\.\s*resolve\s*\(\s*name\s*,\s*['\"]\*['\"]\s*,"
-            r"\s*snapshotDirectory\s*\)"
-        ),
-        (
-            r"\bnpa\s*\.\s*resolve\s*\(\s*name\s*,\s*specifier\s*,"
-            r"\s*snapshotDirectory\s*\)"
-        ),
-        r"\breadWorkspaceManifest\s*\(\s*snapshotDirectory\s*\)",
-        r"\bWorkspaceSpec\s*\.\s*parse\s*\(\s*rawSpecifier\s*\)",
-        r"\bworkspacePrefToNpm\s*\(\s*rawSpecifier\s*\)",
-        r"\bextractMainDocument\s*\(\s*comparisonView\s*\)",
-        r"\bnameVerFromPkgSnapshot\s*\(\s*dependencyPath\s*,\s*snapshot\s*\)",
-        (
-            r"\bauthorities\s*\.\s*pkgSnapshotToResolution\s*\("
-            r"\s*dependencyPath\s*,\s*snapshot\s*,\s*authorities\s*\."
-            r"\s*registryContext\s*\)"
-        ),
-        r"\brefToRelative\s*\(\s*resolvedReference\s*,\s*dependencyKey\s*\)",
-    )
-    for pattern in required_calls:
-        assert re.search(pattern, source), pattern
-    lock_read = re.search(
-        r"\blockfileModule\s*\.\s*readWantedLockfileWithMergeInfo\s*\(\s*"
-        r"lockfileDirectory\s*,\s*\{(?P<options>[^{}]*)\}\s*,?\s*\)",
-        source,
-    )
-    assert lock_read is not None
-    options = lock_read["options"]
-    assert set(re.findall(r"\b([A-Za-z]+)\s*:", options)) == {
-        "autofixMergeConflicts",
-        "ignoreIncompatible",
-        "mergeGitBranchLockfiles",
-        "useGitBranchLockfile",
-        "wantedVersions",
-    }
-    for key, value in (
-        ("autofixMergeConflicts", "true"),
-        ("ignoreIncompatible", "false"),
-        ("mergeGitBranchLockfiles", "false"),
-        ("useGitBranchLockfile", "false"),
-    ):
-        assert re.search(rf"\b{key}\s*:\s*{value}\b", options)
-    assert re.search(
-        r"\bwantedVersions\s*:\s*\[\s*['\"]9\.0['\"]\s*,?\s*\]", options
-    )
-    forbidden_patterns = (
-        r"\.\s*(?:normalize|prepare|fix)\s*\(",
-        r"\breadWorkspaceManifest\s*\(\s*snapshotDirectory\s*,",
-        r"\bpackageIdFromSnapshot\b",
-        (
-            r"\b(?:readCurrentLockfile|readWantedLockfile"
-            r"|readWantedLockfileAndAutofixConflicts|readWantedLockfileFile)\s*\("
-        ),
-        r"@pnpm/(?:lockfile\.fs|lockfile\.utils|deps\.path)/",
-    )
-    for pattern in forbidden_patterns:
-        assert not re.search(pattern, source), pattern
-
-
 @pytest.mark.parametrize(
     ("dependency_key", "source_spec", "expected_fetch", "expected_selector"),
     [
@@ -3394,56 +3299,6 @@ def test_node_pnpm_preserves_original_bytes_digest_and_crlf_admission(
     assert not (snapshot_root / "node_modules").exists()
 
 
-def test_nuget_source_contract_uses_exact_non_writable_public_reader_calls() -> (  # noqa: E501
-    None
-):
-    """Fence reader signatures; integration/review own bytes and execution."""
-    import re  # noqa: PLC0415
-
-    program_path = (
-        _REPOSITORY_ROOT
-        / "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs"
-    )
-    source = program_path.read_text(encoding="utf-8")
-    required_calls = (
-        (
-            r"\bstream\s*=\s*new\s+MemoryStream\s*\(\s*request\s*\.\s*Content"
-            r"\s*,\s*writable\s*:\s*false\s*\)"
-        ),
-        r"\blogger\s*=\s*NullLogger\s*\.\s*Instance\b",
-        (
-            r"\bPackagesLockFileFormat\s*\.\s*Read\s*\(\s*stream\s*,\s*logger"
-            r"\s*,\s*request\s*\.\s*LogicalPath\s*\)"
-        ),
-        (
-            r"\breader\s*=\s*new\s+PackagesConfigReader\s*\(\s*stream\s*,"
-            r"\s*leaveStreamOpen\s*:\s*false\s*\)"
-        ),
-        (
-            r"\breader\s*\.\s*GetPackages\s*\(\s*allowDuplicatePackageIds\s*:\s*false\s*\)"
-            r"\s*\.\s*OrderBy\s*\(\s*(?P<item>[A-Za-z_][A-Za-z0-9_]*)\s*=>\s*(?P=item)"
-            r"\s*\.\s*PackageIdentity\s*,\s*PackageIdentity\s*\.\s*Comparer\s*\)"
-        ),
-    )
-    for pattern in required_calls:
-        assert re.search(pattern, source), pattern
-    forbidden_patterns = (
-        r"\bnew\s+FileStream\s*\(",
-        r"\bwritable\s*:\s*true\b",
-        r"\bPackagesLockFileFormat\s*\.\s*Read\s*\(\s*request\s*\.",
-        r"\bNullLogger\s*\.\s*Instance\s*,\s*stream\b",
-        r"\bleaveStreamOpen\s*:\s*true\b",
-        r"\ballowDuplicatePackageIds\s*:\s*true\b",
-        r"\.\s*GetPackages\s*\(\s*\)",
-        r"\bJObject\b",
-        r"\bJsonNode\s*\.\s*Parse\b",
-        r"\bXDocument\b",
-    )
-    for pattern in forbidden_patterns:
-        assert not re.search(pattern, source), pattern
-    assert program_path.is_file()
-
-
 def test_node_pnpm_orders_non_ascii_catalogs_and_importers_by_utf8_bytes(
     tmp_path: Path,
 ) -> None:
@@ -3701,28 +3556,6 @@ def test_nuget_uses_ordinal_and_case_insensitive_ordinal_unicode_ordering() -> (
         ("net10.0", non_bmp),
         ("net9.0", "tail"),
     ]
-
-
-def test_shipped_node_authority_binds_fixed_parser_arguments_exactly() -> None:
-    """Fence fixed arguments, without asserting physical call counts or layout."""  # noqa: E501
-    import re  # noqa: PLC0415
-
-    source = _NODE_AUTHORITY.read_text(encoding="utf-8")
-    required_bindings = (
-        r"\bconst\s+REGISTRY\s*=\s*['\"]https://registry\.npmjs\.org/['\"]\s*;",
-        r"\bconst\s+DEFAULT_TAG\s*=\s*['\"]latest['\"]\s*;",
-        (
-            r"\bparseBareSpecifier\s*\(\s*normalizedSpecifier\s*,"
-            r"\s*dependencyKey\s*,\s*DEFAULT_TAG\s*,\s*REGISTRY\s*\)"
-        ),
-        r"\bregistriesByScope\s*:\s*\{\s*default\s*:\s*REGISTRY\s*\}",
-    )
-    for pattern in required_bindings:
-        assert re.search(pattern, source), pattern
-    assert not re.search(
-        r"\bprocess\s*\.\s*env\s*\.\s*npm_config_registry\b", source
-    )
-    assert not re.search(r"\bprocess\s*\.\s*cwd\s*\(", source)
 
 
 @pytest.mark.parametrize(

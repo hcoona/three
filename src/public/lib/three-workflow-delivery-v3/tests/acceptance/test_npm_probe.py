@@ -269,13 +269,25 @@ def test_request_has_no_missing_field_defaults(section, field):
     [
         "@hcoona/hcoona-release-smoke-npm",
         "@hcoona/hexo-renderer-asciidoc",
+    ],
+)
+def test_request_rejects_protected_packages(package):
+    document = REQUEST.to_document()
+    document["fixture"]["package"] = package
+    document["disposable_package_preconditions"]["package"] = package
+
+    with pytest.raises(ValueError, match="disposable"):
+        probe.parse_request(canonicalize(document))
+
+
+@pytest.mark.parametrize(
+    "package",
+    [
         "@another/synthetic-native-probe",
         "@hcoona/Uppercase",
     ],
 )
-def test_package_exclusions_and_official_scope_reject_before_runner(
-    probe_case, package
-):
+def test_official_package_scope_rejects_before_runner(probe_case, package):
     document = json.loads(canonicalize(REQUEST.to_document()))
     document["fixture"]["package"] = package
     document["disposable_package_preconditions"]["package"] = package
