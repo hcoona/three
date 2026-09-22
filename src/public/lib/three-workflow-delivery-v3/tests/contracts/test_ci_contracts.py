@@ -43,6 +43,7 @@ from three_workflow_delivery_v3.records.ci import (
     ci_lane_result_digest,
     ci_qualification_snapshot_digest,
     ci_slice_decision_digest,
+    derive_ci_pr_slo,
 )
 
 if TYPE_CHECKING:
@@ -873,6 +874,25 @@ def test_manual_and_blocked_plan_shapes_are_exact() -> None:
                 complete_scope=False,
             )
         )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".github/workflow-delivery/governance/example.json",
+        "src/public/lib/three-workflow-delivery-v3/src/control.py",
+        ".github/workflows/workflow-delivery-v3-ci.yml",
+        "mise.toml",
+    ],
+)
+def test_broad_change_rules_exclude_ordinary_pr_slo(path: str) -> None:
+    """Exclude governance, control, workflow, and toolchain changes."""
+    assert derive_ci_pr_slo(
+        _candidate(),
+        changed_paths=(path,),
+        elapsed_seconds=721,
+        supersession_state="not-superseded",
+    ) == ("excluded", "broad-change")
 
 
 def test_decision_summary_and_slo_are_exact_derivations() -> None:

@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import importlib.util
-import json
 import re
-import socket
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from three_workflow_delivery_v3 import cli as cli_module
-from three_workflow_delivery_v3.cli import main
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 CODEOWNERS_PATH = REPO_ROOT / ".github/CODEOWNERS"
@@ -32,18 +27,6 @@ SYNTHETIC_FUTURE_SURFACES = (
     ".github/actions/workflow-delivery-v3-future/action.yml",
     ".github/actions/workflow-delivery-v3/future/action.yml",
 )
-_BUDDY_CONTRACT_SPEC = importlib.util.spec_from_file_location(
-    "_commit9_buddy_workflow_contract",
-    Path(__file__).with_name("test_buddy_workflows.py"),
-)
-assert _BUDDY_CONTRACT_SPEC is not None
-assert _BUDDY_CONTRACT_SPEC.loader is not None
-_BUDDY_CONTRACT = importlib.util.module_from_spec(_BUDDY_CONTRACT_SPEC)
-_BUDDY_CONTRACT_SPEC.loader.exec_module(_BUDDY_CONTRACT)
-CALLER = _BUDDY_CONTRACT.CALLER
-_document = _BUDDY_CONTRACT._document  # noqa: SLF001
-_run = _BUDDY_CONTRACT._run  # noqa: SLF001
-_step = _BUDDY_CONTRACT._step  # noqa: SLF001
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,8 +49,10 @@ def _parse_rules(content: str) -> tuple[CodeOwnersRule, ...]:
 
 
 def _pattern_expression(pattern: str) -> re.Pattern[str]:
+    """Match the demonstrated rooted, subtree, and descriptor shapes."""
+    rooted = pattern.startswith("/")
     normalized = pattern.removeprefix("/")
-    if "/" not in normalized:
+    if not rooted and "/" not in normalized:
         normalized = f"**/{normalized}"
     expression: list[str] = []
     index = 0
@@ -222,15 +207,24 @@ def test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_
     assert set(SYNTHETIC_FUTURE_SURFACES) <= governed_paths
     assert GOVERNANCE_PATH in governed_paths
     assert GOVERNANCE_PATH in _workspace_paths()
-    assert _coverage_failures(ACTUAL_RULES, governed_paths) == {}
+    ownership_only_paths = {
+        ".github/workflows/buddy.yml",
+        ".github/workflows/release-buddy.yml",
+        ".github/workflows/legacy-buddy.yml",
+        ".github/workflows/compatibility.yml",
+        ".github/workflows/new-buddy-compatibility.yml",
+    }
+    ownership_paths = governed_paths | ownership_only_paths
     assert {
-        path: _final_owners(ACTUAL_RULES, path) for path in governed_paths
-    } == dict.fromkeys(governed_paths, (REQUIRED_OWNER,))
+        path: _final_owners(ACTUAL_RULES, path) for path in ownership_paths
+    } == dict.fromkeys(ownership_paths, (REQUIRED_OWNER,))
 
 
 @pytest.mark.parametrize(
     ("pattern", "path", "matches"),
     [
+        ("/uv.lock", "uv.lock", True),
+        ("/uv.lock", "nested/uv.lock", False),
         ("/governed/exact.py", "governed/exact.py", True),
         ("/governed/exact.py", "nested/governed/exact.py", False),
         ("/governed/**", "governed/nested/file.py", True),
@@ -284,113 +278,3 @@ def test_codeowners_test_oracle_rejects_later_nonsole_owner(
 
     assert _final_owners(rules, path) == owners
     assert _coverage_failures(rules, {path}) == {path: owners}
-
-
-@pytest.mark.parametrize(
-    "selected_ref",
-    [
-        "refs/heads/contributor/arbitrary-buddy-source",
-        "refs/tags/arbitrary-buddy-candidate",
-    ],
-    ids=["branch", "tag"],
-)
-def test_public_cli_normalizes_arbitrary_buddy_branch_and_tag_without_codeowners_gate(  # noqa: E501
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    selected_ref: str,
-) -> None:
-    """Preserve arbitrary refs through the public offline CLI boundary."""
-
-    def unexpected_network(*_args: object, **_kwargs: object) -> None:
-        message = "normalization attempted network access"
-        raise AssertionError(message)
-
-    monkeypatch.setattr(cli_module, "urlopen", unexpected_network)
-    monkeypatch.setattr(socket, "create_connection", unexpected_network)
-    output = tmp_path / "intent.json"
-    target = "1234567890abcdef1234567890abcdef12345678"
-
-    status = main(
-        [
-            "release",
-            "normalize-live-request",
-            "--repository",
-            "hcoona/three",
-            "--selected-ref",
-            selected_ref,
-            "--target",
-            target,
-            "--actor",
-            "commit9-test",
-            "--workflow-run-id",
-            "9009",
-            "--run-attempt",
-            "2",
-            "--output",
-            str(output),
-        ]
-    )
-    intent = json.loads(output.read_bytes())
-
-    assert status == 0
-    assert {
-        field: intent[field]
-        for field in (
-            "workflow-ref",
-            "selected-ref",
-            "workflow-sha",
-            "target",
-            "event-kind",
-            "channel",
-            "mode",
-            "purpose",
-        )
-    } == {
-        "workflow-ref": selected_ref,
-        "selected-ref": selected_ref,
-        "workflow-sha": target,
-        "target": target,
-        "event-kind": "workflow_dispatch",
-        "channel": "buddy",
-        "mode": "live",
-        "purpose": "live-release",
-    }
-    assert selected_ref in output.read_text(encoding="utf-8")
-
-
-def test_actual_buddy_workflow_passes_github_ref_as_selected_ref_without_ownership_gate() -> (  # noqa: E501
-    None
-):
-    """Pin actual selected-ref wiring and offline ownership scope."""
-    caller = _document(CALLER)
-    request = caller["jobs"]["request"]
-    normalization_step = _step(request, "Normalize fixed live request")
-    command = _run(normalization_step)
-    folded = command.casefold()
-    conditions = [
-        condition
-        for job in caller["jobs"].values()
-        for condition in (
-            job.get("if"),
-            *(
-                step.get("if")
-                for step in job.get("steps", ())
-                if isinstance(step, dict)
-            ),
-        )
-        if isinstance(condition, str)
-    ]
-
-    assert "release normalize-live-request" in command
-    assert '--selected-ref "${GITHUB_REF}"' in command
-    assert 'echo "selected-ref=${GITHUB_REF}" >> "${GITHUB_OUTPUT}"' in command
-    assert request["if"] == "github.run_attempt == 1"
-    assert "if" not in normalization_step
-    assert all(
-        "github.ref" not in condition.casefold() for condition in conditions
-    )
-    assert "refs/heads/" not in command
-    assert "codeowners" not in folded
-    assert "api.github.com" not in folded
-    assert "curl " not in folded
-    assert "wget " not in folded

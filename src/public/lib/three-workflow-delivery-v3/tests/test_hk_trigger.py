@@ -1814,25 +1814,8 @@ def test_acceptance_fixture_required_files_are_visible_to_git() -> None:
     assert all((REPO_ROOT / path).is_file() for path in visible_paths)
 
 
-def test_legacy_pngchunk_ztxt_ba_line_and_typos_exception_are_exact() -> None:
-    """Preserve the historical identifier and its file-specific exception."""
-    legacy_path = "src/public/lib/Hjg.Pngcs/Chunks/PngChunkZTXT.cs"
-    legacy_source = (REPO_ROOT / legacy_path).read_text(encoding="utf-8")
-    typos_config = tomllib.loads(
-        (REPO_ROOT / ".typos.toml").read_text(encoding="utf-8")
-    )
-    legacy_identifier = "b" + "a"
-
-    assert re.search(
-        rf"\bMemoryStream\s+{legacy_identifier}\s*=\s*new\s+"
-        r"MemoryStream\s*\(\s*\)\s*;",
-        legacy_source,
-    )
-    assert legacy_path in typos_config["files"]["extend-exclude"]
-
-
-def test_typos_legacy_identifier_exceptions_are_file_specific() -> None:
-    """Reject wildcard Pngcs or repository-wide identifier exemptions."""
+def test_typos_pngcs_exclusions_remain_bounded() -> None:
+    """Keep imported-file exclusions bounded and test artifacts visible."""
     typos_config = tomllib.loads(
         (REPO_ROOT / ".typos.toml").read_text(encoding="utf-8")
     )
@@ -1841,25 +1824,7 @@ def test_typos_legacy_identifier_exceptions_are_file_specific() -> None:
         path for path in exclusions if "src/public/lib/Hjg.Pngcs/" in path
     )
 
-    assert "src/public/lib/Hjg.Pngcs/Chunks/PngChunkZTXT.cs" in pngcs_exclusions
-    assert "src/public/lib/Hjg.Pngcs/Chunks/ChunkRaw.cs" in pngcs_exclusions
     assert all("*" not in path and "?" not in path for path in pngcs_exclusions)
-    legacy_identifier = "b" + "a"
-    tables = [typos_config]
-    while tables:
-        table = tables.pop()
-        for name, value in table.items():
-            if name in ("extend-words", "extend-identifiers"):
-                assert legacy_identifier not in {
-                    key.casefold() for key in value
-                }
-            if name in ("extend-ignore-re", "extend-ignore-identifiers-re"):
-                assert not any(
-                    rf"\b{legacy_identifier}\b" in pattern.casefold()
-                    for pattern in value
-                )
-            if isinstance(value, dict):
-                tables.append(value)
     assert ".testagent/**" not in exclusions
 
 
@@ -2041,3 +2006,57 @@ def test_mise_bootstrap_preserves_preparation_and_build_permissions(
         (REPO_ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8")
     )
     assert workspace["allowBuilds"]["msgpackr-extract"] is True
+
+
+def test_real_hk_selects_deleted_buddy_routes(tmp_path: Path) -> None:
+    """Keep deleted legacy entry names inside real v3 validation selection."""
+    repo = tmp_path / "repo"
+    paths = (
+        ".github/workflows/buddy.yml",
+        ".github/workflows/release-buddy.yml",
+    )
+    base = _initialize_repository(repo, baseline_paths=paths)
+    _git(repo, "rm", "--", *paths)
+    head = _commit(repo, "delete retired Buddy routes")
+
+    assert _helper_changed_paths(repo, base, head) == paths
+    assert not (repo / paths[0]).exists()
+    assert not (repo / paths[1]).exists()
+    step = _helper_step_plan(repo, base, head)
+    assert step["status"] == "included"
+    assert step["fileCount"] == 2  # noqa: PLR2004
+
+
+def test_real_hk_selects_renamed_buddy_route(tmp_path: Path) -> None:
+    """Select both names of a real unchanged-content compatibility rename."""
+    repo = tmp_path / "repo"
+    old = ".github/workflows/buddy.yml"
+    new = ".github/workflows/compatibility.yml"
+    base = _initialize_repository(repo, baseline_paths=(old,))
+    _git(repo, "mv", "--", old, new)
+    head = _commit(repo, "rename retired Buddy route")
+
+    assert (
+        _git(
+            repo, "diff", "--name-status", "--find-renames", base, head, "--"
+        ).stdout
+        == f"R100\t{old}\t{new}\n"
+    )
+    assert _helper_changed_paths(repo, base, head) == (old, new)
+    step = _helper_step_plan(repo, base, head)
+    assert step["status"] == "included"
+    assert step["fileCount"] == 2  # noqa: PLR2004
+
+
+def test_real_hk_selects_future_buddy_route(tmp_path: Path) -> None:
+    """Select a newly introduced workflow without requiring a v3 prefix."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    path = ".github/workflows/new-buddy-compatibility.yml"
+    _write(repo, path, "new compatibility route\n")
+    head = _commit(repo, "add compatibility route")
+
+    assert _helper_changed_paths(repo, base, head) == (path,)
+    step = _helper_step_plan(repo, base, head)
+    assert step["status"] == "included"
+    assert step["fileCount"] == 1

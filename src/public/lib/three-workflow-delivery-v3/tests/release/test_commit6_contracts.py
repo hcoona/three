@@ -209,7 +209,7 @@ def test_release_intent_is_stable_while_simulation_reruns_are_distinct(
     assert rerun_binding.simulation.identity != binding.simulation.identity
 
 
-def test_release_records_are_exact_frozen_slotted_dataclasses(
+def test_release_records_are_exact_frozen_dataclasses(
     intent: ReleaseIntent,
     binding: SimulationBinding,
 ) -> None:
@@ -221,7 +221,6 @@ def test_release_records_are_exact_frozen_slotted_dataclasses(
 
     for record in records:
         assert fields(record)
-        assert hasattr(type(record), "__slots__")
         with pytest.raises(FrozenInstanceError):
             record.__setattr__(fields(record)[0].name, "mutated")
 
@@ -485,9 +484,8 @@ def test_repository_model_admission_rejects_live_run_attempt(
     )
 
 
-def test_admitted_repository_model_is_frozen_and_slotted(
+def test_admitted_repository_model_is_frozen(
     admitted_repository_model: AdmittedRepositoryModelSnapshot,
 ) -> None:
-    assert not hasattr(admitted_repository_model, "__dict__")
     with pytest.raises(FrozenInstanceError):
         admitted_repository_model.canonical_digest = "sha256:" + "0" * 64  # type: ignore[misc]

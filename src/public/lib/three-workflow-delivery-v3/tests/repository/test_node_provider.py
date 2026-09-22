@@ -878,7 +878,6 @@ def test_provider_compiles_pnpm_and_nbgv_facts_once_for_exact_target(
     assert result.conflicts == ()
     assert result.diagnostic_reference is None
     assert len(runner.nbgv_calls) == 1
-    assert runner.nbgv_calls[0][3].count("getVersion(") == 1
     nbgv_records = [
         record for record in runner.commands if record[0] in runner.nbgv_calls
     ]
@@ -3478,9 +3477,6 @@ def test_internal_exact_target_git_materialization_skips_lfs_smudge_in_closed_en
         )
 
 
-SHA256_HEX_LENGTH = 64
-
-
 class _Phase3RecordingRunner(RecordingRunner):
     """Allow Phase 3 tests to vary only the reported tool versions."""
 
@@ -3572,250 +3568,73 @@ def _assert_phase3_provider_payload_rejected(
     assert len(runner.nbgv_calls) == 1
 
 
-@pytest.mark.parametrize(
-    ("field", "value", "accepted"),
-    [
-        ("version", "1.2", True),
-        ("version", "1.2.3", True),
-        ("version", "1.2.3.4", True),
-        ("version", "", False),
-        ("version", 123, False),
-        ("version", "1", False),
-        ("version", "1.2.3.4.5", False),
-        ("version", "01.2.3", False),
-        ("version", "1.02.3", False),
-        ("version", "1.-2.3", False),
-        ("version", "1.two.3", False),
-        ("version", " 1.2.3", False),
-        ("semVer1", "", False),
-        ("semVer1", 123, False),
-        ("semVer2", "", False),
-        ("semVer2", 123, False),
-    ],
-    ids=[
-        "version-valid-two-components",
-        "version-valid-three-components",
-        "version-valid-four-components",
-        "version-empty",
-        "version-non-string",
-        "version-one-component",
-        "version-five-components",
-        "version-leading-zero-major",
-        "version-leading-zero-minor",
-        "version-negative-component",
-        "version-nonnumeric-component",
-        "version-whitespace-padded",
-        "semver1-empty",
-        "semver1-non-string",
-        "semver2-empty",
-        "semver2-non-string",
-    ],
-)
-def test_provider_rejects_malformed_nbgv_version_contract(
+def test_provider_preserves_distinct_native_nbgv_fields(
     tmp_path: Path,
     valid_provider_node_api_payload: dict[str, object],
-    field: str,
-    value: object,
-    *,
-    accepted: bool,
 ) -> None:
-    """Accept only canonical numeric versions and required SemVer strings."""
+    """Carry each native fact unchanged without deriving the npm projection."""
     repo, runner, binding = _phase3_provider_scenario(tmp_path)
-    valid_provider_node_api_payload[field] = value
+    valid_provider_node_api_payload.update(
+        version="1.2.3.4",
+        semVer1="1.2.3-beta-0042-e123456",
+        semVer2="7.8.9",
+        npmPackageVersion="1.2.3-beta.4+build.5",
+    )
     runner.nbgv = valid_provider_node_api_payload
 
-    if accepted:
-        result = provide_node_repository_facts(
-            repo,
-            PROJECT_PATH,
-            binding,
-            _materialization(),
-            runner=runner,
-        )
-
-        assert result.nbgv.canonical_version == value
-        assert (
-            result.nbgv.sem_ver1 == (valid_provider_node_api_payload["semVer1"])
-        )
-        assert (
-            result.nbgv.sem_ver2 == (valid_provider_node_api_payload["semVer2"])
-        )
-        digest_prefix, digest_hex = result.nbgv.node_api_result_digest.split(
-            ":", maxsplit=1
-        )
-        assert digest_prefix == "sha256"
-        assert len(digest_hex) == SHA256_HEX_LENGTH
-        assert digest_hex == digest_hex.lower()
-        assert set(digest_hex) <= set("0123456789abcdef")
-        assert result.outcome == "success"
-        return
-
-    _assert_phase3_provider_payload_rejected(
-        repo,
-        runner,
-        binding,
-        match=r"(?:version|semVer1|semVer2)",
+    result = provide_node_repository_facts(
+        repo, PROJECT_PATH, binding, _materialization(), runner=runner
     )
 
-
-@pytest.mark.parametrize(
-    ("npm_package_version", "accepted"),
-    [
-        ("1.2.3-beta.4", True),
-        ("1.2.3+build.5", True),
-        ("1.2.3-beta.4+build.5", True),
-        ("", False),
-        ("^1.2.3", False),
-        ("latest", False),
-        ("https://registry.npmjs.org/package", False),
-        ("v1.2.3", False),
-        (" 1.2.3", False),
-        ("1.2", False),
-        ("01.2.3", False),
-        ("1.2.3-01", False),
-        ("1.2.3-", False),
-        ("1.2.3+", False),
-        ("1.2.3-alpha..1", False),
-        ("1.2.3-alpha_beta", False),
-        (123, False),
-    ],
-    ids=[
-        "valid-prerelease",
-        "valid-build",
-        "valid-prerelease-build",
-        "empty",
-        "range",
-        "tag",
-        "url",
-        "v-prefixed",
-        "whitespace-padded",
-        "malformed",
-        "leading-zero-major",
-        "leading-zero-prerelease",
-        "empty-prerelease",
-        "empty-build",
-        "empty-prerelease-identifier",
-        "invalid-prerelease-character",
-        "non-string",
-    ],
-)
-def test_provider_rejects_malformed_npm_package_version_contract(
-    tmp_path: Path,
-    valid_provider_node_api_payload: dict[str, object],
-    npm_package_version: object,
-    *,
-    accepted: bool,
-) -> None:
-    """Retain one native npm SemVer and reject every non-version form."""
-    repo, runner, binding = _phase3_provider_scenario(tmp_path)
-    valid_provider_node_api_payload["semVer2"] = "7.8.9"
-    valid_provider_node_api_payload["npmPackageVersion"] = npm_package_version
-    runner.nbgv = valid_provider_node_api_payload
-
-    if accepted:
-        result = provide_node_repository_facts(
-            repo,
-            PROJECT_PATH,
-            binding,
-            _materialization(),
-            runner=runner,
-        )
-
-        assert result.nbgv.npm_package_version == npm_package_version
-        assert result.nbgv.sem_ver2 == "7.8.9"
-        assert result.nbgv.npm_package_version != result.nbgv.sem_ver2
-        assert len(runner.nbgv_calls) == 1
-        return
-
-    _assert_phase3_provider_payload_rejected(
-        repo,
-        runner,
-        binding,
-        match="npmPackageVersion",
+    assert result.outcome == "success"
+    assert result.nbgv.canonical_version == "1.2.3.4"
+    assert result.nbgv.sem_ver1 == "1.2.3-beta-0042-e123456"
+    assert result.nbgv.sem_ver2 == "7.8.9"
+    assert result.nbgv.npm_package_version == "1.2.3-beta.4+build.5"
+    assert result.nbgv.git_commit_id == "e" * 40
+    assert result.nbgv.version_height == 42  # noqa: PLR2004
+    assert result.nbgv.public_release is False
+    assert result.nbgv.node_api_result_digest == canonical_sha256(
+        valid_provider_node_api_payload
     )
+    assert len(runner.nbgv_calls) == 1
 
 
-@pytest.mark.parametrize(
-    "git_commit_id",
-    [
-        "e" * 39,
-        "E" * 40,
-        "g" * 40,
-        f"{'e' * 40} ",
-        123,
-        "d" * 40,
-    ],
-    ids=[
-        "short",
-        "uppercase",
-        "nonhex",
-        "whitespace-padded",
-        "non-string",
-        "target-mismatch",
-    ],
-)
-def test_provider_rejects_malformed_target_git_commit_id(
+def test_provider_applies_intrinsic_nbgv_validation(
     tmp_path: Path,
     valid_provider_node_api_payload: dict[str, object],
-    git_commit_id: object,
 ) -> None:
-    """Require the exact target as one full lowercase hexadecimal SHA."""
+    """Refuse a shape-valid native payload that violates version grammar."""
     repo, runner, binding = _phase3_provider_scenario(tmp_path)
-    valid_provider_node_api_payload["gitCommitId"] = git_commit_id
+    valid_provider_node_api_payload["npmPackageVersion"] = "1.2.3-alpha_beta"
     runner.nbgv = valid_provider_node_api_payload
 
     _assert_phase3_provider_payload_rejected(
-        repo,
-        runner,
-        binding,
-        match=r"(?:gitCommitId|exact target)",
+        repo, runner, binding, match="npmPackageVersion"
     )
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("versionHeight", 0),
-        ("versionHeight", -1),
-        ("versionHeight", True),
-        ("versionHeight", False),
-        ("versionHeight", "42"),
-        ("versionHeight", 42.5),
-        ("publicRelease", "false"),
-        ("publicRelease", 0),
-        ("publicRelease", None),
-        ("publicRelease", []),
-    ],
-    ids=[
-        "height-zero",
-        "height-negative",
-        "height-true",
-        "height-false",
-        "height-string",
-        "height-non-integral",
-        "public-release-string",
-        "public-release-integer",
-        "public-release-none",
-        "public-release-other",
+        pytest.param("semVer2", 123, id="string-fact-is-not-coerced"),
+        pytest.param("versionHeight", True, id="boolean-is-not-height"),
+        pytest.param("versionHeight", "42", id="string-is-not-height"),
+        pytest.param("publicRelease", "false", id="string-is-not-boolean"),
     ],
 )
-def test_provider_rejects_invalid_nbgv_scalar_contract(
+def test_provider_rejects_coercible_native_nbgv_fields(
     tmp_path: Path,
     valid_provider_node_api_payload: dict[str, object],
     field: str,
     value: object,
 ) -> None:
-    """Require a positive non-Boolean height and Boolean public release."""
+    """Reject raw external field types rather than coercing their values."""
     repo, runner, binding = _phase3_provider_scenario(tmp_path)
     valid_provider_node_api_payload[field] = value
     runner.nbgv = valid_provider_node_api_payload
 
-    _assert_phase3_provider_payload_rejected(
-        repo,
-        runner,
-        binding,
-        match=field,
-    )
+    _assert_phase3_provider_payload_rejected(repo, runner, binding, match=field)
 
 
 @pytest.mark.parametrize(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
 import subprocess
 import tomllib
 from argparse import Namespace
@@ -45,12 +46,15 @@ from three_workflow_delivery_v3.records.release import (
     BuddyExecutionIdentity,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
+    ReleaseIntent,
 )
+from three_workflow_delivery_v3.release import eligibility
 from three_workflow_delivery_v3.release.identity import (
     OFFICIAL_SIMULATION_PRODUCER,
     normalize_official_simulation_intent,
 )
 from three_workflow_delivery_v3.repository import (
+    AdmittedRepositoryModelSnapshot,
     CompilationContext,
     admit_repository_model_snapshot,
     first_slice_provider_manifest,
@@ -58,6 +62,7 @@ from three_workflow_delivery_v3.repository import (
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_POLICY_PATH,
+    ReleasePolicy,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
     AUTHORITATIVE_REMOTE,
@@ -74,6 +79,7 @@ from three_workflow_delivery_v3.repository.node_provider import (
     ProviderBinding,
 )
 
+from .release import test_eligibility as eligibility_fixtures
 from .release.conftest import (
     live_admitted_repository_model as live_admitted_repository_model,  # noqa: PLC0414
 )
@@ -1014,6 +1020,78 @@ def test_retired_acceptance_command_rejects_before_effects(
 
 
 @pytest.mark.parametrize(
+    "selected_ref",
+    [
+        "refs/heads/contributor/arbitrary-buddy-source",
+        "refs/tags/arbitrary-buddy-candidate",
+    ],
+    ids=["branch", "tag"],
+)
+def test_public_cli_normalizes_arbitrary_buddy_branch_and_tag_without_codeowners_gate(  # noqa: E501
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selected_ref: str,
+) -> None:
+    """Preserve arbitrary refs through the public offline CLI boundary."""
+
+    def unexpected_network(*_args: object, **_kwargs: object) -> None:
+        message = "normalization attempted network access"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(cli_module, "urlopen", unexpected_network)
+    monkeypatch.setattr(socket, "create_connection", unexpected_network)
+    output = tmp_path / "intent.json"
+    target = "1234567890abcdef1234567890abcdef12345678"
+
+    status = cli_module.main(
+        [
+            "release",
+            "normalize-live-request",
+            "--repository",
+            "hcoona/three",
+            "--selected-ref",
+            selected_ref,
+            "--target",
+            target,
+            "--actor",
+            "commit9-test",
+            "--workflow-run-id",
+            "9009",
+            "--run-attempt",
+            "2",
+            "--output",
+            str(output),
+        ]
+    )
+    intent = json.loads(output.read_bytes())
+
+    assert status == 0
+    assert {
+        field: intent[field]
+        for field in (
+            "workflow-ref",
+            "selected-ref",
+            "workflow-sha",
+            "target",
+            "event-kind",
+            "channel",
+            "mode",
+            "purpose",
+        )
+    } == {
+        "workflow-ref": selected_ref,
+        "selected-ref": selected_ref,
+        "workflow-sha": target,
+        "target": target,
+        "event-kind": "workflow_dispatch",
+        "channel": "buddy",
+        "mode": "live",
+        "purpose": "live-release",
+    }
+    assert selected_ref in output.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
     "command",
     [
         "normalize-simulation-request",
@@ -1023,10 +1101,6 @@ def test_retired_acceptance_command_rejects_before_effects(
         "plan-qualification",
         "run-build",
         "form-uploaded-artifact",
-        "run-project-test",
-        "run-artifact-contents",
-        "run-install-import",
-        "form-incomplete-evidence",
         "finalize-qualification",
         "observe-npmjs",
         "materialize-hypothetical-actions",
@@ -3256,178 +3330,120 @@ def test_live_eligibility_cli_rejects_consumer_policy_option(
     assert "--consumer-policy" in captured.err
 
 
-def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
+@pytest.mark.parametrize("enabled", [True, False], ids=["admitted", "blocked"])
+def test_live_eligibility_command_persists_current_decision(  # noqa: PLR0913
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+    *,
+    enabled: bool,
 ) -> None:
-    """Parse and dispatch one resolved root and current lineage."""
-    target = "e" * 40
+    """Persist current input admission and both workflow-facing outcomes."""
+    model = live_admitted_repository_model
+    target = live_intent.target
     repository_argument = tmp_path / "alias" / ".." / "repository"
-    resolved_repository_root = repository_argument.resolve()
+    resolved_root = repository_argument.resolve()
     output_path = tmp_path / "live-eligibility.json"
-    github_output_path = tmp_path / "github-output.txt"
-    github_token = f"token-{target[:8]}"
-    command_arguments = _live_eligibility_cli_arguments()
-    command_arguments[command_arguments.index("--github-token") + 1] = (
-        github_token
+    github_output = tmp_path / "github-output.txt"
+    observed_at = eligibility_fixtures.NOW
+    client = RecordingGovernanceClient(
+        eligibility_fixtures._attestation_content(live_enabled=enabled),  # noqa: SLF001
     )
-    command_arguments[command_arguments.index("--output") + 1] = str(
-        output_path
-    )
-    command_arguments.extend(
+    static_result = eligibility_fixtures._static_reference(target=target)  # noqa: SLF001
+    authoring_reads: list[tuple[Path, str]] = []
+    scans: list[tuple[Path, str, str]] = []
+
+    def authoring(root: Path, selected_target: str):
+        authoring_reads.append((root, selected_target))
+        return None, None, policy
+
+    def scan(root: Path, *, source_kind: str, target: str):
+        scans.append((root, source_kind, target))
+        return static_result
+
+    def governance_client(*, repository: str, token: str):
+        assert repository == policy.governance.repository
+        assert token == "test-token"  # noqa: S105
+        return client
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return observed_at if tz is None else observed_at.astimezone(tz)
+
+    monkeypatch.setattr(cli_module, "datetime", Clock)
+    monkeypatch.setattr(cli_module, "load_first_slice_authoring", authoring)
+    monkeypatch.setattr(cli_module, "GitHubGovernanceClient", governance_client)
+    monkeypatch.setattr(eligibility, "scan_bounded_static_references", scan)
+    if enabled:
+        eligibility_fixtures._admit_test_destination_primitive(monkeypatch)  # noqa: SLF001
+
+    result = cli_module.main(
         [
+            "release",
+            "evaluate-live-eligibility",
+            "--github-token",
+            "test-token",
+            "--workflow-run-id",
+            str(live_intent.workflow_run_id),
+            "--run-attempt",
+            "1",
+            "--target",
+            target,
             "--repo-root",
             str(repository_argument),
+            *uploaded_arguments(
+                tmp_path / "inputs", "intent", live_intent.to_document(), 101
+            ),
+            *uploaded_arguments(
+                tmp_path / "inputs",
+                "repository-model",
+                model.snapshot.to_document(),
+                202,
+            ),
+            "--output",
+            str(output_path),
             "--github-output",
-            str(github_output_path),
+            str(github_output),
         ]
     )
-    arguments = cli_module._parser().parse_args(  # noqa: SLF001
-        command_arguments
+
+    content = output_path.read_bytes()
+    document = json.loads(content)
+    assert content == canonicalize(document)
+    assert result == (0 if enabled else 1)
+    assert (
+        document["schema"] == "workflow-delivery/v3/live-eligibility-decision"
     )
-    intent = SimpleNamespace(
-        request_id="release-request-live-root-forwarding",
-        selected_ref="refs/heads/release",
+    assert document["result"] == ("pass" if enabled else "blocked")
+    assert document["diagnostics"] == (
+        [] if enabled else ["governance-live-disabled"]
     )
-    control = f"workflow-delivery-v3:{target}"
-    snapshot = SimpleNamespace(context=SimpleNamespace(control=control))
-    model_digest = "sha256:" + ("3" * 64)
-    model = SimpleNamespace(
-        canonical_digest=model_digest,
-        snapshot=snapshot,
-    )
-    policy = SimpleNamespace(
-        governance=SimpleNamespace(repository="owner/repository")
-    )
-    client = object()
-    policy_digest = "sha256:" + ("5" * 64)
-    static_catalog_digest = "sha256:" + ("6" * 64)
-    decision_digest = "sha256:" + ("7" * 64)
-    observed_at = datetime(2026, 9, 1, 10, 24, 3, tzinfo=UTC)
-    decision_document: dict[str, JsonValue] = {
-        "schema": "workflow-delivery/v3/live-eligibility-decision",
-        "result": "pass",
-        "diagnostics": [],
+    assert document["context"] == {
+        "purpose": "live-release",
+        "request-id": live_intent.request_id,
+        "workflow-run-id": live_intent.workflow_run_id,
+        "selected-ref": live_intent.selected_ref,
+        "target": target,
+        "repository-model-digest": model.canonical_digest,
+        "producer": "evaluate-live-eligibility",
+        "control": model.snapshot.context.control,
+        "release-policy-digest": cli_module.release_policy_digest(policy),
+        "catalog-digest": cli_module.catalog_digest(),
     }
-    decision = SimpleNamespace(
-        result="pass",
-        decision_digest=decision_digest,
-        to_document=lambda: decision_document,
+    assert document["static-reference"] == static_result.to_document()
+    assert document["governance"]["observed-at"] == "2026-08-06T12:00:00Z"
+    assert (
+        document["governance"]["admitted-attestation"]["live_enabled"]
+        is enabled
     )
-    calls = SimpleNamespace(
-        intent=[],
-        model=[],
-        authoring=[],
-        client=[],
-        policy_digest=[],
-        catalog_digest=[],
-        timezone=[],
-        evaluation=[],
-        writes=[],
-        outputs=[],
-    )
-
-    def evaluate(  # noqa: PLR0913
-        context: object,
-        actual_model: object,
-        actual_policy: object,
-        actual_client: object,
-        *,
-        repository_root: Path,
-        now: datetime,
-    ) -> object:
-        calls.evaluation.append(
-            (
-                context,
-                actual_model,
-                actual_policy,
-                actual_client,
-                repository_root,
-                now,
-            )
-        )
-        return decision
-
-    patches = {
-        "_load_live_intent": lambda value: calls.intent.append(value) or intent,
-        "_load_live_model": lambda value, current_intent: (
-            calls.model.append((value, current_intent)) or model
-        ),
-        "load_first_slice_authoring": lambda root, requested_target: (
-            calls.authoring.append((root, requested_target))
-            or (object(), object(), policy)
-        ),
-        "GitHubGovernanceClient": lambda *, repository, token: (
-            calls.client.append((repository, token)) or client
-        ),
-        "release_policy_digest": lambda value: (
-            calls.policy_digest.append(value) or policy_digest
-        ),
-        "catalog_digest": lambda: (
-            calls.catalog_digest.append(None) or static_catalog_digest
-        ),
-        "evaluate_live_eligibility": evaluate,
-        "_write_output": lambda path, document: calls.writes.append(
-            (path, document)
-        ),
-        "_record_outputs": (
-            lambda path, *, role, digest, extra: calls.outputs.append(
-                (path, role, digest, extra)
-            )
-        ),
-    }
-    for name, replacement in patches.items():
-        monkeypatch.setattr(cli_module, name, replacement)
-    monkeypatch.setattr(
-        cli_module,
-        "datetime",
-        SimpleNamespace(
-            now=lambda timezone: calls.timezone.append(timezone) or observed_at
-        ),
-    )
-
-    result = arguments.handler(arguments)
-
-    expected_context = cli_module.LiveEligibilityContext(
-        purpose="live-release",
-        request_id="release-request-live-root-forwarding",
-        workflow_run_id=WORKFLOW_RUN_ID,
-        selected_ref="refs/heads/release",
-        target=target,
-        repository_model_digest=model_digest,
-        producer="evaluate-live-eligibility",
-        control=control,
-        release_policy_digest=policy_digest,
-        catalog_digest=static_catalog_digest,
-    )
-    assert result == 0
-    assert arguments.repo_root != "."
-    assert not hasattr(arguments, "consumer_policy")
-    assert calls.intent == [arguments]
-    assert calls.model == [(arguments, intent)]
-    assert calls.authoring == [(resolved_repository_root, target)]
-    assert calls.evaluation == [
-        (
-            expected_context,
-            model,
-            policy,
-            client,
-            resolved_repository_root,
-            observed_at,
-        )
+    digest = hashlib.sha256(content).hexdigest()
+    assert github_output.read_text().splitlines() == [
+        f"live-eligibility-digest=sha256:{digest}",
+        f"live-eligibility-digest-hex={digest}",
+        f"live-result={'admitted' if enabled else 'blocked'}",
     ]
-    assert calls.client == [("owner/repository", github_token)]
-    assert calls.policy_digest == [policy]
-    assert calls.catalog_digest == [None]
-    assert calls.timezone == [UTC]
-    assert calls.writes == [(str(output_path), decision_document)]
-    assert calls.outputs == [
-        (
-            str(github_output_path),
-            "live-eligibility",
-            decision_digest,
-            (("live-result", "admitted"),),
-        )
-    ]
-    assert not output_path.exists()
-    assert not github_output_path.exists()
+    assert authoring_reads == [(resolved_root, target)]
+    assert scans == [(resolved_root, "git-target", target)]

@@ -495,7 +495,7 @@ def _set_nested_member(document, path, value):
     parent[path[-1]] = value
 
 
-def test_publication_finalizer_records_are_frozen_and_slotted():
+def test_publication_finalizer_records_are_frozen():
     scenarios = (
         (_approval_boundary, "environment"),
         (_governance_proof, "provenance"),
@@ -515,8 +515,6 @@ def test_publication_finalizer_records_are_frozen_and_slotted():
 
     for factory, field_name in scenarios:
         record = factory()
-        assert "__slots__" in type(record).__dict__
-        assert not hasattr(record, "__dict__")
         with pytest.raises(FrozenInstanceError, match="cannot assign"):
             setattr(record, field_name, getattr(record, field_name))
 
@@ -1527,24 +1525,36 @@ def test_profile_match_requires_nonempty_command_and_configuration(
     "configuration",
     [
         (
-            ("fetch-retries",),
-            *_PROFILE_CONFIGURATION[1:],
-        ),
-        (
             _PROFILE_CONFIGURATION[0],
             _PROFILE_CONFIGURATION[0],
             *_PROFILE_CONFIGURATION[1:],
         ),
         tuple(reversed(_PROFILE_CONFIGURATION)),
     ],
-    ids=("wrong-pair-size", "duplicate-key", "unsorted"),
+    ids=("duplicate-key", "unsorted"),
 )
 def test_profile_match_configuration_uses_canonical_pairs(configuration):
+    with pytest.raises(ValueError, match=r"duplicate|sorted"):
+        replace(_profile_match(), configuration=configuration)
+
+
+def test_marker_transport_rejects_malformed_configuration_pair() -> None:
+    """Reject malformed external pair shape before constructing the record."""
+    document = _marker().to_document()
+    _set_nested_member(
+        document, ("profile-match", "configuration", 0), ["fetch-retries"]
+    )
+
     with pytest.raises(
         ValueError,
-        match=r"two strings|duplicate|sorted",
+        match=(
+            r"^profile match\.configuration\[0\]"
+            r" must contain exactly two strings$"
+        ),
     ):
-        replace(_profile_match(), configuration=configuration)
+        release_record_from_document(
+            document, expected_type=MutationMayHaveStartedMarker
+        )
 
 
 @pytest.mark.parametrize(

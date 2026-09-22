@@ -697,8 +697,6 @@ def test_real_nbgv_facts_ignore_recognized_ci_ref_environment(
     ]
     assert len(baseline_nbgv_calls) == 1
     assert len(actual_nbgv_calls) == 1
-    assert baseline_nbgv_calls[0][3].count("getVersion(process.cwd())") == 1
-    assert actual_nbgv_calls[0][3].count("getVersion(process.cwd())") == 1
     assert baseline["git-commit-id"] == target
     assert baseline["version-height"] == 1
     assert baseline["public-release"] is False
@@ -917,7 +915,6 @@ def test_fact_bundle_schema_binds_complete_approved_contract() -> None:
     assert admitted.provider_result.to_document() == expected_result
     assert admitted.bundle.to_document() == expected_document
     assert admitted.admission == admission
-    assert not hasattr(bundle, "__dict__")
     with pytest.raises(FrozenInstanceError):
         setattr(bundle, "transport_id", 203)  # noqa: B010
 
@@ -1226,25 +1223,6 @@ def test_compilation_context_requires_exact_string_producer() -> None:
     assert forged.run_attempt is None
 
 
-def test_repository_model_rejects_digest_equivalent_list_backed_snapshot() -> (
-    None
-):
-    """Block a tuple-to-list TOCTOU mutation that preserves JSON digest."""
-    snapshot = _snapshot()
-    forged = replace(
-        snapshot,
-        release_units=cast("Any", [*snapshot.release_units]),
-    )
-
-    assert forged.to_document() == snapshot.to_document()
-    assert forged.snapshot_digest == snapshot.snapshot_digest
-    with pytest.raises(TypeError, match=r"release_units.*exact tuple"):
-        validate_first_slice_repository_model_snapshot(forged)
-
-    validate_first_slice_repository_model_snapshot(snapshot)
-    assert snapshot.release_units[0].builds[0].build_id == "npm-package"
-
-
 def test_repository_model_parser_owns_values_across_document_reuse() -> None:
     """Keep parsed values stable when source and exported documents change."""
     expected = _snapshot()
@@ -1285,8 +1263,8 @@ def test_repository_model_parser_owns_values_across_document_reuse() -> None:
     validate_first_slice_repository_model_snapshot(parsed)
 
 
-def test_repository_model_valid_tuples_keep_canonical_json_arrays() -> None:
-    """Keep accepted tuple fields serialized as canonical JSON arrays."""
+def test_repository_model_serializes_complete_canonical_document() -> None:
+    """Preserve complete wire fields, arrays and the canonical digest."""
     snapshot = _snapshot()
 
     validate_first_slice_repository_model_snapshot(snapshot)

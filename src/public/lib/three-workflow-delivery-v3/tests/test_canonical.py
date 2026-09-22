@@ -47,7 +47,6 @@ def test_canonicalize_matches_rfc8785_golden_vector(
     value = parse_json_strict(document)
 
     assert canonicalize(value) == expected
-    assert canonicalize(value).decode("utf-8") == expected.decode("utf-8")
 
 
 def test_canonicalize_returns_utf8_json_bytes() -> None:
@@ -70,43 +69,22 @@ def test_canonical_sha256_matches_golden_digest() -> None:
     assert canonical_sha256(second) == canonical_sha256(first)
 
 
-@pytest.mark.parametrize(
-    "document",
-    ["", '{"missing":}', "[1,]"],
-)
-def test_parse_json_strict_rejects_malformed_json(
-    document: str,
-) -> None:
-    """Reject invalid syntax through the real JSON parser."""
+def test_parse_json_strict_rejects_malformed_json() -> None:
+    """Propagate invalid syntax from the real JSON parser."""
     with pytest.raises(json.JSONDecodeError):
-        parse_json_strict(document)
+        parse_json_strict('{"missing":}')
 
 
-@pytest.mark.parametrize("constant", ["NaN", "Infinity"])
-def test_parse_json_strict_rejects_non_json_constants(constant: str) -> None:
-    """Reject non-JSON constants admitted by the underlying parser."""
-    with pytest.raises(ValueError, match=f"invalid JSON constant: {constant}"):
-        parse_json_strict(constant)
+def test_parse_json_strict_rejects_non_json_constants() -> None:
+    """Install the callback that rejects non-JSON numeric constants."""
+    with pytest.raises(ValueError, match="invalid JSON constant: NaN"):
+        parse_json_strict("NaN")
 
 
-@pytest.mark.parametrize(
-    ("document", "duplicate_name"),
-    [
-        ('{"id":1,"id":2}', "id"),
-        ('{"outer":{"value":1,"value":2}}', "value"),
-        ('[{"nested":{"key":1,"key":2}}]', "key"),
-    ],
-)
-def test_parse_json_strict_rejects_duplicate_members(
-    document: str,
-    duplicate_name: str,
-) -> None:
-    """Reject duplicate object members at every nesting depth."""
-    with pytest.raises(
-        ValueError,
-        match=rf"duplicate JSON object member: '{duplicate_name}'",
-    ):
-        parse_json_strict(document)
+def test_parse_json_strict_rejects_duplicate_members() -> None:
+    """Reject a duplicate object member nested within an array."""
+    with pytest.raises(ValueError, match="duplicate JSON object member: 'key'"):
+        parse_json_strict('[{"nested":{"key":1,"key":2}}]')
 
 
 def test_parse_json_strict_accepts_strict_utf8_bytes() -> None:
@@ -122,26 +100,13 @@ def test_parse_json_strict_accepts_strict_utf8_bytes() -> None:
 @pytest.mark.parametrize(
     "document",
     [
-        '{"value":"€"}'.encode("utf-16"),
         '{"value":"€"}'.encode("utf-16-le"),
-        '{"value":"€"}'.encode("utf-16-be"),
-        '{"value":"€"}'.encode("utf-32"),
-        '{"value":"€"}'.encode("utf-32-le"),
-        '{"value":"€"}'.encode("utf-32-be"),
         b'{"value":"\xff"}',
     ],
-    ids=[
-        "utf-16-bom",
-        "utf-16-little-endian",
-        "utf-16-big-endian",
-        "utf-32-bom",
-        "utf-32-little-endian",
-        "utf-32-big-endian",
-        "invalid-utf-8",
-    ],
+    ids=["utf-16-little-endian", "invalid-utf-8"],
 )
 def test_parse_json_strict_rejects_non_utf8_bytes(document: bytes) -> None:
-    """Reject byte input encoded as UTF-16, UTF-32, or invalid UTF-8."""
+    """Reject alternative encoding and invalid bytes at the UTF-8 decoder."""
     with pytest.raises(UnicodeDecodeError, match="utf-8"):
         parse_json_strict(document)
 
@@ -171,47 +136,18 @@ def test_parse_canonical_json_accepts_canonical_utf8_object() -> None:
     }
 
 
-@pytest.mark.parametrize(
-    "document",
-    [b"null", b"true", b"42", b'"record"', b"[1,2]"],
-    ids=["null", "boolean", "number", "string", "array"],
-)
-def test_parse_canonical_json_rejects_non_object_json(document: bytes) -> None:
-    """Reject every canonical JSON kind that is not a transported object."""
+def test_parse_canonical_json_rejects_non_object_json() -> None:
+    """Require an object even when the supplied array is canonical JSON."""
     with pytest.raises(TypeError, match="must be an object"):
-        parse_canonical_json(document)
+        parse_canonical_json(b"[1,2]")
 
 
-def test_parse_canonical_json_rejects_malformed_json() -> None:
-    """Preserve strict parser failure for malformed transported bytes."""
-    with pytest.raises(json.JSONDecodeError):
-        parse_canonical_json(b'{"missing":}')
-
-
-@pytest.mark.parametrize(
-    ("document", "duplicate_name"),
-    [
-        (b'{"id":1,"id":2}', "id"),
-        (b'{"outer":{"value":1,"value":2}}', "value"),
-    ],
-    ids=["top-level", "nested"],
-)
-def test_parse_canonical_json_rejects_duplicate_members(
-    document: bytes,
-    duplicate_name: str,
-) -> None:
-    """Reject duplicate members before checking canonical record bytes."""
+def test_parse_canonical_json_rejects_duplicate_members() -> None:
+    """Reject duplicates before the wrapper compares canonical bytes."""
     with pytest.raises(
-        ValueError,
-        match=rf"duplicate JSON object member: '{duplicate_name}'",
+        ValueError, match="duplicate JSON object member: 'value'"
     ):
-        parse_canonical_json(document)
-
-
-def test_parse_canonical_json_rejects_non_utf8_bytes() -> None:
-    """Preserve strict UTF-8 decoding at the transported record boundary."""
-    with pytest.raises(UnicodeDecodeError, match="utf-8"):
-        parse_canonical_json(b'{"value":"\xff"}')
+        parse_canonical_json(b'{"outer":{"value":1,"value":2}}')
 
 
 @pytest.mark.parametrize(

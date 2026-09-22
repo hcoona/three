@@ -1239,21 +1239,6 @@ def test_later_probe_failure_retains_earlier_successful_probe_evidence() -> (
     assert evidence.mutation_classification == "unknown"
 
 
-@pytest.mark.parametrize("probe_index", [0, 1])
-def test_scenario_records_require_exact_internal_coordinate_and_tag(
-    probe_index: int,
-) -> None:
-    document = _document()
-    scenario = document["probe-facts"][probe_index]["scenarios"][0]
-    scenario["package-coordinate"] = (
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
-    )
-    scenario["tag"] = "wdv3-acceptance-9"
-
-    with pytest.raises(ValueError):
-        _admit(document)
-
-
 @pytest.mark.parametrize(
     ("dependency_result", "probe_result", "wrong"),
     [
@@ -1888,87 +1873,6 @@ def test_retry_2_profile_admits_only_exact_rejected_dispatch_sentinel_evidence()
 
 
 @pytest.mark.parametrize(
-    ("path", "value", "message"),
-    [
-        (
-            ("workflow", "path"),
-            ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml",
-            "workflow.path",
-        ),
-        (
-            ("environment",),
-            ENVIRONMENT,
-            "environment",
-        ),
-        (
-            ("confirmation-digest",),
-            LEGACY_CONFIRMATION_DIGEST,
-            "confirmation-digest",
-        ),
-        (
-            ("target-sha",),
-            "c" * 40,
-            "target-sha",
-        ),
-    ],
-)
-def test_retry_2_profile_rejects_cross_profile_substitution(
-    path: tuple[str, ...],
-    value: object,
-    message: str,
-) -> None:
-    document = _retry_2_document()
-    _set_path(document, path, value)
-
-    with pytest.raises(ValueError, match=message):
-        _admit(document)
-
-
-def test_legacy_profile_rejects_unreviewed_target_and_confirmation() -> None:
-    document = _document()
-    document["target-sha"] = "c" * 40
-    with pytest.raises(ValueError, match="target-sha"):
-        _admit(document)
-
-    document = _document()
-    document["confirmation-digest"] = SHA256_A
-    with pytest.raises(ValueError, match="confirmation-digest"):
-        _admit(document)
-
-
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        "unknown-classification",
-        "successful-validation",
-        "review-artifact",
-        "reviewer-attribution",
-        "probe-record",
-    ],
-)
-def test_zero_target_rejects_non_rejected_dispatch_evidence(
-    mutation: str,
-) -> None:
-    document = _retry_2_document()
-    if mutation == "unknown-classification":
-        document["mutation-classification"] = "unknown"
-    elif mutation == "successful-validation":
-        document["dependency-results"][0]["result"] = "success"
-    elif mutation == "review-artifact":
-        document["recovery"]["artifact-id"] = 701
-    elif mutation == "reviewer-attribution":
-        document["reviewer"] = {
-            "login": "octocat",
-            "source": "on-demand-read-only-inspection",
-        }
-    else:
-        document["probe-facts"][0] = _probe_fact("probe-absent-create-readback")
-
-    with pytest.raises(ValueError):
-        _admit(document)
-
-
-@pytest.mark.parametrize(
     ("dependency_job", "terminal_result", "classification"),
     [
         (dependency_job, terminal_result, classification)
@@ -2463,87 +2367,6 @@ def test_retry_3_complete_evidence_admits_finalized_profile_round_trip() -> (
     assert (
         lost_scenario["post"]["content-sha512"] == lost_proof["tarball-sha512"]
     )
-    lost_scenario["post"]["content-sha512"] = SHA512_A
-    assert (
-        lost_scenario["post"]["content-sha512"] != lost_proof["tarball-sha512"]
-    )
-    _refresh_probe_record_digest(document, 1)
-
-    with pytest.raises(ValueError, match="tarball-sha512"):
-        _admit(document)
-
-
-@pytest.mark.parametrize(
-    ("path", "value", "message"),
-    [
-        (
-            ("workflow", "path"),
-            (
-                ".github/workflows/"
-                "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
-            ),
-            "workflow.path",
-        ),
-        (
-            ("environment",),
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-2",
-            "environment",
-        ),
-        (
-            ("recovery", "environment"),
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-2",
-            "recovery.environment",
-        ),
-        (
-            ("confirmation-digest",),
-            (
-                "sha256:"
-                "1215f9d01cd343462c3f826ba67ebee86b6f6142b7fcfe5630572a5a808314f8"
-            ),
-            "confirmation-digest",
-        ),
-        (("target-sha",), "c" * 40, "target-sha"),
-    ],
-)
-def test_retry_3_profile_rejects_cross_profile_substitution(
-    path: tuple[str, ...],
-    value: object,
-    message: str,
-) -> None:
-    document = _retry_3_document()
-    _set_path(document, path, value)
-
-    with pytest.raises(ValueError, match=message):
-        _admit(document)
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        (
-            "package-coordinate",
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.10",
-        ),
-        ("tag", "wdv3-acceptance-10"),
-    ],
-)
-def test_retry_3_profile_rejects_scenario_coordinate_or_tag_mismatch(
-    field: str,
-    value: str,
-) -> None:
-    document = _retry_3_document()
-    fact = _probe_fact("probe-absent-create-readback")
-    scenario = fact["scenarios"][0]
-    scenario["package-coordinate"] = (
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
-    )
-    scenario["tag"] = "wdv3-acceptance-9"
-    scenario[field] = value
-    document["probe-facts"][0] = fact
-    _refresh_probe_record_digest(document, 0)
-
-    with pytest.raises(ValueError, match=field):
-        _admit(document)
 
 
 def test_retry_3_profile_preserves_retry_1_and_retry_2_admission() -> None:
@@ -3202,93 +3025,6 @@ def test_retry_4_governance_rejects_non_exact_zero_targets(
         _admit(document)
 
 
-@pytest.mark.parametrize(
-    ("path", "value", "message"),
-    [
-        pytest.param(
-            ("dependency-results", 1, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="environment-review-ran",
-        ),
-        pytest.param(
-            ("dependency-results", 2, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="absent-create-probe-ran",
-        ),
-        pytest.param(
-            ("dependency-results", 3, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="exact-and-conflict-probe-ran",
-        ),
-        pytest.param(
-            ("probe-facts", 0, "record-digest"),
-            SHA256_A,
-            "retain suite records",
-            id="probe-record-digest-retained",
-        ),
-        pytest.param(
-            ("probe-facts", 0, "scenarios"),
-            "test-local-retained-scenario",
-            "record-digest",
-            id="probe-scenario-retained",
-        ),
-        pytest.param(
-            ("probe-facts", 0, "artifact-id"),
-            799,
-            "zero target-sha requires exact rejected",
-            id="probe-artifact-id-retained",
-        ),
-        pytest.param(
-            ("probe-facts", 0, "artifact-digest"),
-            SHA256_A,
-            "zero target-sha requires exact rejected",
-            id="probe-artifact-digest-retained",
-        ),
-        pytest.param(
-            ("recovery", "artifact-id"),
-            701,
-            "zero target-sha requires exact rejected",
-            id="review-artifact-retained",
-        ),
-        pytest.param(
-            ("reviewer",),
-            {
-                "login": "octocat",
-                "source": "on-demand-read-only-inspection",
-            },
-            "zero target-sha requires exact rejected",
-            id="reviewer-attributed",
-        ),
-        pytest.param(
-            ("mutation-classification",),
-            "unknown",
-            "mutation-classification",
-            id="possible-mutation-claimed",
-        ),
-    ],
-)
-def test_retry_4_zero_target_rejects_review_probe_record_artifact_reviewer_or_mutation_claims(
-    path: tuple[object, ...],
-    value: object,
-    message: str,
-) -> None:
-    _registered_retry_4_governance_profile()
-    document = _retry_4_preparation_document()
-    if value == "test-local-retained-scenario":
-        retained_scenario = _scenario("absent-create-readback")
-        retained_scenario["package-coordinate"], retained_scenario["tag"] = (
-            TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES["absent-create-readback"]
-        )
-        value = [retained_scenario]
-    _set_path(document, path, value)
-
-    with pytest.raises(ValueError, match=message):
-        _admit(document)
-
-
 def test_retry_4_complete_evidence_admits_finalized_profile_round_trip() -> (
     None
 ):
@@ -3638,93 +3374,6 @@ def test_retry_5_governance_admits_exact_zero_target_rejected_dispatch_round_tri
     assert admitted.evidence_digest == canonical_sha256(document)
 
 
-@pytest.mark.parametrize(
-    ("path", "replacement", "message"),
-    [
-        pytest.param(
-            ("dependency-results", 0, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="validation-succeeded",
-        ),
-        pytest.param(
-            ("dependency-results", 1, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="review-ran",
-        ),
-        pytest.param(
-            ("dependency-results", 2, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="probe-ran",
-        ),
-        pytest.param(
-            ("probe-facts", 0, "record-digest"),
-            SHA256_A,
-            "retain suite records",
-            id="record-present",
-        ),
-        pytest.param(
-            ("reviewer",),
-            {
-                "login": "test-only-reviewer",
-                "source": "on-demand-read-only-inspection",
-            },
-            "zero target-sha requires exact rejected",
-            id="reviewer-present",
-        ),
-        pytest.param(
-            ("recovery", "artifact-id"),
-            701,
-            "zero target-sha requires exact rejected",
-            id="artifact-present",
-        ),
-        pytest.param(
-            ("mutation-classification",),
-            "unknown",
-            "mutation-classification",
-            id="mutation-not-incomplete",
-        ),
-        pytest.param(
-            ("target-sha",),
-            "1" * 40,
-            "target-sha",
-            id="target-substitution",
-        ),
-        pytest.param(
-            ("workflow", "path"),
-            TEST_LOCAL_RETRY_4_WORKFLOW_PATH,
-            "workflow.path",
-            id="workflow-substitution",
-        ),
-        pytest.param(
-            ("environment",),
-            TEST_LOCAL_RETRY_4_ENVIRONMENT,
-            "environment",
-            id="top-level-environment-substitution",
-        ),
-        pytest.param(
-            ("recovery", "environment"),
-            TEST_LOCAL_RETRY_4_ENVIRONMENT,
-            "recovery environment",
-            id="recovery-environment-substitution",
-        ),
-    ],
-)
-def test_retry_5_zero_target_rejects_noncanonical_dispatch_or_identity(
-    path: tuple[object, ...],
-    replacement: object,
-    message: str,
-) -> None:
-    _registered_retry_5_governance_profile()
-    document = _retry_5_preparation_document()
-    _set_path(document, path, replacement)
-
-    with pytest.raises(ValueError, match=message):
-        _admit(document)
-
-
 @pytest.mark.parametrize("upstream_status", [200, 201])
 def test_retry_5_real_registry_admits_complete_status_and_preserves_bindings(
     upstream_status: int,
@@ -3863,12 +3512,13 @@ def test_retry_5_governance_rejects_run_and_recovery_correlation_drift(
         _admit(document)
 
 
-@pytest.mark.parametrize("upstream_status", [200, 201])
-def test_retry_5_lost_response_proof_must_bind_exact_readback_content(
-    upstream_status: int,
-) -> None:
-    document = _retry_5_finalized_document(upstream_status=upstream_status)
-    lost_response = document["probe-facts"][1]["scenarios"][3]
+def test_retry_5_lost_response_proof_must_bind_exact_readback_content() -> None:
+    document = _retry_5_finalized_document(upstream_status=201)
+    control = _admit(document)
+    assert control.mutation_classification == "complete"
+    assert control.to_document() == document
+    mutated = deepcopy(document)
+    lost_response = mutated["probe-facts"][1]["scenarios"][3]
     assert lost_response["scenario"] == "lost-response"
     assert (
         lost_response["validated-request-proof"]["tarball-sha512"]
@@ -3878,10 +3528,14 @@ def test_retry_5_lost_response_proof_must_bind_exact_readback_content(
         lost_response["validated-request-proof"]["tarball-sha512"] != SHA512_A
     )
     lost_response["validated-request-proof"]["tarball-sha512"] = SHA512_A
-    _refresh_probe_record_digest(document, 1)
+    _refresh_probe_record_digest(mutated, 1)
 
-    with pytest.raises(ValueError, match="tarball-sha512"):
-        _admit(document)
+    with pytest.raises(ValueError) as error:
+        _admit(mutated)
+    assert str(error.value) == (
+        "probe-facts.1.scenarios.3.validated-request-proof."
+        "tarball-sha512 does not match exact readback"
+    )
 
 
 _RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES = tuple(
@@ -3911,324 +3565,6 @@ def test_retry_5_real_registry_rejects_non_authoritative_status(
         match="accepted npm publish status",
     ):
         _admit(document)
-
-
-def test_retry_5_governance_rejects_hypothetical_later_finalization_target() -> (
-    None
-):
-    profile = _registered_retry_5_governance_profile()
-    document = _retry_5_finalized_document(upstream_status=200)
-    document["target-sha"] = HYPOTHETICAL_LATER_RETRY_5_FINALIZATION_TARGET_SHA
-
-    assert profile.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
-    assert HYPOTHETICAL_LATER_RETRY_5_FINALIZATION_TARGET_SHA != (
-        RETRY_5_FINALIZED_TARGET_SHA
-    )
-    with pytest.raises(ValueError, match="target-sha"):
-        _admit(document)
-
-
-@pytest.mark.parametrize(
-    ("direction", "binding", "path", "message"),
-    [
-        pytest.param(
-            direction,
-            binding,
-            path,
-            message,
-            id=f"{direction}-{binding}",
-        )
-        for direction in (
-            "retry-5-receives-retry-4",
-            "retry-4-receives-retry-5",
-        )
-        for binding, path, message in (
-            ("workflow", ("workflow", "path"), "workflow.path"),
-            ("environment", ("environment",), "environment"),
-            (
-                "recovery-environment",
-                ("recovery", "environment"),
-                "recovery environment",
-            ),
-            (
-                "confirmation-digest",
-                ("confirmation-digest",),
-                "confirmation-digest",
-            ),
-            ("target", ("target-sha",), "target-sha"),
-            (
-                "coordinate",
-                (
-                    "probe-facts",
-                    0,
-                    "scenarios",
-                    0,
-                    "package-coordinate",
-                ),
-                "package-coordinate",
-            ),
-            (
-                "tag",
-                ("probe-facts", 0, "scenarios", 0, "tag"),
-                "tag",
-            ),
-            (
-                "request",
-                (
-                    "probe-facts",
-                    0,
-                    "scenarios",
-                    0,
-                    "validated-request-proof",
-                    "request-digest",
-                ),
-                "response-identity-digest",
-            ),
-            (
-                "tarball",
-                (
-                    "probe-facts",
-                    0,
-                    "scenarios",
-                    0,
-                    "validated-request-proof",
-                    "tarball-sha512",
-                ),
-                "tarball-sha512",
-            ),
-            (
-                "response",
-                (
-                    "probe-facts",
-                    0,
-                    "scenarios",
-                    0,
-                    "response",
-                    "identity-digest",
-                ),
-                "response-identity-digest",
-            ),
-        )
-    ],
-)
-def test_retry_5_governance_rejects_bidirectional_cross_profile_bindings(
-    direction: str,
-    binding: str,
-    path: tuple[object, ...],
-    message: str,
-) -> None:
-    retry_5_document = _retry_5_finalized_document(upstream_status=200)
-    retry_4_profile = _registered_retry_4_governance_profile()
-    retry_4_document = _test_local_finalized_document(
-        workflow_path=retry_4_profile.workflow_path,
-        target_sha=retry_4_profile.target_sha,
-        package_coordinate=retry_4_profile.package_coordinate,
-        confirmation_digest=retry_4_profile.confirmation_digest,
-        environment=retry_4_profile.environment,
-        scenario_coordinates=retry_4_profile.coordinates(),
-        proof_namespace="retry-4-historical-cross-profile-control",
-    )
-
-    retry_5_control = _admit(retry_5_document)
-    retry_4_control = _admit(retry_4_document)
-    assert retry_5_control.target_sha == RETRY_5_FINALIZED_TARGET_SHA
-    assert retry_4_control.target_sha == TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
-    if direction == "retry-5-receives-retry-4":
-        recipient, donor = retry_5_document, retry_4_document
-    else:
-        recipient, donor = retry_4_document, retry_5_document
-    mutated = deepcopy(recipient)
-    donor_value = deepcopy(_test_local_path_value(donor, path))
-    _set_path(mutated, path, donor_value)
-    if binding in {"coordinate", "tag", "request", "tarball", "response"}:
-        _refresh_probe_record_digest(mutated, 0)
-
-    assert _test_local_path_value(mutated, path) == donor_value
-    assert _test_local_path_value(mutated, path) != _test_local_path_value(
-        recipient,
-        path,
-    )
-    with pytest.raises(ValueError, match=message):
-        _admit(mutated)
-
-
-@pytest.mark.parametrize(
-    ("document_profile", "field"),
-    [
-        pytest.param(
-            "retry-4",
-            "workflow",
-            id="retry-4-document-with-retry-3-workflow",
-        ),
-        pytest.param(
-            "retry-4",
-            "environment",
-            id="retry-4-document-with-retry-3-environment",
-        ),
-        pytest.param(
-            "retry-4",
-            "recovery-environment",
-            id="retry-4-document-with-retry-3-recovery-environment",
-        ),
-        pytest.param(
-            "retry-4",
-            "confirmation-digest",
-            id="retry-4-document-with-retry-3-confirmation-digest",
-        ),
-        pytest.param(
-            "retry-4",
-            "target",
-            id="retry-4-document-with-retry-3-target",
-        ),
-        pytest.param(
-            "retry-4",
-            "coordinate",
-            id="retry-4-document-with-retry-3-coordinate",
-        ),
-        pytest.param(
-            "retry-4",
-            "tag",
-            id="retry-4-document-with-retry-3-tag",
-        ),
-        pytest.param(
-            "retry-3",
-            "workflow",
-            id="retry-3-document-with-retry-4-workflow",
-        ),
-        pytest.param(
-            "retry-3",
-            "environment",
-            id="retry-3-document-with-retry-4-environment",
-        ),
-        pytest.param(
-            "retry-3",
-            "recovery-environment",
-            id="retry-3-document-with-retry-4-recovery-environment",
-        ),
-        pytest.param(
-            "retry-3",
-            "confirmation-digest",
-            id="retry-3-document-with-retry-4-confirmation-digest",
-        ),
-        pytest.param(
-            "retry-3",
-            "target",
-            id="retry-3-document-with-retry-4-target",
-        ),
-        pytest.param(
-            "retry-3",
-            "coordinate",
-            id="retry-3-document-with-retry-4-coordinate",
-        ),
-        pytest.param(
-            "retry-3",
-            "tag",
-            id="retry-3-document-with-retry-4-tag",
-        ),
-    ],
-)
-def test_retry_4_governance_rejects_cross_profile_field_substitutions(
-    document_profile: str,
-    field: str,
-) -> None:
-    registered_retry_4_profile = _registered_retry_4_governance_profile()
-    assert (
-        registered_retry_4_profile.target_sha
-        == TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
-    )
-    paths = {
-        "workflow": ("workflow", "path"),
-        "environment": ("environment",),
-        "recovery-environment": ("recovery", "environment"),
-        "confirmation-digest": ("confirmation-digest",),
-        "target": ("target-sha",),
-        "coordinate": (
-            "probe-facts",
-            0,
-            "scenarios",
-            0,
-            "package-coordinate",
-        ),
-        "tag": ("probe-facts", 0, "scenarios", 0, "tag"),
-    }
-    messages = {
-        "workflow": "workflow.path",
-        "environment": "environment",
-        "recovery-environment": "recovery environment",
-        "confirmation-digest": "confirmation-digest",
-        "target": "target-sha",
-        "coordinate": "package-coordinate",
-        "tag": "tag",
-    }
-    retry_3_values = {
-        "workflow": GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH,
-        "environment": GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
-        "recovery-environment": GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
-        "confirmation-digest": (
-            "sha256:"
-            "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
-        ),
-        "target": RETRY_3_TARGET_SHA,
-        "coordinate": TEST_LOCAL_RETRY_3_SCENARIO_COORDINATES[
-            "absent-create-readback"
-        ][0],
-        "tag": TEST_LOCAL_RETRY_3_SCENARIO_COORDINATES[
-            "absent-create-readback"
-        ][1],
-    }
-    retry_4_values = {
-        "workflow": registered_retry_4_profile.workflow_path,
-        "environment": registered_retry_4_profile.environment,
-        "recovery-environment": registered_retry_4_profile.environment,
-        "confirmation-digest": registered_retry_4_profile.confirmation_digest,
-        "target": registered_retry_4_profile.target_sha,
-        "coordinate": registered_retry_4_profile.coordinates()[
-            "absent-create-readback"
-        ][0],
-        "tag": registered_retry_4_profile.coordinates()[
-            "absent-create-readback"
-        ][1],
-    }
-    if document_profile == "retry-4":
-        document = _test_local_finalized_document(
-            workflow_path=registered_retry_4_profile.workflow_path,
-            target_sha=registered_retry_4_profile.target_sha,
-            package_coordinate=registered_retry_4_profile.package_coordinate,
-            confirmation_digest=registered_retry_4_profile.confirmation_digest,
-            environment=registered_retry_4_profile.environment,
-            scenario_coordinates=registered_retry_4_profile.coordinates(),
-            proof_namespace="retry-4-finalized-cross-profile",
-        )
-        replacement = retry_3_values[field]
-    else:
-        document = _test_local_finalized_document(
-            workflow_path=GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH,
-            target_sha=RETRY_3_TARGET_SHA,
-            package_coordinate=GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
-            confirmation_digest=(
-                "sha256:"
-                "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
-            ),
-            environment=GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
-            scenario_coordinates=TEST_LOCAL_RETRY_3_SCENARIO_COORDINATES,
-            proof_namespace="historical-retry-3-control",
-        )
-        replacement = retry_4_values[field]
-
-    admitted_control = _admit(document)
-    assert admitted_control.to_document() == document
-    expected_target = (
-        TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
-        if document_profile == "retry-4"
-        else RETRY_3_TARGET_SHA
-    )
-    assert admitted_control.target_sha == expected_target
-    assert admitted_control.mutation_classification == "complete"
-    mutated = deepcopy(document)
-    _set_path(mutated, paths[field], replacement)
-    assert mutated != document
-    with pytest.raises(ValueError, match=messages[field]):
-        _admit(mutated)
 
 
 def test_retry_4_governance_preserves_historical_profiles_digests_and_replay_evidence() -> (
@@ -4453,6 +3789,11 @@ def test_retry_4_governance_preserves_historical_profiles_digests_and_replay_evi
         "validated-request-proof"
         not in retry_1_scenarios["absent-create-readback"]
     )
+    retry_1_lost_response = retry_1_scenarios["lost-response"]
+    assert (
+        retry_1_lost_response["validated-request-proof"]["tarball-sha512"]
+        != retry_1_lost_response["post"]["content-sha512"]
+    )
     for profile_name in ("retry-2", "retry-3"):
         scenarios = {
             scenario["scenario"]: scenario
@@ -4470,6 +3811,214 @@ def test_retry_4_governance_preserves_historical_profiles_digests_and_replay_evi
                 scenario_document["post"]["content-sha512"]
                 == proof["tarball-sha512"]
             )
+
+
+@pytest.mark.parametrize(
+    ("path", "reason"),
+    [
+        pytest.param(
+            ("workflow", "path"), "workflow.path must be ", id="P1-workflow"
+        ),
+        pytest.param(
+            ("environment",), "environment must be ", id="P2-environment"
+        ),
+        pytest.param(
+            ("recovery", "environment"),
+            "recovery environment must match acceptance environment",
+            id="P3-recovery-environment",
+        ),
+        pytest.param(
+            ("confirmation-digest",),
+            "confirmation-digest must be ",
+            id="P4-confirmation",
+        ),
+        pytest.param(
+            ("target-sha",),
+            "target-sha does not match the reviewed acceptance profile",
+            id="P5-target",
+        ),
+        pytest.param(
+            ("probe-facts", 0, "scenarios", 0, "package-coordinate"),
+            "probe-facts.0.scenarios.0.package-coordinate must be ",
+            id="P6-scenario-coordinate",
+        ),
+        pytest.param(
+            ("probe-facts", 0, "scenarios", 0, "tag"),
+            "probe-facts.0.scenarios.0.tag must be ",
+            id="P7-scenario-tag",
+        ),
+    ],
+)
+def test_governance_profile_fields_reject_single_foreign_binding(
+    path: tuple[object, ...],
+    reason: str,
+) -> None:
+    recipient = _retry_5_finalized_document(upstream_status=201)
+    donor = _test_local_finalized_document(
+        workflow_path=TEST_LOCAL_RETRY_4_WORKFLOW_PATH,
+        target_sha=TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA,
+        package_coordinate=TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE,
+        confirmation_digest=TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST,
+        environment=TEST_LOCAL_RETRY_4_ENVIRONMENT,
+        scenario_coordinates=TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES,
+        proof_namespace="retry-4-profile-field-control",
+    )
+    recipient_control = _admit(recipient)
+    donor_control = _admit(donor)
+    assert (recipient_control.target_sha, donor_control.target_sha) == (
+        "66154d0bb351a0c9c13d16292ce003d7eee65077",
+        "835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa",
+    )
+    for document, admitted in (
+        (recipient, recipient_control),
+        (donor, donor_control),
+    ):
+        assert admitted.mutation_classification == "complete"
+        assert admitted.to_document() == document
+        assert canonicalize(admitted.to_document()) == canonicalize(document)
+
+    replacement = deepcopy(_test_local_path_value(donor, path))
+    assert replacement != _test_local_path_value(recipient, path)
+    mutated = deepcopy(recipient)
+    _set_path(mutated, path, replacement)
+    if path[0] == "probe-facts":
+        _refresh_probe_record_digest(mutated, 0)
+
+    with pytest.raises(ValueError) as error:
+        _admit(mutated)
+    assert str(error.value).startswith(reason)
+
+
+@pytest.mark.parametrize(
+    ("path", "reason"),
+    [
+        pytest.param(
+            ("validated-request-proof", "request-digest"),
+            "probe-facts.0.scenarios.0.validated-request-proof."
+            "response-identity-digest is not exact",
+            id="I1-proof-internal-identity",
+        ),
+        pytest.param(
+            ("response", "identity-digest"),
+            "probe-facts.0.scenarios.0.validated-request-proof."
+            "response-identity-digest does not match response",
+            id="I2-enclosing-response-identity",
+        ),
+    ],
+)
+def test_governance_proof_identity_rejects_distinct_inconsistencies(
+    path: tuple[object, ...],
+    reason: str,
+) -> None:
+    document = _retry_5_finalized_document(upstream_status=201)
+    control = _admit(document)
+    assert control.mutation_classification == "complete"
+    assert control.to_document() == document
+    mutated = deepcopy(document)
+    scenario = mutated["probe-facts"][0]["scenarios"][0]
+    assert scenario["response"]["result"] == "protocol-confirmed"
+    assert _test_local_path_value(scenario, path) != SHA256_A
+    _set_path(scenario, path, SHA256_A)
+    _refresh_probe_record_digest(mutated, 0)
+
+    with pytest.raises(ValueError) as error:
+        _admit(mutated)
+    assert str(error.value) == reason
+
+
+def test_incomplete_probe_scenarios_require_canonical_record_digest() -> None:
+    document = _retry_5_finalized_document(upstream_status=201)
+    first_probe = document["probe-facts"][0]
+    first_probe["result"] = "incomplete"
+    first_probe["artifact-id"] = None
+    first_probe["artifact-digest"] = None
+    document["mutation-classification"] = "incomplete"
+    assert document["target-sha"] == RETRY_5_FINALIZED_TARGET_SHA
+    assert {item["result"] for item in document["dependency-results"]} == {
+        "success"
+    }
+    assert first_probe["scenarios"]
+    assert first_probe["record-digest"] is not None
+    control = _admit(document)
+    assert control.mutation_classification == "incomplete"
+    assert control.to_document() == document
+    assert canonicalize(control.to_document()) == canonicalize(document)
+
+    mutated = deepcopy(document)
+    mutated["probe-facts"][0]["record-digest"] = None
+    with pytest.raises(ValueError) as error:
+        _admit(mutated)
+    assert str(error.value) == (
+        "probe-facts.0.record-digest does not match the canonical scenario "
+        "suite digest"
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        pytest.param(
+            ((("dependency-results", 0, "result"), "success"),),
+            id="Z1-validation-succeeded",
+        ),
+        pytest.param(
+            ((("dependency-results", 1, "result"), "success"),),
+            id="Z2-review-ran",
+        ),
+        pytest.param(
+            ((("dependency-results", 3, "result"), "success"),),
+            id="Z3-second-probe-ran",
+        ),
+        pytest.param(
+            ((("probe-facts", 0, "artifact-id"), 799),),
+            id="Z4-first-probe-artifact-id",
+        ),
+        pytest.param(
+            ((("probe-facts", 1, "artifact-digest"), SHA256_A),),
+            id="Z5-second-probe-artifact-digest",
+        ),
+        pytest.param(
+            ((("recovery", "artifact-id"), 701),),
+            id="Z6-review-artifact",
+        ),
+        pytest.param(
+            (
+                (
+                    ("reviewer",),
+                    {
+                        "login": "octocat",
+                        "source": "on-demand-read-only-inspection",
+                    },
+                ),
+            ),
+            id="Z7-attributed-reviewer",
+        ),
+        pytest.param(
+            (
+                (("probe-facts", 1, "result"), "unknown"),
+                (("mutation-classification",), "unknown"),
+            ),
+            id="Z8-coherent-unknown-claim",
+        ),
+    ],
+)
+def test_zero_target_rejects_reachable_dispatch_contradictions(
+    changes: tuple[tuple[tuple[object, ...], object], ...],
+) -> None:
+    document = _retry_5_preparation_document()
+    control = _admit(document)
+    assert control.to_document() == document
+    assert control.target_sha == "0" * 40
+    assert control.mutation_classification == "incomplete"
+    mutated = deepcopy(document)
+    for path, replacement in changes:
+        _set_path(mutated, path, replacement)
+
+    with pytest.raises(ValueError) as error:
+        _admit(mutated)
+    assert str(error.value) == (
+        "zero target-sha requires exact rejected fixed-input dispatch evidence"
+    )
 
 
 def test_retry_5_governance_authoritative_publish_status_set_is_exact() -> None:

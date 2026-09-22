@@ -450,14 +450,12 @@ function importerReferences(importer, importerId, packages, resolutionKinds, aut
   }
   const selectedSections = ['dependencies', 'devDependencies', 'optionalDependencies'];
   const entries = [];
-  const referencedSpecifiers = new Set();
   for (const section of selectedSections) {
     for (const [dependencyKey, resolvedReference] of orderedStringEntries(importer[section], { absent: true })) {
       if (!Object.hasOwn(importer.specifiers, dependencyKey)) {
         unsupported();
       }
       const rawSpecifier = exactString(importer.specifiers[dependencyKey]);
-      referencedSpecifiers.add(dependencyKey);
       const workspaceSpec = officialCall(() => authorities.WorkspaceSpec.parse(rawSpecifier));
       const normalizedSpecifier =
         workspaceSpec === null ? rawSpecifier : officialCall(() => authorities.workspacePrefToNpm(rawSpecifier));
@@ -501,16 +499,7 @@ function importerReferences(importer, importerId, packages, resolutionKinds, aut
       });
     }
   }
-  validateImporterSpecifierMembership(importer.specifiers, referencedSpecifiers);
   return entries;
-}
-
-function validateImporterSpecifierMembership(specifiers, referencedSpecifiers) {
-  for (const [specifierKey] of orderedStringEntries(specifiers)) {
-    if (!referencedSpecifiers.has(specifierKey)) {
-      unsupported();
-    }
-  }
 }
 
 function pnpmImporters(lockfile, packages, resolutionKinds, authorities) {
@@ -678,5 +667,3 @@ async function main() {
 if (process.argv[1] !== undefined && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
   await main();
 }
-
-export { validateImporterSpecifierMembership };

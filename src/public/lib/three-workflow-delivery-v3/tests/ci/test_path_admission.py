@@ -31,21 +31,17 @@ def test_native_package_prefix_admission_is_directory_bounded(
 
 
 @pytest.mark.parametrize(
-    "basename",
+    "path",
     [
         "package.json",
-        "packages.config",
-        "packages.lock.json",
+        "nested/packages.config",
+        "nested/deeper/packages.lock.json",
         "pnpm-lock.yaml",
-        "pnpm-workspace.yaml",
+        "nested/pnpm-workspace.yaml",
     ],
 )
-@pytest.mark.parametrize("prefix", ["", "nested/", "nested/deeper/"])
-def test_static_reference_basename_is_repository_only(
-    basename: str, prefix: str
-) -> None:
-    """Select every retained static-reference basename at any depth."""
-    path = prefix + basename
+def test_static_reference_basename_is_repository_only(path: str) -> None:
+    """Select retained static-reference basenames across directory depths."""
     assert is_static_reference_surface_path(path)
     assert is_repository_only_path(path)
 
