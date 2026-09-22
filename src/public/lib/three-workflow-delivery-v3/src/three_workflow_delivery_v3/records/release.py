@@ -534,7 +534,7 @@ class ReleaseIntent:
         return canonical_sha256(self.to_document())
 
 
-@dataclass(frozen=True, slots=True, order=True)
+@dataclass(frozen=True, slots=True)
 class OfficialProductIdentity:
     """Official channel, Release Unit, and canonical NBGV product identity."""
 
@@ -563,7 +563,7 @@ class OfficialProductIdentity:
         }
 
 
-@dataclass(frozen=True, slots=True, order=True)
+@dataclass(frozen=True, slots=True)
 class OfficialExecutionIdentity:
     """Official Product Identity plus immutable target."""
 

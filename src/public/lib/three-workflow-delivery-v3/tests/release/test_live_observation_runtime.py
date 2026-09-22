@@ -337,6 +337,65 @@ def test_expired_native_acceptance_is_blocking_evidence_not_lost_observation(
     )
 
 
+def _blocking_finalizer_arguments(
+    tmp_path, case, document, authority, qualification
+):
+    evidence_arguments = []
+    for evidence in case.evidence:
+        role = {
+            "release:build:npm-package": "build_evidence",
+            "release:quality:project-test": "project_test_evidence",
+            "release:quality:npm-artifact-contents": (
+                "artifact_contents_evidence"
+            ),
+            "release:quality:npm-install-import": "install_import_evidence",
+        }[evidence.obligation.obligation_id]
+        evidence_arguments += uploaded_arguments(
+            tmp_path,
+            role,
+            evidence.to_document(),
+            200 + len(evidence_arguments),
+        )
+    outcome = tmp_path / "outcome.json"
+    observation_digest = canonical_sha256(document)
+    observation_reference = ArtifactReference(
+        artifact_id=108,
+        artifact_digest=observation_digest,
+        artifact_url=(
+            "https://github.com/hcoona/three/actions/runs/"
+            f"{case.intent.workflow_run_id}/artifacts/108"
+        ),
+        payload_path="observation.json",
+        payload_digest=observation_digest,
+    )
+    arguments = [
+        "release",
+        "finalize-live",
+        *current_arguments(case),
+        *authority,
+        *qualification,
+        *evidence_arguments,
+        *uploaded_arguments(
+            tmp_path,
+            "observation",
+            document,
+            108,
+            reference=observation_reference,
+        ),
+        "--publisher-conclusion",
+        "skipped",
+        "--publication-terminal-reference",
+        "null",
+        "--observation-conclusion",
+        "failure",
+        "--outcome-output",
+        str(outcome),
+        "--summary-output",
+        str(tmp_path / "outcome.md"),
+    ]
+    return arguments, observation_reference
+
+
 @pytest.mark.parametrize(
     ("failure", "expected"),
     [
@@ -417,59 +476,10 @@ def test_blocking_remote_facts_persist_and_finalize_with_exact_ancestry(
     )
     document = json.loads(observation_path.read_bytes())
     assert document["classification"] == expected
-    evidence_arguments = []
-    for evidence in case.evidence:
-        role = {
-            "release:build:npm-package": "build_evidence",
-            "release:quality:project-test": "project_test_evidence",
-            "release:quality:npm-artifact-contents": (
-                "artifact_contents_evidence"
-            ),
-            "release:quality:npm-install-import": "install_import_evidence",
-        }[evidence.obligation.obligation_id]
-        evidence_arguments += uploaded_arguments(
-            tmp_path,
-            role,
-            evidence.to_document(),
-            200 + len(evidence_arguments),
-        )
-    outcome = tmp_path / "outcome.json"
-    observation_digest = canonical_sha256(document)
-    observation_reference = ArtifactReference(
-        artifact_id=108,
-        artifact_digest=observation_digest,
-        artifact_url=(
-            "https://github.com/hcoona/three/actions/runs/"
-            f"{case.intent.workflow_run_id}/artifacts/108"
-        ),
-        payload_path="observation.json",
-        payload_digest=observation_digest,
+    finalizer, observation_reference = _blocking_finalizer_arguments(
+        tmp_path, case, document, authority, qualification
     )
-    finalizer = [
-        "release",
-        "finalize-live",
-        *current_arguments(case),
-        *authority,
-        *qualification,
-        *evidence_arguments,
-        *uploaded_arguments(
-            tmp_path,
-            "observation",
-            document,
-            108,
-            reference=observation_reference,
-        ),
-        "--publisher-conclusion",
-        "skipped",
-        "--publication-terminal-reference",
-        "null",
-        "--observation-conclusion",
-        "failure",
-        "--outcome-output",
-        str(outcome),
-        "--summary-output",
-        str(tmp_path / "outcome.md"),
-    ]
+    outcome = tmp_path / "outcome.json"
     assert cli.main(finalizer) == 1
     outcome_document = json.loads(outcome.read_bytes())
     assert outcome_document["disposition"] == "failed-before-publication"
@@ -494,7 +504,32 @@ def test_blocking_remote_facts_persist_and_finalize_with_exact_ancestry(
         outcome.unlink()
         assert cli.main(finalizer) == 1
         assert outcome.read_bytes() == retained_outcome
+
+
+def test_finalizer_rejects_coherent_foreign_decision_reference(
+    observation_case, tmp_path, monkeypatch, capsys
+):
+    case = observation_case
+    observation = observe(
+        case,
+        Transport(responses(case, version_state="absent", tag_state="other")),
+    )
+    assert observation.classification == "conflicting"
+    authority = authority_arguments(tmp_path, case, monkeypatch)
+    qualification = qualification_arguments(tmp_path, case)
+    finalizer, reference = _blocking_finalizer_arguments(
+        tmp_path, case, observation.to_document(), authority, qualification
+    )
+    outcome = tmp_path / "outcome.json"
+    assert cli.main(finalizer) == 1
+    assert json.loads(outcome.read_bytes())["direct-predecessor"] == {
+        "kind": "blocking-observation",
+        "reference": reference.to_document(),
+    }
     outcome.unlink()
+    summary = tmp_path / "outcome.md"
+    summary.unlink()
+    capsys.readouterr()
     decision_index = finalizer.index("--qualification-decision-artifact-id") + 1
     finalizer[decision_index] = "803"
     url_index = finalizer.index("--qualification-decision-artifact-url") + 1
@@ -502,7 +537,12 @@ def test_blocking_remote_facts_persist_and_finalize_with_exact_ancestry(
         "/802", "/803"
     )
     assert cli.main(finalizer) == 1
+    assert (
+        "Observation differs from qualified desired state"
+        in capsys.readouterr().err
+    )
     assert not outcome.exists()
+    assert not summary.exists()
 
 
 @pytest.mark.parametrize(

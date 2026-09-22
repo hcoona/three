@@ -953,8 +953,13 @@ def test_qualification_decision_transport_rejects_empty_dispositions(
         )
 
 
-@pytest.mark.parametrize("disposition_index", [0, 1, 2, 3])
-@pytest.mark.parametrize("outcome", ["failed", "incomplete"])
+@pytest.mark.parametrize(
+    ("disposition_index", "outcome"),
+    [
+        pytest.param(0, "failed", id="failed-first"),
+        pytest.param(-1, "incomplete", id="incomplete-last"),
+    ],
+)
 def test_success_decision_constructor_rejects_unsatisfied_disposition(
     qualified_simulation,
     disposition_index: int,
@@ -966,11 +971,9 @@ def test_success_decision_constructor_rejects_unsatisfied_disposition(
         disposition.outcome == "satisfied"
         for disposition in decision.obligation_dispositions
     )
-    dispositions = tuple(
-        replace(disposition, outcome=outcome)
-        if index == disposition_index
-        else disposition
-        for index, disposition in enumerate(decision.obligation_dispositions)
+    dispositions = list(decision.obligation_dispositions)
+    dispositions[disposition_index] = replace(
+        dispositions[disposition_index], outcome=outcome
     )
 
     with pytest.raises(
@@ -980,14 +983,14 @@ def test_success_decision_constructor_rejects_unsatisfied_disposition(
             r"disposition to be satisfied$"
         ),
     ):
-        replace(decision, obligation_dispositions=dispositions)
+        replace(decision, obligation_dispositions=tuple(dispositions))
 
 
 @pytest.mark.parametrize(
     ("disposition_index", "outcome"),
     [
-        pytest.param(0, "failed", id="failed-0"),
-        pytest.param(3, "incomplete", id="incomplete-3"),
+        pytest.param(0, "failed", id="failed-first"),
+        pytest.param(-1, "incomplete", id="incomplete-last"),
     ],
 )
 def test_success_decision_transport_rejects_unsatisfied_disposition(

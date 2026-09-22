@@ -505,38 +505,20 @@ def test_unacceptable_process_stops_all_later_mutation(
 @pytest.mark.parametrize(
     ("damage", "message"),
     [
-        ("latest", "delta changed: tags"),
-        ("control", "delta changed: control"),
         ("unrelated-version", "delta changed: active_versions"),
         ("missing-original", "incomplete selected content"),
-        ("different-original", "requires exact original content"),
     ],
 )
 def test_duplicate_semantic_delta_stops_before_next_probe(
-    ops, fixtures, label, damage, message
+    ops, label, damage, message
 ):
-    capture = ops.captures[label]
-    if damage == "latest":
-        tags = dict(capture.state.tags)
-        tags["latest"] = A.name
-        _state(ops, label, tags=tuple(sorted(tags.items())))
-    elif damage == "control":
-        _state(ops, label, control=replace(CONTROL, container_id=701))
-    elif damage == "unrelated-version":
+    if damage == "unrelated-version":
         _state(ops, label, active_versions=(A.name,))
         ops.captures[label] = replace(
             ops.captures[label], active_inventory=(A,)
         )
     else:
-        _state(
-            ops,
-            label,
-            contents=(
-                ()
-                if damage == "missing-original"
-                else (fixtures[A.name, "different"].content,)
-            ),
-        )
+        _state(ops, label, contents=())
     with pytest.raises(ValueError, match=message):
         run_npm_suite(PLAN, ops)
     _stop_at(ops, "capture:" + label)

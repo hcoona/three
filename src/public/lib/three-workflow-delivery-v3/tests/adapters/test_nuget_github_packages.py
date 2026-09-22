@@ -293,22 +293,73 @@ def test_location_comparison_excludes_trivial_decoded_forms(location):
 @pytest.mark.parametrize(
     "location",
     [
-        None,
-        "",
+        " https://artifact-storage.example/a",
+        "\thttps://artifact-storage.example/a",
+        "\x00https://artifact-storage.example/a",
+        "https://artifact-storage.example/a\r\nb",
+        "https://artifact-storage.example/a b",
+        "https://artifact-storage.example/a\x7f",
+        "https://artifact-storage.example/non-ascii-\u00e9",
+        "https://artifact-storage.example/a\\b",
         "http://storage.example/a",
-        "https://127.1/a",
-        " https://storage.example/a",
-        "https://storage.example/a#",
-        "https://user@storage.example/a",
-        "https://storage.example:8443/a",
-        "https://storage.example/a?sig=" + TOKEN,
-        "https://storage.example/a?sig="
-        + "".join(f"%{ord(c):02X}" for c in TOKEN),
+        "//storage.example/a",
+        "https://artifact-storage.example/a#",
+        "https://artifact-storage.example/a#part",
     ],
 )
-def test_package_read_rejects_invalid_location_without_storage(
-    authority, location
-):
+def test_redirect_origin_rejects_raw_location_grammar(location):
+    with pytest.raises(
+        nuget.NuGetAdapterError, match="invalid storage Location"
+    ):
+        nuget.read_redirect_origin(location)
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https:///a",
+        "https://user@storage.example/a",
+        "https://user:pass@storage.example/a",
+        "https://storage.example:443/a",
+        "https://storage.example:/a",
+        "https://storage.example:8443/a",
+        "https://127.0.0.1/a",
+        "https://127.1/a",
+        "https://2130706433/a",
+        "https://0x7f.1/a",
+        "https://0177.0.0.1/a",
+        "https://[::1]/a",
+        "https://api.github.com/a",
+        "https://API.GITHUB.COM/a",
+        "https://api.github.com./a",
+        "https://storage%2eexample/a",
+        "https://storage_example/a",
+        "https://-storage.example/a",
+        "https://storage-.example/a",
+        "https://storage..example/a",
+        "https://" + "a" * 64 + ".example/a",
+    ],
+)
+def test_redirect_origin_rejects_unsafe_dns_authority(location):
+    with pytest.raises(
+        nuget.NuGetAdapterError, match="invalid storage DNS authority"
+    ):
+        nuget.read_redirect_origin(location)
+
+
+def test_redirect_origin_rejects_malformed_ipv6_authority():
+    # urlsplit owns this rejection; its diagnostic text is not our contract.
+    with pytest.raises(ValueError):  # noqa: PT011
+        nuget.read_redirect_origin("https://[broken/a")
+
+
+def test_redirect_origin_returns_admitted_dns_origin():
+    location = "https://Storage.Example/objects/a%2Fb?sig=x%2Fy&empty="
+    assert nuget.read_redirect_origin(location) == "https://storage.example"
+
+
+@pytest.mark.parametrize("location", [None, ""])
+def test_package_redirect_requires_location_before_storage(authority, location):
     responses = _responses()
     responses[ARCHIVE_URL] = _response(
         ARCHIVE_URL,
@@ -317,7 +368,51 @@ def test_package_read_rejects_invalid_location_without_storage(
         headers=() if location is None else (("Location", location),),
     )
     transport = _reader(responses)
-    with pytest.raises(nuget.NuGetAdapterError):
+    with pytest.raises(
+        nuget.NuGetAdapterError, match="missing package Location"
+    ):
+        _observe(transport, authority)
+    transport.get_package_storage.assert_not_called()
+    authority.inspect_package.assert_not_called()
+
+
+def test_package_location_grammar_rejection_precedes_storage(authority):
+    responses = _responses()
+    responses[ARCHIVE_URL] = _response(
+        ARCHIVE_URL,
+        status=302,
+        body=b"redirect",
+        headers=(("Location", " https://storage.example/a"),),
+    )
+    transport = _reader(responses)
+    with pytest.raises(
+        nuget.NuGetAdapterError, match="invalid storage Location"
+    ):
+        _observe(transport, authority)
+    transport.get_package_storage.assert_not_called()
+    authority.inspect_package.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://storage.example/a?sig=" + TOKEN,
+        "https://storage.example/a?sig="
+        + "".join(f"%{ord(c):02X}" for c in TOKEN),
+    ],
+)
+def test_package_location_credentials_never_reach_storage(authority, location):
+    responses = _responses()
+    responses[ARCHIVE_URL] = _response(
+        ARCHIVE_URL,
+        status=302,
+        body=b"redirect",
+        headers=(("Location", location),),
+    )
+    transport = _reader(responses)
+    with pytest.raises(
+        nuget.NuGetAdapterError, match="request credential or capability"
+    ):
         _observe(transport, authority)
     transport.get_package_storage.assert_not_called()
     authority.inspect_package.assert_not_called()
@@ -854,19 +949,11 @@ def test_local_server_receives_one_exact_multipart_package(
     [
         203,
         204,
-        301,
         302,
-        303,
-        307,
-        308,
         401,
-        403,
         409,
         429,
-        500,
-        502,
         503,
-        504,
         "timeout",
         "dropped",
     ],

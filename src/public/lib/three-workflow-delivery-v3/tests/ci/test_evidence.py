@@ -143,11 +143,6 @@ def _plan(
     encoded = canonicalize(document)
     return admit_ci_qualification_snapshot_json(
         encoded,
-        expected_candidate=_candidate(),
-        expected_repository_model_digest=cast(
-            "str",
-            document["repository-model-digest"],
-        ),
         expected_root_hk_definition=cast(
             "str",
             document["root-hk-definition"],
