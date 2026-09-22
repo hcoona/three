@@ -712,7 +712,9 @@ def test_qualification_precedes_one_stable_always_run_final_check() -> None:
         assert referenced_jobs <= _dependencies(job)
 
 
-def test_candidate_uses_exact_pr_range_and_tested_merge_target() -> None:
+def test_candidate_uses_exact_pr_range_and_tested_merge_target(
+    boundary: WorkflowBoundary,
+) -> None:
     """Bind paths to base/head while checkout and execution use github.sha."""
     jobs = _document()["jobs"]
     request = jobs["request"]
@@ -748,6 +750,17 @@ def test_candidate_uses_exact_pr_range_and_tested_merge_target() -> None:
     assert '--selected-ref "${GITHUB_REF}"' in command
     assert "workflow_delivery_v3_hk.py" not in command
     assert "ci candidate" in command
+    boundary.env.update(
+        GITHUB_REPOSITORY="hcoona/three",
+        GITHUB_REF="refs/pull/712/merge",
+        GITHUB_SHA="c" * 40,
+    )
+    result = boundary.run("request", "Form exact candidate and comparison")
+    assert result.returncode == 0, result.stderr
+    candidate = boundary.calls()[0]
+    assert _option(candidate, "--base-sha") == "a" * 40
+    assert _option(candidate, "--head-sha") == "b" * 40
+    assert _option(candidate, "--target") == "c" * 40
 
 
 def test_discovery_and_plan_reuse_same_revision_core_apis() -> None:

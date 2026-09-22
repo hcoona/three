@@ -43,6 +43,7 @@ PYTHON_INPUTS = {
     "eng/scripts/sync_python_version.py",
 }
 DOTNET_INPUTS = {
+    ".editorconfig",
     "global.json",
     "NuGet.Config",
     "nuget.config",
@@ -148,6 +149,7 @@ def _python_consumers(
 
 def _dotnet_input(path: str, roots: set[str]) -> bool:
     inherited = Path(path).name in {
+        ".editorconfig",
         "Directory.Build.props",
         "Directory.Build.targets",
         "Directory.Packages.props",
@@ -259,6 +261,11 @@ def _python_tests(
         or (test.startswith(V3 + "/") and _v3_input(path))
         or (test.startswith(AZURE + "/") and _azure_input(path))
         or (
+            test == "tests/eng/test_legacy_release_contract.py"
+            and _legacy_release_input(path)
+        )
+        or (test == "tests/eng/test_typos_config.py" and path == ".typos.toml")
+        or (
             test.startswith("src/public/lib/nbgv-python/")
             and path in DOTNET_INPUTS
         )
@@ -272,6 +279,33 @@ def _python_tests(
             }
         )
     }
+
+
+def _legacy_release_input(path: str) -> bool:
+    return (
+        path.startswith(
+            (
+                ".github/workflows/",
+                "eng/release/",
+                "src/public/lib/hcoona-release-smoke",
+                "src/public/lib/three-workflow-release-",
+                "tests/fixtures/workflow-release-",
+                "tests/test_workflow_release_",
+            )
+        )
+        or path.endswith(("/three.release.yml", "/three.quality.yml"))
+        or path
+        in {
+            ".github/actionlint.yaml",
+            "eng/release",
+            "eng/scripts/publish_node_gpr_idempotent.sh",
+            "eng/scripts/publish_node_npmjs_idempotent.sh",
+            "eng/scripts/release_orchestrate_lint_caller_completeness.sh",
+            "eng/scripts/verify_python_distribution_exactness.py",
+            "eng/scripts/workflow_release_acceptance_gate.py",
+            "eng/scripts/workflow_release_control.py",
+        }
+    )
 
 
 def select(

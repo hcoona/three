@@ -57,7 +57,7 @@ jobs:
       - name: Form exact candidate and comparison
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci candidate \

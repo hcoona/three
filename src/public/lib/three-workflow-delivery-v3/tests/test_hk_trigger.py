@@ -1146,20 +1146,6 @@ def test_acceptance_fixture_required_files_are_visible_to_git() -> None:
     assert all((REPO_ROOT / path).is_file() for path in visible_paths)
 
 
-def test_typos_pngcs_exclusions_remain_bounded() -> None:
-    """Keep imported-file exclusions bounded and test artifacts visible."""
-    typos_config = tomllib.loads(
-        (REPO_ROOT / ".typos.toml").read_text(encoding="utf-8")
-    )
-    exclusions = typos_config["files"]["extend-exclude"]
-    pngcs_exclusions = tuple(
-        path for path in exclusions if "src/public/lib/Hjg.Pngcs/" in path
-    )
-
-    assert all("*" not in path and "?" not in path for path in pngcs_exclusions)
-    assert ".testagent/**" not in exclusions
-
-
 def test_hk_helper_propagates_exact_child_exit_code_and_changed_paths(
     tmp_path: Path,
 ) -> None:

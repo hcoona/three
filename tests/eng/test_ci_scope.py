@@ -28,6 +28,7 @@ finally:
 V3_TESTS = scope.V3 + "/tests"
 AZURE_TESTS = scope.AZURE + "/python/tests"
 NBGV_TESTS = "src/public/lib/nbgv-python/tests"
+LEGACY_RELEASE_TESTS = "tests/eng/test_legacy_release_contract.py"
 
 
 @pytest.mark.parametrize(
@@ -36,6 +37,22 @@ NBGV_TESTS = "src/public/lib/nbgv-python/tests"
         ("docs/README.md", set(), set()),
         (scope.V3 + "/docs/requirements.md", set(), set()),
         ("src/public/lib/CircularList/CircularList.cs", {"dotnet"}, set()),
+        (
+            ".editorconfig",
+            {"dotnet", "azureauth", "python"},
+            {V3_TESTS, AZURE_TESTS, NBGV_TESTS},
+        ),
+        (
+            "src/private/app/.editorconfig",
+            {"dotnet", "azureauth", "python"},
+            {V3_TESTS, AZURE_TESTS},
+        ),
+        (
+            "src/public/lib/CircularList/.editorconfig",
+            {"dotnet"},
+            set(),
+        ),
+        ("docs/.editorconfig", set(), set()),
         (
             "src/public/lib/CircularList/Directory.Build.props",
             {"dotnet"},
@@ -81,7 +98,22 @@ NBGV_TESTS = "src/public/lib/nbgv-python/tests"
         (
             ".github/workflows/workflow-delivery-v3-ci.yml",
             {"python"},
-            {V3_TESTS},
+            {V3_TESTS, LEGACY_RELEASE_TESTS},
+        ),
+        (
+            ".github/workflows/unrelated-project.yml",
+            {"python"},
+            {LEGACY_RELEASE_TESTS},
+        ),
+        (
+            "eng/scripts/publish_node_npmjs_idempotent.sh",
+            {"python"},
+            {LEGACY_RELEASE_TESTS},
+        ),
+        (
+            ".typos.toml",
+            {"python"},
+            {"tests/eng/test_typos_config.py"},
         ),
     ],
 )
