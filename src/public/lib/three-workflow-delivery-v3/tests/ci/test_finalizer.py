@@ -175,11 +175,6 @@ def _plan(mode: str = "complete") -> CiQualificationSnapshot:
     document = _plan_document(mode)
     return admit_ci_qualification_snapshot_json(
         canonicalize(document),
-        expected_candidate=_candidate(manual=mode == "manual"),
-        expected_repository_model_digest=cast(
-            "str",
-            document["repository-model-digest"],
-        ),
         expected_root_hk_definition=cast(
             "str",
             document["root-hk-definition"],
@@ -439,11 +434,6 @@ def test_broad_pr_changes_are_excluded_from_ordinary_slo(path: str) -> None:
     document["expected-evidence-ids"] = expected_evidence_ids
     plan = admit_ci_qualification_snapshot_json(
         canonicalize(document),
-        expected_candidate=_candidate(),
-        expected_repository_model_digest=cast(
-            "str",
-            document["repository-model-digest"],
-        ),
         expected_root_hk_definition=cast(
             "str",
             document["root-hk-definition"],

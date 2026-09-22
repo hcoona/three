@@ -179,53 +179,61 @@ def test_request_identity_matches_literal_preimage(
     assert ci_obligation_request_digest(**inputs) == digest  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        pytest.param("candidate_digest", DIGEST_D, id="candidate"),
-        pytest.param("repository_model_digest", DIGEST_D, id="model"),
-        pytest.param("lane_id", "project-build", id="lane"),
-        pytest.param("definition_id", "node/project-build-v1", id="definition"),
-        pytest.param("definition_digest", DIGEST_D, id="definition-digest"),
-        pytest.param("prerequisites", ("ci:root-hk",), id="prerequisites"),
-        pytest.param("selected", False, id="selected-and-required"),
-        pytest.param("scope_mode", "slice-validation", id="scope-mode"),
-        pytest.param("changed_paths", ("README.md",), id="changed-paths"),
-        pytest.param(
-            "changed_paths",
-            ("src/example/package.json", "src/example/index.ts"),
-            id="changed-path-order",
-        ),
-        pytest.param(
-            "selected_project_nodes", ("@example/other",), id="project"
-        ),
-        pytest.param("selected_release_units", ("other-unit",), id="unit"),
-        pytest.param("selected_variants", ("other-variant",), id="variant"),
-        pytest.param(
-            "selected_outputs",
-            (("other-output", "primary-package", "npm-tarball"),),
-            id="output-id",
-        ),
-        pytest.param(
-            "selected_outputs",
-            (("npm-tarball", "secondary-package", "npm-tarball"),),
-            id="output-role",
-        ),
-        pytest.param(
-            "selected_outputs",
-            (("npm-tarball", "primary-package", "generic-archive"),),
-            id="output-media-kind",
-        ),
-    ],
-)
-def test_request_identity_distinguishes_bound_inputs(
-    field: str,
-    value: object,
-) -> None:
-    """Prevent request aliases when one bound input or ordered path changes."""
-    changed = REQUEST_INPUTS | {field: value}
-    assert ci_obligation_request_digest(**changed) != (  # type: ignore[arg-type]
-        ci_obligation_request_digest(**REQUEST_INPUTS)  # type: ignore[arg-type]
+def test_request_identity_preserves_complete_alternate_mapping() -> None:
+    """Map distinct scalar and ordered tuple inputs, without claiming a Plan."""
+    document = {
+        "schema": "workflow-delivery/v3/ci-obligation-request",
+        "candidate-digest": "sha256:" + "d" * 64,
+        "repository-model-digest": "sha256:" + "e" * 64,
+        "lane-id": "project-build",
+        "definition-id": "node/project-build-v1",
+        "definition-digest": "sha256:" + "f" * 64,
+        "prerequisites": ["ci:z", "ci:a"],
+        "selected": False,
+        "required": False,
+        "scope-mode": "slice-validation",
+        "changed-paths": ["z/package.json", "a/index.ts"],
+        "selected-project-nodes": ["@example/zeta", "@example/alpha"],
+        "selected-release-units": ["z-unit", "a-unit"],
+        "selected-variants": ["z-variant", "a-variant"],
+        "selected-outputs": [
+            {
+                "output-id": "z-output",
+                "logical-role": "z-role",
+                "media-kind": "z-media",
+            },
+            {
+                "output-id": "a-output",
+                "logical-role": "a-role",
+                "media-kind": "a-media",
+            },
+        ],
+    }
+    digest = (
+        "sha256:"
+        "5689d006eedd5c8519be10b6d2a30b61eb9c023abe65fbc9adb74ecdd164b863"
+    )
+    assert _literal_digest(document) == digest
+    assert (
+        ci_obligation_request_digest(
+            candidate_digest=DIGEST_D,
+            repository_model_digest="sha256:" + "e" * 64,
+            lane_id="project-build",
+            definition_id="node/project-build-v1",
+            definition_digest="sha256:" + "f" * 64,
+            prerequisites=("ci:z", "ci:a"),
+            selected=False,
+            scope_mode="slice-validation",
+            changed_paths=("z/package.json", "a/index.ts"),
+            selected_project_nodes=("@example/zeta", "@example/alpha"),
+            selected_release_units=("z-unit", "a-unit"),
+            selected_variants=("z-variant", "a-variant"),
+            selected_outputs=(
+                ("z-output", "z-role", "z-media"),
+                ("a-output", "a-role", "a-media"),
+            ),
+        )
+        == digest
     )
 
 

@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
-from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
+from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactReference,
     artifact_reference_from_document,
@@ -38,9 +38,12 @@ from three_workflow_delivery_v3.records.release import (
     PublicationSnapshot,
     ReleaseArtifact,
     RemoteStateObservation,
-    admit_release_record,
     form_nuget_publication_action,
     form_publication_action,
+    release_record_digest,
+)
+from three_workflow_delivery_v3.records.release_transport import (
+    validate_release_admission_bindings,
 )
 from three_workflow_delivery_v3.release.eligibility import (
     AdmittedLiveEligibilityDecision,
@@ -177,12 +180,9 @@ def _admit_pair(
             "Finalizer requires one exact record and full reference"
         )
     record, reference = pair
-    admit_release_record(
-        canonicalize(record.to_document()),
-        expected=record,
-        expected_digest=reference.payload_digest,
-        expected_bindings=current,
-    )
+    if release_record_digest(record) != reference.payload_digest:
+        raise ValueError("Finalizer record and reference payload digest differ")
+    validate_release_admission_bindings(record, current)
 
 
 def _admit_qualification(
@@ -250,12 +250,7 @@ def _admit_qualification(
     ):
         raise ValueError("Finalizer Qualification closure mismatch")
     for record in (inputs.intent, binding, inputs.snapshot, inputs.decision):
-        admit_release_record(
-            canonicalize(record.to_document()),
-            expected=record,
-            expected_digest=canonical_sha256(record.to_document()),
-            expected_bindings=current,
-        )
+        validate_release_admission_bindings(record, current)
 
 
 def _admit_publication(inputs: FinalizationInputs) -> None:  # noqa: C901, PLR0912, PLR0915

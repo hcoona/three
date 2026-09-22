@@ -22,6 +22,13 @@ from three_workflow_delivery_v3.canonical import (
     canonical_sha256,
     canonicalize,
 )
+from three_workflow_delivery_v3.ci import planner as ci_planner
+from three_workflow_delivery_v3.ci.evidence import (
+    form_ci_evidence,
+    form_empty_lane_result,
+    form_evidence_lane_result,
+)
+from three_workflow_delivery_v3.ci.finalizer import finalize_ci_slice
 from three_workflow_delivery_v3.ci.planner import (
     form_pull_request_candidate,
     form_slice_validation_candidate,
@@ -29,7 +36,10 @@ from three_workflow_delivery_v3.ci.planner import (
 from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.ci import (
     CI_WORKFLOW_PATH,
+    admit_ci_bootstrap_projection_decision_json,
+    ci_evidence_digest,
     ci_qualification_snapshot_digest,
+    ci_slice_summary_text,
 )
 from three_workflow_delivery_v3.records.release import (
     BuddyExecutionIdentity,
@@ -1718,6 +1728,209 @@ def test_ci_bootstrap_projection_rejects_inexact_inputs(
         "summary-mismatch": "Summary does not match",
     }[mutation]
     assert expected_error in capsys.readouterr().err
+
+
+def test_ci_bootstrap_projection_rejects_foreign_candidate_before_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reject a coherent other-run Decision before Git or summary effects."""
+    records = _blocked_pr_decision_fixture(tmp_path, monkeypatch)
+    plan = cli_module._load_ci_plan(str(records[0]), records[1])  # noqa: SLF001
+    candidate = replace(plan.candidate, workflow_run_id=WORKFLOW_RUN_ID + 1)
+    obligations = ci_planner._form_obligations(  # noqa: SLF001
+        candidate=candidate,
+        repository_model_digest=plan.repository_model_digest,
+        selected_lanes=(),
+        scope_mode=plan.scope_mode,
+        changed_paths=plan.changed_paths,
+        selected_project_nodes=plan.selected_project_nodes,
+        selected_release_units=plan.selected_release_units,
+        selected_variants=plan.selected_variants,
+        selected_outputs=plan.selected_outputs,
+    )
+    alternate_plan = replace(
+        plan,
+        candidate=candidate,
+        workflow_run_id=candidate.workflow_run_id,
+        obligations=obligations,
+    )
+    decision = finalize_ci_slice(
+        alternate_plan,
+        tuple(
+            form_empty_lane_result(alternate_plan, lane_id=lane)
+            for lane in cli_module.CI_LANE_IDS
+        ),
+        elapsed_seconds=EXPECTED_ELAPSED_SECONDS,
+        supersession_state="not-superseded",
+    )
+    encoded = canonicalize(decision.to_document())
+    assert (
+        admit_ci_bootstrap_projection_decision_json(
+            encoded, expected_plan=alternate_plan
+        )
+        == decision
+    )
+    records[2].write_bytes(encoded)
+    records[3].write_bytes(canonicalize(decision.summary.to_document()))
+    observed: list[tuple[object, ...]] = []
+
+    def contains_path(*arguments: object) -> bool:
+        observed.append(arguments)
+        return False
+
+    monkeypatch.setattr(cli_module, "_git_commit_contains_path", contains_path)
+    github_summary = tmp_path / "github-summary.md"
+    _write(github_summary, "existing note\n")
+    arguments = _bootstrap_projection_arguments(
+        records=records,
+        github_summary=github_summary,
+    )
+
+    assert cli_module.main(arguments) == 1
+    assert "trusted current candidate" in capsys.readouterr().err
+    assert observed == []
+    assert github_summary.read_text(encoding="utf-8") == "existing note\n"
+    assert records[2].read_bytes() == encoded
+
+
+def test_ci_bootstrap_projection_rejects_nonempty_evidence_before_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Keep a valid Finalizer Decision with Evidence outside bootstrap."""
+    plan_path, _, document = _plan_fixture(
+        tmp_path,
+        monkeypatch,
+        event_kind="pull_request",
+        changed_paths=("docs/wiki/README.md",),
+    )
+    plan_digest = canonical_sha256(document)
+    plan = cli_module._load_ci_plan(str(plan_path), plan_digest)  # noqa: SLF001
+    obligation = next(item for item in plan.obligations if item.selected)
+    assert obligation.lane_id == "root-hk"
+    evidence = form_ci_evidence(
+        plan,
+        obligation=obligation,
+        producer="root-hk",
+        workflow_run_id=plan.workflow_run_id,
+        run_attempt=plan.run_attempt,
+        runner="ubuntu-24.04",
+        raw_outcome="success",
+        output_digests=("sha256:" + ("9" * 64),),
+        diagnostics=("root-hk completed mechanically",),
+    )
+    decision = finalize_ci_slice(
+        plan,
+        tuple(
+            form_evidence_lane_result(plan, evidence)
+            if item.selected
+            else form_empty_lane_result(plan, lane_id=item.lane_id)
+            for item in plan.obligations
+        ),
+        elapsed_seconds=EXPECTED_ELAPSED_SECONDS,
+        supersession_state="not-superseded",
+    )
+    assert decision.terminal_result == "success"
+    assert decision.admitted_evidence_digests == (ci_evidence_digest(evidence),)
+    assert decision.admitted_artifact_digests == ()
+    decision_path = _write_canonical(
+        tmp_path / "ready-decision.json", decision.to_document()
+    )
+    summary_path = _write_canonical(
+        tmp_path / "ready-summary.json", decision.summary.to_document()
+    )
+    observed: list[tuple[object, ...]] = []
+
+    def contains_path(*arguments: object) -> bool:
+        observed.append(arguments)
+        return False
+
+    monkeypatch.setattr(cli_module, "_git_commit_contains_path", contains_path)
+    github_summary = tmp_path / "github-summary.md"
+    _write(github_summary, "existing note\n")
+    arguments = _bootstrap_projection_arguments(
+        records=(
+            plan_path,
+            plan_digest,
+            decision_path,
+            summary_path,
+            tmp_path / "repo",
+        ),
+        github_summary=github_summary,
+    )
+
+    assert cli_module.main(arguments) == 1
+    assert "must have no admitted Evidence" in capsys.readouterr().err
+    assert observed == []
+    assert github_summary.read_text(encoding="utf-8") == "existing note\n"
+
+
+def test_ci_bootstrap_projection_rejects_artifact_lineage_before_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reject artifact lineage independently of Evidence and summary rules."""
+    records = _blocked_pr_decision_fixture(tmp_path, monkeypatch)
+    plan = cli_module._load_ci_plan(str(records[0]), records[1])  # noqa: SLF001
+    decision = admit_ci_bootstrap_projection_decision_json(
+        records[2].read_bytes(), expected_plan=plan
+    )
+    artifact_digests = ("sha256:" + ("9" * 64),)
+    summary_text = ci_slice_summary_text(
+        candidate=decision.candidate,
+        repository_model_digest=decision.repository_model_digest,
+        plan_digest=decision.plan_digest,
+        scope_mode=decision.scope_mode,
+        changed_paths=decision.changed_paths,
+        selected_project_nodes=decision.selected_project_nodes,
+        selected_release_units=decision.selected_release_units,
+        selected_variants=decision.selected_variants,
+        selected_outputs=decision.selected_outputs,
+        plan_diagnostics=decision.plan_diagnostics,
+        dispositions=decision.obligation_dispositions,
+        evidence_digests=decision.admitted_evidence_digests,
+        artifact_digests=artifact_digests,
+        explanation=decision.explanation,
+        terminal_result=decision.terminal_result,
+        failure_class=decision.failure_class,
+        next_action=decision.next_action,
+        elapsed_seconds=decision.elapsed_seconds,
+        supersession_state=decision.supersession_state,
+        supersession_reason=decision.supersession_reason,
+        pr_slo=decision.pr_slo,
+        pr_slo_reason=decision.pr_slo_reason,
+    )
+    decision = replace(
+        decision,
+        admitted_artifact_digests=artifact_digests,
+        summary=replace(decision.summary, text=summary_text),
+    )
+    assert decision.admitted_evidence_digests == ()
+    assert decision.admitted_artifact_digests == artifact_digests
+    records[2].write_bytes(canonicalize(decision.to_document()))
+    records[3].write_bytes(canonicalize(decision.summary.to_document()))
+    observed: list[tuple[object, ...]] = []
+
+    def contains_path(*arguments: object) -> bool:
+        observed.append(arguments)
+        return False
+
+    monkeypatch.setattr(cli_module, "_git_commit_contains_path", contains_path)
+    github_summary = tmp_path / "github-summary.md"
+    _write(github_summary, "existing note\n")
+    arguments = _bootstrap_projection_arguments(
+        records=records,
+        github_summary=github_summary,
+    )
+
+    assert cli_module.main(arguments) == 1
+    assert "must have no admitted artifacts" in capsys.readouterr().err
+    assert observed == []
+    assert github_summary.read_text(encoding="utf-8") == "existing note\n"
 
 
 def test_git_commit_path_probe_uses_exact_base_tree(tmp_path: Path) -> None:

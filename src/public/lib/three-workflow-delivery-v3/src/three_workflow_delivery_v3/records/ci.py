@@ -2846,36 +2846,14 @@ def _require_expected_candidate(
         raise ValueError(message)
 
 
-def admit_ci_candidate_json(
+def admit_ci_qualification_snapshot_json(
     document: bytes | bytearray,
     *,
-    expected_candidate: CiCandidate,
-) -> CiCandidate:
-    """Admit one canonical UTF-8 CI Candidate document."""
-    parsed = parse_canonical_json(document)
-    candidate = _ci_candidate_from_document(parsed, context="CI Candidate")
-    _require_expected_candidate(
-        candidate,
-        expected_candidate,
-        context="CI Candidate",
-    )
-    return candidate
-
-
-def admit_ci_qualification_snapshot_json(  # noqa: PLR0913
-    document: bytes | bytearray,
-    *,
-    expected_candidate: CiCandidate,
-    expected_repository_model_digest: str,
     expected_root_hk_definition: str,
     expected_root_hk_definition_digest: str,
     expected_plan_digest: str,
 ) -> CiQualificationSnapshot:
     """Admit one canonical UTF-8 CI Qualification Snapshot document."""
-    _require_digest(
-        expected_repository_model_digest,
-        field="expected_repository_model_digest",
-    )
     _require_nonempty_string(
         expected_root_hk_definition,
         field="expected_root_hk_definition",
@@ -2897,17 +2875,6 @@ def admit_ci_qualification_snapshot_json(  # noqa: PLR0913
         parsed,
         context="CI Qualification Snapshot",
     )
-    _require_expected_candidate(
-        snapshot.candidate,
-        expected_candidate,
-        context="CI Qualification Snapshot",
-    )
-    if snapshot.repository_model_digest != expected_repository_model_digest:
-        message = (
-            "CI Qualification Snapshot does not match the trusted "
-            "Repository Model digest"
-        )
-        raise ValueError(message)
     if (
         snapshot.root_hk_definition != expected_root_hk_definition
         or snapshot.root_hk_definition_digest
@@ -2924,102 +2891,14 @@ def admit_ci_qualification_snapshot_json(  # noqa: PLR0913
     return snapshot
 
 
-def admit_ci_evidence_json(
-    document: bytes | bytearray,
-    *,
-    expected_candidate: CiCandidate,
-    expected_plan_digest: str,
-    expected_obligation: CiObligation,
-) -> CiEvidence:
-    """Admit one canonical UTF-8 CI Evidence document."""
-    _require_digest(expected_plan_digest, field="expected_plan_digest")
-    _validate_ci_obligation(expected_obligation)
-    parsed = parse_canonical_json(document)
-    evidence = _ci_evidence_from_document(parsed, context="CI Evidence")
-    _require_expected_candidate(
-        evidence.candidate,
-        expected_candidate,
-        context="CI Evidence",
-    )
-    if evidence.plan_digest != expected_plan_digest:
-        message = "CI Evidence does not match the trusted Plan digest"
-        raise ValueError(message)
-    if evidence.obligation != expected_obligation:
-        message = "CI Evidence does not match the trusted obligation"
-        raise ValueError(message)
-    return evidence
-
-
-def admit_ci_artifact_json(  # noqa: PLR0913
-    document: bytes | bytearray,
-    *,
-    expected_candidate: CiCandidate,
-    expected_artifact_id: int,
-    expected_artifact_name: str,
-    expected_artifact_url: str,
-    expected_transport_digest: str,
-    expected_output_id: str,
-    expected_logical_role: str,
-    expected_media_kind: str,
-) -> CiArtifact:
-    """Admit one canonical current-candidate CI npm artifact record."""
-    _require_positive_integer(
-        expected_artifact_id,
-        field="expected_artifact_id",
-    )
-    _require_nonempty_string(
-        expected_artifact_name,
-        field="expected_artifact_name",
-    )
-    _require_nonempty_string(
-        expected_artifact_url,
-        field="expected_artifact_url",
-    )
-    _require_digest(
-        expected_transport_digest,
-        field="expected_transport_digest",
-    )
-    _require_nonempty_string(expected_output_id, field="expected_output_id")
-    _require_nonempty_string(
-        expected_logical_role,
-        field="expected_logical_role",
-    )
-    _require_nonempty_string(expected_media_kind, field="expected_media_kind")
-    parsed = parse_canonical_json(document)
-    artifact = _ci_artifact_from_document(parsed, context="CI Artifact")
-    _require_expected_candidate(
-        artifact.candidate,
-        expected_candidate,
-        context="CI Artifact",
-    )
-    if (
-        artifact.artifact_id != expected_artifact_id
-        or artifact.artifact_name != expected_artifact_name
-        or artifact.artifact_url != expected_artifact_url
-        or artifact.transport_digest != expected_transport_digest
-        or artifact.output_id != expected_output_id
-        or artifact.logical_role != expected_logical_role
-        or artifact.media_kind != expected_media_kind
-    ):
-        message = "CI Artifact does not match trusted platform metadata"
-        raise ValueError(message)
-    return artifact
-
-
 def admit_ci_lane_result_json(
     document: bytes | bytearray,
     *,
     expected_candidate: CiCandidate,
     expected_plan_digest: str,
-    expected_lane_id: str,
 ) -> CiLaneResult:
     """Admit one canonical UTF-8 CI Lane Result document."""
     _require_digest(expected_plan_digest, field="expected_plan_digest")
-    _require_choice(
-        expected_lane_id,
-        _CI_LANE_ID_SET,
-        field="expected_lane_id",
-    )
     parsed = parse_canonical_json(document)
     result = _ci_lane_result_from_document(parsed, context="CI Lane Result")
     _require_expected_candidate(
@@ -3030,63 +2909,17 @@ def admit_ci_lane_result_json(
     if result.plan_digest != expected_plan_digest:
         message = "CI Lane Result does not match the trusted Plan digest"
         raise ValueError(message)
-    if result.lane_id != expected_lane_id:
-        message = "CI Lane Result does not match the trusted static lane"
-        raise ValueError(message)
     return result
 
 
-def admit_ci_slice_decision_json(  # noqa: C901
+def admit_ci_bootstrap_projection_decision_json(
     document: bytes | bytearray,
     *,
     expected_plan: CiQualificationSnapshot,
-    expected_evidence: tuple[CiEvidence, ...],
-    expected_elapsed_seconds: int,
-    expected_supersession_state: str,
 ) -> CiSliceDecision:
-    """Admit one canonical UTF-8 non-authoritative CI Slice Decision."""
+    """Admit a canonical empty-Evidence Decision for bootstrap projection."""
     _validate_ci_qualification_snapshot(expected_plan)
-    _require_nonnegative_integer(
-        expected_elapsed_seconds,
-        field="expected_elapsed_seconds",
-    )
-    _require_choice(
-        expected_supersession_state,
-        _SUPERSESSION_STATES,
-        field="expected_supersession_state",
-    )
     expected_plan_digest = ci_qualification_snapshot_digest(expected_plan)
-    _require_exact_type(
-        expected_evidence,
-        tuple,
-        field="expected_evidence",
-    )
-    expected_evidence_by_obligation: dict[str, CiEvidence] = {}
-    for evidence in expected_evidence:
-        _validate_ci_evidence(evidence)
-        obligation_id = evidence.obligation.obligation_id
-        if obligation_id in expected_evidence_by_obligation:
-            message = "trusted Plan Evidence contains duplicate obligations"
-            raise ValueError(message)
-        expected_obligation = next(
-            (
-                obligation
-                for obligation in expected_plan.obligations
-                if obligation.obligation_id == obligation_id
-            ),
-            None,
-        )
-        if (
-            expected_obligation is None
-            or evidence.obligation != expected_obligation
-            or evidence.plan_digest != expected_plan_digest
-            or evidence.candidate != expected_plan.candidate
-            or evidence.workflow_run_id != expected_plan.workflow_run_id
-            or evidence.run_attempt != expected_plan.run_attempt
-        ):
-            message = "trusted Evidence does not match the trusted Plan"
-            raise ValueError(message)
-        expected_evidence_by_obligation[obligation_id] = evidence
     parsed = parse_canonical_json(document)
     decision = _ci_slice_decision_from_document(
         parsed,
@@ -3115,12 +2948,6 @@ def admit_ci_slice_decision_json(  # noqa: C901
     ):
         message = "CI Slice Decision does not match trusted Plan scope"
         raise ValueError(message)
-    if decision.elapsed_seconds != expected_elapsed_seconds:
-        message = "CI Slice Decision does not match trusted elapsed time"
-        raise ValueError(message)
-    if decision.supersession_state != expected_supersession_state:
-        message = "CI Slice Decision does not match trusted supersession state"
-        raise ValueError(message)
     if (
         tuple(
             disposition.obligation
@@ -3130,42 +2957,15 @@ def admit_ci_slice_decision_json(  # noqa: C901
     ):
         message = "CI Slice Decision dispositions do not match the trusted Plan"
         raise ValueError(message)
-    for disposition in decision.obligation_dispositions:
-        evidence = expected_evidence_by_obligation.get(
-            disposition.obligation.obligation_id,
-        )
-        expected_digests = (
-            () if evidence is None else (ci_evidence_digest(evidence),)
-        )
-        if disposition.evidence_digests != expected_digests:
-            message = (
-                "CI Slice Decision Evidence does not match trusted admitted "
-                "Evidence"
-            )
-            raise ValueError(message)
-        if (
-            evidence is not None
-            and disposition.outcome != evidence.normalized_outcome
-        ):
-            message = (
-                "CI Slice Decision outcome does not match trusted admitted "
-                "Evidence"
-            )
-            raise ValueError(message)
-    expected_artifact_digests = tuple(
-        ci_artifact_digest(artifact)
-        for obligation in expected_plan.obligations
-        if (
-            evidence := expected_evidence_by_obligation.get(
-                obligation.obligation_id
-            )
-        )
-        is not None
-        for artifact in evidence.artifacts
-    )
-    if decision.admitted_artifact_digests != expected_artifact_digests:
+    if any(
+        disposition.evidence_digests
+        for disposition in decision.obligation_dispositions
+    ):
+        message = "bootstrap projection Decision must have no admitted Evidence"
+        raise ValueError(message)
+    if decision.admitted_artifact_digests:
         message = (
-            "CI Slice Decision artifacts do not match trusted admitted Evidence"
+            "bootstrap projection Decision must have no admitted artifacts"
         )
         raise ValueError(message)
     return decision
@@ -3231,12 +3031,9 @@ __all__ = [
     "CiQualificationSnapshot",
     "CiSliceDecision",
     "CiSliceSummary",
-    "admit_ci_artifact_json",
-    "admit_ci_candidate_json",
-    "admit_ci_evidence_json",
+    "admit_ci_bootstrap_projection_decision_json",
     "admit_ci_lane_result_json",
     "admit_ci_qualification_snapshot_json",
-    "admit_ci_slice_decision_json",
     "ci_artifact_digest",
     "ci_candidate_digest",
     "ci_evidence_digest",

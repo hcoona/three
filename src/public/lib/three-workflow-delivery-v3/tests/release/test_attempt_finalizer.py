@@ -153,6 +153,27 @@ def finalize(
     return outcome
 
 
+def test_finalizer_rejects_observation_reference_with_wrong_payload_digest(
+    observation_case,
+):
+    observation, reference = pair(
+        _observation(observation_case, classification="unknown"),
+        "observation.json",
+        108,
+    )
+    inputs = replace(
+        base_inputs(observation_case),
+        observations=(
+            (
+                observation,
+                replace(reference, payload_digest="sha256:" + "f" * 64),
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="record and reference payload digest"):
+        finalize(inputs)
+
+
 @pytest.mark.parametrize("job", ["success", "failure", "cancelled"])
 @pytest.mark.parametrize(
     ("result_state", "mutation", "expected", "possible"),

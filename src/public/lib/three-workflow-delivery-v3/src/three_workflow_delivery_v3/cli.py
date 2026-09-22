@@ -80,10 +80,9 @@ from three_workflow_delivery_v3.records.ci import (
     CiLaneResult,
     CiQualificationSnapshot,
     _ci_candidate_from_document,
-    _ci_slice_decision_from_document,
+    admit_ci_bootstrap_projection_decision_json,
     admit_ci_lane_result_json,
     admit_ci_qualification_snapshot_json,
-    admit_ci_slice_decision_json,
     ci_qualification_snapshot_digest,
 )
 from three_workflow_delivery_v3.records.release import (
@@ -4725,17 +4724,8 @@ def _ci_plan_command(arguments: argparse.Namespace) -> int:
 
 
 def _load_ci_plan(path: str, expected_digest: str) -> CiQualificationSnapshot:
-    content, document = _read_object(path, context="CI Plan")
-    candidate = _ci_candidate_from_document(
-        document["candidate"], context="CI Candidate"
-    )
     return admit_ci_qualification_snapshot_json(
-        content,
-        expected_candidate=candidate,
-        expected_repository_model_digest=_string(
-            document["repository-model-digest"],
-            context="CI Plan.repository-model-digest",
-        ),
+        Path(path).read_bytes(),
         expected_root_hk_definition=ROOT_HK_DEFINITION,
         expected_root_hk_definition_digest=_definition_digest(
             ROOT_HK_DEFINITION
@@ -5135,13 +5125,10 @@ def _load_lane_result(
     *,
     plan: CiQualificationSnapshot,
 ) -> CiLaneResult:
-    content, document = _read_object(path, context="CI Lane Result")
-    lane_id = _string(document["lane-id"], context="CI Lane Result.lane-id")
     return admit_ci_lane_result_json(
-        content,
+        Path(path).read_bytes(),
         expected_candidate=plan.candidate,
         expected_plan_digest=ci_qualification_snapshot_digest(plan),
-        expected_lane_id=lane_id,
     )
 
 
@@ -5312,20 +5299,9 @@ def _ci_project_bootstrap_shadow_command(
     arguments: argparse.Namespace,
 ) -> int:
     plan = _load_ci_plan(arguments.plan, arguments.plan_digest)
-    content, document = _read_object(
-        arguments.decision,
-        context="CI Slice Decision",
-    )
-    parsed = _ci_slice_decision_from_document(
-        document,
-        context="CI Slice Decision",
-    )
-    decision = admit_ci_slice_decision_json(
-        content,
+    decision = admit_ci_bootstrap_projection_decision_json(
+        Path(arguments.decision).read_bytes(),
         expected_plan=plan,
-        expected_evidence=(),
-        expected_elapsed_seconds=parsed.elapsed_seconds,
-        expected_supersession_state=parsed.supersession_state,
     )
     _, summary = _read_object(
         arguments.summary,
