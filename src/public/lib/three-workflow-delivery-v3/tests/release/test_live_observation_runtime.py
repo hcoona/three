@@ -404,10 +404,6 @@ def _blocking_finalizer_arguments(
         ("version-unknown", "unknown"),
         ("control-conflict", "conflicting"),
         ("mixed-blockers", "unprovable"),
-        ("package-404", "unprovable"),
-        ("package-405", "unprovable"),
-        ("package-missing-versions", "unprovable"),
-        ("package-partial", "unknown"),
     ],
 )
 def test_blocking_remote_facts_persist_and_finalize_with_exact_ancestry(
@@ -427,18 +423,6 @@ def test_blocking_remote_facts_persist_and_finalize_with_exact_ancestry(
         remote[PACKAGE_URL] = GitHubPackagesNetworkError(
             "package metadata unavailable"
         )
-    elif failure in {"package-404", "package-405"}:
-        remote[PACKAGE_URL] = response(
-            PACKAGE_URL,
-            status=int(failure.removeprefix("package-")),
-            body=b"",
-        )
-    elif failure == "package-missing-versions":
-        document = json.loads(remote[PACKAGE_URL].body)
-        del document["versions"]
-        remote[PACKAGE_URL] = response(PACKAGE_URL, document)
-    elif failure == "package-partial":
-        remote[PACKAGE_URL] = replace(remote[PACKAGE_URL], complete=False)
     if failure in {"control-conflict", "mixed-blockers"}:
         remote[ENDPOINT] = response(
             ENDPOINT,

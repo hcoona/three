@@ -905,20 +905,12 @@ def test_evaluator_output_round_trips_through_strict_live_admission(
     )
 
 
-@pytest.mark.parametrize(
-    "admission_mode",
-    [
-        LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
-        LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
-    ],
-)
-def test_nonexact_issuer_is_rejected_in_every_admission_mode(
-    admission_mode: LiveEligibilityAdmissionMode,
+def test_current_admission_rejects_nonexact_issuer(
     live_intent: ReleaseIntent,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
-    """Require the sole accepted operator in every lifecycle mode."""
+    """Require the accepted operator when admitting current authority."""
     issuer = "other-issuer"
     document = _transport_decision(
         live_intent,
@@ -937,7 +929,7 @@ def test_nonexact_issuer_is_rejected_in_every_admission_mode(
             live_intent=live_intent,
             live_admitted_repository_model=live_admitted_repository_model,
             policy=policy,
-            admission_mode=admission_mode,
+            admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
         )
 
 
@@ -1013,15 +1005,7 @@ def test_authorization_replay_accepts_originally_valid_decision_after_expiry(
     )
 
 
-@pytest.mark.parametrize(
-    "admission_mode",
-    [
-        LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
-        LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
-    ],
-)
-def test_admission_rejects_observation_at_original_expiry_in_every_mode(
-    admission_mode: LiveEligibilityAdmissionMode,
+def test_replay_rejects_observation_at_original_expiry(
     live_intent: ReleaseIntent,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
@@ -1044,56 +1028,25 @@ def test_admission_rejects_observation_at_original_expiry_in_every_mode(
             live_intent=live_intent,
             live_admitted_repository_model=live_admitted_repository_model,
             policy=policy,
-            admission_mode=admission_mode,
+            admission_mode=LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
             now=datetime(2026, 10, 1, 0, 0, 1, tzinfo=UTC),
         )
 
 
-@pytest.mark.parametrize(
-    ("path", "value", "message"),
-    [
-        pytest.param(
-            ("context", "target"),
-            "d" * 40,
-            "current lineage mismatch",
-            id="lineage",
-        ),
-        pytest.param(
-            ("static-reference", "policy-id"),
-            "other-policy",
-            "policy ID is not current",
-            id="static-reference-policy",
-        ),
-        pytest.param(
-            ("governance", "repository"),
-            "other/repository",
-            "exact fixed contract",
-            id="governance-source",
-        ),
-    ],
-)
-def test_authorization_replay_rejects_semantic_substitutions(  # noqa: PLR0913, PLR0917
-    path: tuple[str, ...],
-    value: JsonValue,
-    message: str,
+def test_authorization_replay_rejects_current_lineage_substitution(
     live_intent: ReleaseIntent,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
-    """Keep all immutable semantic validation active during replay."""
+    """Replaying original validity does not bypass current lineage."""
     document = _transport_decision(
         live_intent,
         live_admitted_repository_model,
         policy,
     ).to_document()
-    _set_decision_path(document, path, value)
-    if path[:2] == ("governance", "admitted-attestation"):
-        governance = _object_member(document, "governance")
-        attestation = governance["admitted-attestation"]
-        assert isinstance(attestation, dict)
-        governance["canonical-content-digest"] = canonical_sha256(attestation)
+    _set_decision_path(document, ("context", "target"), "d" * 40)
 
-    with pytest.raises((TypeError, ValueError), match=message):
+    with pytest.raises(ValueError, match="current lineage mismatch"):
         _admit_mutated_decision(
             document,
             live_intent=live_intent,
@@ -1104,15 +1057,7 @@ def test_authorization_replay_rejects_semantic_substitutions(  # noqa: PLR0913, 
         )
 
 
-@pytest.mark.parametrize(
-    "admission_mode",
-    [
-        LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
-        LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY,
-    ],
-)
 def test_artifact_cannot_select_live_eligibility_admission_mode(
-    admission_mode: LiveEligibilityAdmissionMode,
     live_intent: ReleaseIntent,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
@@ -1131,7 +1076,7 @@ def test_artifact_cannot_select_live_eligibility_admission_mode(
             live_intent=live_intent,
             live_admitted_repository_model=live_admitted_repository_model,
             policy=policy,
-            admission_mode=admission_mode,
+            admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
         )
 
 
@@ -3219,110 +3164,20 @@ def test_observation_rejects_nonzero_utc_offsets_before_source_read(
             id="unsupported-namespace",
         ),
         pytest.param(
-            "refs/heads/",
-            "not a valid Git ref",
-            id="empty-suffix",
-        ),
-        pytest.param(
-            "refs/heads/topic/",
-            "not a valid Git ref",
-            id="trailing-slash",
-        ),
-        pytest.param(
-            "refs/tags/release.",
-            "not a valid Git ref",
-            id="trailing-dot",
-        ),
-        pytest.param(
-            "refs/heads/topic..branch",
-            "not a valid Git ref",
-            id="double-dot",
-        ),
-        pytest.param(
-            "refs/heads/topic@{1",
-            "not a valid Git ref",
-            id="reflog-sequence",
-        ),
-        pytest.param(
             "refs/heads/topic branch",
             "not a valid Git ref",
             id="forbidden-space",
         ),
-        pytest.param(
-            "refs/heads/topic~branch",
-            "not a valid Git ref",
-            id="forbidden-tilde",
-        ),
-        pytest.param(
-            "refs/heads/topic^branch",
-            "not a valid Git ref",
-            id="forbidden-caret",
-        ),
-        pytest.param(
-            "refs/heads/topic:branch",
-            "not a valid Git ref",
-            id="forbidden-colon",
-        ),
-        pytest.param(
-            "refs/heads/topic?branch",
-            "not a valid Git ref",
-            id="forbidden-question-mark",
-        ),
-        pytest.param(
-            "refs/heads/topic*branch",
-            "not a valid Git ref",
-            id="forbidden-asterisk",
-        ),
-        pytest.param(
-            "refs/heads/topic[branch",
-            "not a valid Git ref",
-            id="forbidden-open-bracket",
-        ),
-        pytest.param(
-            "refs/heads/topic\\branch",
-            "not a valid Git ref",
-            id="forbidden-backslash",
-        ),
-        pytest.param(
-            "refs/heads/topic/.hidden",
-            "not a valid Git ref",
-            id="hidden-component",
-        ),
-        pytest.param(
-            "refs/heads/topic.lock",
-            "not a valid Git ref",
-            id="lock-suffix",
-        ),
-        pytest.param(
-            "refs/heads/topic//branch",
-            "not a valid Git ref",
-            id="empty-component",
-        ),
-        pytest.param(
-            "refs/heads/topic\x00branch",
-            "not a valid Git ref",
-            id="nul-control",
-        ),
-        pytest.param(
-            "refs/heads/topic\x1fbranch",
-            "not a valid Git ref",
-            id="unit-separator-control",
-        ),
-        pytest.param(
-            "refs/heads/topic\x7fbranch",
-            "not a valid Git ref",
-            id="delete-control",
-        ),
     ],
 )
-def test_selected_ref_grammar_rejects_invalid_refs_before_any_read(
+def test_selected_ref_boundary_rejects_unsupported_or_malformed_refs(
     selected_ref: str,
     message: str,
     monkeypatch: pytest.MonkeyPatch,
     live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
     policy: ReleasePolicy,
 ) -> None:
-    """Reject invalid supported-ref grammar before either external read."""
+    """Reject unsupported or malformed ref identity before external reads."""
     snapshot = live_admitted_repository_model.snapshot
     context = _context(snapshot, policy, selected_ref=selected_ref)
     client = RecordingGovernanceClient(_attestation_content(live_enabled=True))

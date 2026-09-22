@@ -4,27 +4,38 @@ from __future__ import annotations
 
 # ruff: noqa: D103
 from copy import deepcopy
+from dataclasses import replace
 from unittest.mock import Mock
 
 import pytest
 from three_workflow_delivery_v3.repository import dotnet_provider
 
-from .test_dotnet_compiler import _native_scenario
+from .test_dotnet_provider import _admission_scenario
 
 
-@pytest.fixture(scope="module")
-def native_transport_scenario(tmp_path_factory):
-    """Reuse immutable modeled facts over an actual isolated Git target."""
-    with pytest.MonkeyPatch.context() as patch:
-        return _native_scenario(
-            tmp_path_factory.mktemp("nuget-provider-transport"), patch
-        )
+@pytest.fixture
+def native_transport_scenario(monkeypatch):
+    """Supply modeled transport facts without Git or native evaluation."""
+    monkeypatch.setattr(
+        dotnet_provider,
+        "run_native",
+        Mock(side_effect=AssertionError("target evaluation is forbidden")),
+    )
+    _, _, result = _admission_scenario()
+    return replace(
+        result,
+        nbgv=replace(
+            result.nbgv,
+            sem_ver2="1.2.3-beta.7+Build.Meta",
+            nuget_package_version="1.2.3-beta.7+Build.Meta",
+        ),
+    )
 
 
 def test_native_provider_result_round_trip_without_evaluation(
     native_transport_scenario, monkeypatch
 ):
-    result = native_transport_scenario[3]
+    result = native_transport_scenario
     evaluate = Mock(
         side_effect=AssertionError("target evaluation is forbidden")
     )
@@ -33,7 +44,7 @@ def test_native_provider_result_round_trip_without_evaluation(
         result.to_document()
     )
     assert parsed == result
-    assert parsed.nbgv.nuget_package_version == "1.2.3-beta.42+Build.Meta"
+    assert parsed.nbgv.nuget_package_version == "1.2.3-beta.7+Build.Meta"
     assert parsed.source_input_manifest == result.source_input_manifest
     assert parsed.native_evaluation_digest == result.native_evaluation_digest
     assert parsed.result_digest == result.result_digest
@@ -84,7 +95,7 @@ def test_native_provider_result_round_trip_without_evaluation(
 def test_native_provider_parser_rejects_malformed_facts(
     native_transport_scenario, path, value
 ):
-    document = deepcopy(native_transport_scenario[3].to_document())
+    document = deepcopy(native_transport_scenario.to_document())
     parent = document
     for key in path[:-1]:
         parent = parent[key]

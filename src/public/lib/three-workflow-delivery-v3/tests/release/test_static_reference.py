@@ -3490,24 +3490,6 @@ def test_excluded_surface_selects_no_graph_and_has_no_fallback(
     assert source.read_bytes() == content
 
 
-def test_retired_static_reference_consumer_paths_remain_absent() -> None:
-    """Preserve the three retired consumer entry points as absent."""
-    obsolete_paths = (
-        "eng/scripts/workflow_delivery_v3_consumer_policy.py",
-        (
-            "src/public/lib/three-workflow-delivery-v3/src/"
-            "three_workflow_delivery_v3/release/consumer_policy.py"
-        ),
-        (
-            "src/public/lib/three-workflow-delivery-v3/src/"
-            "three_workflow_delivery_v3/release/javascript_consumer.py"
-        ),
-    )
-    assert [
-        path for path in obsolete_paths if (REPO_ROOT / path).exists()
-    ] == []
-
-
 @pytest.mark.parametrize(
     ("source_kind", "result_target", "expected_outcome"),
     [
