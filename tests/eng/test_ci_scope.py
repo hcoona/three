@@ -175,6 +175,8 @@ def comparison(tmp_path):
     python = tmp_path / "src/python"
     python.mkdir(parents=True)
     (python / "pyproject.toml").write_text('[project]\nname = "sample"\n')
+    (python / "tests").mkdir()
+    (python / "tests/test_sample.py").write_text("def test_sample(): pass\n")
     (python / "old.py").write_text("retained = True\n" * 10)
     (python / "deleted.py").write_text("removed = True\n")
     node = tmp_path / "src/node"
@@ -241,3 +243,42 @@ def test_selection_failure_never_emits_successful_applicability(
     full = _select_cli(root, "--full")
     assert full.returncode == 0, full.stderr
     assert all(json.loads(full.stdout)["scopes"].values())
+
+
+@pytest.mark.parametrize(
+    "inventory", ["[]", '"src/python/tests"', '[""]', "[true]"]
+)
+def test_unusable_test_inventory_never_emits_successful_applicability(
+    comparison, inventory
+):
+    """Unsupported discovery configuration cannot become a green empty job."""
+    root, base, _ = comparison
+    config = root / "pyproject.toml"
+    config.write_text(
+        config.read_text().replace('["src/python/tests"]', inventory)
+    )
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Change test inventory")
+    for arguments in (("--from-ref", base), ("--full",)):
+        result = _select_cli(root, *arguments)
+        assert result.returncode != 0
+        assert "nonempty list of explicit paths" in result.stderr
+        assert not (root / "outputs").exists()
+
+
+def test_candidate_test_migration_selects_replacement_root(comparison):
+    """Reviewed test moves use the candidate inventory, not historical paths."""
+    root, base, _ = comparison
+    (root / "src/python/tests").rename(root / "src/python/checks")
+    config = root / "pyproject.toml"
+    config.write_text(
+        config.read_text().replace("src/python/tests", "src/python/checks")
+    )
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Move test owner")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert selected["python_roots"] == ["src/python/checks"]
+    assert selected["scopes"]["python"]
+    assert not (root / "src/python/tests").exists()

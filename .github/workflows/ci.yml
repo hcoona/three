@@ -640,7 +640,10 @@ jobs:
 
           roots = json.loads(os.environ["PYTHON_TEST_ROOTS"])
           allowed = tomllib.loads(Path("pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]["testpaths"]
-          if not roots or any(root not in allowed for root in roots):
+          if (not isinstance(allowed, list) or not allowed
+                  or any(not isinstance(root, str) or not root.strip() for root in allowed)):
+              raise SystemExit("Python testpaths must be a nonempty list of explicit paths")
+          if not isinstance(roots, list) or not roots or any(root not in allowed for root in roots):
               raise SystemExit("Missing or invalid selected Python test roots")
           print(sys.version, flush=True)
           subprocess.run([sys.executable, "-m", "pytest", *roots,

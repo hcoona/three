@@ -729,3 +729,29 @@ def test_python_test_entry_runs_only_selected_roots_and_propagates_failure(
         assert (result.returncode != 0) is failing, result.stderr
         assert "must not collect" not in result.stdout + result.stderr
         assert (tmp_path / "artifacts/test-results/python.xml").is_file()
+
+    for inventory, roots in (
+        ("[]", '["selected"]'),
+        ('"selected"', '["selected"]'),
+        ('[""]', '["selected"]'),
+        ("[true]", '["selected"]'),
+        ('["selected"]', "[]"),
+        ('["selected"]', '"selected"'),
+    ):
+        (tmp_path / "pyproject.toml").write_text(
+            f"[tool.pytest.ini_options]\ntestpaths = {inventory}\n"
+        )
+        artifact = tmp_path / "artifacts/test-results/python.xml"
+        artifact.unlink(missing_ok=True)
+        result = run_step(
+            step,
+            cwd=tmp_path,
+            env={"PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}"},
+            bindings=_bindings(tmp_path)
+            | {"needs.scope.outputs.python_roots": roots},
+            workflow=workflow,
+            job=job,
+        )
+        assert result.returncode != 0
+        assert "Python test" in result.stderr
+        assert not artifact.exists()

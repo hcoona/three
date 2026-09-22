@@ -314,6 +314,15 @@ def select(
     """Select Python roots and the existing Node/.NET workspace units."""
     config = tomllib.loads((root / "pyproject.toml").read_text())
     test_roots = config["tool"]["pytest"]["ini_options"]["testpaths"]
+    if (
+        not isinstance(test_roots, list)
+        or not test_roots
+        or any(
+            not isinstance(test, str) or not test.strip() for test in test_roots
+        )
+    ):
+        message = "Python testpaths must be a nonempty list of explicit paths"
+        raise ValueError(message)
     files = set(
         git(root, "ls-tree", "-r", "--name-only", "-z", "HEAD").split("\0")
     )
