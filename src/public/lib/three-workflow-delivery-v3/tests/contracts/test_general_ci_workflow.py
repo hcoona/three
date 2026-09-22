@@ -79,7 +79,7 @@ def _required_step(scope: dict[str, Any]) -> None:
         "true",
         "success()",
         "${{ success() }}",
-        "steps.scope.outputs.run == 'true'",
+        "success() && !cancelled() && steps.scope.outputs.run == 'true'",
     )
     assert scope.get("continue-on-error", False) is False
 
@@ -147,7 +147,11 @@ def _run_bash_steps(
 ) -> subprocess.CompletedProcess[str]:
     result = None
     for step in steps:
-        if "run" not in step or step.get("id") == "scope":
+        if (
+            "run" not in step
+            or step.get("id") == "scope"
+            or step.get("if") == "cancelled()"
+        ):
             continue
         _required_step(step)
         result = run_step(
@@ -241,7 +245,7 @@ def test_required_general_ci_checks_remain_eligible(
         assert permissions.get("contents") == "read"
         assert "write" not in permissions.values()
         for step in job["steps"]:
-            if "Retain" not in step["name"]:
+            if "Retain" not in step["name"] and step.get("if") != "cancelled()":
                 _required_step(step)
         needs = job.get("needs", [])
         pending.extend([needs] if isinstance(needs, str) else needs)
@@ -512,7 +516,11 @@ def _run_dotnet(
     assert pwsh is not None, "The managed CI toolchain must provide PowerShell."
     result = None
     for step in job["steps"]:
-        if "run" not in step or step.get("id") == "scope":
+        if (
+            "run" not in step
+            or step.get("id") == "scope"
+            or step.get("if") == "cancelled()"
+        ):
             continue
         _required_step(step)
         process_env = {**os.environ, **env}
@@ -678,9 +686,78 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
             assert output.read_text().strip() == f"run={run}"
         else:
             assert not output.exists()
-        for step in job["steps"][1:]:
+        for step in job["steps"][1:-1]:
             assert "steps.scope.outputs.run == 'true'" in step["if"]
             assert not step.get("continue-on-error", False)
+
+
+def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
+    """Keep cancellation-aware work and an explicit failing terminal step."""
+    for name, job in workflow["jobs"].items():
+        if name == "scope":
+            continue
+        assert job["if"] == "always()"
+        for step in job["steps"][1:-1]:
+            if step["if"].startswith("always() &&"):
+                assert step.get("uses", "").startswith(
+                    "actions/upload-artifact@"
+                )
+            else:
+                assert step["if"].startswith(
+                    "success() && !cancelled() && "
+                    "steps.scope.outputs.run == 'true'"
+                )
+        terminal = job["steps"][-1]
+        assert terminal["if"] == "cancelled()"
+        assert not terminal.get("continue-on-error", False)
+        result = run_step(
+            terminal,
+            cwd=tmp_path,
+            env={},
+            bindings=_bindings(tmp_path),
+            workflow=workflow,
+            job=job,
+        )
+        assert result.returncode != 0
+        assert "canceled before a complete result" in result.stderr
+
+
+def test_scope_selection_uses_project_python_and_tested_comparison(
+    workflow, tmp_path
+):
+    """Bootstrap selection from the same runtime projection as its consumers."""
+    job = workflow["jobs"]["scope"]
+    setup = _action(job, "actions/setup-python")
+    select = next(step for step in job["steps"] if step.get("id") == "select")
+    assert setup["with"]["python-version-file"] == ".python-version"
+    assert job["steps"].index(setup) < job["steps"].index(select)
+    env = _commands(tmp_path)
+    result = run_step(
+        select,
+        cwd=tmp_path,
+        env=env,
+        bindings=_bindings(tmp_path)
+        | {
+            "github.event.pull_request.base.sha || github.event.before": "a"
+            * 40
+        },
+        workflow=workflow,
+        job=job,
+    )
+    assert result.returncode == 0, result.stderr
+    assert [item["command"] for item in _observations(env)] == [
+        ["python", "--version"],
+        [
+            "python",
+            "eng/scripts/ci_scope.py",
+            "--from-ref",
+            "a" * 40,
+            "--to-ref",
+            "d" * 40,
+            "--output",
+            "artifacts/ci-scope.json",
+        ],
+    ]
 
 
 def test_python_test_entry_runs_only_selected_roots_and_propagates_failure(

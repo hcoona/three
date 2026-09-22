@@ -39,16 +39,21 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
+      - name: Setup selection Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
       - name: Select work from the actual comparison
         id: select
         env:
           COMPARISON_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           TESTED_CANDIDATE: ${{ github.sha }}
         run: |
+          python --version
           if [[ "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]]; then
-            python3 eng/scripts/ci_scope.py --full --output artifacts/ci-scope.json
+            python eng/scripts/ci_scope.py --full --output artifacts/ci-scope.json
           else
-            python3 eng/scripts/ci_scope.py --from-ref "$COMPARISON_BASE" \
+            python eng/scripts/ci_scope.py --from-ref "$COMPARISON_BASE" \
               --to-ref "$TESTED_CANDIDATE" --output artifacts/ci-scope.json
           fi
       - name: Retain selection and reasons
@@ -85,19 +90,26 @@ jobs:
           esac
 
       - name: Checkout
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/checkout@v7
 
       - name: Set up mise
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           experimental: true
           install: false
 
       - name: Validate lockfile
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: mise install --locked --dry-run --monorepo
+
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
 
   validation:
     name: Validate
@@ -123,38 +135,38 @@ jobs:
           esac
 
       - name: Checkout
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup .NET SDK
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
       - name: Setup Go
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-go@v7
         with:
           go-version: '1.*'
 
       - name: Setup Java
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '25'
 
       - name: Set up PNPM
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 11.22.0
 
       - name: Set up Node.js
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: '24.19.0'
@@ -162,26 +174,26 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Python 3
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
 
       - name: Set up Ruby
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
           ruby-version: '4.0.6'
           bundler-cache: true
 
       - name: Install pkl
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: pkl-community/setup-pkl@0bffd1602015ccf46333e880f81087e73fd1a361 # v0
         with:
           pkl-version: 0.31.1
 
       - name: Capture setup tool paths
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -205,14 +217,14 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Mise Install Tools
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           experimental: true
           install: false
 
       - name: Install dependencies
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         env:
           MISE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -230,7 +242,7 @@ jobs:
           mise bootstrap
 
       - name: Validate with HK
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         env:
           HK_PROFILE: small,medium,large
           CI_BASE: ${{ needs.scope.outputs.base }}
@@ -245,6 +257,13 @@ jobs:
               --from-ref "$CI_BASE" --to-ref "$CI_CANDIDATE" \
               -- hk check --no-progress --no-fail-fast
           fi
+
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
 
   dotnet-tests:
     name: Build & Test (.NET 10)
@@ -271,13 +290,13 @@ jobs:
           esac
 
       - name: Checkout
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup .NET SDK
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
@@ -285,20 +304,20 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
 
       - name: Restore dotnet tools
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: |
           dotnet tool restore
 
       - name: Restore
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: dotnet restore dirs.proj -p:RestoreLockedMode=true
 
       - name: Build
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: dotnet build dirs.proj -c Debug --no-restore -p:RestoreLockedMode=true
 
       - name: Test
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: pwsh
         run: |
           $testProjects = Get-ChildItem -Path tests -Filter '*.csproj' -Recurse
@@ -319,6 +338,13 @@ jobs:
               }
             }
           }
+
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
 
   azureauth-foundation-artifacts:
     name: AzureAuth Foundation Artifact (${{ matrix.build-os }} build, ${{ matrix.target-os }} target, ${{ matrix.target-rid }})
@@ -367,13 +393,13 @@ jobs:
           esac
 
       - name: Checkout
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup .NET SDK
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
@@ -384,11 +410,11 @@ jobs:
             tests/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform.Tests/packages.lock.json
 
       - name: Restore dotnet tools for deployment validation
-        if: steps.scope.outputs.run == 'true' && (matrix.run-deployment-validation)
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && (matrix.run-deployment-validation)
         run: dotnet tool restore
 
       - name: Test AzureAuth host OS behavior
-        if: steps.scope.outputs.run == 'true' && (matrix.run-host-tests)
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && (matrix.run-host-tests)
         timeout-minutes: 15
         shell: pwsh
         run: |
@@ -401,12 +427,12 @@ jobs:
             -p:RestoreLockedMode=true
 
       - name: Test foundation artifact script
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: pwsh
         run: ./tests/private/app/azureauth-credprovider/New-FoundationArtifact.Tests.ps1
 
       - name: Create internal foundation artifact
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: pwsh
         run: |
           ./eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1 `
@@ -417,7 +443,7 @@ jobs:
             -SourceRevision '${{ github.sha }}'
 
       - name: Upload internal foundation artifact
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: azureauth-credprovider-foundation-internal-${{ matrix.build-os }}-${{ matrix.target-rid }}
@@ -426,19 +452,19 @@ jobs:
           retention-days: 7
 
       - name: Setup Python 3.14 for deployment validation
-        if: steps.scope.outputs.run == 'true' && (matrix.run-deployment-validation)
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && (matrix.run-deployment-validation)
         uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
 
       - name: Install uv for deployment validation
-        if: steps.scope.outputs.run == 'true' && (matrix.run-deployment-validation)
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && (matrix.run-deployment-validation)
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: false
 
       - name: Create deployment validation bundle
-        if: steps.scope.outputs.run == 'true' && (matrix.run-deployment-validation)
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && (matrix.run-deployment-validation)
         shell: pwsh
         run: |
           ./eng/scripts/azureauth-credprovider/New-DeploymentValidationBundle.ps1 `
@@ -447,7 +473,7 @@ jobs:
             -Configuration Release
 
       - name: Test deployment validation lifecycle
-        if: steps.scope.outputs.run == 'true' && (matrix.run-deployment-validation)
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && (matrix.run-deployment-validation)
         shell: pwsh
         run: |
           ./tests/private/app/azureauth-credprovider/Install-DeploymentValidationBundle.Tests.ps1 `
@@ -456,6 +482,13 @@ jobs:
               'azureauth-credprovider-deployment-validation-internal-' +
               '${{ matrix.build-os }}-${{ matrix.target-rid }}.zip'
             )
+
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
 
   node-tests:
     name: Test & Build (Node.js ${{ matrix.node-version }})
@@ -486,25 +519,25 @@ jobs:
           esac
 
       - name: Checkout
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup .NET SDK
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
       - name: Set up PNPM
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 11.22.0
 
       - name: Set up Node.js
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
@@ -512,14 +545,14 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: |
           set -Eeuo pipefail
           pnpm install --frozen-lockfile
           dotnet tool restore
 
       - name: Record actual tool versions
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: |
           set -Eeuo pipefail
           echo "node=$(node --version)"
@@ -527,20 +560,27 @@ jobs:
           echo "npm=$(npm --version)"
 
       - name: Type check package
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: pnpm --dir "${PACKAGE_DIR}" run typecheck
 
       - name: Run monorepo tests
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: pnpm run test
 
       - name: Build monorepo
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: pnpm run build
 
       - name: Pack and probe published artifact
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: pnpm --dir "${PACKAGE_DIR}" run validate:packed-artifact
+
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
 
   python-tests:
     name: Test (Python 3.14)
@@ -567,25 +607,25 @@ jobs:
           esac
 
       - name: Checkout
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup .NET SDK
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
       - name: Set up PNPM
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 11.22.0
 
       - name: Set up Node.js
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: '24.19.0'
@@ -593,26 +633,26 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Set up mise, HK, and Pkl
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           experimental: true
           install_args: hk pkl
 
       - name: Setup Python 3.14
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
 
       - name: Install uv
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           cache-dependency-glob: 'uv.lock'
 
       - name: Install dependencies
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: |
           set -Eeuo pipefail
           dotnet tool restore
@@ -620,13 +660,13 @@ jobs:
           uv sync --frozen --all-packages
 
       - name: Prepare static-reference authorities
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         env:
           MISE_TASK_RUN_AUTO_INSTALL: 'false'
         run: mise run prepare:static-reference-authorities
 
       - name: Run tests
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         env:
           PYTHON_TEST_ROOTS: ${{ needs.scope.outputs.python_roots }}
         run: |
@@ -659,6 +699,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
+
   ruby-tests:
     name: Test (Ruby 3.3)
     runs-on: ubuntu-latest
@@ -681,19 +728,19 @@ jobs:
           esac
 
       - name: Checkout
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup Ruby
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
           ruby-version: '4.0.6'
 
       - name: Install system dependencies
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -709,7 +756,7 @@ jobs:
             ghostscript \
             fd-find
       - name: Ensure fd is available
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -732,7 +779,7 @@ jobs:
           exit 1
 
       - name: Run Ruby gem tests
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -773,6 +820,13 @@ jobs:
             exit 1
           fi
 
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
+
   scholarly-tests:
     name: Test scholarly publication
     runs-on: ubuntu-latest
@@ -791,19 +845,25 @@ jobs:
             *) echo 'Scope selection failed or omitted applicability.' >&2; exit 1 ;;
           esac
       - name: Checkout
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/checkout@v7
       - name: Install uv
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Set up mise
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           experimental: true
           install: false
       - name: Run scholarly project tests
-        if: steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         env:
           MISE_TASK_RUN_AUTO_INSTALL: 'false'
         run: mise run scholarly-publication-plugin-test
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
