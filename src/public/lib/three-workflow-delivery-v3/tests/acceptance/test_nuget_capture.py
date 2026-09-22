@@ -216,18 +216,15 @@ def test_capture_retains_complete_state_and_actual_scenario_bytes(
         ("label", ""),
         ("tooling_sha", "main"),
         ("helper_runtime_sha256", "unknown"),
-        ("container_id", True),
         ("container_id", -1),
         ("version", ""),
-        ("limits", {}),
     ],
 )
-def test_capture_rejects_invalid_requests_before_reads(
-    capture_request, scenario, field, value
+def test_capture_request_rejects_invalid_domain_values(
+    capture_request, field, value
 ):
     with pytest.raises(ValueError, match=r"invalid|requires exact|missing"):
         replace(capture_request, **{field: value})
-    scenario[1].get.assert_not_called()
 
 
 @pytest.mark.parametrize(

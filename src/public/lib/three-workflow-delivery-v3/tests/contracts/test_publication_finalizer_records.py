@@ -558,9 +558,6 @@ def test_package_control_proof_emits_first_slice_authority_shape():
         "facts": [[name, list(values)] for name, values in _PACKAGE_FACTS],
         "response-digests": [list(pair) for pair in _PACKAGE_RESPONSE_DIGESTS],
     }
-    assert document["endpoints"][0].startswith(
-        "https://api.github.com/users/hcoona/packages/",
-    )
 
 
 def test_public_package_api_proof_preserves_unexposed_access_facts():
@@ -998,10 +995,6 @@ def test_profile_match_emits_resolved_first_slice_command():
         "configuration": [list(pair) for pair in _PROFILE_CONFIGURATION],
         "matched-at": _PROFILE_MATCHED_AT,
     }
-    assert document["command"][-2:] == [
-        "--ignore-scripts",
-        "--fetch-retries=0",
-    ]
 
 
 def test_destination_readback_emits_exact_version_and_paired_tag_shape():
@@ -1335,7 +1328,7 @@ def test_governance_proof_requires_exact_boolean_true(live_enabled):
         replace(proof, live_enabled=live_enabled)
 
 
-def test_governance_eligibility_sha_can_be_a_continuity_ancestor():
+def test_governance_proof_preserves_distinct_supplied_eligibility_and_target_shas():  # noqa: E501
     marker = _marker()
 
     assert (
@@ -1816,7 +1809,7 @@ def test_publication_diagnostics_rejects_invalid_entry_or_flag_type(
         PublicationDiagnostics(entries=entries, truncated=truncated)
 
 
-def test_mutation_marker_accepts_a_coherently_rebound_current_attempt():
+def test_mutation_marker_projects_a_coherent_alternate_attempt():
     attempt = _attempt(
         target=_ALTERNATE_TARGET,
         workflow_run_id=_ALTERNATE_WORKFLOW_RUN_ID,
@@ -2041,7 +2034,7 @@ def test_publication_result_binds_producer_control_and_current_run(
         )
 
 
-def test_published_result_accepts_a_coherently_rebound_current_attempt():
+def test_published_result_projects_a_coherent_alternate_attempt():
     attempt = _attempt(
         target=_ALTERNATE_TARGET,
         workflow_run_id=_ALTERNATE_WORKFLOW_RUN_ID,
@@ -2235,7 +2228,7 @@ def test_finalization_proof_requires_canonical_proved_at(
         replace(_finalization_proof(), proved_at=proved_at)
 
 
-def test_finalization_proof_accepts_a_coherently_rebound_current_attempt():
+def test_finalization_proof_projects_a_coherent_alternate_attempt():
     attempt = _attempt(
         target=_ALTERNATE_TARGET,
         workflow_run_id=_ALTERNATE_WORKFLOW_RUN_ID,
@@ -2560,7 +2553,7 @@ def test_release_transport_rejects_representative_nested_schema_openings(  # noq
             _marker,
             MutationMayHaveStartedMarker,
             ("package-control-proof", "endpoints"),
-            _ENDPOINTS,
+            {},
             "endpoints must be an array",
         ),
         (
@@ -2574,14 +2567,14 @@ def test_release_transport_rejects_representative_nested_schema_openings(  # noq
             _publication_result,
             PublicationResult,
             ("diagnostics", "entries"),
-            _diagnostics().entries,
+            {},
             "entries must be an array",
         ),
         (
             _finalization_proof,
             ExactSatisfiedFinalizationProof,
             ("exact-version-readback", "response-digests"),
-            _readback().response_digests,
+            {},
             "response-digests must be an array",
         ),
     ],

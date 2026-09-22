@@ -413,10 +413,21 @@ def test_pre_v3_control_plane_and_legacy_descriptors_are_absent() -> None:
 def test_pre_v3_design_docs_cannot_reactivate_legacy_buddy_routes() -> None:
     """Mark restored pre-v3 guidance as historical and non-authoritative."""
     for relative_path in ARCHIVED_LEGACY_BUDDY_DOCS:
-        notice = (REPO_ROOT / relative_path).read_text(encoding="utf-8")[:700]
+        lines = (
+            (REPO_ROOT / relative_path).read_text(encoding="utf-8").splitlines()
+        )
+        assert lines[0].startswith("# "), relative_path
+        index = 1
+        while index < len(lines) and not lines[index].strip():
+            index += 1
+        quoted_lines = []
+        while index < len(lines) and lines[index].startswith(">"):
+            quoted_lines.append(lines[index][1:].strip())
+            index += 1
+        notice = " ".join(" ".join(quoted_lines).split())
         assert "**Archived and superseded:**" in notice, relative_path
         assert (
-            "legacy `buddy.yml` and `release-buddy.yml` routes are\n> retired"
+            "legacy `buddy.yml` and `release-buddy.yml` routes are retired"
             in notice
         ), relative_path
         assert "Do not use this document to recreate either route" in notice, (

@@ -568,30 +568,11 @@ def _configure_clean_provider_environment(
             monkeypatch.setenv(name, value)
 
 
-def _declared_nbgv_environment_allowlist() -> frozenset[str]:
-    candidates = (
-        "NBGV_ENVIRONMENT_ALLOWLIST",
-        "REF_NEUTRAL_ENVIRONMENT_ALLOWLIST",
-        "_NBGV_ENVIRONMENT_ALLOWLIST",
-        "_REF_NEUTRAL_ENVIRONMENT_ALLOWLIST",
-    )
-    for name in candidates:
-        value = getattr(node_provider_module, name, None)
-        if isinstance(value, (tuple, frozenset, set)):
-            assert all(isinstance(item, str) and item for item in value)
-            return frozenset(value)
-    message = (
-        "Node Provider must declare and use an explicit ref-neutral NBGV "
-        "environment allowlist"
-    )
-    raise AssertionError(message)
-
-
 def test_nbgv_provider_declares_explicit_ref_neutral_environment_allowlist() -> (  # noqa: E501
     None
 ):
     """Exclude every NBGV-recognized CI ref input from authoritative facts."""
-    allowlist = _declared_nbgv_environment_allowlist()
+    allowlist = frozenset(node_provider_module.NBGV_ENVIRONMENT_ALLOWLIST)
 
     assert "PATH" in allowlist
     assert allowlist.isdisjoint(_NBGV_RECOGNIZED_REF_VARIABLES)

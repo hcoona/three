@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -111,6 +112,7 @@ class WorkflowBoundary:
             "COMMAND_LOG": str(root / "commands.jsonl"),
         }
         recorder = """import json, os, sys
+from itertools import pairwise
 from pathlib import Path
 command = [Path(sys.argv[0]).name, *sys.argv[1:]]
 with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
@@ -235,11 +237,34 @@ def test_root_hk_executes_admitted_toolchain_and_selected_mode(
     """Prepare the admitted toolchain before incremental or full HK."""
     _provider(boundary)
     boundary.env["GITHUB_EVENT_NAME"] = event
-    result = boundary.run(
-        "root-hk", "Run permanent root HK and static-reference policy"
+    job = boundary.document["jobs"]["root-hk"]
+    execute_steps = [
+        step for step in job["steps"] if step.get("id") == "execute"
+    ]
+    assert len(execute_steps) == 1
+    # The scheduling owner establishes that this lane is selected.
+    result = run_step(
+        execute_steps[0],
+        cwd=boundary.root,
+        env=boundary.env,
+        bindings=boundary.bindings,
+        workflow=boundary.document,
+        job=job,
     )
     assert result.returncode == 0, result.stderr
     calls = boundary.calls()
+    for command in calls:
+        assert "--consumer-policy" not in command
+        assert all(
+            not argument.startswith("--consumer-policy=")
+            for argument in command
+        )
+        assert "check:static-reference-worktree" not in command
+        assert "--source-kind=worktree" not in command
+        assert all(
+            (option, value) != ("--source-kind", "worktree")
+            for option, value in pairwise(command)
+        )
     hk = next(call for call in calls if "hk" in call)
     preparation = [
         ["mise", "run", "prepare:static-reference-authorities"],

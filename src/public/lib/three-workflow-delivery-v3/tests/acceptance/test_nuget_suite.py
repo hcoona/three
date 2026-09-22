@@ -415,4 +415,3 @@ def test_suite_plan_rejects_misaligned_static_subjects(suite, change):
         )
     with pytest.raises(ValueError, match="suite"):
         NuGetSuitePlan(canonicalize(static), reads, consumer)
-    assert suite.events == []

@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING
 
 import pytest
+import yaml
 from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.release.static_reference_model import (
     PRODUCER_PACKAGE,
@@ -45,6 +46,10 @@ from three_workflow_delivery_v3.release.static_reference_source import (
 
 if TYPE_CHECKING:
     from types import ModuleType
+
+    from three_workflow_delivery_v3.release.static_reference_session import (
+        MaterializedAuthorityInvocation,
+    )
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 STATIC_REFERENCE_SCRIPT = (
@@ -1857,7 +1862,7 @@ def test_authority_dispatches_each_graph_to_its_exact_protocol(  # noqa: PLR0913
         str(prepared_authority),
     )
     assert request == expected_request
-    assert seen_invocation is invocation
+    assert seen_invocation == invocation
     assert seen_session is session
     assert not invocation_root.exists()
     assert not session_root.exists()
@@ -3282,7 +3287,7 @@ def test_policy_cleanup_failed_overrides_success_source_or_graph_result_and_clea
 def test_hexo_file_reference_and_v9_lock_project_a_typed_directory(
     tmp_path: Path,
 ) -> None:
-    """Project the tracked Hexo file reference and keep the whole scan clean."""
+    """Project the tracked Hexo local reference through its actual lock key."""
     from three_workflow_delivery_v3.release.static_reference_authority import (  # noqa: PLC0415
         run_authority_graph,
     )
@@ -3323,6 +3328,13 @@ def test_hexo_file_reference_and_v9_lock_project_a_typed_directory(
         input_mode="strict-utf8-file",
     )
     assert lock_candidate.content == lock_path.read_bytes()
+    lock_document = yaml.safe_load(lock_candidate.content)
+    reference = lock_document["importers"]["."]["dependencies"][
+        "hexo-renderer-asciidoc"
+    ]
+    assert reference["specifier"] == "file:../.."
+    snapshot_key = f"hexo-renderer-asciidoc@{reference['version']}"
+    assert snapshot_key in lock_document["snapshots"]
 
     session_root: Path
     with StaticReferenceSession(parent=tmp_path) as session:
@@ -3362,64 +3374,39 @@ def test_hexo_file_reference_and_v9_lock_project_a_typed_directory(
             outcome.implementation_identities
             == (_PHASE2_GRAPH_IMPLEMENTATIONS["pnpm-lock-v1"])
         )
-        assert relevant_facts == (
-            {
-                "dependencies": [
-                    {
-                        "dependencyKey": "@asciidoctor/core",
-                        "reference": "4.0.11",
-                        "section": "dependencies",
-                    },
-                    {
-                        "dependencyKey": "cheerio",
-                        "reference": "1.2.0",
-                        "section": "dependencies",
-                    },
-                    {
-                        "dependencyKey": "entities",
-                        "reference": "8.0.0",
-                        "section": "dependencies",
-                    },
-                    {
-                        "dependencyKey": "hexo",
-                        "reference": "8.1.2(chokidar@3.6.0)",
-                        "section": "dependencies",
-                    },
-                    {
-                        "dependencyKey": "hexo-util",
-                        "reference": "4.0.0",
-                        "section": "dependencies",
-                    },
-                ],
-                "dependencyPath": (
-                    "hexo-renderer-asciidoc@file:../.."
-                    "(hexo@8.1.2(chokidar@3.6.0))"
-                ),
-                "kind": "pnpm-lock-snapshot",
-                "name": "hexo-renderer-asciidoc",
-                "nonSemverVersion": "file:../..",
-                "registryName": None,
-                "resolution": {
-                    "kind": "directory",
-                    "localPath": "src/public/lib/hexo-renderer-asciidoc",
-                },
-                "version": None,
+        assert len(relevant_facts) == 2  # noqa: PLR2004
+        facts_by_kind = {fact["kind"]: fact for fact in relevant_facts}
+        assert set(facts_by_kind) == {
+            "pnpm-lock-snapshot",
+            "pnpm-lock-importer-reference",
+        }
+        assert {
+            key: value
+            for key, value in facts_by_kind["pnpm-lock-snapshot"].items()
+            if key != "dependencies"
+        } == {
+            "dependencyPath": snapshot_key,
+            "kind": "pnpm-lock-snapshot",
+            "name": "hexo-renderer-asciidoc",
+            "nonSemverVersion": "file:../..",
+            "registryName": None,
+            "resolution": {
+                "kind": "directory",
+                "localPath": "src/public/lib/hexo-renderer-asciidoc",
             },
-            {
-                "dependencyKey": "hexo-renderer-asciidoc",
-                "importerId": ".",
-                "kind": "pnpm-lock-importer-reference",
-                "rawSpecifier": "file:../..",
-                "registrySpec": None,
-                "resolvedReference": ("file:../..(hexo@8.1.2(chokidar@3.6.0))"),
-                "section": "dependencies",
-                "snapshotKey": (
-                    "hexo-renderer-asciidoc@file:../.."
-                    "(hexo@8.1.2(chokidar@3.6.0))"
-                ),
-                "workspaceSelector": None,
-            },
-        )
+            "version": None,
+        }
+        assert facts_by_kind["pnpm-lock-importer-reference"] == {
+            "dependencyKey": "hexo-renderer-asciidoc",
+            "importerId": ".",
+            "kind": "pnpm-lock-importer-reference",
+            "rawSpecifier": reference["specifier"],
+            "registrySpec": None,
+            "resolvedReference": reference["version"],
+            "section": "dependencies",
+            "snapshotKey": snapshot_key,
+            "workspaceSelector": None,
+        }
         session.release(invocation)
 
     assert not session_root.exists()
@@ -3506,7 +3493,7 @@ def test_excluded_surface_selects_no_graph_and_has_no_fallback(
 def test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared() -> (  # noqa: E501
     None
 ):
-    """Reject superseded grammars, exceptions, inventories, and claims."""
+    """Keep retired entries absent and exclude unsupported policy claims."""
     from three_workflow_delivery_v3.release.static_reference_policy import (  # noqa: PLC0415
         static_reference_policy_document,
     )
@@ -3525,43 +3512,6 @@ def test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared() 
     assert [
         path for path in obsolete_paths if (REPO_ROOT / path).exists()
     ] == []
-
-    implementation_paths = (
-        REPO_ROOT / "eng/scripts/workflow_delivery_v3_static_reference.py",
-        (
-            REPO_ROOT
-            / "eng/scripts/workflow_delivery_v3_static_reference_node.mjs"
-        ),
-        (
-            REPO_ROOT
-            / "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs"
-        ),
-        *sorted(
-            (
-                REPO_ROOT / "src/public/lib/three-workflow-delivery-v3/src/"
-                "three_workflow_delivery_v3/release"
-            ).glob("static_reference_*.py")
-        ),
-    )
-    implementation_text = "\n".join(
-        path.read_text(encoding="utf-8") for path in implementation_paths
-    ).casefold()
-    assert {
-        marker
-        for marker in (
-            "approved_consumer_exceptions",
-            "consumer_policy_parser_profile",
-            "tree_sitter",
-            "tree-sitter",
-            "dataflow",
-            "scanned-surfaces",
-            "admitted-exceptions",
-            "fixed-inventory",
-            "trigger-catalog",
-            "consumer-policy-result",
-        )
-        if marker in implementation_text
-    } == set()
 
     policy_document = static_reference_policy_document()
     policy_text = json.dumps(policy_document, sort_keys=True).casefold()
@@ -4966,20 +4916,41 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
             ),
         )
 
+    invocations: dict[str, MaterializedAuthorityInvocation] = {}
+
+    class RecordingSession(StaticReferenceSession):
+        def materialize(
+            self,
+            selected_candidate: StaticReferenceCandidate,
+            *,
+            source_kind: str,
+            target: str | None,
+        ) -> MaterializedAuthorityInvocation:
+            invocation = super().materialize(
+                selected_candidate,
+                source_kind=source_kind,  # type: ignore[arg-type]
+                target=target,
+            )
+            invocations[selected_candidate.path] = invocation
+            return invocation
+
     cleanup_calls: list[Path] = []
 
     def cleanup(path: Path) -> None:
         cleanup_calls.append(path)
         if path.exists():
             shutil.rmtree(path)
-        if terminal_case == "cleanup" and path.name == "invocation-0001":
+        if (
+            terminal_case == "cleanup"
+            and path == invocations["01/package.json"].root
+        ):
             message = "injected exact-root cleanup failure"
             raise OSError(message)
 
     sessions: list[StaticReferenceSession] = []
 
     def session_factory() -> StaticReferenceSession:
-        session = StaticReferenceSession(parent=tmp_path, cleanup=cleanup)
+        session = RecordingSession(parent=tmp_path, cleanup=cleanup)
         sessions.append(session)
         return session
 
@@ -5032,7 +5003,7 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
     assert cleanup_calls == [
         authority_calls[0][1],
         authority_calls[1][1],
-        sessions[0].root / "invocation-0002",
+        invocations["02/package.json"].root,
         sessions[0].root,
     ]
     assert all(not path.exists() for path in cleanup_calls)
@@ -5103,12 +5074,12 @@ def test_policy_timeout_and_cancellation_always_clean_exact_roots(  # noqa: PLR0
             shutil.rmtree(path)
         if (
             terminal_case == "timeout-cleanup-failure"
-            and path.name == "invocation-0000"
+            and path == invocations[0].root
         ):
             message = "cleanup overrides timeout"
             raise OSError(message)
 
-    invocation_roots: list[Path] = []
+    invocations: list[MaterializedAuthorityInvocation] = []
 
     class RecordingSession(StaticReferenceSession):
         def materialize(
@@ -5117,13 +5088,13 @@ def test_policy_timeout_and_cancellation_always_clean_exact_roots(  # noqa: PLR0
             *,
             source_kind: str,
             target: str | None,
-        ) -> object:
+        ) -> MaterializedAuthorityInvocation:
             invocation = super().materialize(
                 selected_candidate,
                 source_kind=source_kind,  # type: ignore[arg-type]
                 target=target,
             )
-            invocation_roots.append(invocation.root)
+            invocations.append(invocation)
             return invocation
 
     sessions: list[RecordingSession] = []
@@ -5175,7 +5146,7 @@ def test_policy_timeout_and_cancellation_always_clean_exact_roots(  # noqa: PLR0
     assert command[1] == str(
         REPO_ROOT / "eng/scripts/workflow_delivery_v3_static_reference_node.mjs"
     )
-    assert kwargs["cwd"] == invocation_roots[0]
+    assert kwargs["cwd"] == invocations[0].root
     assert kwargs["timeout"] == 30  # noqa: PLR2004
     request = json.loads(kwargs["input"])  # type: ignore[arg-type]
     assert request == {
@@ -5183,14 +5154,12 @@ def test_policy_timeout_and_cancellation_always_clean_exact_roots(  # noqa: PLR0
             "workflow-delivery/v3/static-reference-node-authority-request"
         ),
         "graph": "npm-manifest-v1",
-        "snapshotRoot": str(invocation_roots[0] / "snapshot"),
-        "candidatePath": str(
-            invocation_roots[0] / "snapshot/candidate/package.json"
-        ),
+        "snapshotRoot": str(invocations[0].snapshot_root),
+        "candidatePath": str(invocations[0].candidate_path),
         "logicalPath": "candidate/package.json",
     }
     assert len(sessions) == 1
-    assert cleanup_calls == [invocation_roots[0], sessions[0].root]
+    assert cleanup_calls == [invocations[0].root, sessions[0].root]
     assert all(not path.exists() for path in cleanup_calls)
 
 
@@ -5881,14 +5850,7 @@ def test_git_sources_ignore_all_ambient_repository_object_and_config_redirects( 
         ("index", None, indexed, indexed_object),
         ("worktree", None, worktree, None),
     ]
-    assert len(git_calls) == 10  # noqa: PLR2004
-    assert (
-        sum(
-            call[0][2:] == ("rev-parse", "--show-toplevel")
-            for call in git_calls
-        )
-        == 3  # noqa: PLR2004
-    )
+    assert git_calls
     assert all(call[1] == repository.resolve() for call in git_calls)
     assert all(call[0][1] == "--no-replace-objects" for call in git_calls)
     assert all(

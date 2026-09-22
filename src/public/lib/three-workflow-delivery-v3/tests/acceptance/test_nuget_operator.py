@@ -331,6 +331,14 @@ def test_operator_source_admission_checks_actual_python_and_helper_inputs(
         state[key] = original
 
 
+def test_operator_request_rejects_boolean_capture_container_id(inputs):
+    document = inputs[0].to_document()
+    document["captures"][0]["containerId"] = True
+
+    with pytest.raises(ValueError, match="exact integer"):
+        operator.read_request(canonicalize(document))
+
+
 def test_operator_request_roundtrip_rejects_scope_and_budget_changes(inputs):
     request, _kwargs, _files = inputs
     assert (

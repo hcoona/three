@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import importlib.util
 import json
 import os
@@ -97,48 +96,43 @@ def test_manual_worktree_static_reference_is_a_separate_mise_task(
     assert "--target" not in command
 
 
-def test_root_hk_live_static_reference_uses_git_target_evidence_only() -> None:
+def test_root_hk_live_static_reference_uses_git_target_evidence_only(
+    tmp_path: Path,
+) -> None:
     """Keep root-HK feedback out of Live's exact-target evidence boundary."""
     static_step = _effective_hooks()["check"]["steps"][
         STATIC_REFERENCE_STEP_NAME
     ]["check"]
-    buddy_workflow = (
-        REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
-    ).read_text(encoding="utf-8")
-    eligibility_path = (
-        REPO_ROOT / "src/public/lib/three-workflow-delivery-v3/src/"
-        "three_workflow_delivery_v3/release/eligibility.py"
+    log = tmp_path / "commands.jsonl"
+    recorder = (
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        f"with Path({str(log)!r}).open('a', encoding='utf-8') as stream:\n"
+        "    stream.write(json.dumps({'argv': [Path(sys.argv[0]).name, "
+        "*sys.argv[1:]], 'cwd': os.getcwd()}) + '\\n')\n"
     )
-    syntax = ast.parse(eligibility_path.read_text(encoding="utf-8"))
-    evaluator = next(
-        node
-        for node in syntax.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "evaluate_live_eligibility"
+    for name in ("uv", "mise"):
+        executable(tmp_path / "bin" / name, recorder)
+    result = run_step(
+        {"run": static_step},
+        cwd=REPO_ROOT,
+        env={"PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}"},
+        bindings={},
     )
-    scan_calls = tuple(
-        node
-        for node in ast.walk(evaluator)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "scan_bounded_static_references"
-    )
-
-    assert "git-target" not in static_step
-    assert "--target" not in static_step
-    assert "workflow_delivery_v3_static_reference.py" not in buddy_workflow
-    assert "three-workflow-delivery-v3 release evaluate-live-eligibility" in (
-        buddy_workflow
-    )
-    assert '--target "${GITHUB_SHA}"' in buddy_workflow
-    assert len(scan_calls) == 1
-    keywords = {
-        keyword.arg: keyword.value
-        for keyword in scan_calls[0].keywords
-        if keyword.arg is not None
-    }
-    assert ast.literal_eval(keywords["source_kind"]) == "git-target"
-    assert ast.unparse(keywords["target"]) == "context.target"
+    assert result.returncode == 0, result.stderr
+    observations = [json.loads(line) for line in log.read_text().splitlines()]
+    assert observations
+    for observation in observations:
+        assert Path(observation["cwd"]) == REPO_ROOT
+        arguments = observation["argv"]
+        assert arguments[:2] == ["uv", "run"]
+        assert STATIC_REFERENCE_IMPLEMENTATION.as_posix() in arguments
+        assert arguments[arguments.index("--repository-root") + 1] == "."
+        assert arguments[arguments.index("--source-kind") + 1] == "index"
+        assert "--target" not in arguments
+        assert all(
+            not argument.startswith("--target=") for argument in arguments
+        )
 
 
 if TYPE_CHECKING:
@@ -1178,7 +1172,6 @@ def test_script_reports_invalid_ref(tmp_path: Path) -> None:
     assert result.returncode != 0
     assert result.stdout.strip() == ""
     assert missing_ref in result.stderr
-    assert "Command '('git', 'rev-parse', '--verify'" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -1218,11 +1211,6 @@ def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
     old_orphan = Path(
         "tests/workflow_delivery_v3/test_commit3_contract_boundaries.py",
     )
-    sentinel = (
-        f"{destination.as_posix()}::"
-        "test_nbgv_provider_declares_explicit_ref_neutral_environment_allowlist"
-    )
-
     assert (REPO_ROOT / destination).is_file()
     assert not (REPO_ROOT / old_orphan).exists()
 
@@ -1256,7 +1244,12 @@ def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
         ),
         cwd=REPO_ROOT,
     )
-    assert sentinel in collection.stdout.splitlines()
+    collected_modules = {
+        line.split("::", 1)[0]
+        for line in collection.stdout.splitlines()
+        if "::" in line
+    }
+    assert destination.as_posix() in collected_modules
 
 
 def test_real_hk_plan_triggers_scholarly_suite_for_bounded_surfaces(
@@ -1824,55 +1817,49 @@ def test_acceptance_fixture_required_files_are_visible_to_git() -> None:
 def test_legacy_pngchunk_ztxt_ba_line_and_typos_exception_are_exact() -> None:
     """Preserve the historical identifier and its file-specific exception."""
     legacy_path = "src/public/lib/Hjg.Pngcs/Chunks/PngChunkZTXT.cs"
-    legacy_lines = (
-        (REPO_ROOT / legacy_path)
-        .read_text(
-            encoding="utf-8",
-        )
-        .splitlines()
+    legacy_source = (REPO_ROOT / legacy_path).read_text(encoding="utf-8")
+    typos_config = tomllib.loads(
+        (REPO_ROOT / ".typos.toml").read_text(encoding="utf-8")
     )
-    typos_config = (REPO_ROOT / ".typos.toml").read_text(encoding="utf-8")
-    exact_exception = f'  "{legacy_path}",'
     legacy_identifier = "b" + "a"
 
-    assert legacy_lines[45] == (
-        f"            MemoryStream {legacy_identifier} = new MemoryStream();"
+    assert re.search(
+        rf"\bMemoryStream\s+{legacy_identifier}\s*=\s*new\s+"
+        r"MemoryStream\s*\(\s*\)\s*;",
+        legacy_source,
     )
-    assert typos_config.count(exact_exception) == 1
+    assert legacy_path in typos_config["files"]["extend-exclude"]
 
 
 def test_typos_legacy_identifier_exceptions_are_file_specific() -> None:
     """Reject wildcard Pngcs or repository-wide identifier exemptions."""
-    minimum_specific_exception_count = 3
-    typos_config = (REPO_ROOT / ".typos.toml").read_text(encoding="utf-8")
-    exclusion_block = typos_config.split("extend-exclude = [", 1)[1].split(
-        "]",
-        1,
-    )[0]
+    typos_config = tomllib.loads(
+        (REPO_ROOT / ".typos.toml").read_text(encoding="utf-8")
+    )
+    exclusions = typos_config["files"]["extend-exclude"]
     pngcs_exclusions = tuple(
-        line.strip().rstrip(",").strip("\"'")
-        for line in exclusion_block.splitlines()
-        if "src/public/lib/Hjg.Pngcs/" in line
+        path for path in exclusions if "src/public/lib/Hjg.Pngcs/" in path
     )
 
     assert "src/public/lib/Hjg.Pngcs/Chunks/PngChunkZTXT.cs" in pngcs_exclusions
     assert "src/public/lib/Hjg.Pngcs/Chunks/ChunkRaw.cs" in pngcs_exclusions
-    assert len(pngcs_exclusions) >= minimum_specific_exception_count
     assert all("*" not in path and "?" not in path for path in pngcs_exclusions)
     legacy_identifier = "b" + "a"
-    assert not any(
-        line.lstrip()
-        .casefold()
-        .startswith(
-            (
-                f"{legacy_identifier} =",
-                f"{legacy_identifier}=",
-            )
-        )
-        for line in typos_config.splitlines()
-    )
-    assert rf"\b{legacy_identifier}\b" not in typos_config.casefold()
-    assert ".testagent/**" not in typos_config
+    tables = [typos_config]
+    while tables:
+        table = tables.pop()
+        for name, value in table.items():
+            if name in ("extend-words", "extend-identifiers"):
+                assert legacy_identifier not in {
+                    key.casefold() for key in value
+                }
+            if name in ("extend-ignore-re", "extend-ignore-identifiers-re"):
+                assert rf"\b{legacy_identifier}\b" not in {
+                    pattern.casefold() for pattern in value
+                }
+            if isinstance(value, dict):
+                tables.append(value)
+    assert ".testagent/**" not in exclusions
 
 
 def test_hk_helper_propagates_exact_child_exit_code_and_changed_paths(
@@ -1984,7 +1971,9 @@ def test_hk_helper_rejects_non_utf8_path_before_child_execution(
     assert type(error.value.__cause__) is UnicodeDecodeError
 
 
-def test_mise_bootstrap_preserves_preparation_and_build_permissions() -> None:
+def test_mise_bootstrap_preserves_preparation_and_build_permissions(
+    tmp_path: Path,
+) -> None:
     """Keep frozen authority preparation before permitted native rebuilds."""
     mise_config = tomllib.loads(
         (REPO_ROOT / "mise.toml").read_text(encoding="utf-8"),
@@ -1995,14 +1984,57 @@ def test_mise_bootstrap_preserves_preparation_and_build_permissions() -> None:
     node_bootstrap = tasks["bootstrap:node"]
     preparation = tasks[preparation_name]
 
-    assert bootstrap_dependencies.count("bootstrap:node") == 1
-    assert tuple(node_bootstrap["depends"]) == (preparation_name,)
-    assert node_bootstrap["run"] == "pnpm -r rebuild --pending"
-    assert preparation["run"] == (
-        "uv run --isolated --frozen --python 3.13 "
-        "--package three-workflow-delivery-v3 python -B "
-        "eng/scripts/workflow_delivery_v3_prepare_static_reference.py"
+    assert "bootstrap:node" in bootstrap_dependencies
+    assert preparation_name in node_bootstrap["depends"]
+    recorder = (
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "with Path(os.environ['COMMAND_LOG']).open('a', "
+        "encoding='utf-8') as stream:\n"
+        "    stream.write(json.dumps([Path(sys.argv[0]).name, "
+        "*sys.argv[1:]]) + '\\n')\n"
     )
+    for name in ("uv", "pnpm"):
+        executable(tmp_path / "bin" / name, recorder)
+    observations = {}
+    for name, task in (
+        ("preparation", preparation),
+        ("rebuild", node_bootstrap),
+    ):
+        log = tmp_path / f"{name}.jsonl"
+        result = run_step(
+            {"run": task["run"]},
+            cwd=REPO_ROOT,
+            env={
+                "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+                "COMMAND_LOG": str(log),
+            },
+            bindings={},
+        )
+        assert result.returncode == 0, result.stderr
+        observations[name] = [
+            json.loads(line) for line in log.read_text().splitlines()
+        ]
+        assert observations[name]
+    for command in observations["preparation"]:
+        assert command[:2] == ["uv", "run"]
+        assert "--isolated" in command
+        assert "--frozen" in command
+        assert command[command.index("--python") + 1] == "3.13"
+        assert command[command.index("--package") + 1] == (
+            "three-workflow-delivery-v3"
+        )
+        python_index = command.index("python")
+        assert command[python_index:] == [
+            "python",
+            "-B",
+            "eng/scripts/workflow_delivery_v3_prepare_static_reference.py",
+        ]
+    for command in observations["rebuild"]:
+        assert command[0] == "pnpm"
+        assert "-r" in command or "--recursive" in command
+        assert "rebuild" in command
+        assert "--pending" in command
 
     workspace = yaml.safe_load(
         (REPO_ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8")

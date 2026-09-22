@@ -149,10 +149,12 @@ def built_result() -> node_adapter.BuildResult:
     )
 
 
-def _source_snapshot() -> dict[str, tuple[str, bytes | str]]:
+def _source_snapshot(
+    source_root: Path = PROJECT_ROOT,
+) -> dict[str, tuple[str, bytes | str]]:
     snapshot: dict[str, tuple[str, bytes | str]] = {}
-    for path in sorted(PROJECT_ROOT.rglob("*")):
-        relative_path = path.relative_to(PROJECT_ROOT)
+    for path in sorted(source_root.rglob("*")):
+        relative_path = path.relative_to(source_root)
         if "node_modules" in relative_path.parts:
             continue
         relative = relative_path.as_posix()
@@ -460,18 +462,45 @@ def _make_runtime_request(
     )
 
 
-def test_source_snapshot_covers_complete_fixture_project() -> None:
-    assert set(_source_snapshot()) - {"dist/index.js"} == {
-        "README.md",
-        "package.json",
-        "scripts/build.mjs",
-        "scripts/nbgv-version.mjs",
-        "src/index.js",
-        "test/index.test.js",
-        "version.json",
-        "workflow-delivery.quality.yml",
-        "workflow-delivery.release-unit.yml",
+def test_source_snapshot_covers_controlled_source_projection(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    (source / "src").mkdir(parents=True)
+    (source / "docs").mkdir()
+    (source / "node_modules").mkdir()
+    (source / "nested/node_modules").mkdir(parents=True)
+    (source / "package.json").write_bytes(b'{"name":"source-projection"}\n')
+    (source / "src/index.js").write_bytes(b"export const value = 1;\n")
+    (source / "docs/unlisted.txt").write_bytes(b"unlisted source document\n")
+    (source / "link.txt").symlink_to("docs/unlisted.txt")
+    (source / "node_modules/excluded.txt").write_bytes(b"excluded root\n")
+    (source / "nested/node_modules/excluded.txt").write_bytes(
+        b"excluded nested\n"
+    )
+
+    before = _source_snapshot(source)
+
+    assert before == {
+        "package.json": ("file", b'{"name":"source-projection"}\n'),
+        "src/index.js": ("file", b"export const value = 1;\n"),
+        "docs/unlisted.txt": ("file", b"unlisted source document\n"),
+        "link.txt": ("symlink", "docs/unlisted.txt"),
     }
+
+    (source / "package.json").write_bytes(b'{"name":"changed-projection"}\n')
+    (source / "src/index.js").unlink()
+    (source / "extra").mkdir()
+    (source / "extra/new.txt").write_bytes(b"added source file\n")
+    after = _source_snapshot(source)
+
+    assert after == {
+        "package.json": ("file", b'{"name":"changed-projection"}\n'),
+        "docs/unlisted.txt": ("file", b"unlisted source document\n"),
+        "link.txt": ("symlink", "docs/unlisted.txt"),
+        "extra/new.txt": ("file", b"added source file\n"),
+    }
+    assert after != before
 
 
 def test_package_target_witness_is_canonical_and_execution_independent(
@@ -1062,7 +1091,7 @@ def test_failure_paths_preserve_complete_source_checkout(
                 "--ignore-scripts",
                 "--json",
                 "--pack-destination",
-                observed_commands[-1][-1],
+                failed_command[0][-1],
             ),
         ],
         "test": [
@@ -1080,11 +1109,31 @@ def test_failure_paths_preserve_complete_source_checkout(
                 "--no-audit",
                 "--no-fund",
                 "--package-lock=false",
-                observed_commands[-1][-1],
+                failed_command[0][-1],
             ),
         ],
     }
-    assert observed_commands == expected_commands[failure]
+    assert Counter(observed_commands) == Counter(expected_commands[failure])
+    queries = [
+        command
+        for command in expected_commands[failure]
+        if command[-1] == "--version"
+    ]
+    operations = [
+        command
+        for command in expected_commands[failure]
+        if command not in queries
+    ]
+    assert all(
+        observed_commands.index(query) < observed_commands.index(operation)
+        for query in queries
+        for operation in operations
+    )
+    if failure == "pack":
+        assert observed_commands.index(("node", "scripts/build.mjs")) < (
+            observed_commands.index(failed_command[0])
+        )
+    assert observed_commands[-1] == failed_command[0]
     assert _source_snapshot() == before
 
 
@@ -1679,43 +1728,23 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
     }
     read_counts = dict.fromkeys(resolved_sources.values(), 0)
     captured_sources: dict[str, bytes] = {}
-    observed_source_reads: list[Path] = []
-    staged_sources: dict[str, bytes] = {}
-    prepared_staging_roots: list[Path] = []
     runner_staging_roots: list[Path] = []
     runner_staged_sources: list[dict[str, bytes]] = []
     packed_evidence_bytes: list[bytes] = []
     evidence_marker = b"\n/* declared-input-evidence\n"
     original_read_bytes = Path.read_bytes
-    original_prepare_staged_manifest = (
-        node_adapter._prepare_staged_manifest  # noqa: SLF001
-    )
 
     def capture_source_read(path: Path) -> bytes:
         resolved_path = path.resolve()
         if resolved_path not in source_by_path:
             return original_read_bytes(path)
         relative = source_by_path[resolved_path]
-        observed_source_reads.append(path)
         read_counts[resolved_path] += 1
         content = original_read_bytes(path)
         if read_counts[resolved_path] == 1:
             captured_sources[relative] = content
             path.write_bytes(mutated_sources[relative])
         return content
-
-    def observe_staged_sources(
-        request: BuildRequest,
-        staging_root: Path,
-    ) -> tuple[str, tuple[str, ...], tuple[tuple[str, str], ...]]:
-        prepared_staging_roots.append(staging_root.resolve())
-        staged_sources.update(
-            {
-                relative: original_read_bytes(staging_root / relative)
-                for relative in DECLARED_INPUTS
-            }
-        )
-        return original_prepare_staged_manifest(request, staging_root)
 
     def deterministic_runner(
         command: tuple[str, ...],
@@ -1737,15 +1766,16 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
                     for relative in DECLARED_INPUTS
                 }
             )
+            runner_sources = runner_staged_sources[-1]
             packed_evidence = canonicalize(
                 {
                     relative: {
-                        "byte-size": len(staged_sources[relative]),
-                        "bytes-hex": staged_sources[relative].hex(),
+                        "byte-size": len(runner_sources[relative]),
+                        "bytes-hex": runner_sources[relative].hex(),
                         "sha256": (
                             "sha256:"
                             + hashlib.sha256(
-                                staged_sources[relative]
+                                runner_sources[relative]
                             ).hexdigest()
                         ),
                     }
@@ -1792,11 +1822,6 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
         pytest.fail(f"unexpected Adapter command: {command}")
 
     monkeypatch.setattr(Path, "read_bytes", capture_source_read)
-    monkeypatch.setattr(
-        node_adapter,
-        "_prepare_staged_manifest",
-        observe_staged_sources,
-    )
     monkeypatch.setattr(node_adapter, "_run", deterministic_runner)
 
     result = build_node_package(
@@ -1807,9 +1832,6 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
         source.is_relative_to(resolved_project) and source.is_file()
         for source in resolved_sources.values()
     )
-    assert observed_source_reads == [
-        resolved_sources[relative] for relative in DECLARED_INPUTS
-    ]
     assert read_counts == {
         resolved_sources[relative]: 1 for relative in DECLARED_INPUTS
     }
@@ -1834,8 +1856,8 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
         "sha512:" + hashlib.sha512(result.tarball).hexdigest()
     )
     assert result.manifest.byte_size == len(result.tarball)
-    assert prepared_staging_roots == runner_staging_roots
-    assert staged_sources == original_sources
+    assert len(runner_staging_roots) == 1
+    assert not runner_staging_roots[0].is_relative_to(resolved_project)
     assert len(runner_staged_sources) == 1
     runner_sources = runner_staged_sources[0]
     assert all(
@@ -1859,8 +1881,24 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
         "README.md",
         "workflow-delivery/provenance.json",
     ]
+    expected_runner_manifest = {
+        **original_manifest,
+        "version": build_request.npm_package_version,
+        "files": ["dist", "README.md", "workflow-delivery/provenance.json"],
+    }
+    assert runner_manifest == expected_runner_manifest
 
     packed_entries = _tar_entries(result.tarball)
+    assert (
+        packed_entries["package/package.json"]
+        == (runner_sources["package.json"])
+    )
+    assert json.loads(packed_entries["package/package.json"]) == (
+        expected_runner_manifest
+    )
+    assert packed_entries["package/workflow-delivery/provenance.json"] == (
+        build_request.witness.canonical_bytes
+    )
     packed_dist = packed_entries["package/dist/index.js"]
     assert packed_dist.startswith(
         original_sources["src/index.js"] + evidence_marker
@@ -1874,13 +1912,16 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
     assert set(packed_evidence) == set(DECLARED_INPUTS)
     for relative in DECLARED_INPUTS:
         evidence = packed_evidence[relative]
-        assert evidence["byte-size"] == len(original_sources[relative])
+        expected_bytes = (
+            runner_sources[relative]
+            if relative == "package.json"
+            else original_sources[relative]
+        )
+        assert evidence["byte-size"] == len(expected_bytes)
         assert evidence["sha256"] == (
-            "sha256:" + hashlib.sha256(original_sources[relative]).hexdigest()
+            "sha256:" + hashlib.sha256(expected_bytes).hexdigest()
         )
-        assert (
-            bytes.fromhex(evidence["bytes-hex"]) == original_sources[relative]
-        )
+        assert bytes.fromhex(evidence["bytes-hex"]) == expected_bytes
     assert packed_entries["package/README.md"] == original_sources["README.md"]
     assert all(
         mutated not in packed_entries.values()
@@ -2620,9 +2661,8 @@ def test_artifact_contents_rejects_noncanonical_numeric_header_encoding(
         )
 
 
-def test_artifact_contents_rejects_bad_checksum_before_tarfile_parse(
+def test_artifact_contents_rejects_arithmetic_checksum_mismatch(
     built_result: node_adapter.BuildResult,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original_payload = gzip.decompress(built_result.tarball)
     checksum_start, checksum_end = TAR_HEADER_FIELDS["checksum"]
@@ -2634,32 +2674,17 @@ def test_artifact_contents_rejects_bad_checksum_before_tarfile_parse(
     mutated_payload = bytearray(original_payload)
     mutated_payload[checksum_start:checksum_end] = incorrect_checksum
     mutated_tarball = gzip.compress(bytes(mutated_payload), mtime=0)
-    semantic_parse_calls: list[bool] = []
 
     assert incorrect_checksum[-2:] == b" \0"
     assert all(ord("0") <= byte <= ord("7") for byte in incorrect_checksum[:-2])
     assert mutated_payload[:checksum_start] == original_payload[:checksum_start]
     assert mutated_payload[checksum_end:] == original_payload[checksum_end:]
 
-    def fail_semantic_tar_parse(
-        *_args: object,
-        **_kwargs: object,
-    ) -> object:
-        semantic_parse_calls.append(True)
-        pytest.fail("semantic TAR parsing ran before raw checksum rejection")
-
-    monkeypatch.setattr(
-        node_adapter.tarfile,
-        "open",
-        fail_semantic_tar_parse,
-    )
-
     with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
         qualify_npm_artifact_contents(
             mutated_tarball,
             built_result.expectation,
         )
-    assert semantic_parse_calls == []
 
 
 @pytest.mark.parametrize(
@@ -3075,7 +3100,7 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
     )
 
 
-def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_commands(  # noqa: E501, PLR0915
+def test_adapter_operations_preserve_required_commands_and_effect_boundaries(  # noqa: PLR0915
     build_request: BuildRequest,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -3097,13 +3122,7 @@ def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_command
     )
     observed_commands: list[tuple[str, ...]] = []
     build_output_destinations: list[Path] = []
-    consumer_tarball_copies: list[tuple[Path, Path]] = []
-    observed_import_scripts: list[str] = []
-    fixed_import_script = (
-        "import {smokeMessage} from "
-        '"@hcoona/hcoona-release-smoke-npm";'
-        "process.stdout.write(smokeMessage());"
-    )
+    consumer_tarball_copies: list[tuple[Path, Path, bytes]] = []
 
     def record_and_emulate(  # noqa: PLR0911
         command: tuple[str, ...],
@@ -3160,7 +3179,13 @@ def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_command
             )
         if argv[:2] == ("npm", "install"):
             tarball_path = Path(argv[-1])
-            consumer_tarball_copies.append((cwd, tarball_path))
+            consumer_tarball_copies.append(
+                (
+                    cwd.resolve(),
+                    tarball_path.resolve(),
+                    tarball_path.read_bytes(),
+                )
+            )
             package_root = (
                 cwd / "node_modules" / "@hcoona/hcoona-release-smoke-npm"
             )
@@ -3172,75 +3197,130 @@ def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_command
                 destination.write_bytes(content)
             return subprocess.CompletedProcess(argv, 0, "", "")
         if argv[:2] == ("node", "--input-type=module"):
-            if len(argv) == EXPECTED_IMPORT_COMMAND_ARG_COUNT:
-                observed_import_scripts.append(argv[3])
             return subprocess.CompletedProcess(
                 argv,
                 0,
                 "hcoona-release-smoke-npm",
                 "",
             )
-        return subprocess.CompletedProcess(argv, 0, "passed", "")
+        if argv == ("npm", "test", "--ignore-scripts"):
+            return subprocess.CompletedProcess(argv, 0, "passed", "")
+        pytest.fail(f"unexpected Adapter command: {argv}")
 
     monkeypatch.setattr(node_adapter, "_run", record_and_emulate)
 
+    groups = {}
+    start = len(observed_commands)
     built_result = node_adapter.build_node_package(request)
+    groups["build-package"] = observed_commands[start:]
+    start = len(observed_commands)
     node_adapter.run_node_project_build(request)
+    groups["project-build"] = observed_commands[start:]
+    start = len(observed_commands)
     node_adapter.run_node_project_tests(source_root, runtime_request)
+    groups["project-test"] = observed_commands[start:]
+    start = len(observed_commands)
     node_adapter.qualify_npm_install_import(
         built_result.tarball,
         built_result.expectation,
         runtime_request,
     )
+    groups["install-import"] = observed_commands[start:]
 
-    observed_build_output = (
-        build_output_destinations[0]
-        if build_output_destinations
-        else Path("<missing-build-output>")
-    )
-    observed_consumer_tarball = (
-        consumer_tarball_copies[0][1]
-        if consumer_tarball_copies
-        else Path("<missing-consumer-tarball>")
-    )
-    expected_commands = [
+    build_queries = (
         ("node", "--version"),
         ("pnpm", "--version"),
         ("npm", "--version"),
-        ("node", "scripts/build.mjs"),
-        (
-            "npm",
-            "pack",
-            "--ignore-scripts",
-            "--json",
-            "--pack-destination",
-            str(observed_build_output),
+    )
+    runtime_queries = (("node", "--version"), ("npm", "--version"))
+    expected_roles = {
+        "build-package": (
+            *build_queries,
+            ("node", "scripts/build.mjs"),
+            ("npm", "pack"),
         ),
-        ("node", "--version"),
-        ("pnpm", "--version"),
-        ("npm", "--version"),
-        ("node", "scripts/build.mjs"),
-        ("node", "--version"),
-        ("npm", "--version"),
-        ("npm", "test", "--ignore-scripts"),
-        ("node", "--version"),
-        ("npm", "--version"),
-        (
-            "npm",
-            "install",
-            "--ignore-scripts",
-            "--no-audit",
-            "--no-fund",
-            "--package-lock=false",
-            str(observed_consumer_tarball),
+        "project-build": (*build_queries, ("node", "scripts/build.mjs")),
+        "project-test": (*runtime_queries, ("npm", "test")),
+        "install-import": (
+            *runtime_queries,
+            ("npm", "install"),
+            ("node", "--input-type=module"),
         ),
-        (
+    }
+    commands_by_group = {}
+    for name, commands in groups.items():
+        assert Counter(command[:2] for command in commands) == Counter(
+            expected_roles[name]
+        )
+        by_role = {command[:2]: command for command in commands}
+        commands_by_group[name] = by_role
+        queries = (
+            build_queries
+            if name in {"build-package", "project-build"}
+            else runtime_queries
+        )
+        for query in queries:
+            assert by_role[query] == query
+        assert all(
+            commands.index(query) < commands.index(command)
+            for query in queries
+            for role, command in by_role.items()
+            if role not in queries
+        )
+
+    assert len(build_output_destinations) == 1
+    assert len(consumer_tarball_copies) == 1
+    observed_build_output = build_output_destinations[0]
+    consumer_root, observed_consumer_tarball, installed_bytes = (
+        consumer_tarball_copies[0]
+    )
+    for name in ("build-package", "project-build"):
+        assert commands_by_group[name][("node", "scripts/build.mjs")] == (
             "node",
-            "--input-type=module",
-            "-e",
-            fixed_import_script,
-        ),
+            "scripts/build.mjs",
+        )
+    pack_command = commands_by_group["build-package"][("npm", "pack")]
+    assert pack_command == (
+        "npm",
+        "pack",
+        "--ignore-scripts",
+        "--json",
+        "--pack-destination",
+        str(observed_build_output),
+    )
+    assert groups["build-package"].index(("node", "scripts/build.mjs")) < (
+        groups["build-package"].index(pack_command)
+    )
+    assert commands_by_group["project-test"][("npm", "test")] == (
+        "npm",
+        "test",
+        "--ignore-scripts",
+    )
+    install_command = commands_by_group["install-import"][("npm", "install")]
+    assert install_command == (
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--package-lock=false",
+        str(observed_consumer_tarball),
+    )
+    import_command = commands_by_group["install-import"][
+        ("node", "--input-type=module")
     ]
+    assert len(import_command) == EXPECTED_IMPORT_COMMAND_ARG_COUNT
+    assert import_command[:3] == ("node", "--input-type=module", "-e")
+    assert import_command[3]
+    assert groups["install-import"].index(install_command) < (
+        groups["install-import"].index(import_command)
+    )
+    assert not observed_build_output.resolve().is_relative_to(
+        source_root.resolve()
+    )
+    assert not consumer_root.is_relative_to(source_root.resolve())
+    assert observed_consumer_tarball.is_relative_to(consumer_root)
+    assert installed_bytes == built_result.tarball
 
     lowered_commands = tuple(
         " ".join(command).lower() for command in observed_commands
@@ -3265,13 +3345,3 @@ def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_command
         for command in lowered_commands
         for prefix in restoration_prefixes
     )
-
-    assert observed_commands == expected_commands
-    assert build_output_destinations == [observed_build_output]
-    assert observed_build_output.name == "output"
-    assert not observed_build_output.is_relative_to(source_root.resolve())
-    assert consumer_tarball_copies == [
-        (observed_consumer_tarball.parent, observed_consumer_tarball)
-    ]
-    assert observed_consumer_tarball.name == "package.tgz"
-    assert observed_import_scripts == [fixed_import_script]

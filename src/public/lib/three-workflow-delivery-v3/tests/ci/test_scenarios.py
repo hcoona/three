@@ -97,17 +97,6 @@ def test_manual_worktree_scenario_is_isolated_in_mise() -> None:
     assert "--source-kind worktree" not in hk
 
 
-def test_workflows_omit_all_consumer_policy_spellings() -> None:
-    """Reject both CLI and Python spellings in delivered workflows."""
-    workflows = (
-        CI_WORKFLOW.read_text(encoding="utf-8"),
-        BUDDY_WORKFLOW.read_text(encoding="utf-8"),
-    )
-
-    assert all("--consumer-policy" not in text for text in workflows)
-    assert all("consumer_policy" not in text for text in workflows)
-
-
 HK_CONFIG = REPO_ROOT / "hk.pkl"
 HK_SUPPORT = REPO_ROOT / "src/private/lib/hk"
 HK_RANGE_HELPER = Path("eng/scripts/workflow_delivery_v3_hk.py")

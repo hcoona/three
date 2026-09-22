@@ -172,7 +172,7 @@ def test_upload_metadata_binds_after_single_mechanical_build(
     assert failed_evidence is None
     assert not hasattr(mechanics, "transport")
     assert mechanics.normalized_outcome == "satisfied"
-    assert mechanics.tarball is scenario.build_result.tarball
+    assert mechanics.tarball == scenario.build_result.tarball
     assert calls == 1
 
     transport = ArtifactTransportIdentity(

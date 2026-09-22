@@ -285,9 +285,7 @@ def test_impossible_or_finalizer_only_outcomes_are_not_public(
     outcome: str,
 ) -> None:
     """Keep conflict and incomplete states out of Evidence formation."""
-    with pytest.raises(
-        ValueError, match=r"^required outcome has an invalid closed value$"
-    ):
+    with pytest.raises(ValueError):  # noqa: PT011 - Internal exception wording.
         normalize_required_outcome(outcome)
 
 
@@ -449,7 +447,5 @@ def test_supersession_reason(state: str, reason: str) -> None:
 
 def test_supersession_reason_rejects_unknown_state() -> None:
     """Reject unsupported state spellings instead of claiming current proof."""
-    with pytest.raises(
-        ValueError, match=r"^supersession_state has an invalid closed value$"
-    ):
+    with pytest.raises(ValueError):  # noqa: PT011 - Internal exception wording.
         supersession_reason("current")

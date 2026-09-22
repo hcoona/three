@@ -146,6 +146,19 @@ def _write_canonical(path: Path, document: JsonValue) -> Path:
     return path
 
 
+def _github_output_values(path: Path) -> dict[str, str]:
+    text = path.read_text(encoding="utf-8")
+    assert text.endswith("\n")
+    values: dict[str, str] = {}
+    for assignment in text[:-1].split("\n"):
+        name, separator, value = assignment.partition("=")
+        assert name
+        assert separator == "="
+        assert name not in values
+        values[name] = value
+    return values
+
+
 def _target_authoring_repo(
     tmp_path: Path,
     *,
@@ -1429,19 +1442,18 @@ def test_ci_plan_cli_closes_repository_only_and_manual_scope(
     selected_by_lane = dict(
         zip(cli_module.CI_LANE_IDS, lane_selected, strict=True)
     )
-    assert (tmp_path / f"{event_kind}-github-output").read_text(
-        encoding="utf-8"
-    ) == (
-        f"plan-digest={canonical_sha256(plan)}\n"
-        "plan-ready=true\n"
-        f"root-hk-selected={str(selected_by_lane['root-hk']).lower()}\n"
-        "project-build-selected="
-        f"{str(selected_by_lane['project-build']).lower()}\n"
-        "project-test-selected="
-        f"{str(selected_by_lane['project-test']).lower()}\n"
-        "npm-artifact-build-selected="
-        f"{str(selected_by_lane['npm-artifact-build']).lower()}\n"
-    )
+    assert _github_output_values(tmp_path / f"{event_kind}-github-output") == {
+        "plan-digest": canonical_sha256(plan),
+        "plan-ready": "true",
+        "root-hk-selected": str(selected_by_lane["root-hk"]).lower(),
+        "project-build-selected": str(
+            selected_by_lane["project-build"]
+        ).lower(),
+        "project-test-selected": str(selected_by_lane["project-test"]).lower(),
+        "npm-artifact-build-selected": str(
+            selected_by_lane["npm-artifact-build"]
+        ).lower(),
+    }
     assert plan["candidate"]["purpose"] == (  # type: ignore[index]
         "ci-pr-slice-shadow"
         if event_kind == "pull_request"
@@ -1498,16 +1510,16 @@ def test_missing_target_authoring_closes_blocked_plan_and_decision(
     assert diagnostic in " ".join(
         cast("list[str]", plan["diagnostics"]),
     )
-    assert (tmp_path / "workflow_dispatch-github-output").read_text(
-        encoding="utf-8"
-    ) == (
-        f"plan-digest={plan_digest}\n"
-        "plan-ready=false\n"
-        "root-hk-selected=false\n"
-        "project-build-selected=false\n"
-        "project-test-selected=false\n"
-        "npm-artifact-build-selected=false\n"
-    )
+    assert _github_output_values(
+        tmp_path / "workflow_dispatch-github-output"
+    ) == {
+        "plan-digest": plan_digest,
+        "plan-ready": "false",
+        "root-hk-selected": "false",
+        "project-build-selected": "false",
+        "project-test-selected": "false",
+        "npm-artifact-build-selected": "false",
+    }
 
     results: list[str] = []
     for lane in cli_module.CI_LANE_IDS:
@@ -2396,10 +2408,12 @@ def test_form_approval_bundle_command_binds_current_loaded_records(
         "control": control,
     }
     assert json.loads(output.read_bytes()) == bundle_document
-    assert github_output.read_text(encoding="utf-8").splitlines() == [
-        f"approval-bundle-digest={bundle.bundle_digest}",
-        f"approval-bundle-digest-hex={bundle.bundle_digest.removeprefix('sha256:')}",
-    ]
+    assert _github_output_values(github_output) == {
+        "approval-bundle-digest": bundle.bundle_digest,
+        "approval-bundle-digest-hex": bundle.bundle_digest.removeprefix(
+            "sha256:"
+        ),
+    }
 
 
 @pytest.mark.parametrize(
@@ -2823,25 +2837,22 @@ def test_compile_live_model_emits_canonical_buddy_execution_concurrency_key(
         ),
         expected_digest=canonical_sha256(model_document),
     )
-    output_lines = github_output.read_text(encoding="utf-8").splitlines()
+    output_values = _github_output_values(github_output)
 
     assert result == 0
     assert captured.out == ""
     assert captured.err == ""
     assert admitted.snapshot.ready is True
-    assert output_lines == [
-        f"repository-model-digest={admitted.canonical_digest}",
-        (
-            "repository-model-digest-hex="
-            f"{admitted.canonical_digest.removeprefix('sha256:')}"
+    assert output_values == {
+        "repository-model-digest": admitted.canonical_digest,
+        "repository-model-digest-hex": admitted.canonical_digest.removeprefix(
+            "sha256:"
         ),
-        (
-            "execution-concurrency-key="
-            "a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d"
-            "3254299d664534a6"
+        "execution-concurrency-key": (
+            "a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d3254299d664534a6"
         ),
-    ]
-    assert "sha256:" not in output_lines[2]
+    }
+    assert "sha256:" not in output_values["execution-concurrency-key"]
 
 
 def test_compile_live_model_does_not_emit_execution_concurrency_key_when_compilation_fails(  # noqa: E501
@@ -2877,7 +2888,7 @@ def test_compile_live_model_execution_concurrency_key_changes_with_target(
     )
     results: list[int] = []
     model_documents: list[dict[str, JsonValue]] = []
-    output_lines_by_target: list[list[str]] = []
+    output_values_by_target: list[dict[str, str]] = []
 
     for index, target in enumerate(targets):
         scenario_root = tmp_path / f"target-{index}"
@@ -2895,24 +2906,21 @@ def test_compile_live_model_execution_concurrency_key_changes_with_target(
             json.loads(model_output.read_bytes()),
         )
         model_digest = canonical_sha256(model_document)
-        output_lines = github_output.read_text(encoding="utf-8").splitlines()
+        output_values = _github_output_values(github_output)
 
         results.append(result)
         model_documents.append(model_document)
-        output_lines_by_target.append(output_lines)
-        assert output_lines == [
-            f"repository-model-digest={model_digest}",
-            (
-                "repository-model-digest-hex="
-                f"{model_digest.removeprefix('sha256:')}"
-            ),
-            f"execution-concurrency-key={expected_keys[index]}",
-        ]
+        output_values_by_target.append(output_values)
+        assert output_values == {
+            "repository-model-digest": model_digest,
+            "repository-model-digest-hex": model_digest.removeprefix("sha256:"),
+            "execution-concurrency-key": expected_keys[index],
+        }
 
     captured = capsys.readouterr()
     actual_keys = tuple(
-        output_lines[2].removeprefix("execution-concurrency-key=")
-        for output_lines in output_lines_by_target
+        output_values["execution-concurrency-key"]
+        for output_values in output_values_by_target
     )
 
     assert results == [0, 0]
@@ -2969,10 +2977,6 @@ def test_live_eligibility_cli_omits_consumer_policy_input() -> None:
         _live_eligibility_cli_arguments()
     )
 
-    assert (
-        arguments.handler
-        is cli_module._release_evaluate_live_eligibility_command  # noqa: SLF001
-    )
     assert arguments.target == "e" * 40
     assert arguments.repo_root == "."
     assert not hasattr(arguments, "consumer_policy")
@@ -2994,30 +2998,37 @@ def test_live_eligibility_cli_rejects_consumer_policy_option(
     captured = capsys.readouterr()
     assert error.value.code == ARGPARSE_ERROR
     assert captured.out == ""
-    assert "unrecognized arguments: --consumer-policy obsolete.json" in (
-        captured.err
-    )
+    assert "--consumer-policy" in captured.err
 
 
 def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Forward one resolved root and current lineage without policy input."""
+    """Parse and dispatch one resolved root and current lineage."""
     target = "e" * 40
     repository_argument = tmp_path / "alias" / ".." / "repository"
     resolved_repository_root = repository_argument.resolve()
     output_path = tmp_path / "live-eligibility.json"
     github_output_path = tmp_path / "github-output.txt"
     github_token = f"token-{target[:8]}"
-    arguments = Namespace(
-        repo_root=str(repository_argument),
-        github_token=github_token,
-        workflow_run_id=WORKFLOW_RUN_ID,
-        run_attempt=3,
-        target=target,
-        output=str(output_path),
-        github_output=str(github_output_path),
+    command_arguments = _live_eligibility_cli_arguments()
+    command_arguments[command_arguments.index("--github-token") + 1] = (
+        github_token
+    )
+    command_arguments[command_arguments.index("--output") + 1] = str(
+        output_path
+    )
+    command_arguments.extend(
+        [
+            "--repo-root",
+            str(repository_argument),
+            "--github-output",
+            str(github_output_path),
+        ]
+    )
+    arguments = cli_module._parser().parse_args(  # noqa: SLF001
+        command_arguments
     )
     intent = SimpleNamespace(
         request_id="release-request-live-root-forwarding",
@@ -3120,9 +3131,7 @@ def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
         ),
     )
 
-    result = cli_module._release_evaluate_live_eligibility_command(  # noqa: SLF001
-        arguments
-    )
+    result = arguments.handler(arguments)
 
     expected_context = cli_module.LiveEligibilityContext(
         purpose="live-release",

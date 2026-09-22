@@ -13,6 +13,7 @@ from three_workflow_delivery_v3.acceptance.nuget_profile import WORKFLOW_PATH
 from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 
 from ..contracts.test_nuget_workflows import _assert_success, _pwsh
+from .nuget_workflow_projection import project_workflow
 from .test_nuget_profile import _platform
 
 ROOT = Path(__file__).resolve().parents[6]
@@ -24,7 +25,17 @@ def workflow():
     return yaml.safe_load((ROOT / WORKFLOW_PATH).read_text(encoding="utf-8"))
 
 
-def test_profile_workflow_is_credential_free_and_attempt_bound(workflow):
+@pytest.fixture(scope="module")
+def workflow_roles(workflow, tmp_path_factory):
+    """Project official parser facts once for this workflow module."""
+    return project_workflow(
+        workflow, tmp_path_factory.mktemp("nuget-profile-roles")
+    )
+
+
+def test_profile_workflow_is_credential_free_and_attempt_bound(
+    workflow, workflow_roles
+):
     """Only platform checkout/upload actions receive their ordinary tokens."""
     assert set(workflow["on"]) == {"workflow_dispatch"}
     assert set(workflow["on"]["workflow_dispatch"]["inputs"]) == {
@@ -70,7 +81,7 @@ def test_profile_workflow_is_credential_free_and_attempt_bound(workflow):
     assert {
         step["uses"] for step in job["steps"] if "uses" in step
     } == trusted_actions
-    for candidate in workflow["jobs"].values():
+    for candidate_name, candidate in workflow["jobs"].items():
         permissions = candidate.get("permissions", workflow["permissions"])
         assert isinstance(permissions, dict)
         assert all(
@@ -84,7 +95,9 @@ def test_profile_workflow_is_credential_free_and_attempt_bound(workflow):
         assert {term.strip() for term in job["if"].split("&&")}.issubset(
             {term.strip() for term in candidate["if"].split("&&")}
         )
-        candidate_source = json.dumps(candidate)
+        candidate_source = json.dumps(
+            workflow_roles.configuration(candidate_name)
+        )
         assert not any(
             route in candidate_source
             for route in (
@@ -95,13 +108,14 @@ def test_profile_workflow_is_credential_free_and_attempt_bound(workflow):
                 "NUGET_AUTH_TOKEN",
             )
         )
-        for step in candidate.get("steps", []):
+        for role in workflow_roles.steps(candidate_name):
+            step = role.step
             if "uses" in step:
                 assert step["uses"] in trusted_actions
             if step.get("uses", "").startswith("actions/checkout@"):
                 assert step["with"]["ref"] == "${{ github.sha }}"
                 assert step["with"]["persist-credentials"] is False
-            source = step.get("run", "")
+            source = workflow_roles.source(role) if "run" in step else ""
             assert not any(
                 forbidden in source
                 for forbidden in (
@@ -118,13 +132,11 @@ def test_profile_workflow_is_credential_free_and_attempt_bound(workflow):
                     "NUGET_AUTH_TOKEN",
                 )
             )
-    raw = (ROOT / WORKFLOW_PATH).read_text(encoding="utf-8")
-    assert (
-        raw.count(
-            "python -m three_workflow_delivery_v3.acceptance.nuget_profile"
-        )
-        == 1
+    invocations = workflow_roles.invocations(
+        "three_workflow_delivery_v3.acceptance.nuget_profile"
     )
+    assert len(invocations) == 1
+    assert invocations[0].role == workflow_roles.select("profile.observe")
     for step in job["steps"]:
         assert set(step.get("env", {})).issubset({"WDV3_PROFILE_SPEC"})
         if step.get("uses", "").startswith("actions/checkout@"):
@@ -136,28 +148,16 @@ def test_profile_workflow_is_credential_free_and_attempt_bound(workflow):
             }
         if step.get("uses", "").startswith("astral-sh/setup-uv@"):
             assert step["with"]["version"] == "0.12.7"
-    sync = next(
-        step
-        for step in job["steps"]
-        if step["name"] == "Prepare the locked Python environment"
-    )
-    assert (
-        "uv sync --directory tooling --locked --python 3.13.12 "
-        "--package three-workflow-delivery-v3"
-    ) in sync["run"]
+    # The role binds each required flag to its actual locked-sync operand.
+    workflow_roles.sync_operands()
 
 
 @pytest.mark.parametrize("status", [0, 17])
 def test_profile_workflow_preserves_spec_bytes_and_failure(
-    workflow, tmp_path, status
+    workflow_roles, tmp_path, status
 ):
     """Preserve literal UTF-8 environment input through actual PowerShell."""
-    step = next(
-        step
-        for step in workflow["jobs"]["observe"]["steps"]
-        if step["name"]
-        == "Observe the current profile without package credentials"
-    )
+    step = workflow_roles.select("profile.observe").step
     assert step["env"] == {"WDV3_PROFILE_SPEC": "${{ inputs.profile_spec }}"}
     assert "${{ inputs." not in step["run"]
     workspace = tmp_path / "workspace with spaces"
@@ -219,15 +219,13 @@ def test_profile_workflow_preserves_spec_bytes_and_failure(
     assert not (workspace / ".wdv3/evidence/observation").exists()
 
 
-def test_profile_workflow_retains_immutable_observation(workflow, tmp_path):
+def test_profile_workflow_retains_immutable_observation(
+    workflow_roles, tmp_path
+):
     """The raw archive retains available bytes even when observation failed."""
-    job = workflow["jobs"]["observe"]
-    seal = next(step for step in job["steps"] if step.get("id") == "seal")
-    upload = next(
-        step
-        for step in job["steps"]
-        if step["name"] == "Retain immutable profile evidence"
-    )
+    transport = workflow_roles.select("profile.seal-upload")
+    seal = transport.archive.step
+    upload = transport.upload.step
     assert seal["if"] == "always()"
     assert upload["if"] == "always() && steps.seal.outcome == 'success'"
     assert upload["with"] == {
@@ -277,11 +275,11 @@ def test_profile_workflow_retains_immutable_observation(workflow, tmp_path):
 
 
 def test_profile_workflow_retains_only_public_platform_fields(
-    workflow, tmp_path
+    workflow_roles, tmp_path
 ):
     """Failure diagnostics preserve run identity without an environment dump."""
-    step = workflow["jobs"]["observe"]["steps"][0]
-    assert step["name"] == "Retain actual profile platform context"
+    step = workflow_roles.select("profile.context").step
+    workflow_roles.context_predecessors()
     platform = _platform()
 
     _assert_success(

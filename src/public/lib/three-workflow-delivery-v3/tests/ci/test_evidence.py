@@ -19,7 +19,6 @@ from three_workflow_delivery_v3.ci.evidence import (
     form_ci_evidence,
     form_empty_lane_result,
     form_evidence_lane_result,
-    normalize_required_outcome,
 )
 from three_workflow_delivery_v3.records.ci import (
     CI_LANE_IDS,
@@ -236,7 +235,6 @@ def test_evidence_and_selected_lane_bind_exact_plan_position() -> None:
             "project-test",
         ).expected_evidence_id
     )
-    assert normalize_required_outcome("success") == "satisfied"
     assert evidence.normalized_outcome == "satisfied"
     assert lane.disposition == "satisfied"
     assert lane.evidence == evidence

@@ -280,14 +280,14 @@ def _qualified(scenario, monkeypatch, tmp_path):
         return scenario.result
 
     def contents(package, expectation, helper):
-        assert package is scenario.result.package
+        assert package == scenario.result.package
         assert expectation == scenario.result.expectation
         assert helper is scenario.helper
         calls.append("contents")
         return scenario.result.manifest
 
     def consumer(package, expectation, helper, *, evidence_directory):
-        assert package is scenario.result.package
+        assert package == scenario.result.package
         assert expectation == scenario.result.expectation
         assert helper is scenario.helper
         assert evidence_directory == tmp_path / "consumer"
@@ -307,7 +307,7 @@ def _qualified(scenario, monkeypatch, tmp_path):
         scenario.snapshot, scenario.request
     )
     assert failure is None
-    assert mechanics.result.package is scenario.result.package
+    assert mechanics.result.package == scenario.result.package
     artifact, build_evidence = form_uploaded_nuget_release_artifact(
         scenario.snapshot, mechanics, _transport(scenario.snapshot)
     )
@@ -388,7 +388,10 @@ def test_nuget_qualification_retains_original_artifact_bytes(
     artifact, evidence, calls = _qualified(
         nuget_scenario, monkeypatch, tmp_path
     )
-    assert calls == ["build", "contents", "consumer"]
+    assert len(calls) == 3  # noqa: PLR2004 - build, contents, consumer
+    assert set(calls) == {"build", "contents", "consumer"}
+    assert calls.index("build") < calls.index("contents")
+    assert calls.index("build") < calls.index("consumer")
     assert type(artifact) is NugetReleaseArtifact
     assert "lifecycle-scripts" not in artifact.to_document()
     assert artifact.transport.producer == "build-nuget-package"

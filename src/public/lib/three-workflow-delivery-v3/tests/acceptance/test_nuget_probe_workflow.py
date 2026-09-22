@@ -15,6 +15,7 @@ from three_workflow_delivery_v3.records.artifacts import (
 )
 
 from ..contracts.test_nuget_workflows import _assert_success, _pwsh
+from .nuget_workflow_projection import project_workflow
 
 ROOT = Path(__file__).resolve().parents[6]
 
@@ -25,7 +26,17 @@ def workflow():
     return yaml.safe_load((ROOT / WORKFLOW_PATH).read_text(encoding="utf-8"))
 
 
-def test_probe_workflow_limits_publication_authority_to_publisher_job(workflow):
+@pytest.fixture(scope="module")
+def workflow_roles(workflow, tmp_path_factory):
+    """Project official parser facts once for this workflow module."""
+    return project_workflow(
+        workflow, tmp_path_factory.mktemp("nuget-probe-roles")
+    )
+
+
+def test_probe_workflow_limits_publication_authority_to_publisher_job(
+    workflow, workflow_roles
+):
     """Only the publisher job has effective package-write permission."""
     assert set(workflow["on"]) == {"workflow_dispatch"}
     assert workflow["permissions"] == {}
@@ -46,6 +57,7 @@ def test_probe_workflow_limits_publication_authority_to_publisher_job(workflow):
     }
     # Pinned checkout/setup actions can receive the publisher job token through
     # their input defaults. This scan covers explicit command environments only.
+    publish = workflow_roles.select("probe.publish")
     explicit_tokens = []
     for name, job in workflow["jobs"].items():
         assert job["runs-on"] == "windows-2022"
@@ -62,16 +74,17 @@ def test_probe_workflow_limits_publication_authority_to_publisher_job(workflow):
         ):
             assert clause in job["if"]
         assert "||" not in job["if"]
-        for step in job["steps"]:
+        for role in workflow_roles.steps(name):
+            step = role.step
             environment = step.get("env", {})
             assert not {"GH_TOKEN", "NUGET_AUTH_TOKEN"}.intersection(
                 environment
             )
             if "GITHUB_TOKEN" in environment:
                 explicit_tokens.append(
-                    (name, step["name"], environment["GITHUB_TOKEN"])
+                    (name, role.index, environment["GITHUB_TOKEN"])
                 )
-            source = step.get("run", "")
+            source = workflow_roles.source(role) if "run" in step else ""
             assert not any(
                 command in source
                 for command in (
@@ -87,7 +100,7 @@ def test_probe_workflow_limits_publication_authority_to_publisher_job(workflow):
                 assert step["with"]["fetch-depth"] == 0
                 assert step["with"]["persist-credentials"] is False
     assert explicit_tokens == [
-        ("publish", "Invoke the bound probe once", "${{ github.token }}")
+        (publish.job, publish.index, "${{ github.token }}")
     ]
     publisher = workflow["jobs"]["publish"]
     assert publisher["needs"] == "prepare"
@@ -96,7 +109,7 @@ def test_probe_workflow_limits_publication_authority_to_publisher_job(workflow):
     )
 
 
-def test_probe_workflow_binds_immutable_inputs(workflow):
+def test_probe_workflow_binds_immutable_inputs(workflow, workflow_roles):
     """Original producer IDs and current-run transport remain distinct."""
     for name, job in workflow["jobs"].items():
         downloads = [
@@ -124,13 +137,16 @@ def test_probe_workflow_binds_immutable_inputs(workflow):
                     item["artifact-ids"]
                     == "${{ needs.prepare.outputs.input-id }}"
                 )
-        for step in job["steps"]:
+        diagnostic_upload = workflow_roles.select(
+            "probe.diagnostics", name
+        ).upload
+        for step_index, step in enumerate(job["steps"]):
             if step.get("uses", "").startswith("actions/upload-artifact@"):
                 assert step["with"]["archive"] is False
                 assert step["with"]["overwrite"] is False
                 assert step["with"]["retention-days"] == 45  # noqa: PLR2004
                 assert step["with"]["if-no-files-found"] == "error"
-                if "diagnostics" in step["name"]:
+                if step_index == diagnostic_upload.index:
                     assert step["if"] == "always()"
 
 
@@ -165,13 +181,11 @@ def test_probe_seal_preserves_original_payload(workflow, tmp_path):
     assert payload.read_bytes() == content
 
 
-def test_probe_reference_preserves_actual_upload_identity(workflow, tmp_path):
+def test_probe_reference_preserves_actual_upload_identity(
+    workflow_roles, tmp_path
+):
     """Raw action output becomes a canonical, separately bound reference."""
-    step = next(
-        step
-        for step in workflow["jobs"]["publish"]["steps"]
-        if step["name"] == "Bind the actual prepared artifact reference"
-    )
+    step = workflow_roles.select("probe.reference").step
     evidence = tmp_path / ".wdv3/evidence"
     evidence.mkdir(parents=True)
     environment = {
@@ -196,13 +210,11 @@ def test_probe_reference_preserves_actual_upload_identity(workflow, tmp_path):
 
 
 @pytest.mark.parametrize("status", [0, 17])
-def test_probe_shell_preserves_paths_and_failure(workflow, tmp_path, status):
+def test_probe_shell_preserves_paths_and_failure(
+    workflow_roles, tmp_path, status
+):
     """The invocation receives exact paths and its failure reaches Actions."""
-    step = next(
-        step
-        for step in workflow["jobs"]["publish"]["steps"]
-        if step["name"] == "Invoke the bound probe once"
-    )
+    step = workflow_roles.select("probe.publish").step
     environment = {
         "GITHUB_WORKSPACE": str(tmp_path / "workspace with spaces"),
         "WDV3_INPUT_NAME": "original.zip",
@@ -232,26 +244,19 @@ def test_probe_shell_preserves_paths_and_failure(workflow, tmp_path, status):
 
 
 def test_probe_failure_diagnostics_keep_both_jobs_and_original_bytes(
-    workflow, tmp_path
+    workflow, workflow_roles, tmp_path
 ):
     """Retain partial evidence under distinct immutable raw basenames."""
     names = []
-    for job_name, job in workflow["jobs"].items():
+    for job_name in workflow["jobs"]:
         workspace = tmp_path / job_name
         evidence = workspace / ".wdv3/evidence"
         evidence.mkdir(parents=True)
         content = b"controlled partial diagnostics\r\n"
         (evidence / "failure.json").write_bytes(content)
-        step = next(
-            step
-            for step in job["steps"]
-            if step["name"] == "Archive available probe diagnostics"
-        )
-        upload = next(
-            step
-            for step in job["steps"]
-            if step["name"] == "Retain immutable probe diagnostics"
-        )
+        diagnostics = workflow_roles.select("probe.diagnostics", job_name)
+        step = diagnostics.archive.step
+        upload = diagnostics.upload.step
         _assert_success(_pwsh(workspace, step["run"], {"GITHUB_RUN_ID": "81"}))
         path = workspace / upload["with"]["path"].replace(
             "${{ github.run_id }}", "81"
