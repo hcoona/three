@@ -93,7 +93,7 @@ def _nbgv_facts() -> NbgvFacts:
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def witness() -> PackageTargetWitness:
     """Return the canonical first-slice Package Target Witness."""
     return PackageTargetWitness(
@@ -107,7 +107,7 @@ def witness() -> PackageTargetWitness:
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def build_request(witness: PackageTargetWitness) -> BuildRequest:
     """Return a closed request using only declared project/build inputs."""
     return BuildRequest(
@@ -123,29 +123,28 @@ def build_request(witness: PackageTargetWitness) -> BuildRequest:
 
 
 @pytest.fixture(scope="module")
-def built_result() -> node_adapter.BuildResult:
+def native_build_request(build_request: BuildRequest) -> BuildRequest:
+    """Freeze the installed toolchain once for native integration scenarios."""
+    versions = {
+        tool: subprocess.check_output(  # noqa: S603
+            (tool, "--version"), text=True
+        ).strip()
+        for tool in ("node", "pnpm", "npm")
+    }
+    return replace(
+        build_request,
+        node_version=versions["node"].removeprefix("v"),
+        pnpm_version=versions["pnpm"],
+        npm_version=versions["npm"],
+    )
+
+
+@pytest.fixture(scope="module")
+def built_result(
+    native_build_request: BuildRequest,
+) -> node_adapter.BuildResult:
     """Build the real smoke package once for artifact quality scenarios."""
-    witness = PackageTargetWitness(
-        target=TARGET,
-        release_unit="hcoona-release-smoke-npm",
-        nbgv=_nbgv_facts(),
-        build_definition="node/npm-package-v1",
-        catalog_digest=DIGEST_A,
-        control_digest=DIGEST_B,
-        purpose="slice-validation",
-    )
-    return build_node_package(
-        BuildRequest(
-            source_root=PROJECT_ROOT,
-            declared_inputs=DECLARED_INPUTS,
-            npm_package_version=NPM_VERSION,
-            witness=witness,
-            source_date_epoch=1_700_000_000,
-            node_version="24.19.0",
-            pnpm_version="11.22.0",
-            npm_version="11.17.0",
-        )
-    )
+    return build_node_package(native_build_request)
 
 
 def _source_snapshot(
@@ -644,7 +643,7 @@ def test_build_rejects_outside_root_symlink_before_read_copy_or_runner(
     ],
 )
 def test_build_rejects_non_exact_source_package_files_allowlist(
-    build_request: BuildRequest,
+    native_build_request: BuildRequest,
     tmp_path: Path,
     files: list[str],
 ) -> None:
@@ -663,9 +662,8 @@ def test_build_rejects_non_exact_source_package_files_allowlist(
     with pytest.raises(ValueError, match="files"):
         build_node_package(
             replace(
-                build_request,
+                native_build_request,
                 source_root=project,
-                pnpm_version="11.22.0",
             )
         )
 
@@ -679,14 +677,14 @@ def test_build_rejects_non_exact_source_package_files_allowlist(
     ],
 )
 def test_build_rejects_runtime_toolchain_mismatch(
-    build_request: BuildRequest,
+    native_build_request: BuildRequest,
     field: str,
     value: str,
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
         build_node_package(
-            replace(build_request, **cast("Any", {field: value}))
+            replace(native_build_request, **cast("Any", {field: value}))
         )
 
 
@@ -754,12 +752,12 @@ def test_node_runtime_version_accepts_only_the_optional_cli_prefix(
 
 
 def test_build_is_deterministic_across_process_umasks_and_normalizes_modes(
-    build_request: BuildRequest,
+    native_build_request: BuildRequest,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     before = _source_snapshot()
     source_manifest = json.loads(
-        (build_request.source_root / "package.json").read_text()
+        (native_build_request.source_root / "package.json").read_text()
     )
     assert source_manifest["version"] == "0.0.0-placeholder"
 
@@ -806,7 +804,7 @@ def test_build_is_deterministic_across_process_umasks_and_normalizes_modes(
             active_umask = mask
             with _temporary_process_umask(mask):
                 assert _current_process_umask() == mask
-                results[mask] = build_node_package(build_request)
+                results[mask] = build_node_package(native_build_request)
                 assert _source_snapshot() == before
             umask_restored[mask] = _current_process_umask() == initial_umask
     finally:
@@ -939,11 +937,11 @@ def test_build_is_deterministic_across_process_umasks_and_normalizes_modes(
         "README.md",
         "workflow-delivery/provenance.json",
     )
-    assert permissive.witness == build_request.witness.canonical_bytes
+    assert permissive.witness == native_build_request.witness.canonical_bytes
     assert permissive.toolchain == (
-        ("node", "24.19.0"),
-        ("pnpm", "11.22.0"),
-        ("npm", "11.17.0"),
+        ("node", native_build_request.node_version),
+        ("pnpm", native_build_request.pnpm_version),
+        ("npm", native_build_request.npm_version),
         ("adapter", "node/npm-package-v1"),
     )
     assert tuple(
@@ -957,7 +955,7 @@ def test_build_is_deterministic_across_process_umasks_and_normalizes_modes(
 
 
 def test_lifecycle_evidence_binds_every_manifest_script(
-    build_request: BuildRequest,
+    native_build_request: BuildRequest,
     tmp_path: Path,
 ) -> None:
     project = tmp_path / "project"
@@ -976,9 +974,8 @@ def test_lifecycle_evidence_binds_every_manifest_script(
 
     result = build_node_package(
         replace(
-            build_request,
+            native_build_request,
             source_root=project,
-            pnpm_version="11.22.0",
         ),
     )
 
@@ -1289,13 +1286,13 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
 
 
 def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: PLR0915
-    build_request: BuildRequest,
+    native_build_request: BuildRequest,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original_run = node_adapter._run  # noqa: SLF001
     runtime_request = _make_runtime_request(
-        node_version=f"v{build_request.node_version}",
-        npm_version=build_request.npm_version,
+        node_version=f"v{native_build_request.node_version}",
+        npm_version=native_build_request.npm_version,
     )
     observations: dict[
         str,
@@ -1344,11 +1341,11 @@ def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: 
     before = _source_snapshot()
     operation = "artifact-build"
     observations[operation] = []
-    built_result = build_node_package(build_request)
+    built_result = build_node_package(native_build_request)
     assert _source_snapshot() == before
     operation = "project-build"
     observations[operation] = []
-    run_node_project_build(build_request)
+    run_node_project_build(native_build_request)
     assert _source_snapshot() == before
     operation = "project-tests"
     observations[operation] = []
@@ -1446,7 +1443,9 @@ def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: 
                 *({"SOURCE_DATE_EPOCH"} if is_build else set()),
             }
             assert environment.get("SOURCE_DATE_EPOCH") == (
-                str(build_request.source_date_epoch) if is_build else None
+                str(native_build_request.source_date_epoch)
+                if is_build
+                else None
             )
             assert set(environment) == expected_keys
             assert all(
@@ -1652,9 +1651,10 @@ def test_artifact_contents_rejects_incomplete_expected_file_closure(
 def test_install_import_rejects_mutated_artifact_export(
     built_result: node_adapter.BuildResult,
 ) -> None:
+    toolchain = dict(built_result.toolchain)
     runtime_request = _make_runtime_request(
-        node_version="v24.19.0",
-        npm_version="11.17.0",
+        node_version=toolchain["node"],
+        npm_version=toolchain["npm"],
     )
     entries = _tar_entries(built_result.tarball)
     entries["package/dist/index.js"] = (
