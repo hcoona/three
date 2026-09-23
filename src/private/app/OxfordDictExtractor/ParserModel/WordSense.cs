@@ -72,7 +72,8 @@ namespace OxfordDictExtractor.ParserModel
 
         public static WordSense ParseFromDictContent(HtmlNode liNode)
         {
-            var sensetop = liNode.SelectSingleNode("./span[@class='sensetop']");
+            var sensetop = liNode.SelectSingleNode("./span[@class='sensetop']")
+                ?? throw new InvalidDataException("Cannot find sense header.");
             if (sensetop.ChildNodes.Count == 1)
             {
                 if (sensetop.ChildNodes.Single()
@@ -95,14 +96,15 @@ namespace OxfordDictExtractor.ParserModel
             if (def == null)
             {
                 var sensetopNextSibling = sensetop.NextSibling;
-                while (!sensetopNextSibling.HasClass("xrefs")
+                while (sensetopNextSibling != null
+                    && !sensetopNextSibling.HasClass("xrefs")
                     && !sensetopNextSibling.HasClass("examples")
                     && !sensetopNextSibling.HasClass("collapse"))
                 {
                     sensetopNextSibling = sensetopNextSibling.NextSibling;
                 }
 
-                if (sensetopNextSibling.HasClass("xrefs"))
+                if (sensetopNextSibling?.HasClass("xrefs") == true)
                 {
                     def = sensetopNextSibling;
                     defChn = sensetopNextSibling;
@@ -158,8 +160,8 @@ namespace OxfordDictExtractor.ParserModel
                 },
                 Grammar = liNode.SelectSingleNode(".//span[@class='grammar']")?.InnerText
                     ?? liNode
-                        .ParentNode
-                        .ParentNode
+                        .ParentNode?
+                        .ParentNode?
                         .SelectSingleNode(
                             "./div[@class='top-container']"
                             + "/div[@class='top-g']"
@@ -167,8 +169,8 @@ namespace OxfordDictExtractor.ParserModel
                         ?.InnerText,
                 Labels = liNode.SelectSingleNode("./span[@class='labels']")?.InnerText
                     ?? liNode
-                        .ParentNode
-                        .ParentNode
+                        .ParentNode?
+                        .ParentNode?
                         .SelectSingleNode(
                             "./div[@class='top-container']"
                             + "/div[@class='top-g']"
@@ -182,7 +184,7 @@ namespace OxfordDictExtractor.ParserModel
                         .Trim(),
                     " "),
                 ChineseDisG = chineseDisG,
-                ChineseDefinition = Constants.WhitespacesNormalizer.Replace(
+                ChineseDefinition = defChn == null ? null : Constants.WhitespacesNormalizer.Replace(
                     WebUtility.HtmlDecode(defChn.InnerText
                         ?? throw new InvalidDataException("Cannot parse def span."))
                         .Trim(),

@@ -16,16 +16,16 @@ url = "https://dl.google.com/go/go1.26.1.windows-amd64.zip"
 version = "0.7.7"
 backend = "go:github.com/B1NARY-GR0UP/nwa"
 
-[[tools.hk]]
+[[tools."aqua:jdx/hk"]]
 version = "1.53.0"
 backend = "aqua:jdx/hk"
 
-[tools.hk."platforms.linux-x64"]
+[tools."aqua:jdx/hk"."platforms.linux-x64"]
 checksum = "sha256:960c14b3bcd61e36dcb42c304e3cc23b22ef2e6f28ac6559e3856d27acf6b54a"
 url = "https://github.com/jdx/hk/releases/download/v1.53.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/hk/releases/assets/487429267"
 
-[tools.hk."platforms.windows-x64"]
+[tools."aqua:jdx/hk"."platforms.windows-x64"]
 checksum = "sha256:a2e5c6131d01cfd6d62204872798f97fc933e7f142d718b3e191434e2d31ef1c"
 url = "https://github.com/jdx/hk/releases/download/v1.53.0/hk-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/jdx/hk/releases/assets/487429261"

@@ -27,7 +27,7 @@ pnpm = "12.5.1"
 uv = "latest"
 
 # Git Commit Hook Manager
-hk = "1.56.1"
+"aqua:jdx/hk" = "1.56.1"
 
 #
 # Linters and Formatters
@@ -151,7 +151,6 @@ description = "Refresh tracked pnpm lockfiles"
 run = '''
 pnpm install --lockfile-only --no-frozen-lockfile
 pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --lockfile-only --no-frozen-lockfile
-pnpm exec -- prettier --write -- pnpm-lock.yaml src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/pnpm-lock.yaml
 '''
 
 [tasks.update-uv-lock]
