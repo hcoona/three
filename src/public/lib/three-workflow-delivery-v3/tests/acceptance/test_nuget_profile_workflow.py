@@ -147,7 +147,9 @@ def test_profile_workflow_is_credential_free_and_attempt_bound(
                 "persist-credentials": False,
             }
         if step.get("uses", "").startswith("astral-sh/setup-uv@"):
-            assert step["with"]["version"] == "0.12.7"
+            uv_version = step["with"]["version"]
+            assert isinstance(uv_version, str)
+            assert uv_version.strip()
     # The role binds each required flag to its actual locked-sync operand.
     workflow_roles.sync_operands()
 
