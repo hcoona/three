@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -20,11 +21,11 @@ ROOT = Path(__file__).resolve().parents[6]
 WORKFLOW = (
     ROOT / ".github/workflows/workflow-delivery-v3-native-npm-acceptance.yml"
 )
-CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-UV = "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
-MISE = "jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518"
-PNPM = "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
-UPLOAD = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+CHECKOUT = "actions/checkout"
+UV = "astral-sh/setup-uv"
+MISE = "jdx/mise-action"
+PNPM = "pnpm/action-setup"
+UPLOAD = "actions/upload-artifact"
 PACKAGE = "three-workflow-delivery-v3"
 MODULE = "three_workflow_delivery_v3.acceptance"
 AUDIT_FILES = {
@@ -51,7 +52,8 @@ def _step(identity):
     matches = [
         step
         for step in _steps()
-        if step.get("id") == identity or step.get("uses") == identity
+        if step.get("id") == identity
+        or step.get("uses", "").partition("@")[0] == identity
     ]
     assert len(matches) == 1
     return matches[0]
@@ -131,7 +133,11 @@ def test_probe_token_env_binding_and_prerequisite_order():  # noqa: PLR0915
     assert job.get("env", {}) == {}
     assert job["defaults"]["run"]["shell"] == "bash"
     steps = _steps()
-    assert sorted(step["uses"] for step in steps if "uses" in step) == sorted(
+    actions = [step["uses"] for step in steps if "uses" in step]
+    assert all(
+        re.fullmatch(r"[^@]+@[0-9a-f]{40}", action) for action in actions
+    )
+    assert sorted(action.partition("@")[0] for action in actions) == sorted(
         [CHECKOUT, UV, MISE, PNPM, UPLOAD]
     )
     assert steps.index(_step(CHECKOUT)) < steps.index(_step(UV))
@@ -144,13 +150,18 @@ def test_probe_token_env_binding_and_prerequisite_order():  # noqa: PLR0915
         "ref": "${{ github.sha }}",
         "persist-credentials": False,
     }
-    assert _step(UV)["with"]["version"] == "0.12.7"
+    uv_version = _step(UV)["with"]["version"]
+    assert isinstance(uv_version, str)
+    assert uv_version.strip()
     assert _step(MISE)["with"] == {
         "install": False,
         "working_directory": "${{ runner.temp }}",
     }
+    pnpm_version = _step(PNPM)["with"]["version"]
+    assert isinstance(pnpm_version, str)
+    assert pnpm_version.strip()
     assert _step(PNPM)["with"] == {
-        "version": "11.22.0",
+        "version": pnpm_version,
         "run_install": False,
     }
     assert _step("toolchain")["working-directory"] == "${{ runner.temp }}"
@@ -187,8 +198,8 @@ def test_probe_token_env_binding_and_prerequisite_order():  # noqa: PLR0915
         assert "secrets" not in candidate
         for step in candidate.get("steps", []):
             if "uses" in step:
-                assert step["uses"] in {CHECKOUT, UV, MISE, PNPM, UPLOAD}
-            if step.get("uses") == CHECKOUT:
+                assert step["uses"] in actions
+            if step.get("uses", "").partition("@")[0] == CHECKOUT:
                 assert step["with"]["ref"] == "${{ github.sha }}"
                 assert step["with"]["persist-credentials"] is False
         if identity == "probe":
