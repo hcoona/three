@@ -162,7 +162,7 @@ def _evaluate_with_result(
     monkeypatch.setattr(eligibility, "scan_bounded_static_references", scan)
     monkeypatch.setattr(
         eligibility,
-        "validate_live_static_reference_result",
+        "validate_bounded_static_reference_result",
         validate,
     )
     monkeypatch.setattr(eligibility, "observe_governance_source", observe)
@@ -256,7 +256,7 @@ def test_live_eligibility_validates_static_reference_before_governance(
 
     monkeypatch.setattr(
         eligibility,
-        "validate_live_static_reference_result",
+        "validate_bounded_static_reference_result",
         reject,
     )
     monkeypatch.setattr(

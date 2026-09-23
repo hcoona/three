@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
-import tomllib
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
@@ -65,184 +63,6 @@ type AuthorityRunner = Callable[
 type SessionFactory = Callable[[], StaticReferenceSession]
 
 _LOGGER = logging.getLogger(__name__)
-_AUTHORITY_DEPENDENCY_CLOSURES = (
-    (
-        "pnpm-lock",
-        "pnpm-lock.yaml",
-        "sha256:44ea8ea08134a04f079e89747de2f4b6219ff7dbc23365d66c9656e087a224ba",
-    ),
-    (
-        "nuget-lock",
-        (
-            "src/private/app/workflow-delivery-v3-nuget-authority/"
-            "packages.lock.json"
-        ),
-        "sha256:2fcd4e94b3b3be83522776536c4cae3f22aaa4bcbfe747a522627654c020cc5a",
-    ),
-)
-_EXPECTED_IMPLEMENTATIONS: dict[str, tuple[str, ...]] = {
-    "npm-manifest-v1": (
-        "@npmcli/package-json@8.0.0",
-        "node@24.19.0",
-        "npm-package-arg@14.0.0",
-    ),
-    "pnpm-lock-v1": (
-        "@pnpm/deps.path@1101.0.1",
-        "@pnpm/lockfile.fs@1100.2.5",
-        "@pnpm/lockfile.utils@1102.1.0",
-        "@pnpm/resolving.npm-resolver@1104.1.0",
-        "@pnpm/workspace.spec-parser@1100.0.1",
-        "node@24.19.0",
-    ),
-    "pnpm-workspace-v1": (
-        "@pnpm/resolving.npm-resolver@1104.1.0",
-        "@pnpm/workspace.spec-parser@1100.0.1",
-        "@pnpm/workspace.workspace-manifest-reader@1100.1.8",
-        "node@24.19.0",
-        "npm-package-arg@14.0.0",
-    ),
-    "nuget-lock-v1": (
-        "NuGet.Packaging@7.9.0",
-        "NuGet.ProjectModel@7.9.0",
-        "dotnet-runtime@10.0.8",
-    ),
-}
-_LIVE_REQUIRED_GRAPH_IDS = (
-    "npm-manifest-v1",
-    "pnpm-lock-v1",
-    "pnpm-workspace-v1",
-    "nuget-lock-v1",
-)
-_LIVE_REQUIRED_IMPLEMENTATION_IDENTITIES = frozenset(
-    identity
-    for graph_id in _LIVE_REQUIRED_GRAPH_IDS
-    for identity in _EXPECTED_IMPLEMENTATIONS[graph_id]
-)
-
-_NODE_CHECKSUMS = {
-    "linux-arm64": (
-        "sha256:d28c8a5bf0a808f0ed434a1dce8c54ae98f0371c0bd86ac58abc613f73e6643f"
-    ),
-    "linux-arm64-musl": (
-        "sha256:20824e4d35948fae5b337dccef47813b04d8995312f59df7386f2256d9f9ab7e"
-    ),
-    "linux-x64": (
-        "sha256:f625d97cd707df4ff96254916fbc5ff014f09c09effe5a1e0ca8f6d41a8789d4"
-    ),
-    "linux-x64-musl": (
-        "sha256:c60223786df14a5d23e220ebb8e60318f5322640a62f90e6d9e54d3a18da532e"
-    ),
-    "macos-arm64": (
-        "sha256:8294b7aa9b03997481c06babf1e8b270c859358f27da57a11509afe537ac381d"
-    ),
-    "macos-x64": (
-        "sha256:d1b5e999db158c62fe8f7267a4476b035d8bd93b1a605bac24a3f0dd166e3316"
-    ),
-    "windows-x64": (
-        "sha256:57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73"
-    ),
-}
-_PNPM_CHECKSUMS = {
-    "linux-arm64": (
-        "sha256:f1426231f365bdfd46c15fa3d1211c3936ee2c4e557afd304f6c66dbf1b2a8bf"
-    ),
-    "linux-arm64-musl": (
-        "sha256:6e53557024be48e59ab8760f9117c0e5c0e0a37ab420f71f302d86216970d28f"
-    ),
-    "linux-x64": (
-        "sha256:4c592fa410eb23b69691a9efb9bf21c87c15b3e9d88c6ec8acdd354a0eb8de71"
-    ),
-    "linux-x64-musl": (
-        "sha256:45425b06e747cbcaff4940d7b4a55e694645f15f9339dbf7f2601cfb21400545"
-    ),
-    "macos-arm64": (
-        "sha256:2000dcc8f0718852c2806ba4dca1edaedf18a4a39264474d5a1c8fcee250adfd"
-    ),
-    "windows-x64": (
-        "sha256:1de83ad5100acfd2adb5c8bc6f8a428cee9ff4e365deff57c22bfc0cccaa4ddb"
-    ),
-}
-
-
-@dataclass(frozen=True, slots=True)
-class _MiseToolSpec:
-    tool: str
-    config_key: str
-    selector: str
-    lock_key: str
-    backend: str
-    version: str
-    artifact_checksums: tuple[tuple[str, str], ...] = ()
-    provenance: str | None = None
-
-
-_MISE_TOOL_SPECS = (
-    _MiseToolSpec(
-        tool="dotnet",
-        config_key="core:dotnet",
-        selector="10",
-        lock_key="dotnet",
-        backend="core:dotnet",
-        version="10.0.300",
-    ),
-    _MiseToolSpec(
-        tool="node",
-        config_key="node",
-        selector="24",
-        lock_key="node",
-        backend="core:node",
-        version="24.19.0",
-        artifact_checksums=tuple(_NODE_CHECKSUMS.items()),
-    ),
-    _MiseToolSpec(
-        tool="pnpm",
-        config_key="pnpm",
-        selector="11.22.0",
-        lock_key="pnpm",
-        backend="aqua:pnpm/pnpm",
-        version="11.22.0",
-        artifact_checksums=tuple(_PNPM_CHECKSUMS.items()),
-        provenance="github-attestations",
-    ),
-)
-
-
-def _mise_runtime_closure_document() -> dict[str, JsonValue]:
-    selectors: list[JsonValue] = [
-        {
-            "tool": spec.tool,
-            "config-key": spec.config_key,
-            "selector": spec.selector,
-            "lock-key": spec.lock_key,
-        }
-        for spec in _MISE_TOOL_SPECS
-    ]
-    tools: list[JsonValue] = []
-    for spec in _MISE_TOOL_SPECS:
-        tool: dict[str, JsonValue] = {
-            "tool": spec.tool,
-            "lock-key": spec.lock_key,
-            "backend": spec.backend,
-            "version": spec.version,
-        }
-        if spec.artifact_checksums:
-            artifact_checksums: dict[str, JsonValue] = {}
-            for platform, checksum in spec.artifact_checksums:
-                artifact_checksums[platform] = checksum
-            tool["artifact-checksums"] = artifact_checksums
-        if spec.provenance is not None:
-            tool["provenance"] = spec.provenance
-        tools.append(tool)
-    return {
-        "mise-config": {
-            "path": "mise.toml",
-            "selectors": selectors,
-        },
-        "mise-lock": {
-            "path": "mise.lock",
-            "tools": tools,
-        },
-    }
 
 
 def _static_reference_graph_contracts() -> dict[str, JsonValue]:
@@ -701,17 +521,9 @@ def _static_reference_fact_contracts() -> dict[str, JsonValue]:
 
 
 def static_reference_authority_manifest() -> dict[str, JsonValue]:
-    """Return the checked-in exact authority graph manifest."""
+    """Return the semantic graph contract, independent of tooling versions."""
     return {
         "schema": "workflow-delivery/v3/static-reference-authority-manifest",
-        "dependency-closures": [
-            {
-                "kind": kind,
-                "path": path,
-                "sha256": digest,
-            }
-            for kind, path, digest in _AUTHORITY_DEPENDENCY_CLOSURES
-        ],
         "execution": {
             "node-command": [
                 "node",
@@ -733,9 +545,10 @@ def static_reference_authority_manifest() -> dict[str, JsonValue]:
                 "artifact": "package.json",
                 "input-mode": "strict-utf8-file",
                 "snapshot-inputs": ["package.json"],
-                "implementations": list(
-                    _EXPECTED_IMPLEMENTATIONS["npm-manifest-v1"]
-                ),
+                "packages": [
+                    "@npmcli/package-json",
+                    "npm-package-arg",
+                ],
                 "apis": [
                     "PackageJson.load(snapshotDirectory)",
                     "npa.resolve(name,spec,snapshotDirectory)",
@@ -747,9 +560,13 @@ def static_reference_authority_manifest() -> dict[str, JsonValue]:
                 "artifact": "pnpm-lock.yaml@9.0",
                 "input-mode": "strict-utf8-file",
                 "snapshot-inputs": ["pnpm-lock.yaml"],
-                "implementations": list(
-                    _EXPECTED_IMPLEMENTATIONS["pnpm-lock-v1"]
-                ),
+                "packages": [
+                    "@pnpm/deps.path",
+                    "@pnpm/lockfile.fs",
+                    "@pnpm/lockfile.utils",
+                    "@pnpm/resolving.npm-resolver",
+                    "@pnpm/workspace.spec-parser",
+                ],
                 "apis": [
                     "extractMainDocument",
                     "readWantedLockfileWithMergeInfo",
@@ -770,9 +587,12 @@ def static_reference_authority_manifest() -> dict[str, JsonValue]:
                 "artifact": "pnpm-workspace.yaml",
                 "input-mode": "strict-utf8-file",
                 "snapshot-inputs": ["pnpm-workspace.yaml"],
-                "implementations": list(
-                    _EXPECTED_IMPLEMENTATIONS["pnpm-workspace-v1"]
-                ),
+                "packages": [
+                    "@pnpm/resolving.npm-resolver",
+                    "@pnpm/workspace.spec-parser",
+                    "@pnpm/workspace.workspace-manifest-reader",
+                    "npm-package-arg",
+                ],
                 "apis": [
                     "readWorkspaceManifest(snapshotDirectory)",
                     "WorkspaceSpec.parse",
@@ -801,9 +621,10 @@ def static_reference_authority_manifest() -> dict[str, JsonValue]:
                         "mode": "xml-byte-stream",
                     },
                 ],
-                "implementations": list(
-                    _EXPECTED_IMPLEMENTATIONS["nuget-lock-v1"]
-                ),
+                "packages": [
+                    "NuGet.Packaging",
+                    "NuGet.ProjectModel",
+                ],
                 "apis": [
                     (
                         "PackagesLockFileFormat.Read("
@@ -818,29 +639,6 @@ def static_reference_authority_manifest() -> dict[str, JsonValue]:
             },
         ],
         "normalized-fact-contracts": _static_reference_fact_contracts(),
-        "runtime-closure": _mise_runtime_closure_document(),
-        "runtimes": [
-            {
-                "tool": "dotnet",
-                "backend": "core:dotnet",
-                "sdk-version": "10.0.300",
-                "loaded-runtime": "dotnet-runtime@10.0.8",
-            },
-            {
-                "tool": "node",
-                "backend": "core:node",
-                "version": "24.19.0",
-                "loaded-runtime": "node@24.19.0",
-                "artifact-checksums": dict(_NODE_CHECKSUMS),
-            },
-            {
-                "tool": "pnpm",
-                "backend": "aqua:pnpm/pnpm",
-                "version": "11.22.0",
-                "provenance": "github-attestations",
-                "artifact-checksums": dict(_PNPM_CHECKSUMS),
-            },
-        ],
     }
 
 
@@ -917,90 +715,6 @@ STATIC_REFERENCE_POLICY_DIGEST = canonical_sha256(
 )
 
 
-class StaticReferenceAuthorityMismatchError(RuntimeError):
-    """The checked-in authority closure does not match the current policy."""
-
-
-def _exact_mapping(value: object) -> dict[str, object]:
-    if not isinstance(value, dict) or any(
-        type(key) is not str for key in value
-    ):
-        message = "static-reference authority closure does not match"
-        raise StaticReferenceAuthorityMismatchError(message)
-    return cast("dict[str, object]", value)
-
-
-def _load_toml_document(path: Path) -> dict[str, object]:
-    try:
-        with path.open("rb") as stream:
-            document: object = tomllib.load(stream)
-    except (OSError, tomllib.TOMLDecodeError) as error:
-        message = "static-reference authority closure is unavailable"
-        raise StaticReferenceAuthorityMismatchError(message) from error
-    return _exact_mapping(document)
-
-
-def _validate_mise_runtime_closure(repository_root: Path) -> None:
-    config = _load_toml_document(repository_root / "mise.toml")
-    lock = _load_toml_document(repository_root / "mise.lock")
-    config_tools = _exact_mapping(config.get("tools"))
-    lock_tools = _exact_mapping(lock.get("tools"))
-    for spec in _MISE_TOOL_SPECS:
-        if config_tools.get(spec.config_key) != spec.selector:
-            message = "static-reference authority closure does not match"
-            raise StaticReferenceAuthorityMismatchError(message)
-        entries = lock_tools.get(spec.lock_key)
-        if type(entries) is not list or len(entries) != 1:
-            message = "static-reference authority closure does not match"
-            raise StaticReferenceAuthorityMismatchError(message)
-        entry = _exact_mapping(entries[0])
-        if (
-            entry.get("backend") != spec.backend
-            or entry.get("version") != spec.version
-        ):
-            message = "static-reference authority closure does not match"
-            raise StaticReferenceAuthorityMismatchError(message)
-        expected_checksums = dict(spec.artifact_checksums)
-        if not expected_checksums:
-            continue
-        platforms = {
-            key.removeprefix("platforms."): value
-            for key, value in entry.items()
-            if key.startswith("platforms.")
-        }
-        if set(platforms) != set(expected_checksums):
-            message = "static-reference authority closure does not match"
-            raise StaticReferenceAuthorityMismatchError(message)
-        for platform, expected_checksum in expected_checksums.items():
-            platform_entry = _exact_mapping(platforms.get(platform))
-            if platform_entry.get("checksum") != expected_checksum:
-                message = "static-reference authority closure does not match"
-                raise StaticReferenceAuthorityMismatchError(message)
-            if (
-                spec.provenance is not None
-                and platform_entry.get("provenance") != spec.provenance
-            ):
-                message = "static-reference authority closure does not match"
-                raise StaticReferenceAuthorityMismatchError(message)
-
-
-def validate_static_reference_dependency_closures(
-    repository_root: Path,
-) -> None:
-    """Require the checked-in package-manager locks bound by the policy."""
-    for _, relative_path, expected_digest in _AUTHORITY_DEPENDENCY_CLOSURES:
-        try:
-            content = (repository_root / relative_path).read_bytes()
-        except OSError as error:
-            message = "static-reference authority closure is unavailable"
-            raise StaticReferenceAuthorityMismatchError(message) from error
-        observed_digest = f"sha256:{hashlib.sha256(content).hexdigest()}"
-        if observed_digest != expected_digest:
-            message = "static-reference authority closure does not match"
-            raise StaticReferenceAuthorityMismatchError(message)
-    _validate_mise_runtime_closure(repository_root)
-
-
 @dataclass(slots=True)
 class _ScanState:
     implementation_identities: set[str] = field(default_factory=set)
@@ -1016,19 +730,6 @@ class _ScanContext:
     session: StaticReferenceSession
     authority_runner: AuthorityRunner
     state: _ScanState
-
-
-def _implementation_mismatch(
-    outcome: AuthorityGraphOutcome,
-) -> bool:
-    expected_values = _EXPECTED_IMPLEMENTATIONS.get(outcome.graph_id)
-    if expected_values is None:
-        return True
-    expected = set(expected_values)
-    observed = set(outcome.implementation_identities)
-    if not observed <= expected:
-        return True
-    return outcome.error_kind is None and observed != expected
 
 
 def _run_materialized_candidate(
@@ -1049,9 +750,6 @@ def _run_materialized_candidate(
     context.state.implementation_identities.update(
         outcome.implementation_identities
     )
-    if _implementation_mismatch(outcome):
-        context.state.error_kind = "authority-mismatch"
-        return
     if outcome.error_kind is not None:
         context.state.error_kind = outcome.error_kind
         return
@@ -1148,12 +846,6 @@ def _scan_inventory(
     ] = deque()
     try:
         materialized = _materialize_inventory(context)
-        if state.error_kind is None and authority_runner is None:
-            try:
-                validate_static_reference_dependency_closures(repository_root)
-            except StaticReferenceAuthorityMismatchError:
-                state.error_kind = "authority-mismatch"
-
         if state.error_kind is None:
             _run_materialized_inventory(context, materialized)
     finally:
@@ -1257,42 +949,12 @@ def validate_bounded_static_reference_result(
             "implementation identities"
         )
         raise ValueError(message)
-    if result.error_kind is None:
-        admitted_closures = {frozenset[str]()}
-        for implementation_set in _EXPECTED_IMPLEMENTATIONS.values():
-            graph_closure = frozenset(implementation_set)
-            admitted_closures.update(
-                closure | graph_closure for closure in tuple(admitted_closures)
-            )
-        if frozenset(result.implementation_identities) not in admitted_closures:
-            message = (
-                "bounded static-reference Result implementations are "
-                "not complete graph closures"
-            )
-            raise ValueError(message)
-
-
-def validate_live_static_reference_result(
-    result: BoundedStaticReferenceResult,
-) -> None:
-    """Require the mandatory first-slice authority closure for Live clean."""
-    validate_bounded_static_reference_result(result)
-    if (
-        result.result == "clean"
-        and not frozenset(result.implementation_identities)
-        >= _LIVE_REQUIRED_IMPLEMENTATION_IDENTITIES
-    ):
-        message = "Live static-reference Result implementations are incomplete"
-        raise ValueError(message)
 
 
 __all__ = [
     "STATIC_REFERENCE_POLICY_DIGEST",
-    "StaticReferenceAuthorityMismatchError",
     "scan_bounded_static_references",
     "static_reference_authority_manifest",
     "static_reference_policy_document",
     "validate_bounded_static_reference_result",
-    "validate_live_static_reference_result",
-    "validate_static_reference_dependency_closures",
 ]
