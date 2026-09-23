@@ -22,11 +22,11 @@ GOVERNANCE = (
     / ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json"
 )
 RETENTION_DAYS = 45
-CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-UV = "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
-MISE = "jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518"
-UPLOAD = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
-DOWNLOAD = "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+CHECKOUT = "actions/checkout"
+UV = "astral-sh/setup-uv"
+MISE = "jdx/mise-action"
+UPLOAD = "actions/upload-artifact"
+DOWNLOAD = "actions/download-artifact"
 APPROVAL_ENVIRONMENT_NAME = "workflow-delivery-v3-buddy-approval"
 APPROVAL_ENVIRONMENT_MARKER = f"{APPROVAL_ENVIRONMENT_NAME}/v1"
 ATTEMPT_ONE_CONDITION = "github.run_attempt == 1"
@@ -207,7 +207,7 @@ def _artifact_steps(
         step
         for job in document["jobs"].values()
         for step in _steps(job)
-        if step.get("uses") == action
+        if step.get("uses", "").partition("@")[0] == action
     ]
 
 
@@ -382,7 +382,7 @@ def test_buddy_request_normalization_passes_selected_identity_and_retains_payloa
     job = document["jobs"]["request"]
     normalization = _step(job, "Normalize fixed live request")
     upload = _step(job, "Upload Release Intent")
-    assert upload["uses"] == UPLOAD
+    assert upload["uses"].partition("@")[0] == UPLOAD
     command_log = tmp_path / "commands.jsonl"
     github_output = tmp_path / "github-output"
     payload = b'{"synthetic":"WH04 shell wiring fixture"}\n'
@@ -594,7 +594,11 @@ with Path(args[args.index("--github-output") + 1]).open("a", encoding="utf-8") a
     )
     assert outputs["execution-concurrency-key"] == "key-from-admitted-model"
     assert outputs["repository-model-digest"] == "sha256:" + "4" * 64
-    upload = next(step for step in _steps(job) if step.get("uses") == UPLOAD)
+    upload = next(
+        step
+        for step in _steps(job)
+        if step.get("uses", "").partition("@")[0] == UPLOAD
+    )
     for name, producer, field in (
         ("repository-model-digest", compile_step, "repository-model-digest"),
         (
@@ -861,7 +865,7 @@ def test_live_eligibility_block_is_uploaded_before_status_propagates() -> None:
     upload = _step(job, "Upload Live Eligibility Decision")
     propagate = _step(job, "Propagate Live Eligibility status")
     assert steps.index(evaluate) < steps.index(upload) < steps.index(propagate)
-    assert upload["uses"] == UPLOAD
+    assert upload["uses"].partition("@")[0] == UPLOAD
     assert upload["with"]["archive"] is False
     assert upload["with"]["overwrite"] is False
     assert upload["with"]["if-no-files-found"] == "error"
@@ -880,7 +884,7 @@ def test_live_eligibility_installs_only_the_static_authority_toolchain() -> (
     toolchain = _step(job, "Install exact toolchain")
     preparation = _step(job, "Prepare static-reference authorities")
 
-    assert toolchain["uses"] == MISE
+    assert toolchain["uses"].partition("@")[0] == MISE
     assert toolchain["with"] == {
         "experimental": True,
         "install": True,
@@ -986,7 +990,7 @@ def test_blocking_observation_is_retained_before_status_propagation() -> None:
     assert upload["if"] == (
         "always() && steps.observe.outputs.observation-set-artifact-name != ''"
     )
-    assert upload["uses"] == UPLOAD
+    assert upload["uses"].partition("@")[0] == UPLOAD
     assert upload["with"]["archive"] is False
     assert upload["with"]["overwrite"] is False
     assert upload["with"]["if-no-files-found"] == "error"
@@ -1000,7 +1004,7 @@ def test_blocking_observation_is_retained_before_status_propagation() -> None:
         "always() && needs.observe-github-packages.outputs."
         "observation-set-artifact-id != ''"
     )
-    assert download["uses"] == DOWNLOAD
+    assert download["uses"].partition("@")[0] == DOWNLOAD
     assert download["with"]["artifact-ids"] == (
         "${{ needs.observe-github-packages.outputs.observation-set-artifact-id }}"
     )
@@ -1298,7 +1302,7 @@ def test_all_actions_are_full_sha_pinned_with_version_comments() -> None:
     assert uses_lines
     assert all(pin.fullmatch(line) for line in uses_lines)
     assert {
-        str(step["uses"])
+        str(step["uses"]).partition("@")[0]
         for document in documents
         for job in document["jobs"].values()
         for step in _steps(job)
@@ -2049,7 +2053,7 @@ def test_reviewer_identity_and_approval_bundle_are_durable_before_wait() -> (
     assert materializer["outputs"]["approval-bundle-digest"] == (
         "${{ steps.form-bundle.outputs.approval-bundle-digest }}"
     )
-    assert upload_bundle["uses"] == UPLOAD
+    assert upload_bundle["uses"].partition("@")[0] == UPLOAD
     assert upload_bundle["with"] == {
         "name": "${{ steps.form-bundle.outputs.approval-bundle-artifact-name }}",
         "path": (
@@ -2180,7 +2184,7 @@ def test_approve_publication_freshly_admits_governance_and_emits_sole_authorizat
     assert "date -u" not in command
     assert "--output .wdv3/publication-authorization.json" in command
     assert steps.index(authorize) < steps.index(upload)
-    assert upload["uses"] == UPLOAD
+    assert upload["uses"].partition("@")[0] == UPLOAD
     assert upload["with"] == {
         "name": (
             "${{ steps.authorize.outputs."
@@ -2402,10 +2406,10 @@ def test_publisher_terminal_transport_preserves_mutation_order() -> None:
     for role in ("mutation-marker", "publication-result"):
         upload = identified["upload-" + role]
         download = identified["download-" + role]
-        assert upload["uses"] == UPLOAD
+        assert upload["uses"].partition("@")[0] == UPLOAD
         assert upload["with"]["retention-days"] == RETENTION_DAYS
         assert upload["with"]["overwrite"] is False
-        assert download["uses"] == DOWNLOAD
+        assert download["uses"].partition("@")[0] == DOWNLOAD
         assert (
             download["with"]["artifact-ids"]
             == f"${{{{ steps.upload-{role}.outputs.artifact-id }}}}"
@@ -2455,7 +2459,7 @@ def test_finalizer_downloads_only_the_explicit_terminal_and_direct_marker() -> (
         == "${{ steps.marker-lineage.outputs.marker-artifact-id }}"
     )
     for step in (terminal, marker):
-        assert step["uses"] == DOWNLOAD
+        assert step["uses"].partition("@")[0] == DOWNLOAD
         assert step["with"]["digest-mismatch"] == "error"
         assert "name" not in step["with"]
     resolver = _step(finalizer, "Resolve Result direct marker lineage")
@@ -2605,7 +2609,7 @@ def test_live_observation_authority_closes_every_current_consumer() -> None:
         downloads = [
             reference
             for step in _steps(job)
-            if step.get("uses") == DOWNLOAD
+            if step.get("uses", "").partition("@")[0] == DOWNLOAD
             for reference in step["with"]["artifact-ids"].split(",")
         ]
         for role in ("intent", "repository-model", "live-eligibility"):
@@ -2676,7 +2680,8 @@ def test_current_authority_jobs_install_no_mutating_toolchain() -> None:
         "prove-exact-satisfied",
     ):
         assert all(
-            step.get("uses") != MISE for step in _steps(callee_jobs[job_name])
+            step.get("uses", "").partition("@")[0] != MISE
+            for step in _steps(callee_jobs[job_name])
         )
 
 
@@ -2686,7 +2691,7 @@ def test_current_live_checkouts_use_exact_selected_target() -> None:
         step
         for job_name, job in jobs.items()
         for step in _steps(job)
-        if step.get("uses") == CHECKOUT
+        if step.get("uses", "").partition("@")[0] == CHECKOUT
     ]
 
     assert checkouts
