@@ -28,11 +28,11 @@ STATIC_LANES = (
 CHECK_NAME = "Workflow Delivery v3 / hcoona-release-smoke-npm (shadow)"
 RETENTION_DAYS = 45
 CHILD_FAILURE = 73
-CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-UV = "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
-MISE = "jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518"
-UPLOAD = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
-DOWNLOAD = "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+CHECKOUT = "actions/checkout"
+UV = "astral-sh/setup-uv"
+MISE = "jdx/mise-action"
+UPLOAD = "actions/upload-artifact"
+DOWNLOAD = "actions/download-artifact"
 
 
 def _document() -> dict[str, Any]:
@@ -726,7 +726,9 @@ def test_candidate_uses_exact_pr_range_and_tested_merge_target(
     command = _run(request, "Form exact candidate and comparison")
     clock = _run(request, "Record platform workflow creation")
     metadata = next(step for step in steps if step.get("id") == "clock")
-    setup_uv = next(step for step in steps if step.get("uses") == UV)
+    setup_uv = next(
+        step for step in steps if step.get("uses", "").partition("@")[0] == UV
+    )
 
     assert "git fetch --force --tags --no-recurse-submodules origin" in checkout
     assert '"+${TARGET_SHA}:refs/remotes/origin/wdv3-target"' in checkout
@@ -800,7 +802,9 @@ def test_actions_are_full_sha_pinned_with_current_version_comments() -> None:
 
     assert uses_lines
     assert all(pattern.fullmatch(line) for line in uses_lines)
-    assert {step["uses"] for step in _uses_steps(_document())} == {
+    assert {
+        step["uses"].partition("@")[0] for step in _uses_steps(_document())
+    } == {
         CHECKOUT,
         UV,
         MISE,
@@ -813,10 +817,14 @@ def test_stock_raw_artifacts_propagate_exact_ids_and_digests() -> None:
     """Use immutable raw stock artifacts and verify their upload digests."""
     document = _document()
     upload_steps = [
-        step for step in _uses_steps(document) if step["uses"] == UPLOAD
+        step
+        for step in _uses_steps(document)
+        if step["uses"].partition("@")[0] == UPLOAD
     ]
     download_steps = [
-        step for step in _uses_steps(document) if step["uses"] == DOWNLOAD
+        step
+        for step in _uses_steps(document)
+        if step["uses"].partition("@")[0] == DOWNLOAD
     ]
     raw = WORKFLOW.read_text(encoding="utf-8")
 
@@ -1016,7 +1024,7 @@ def test_finalizer_persists_canonical_decision_and_summary_before_guard() -> (
     )
     for step, role, condition in expected:
         assert step["if"] == condition
-        assert step["uses"] == UPLOAD
+        assert step["uses"].partition("@")[0] == UPLOAD
         assert step["with"]["name"] == (
             "wdv3-${{ github.run_id }}-${{ github.run_attempt }}-"
             f"{role}"

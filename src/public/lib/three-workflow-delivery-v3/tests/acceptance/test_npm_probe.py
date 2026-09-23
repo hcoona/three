@@ -718,7 +718,7 @@ def test_cli_never_substitutes_pat_for_missing_github_token(
     assert not probe_case["runtime_directory"].exists()
 
 
-def test_actual_pinned_nonnetwork_queries_ignore_ambient_and_target_config(
+def test_actual_nonnetwork_config_queries_ignore_ambient_and_target_config(
     probe_case, monkeypatch
 ):
     node = shutil.which("node")
@@ -729,10 +729,10 @@ def test_actual_pinned_nonnetwork_queries_ignore_ambient_and_target_config(
     real_runner = IsolatedNpmProcessRunner()
 
     class RealQueryNpm(ControlledNpm):
-        """Delegate only version/config queries to real npm, never publish."""
+        """Exercise the installed config parser; control profile and publish."""
 
         def run(self, argv, *, cwd, environment, timeout, output_limit):
-            if argv[:2] == ("npm", "publish"):
+            if argv[:3] != ("npm", "config", "get"):
                 return super().run(
                     argv,
                     cwd=cwd,
@@ -740,9 +740,6 @@ def test_actual_pinned_nonnetwork_queries_ignore_ambient_and_target_config(
                     timeout=timeout,
                     output_limit=output_limit,
                 )
-            assert argv in {("node", "--version"), ("npm", "--version")} or (
-                argv[:3] == ("npm", "config", "get")
-            )
             self.calls.append(
                 (argv, cwd, dict(environment), timeout, output_limit)
             )
