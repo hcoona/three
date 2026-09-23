@@ -266,13 +266,13 @@ def _initialize_empty_repository(repo: Path) -> str:
 @cache
 def _hk_executable() -> str:
     install_root = _run(
-        ("mise", "where", "hk"),
+        ("mise", "where", "aqua:jdx/hk"),
         cwd=REPO_ROOT,
     ).stdout.strip()
     executable = Path(install_root) / "hk"
     version = _run((str(executable), "--version"), cwd=REPO_ROOT)
     active_version = _run(
-        ("mise", "current", "hk"),
+        ("mise", "current", "aqua:jdx/hk"),
         cwd=REPO_ROOT,
     ).stdout.strip()
     assert version.stdout.strip() == f"hk {active_version}"

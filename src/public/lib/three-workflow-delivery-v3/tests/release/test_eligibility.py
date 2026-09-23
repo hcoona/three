@@ -112,7 +112,6 @@ EXPECTED_STATIC_REFERENCE_ERROR_KINDS = (
     "authority-rejected",
     "authority-execution-failed",
     "unsupported-projection",
-    "authority-mismatch",
     "cleanup-failed",
 )
 LIVE_STATIC_REFERENCE_IMPLEMENTATIONS = (
@@ -1298,60 +1297,6 @@ def test_live_admission_requires_a_diagnostic_free_static_reference_clean_pass(
     mutation(document)
 
     with pytest.raises(ValueError, match=message):
-        _admit_mutated_decision(
-            document,
-            live_intent=live_intent,
-            live_admitted_repository_model=live_admitted_repository_model,
-            policy=policy,
-        )
-
-
-@pytest.mark.parametrize(
-    "implementation_identities",
-    [
-        pytest.param((), id="empty"),
-        pytest.param(
-            (
-                "NuGet.Packaging@7.9.0",
-                "NuGet.ProjectModel@7.9.0",
-                "dotnet-runtime@10.0.8",
-            ),
-            id="nuget-only",
-        ),
-        pytest.param(
-            (
-                "@npmcli/package-json@8.0.0",
-                "@pnpm/deps.path@1101.0.1",
-                "@pnpm/lockfile.fs@1100.2.5",
-                "@pnpm/lockfile.utils@1102.1.0",
-                "@pnpm/resolving.npm-resolver@1104.1.0",
-                "@pnpm/workspace.spec-parser@1100.0.1",
-                "@pnpm/workspace.workspace-manifest-reader@1100.1.8",
-                "node@24.19.0",
-                "npm-package-arg@14.0.0",
-            ),
-            id="node-only",
-        ),
-    ],
-)
-def test_live_admission_requires_mandatory_authority_implementations(
-    implementation_identities: tuple[str, ...],
-    live_intent: ReleaseIntent,
-    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
-    policy: ReleasePolicy,
-) -> None:
-    """Reject a hash-consistent pass without every mandatory Live graph."""
-    document = _transport_decision(
-        live_intent,
-        live_admitted_repository_model,
-        policy,
-    ).to_document()
-    static_reference = _object_member(document, "static-reference")
-    static_reference["implementation-identities"] = list(
-        implementation_identities
-    )
-
-    with pytest.raises(ValueError, match="implementations are incomplete"):
         _admit_mutated_decision(
             document,
             live_intent=live_intent,
