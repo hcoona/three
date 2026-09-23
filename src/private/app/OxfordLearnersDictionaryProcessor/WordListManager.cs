@@ -135,12 +135,14 @@ namespace OxfordLearnersDictionaryProcessor
 
             var words = from node in document.DocumentNode.SelectNodes(
                             "//div[@id='wordlistsContentPanel']/ul/li")
+                            ?? throw new InvalidDataException("Cannot find word list entries.")
                         select node;
             foreach (var li in words)
             {
                 if (!this.TryExtractWordListWordMetadata(li, out var wordMetadata))
                 {
                     Console.Error.WriteLine("Ignore failed extraction world: " + li.OuterHtml);
+                    continue;
                 }
 
                 if (wordMetadata!.Headword == "terror")
@@ -165,8 +167,8 @@ namespace OxfordLearnersDictionaryProcessor
             HtmlNode node,
             out WordListWordMetadata? wordMetadata)
         {
-            var dataHw = node.GetDataAttribute("hw");
-            if (dataHw == null)
+            var headword = node.GetDataAttribute("hw")?.Value;
+            if (headword == null)
             {
                 Console.Error.WriteLine($"No data-hw: {node.OuterHtml}");
                 wordMetadata = null;
@@ -184,19 +186,19 @@ namespace OxfordLearnersDictionaryProcessor
             var posSpanNode = node.SelectSingleNode(".//span[@class='pos']");
             if (posSpanNode == null)
             {
-                this.LogWordPosAbsence(headword: dataHw.Value.Trim());
+                this.LogWordPosAbsence(headword: headword.Trim());
             }
 
             var belongToNode = node.SelectSingleNode(".//span[@class='belong-to']");
             if (belongToNode == null)
             {
                 this.LogWordCefrLevelAbsence(
-                    headword: dataHw.Value.Trim(),
+                    headword: headword.Trim(),
                     partOfSpeech: posSpanNode?.InnerText.Trim());
             }
 
             wordMetadata = new WordListWordMetadata(
-                Headword: dataHw.Value.Trim(),
+                Headword: headword.Trim(),
                 CefrLevel: belongToNode == null ? string.Empty : belongToNode.InnerText.Trim(),
                 Link: aNode.GetAttributeValue("href", string.Empty).Trim(),
                 PartOfSpeech: posSpanNode?.InnerText.Trim());

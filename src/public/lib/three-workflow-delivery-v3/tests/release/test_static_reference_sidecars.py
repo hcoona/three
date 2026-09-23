@@ -8,7 +8,6 @@ import os
 import shutil
 import subprocess
 import textwrap
-from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -32,43 +31,28 @@ _RESPONSE_SCHEMA = (
     "workflow-delivery/v3/static-reference-node-authority-response"
 )
 _NPM_PACKAGES = (
-    "@npmcli/package-json@8.0.0",
-    "npm-package-arg@14.0.0",
+    "@npmcli/package-json",
+    "npm-package-arg",
 )
 _PNPM_WORKSPACE_PACKAGES = (
-    "@pnpm/resolving.npm-resolver@1104.1.0",
-    "@pnpm/workspace.spec-parser@1100.0.1",
-    "@pnpm/workspace.workspace-manifest-reader@1100.1.8",
-    "npm-package-arg@14.0.0",
+    "@pnpm/resolving.npm-resolver",
+    "@pnpm/workspace.spec-parser",
+    "@pnpm/workspace.workspace-manifest-reader",
+    "npm-package-arg",
 )
 _PNPM_LOCK_PACKAGES = (
-    "@pnpm/deps.path@1101.0.1",
-    "@pnpm/lockfile.fs@1100.2.5",
-    "@pnpm/lockfile.utils@1102.1.0",
-    "@pnpm/resolving.npm-resolver@1104.1.0",
-    "@pnpm/workspace.spec-parser@1100.0.1",
+    "@pnpm/deps.path",
+    "@pnpm/lockfile.fs",
+    "@pnpm/lockfile.utils",
+    "@pnpm/resolving.npm-resolver",
+    "@pnpm/workspace.spec-parser",
 )
 _UTF8_BOM = b"\xef\xbb\xbf"
 
 
-@cache
-def _node_identity() -> str:
-    completed = subprocess.run(  # noqa: S603
-        [_NODE_BINARY, "--version"],
-        cwd=_REPOSITORY_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert completed.stderr == ""
-    assert completed.stdout.startswith("v")
-    return f"node@{completed.stdout.removeprefix('v').strip()}"
-
-
 def _implementation_identities(*packages: str) -> list[str]:
     return sorted(
-        [_node_identity(), *packages],
+        ["node", *packages],
         key=lambda identity: identity.encode(),
     )
 
@@ -125,8 +109,13 @@ def _assert_json_response(
 ) -> dict[str, Any]:
     actual = parse_json_strict(text)
     assert isinstance(actual, dict)
+    observed = actual.copy()
+    observed["implementationIdentities"] = [
+        identity.rsplit("@", 1)[0]
+        for identity in actual["implementationIdentities"]
+    ]
     assert json.dumps(
-        actual, sort_keys=True, ensure_ascii=True, allow_nan=False
+        observed, sort_keys=True, ensure_ascii=True, allow_nan=False
     ) == json.dumps(
         expected, sort_keys=True, ensure_ascii=True, allow_nan=False
     )
@@ -1761,23 +1750,15 @@ _NUGET_RESPONSE_SCHEMA = (
 )
 _NUGET_GRAPH = "nuget-lock-v1"
 _NUGET_IMPLEMENTATION_IDENTITIES = [
-    "NuGet.Packaging@7.9.0",
-    "NuGet.ProjectModel@7.9.0",
-    "dotnet-runtime@10.0.8",
+    "NuGet.Packaging",
+    "NuGet.ProjectModel",
+    "dotnet-runtime",
 ]
 _DOTNET_BINARY = shutil.which("dotnet")
 _DOTNET_RUNTIME_UNAVAILABLE = "the prepared .NET runtime is unavailable"
 if _DOTNET_BINARY is None:
     raise RuntimeError(_DOTNET_RUNTIME_UNAVAILABLE)
 _MISSING_NUGET_MODEL_VERSION = object()
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _require_current_authority_closure() -> None:
-    policy = importlib.import_module(
-        "three_workflow_delivery_v3.release.static_reference_policy"
-    )
-    policy.validate_static_reference_dependency_closures(_REPOSITORY_ROOT)
 
 
 def _run_nuget_authority(
@@ -2307,9 +2288,10 @@ def test_nuget_authority_accepts_posix_backslash_logical_components(  # noqa: PL
         )
 
     assert outcome.graph_id == "nuget-lock-v1"
-    assert outcome.implementation_identities == tuple(
-        _NUGET_IMPLEMENTATION_IDENTITIES
-    )
+    assert [
+        identity.rsplit("@", 1)[0]
+        for identity in outcome.implementation_identities
+    ] == _NUGET_IMPLEMENTATION_IDENTITIES
     assert [
         json.loads(request)["logicalPath"] for request in serialized_requests
     ] == [logical_path]

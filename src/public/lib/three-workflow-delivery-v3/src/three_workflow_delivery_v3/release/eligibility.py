@@ -30,7 +30,7 @@ from three_workflow_delivery_v3.release.static_reference_model import (
 )
 from three_workflow_delivery_v3.release.static_reference_policy import (
     scan_bounded_static_references,
-    validate_live_static_reference_result,
+    validate_bounded_static_reference_result,
 )
 from three_workflow_delivery_v3.repository.compiler import (
     AdmittedRepositoryModelSnapshot,
@@ -2156,7 +2156,7 @@ def _decision_static_reference(
         context="Live Eligibility Decision.static-reference",
     )
     result = parse_bounded_static_reference_result(canonicalize(document))
-    validate_live_static_reference_result(result)
+    validate_bounded_static_reference_result(result)
     return result
 
 
@@ -2507,7 +2507,7 @@ def evaluate_live_eligibility(  # noqa: PLR0913
         source_kind="git-target",
         target=context.target,
     )
-    validate_live_static_reference_result(static_reference)
+    validate_bounded_static_reference_result(static_reference)
     governance = observe_governance_source(
         policy.governance,
         client,
