@@ -25,7 +25,8 @@ concurrency:
 jobs:
   renovate:
     name: Run Renovate
-    runs-on: windows-2025-vs2026
+    # The Linux mise Ruby backend resolves lock artifacts for every target platform.
+    runs-on: ubuntu-latest
     if: >-
       ${{
         github.event_name != 'issues' ||
@@ -147,13 +148,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $miseRoot = Join-Path $env:LOCALAPPDATA 'mise'
-          $env:Path = @(
-            (Join-Path $miseRoot 'shims')
-            (Join-Path $miseRoot 'bin')
-            $env:Path
-          ) -join [System.IO.Path]::PathSeparator
-
           $repositoryPath = Join-Path $env:RENOVATE_BASE_DIR "repos/github/$env:GITHUB_REPOSITORY"
           Push-Location $repositoryPath
           try {
@@ -190,13 +184,6 @@ jobs:
           RENOVATE_TOKEN: ${{ steps.renovate-app-token.outputs.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-
-          $miseRoot = Join-Path $env:LOCALAPPDATA 'mise'
-          $env:Path = @(
-            (Join-Path $miseRoot 'shims')
-            (Join-Path $miseRoot 'bin')
-            $env:Path
-          ) -join [System.IO.Path]::PathSeparator
 
           node -e @'
           const { execFileSync } = require('node:child_process');
