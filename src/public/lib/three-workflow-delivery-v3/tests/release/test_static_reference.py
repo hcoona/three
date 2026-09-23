@@ -155,7 +155,7 @@ def _candidate(
     )
 
 
-def test_model_source_kinds_and_all_seven_error_kinds_are_exact_and_distinct() -> (  # noqa: E501
+def test_model_source_kinds_and_all_six_error_kinds_are_exact_and_distinct() -> (  # noqa: E501
     None
 ):
     """Keep source and error-kind vocabularies exact and duplicate-free."""
@@ -170,7 +170,6 @@ def test_model_source_kinds_and_all_seven_error_kinds_are_exact_and_distinct() -
         "authority-rejected",
         "authority-execution-failed",
         "unsupported-projection",
-        "authority-mismatch",
         "cleanup-failed",
     )
     assert len(STATIC_REFERENCE_ERROR_KINDS) == len(
@@ -904,27 +903,6 @@ _PHASE2_LIVE_IMPLEMENTATIONS = tuple(
 _PHASE2_PRODUCER_ROOT = "src/public/lib/hcoona-release-smoke-npm"
 _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
     "schema": "workflow-delivery/v3/static-reference-authority-manifest",
-    "dependency-closures": [
-        {
-            "kind": "pnpm-lock",
-            "path": "pnpm-lock.yaml",
-            "sha256": (
-                "sha256:"
-                "44ea8ea08134a04f079e89747de2f4b6219ff7dbc23365d66c9656e087a224ba"
-            ),
-        },
-        {
-            "kind": "nuget-lock",
-            "path": (
-                "src/private/app/workflow-delivery-v3-nuget-authority/"
-                "packages.lock.json"
-            ),
-            "sha256": (
-                "sha256:"
-                "2fcd4e94b3b3be83522776536c4cae3f22aaa4bcbfe747a522627654c020cc5a"
-            ),
-        },
-    ],
     "execution": {
         "node-command": [
             "node",
@@ -932,10 +910,7 @@ _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
         ],
         "nuget-command": [
             "dotnet",
-            (
-                "artifacts/workflow-delivery-v3/static-reference/"
-                "nuget-authority/WorkflowDeliveryV3NuGetAuthority.dll"
-            ),
+            "artifacts/workflow-delivery-v3/static-reference/nuget-authority/WorkflowDeliveryV3NuGetAuthority.dll",
         ],
         "timeout-seconds": 30,
     },
@@ -945,30 +920,18 @@ _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
             "artifact": "package.json",
             "input-mode": "strict-utf8-file",
             "snapshot-inputs": ["package.json"],
-            "implementations": [
-                "@npmcli/package-json@8.0.0",
-                "node@24.19.0",
-                "npm-package-arg@14.0.0",
-            ],
             "apis": [
                 "PackageJson.load(snapshotDirectory)",
                 "npa.resolve(name,spec,snapshotDirectory)",
             ],
             "fact-kinds": ["npm-package-name", "npm-reference"],
+            "packages": ["@npmcli/package-json", "npm-package-arg"],
         },
         {
             "id": "pnpm-lock-v1",
             "artifact": "pnpm-lock.yaml@9.0",
             "input-mode": "strict-utf8-file",
             "snapshot-inputs": ["pnpm-lock.yaml"],
-            "implementations": [
-                "@pnpm/deps.path@1101.0.1",
-                "@pnpm/lockfile.fs@1100.2.5",
-                "@pnpm/lockfile.utils@1102.1.0",
-                "@pnpm/resolving.npm-resolver@1104.1.0",
-                "@pnpm/workspace.spec-parser@1100.0.1",
-                "node@24.19.0",
-            ],
             "apis": [
                 "extractMainDocument",
                 "readWantedLockfileWithMergeInfo",
@@ -983,19 +946,19 @@ _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
                 "pnpm-lock-snapshot",
                 "pnpm-lock-importer-reference",
             ],
+            "packages": [
+                "@pnpm/deps.path",
+                "@pnpm/lockfile.fs",
+                "@pnpm/lockfile.utils",
+                "@pnpm/resolving.npm-resolver",
+                "@pnpm/workspace.spec-parser",
+            ],
         },
         {
             "id": "pnpm-workspace-v1",
             "artifact": "pnpm-workspace.yaml",
             "input-mode": "strict-utf8-file",
             "snapshot-inputs": ["pnpm-workspace.yaml"],
-            "implementations": [
-                "@pnpm/resolving.npm-resolver@1104.1.0",
-                "@pnpm/workspace.spec-parser@1100.0.1",
-                "@pnpm/workspace.workspace-manifest-reader@1100.1.8",
-                "node@24.19.0",
-                "npm-package-arg@14.0.0",
-            ],
             "apis": [
                 "readWorkspaceManifest(snapshotDirectory)",
                 "WorkspaceSpec.parse",
@@ -1007,115 +970,32 @@ _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
                 "pnpm-workspace-pattern",
                 "pnpm-workspace-reference",
             ],
+            "packages": [
+                "@pnpm/resolving.npm-resolver",
+                "@pnpm/workspace.spec-parser",
+                "@pnpm/workspace.workspace-manifest-reader",
+                "npm-package-arg",
+            ],
         },
         {
             "id": "nuget-lock-v1",
-            "artifacts": [
-                "packages.lock.json@1-3",
-                "packages.config",
-            ],
+            "artifacts": ["packages.lock.json@1-3", "packages.config"],
             "input-modes": [
                 {
                     "artifact": "packages.lock.json",
                     "mode": "strict-utf8-byte-stream",
                 },
-                {
-                    "artifact": "packages.config",
-                    "mode": "xml-byte-stream",
-                },
-            ],
-            "implementations": [
-                "NuGet.Packaging@7.9.0",
-                "NuGet.ProjectModel@7.9.0",
-                "dotnet-runtime@10.0.8",
+                {"artifact": "packages.config", "mode": "xml-byte-stream"},
             ],
             "apis": [
-                (
-                    "PackagesLockFileFormat.Read("
-                    "Stream,NullLogger.Instance,repositoryLogicalPath)"
-                ),
+                "PackagesLockFileFormat.Read(Stream,NullLogger.Instance,repositoryLogicalPath)",
                 "PackagesConfigReader(Stream,false).GetPackages(false)",
             ],
             "fact-kinds": [
                 "nuget-lock-dependency",
                 "nuget-packages-config-entry",
             ],
-        },
-    ],
-    "runtimes": [
-        {
-            "tool": "dotnet",
-            "backend": "core:dotnet",
-            "sdk-version": "10.0.300",
-            "loaded-runtime": "dotnet-runtime@10.0.8",
-        },
-        {
-            "tool": "node",
-            "backend": "core:node",
-            "version": "24.19.0",
-            "loaded-runtime": "node@24.19.0",
-            "artifact-checksums": {
-                "linux-arm64": (
-                    "sha256:"
-                    "d28c8a5bf0a808f0ed434a1dce8c54ae98f0371c0bd86ac58abc613f73e6643f"
-                ),
-                "linux-arm64-musl": (
-                    "sha256:"
-                    "20824e4d35948fae5b337dccef47813b04d8995312f59df7386f2256d9f9ab7e"
-                ),
-                "linux-x64": (
-                    "sha256:"
-                    "f625d97cd707df4ff96254916fbc5ff014f09c09effe5a1e0ca8f6d41a8789d4"
-                ),
-                "linux-x64-musl": (
-                    "sha256:"
-                    "c60223786df14a5d23e220ebb8e60318f5322640a62f90e6d9e54d3a18da532e"
-                ),
-                "macos-arm64": (
-                    "sha256:"
-                    "8294b7aa9b03997481c06babf1e8b270c859358f27da57a11509afe537ac381d"
-                ),
-                "macos-x64": (
-                    "sha256:"
-                    "d1b5e999db158c62fe8f7267a4476b035d8bd93b1a605bac24a3f0dd166e3316"
-                ),
-                "windows-x64": (
-                    "sha256:"
-                    "57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73"
-                ),
-            },
-        },
-        {
-            "tool": "pnpm",
-            "backend": "aqua:pnpm/pnpm",
-            "version": "11.22.0",
-            "provenance": "github-attestations",
-            "artifact-checksums": {
-                "linux-arm64": (
-                    "sha256:"
-                    "f1426231f365bdfd46c15fa3d1211c3936ee2c4e557afd304f6c66dbf1b2a8bf"
-                ),
-                "linux-arm64-musl": (
-                    "sha256:"
-                    "6e53557024be48e59ab8760f9117c0e5c0e0a37ab420f71f302d86216970d28f"
-                ),
-                "linux-x64": (
-                    "sha256:"
-                    "4c592fa410eb23b69691a9efb9bf21c87c15b3e9d88c6ec8acdd354a0eb8de71"
-                ),
-                "linux-x64-musl": (
-                    "sha256:"
-                    "45425b06e747cbcaff4940d7b4a55e694645f15f9339dbf7f2601cfb21400545"
-                ),
-                "macos-arm64": (
-                    "sha256:"
-                    "2000dcc8f0718852c2806ba4dca1edaedf18a4a39264474d5a1c8fcee250adfd"
-                ),
-                "windows-x64": (
-                    "sha256:"
-                    "1de83ad5100acfd2adb5c8bc6f8a428cee9ff4e365deff57c22bfc0cccaa4ddb"
-                ),
-            },
+            "packages": ["NuGet.Packaging", "NuGet.ProjectModel"],
         },
     ],
 }
@@ -2230,7 +2110,6 @@ def test_policy_authority_manifest_and_digest_are_exact() -> None:
         not in {
             "graph-contracts",
             "normalized-fact-contracts",
-            "runtime-closure",
         }
     }
     assert manifest_core == _PHASE2_EXPECTED_AUTHORITY_MANIFEST
@@ -2331,27 +2210,6 @@ def test_policy_authority_manifest_and_digest_are_exact() -> None:
     ]["pnpm-snapshot-dependency"]["fields"]
     assert snapshot_dependency_contract["dependencyKey"] == "exact-string"
     assert snapshot_dependency_contract["reference"] == "exact-string"
-    runtime_closure = manifest["runtime-closure"]
-    assert runtime_closure["mise-config"]["selectors"] == [
-        {
-            "tool": "dotnet",
-            "config-key": "core:dotnet",
-            "selector": "10",
-            "lock-key": "dotnet",
-        },
-        {
-            "tool": "node",
-            "config-key": "node",
-            "selector": "24",
-            "lock-key": "node",
-        },
-        {
-            "tool": "pnpm",
-            "config-key": "pnpm",
-            "selector": "11.22.0",
-            "lock-key": "pnpm",
-        },
-    ]
     mutated = json.loads(json.dumps(document))
     mutated["authority-manifest"]["graph-contracts"]["pnpm-lock-v1"][
         "decoding"
@@ -2368,118 +2226,21 @@ def test_policy_authority_manifest_and_digest_are_exact() -> None:
     )
     assert policy.STATIC_REFERENCE_POLICY_DIGEST == (
         "sha256:"
-        "c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d"
+        "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
     )
     assert policy.canonical_sha256(document) == (
         "sha256:"
-        "c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d"
+        "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
     )
 
 
-def test_authority_closure_validation_binds_exact_locks_and_runtime(
-    tmp_path: Path,
-) -> None:
-    """Require the exact checked-in package and runtime closure."""
-    policy = importlib.import_module(
-        "three_workflow_delivery_v3.release.static_reference_policy"
-    )
-    repository = tmp_path / "repository"
-    repository.mkdir()
-    closures = policy.static_reference_authority_manifest()[
-        "dependency-closures"
-    ]
-    assert isinstance(closures, list)
-    for closure in closures:
-        assert isinstance(closure, dict)
-        relative_path = closure["path"]
-        assert isinstance(relative_path, str)
-        destination = repository / relative_path
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(REPO_ROOT / relative_path, destination)
-    for relative_path in ("mise.toml", "mise.lock"):
-        shutil.copyfile(REPO_ROOT / relative_path, repository / relative_path)
-
-    policy.validate_static_reference_dependency_closures(repository)
-
-    pnpm_lock = repository / "pnpm-lock.yaml"
-    original_lock = pnpm_lock.read_bytes()
-    pnpm_lock.write_bytes(original_lock + b"\n")
-    with pytest.raises(
-        policy.StaticReferenceAuthorityMismatchError,
-        match="closure does not match",
-    ):
-        policy.validate_static_reference_dependency_closures(repository)
-
-    pnpm_lock.write_bytes(original_lock)
-    mise_config = repository / "mise.toml"
-    original_mise_config = mise_config.read_bytes()
-    mise_config.write_bytes(
-        original_mise_config.replace(
-            b'node = "24"',
-            b'node = "22"',
-            1,
-        )
-    )
-    with pytest.raises(
-        policy.StaticReferenceAuthorityMismatchError,
-        match="closure does not match",
-    ):
-        policy.validate_static_reference_dependency_closures(repository)
-
-    mise_config.write_bytes(original_mise_config)
-    mise_lock = repository / "mise.lock"
-    original_mise_lock = mise_lock.read_bytes()
-    mise_lock.write_bytes(
-        original_mise_lock.replace(
-            (
-                b"sha256:"
-                b"f625d97cd707df4ff96254916fbc5ff014f09c09effe5a1e0ca8f6d41a8789d4"
-            ),
-            b"sha256:" + (b"0" * 64),
-            1,
-        )
-    )
-    with pytest.raises(
-        policy.StaticReferenceAuthorityMismatchError,
-        match="closure does not match",
-    ):
-        policy.validate_static_reference_dependency_closures(repository)
-
-
-def test_authority_closure_paths_are_materialized_with_lf() -> None:
-    """Keep raw-byte authority closures stable across Git checkout policy."""
-    output = _git(
-        REPO_ROOT,
-        "check-attr",
-        "text",
-        "eol",
-        "--",
-        "pnpm-lock.yaml",
-        (
-            "src/private/app/workflow-delivery-v3-nuget-authority/"
-            "packages.lock.json"
-        ),
-    )
-
-    assert output.splitlines() == [
-        "pnpm-lock.yaml: text: set",
-        "pnpm-lock.yaml: eol: lf",
-        (
-            "src/private/app/workflow-delivery-v3-nuget-authority/"
-            "packages.lock.json: text: set"
-        ),
-        (
-            "src/private/app/workflow-delivery-v3-nuget-authority/"
-            "packages.lock.json: eol: lf"
-        ),
-    ]
-
-
-def test_preparation_validates_locks_before_and_after_publish(
+@pytest.mark.parametrize("failure", [None, "pnpm", "dotnet"])
+def test_preparation_uses_native_locked_installation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    failure: str | None,
 ) -> None:
-    """Bind prepared executables to locks validated before and after work."""
+    """Delegate resolution and integrity to native locked installation."""
     module = _load_prepare_static_reference_script()
     repository = tmp_path / "repository"
     repository.mkdir()
@@ -2487,12 +2248,10 @@ def test_preparation_validates_locks_before_and_after_publish(
     publish_directory = repository / "prepared"
     events: list[str] = []
 
-    def validate(root: Path) -> None:
-        assert root == repository
-        events.append("validate")
-
     def run(*arguments: str) -> None:
-        events.append(" ".join(arguments[:2]))
+        events.append(" ".join(arguments))
+        if arguments[0] == failure:
+            raise subprocess.CalledProcessError(1, arguments)
         if arguments[:2] == ("dotnet", "publish"):
             for name in (
                 "NuGet.Packaging.dll",
@@ -2506,20 +2265,30 @@ def test_preparation_validates_locks_before_and_after_publish(
     monkeypatch.setattr(module, "_REPOSITORY_ROOT", repository)
     monkeypatch.setattr(module, "_NUGET_PROJECT", project)
     monkeypatch.setattr(module, "_PUBLISH_DIRECTORY", publish_directory)
-    monkeypatch.setattr(
-        module,
-        "validate_static_reference_dependency_closures",
-        validate,
-    )
     monkeypatch.setattr(module, "_run", run)
+
+    if failure is not None:
+        with pytest.raises(subprocess.CalledProcessError):
+            module.main()
+        assert events == (
+            ["pnpm install --frozen-lockfile --ignore-scripts"]
+            if failure == "pnpm"
+            else [
+                "pnpm install --frozen-lockfile --ignore-scripts",
+                f"dotnet restore {project} --locked-mode",
+            ]
+        )
+        assert not publish_directory.exists()
+        return
 
     assert module.main() == 0
     assert events == [
-        "validate",
-        "pnpm install",
-        "dotnet restore",
-        "dotnet publish",
-        "validate",
+        "pnpm install --frozen-lockfile --ignore-scripts",
+        f"dotnet restore {project} --locked-mode",
+        (
+            f"dotnet publish {project} --no-restore --configuration Release "
+            f"--output {publish_directory} --nologo"
+        ),
     ]
 
 
@@ -2745,24 +2514,13 @@ def test_policy_materializes_every_candidate_before_any_graph_execution(
         return session
 
     graph_calls: list[object] = []
-    closure_calls: list[Path] = []
 
     def forbidden_graph(*args: object, **kwargs: object) -> object:
         graph_calls.append((args, kwargs))
         message = "graph ran before complete materialization"
         raise AssertionError(message)
 
-    def forbidden_closure(root: Path) -> None:
-        closure_calls.append(root)
-        message = "closure validation ran before complete materialization"
-        raise AssertionError(message)
-
     monkeypatch.setattr(policy, "run_authority_graph", forbidden_graph)
-    monkeypatch.setattr(
-        policy,
-        "validate_static_reference_dependency_closures",
-        forbidden_closure,
-    )
 
     result = policy.scan_bounded_static_references(
         tmp_path,
@@ -2778,7 +2536,6 @@ def test_policy_materializes_every_candidate_before_any_graph_execution(
         "01/pnpm-workspace.yaml",
     ]
     assert graph_calls == []
-    assert closure_calls == []
     assert len(sessions) == 1
     assert not sessions[0].root.exists()
     assert all(not root.exists() for root in invocation_roots)
@@ -2853,91 +2610,6 @@ def test_policy_preflights_utf8_before_candidate_materialization(
     assert not sessions[0].root.exists()
 
 
-def test_policy_reports_authority_mismatch_only_after_materialization(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Validate checked-in closure after source shaping and before graphs."""
-    policy = importlib.import_module(
-        "three_workflow_delivery_v3.release.static_reference_policy"
-    )
-    candidate = _phase2_candidate(
-        "consumer/package.json",
-        family="npm-manifest",
-        graph_id="npm-manifest-v1",
-    )
-    inventory = policy.StaticReferenceInventory(
-        source_kind="worktree",
-        target=None,
-        candidates=(candidate,),
-    )
-    monkeypatch.setattr(
-        policy,
-        "acquire_static_reference_inventory",
-        lambda repository_root, *, source_kind, target=None: inventory,  # noqa: ARG005
-    )
-    invocation_roots: list[Path] = []
-    sessions: list[StaticReferenceSession] = []
-
-    class RecordingSession(StaticReferenceSession):
-        def materialize(
-            self,
-            selected_candidate: StaticReferenceCandidate,
-            *,
-            source_kind: str,
-            target: str | None,
-        ) -> object:
-            invocation = super().materialize(
-                selected_candidate,
-                source_kind=source_kind,  # type: ignore[arg-type]
-                target=target,
-            )
-            invocation_roots.append(invocation.root)
-            return invocation
-
-    def session_factory() -> StaticReferenceSession:
-        session = RecordingSession(parent=tmp_path)
-        sessions.append(session)
-        return session
-
-    closure_calls: list[Path] = []
-
-    def mismatch(root: Path) -> None:
-        closure_calls.append(root)
-        assert all(path.exists() for path in invocation_roots)
-        message = "injected authority mismatch"
-        raise policy.StaticReferenceAuthorityMismatchError(message)
-
-    graph_calls: list[object] = []
-
-    def forbidden_graph(*args: object, **kwargs: object) -> object:
-        graph_calls.append((args, kwargs))
-        message = "graph ran with a mismatched authority closure"
-        raise AssertionError(message)
-
-    monkeypatch.setattr(
-        policy,
-        "validate_static_reference_dependency_closures",
-        mismatch,
-    )
-    monkeypatch.setattr(policy, "run_authority_graph", forbidden_graph)
-
-    result = policy.scan_bounded_static_references(
-        tmp_path,
-        source_kind="worktree",
-        session_factory=session_factory,
-    )
-
-    assert result.error_kind == "authority-mismatch"
-    assert result.findings == ()
-    assert result.implementation_identities == ()
-    assert closure_calls == [tmp_path.resolve()]
-    assert graph_calls == []
-    assert len(sessions) == 1
-    assert not sessions[0].root.exists()
-    assert all(not root.exists() for root in invocation_roots)
-
-
 def test_policy_stops_at_the_first_source_error_before_authority_execution(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3006,7 +2678,7 @@ def test_policy_stops_at_the_first_source_error_before_authority_execution(
         ),
         "policy-digest": (
             "sha256:"
-            "c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d"
+            "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
         ),
         "implementation-identities": [],
         "findings": [],
@@ -3370,10 +3042,6 @@ def test_hexo_file_reference_and_v9_lock_project_a_typed_directory(
         )
 
         assert outcome.error_kind is None
-        assert (
-            outcome.implementation_identities
-            == (_PHASE2_GRAPH_IMPLEMENTATIONS["pnpm-lock-v1"])
-        )
         assert len(relevant_facts) == 2  # noqa: PLR2004
         facts_by_kind = {fact["kind"]: fact for fact in relevant_facts}
         assert set(facts_by_kind) == {
@@ -4754,8 +4422,6 @@ def test_producer_root_outside_dependency_positions_is_clean(
         pytest.param("authority-rejected", id="authority-rejected"),
         pytest.param("execution", id="authority-execution-failed"),
         pytest.param("unsupported", id="unsupported-projection"),
-        pytest.param("mismatch-missing", id="authority-mismatch-missing"),
-        pytest.param("mismatch-extra", id="authority-mismatch-extra"),
         pytest.param("cleanup", id="cleanup-failed"),
     ],
 )
@@ -4837,18 +4503,6 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
         if terminal_case == "execution":
             message = "injected authority timeout"
             raise authority.AuthorityExecutionError(message)
-        if terminal_case == "mismatch-missing":
-            return authority.AuthorityGraphOutcome(
-                graph_id="npm-manifest-v1",
-                implementation_identities=("node@24.19.0",),
-                facts=(),
-            )
-        if terminal_case == "mismatch-extra":
-            return authority.AuthorityGraphOutcome(
-                graph_id="npm-manifest-v1",
-                implementation_identities=("foreign-authority@9.9.9",),
-                facts=(),
-            )
         error_kind = {
             "encoding": "encoding-rejected",
             "authority-rejected": "authority-rejected",
@@ -4922,24 +4576,9 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
         "authority-rejected": "authority-rejected",
         "execution": "authority-execution-failed",
         "unsupported": "unsupported-projection",
-        "mismatch-missing": "authority-mismatch",
-        "mismatch-extra": "authority-mismatch",
         "cleanup": "cleanup-failed",
     }[terminal_case]
-    expected_identities = tuple(
-        sorted(
-            {
-                *_PHASE2_NPM_IMPLEMENTATIONS,
-                *(
-                    ("foreign-authority@9.9.9",)
-                    if terminal_case == "mismatch-extra"
-                    else ()
-                ),
-            },
-            key=lambda identity: identity.encode(),
-        )
-    )
-
+    expected_identities = _PHASE2_NPM_IMPLEMENTATIONS
     assert result.to_document() == {
         "schema": "workflow-delivery/v3/bounded-static-reference-result",
         "result": "error",
