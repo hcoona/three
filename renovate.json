@@ -26,11 +26,6 @@
     "commitMessageAction": "Refresh",
     "commitMessageTopic": "Dependency Lock Files"
   },
-  "postUpgradeTasks": {
-    "commands": ["mise install --locked pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
-    "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
-    "executionMode": "branch"
-  },
   "vulnerabilityAlerts": {
     "enabled": true,
     "labels": ["security"],
@@ -47,6 +42,15 @@
       "description": "Repository-level tooling may update lower bounds normally.",
       "matchFileNames": ["package.json", "pyproject.toml", "global.json", "mise.toml", ".config/dotnet-tools.json"],
       "rangeStrategy": "replace"
+    },
+    {
+      "description": "Refresh pnpm workspace and example locks only for npm dependency changes.",
+      "matchManagers": ["npm"],
+      "postUpgradeTasks": {
+        "commands": ["mise install --locked pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
+        "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
+        "executionMode": "branch"
+      }
     },
     {
       "description": "JavaScript development dependencies may update lower bounds normally.",
@@ -492,15 +496,46 @@
       "automerge": true
     },
     {
+      "description": "Regenerate the shared Python runtime projections after mise Python updates.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["python"],
+      "postUpgradeTasks": {
+        "commands": ["uv run --no-project python eng/scripts/sync_python_version.py --write"],
+        "fileFilters": [
+          ".python-version",
+          "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_runtime.py"
+        ],
+        "executionMode": "update"
+      }
+    },
+    {
       "description": "Regenerate global.json after mise .NET SDK updates.",
       "matchManagers": ["mise"],
       "matchDepNames": ["core:dotnet", "dotnet"],
       "postUpgradeTasks": {
         "commands": ["pkl eval -f json global.pkl -o global.json"],
         "fileFilters": ["global.json"],
-        "executionMode": "branch"
+        "executionMode": "update"
       },
       "automerge": true
+    },
+    {
+      "description": "Regenerate runtime projections when mise lock maintenance refreshes resolved versions.",
+      "matchManagers": ["mise"],
+      "matchFileNames": ["mise.toml"],
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "postUpgradeTasks": {
+        "commands": [
+          "pkl eval -f json global.pkl -o global.json",
+          "uv run --no-project python eng/scripts/sync_python_version.py --write"
+        ],
+        "fileFilters": [
+          "global.json",
+          ".python-version",
+          "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_runtime.py"
+        ],
+        "executionMode": "update"
+      }
     },
     {
       "description": "Refresh pnpm lockfiles after mise pnpm updates.",
@@ -509,7 +544,7 @@
       "postUpgradeTasks": {
         "commands": ["mise install --locked pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
         "fileFilters": ["mise.lock", "**/mise.lock", "pnpm-lock.yaml", "**/pnpm-lock.yaml"],
-        "executionMode": "branch"
+        "executionMode": "update"
       },
       "automerge": true
     },
@@ -537,6 +572,7 @@
       "matchManagers": ["mise"],
       "matchDepNames": [
         "hk",
+        "aqua:jdx/hk",
         "go:github.com/B1NARY-GR0UP/nwa",
         "go:github.com/editorconfig-checker/editorconfig-checker/v3/cmd/editorconfig-checker",
         "taplo",
