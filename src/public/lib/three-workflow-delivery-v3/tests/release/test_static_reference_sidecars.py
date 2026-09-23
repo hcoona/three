@@ -104,6 +104,14 @@ def _run_node_authority(  # noqa: PLR0913
     )
 
 
+def _implementation_name(identity: str) -> str:
+    name, separator, version = identity.rpartition("@")
+    assert name
+    assert separator
+    assert version
+    return name
+
+
 def _assert_json_response(
     text: str, expected: dict[str, Any]
 ) -> dict[str, Any]:
@@ -111,7 +119,7 @@ def _assert_json_response(
     assert isinstance(actual, dict)
     observed = actual.copy()
     observed["implementationIdentities"] = [
-        identity.rsplit("@", 1)[0]
+        _implementation_name(identity)
         for identity in actual["implementationIdentities"]
     ]
     assert json.dumps(
@@ -2289,7 +2297,7 @@ def test_nuget_authority_accepts_posix_backslash_logical_components(  # noqa: PL
 
     assert outcome.graph_id == "nuget-lock-v1"
     assert [
-        identity.rsplit("@", 1)[0]
+        _implementation_name(identity)
         for identity in outcome.implementation_identities
     ] == _NUGET_IMPLEMENTATION_IDENTITIES
     assert [
