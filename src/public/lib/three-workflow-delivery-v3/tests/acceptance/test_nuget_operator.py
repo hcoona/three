@@ -537,6 +537,14 @@ def test_worker_admits_local_runtime_before_any_destination_read(
     }
 
 
+def _process_has_terminated(status: Path) -> bool:
+    try:
+        state = status.read_text().split()[2]
+    except (FileNotFoundError, ProcessLookupError):
+        return True
+    return state == "Z"
+
+
 @pytest.mark.skipif(
     sys.platform != "linux", reason="Linux process-group integration evidence"
 )
@@ -576,12 +584,11 @@ def test_supervisor_terminates_owned_process_group(tmp_path, monkeypatch, kind):
             status = Path(f"/proc/{pid}/stat")
             deadline = time.monotonic() + 3
             while (
-                status.exists()
-                and status.read_text().split()[2] != "Z"
+                not _process_has_terminated(status)
                 and time.monotonic() < deadline
             ):
                 time.sleep(0.01)
-            assert not status.exists() or status.read_text().split()[2] == "Z"
+            assert _process_has_terminated(status)
     finally:
         sys.modules.pop(module_name, None)
 
