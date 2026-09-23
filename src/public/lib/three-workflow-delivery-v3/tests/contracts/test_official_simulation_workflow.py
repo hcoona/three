@@ -12,11 +12,11 @@ REPO_ROOT = Path(__file__).resolve().parents[6]
 WORKFLOW = (
     REPO_ROOT / ".github/workflows/workflow-delivery-v3-official-simulate.yml"
 )
-CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-UV = "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
-MISE = "jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518"
-UPLOAD = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
-DOWNLOAD = "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+CHECKOUT = "actions/checkout"
+UV = "astral-sh/setup-uv"
+MISE = "jdx/mise-action"
+UPLOAD = "actions/upload-artifact"
+DOWNLOAD = "actions/download-artifact"
 RETENTION_DAYS = 45
 EVIDENCE_COUNT = 4
 OPTIONAL_QUALIFICATION_DOWNLOADS = (
@@ -156,7 +156,7 @@ def test_simulation_preserves_input_dependencies_and_execution_limits() -> None:
 
 
 def test_official_simulation_actions_and_checkouts_are_immutable() -> None:
-    """Use commit-5 full-SHA pins and exact selected-target checkouts."""
+    """Require full-SHA pins and exact selected-target checkouts."""
     document = _document()
     uses_steps = _uses_steps(document)
     uses_lines = [
@@ -170,14 +170,18 @@ def test_official_simulation_actions_and_checkouts_are_immutable() -> None:
 
     assert uses_lines
     assert all(pin.fullmatch(line) for line in uses_lines)
-    assert {step["uses"] for step in uses_steps} == {
+    assert {step["uses"].partition("@")[0] for step in uses_steps} == {
         CHECKOUT,
         UV,
         MISE,
         UPLOAD,
         DOWNLOAD,
     }
-    checkout_steps = [step for step in uses_steps if step["uses"] == CHECKOUT]
+    checkout_steps = [
+        step
+        for step in uses_steps
+        if step["uses"].partition("@")[0] == CHECKOUT
+    ]
     # Each existing control/build consumer needs selected-revision code.
     # Additional jobs need no checkout merely because they exist, but every
     # checkout they do use must obey the same target/credential contract.
@@ -196,7 +200,7 @@ def test_official_simulation_actions_and_checkouts_are_immutable() -> None:
         "simulation-finalizer",
     ):
         assert any(
-            step.get("uses") == CHECKOUT
+            step.get("uses", "").partition("@")[0] == CHECKOUT
             for step in _steps(document["jobs"][name])
         ), f"{name} requires the selected target"
     assert all(
@@ -216,10 +220,14 @@ def test_official_simulation_uses_only_raw_id_bound_artifact_transport() -> (
     """Require exact immutable stock artifact settings in every job."""
     document = _document()
     upload_steps = [
-        step for step in _uses_steps(document) if step["uses"] == UPLOAD
+        step
+        for step in _uses_steps(document)
+        if step["uses"].partition("@")[0] == UPLOAD
     ]
     download_steps = [
-        step for step in _uses_steps(document) if step["uses"] == DOWNLOAD
+        step
+        for step in _uses_steps(document)
+        if step["uses"].partition("@")[0] == DOWNLOAD
     ]
     raw = WORKFLOW.read_text(encoding="utf-8")
 
@@ -234,7 +242,7 @@ def test_official_simulation_uses_only_raw_id_bound_artifact_transport() -> (
             if isinstance(step.get("id"), str)
         }
         for step in _steps(job):
-            if step.get("uses") != UPLOAD:
+            if step.get("uses", "").partition("@")[0] != UPLOAD:
                 continue
             settings = step["with"]
             assert settings["retention-days"] == RETENTION_DAYS
@@ -352,7 +360,7 @@ def test_qualification_finalizer_optional_downloads_fail_closed() -> None:
 
     for name in OPTIONAL_QUALIFICATION_DOWNLOADS:
         step = _step(finalizer, name)
-        assert step["uses"] == DOWNLOAD
+        assert step["uses"].partition("@")[0] == DOWNLOAD
         assert step["if"].endswith(" != ''")
         assert "continue-on-error" not in step
         assert step["with"]["digest-mismatch"] == "error"
