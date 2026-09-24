@@ -140,9 +140,65 @@ def test_shared_tool_inputs_select_native_consumers_and_full_is_explicit():
         full["python_roots"]
         == config["tool"]["pytest"]["ini_options"]["testpaths"]
     )
+    assert set(full["python_packages"]) == {
+        "hcoona-three-monorepo",
+        "azureauth-credprovider-keyring",
+        "git-commit-heatmap",
+        "llm-text-splitter",
+        "nbgv-python",
+        "three-workflow-delivery-v3",
+    }
+    assert full["python_dotnet"] is True
+    assert full["python_v3"] is True
     empty = scope.select(ROOT, (), base="HEAD")
     assert not empty["python_roots"]
     assert not empty["scopes"]["python"]
+    assert empty["python_packages"] == []
+    assert empty["python_dotnet"] is False
+    assert empty["python_v3"] is False
+
+
+@pytest.mark.parametrize(
+    ("paths", "packages", "dotnet", "v3"),
+    [
+        ((".typos.toml",), set(), False, False),
+        (
+            ("src/private/app/git-commit-heatmap/README.md",),
+            {"git-commit-heatmap"},
+            False,
+            False,
+        ),
+        (
+            ("eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1",),
+            {"azureauth-credprovider-keyring"},
+            True,
+            False,
+        ),
+        (
+            (scope.V3 + "/tests/test_example.py",),
+            {"three-workflow-delivery-v3"},
+            True,
+            True,
+        ),
+        (
+            (scope.V3 + "/tests/test_example.py", ".typos.toml"),
+            {"three-workflow-delivery-v3"},
+            True,
+            True,
+        ),
+    ],
+)
+def test_python_preparation_follows_selected_consumers(
+    paths, packages, dotnet, v3
+):
+    """Prepare only selected current members and their native tools."""
+    selected = scope.select(ROOT, paths, base="HEAD")
+    assert selected["python_packages"] == [
+        "hcoona-three-monorepo",
+        *sorted(packages),
+    ]
+    assert selected["python_dotnet"] is dotnet
+    assert selected["python_v3"] is v3
 
 
 def _git(root, *arguments):
@@ -169,6 +225,7 @@ def comparison(tmp_path):
     """Create an owned repository with a genuine rename and deletion."""
     _git(tmp_path, "init", "-q")
     (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "sample-root"\n'
         '[tool.uv.workspace]\nmembers = ["src/python"]\n'
         '[tool.pytest.ini_options]\ntestpaths = ["src/python/tests"]\n'
     )
@@ -223,6 +280,7 @@ def test_git_range_retains_deleted_and_both_rename_paths(comparison):
     assert selected["base"] == base
     assert selected["scopes"]["node"]
     assert selected["python_roots"] == ["src/python/tests"]
+    assert selected["python_packages"] == ["sample-root", "sample"]
     assert "python=true\n" in (root / "outputs").read_text()
 
 

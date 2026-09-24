@@ -49,7 +49,17 @@ Ordinary unconsumed documentation selects source checks; package READMEs,
 licenses and other consumed metadata are not globally excluded by extension.
 
 Python selects the affected existing test roots and their workspace/build
-dependency consumers. Node and .NET may retain their existing workspace build
+dependency consumers. Its job syncs the owning current workspace packages and
+root development tools using uv's frozen package selection, including each
+selected member's default development groups. Tests then use that prepared
+environment without another sync. Engineering tests declare their own root
+dependencies. Only selected V3 tests prepare Node, HK, Pkl and static-reference
+authorities; V3 and selected NBGV consumers also prepare .NET tools. Keep the
+static-reference preparation's isolated Python environment separate from the
+test environment. New test consumers must declare any additional native needs
+in the selector and workflow.
+
+Node and .NET may retain their existing workspace build
 units where dependency selection is conservative; that is workspace-level,
 not exact per-project execution. AzureAuth platform artifacts and Ruby or
 scholarly-publication suites have their own affected inputs. A changed .NET

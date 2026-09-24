@@ -346,9 +346,24 @@ def select(
             why.add("explicit full validation")
     selected = [test for test, why in python_reasons.items() if why]
     reasons["python"].update(selected)
+    selected_packages = {
+        name: dependencies
+        for name, (directory, dependencies) in packages.items()
+        if (root / directory / "pyproject.toml").is_file()
+        and any(_under(test, directory) for test in selected)
+    }
+    v3 = any(_under(test, V3) for test in selected)
     return {
         "scopes": {scope: bool(why) for scope, why in reasons.items()},
         "python_roots": selected,
+        "python_packages": (
+            [config["project"]["name"], *sorted(selected_packages)]
+            if selected
+            else []
+        ),
+        "python_v3": v3,
+        "python_dotnet": v3
+        or any("nbgv-python" in deps for deps in selected_packages.values()),
         "reasons": {scope: sorted(why) for scope, why in reasons.items()},
         "python_reasons": {
             test: sorted(why) for test, why in python_reasons.items() if why
@@ -404,7 +419,10 @@ def main() -> int:
         with Path(output).open("a", encoding="utf-8") as stream:
             for scope, selected in result["scopes"].items():
                 stream.write(f"{scope}={str(selected).lower()}\n")
-            stream.write(f"python_roots={json.dumps(result['python_roots'])}\n")
+            for name in ("python_roots", "python_packages"):
+                stream.write(f"{name}={json.dumps(result[name])}\n")
+            for name in ("python_v3", "python_dotnet"):
+                stream.write(f"{name}={str(result[name]).lower()}\n")
             stream.write(
                 f"base={base}\ncandidate={candidate}\nfull={str(options.full).lower()}\n"
             )
