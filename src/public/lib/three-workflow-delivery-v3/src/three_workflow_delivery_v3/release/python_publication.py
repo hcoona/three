@@ -483,9 +483,21 @@ class PythonPublicationResult:
             _digest(self.final_readback_digest, field="Python final readback")
         if self.final_readback_exact and (
             self.final_readback_digest is None
-            or any(o.status != "succeeded" for o in self.operations)
+            or any(
+                o.status != "succeeded" or not o.readback_exact
+                for o in self.operations
+            )
+            or self.final_readback_digest != sdist.readback_digest
         ):
-            message = "Python final exactness cannot upgrade a failed upload"
+            message = "Python final exactness requires both exact readbacks"
+            raise ValueError(message)
+        if (
+            not self.final_readback_exact
+            and self.final_readback_digest is not None
+        ):
+            message = (
+                "Python inexact final readback cannot retain an exact digest"
+            )
             raise ValueError(message)
 
     @property

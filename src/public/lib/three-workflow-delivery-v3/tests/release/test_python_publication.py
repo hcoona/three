@@ -153,6 +153,7 @@ def test_python_publication_success_requires_two_posts_and_exact_readback(
         for entry in result.operations
     ] == [(0, "succeeded", True), (1, "succeeded", True)]
     assert result.final_readback_exact is True
+    assert result.final_readback_digest == result.operations[1].readback_digest
     assert result.mutation_marker_reference == marker_ref
     assert [call[0] for call in transport.calls] == [
         "POST",
@@ -299,6 +300,45 @@ def test_python_result_rejects_unclosed_ordinals_or_unsafe_sequence(change):
             operations,
             _DIGEST,
             final_readback_exact=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "absent-sdist-readback",
+        "inexact-sdist-readback",
+        "different-final-digest",
+        "inexact-final-with-digest",
+    ],
+)
+def test_python_result_rejects_contradictory_final_readback(change):
+    """A final success claim must bind exact operation evidence."""
+    marker, marker_ref, _, _ = prepared_publication()
+    wheel = PythonOperationResult(
+        0, "succeeded", _DIGEST, _DIGEST, readback_exact=True
+    )
+    sdist = PythonOperationResult(
+        1, "succeeded", _DIGEST, _DIGEST, readback_exact=True
+    )
+    final_digest = _DIGEST
+    final_exact = True
+    if change == "absent-sdist-readback":
+        sdist = replace(sdist, readback_digest=None, readback_exact=False)
+    elif change == "inexact-sdist-readback":
+        sdist = replace(sdist, readback_exact=False)
+    elif change == "different-final-digest":
+        final_digest = "sha256:" + "2" * 64
+    else:
+        sdist = replace(sdist, readback_exact=False)
+        final_exact = False
+    with pytest.raises(ValueError, match=r"Python.*readback"):
+        PythonPublicationResult(
+            marker.attempt,
+            marker_ref,
+            (wheel, sdist),
+            final_digest,
+            final_readback_exact=final_exact,
         )
 
 

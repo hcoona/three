@@ -1,4 +1,4 @@
-"""Selected NuGet authoring and independent npm coexistence contracts."""
+"""Independent npm/NuGet authoring beside the accepted Python descriptor."""
 
 from __future__ import annotations
 
@@ -13,18 +13,22 @@ from three_workflow_delivery_v3.catalogs import (
     QUALITY_DEFINITIONS,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
+    FIRST_SLICE_PACKAGE,
     FIRST_SLICE_RELEASE_UNIT,
     NUGET_GOVERNANCE_PATH,
     NUGET_PACKAGE,
     NUGET_POLICY_PATH,
     NUGET_RELEASE_QUALITY,
     NUGET_RELEASE_UNIT,
+    discover_release_units,
     load_first_slice_authoring,
     load_nuget_authoring,
     load_release_policy,
 )
 
 REPOSITORY = Path(__file__).resolve().parents[6]
+PYTHON_UNIT = "hcoona-release-smoke-python"
+DESCRIPTOR_NAME = "workflow-delivery.release-unit.yml"
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -39,7 +43,7 @@ def _git(repo: Path, *args: str) -> str:
 
 @pytest.fixture
 def authored_tree(tmp_path: Path) -> tuple[Path, str]:
-    """Commit both admitted units without invoking their native toolchains."""
+    """Commit all admitted descriptors without invoking native toolchains."""
     for unit in (FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT):
         root = Path("src/public/lib") / unit
         (tmp_path / root).mkdir(parents=True)
@@ -62,6 +66,11 @@ def authored_tree(tmp_path: Path) -> tuple[Path, str]:
         / f"src/public/lib/{NUGET_RELEASE_UNIT}/{NUGET_RELEASE_UNIT}.csproj"
     )
     project.write_text('<Project Sdk="Microsoft.NET.Sdk" />', encoding="utf-8")
+    python_descriptor = Path("src/public/lib") / PYTHON_UNIT / DESCRIPTOR_NAME
+    (tmp_path / python_descriptor).parent.mkdir(parents=True)
+    shutil.copyfile(
+        REPOSITORY / python_descriptor, tmp_path / python_descriptor
+    )
     _git(tmp_path, "init", "--quiet")
     _git(tmp_path, "config", "user.name", "Workflow Delivery Test")
     _git(tmp_path, "config", "user.email", "workflow-delivery@example.invalid")
@@ -73,10 +82,16 @@ def authored_tree(tmp_path: Path) -> tuple[Path, str]:
 def test_nuget_authoring_and_npm_select_independent_units(
     authored_tree: tuple[Path, str],
 ) -> None:
-    """Each unit selects its own package, policy, and quality obligations."""
+    """Python coexistence leaves each existing unit's own contract intact."""
     repo, target = authored_tree
+    assert {
+        (d.release_unit, d.path) for d in discover_release_units(repo, target)
+    } == {
+        (unit, f"src/public/lib/{unit}/{DESCRIPTOR_NAME}")
+        for unit in (FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT, PYTHON_UNIT)
+    }
     nuget, quality, policy = load_nuget_authoring(repo, target)
-    npm, _, npm_policy = load_first_slice_authoring(repo, target)
+    npm, npm_quality, npm_policy = load_first_slice_authoring(repo, target)
     assert nuget.release_unit == NUGET_RELEASE_UNIT
     assert nuget.builds[0].definition == "dotnet/nuget-package-v1"
     assert nuget.builds[0].outputs[0].kind == "nuget-package"
@@ -88,6 +103,15 @@ def test_nuget_authoring_and_npm_select_independent_units(
     assert policy.channel("buddy").quality == NUGET_RELEASE_QUALITY
     assert policy.channel("buddy").projections[0].package == NUGET_PACKAGE
     assert npm.release_unit == FIRST_SLICE_RELEASE_UNIT
+    assert npm.builds[0].definition == "node/npm-package-v1"
+    assert npm.builds[0].outputs[0].kind == "npm-tarball"
+    assert npm_quality.ecosystems == (
+        ("node", "node/hcoona-release-smoke-npm-v1"),
+    )
+    assert (
+        npm_policy.channel("buddy").projections[0].package
+        == FIRST_SLICE_PACKAGE
+    )
     assert npm_policy.governance != policy.governance
     assert tuple(name for name, _ in npm_policy.channels) == (
         "buddy",
@@ -144,30 +168,97 @@ def test_nuget_authoring_reads_committed_target_not_dirty_worktree(
 @pytest.mark.parametrize(
     "loader", [load_nuget_authoring, load_first_slice_authoring]
 )
+@pytest.mark.parametrize(
+    "mutation", ["unknown", "misplaced", "identity-mismatch", "duplicate"]
+)
 def test_known_slice_does_not_admit_unknown_or_misplaced_descriptor(
     authored_tree: tuple[Path, str],
     loader: object,
+    mutation: str,
 ) -> None:
     """Known-unit discovery rejects unrelated authoring in the target tree."""
     repo, _ = authored_tree
-    source = (
-        repo
-        / f"src/public/lib/{NUGET_RELEASE_UNIT}"
-        / "workflow-delivery.release-unit.yml"
-    )
-    extra = repo / "src/unknown/workflow-delivery.release-unit.yml"
-    extra.parent.mkdir(parents=True)
-    extra.write_text(
-        source.read_text(encoding="utf-8").replace(
-            NUGET_RELEASE_UNIT, "unknown-unit"
-        ),
-        encoding="utf-8",
-    )
+    source = repo / f"src/public/lib/{PYTHON_UNIT}" / DESCRIPTOR_NAME
+    if mutation == "identity-mismatch":
+        source.write_text(
+            source.read_text(encoding="utf-8").replace(
+                PYTHON_UNIT, "unknown-unit"
+            ),
+            encoding="utf-8",
+        )
+    else:
+        directory = (
+            "src/public/lib/unknown-unit"
+            if mutation == "unknown"
+            else "src/misplaced"
+        )
+        extra = repo / directory / DESCRIPTOR_NAME
+        extra.parent.mkdir(parents=True)
+        if mutation == "unknown":
+            extra.write_text(
+                source.read_text(encoding="utf-8").replace(
+                    PYTHON_UNIT, "unknown-unit"
+                ),
+                encoding="utf-8",
+            )
+        elif mutation == "duplicate":
+            shutil.copyfile(source, extra)
+        else:
+            source.rename(extra)
     _git(repo, "add", ".")
     _git(repo, "commit", "--quiet", "-m", "Unknown fixture")
     assert callable(loader)
-    with pytest.raises(ValueError, match="registered slice path"):
+    message = (
+        "identity mismatch"
+        if mutation == "identity-mismatch"
+        else "duplicate Release Unit identity"
+        if mutation == "duplicate"
+        else "registered slice path"
+    )
+    with pytest.raises(ValueError, match=message):
         loader(repo, _git(repo, "rev-parse", "HEAD"))
+
+
+@pytest.mark.parametrize(
+    "loader", [load_nuget_authoring, load_first_slice_authoring]
+)
+def test_known_slice_ignores_dirty_python_descriptor_inventory(
+    authored_tree: tuple[Path, str],
+    loader: object,
+) -> None:
+    """The committed three-unit target survives a malformed local descriptor."""
+    repo, target = authored_tree
+    assert callable(loader)
+    expected = loader(repo, target)
+    source = repo / "src/public/lib" / PYTHON_UNIT / DESCRIPTOR_NAME
+    source.write_text("invalid: dirty descriptor", encoding="utf-8")
+    assert loader(repo, target) == expected
+
+
+@pytest.mark.parametrize(
+    ("loader", "selected"),
+    [
+        (load_nuget_authoring, NUGET_RELEASE_UNIT),
+        (load_first_slice_authoring, FIRST_SLICE_RELEASE_UNIT),
+    ],
+)
+def test_known_slice_does_not_require_unrelated_descriptors(
+    authored_tree: tuple[Path, str],
+    loader: object,
+    selected: str,
+) -> None:
+    """Coexistence does not require unrelated units in historical targets."""
+    repo, _ = authored_tree
+    for unit in (FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT, PYTHON_UNIT):
+        if unit != selected:
+            descriptor = repo / "src/public/lib" / unit / DESCRIPTOR_NAME
+            descriptor.rename(descriptor.with_suffix(".disabled"))
+    _git(repo, "add", ".")
+    _git(repo, "commit", "--quiet", "-m", "Historical single-unit fixture")
+    assert callable(loader)
+    descriptor, _, policy = loader(repo, _git(repo, "rev-parse", "HEAD"))
+    assert descriptor.release_unit == selected
+    assert policy.release_unit == selected
 
 
 def test_nuget_catalog_separates_quality_and_blocks_live_admission() -> None:

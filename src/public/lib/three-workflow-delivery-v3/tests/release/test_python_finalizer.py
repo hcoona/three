@@ -470,6 +470,44 @@ def test_python_shared_result_parser_rejects_malformed_operation(field, value):
 
 @pytest.mark.parametrize(
     "change",
+    [
+        "absent-sdist-readback",
+        "inexact-sdist-readback",
+        "different-final-digest",
+        "inexact-final-with-digest",
+    ],
+)
+def test_python_shared_result_parser_rejects_contradictory_final_readback(
+    change,
+):
+    """Canonical wire bytes cannot conceal inconsistent final evidence."""
+    marker, marker_ref, _, _ = prepared_publication()
+    document = _result(marker, marker_ref).to_document()
+    sdist = document["operations"][1]
+    if change == "absent-sdist-readback":
+        sdist["readback-digest"] = None
+        sdist["readback-exact"] = False
+    elif change == "inexact-sdist-readback":
+        sdist["readback-exact"] = False
+    elif change == "different-final-digest":
+        document["final-readback-digest"] = "sha256:" + "2" * 64
+    else:
+        sdist["readback-exact"] = False
+        document["final-readback-exact"] = False
+        document["result"] = "failed"
+    with pytest.raises(ValueError, match=r"Python.*readback"):
+        admit_release_record(
+            canonicalize(document),
+            expected_type=PythonPublicationResult,
+            expected_digest=reference(document).payload_digest,
+            expected_bindings=ReleaseAdmissionBindings(
+                "live-release", RUN_ID, None, TARGET, "publish-python"
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "change",
     ["foreign-attempt", "scalar", "skipped", "dangling", "marker-predecessor"],
 )
 def test_python_finalizer_rejects_terminal_lineage_or_scalar_substitution(
@@ -508,9 +546,30 @@ def test_python_finalizer_rejects_terminal_lineage_or_scalar_substitution(
 def test_python_failed_final_readback_retains_known_mutation_flag():
     """Two completed uploads cannot be reported as an unmutated failure."""
     marker, marker_ref, _, _ = prepared_publication()
-    result = replace(_result(marker, marker_ref), final_readback_exact=False)
+    published = _result(marker, marker_ref)
+    result = replace(
+        published,
+        operations=(
+            published.operations[0],
+            replace(published.operations[1], readback_exact=False),
+        ),
+        final_readback_exact=False,
+        final_readback_digest=None,
+    )
     assert result.result == "failed"
     assert result.mutation_classification == "mutated"
+    admitted = admit_release_record(
+        canonicalize(result.to_document()),
+        expected_type=PythonPublicationResult,
+        expected_digest=result.result_digest,
+        expected_bindings=ReleaseAdmissionBindings(
+            "live-release", RUN_ID, None, TARGET, "publish-python"
+        ),
+    )
+    assert admitted.final_readback_digest is None
+    assert admitted.operations[1].readback_digest == _DIGEST
+    assert admitted.operations[1].readback_exact is False
+    assert admitted.result == "failed"
     inputs = replace(
         _inputs(marker),
         terminal=(result, reference(result.to_document(), 508)),
