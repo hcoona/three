@@ -11,7 +11,8 @@ This is an operating handoff, not a second specification. The current
 [glossary](./architecture-glossary.md), five MLDs,
 [migration policy](./migration-strategy.md), and applicable slice LLD
 ([npm](./hcoona-release-smoke-npm-lld.md) or
-[NuGet](./hcoona-release-smoke-github-packages-lld.md)) are authoritative.
+[NuGet](./hcoona-release-smoke-github-packages-lld.md), or
+[Python](./hcoona-release-smoke-python-lld.md)) are authoritative.
 
 v3 is the only normative line. Use v1 or v2 only when a v3 document explicitly
 requests mechanism extraction and revalidation. Git and delivery PRs carry
@@ -45,9 +46,15 @@ For the owner's next Workflow Delivery v3 task:
    to reuse the completed integration and avoid its diagnosed failure modes.
 3. Identify the selected next project, user-visible result and remaining
    requirements from the owner's instruction and current work carrier.
-   No next smoke or real project is selected by this handoff. Apply the
-   existing domain gates to that scope; previous smoke permissions do not
-   automatically authorize its publication.
+   The accepted [Python design Wave](../../../../../docs/delivery-wave.md#define-the-python-v3-smoke-scope-and-destination)
+   and [Issue #843](https://github.com/hcoona/three/issues/843) select Python:
+   TestPyPI first, then production PyPI; Ruby follows Python completion.
+   Start with the confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),
+   HLD/five MLDs and [Python LLD](./hcoona-release-smoke-python-lld.md), with
+   the [source evidence](./research/python-smoke-evidence.md) for claim limits.
+   Apply the existing domain gates;
+   the design grant and previous smoke permissions do not authorize its
+   implementation or publication.
 
 Recovery uses repository records and linked GitHub carriers. A prior
 conversation, local operator directory or old Agent handle is not required.
@@ -656,7 +663,9 @@ applicable documentation and repository gates but keeps the same validate-before
 - CI Qualification and Release Delivery remain peer contexts; Shared Foundation owns mechanisms, not business policy.
 - Rely on documented lower-layer guarantees. If one is absent, block the capability rather than simulate a weaker one.
   The NuGet-specific dependency and evidence basis follows `WD-NUGET-006`;
-  do not reintroduce its superseded service-statement prerequisite.
+  do not reintroduce its superseded service-statement prerequisite. Python
+  separately follows `WD-PY-006` for its per-file dependency and native evidence
+  basis; it assumes no atomic two-file release or unlimited registry retention.
 - Add an abstraction only when concrete scenarios prove independent identity, behavior, lifecycle, or policy.
 - Do not freeze non-authoritative topology, shell choreography, parser branches, or inventory counts as architecture.
 

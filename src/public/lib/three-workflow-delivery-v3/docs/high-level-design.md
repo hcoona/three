@@ -275,6 +275,55 @@ inconsistent or delayed observations producing no success. Native admission
 binds this accepted integration contract and its evidence; a separate
 GitHub-owned concurrent-atomicity statement is not required.
 
+## Python Smoke Extension
+
+The confirmed `WD-PY-*` requirements add one Release Unit and two independent
+channel/destination bindings: TestPyPI Buddy, then PyPI Official. One Attempt
+addresses one registry. The completed npm and NuGet slices keep their contracts.
+
+The Python Provider evaluates exact-target Python/NBGV inputs without
+publication authority and freezes the `nbgv-python` projection. Build consumes
+that value through isolated static metadata materialization. The generated
+sdist carries the static version and declared backend prerequisites so its
+consumer does not need Git, NBGV or the producer's environment. No new version
+source or ambient override is added to `nbgv-python`.
+
+CI and Release independently qualify both formats. Native package readers
+verify metadata and embedded witnesses; separate clean consumers install the
+wheel and rebuild/install the sdist. The Shared Foundation provides these
+mechanisms; each context retains its own Plans, Evidence and Decisions.
+
+Release models **one Python distribution-set action**, with exactly two ordered
+file operations (wheel, then sdist). One Snapshot, Approval Bundle and
+Authorization close both immutable files and their destination. One durable
+marker precedes the first upload, and one destination-specific Result records
+the complete controlled outcome, including unattempted or partially successful
+operations. The existing nullable scalar terminal reference and Finalizer
+remain; there is no per-file approval, generic transaction or compensation
+system. Missing Result after the marker is unknown and possibly mutated even
+if one file is independently observable. `published` requires two definitive
+upload successes and exact readback of both original artifacts and witnesses.
+
+This set action is **not an atomic registry operation**. A definitive or
+ambiguous failure stops remaining uploads and remains failure. Whole-set exact
+state can be freshly verified without an action; partial/conflicting/unknown
+state blocks normal Live. `WD-PY-006` supplies the explicit per-file service
+dependency, separate native gates and bounded availability claim. Native
+acceptance qualifies each registry/profile independently, without assuming a
+provider statement proving concurrency or promoting finite observations into
+universal guarantees.
+
+Governance binds separate project OIDC publishers, audiences, protected
+Environments and native evidence for each destination. The publisher receives
+short-lived authority only after current-Attempt approval, executes no target
+build code and consumes verified immutable artifacts. The sole-writer risk is
+explicit; source research establishes no existing registration or native grant.
+
+The five MLDs define the model, governance, CI qualification, release state and
+mechanism boundaries. The [Python LLD](./hcoona-release-smoke-python-lld.md)
+closes their bounded contract choices. Design completion remains separate from
+implementation, native admission and actual publication at each destination.
+
 ## Governance and Trust
 
 ### Context-Owned Planning and Finalization
@@ -968,6 +1017,9 @@ the exact active version and take `exact-satisfied`. Differing active version
 bytes fail closed. Release never uses active-version overwrite, a
 publisher-owned delete-and-recreate sequence, or compensation.
 
+Python's file-level dependency and evidence follow `WD-PY-006` through the
+[Python extension](#python-smoke-extension).
+
 NuGet's corresponding dependency and evidence follow `WD-NUGET-006` and
 `WD-NUGET-007` through the [NuGet extension](#nuget-second-slice-extension).
 
@@ -1150,6 +1202,8 @@ failure may leave no durable Attempt Outcome.
 Multi-action or multi-destination publication is outside the first slice and
 requires a concrete scenario and a new reviewed design. This design does not
 preselect a generic transaction, compensation, rollback, or Saga protocol.
+The [Python extension](#python-smoke-extension) defines the separately confirmed
+one-set/two-operation case within the same scalar terminal transport.
 Break-Glass Remediation remains separately approved, uses expected-state checks
 and scoped capability, and records append-only before-and-after state without
 rewriting the original Attempt.
@@ -1296,6 +1350,7 @@ marker before mutation.
 | `WD-RET-*`        | Platform-aware records, durable destination identities, fail-closed expiration                                                                                                                                  |
 | `WD-SLICE-*`      | Same-revision Buddy control, accepted writer TCB and repository-principal blast radius, static-reference policy, one Approval Environment, Publication Authorization, publisher ordering, and one-PR activation |
 | `WD-NFR-*`        | Context separation, adapter extension model, explanation contract, CI objective                                                                                                                                 |
+| `WD-PY-*`         | Python Provider, frozen two-format build/qualification, bounded set action, separate OIDC/native admission and destination proving                                                                              |
 | `WD-NUGET-*`      | NuGet second-slice Provider, package and consumer qualification, protected-main Governance, destination contract, and independently authorized validation gates                                                 |
 
 ## Middle-Layer Design Decomposition

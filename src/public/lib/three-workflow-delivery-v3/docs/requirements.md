@@ -52,7 +52,7 @@ claims, and destination API contracts. Workflow Delivery must validate bindings
 that it creates, but it must not reimplement a lower layer merely to prove the
 lower layer's own contract.
 
-For destinations other than NuGet, live registry publication may rely on a
+For destinations other than the NuGet and Python slices below, live registry publication may rely on a
 documented destination contract that version creation is atomic and
 non-overwriting and that exact package state is
 sufficiently durable and observable. Destination Adapter acceptance tests must
@@ -65,6 +65,10 @@ NuGet follows the dependency and evidence basis in
 [`WD-NUGET-006` and `WD-NUGET-007`](#nuget-second-slice), including bounded
 native acceptance without a separate provider-statement prerequisite. Missing
 or conflicting evidence required by those requirements keeps NuGet blocked.
+
+Python follows the separately owner-confirmed file-level dependency and
+evidence basis in [`WD-PY-006`](#python-smoke-slice). It does not assume atomic
+creation of a complete two-file release or inherit NuGet's service evidence.
 
 If a required guarantee is unavailable at the layer that must own it, the
 affected capability is unsupported or blocked. Application logic must not
@@ -267,7 +271,8 @@ isolation are separate authority boundaries and remain unchanged.
   must obtain short-lived, destination-specific Publication Capability only in
   the action-bearing publisher after Qualification, Observation, Approval
   Bundle admission, Environment approval, and durable Publication
-  Authorization. The Approval job has no publication capability and references
+  Authorization. For the npm and NuGet GitHub Packages slices, the Approval
+  job has no publication capability and references
   the one literal Approval Environment
   `workflow-delivery-v3-buddy-approval`. The publisher has an ordinary success
   dependency on that job. It is the only step-running job with effective
@@ -293,6 +298,25 @@ isolation are separate authority boundaries and remain unchanged.
   result bundle. A package-administration change after the publisher's final
   supported readback remains inside the declared sole-writer/publisher TCB; the
   design does not claim a package-administration lock.
+
+    Python `WD-PY-007` uses a destination-bound Environment-gated publisher
+    instead of that separate Approval job and GitHub Packages permission
+    layout. A credential-free preparation job persists the complete Bundle
+    before the wait. After Environment approval, the trusted publisher verifies
+    native current-run Approval and fresh Governance, validates the Bundle and
+    profile, and durably emits Authorization before requesting any OIDC
+    assertion or registry token. Only this publisher job has `id-token: write`;
+    that platform permission becomes available after Environment approval,
+    while reviewed control enforces the later Authorization-before-token order.
+    It is not cryptographic platform enforcement of artifact authorization.
+    No `packages: write` or static-token fallback is required or admitted for
+    Python. Supported registry configuration checks and protected attestations
+    replace GitHub Packages-specific association/access fields; unexposed
+    registration scope is an explicit attestation limitation. Final fresh
+    Governance, actual-profile verification and durable marker still precede
+    the isolated mutation step. Other execution zones obtain no OIDC or
+    publication authority. The npm/NuGet layout remains unchanged.
+
 - **WD-REL-009:** Immediately before the first mutating destination operation,
   the publisher must durably persist a mutation-may-have-started marker.
   The marker must directly bind the Publication Authorization, the final
@@ -322,6 +346,11 @@ isolation are separate authority boundaries and remain unchanged.
     misbound, or other-kind reference fails admission. A Result reference must
     resolve its marker through Result lineage. Empty or missing output from a
     running publisher is not null and fails admission.
+
+    For Python, one set action uses this same scalar marker/Result transport.
+    Its destination-specific Result records each of the two file operations;
+    `published` requires both definitive successes and exact whole-set readback.
+    Any missing Result after the set marker remains unknown and possibly mutated.
 
     The Result must directly bind the durable marker, which reaches the
     Publication Authorization, plus command classification, post-action
@@ -851,6 +880,81 @@ establish native platform acceptance.
   and permits read-only investigation, not a blind retry. Existing npm
   operation, evidence, permissions, and spent authorizations remain unchanged.
 
+### Python Smoke Slice
+
+These requirements realize the owner's [confirmed packet](https://github.com/hcoona/three/issues/843#issuecomment-5822043601).
+They define a new Python scope, not implemented support or an operation grant.
+
+- **WD-PY-001:** The smoke distribution is `hcoona-release-smoke-python`, with
+  import `hcoona_release_smoke_python` and `project_id()` returning
+  `hcoona-release-smoke-python`. It is pure Python with no runtime dependencies,
+  native extensions or production consumers. The complete output set is one
+  universal wheel and one sdist. Repository-pinned CPython 3.14 on Ubuntu is the
+  initial build and consumer lane; no broader support matrix is promised.
+- **WD-PY-002:** The target-bound, full-history Provider obtains canonical NBGV
+  facts and uses `nbgv-python` to project the selected field into PEP 440. The
+  Model and Build Request freeze both the original facts and exact projection.
+  Build and publication must not recompute NBGV, switch fields, strip local
+  metadata or add run-derived suffixes. Invalid or registry-inadmissible
+  versions block Live admission before mutation. Valid normalized local
+  versions remain admissible technical facts for non-publishing CI and
+  qualification; registry policy must not rewrite their frozen value.
+  Wheel, sdist and installed metadata must
+  agree with the frozen version under native Python identity rules.
+- **WD-PY-003:** Both distributions must retain a byte-bound source witness.
+  Qualification separately proves contents, clean wheel installation and clean
+  sdist rebuild/installation outside Git. The sdist declares sufficient build
+  prerequisites without workspace source substitution, ambient version input,
+  or a hidden consumer NBGV/.NET requirement. Release builds and qualifies its
+  own complete set; CI and prior Attempts supply no Release Evidence.
+- **WD-PY-004:** TestPyPI Buddy proving precedes an independently qualified
+  production PyPI Official Attempt. Each Attempt selects exactly one registry
+  and one complete wheel/sdist set. No artifact, Approval or Evidence promotion
+  is allowed. Final Python completion requires independently audited actual
+  publication, fresh exact bytes and clean consumption of both formats at both
+  destinations. Ruby follows that completion audit.
+- **WD-PY-005:** Approval must cover the entire two-file set before its first
+  upload. Uploads are separate and may expose a partial release. Only complete
+  fresh exact state may take the zero-action exact-satisfied path. Partial,
+  conflicting or unknown pre-existing state blocks normal Live. Failure or
+  ambiguity stops further mutation and cannot become same-Attempt success even
+  if later readback is exact. No rollback, deletion, automatic retry,
+  skip-existing success or automatic partial completion is allowed. Recovery
+  requires a separate request. A missing durable Result after the mutation
+  marker remains unknown and possibly mutated under `WD-REL-009`.
+- **WD-PY-006:** Rely on documented PyPI filename non-reuse and accept
+  non-replacement of an existing TestPyPI live file as a service dependency to
+  qualify, not a documented guarantee established by the
+  [source findings](./research/python-smoke-evidence.md). Each destination and
+  profile requires its own independently audited native acceptance: creation
+  of wheel and sdist, same-byte and different-byte duplicate rejection at the
+  same filename, a bounded competing-creation case, winner-byte preservation,
+  exact readback and clean consumption. No provider-authored concurrent
+  atomicity statement is an additional prerequisite. Finite observations do
+  not prove universal future service behavior, cross-file atomicity or global
+  read linearizability. Missing required evidence blocks Live. Availability is
+  claimed only at the fresh verification event: TestPyPI can prune and PyPI
+  files can be removed. Retain audit evidence outside the registry; loss or
+  change of remote state cannot yield success or authorize restoration.
+- **WD-PY-007:** `hcoona` is the sole accepted writer/operator and explicit
+  Approval reviewer. Self-approval confirms intent, not independent security
+  review. Live uses protected-main targets and same-revision reviewed control.
+  Separate project-bound OIDC publishers and protected Environments bind
+  TestPyPI and PyPI; no static-token fallback is admitted. Provider, Build,
+  Quality, Observation and Finalization receive no publication capability.
+  The trusted publisher consumes immutable artifacts and runs no target build
+  or product code. The threat model does not claim isolation from a malicious
+  accepted writer. Relevant actor, reviewer, ownership or access changes
+  require renewed trust review.
+- **WD-PY-008:** Requirements confirmation precedes HLD, all five MLDs and a
+  brief LLD. Implementation needs a later accepted Wave. Native acceptance
+  additionally needs a concrete authorized protocol with coordinates, finite
+  requests/budgets, isolation, stop conditions and retained evidence. Each
+  real publication needs its own concrete grant and current-Attempt Approval.
+  Design acceptance does not authorize builds, probes, provisioning,
+  authentication/access changes or dispatch. npm/NuGet remain complete and
+  their spent operation grants remain spent.
+
 ### Evidence, Decisions, and Explanation
 
 - **WD-EVD-001:** Evidence Admission must verify exact ownership, target,
@@ -915,7 +1019,9 @@ establish native platform acceptance.
   absence with no retained operational lineage is a legitimate action candidate
   and is not inherently unprovable, but it does not prove the coordinate was
   never published, is not retained as deleted/restorable state, or will accept
-  creation. The authoritative package-version effect must use atomic
+  creation. For Python, `WD-PY-005` and `WD-PY-006` govern the two-file set
+  and file-level non-replacement; no atomic version-set creation is assumed.
+  For the other supported slices, the authoritative package-version effect must use atomic
   non-overwriting creation against the active version namespace. Pre-observed
   exact active state produces no action. At mutation linearization, the
   admitted primitive must not replace or alter an active version; competing
@@ -1084,7 +1190,9 @@ establish native platform acceptance.
 - **WD-OPS-006:** Multi-action or multi-destination publication is outside the
   first slice and requires a concrete scenario and a new reviewed design. The
   first slice has one action and defines no generic transaction, compensation,
-  rollback, or Saga protocol.
+  rollback, or Saga protocol. Python `WD-PY-005` adds one bounded set action
+  containing two sequential file uploads at one destination, without changing
+  the npm/NuGet single-file action or scalar terminal-reference contracts.
 - **WD-OPS-007:** Reconciliation must be exceptional handling for destination
   state that cannot safely proceed through normal observation and a new
   dispatch. It is a separate process, not an Attempt Outcome field. A new

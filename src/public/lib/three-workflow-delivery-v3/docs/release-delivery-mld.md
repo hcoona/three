@@ -184,6 +184,86 @@ audited real publication with its own full current-run lineage and actual
 destination-byte evidence. Design completion, local qualification, and
 historical NuGet packages cannot satisfy those external gates.
 
+## Python Smoke Delivery
+
+`WD-PY-*` uses one Release Unit, independent TestPyPI Buddy and PyPI Official
+Attempts, and same-revision protected-main control. Each Attempt independently
+builds and qualifies one original wheel/sdist pair. The native projection and
+source witness freeze before Build. Live admission rejects registry-inadmissible
+versions, including a local component, without rewriting the frozen value;
+non-publishing CI/qualification can consume valid normalized local versions. TestPyPI proving gates the later Official
+journey but supplies no Official artifact, Approval or Evidence.
+
+### Python Observation and Set Action
+
+One logical projection closes registry origin, normalized project/version and
+exactly the two expected filenames, bytes and witnesses. Read the supported
+Simple Index, parse names/versions using native rules and download actual files.
+A version with additional, yanked, conflicting or unclassifiable files blocks;
+metadata/hash declarations alone do not establish exactness. Supported reads
+are bounded observations, not an atomic snapshot across endpoints.
+
+| Observed complete version state                                            | Normal Live decision                                                                                                       |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Neither file nor another file at that version exists                       | One set action may be formed under current admission. Absence does not prove unused filenames or guarantee upload success. |
+| Exactly both expected files, exact bytes and witnesses                     | Zero actions; fresh whole-set exact-satisfied proof is still required.                                                     |
+| Only one file, extra files, changed bytes/witness, yanked or unknown state | Block; no partial completion or corrective mutation.                                                                       |
+
+The set action has a strict Python discriminator and exactly two ordered
+operations, wheel then sdist, at one destination. It binds both Artifact
+References, filenames and logical digests through the Snapshot, one operation
+profile and the full mutable-resource key for physical registry/project. Both
+file identities and their version are closed before approval. One Approval
+Bundle describes both uploads, their non-atomic visibility and failure behavior.
+One current-Attempt Authorization covers the set. There is no per-file action
+adoption, approval or generic action graph.
+
+### Python Mutation and Terminal Evidence
+
+After the destination Environment approval and Authorization admission defined
+by [Python Governance](./governance-integration-mld.md#python-smoke-governance),
+the publisher repeats fresh Governance/configuration checks and whole-set
+absence observation. Any state change blocks before mutation; it does not
+rewrite the approved Snapshot into an exact-satisfied path. It validates the
+actual operation profile and persists/validates one durable marker before the
+first upload. That marker's authority transitively closes both operations.
+
+Upload the wheel once. Only a definitive successful response and exact wheel
+byte/witness readback permit the sdist upload, also once. A definitive failure,
+timeout, cancellation, ambiguous response or failed readback stops subsequent
+mutation. After two definitive successes, whole-set readback must still find
+exactly the approved files with matching bytes/witnesses and no conflicting
+state. No readback can upgrade a failed upload response to success. Read-only
+retry is bounded by the profile and never repeats a mutation.
+
+A controlled terminal path forms one Python Publication Result, with an ordered
+entry for each operation: `not-attempted`, `succeeded`, `failed` or `unknown`,
+plus sanitized invocation/readback evidence and mutation classification. Entries
+bind operation ordinals from the approved action rather than repeat requested
+artifacts or coordinates. Success means both definitive upload successes and
+exact final whole-set readback. If the wheel succeeded and sdist failed or was
+not attempted, the set Result remains failed with the visible partial effect.
+Ambiguity remains failed/possibly-mutated; complete proof of no effect alone
+can classify no mutation. Controlled failure never authorizes another upload.
+
+One Result/marker/null scalar is propagated to the existing Finalizer; Python
+strict variant admission validates the two-entry closure. A durable Result
+wins over its marker; marker without Result is unknown and possibly mutated,
+even when external reads show one or both files. Missing output from a running
+publisher is not null. No record listing or synthetic Result repairs transport
+loss. Zero-action success requires a new whole-set byte/witness proof and fresh
+Governance/configuration, without publisher, Environment or OIDC credentials.
+
+The final publication Result proves upload/readback. Completion audit also
+requires fresh credential-free destination downloads and separate clean wheel
+and sdist consumers; a failed consumer audit prevents smoke completion without
+rewriting a successful mutation into an invented rollback. Retain the exact
+Attempt lineage, original and downloaded bytes, both consumer results and
+limitations outside each registry. `WD-PY-006` bounds availability to that event.
+The [Python LLD](./hcoona-release-smoke-python-lld.md) closes the native evidence
+matrix and disabled implementation entry. No set retry, deletion, reconciliation
+service or cross-registry transaction is introduced.
+
 ## Domain Model
 
 ### Release Intent
@@ -461,7 +541,7 @@ Destination Definitions and Adapters own:
 Shared Foundation may provide generic clients and binding primitives but does
 not classify projections, plan actions, or decide recovery.
 
-For registry destinations other than NuGet, the Adapter contract must establish:
+For registry destinations other than the NuGet and Python slices, the Adapter contract must establish:
 
 - atomic non-overwriting creation against the active package-version
   namespace;
@@ -476,6 +556,10 @@ unsupported rather than emulated through a reservation, tag witness, binding
 index, application lock, or permanent ledger. An explicitly authorized
 non-authoritative tag side effect remains governed by its bounded race contract
 and is not misrepresented as part of the version-object guarantee.
+
+Python follows `WD-PY-006` and the [Python delivery design](#python-smoke-delivery),
+including file-level non-replacement and bounded availability rather than an
+atomic two-file version creation guarantee.
 
 NuGet instead follows the dependency and evidence basis in `WD-NUGET-006` and
 `WD-NUGET-007`, as realized by the
@@ -794,6 +878,10 @@ exact action.
 
 ### Approval Job and Publication Authorization
 
+This separate-job topology applies to npm/NuGet GitHub Packages. Python
+performs the same logical post-approval admission within its Environment-gated
+publisher under `WD-REL-008` and [Python Governance](./governance-integration-mld.md#python-smoke-governance).
+
 The Approval job references the literal
 `workflow-delivery-v3-buddy-approval` Environment. It:
 
@@ -829,6 +917,10 @@ performs the complete semantic admission, and the publisher independently
 revalidates the resulting closure.
 
 ### Publisher Authority
+
+The job dependency and repository-token permissions below apply to npm/NuGet
+GitHub Packages. Python uses the OIDC layout above; the final authorization,
+profile, Governance and marker requirements remain common.
 
 The publisher has an ordinary success dependency on the Approval job. It is the
 only step-running job with effective `packages: write`.
@@ -1409,9 +1501,12 @@ Attempt processing fails closed when:
   passed the bounded destination acceptance;
 - the Publication Snapshot contains more than one first-slice action;
 - the action-bearing Approval Bundle is incomplete;
-- the Approval job lacks approval or cannot emit a valid Publication
-  Authorization;
-- a publisher starts without ordinary success dependency on the Approval job;
+- current-Attempt native Approval or a valid durable Publication Authorization
+  is missing;
+- a GitHub Packages publisher starts without ordinary success dependency on
+  the separate Approval job;
+- a Python publisher requests an OIDC assertion/token before Environment
+  approval and durable Authorization;
 - any step-running nonpublisher job has effective `packages: write`;
 - the publisher's final Governance or authorization closure check fails;
 - the mutation marker cannot be persisted;

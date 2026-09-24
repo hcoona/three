@@ -228,8 +228,9 @@ for one action-bearing Attempt.
 
 There is no first-slice Capability Environment. A generic Environment Profile
 is deferred until a concrete second policy demonstrates independent semantics.
-A future OIDC channel may introduce a channel-specific Environment only when
-external destination trust validates its OIDC claims.
+The Python OIDC slice supplies the concrete channel-specific Environment
+case under [Python Governance](./governance-integration-mld.md#python-smoke-governance);
+external destination trust validates that Environment in its OIDC tuple.
 
 ### Environment Configuration Sentinel
 
@@ -266,6 +267,16 @@ repository-token package-grant reach is explicitly accepted. It does not
 inherit the npm arbitrary-ref waiver, native evidence, routing tags, or
 administrative-lifecycle conclusions. Design, native admission, and a verified
 real publication are distinct evidence levels.
+
+### Python Distribution-Set Action
+
+The bounded Python publication action under `WD-PY-005`: exactly one wheel
+upload followed by one sdist upload at one registry, covered by one current
+Snapshot, Approval and Authorization. It is one business action with two
+non-atomic file operations, not a registry transaction. One marker precedes the
+set and one Result records its controlled terminal state, including partial
+failure; scalar terminal transport is unchanged. See the
+[Python delivery design](./release-delivery-mld.md#python-smoke-delivery).
 
 ### Official
 
@@ -1257,8 +1268,9 @@ with an observed-absent target-derived tag may materialize one standard npm
 publish action only after bounded native acceptance proves active-version
 non-overwrite and the bounded tag race. Active absence
 does not claim the version was never published, is not retained as a tombstone,
-or will accept creation. Multiple ordered actions and projection-internal
-partial progression require a future explicit design.
+or will accept creation. Multiple independent ordered actions remain outside
+this first slice. The [Python set action](#python-distribution-set-action)
+defines its separately confirmed two-operation partial-failure behavior.
 
 ### Approval Bundle
 
@@ -1274,8 +1286,10 @@ is not authority.
 
 ### Approval Job
 
-The publication-credential-free authoritative job that references
-`workflow-delivery-v3-buddy-approval`.
+The npm/NuGet GitHub Packages publication-credential-free authoritative job
+that references `workflow-delivery-v3-buddy-approval`. Python instead performs
+logical Approval/Authorization admission in its destination Environment-gated
+publisher under `WD-REL-008`; it has no separate job with this definition.
 
 It validates the resolved exact Environment marker value as its first
 authority-critical executable check, has no publication capability, freshly

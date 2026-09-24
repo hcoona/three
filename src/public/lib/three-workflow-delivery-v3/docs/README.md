@@ -54,6 +54,17 @@ effect.
 Before planning or editing v3 work, read the [Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md). It is
 operating guidance, not a second normative specification.
 
+## Python Smoke Design
+
+The accepted [Python design Wave](../../../../../docs/delivery-wave.md#define-the-python-v3-smoke-scope-and-destination)
+and [Issue #843](https://github.com/hcoona/three/issues/843) select TestPyPI first,
+then PyPI. The owner's confirmed scope is recorded in
+[`WD-PY-*`](./requirements.md#python-smoke-slice); the HLD, five MLDs and
+[Python LLD](./hcoona-release-smoke-python-lld.md) define its design.
+The [source evidence](./research/python-smoke-evidence.md) retains service
+findings and limits. Implementation, native admission and publication remain
+separately gated; design delivery is not smoke completion.
+
 ## NuGet Second-Slice Implementation
 
 The [NuGet second-slice handoff](./nuget-smoke-research-handoff.md) retains the
@@ -132,8 +143,9 @@ Read the current v3 documents in this order:
     - [Release Delivery](./release-delivery-mld.md)
     - [Shared Foundation](./shared-foundation-mld.md)
 5. [Migration and Document Policy](./migration-strategy.md)
-6. Applicable slice LLD: [npm](./hcoona-release-smoke-npm-lld.md) or
-   [NuGet](./hcoona-release-smoke-github-packages-lld.md)
+6. Applicable slice LLD: [npm](./hcoona-release-smoke-npm-lld.md),
+   [NuGet](./hcoona-release-smoke-github-packages-lld.md), or
+   [Python](./hcoona-release-smoke-python-lld.md)
 
 Higher layers constrain lower ones, and the current set must be reconciled if a conflict appears. v1 and v2 may supply
 a mechanism only when a v3 document explicitly requires extraction and revalidation.

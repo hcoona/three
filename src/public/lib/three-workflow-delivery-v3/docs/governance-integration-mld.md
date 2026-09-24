@@ -370,6 +370,60 @@ The LLD must identify the protected NuGet admission source and exact evidence
 bindings without changing npm Governance bytes or inheriting its spent
 authorizations.
 
+## Python Smoke Governance
+
+`WD-PY-007` admits only owner-reviewed same-revision control from protected
+`refs/heads/main`. Provider/Build/Quality run credential-free in their separate
+execution zone; planning and readback consume artifacts as data. `hcoona` is
+sole writer/operator and explicit reviewer, with no malicious-writer isolation
+claim. Actor, reviewer, ownership and access changes reopen trust review.
+
+TestPyPI and PyPI each have an independent protected admission source binding
+project name, registry origin, OIDC audience, repository owner/name, workflow
+filename, exact Environment, operation-profile digest, native generation and
+source-evidence revision. Admission also binds required reviewer/protection
+configuration, same-revision control and freshness. No npm/NuGet ready record
+or TestPyPI acceptance enables PyPI. Account ownership and registration facts
+are verified through authorized native setup/readback; they are not inferred
+from public package metadata. Where the service exposes no runtime registration
+inventory, retain the reviewed configuration attestation and its limitation,
+not a fabricated API proof. Missing required facts keep admission blocked.
+
+The Python publication job is itself gated by its destination's protected
+Environment. An upstream credential-free job persists the complete Approval
+Bundle and reviewer summary before the Environment wait. After approval, the
+trusted publication job validates native current-run deployment/reviewer facts
+and fresh Governance, persists the current-Attempt Authorization, then obtains
+OIDC credentials and publishes. This Python job layout replaces the first-slice
+separate Approval-job layout only for Python; the logical Bundle -> Approval ->
+Authorization -> marker order and scalar terminal contract are unchanged.
+Only the Environment-gated publisher has `id-token: write`. That job permission
+is available after Environment approval; reviewed control enforces durable
+Authorization before obtaining an OIDC assertion or registry token. It is not
+a platform claim that OIDC binds the approved artifacts. Its reviewed control
+executes no target build code. Approval is intent confirmation, not an
+independent security review. No static token or broader credential fallback is
+allowed. Zero-action finalization schedules no Environment job or token flow.
+
+The profile binds `testpypi` or `pypi` audience, HTTPS token exchange/upload
+origins, project publisher registration and effective short-lived token scope.
+Tokens and OIDC assertions never enter retained evidence, command lines or
+artifacts. The publisher verifies the admitted tuple and current GitHub controls
+before token minting and again before the marker; uninspectable service-side
+scope remains an attested dependency, not a decoded-token guarantee. The
+publisher Environment has the required reviewer, selected protected branch,
+self-approval policy and sentinel declared by its protected admission.
+
+`WD-PY-006` supplies the file-level dependency and bounded evidence basis.
+Each registry requires its own independently audited native suite and fresh
+configuration before `live_enabled` can become true. Profile/toolchain,
+registration/Environment, accepted service behavior or evidence-scope changes
+reopen affected admission. The existing protected-path, expiry and disablement
+checks apply to each Python source; publication rechecks them at the mutation
+boundary. Provisioning, token/native operations and each real publication
+require their separately accepted grants. This design changes no platform
+configuration and supplies none of those grants.
+
 ## Runtime Permission and Authority Model
 
 ### CI Qualification
@@ -426,6 +480,10 @@ Unknown, partial, conflicting, or unprovable state is not a zero-action success.
 
 ### Action-Bearing Approval
 
+This job layout applies to npm/NuGet GitHub Packages. Python uses the
+[Python Governance layout](#python-smoke-governance) under `WD-REL-008`,
+retaining the same logical approval and authorization bindings.
+
 When the Publication Snapshot contains the one permitted action, Release
 prepares one immutable Approval Bundle before the Environment wait. The bundle
 closes:
@@ -475,6 +533,11 @@ complete validation and Publication Authorization, followed by publisher
 revalidation.
 
 ### Publisher
+
+The permission and separate-job layout in this subsection is for npm/NuGet
+GitHub Packages; Python uses its destination-bound Environment and OIDC
+layout above. Final authorization, profile, Governance and marker checks
+remain common obligations.
 
 The publisher has an ordinary success dependency on the Approval job. It:
 
@@ -733,7 +796,8 @@ Governance integration fails closed when:
 - the selected destination primitive, exact operation profile, or bound
   lower-layer/API contract has not passed the bounded documented-and-observable
   native acceptance applicable to that destination; NuGet uses the dependency
-  and evidence basis in `WD-NUGET-006` and `WD-NUGET-007`;
+  and evidence basis in `WD-NUGET-006` and `WD-NUGET-007`, while Python uses
+  `WD-PY-006` and its separate per-registry admission;
 - the acceptance lacks definitive failure and an empty complete active-state
   delta for either active duplicate, exact creation readback, or, for first-slice
   npm, the bounded tag-race proof;
@@ -745,11 +809,16 @@ Governance integration fails closed when:
   actual pinned runtime configuration differs from the profile;
 - the action-bearing Approval Bundle or any transitively referenced Snapshot,
   reviewer, artifact, action, or resource binding is missing or inconsistent;
-- the Approval job can publish or the publisher can start without its successful
-  Publication Authorization;
+- a GitHub Packages Approval job can publish or its publisher can start without
+  the successful separate Approval job and Publication Authorization;
+- a Python publisher obtains an OIDC assertion/token before its native
+  Environment Approval and durable current-Attempt Authorization;
 - any step-running job other than the publisher has effective
   `packages: write`;
-- the publisher receives a PAT or `id-token: write`;
+- a publisher receives a static-token/PAT fallback, or a GitHub Packages
+  publisher receives `id-token: write`;
+- a nonpublisher Python job receives `id-token: write` or any Python job
+  receives `packages: write`;
 - protected Governance is missing, unreadable, malformed, expired, disabled,
   binding-mismatched, or touched after eligibility;
 - Governance freshness requires equality of unrelated `main` commits rather
