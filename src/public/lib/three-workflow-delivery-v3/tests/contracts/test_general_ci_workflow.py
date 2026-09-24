@@ -238,7 +238,9 @@ def test_required_general_ci_checks_remain_eligible(
         if key == "scope":
             _required_step(job)
         else:
-            assert job["if"] == "always()"
+            assert job["if"] == (
+                "always()" if key == "validation" else "${{ !cancelled() }}"
+            )
             assert job["needs"] == (
                 ["conformance", "scholarly-tests"]
                 if key == "validation"
@@ -674,7 +676,7 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
         if name in {"scope", "validation"}:
             continue
         assert job["needs"] == "scope"
-        assert job["if"] == "always()"
+        assert job["if"] == "${{ !cancelled() }}"
         guard = job["steps"][0]
         assert guard["id"] == "scope"
         output = tmp_path / name
@@ -736,11 +738,14 @@ def test_required_validate_rejects_missing_or_failed_consumers(
 
 
 def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
-    """Keep cancellation-aware work and an explicit failing terminal step."""
+    """Use documented cancelable jobs; shell checks do not model Actions."""
+    assert workflow["concurrency"]["cancel-in-progress"] is True
     for name, job in workflow["jobs"].items():
         if name == "scope":
             continue
-        assert job["if"] == "always()"
+        assert job["if"] == (
+            "always()" if name == "validation" else "${{ !cancelled() }}"
+        )
         for step in job["steps"][1:-1]:
             if step["if"].startswith("always() &&"):
                 assert step.get("uses", "").startswith(
