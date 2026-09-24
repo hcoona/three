@@ -94,10 +94,10 @@ future delivery group.
 ## Python Smoke Delivery
 
 The Python design realizes owner-confirmed `WD-PY-*` through the HLD, five MLDs
-and [brief LLD](./hcoona-release-smoke-python-lld.md). The current design Wave
-permits no implementation or registry operation. After design review and
-protected delivery, a later owner-approved implementation Wave may select the
-following dependency order:
+and [brief LLD](./hcoona-release-smoke-python-lld.md). The
+[accepted Wave](../../../../../docs/delivery-wave.md#implement-the-disabled-python-v3-smoke)
+selects disabled implementation and local validation in the following dependency
+order. Native/configuration operations and publication retain separate grants:
 
 1. Disabled Python Provider/Model and frozen two-format Build/Qualification,
    with native metadata, witnesses and clean wheel/sdist consumers.

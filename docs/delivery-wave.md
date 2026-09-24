@@ -8,44 +8,40 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Define the Python V3 smoke scope and destination
+### Implement the disabled Python V3 smoke
 
 - **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** the owner's request to select Python as the next V3
-  smoke, first proving TestPyPI and then the formal PyPI target, followed by
-  Ruby; current repository governance, V3 requirements, design and engineering
-  principles; the completed npm and NuGet boundaries;
-  and the proposed minimal-package journey in #843.
-- **Advancement and outcome:** research and confirm one dependency-free Python
-  smoke package's scope, channel, version projection, artifact set and
-  TestPyPI-to-PyPI destination sequence. Deliver confirmed requirements,
-  applicable HLD/MLD changes, a brief LLD and validation basis
-  for target-bound NBGV versioning, wheel/sdist builds, clean installed
-  consumption and eventual actual publication verification at both registries.
-  Resolve frozen PEP 440 version consumption, source builds without Git metadata, per-file
-  publication and partial success, destination retention and atomic
-  non-overwrite requirements, channel separation and publisher trust before
-  design acceptance. Require separate qualification, admission, authorization
-  and proving evidence for TestPyPI and PyPI; the full Python smoke completes
-  only after the formal PyPI publication and clean consumer audit.
-  Record unsupported capabilities and any owner decisions needed; keep Live
-  blocked where required guarantees cannot be established. This outcome is
-  design readiness, not completion of the end-to-end smoke.
-- **Effects and delivery:** permit public-source research, read-only public
-  platform inspection, documentation validation, ordinary Issue/PR delivery
-  and CI, and independent delegated domain, record and evidence review. Recheck
-  mutable destination facts at confirmation and before later implementation
-  authorization. Preserve requirements confirmation, design ordering and
-  existing implementation, native-operation and publication gates.
-- **Exclusions:** no package/runtime/workflow implementation, package builds,
-  hosted experiments, native acceptance, release dispatch, publication,
-  provisioning, authentication/access changes or cleanup. No implicit PyPI
-  publication permission, promotion of Buddy evidence, inherited destination
-  exceptions, or reopening completed npm/NuGet smoke operations. Implementation requires
-  a later accepted Wave after design acceptance. Ruby remains subsequent
-  scope: after Python's independent completion audit, the owner evaluates a
-  separate Ruby proposal at the Wave review closing Python; this entry grants
-  no Ruby work.
+- **Accepted inputs:** owner-confirmed `WD-PY-*`, the accepted HLD, five MLDs
+  and brief Python LLD delivered through #845; dated public source findings;
+  existing V3 runtime; and the completed npm/NuGet boundaries. The owner
+  approved the [bounded implementation proposal](https://github.com/hcoona/three/issues/843#issuecomment-5822195747).
+- **Advancement and outcome:** implement `hcoona-release-smoke-python` and its
+  target-bound Python Provider/Model, frozen static-metadata wheel/sdist Build,
+  independent content and clean consumer Qualification, bounded
+  one-set/two-upload Release state, one-shot HTTP profile, scalar terminal
+  evidence and destination-specific disabled Governance/workflow integration.
+  Validate with scenario, contract and local integration tests, root HK and
+  normal hooks; independently review and protected-deliver a coherent disabled
+  implementation. Close exact tool versions, record discriminators, workflow
+  paths and staged-build contracts before execution. Recheck relied-on mutable
+  service/build interfaces and preserve current authority lineage.
+- **Effects and delivery:** permit local dependency preparation,
+  credential-free package builds and isolated consumers/tests,
+  documentation/runtime/workflow changes, ordinary Issue/PR/check operations
+  and ordinary CI, protected delivery, and independent delegated domain,
+  record, evidence and OCR review. Hosted ordinary CI may run the selected
+  local validation; it is not native registry acceptance or release dispatch.
+- **Exclusions:** no registry publication or native acceptance, OIDC/token
+  requests, account/project/Environment provisioning, authentication/access
+  changes, manual release dispatch/rerun, remote recovery/deletion or cleanup.
+  Keep TestPyPI and PyPI `live_enabled: false`. No static-token fallback,
+  partial-set completion, artifact/Approval promotion, reopened npm/NuGet
+  operations or Ruby work. Each native/provisioning protocol requires its own
+  later concrete authorization. Each TestPyPI/PyPI publication additionally
+  requires its own concrete grant and current-Attempt Approval.
+  After the Python two-destination completion audit,
+  the owner evaluates a separate Ruby proposal at the Wave review closing
+  Python; this entry grants no Ruby work.
 
 ### Restore dependency updates and simplify V3 tooling ownership
 

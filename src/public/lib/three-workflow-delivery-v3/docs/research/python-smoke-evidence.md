@@ -2,7 +2,7 @@
 
 This public-source research supports the Python requirements confirmation in
 [Issue #843](https://github.com/hcoona/three/issues/843), under the accepted
-[Python design Wave](../../../../../../docs/delivery-wave.md#define-the-python-v3-smoke-scope-and-destination).
+[Python design Wave](https://github.com/hcoona/three/blob/53b0aaa75dad1aac238f59127a4c1fd63a6642cc/docs/delivery-wave.md#define-the-python-v3-smoke-scope-and-destination).
 The owner selected TestPyPI followed by production PyPI. This record does not
 confirm requirements, select an implementation, admit a destination, or grant
 publication. npm and NuGet remain complete under their existing authorities.
