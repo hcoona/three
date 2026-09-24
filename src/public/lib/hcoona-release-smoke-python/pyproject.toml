@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling==1.32.0", "nbgv-python"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hcoona-release-smoke-python"
+description = "Minimal Python package for Workflow Delivery v3 proving."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+dynamic = ["version"]
+dependencies = []
+
+[tool.hatch.version]
+source = "nbgv"
+
+[tool.hatch.version.nbgv]
+version-field = "SemVer2"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hcoona_release_smoke_python"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/hcoona_release_smoke_python",
+  "pyproject.toml",
+  "README.md",
+  "LICENSE",
+]
+
+[tool.uv.sources]
+nbgv-python = { workspace = true }

@@ -1,0 +1,14 @@
+name: Prepare Python V3 control runtime
+description: Install locked control dependencies without installing the smoke project.
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      with:
+        version: 0.10.9
+        python-version: 3.14.3
+        github-token: ''
+    - shell: bash
+      run: |
+        uv sync --frozen --package three-workflow-delivery-v3 --no-dev
+        echo "${GITHUB_WORKSPACE}/.venv/bin" >> "${GITHUB_PATH}"

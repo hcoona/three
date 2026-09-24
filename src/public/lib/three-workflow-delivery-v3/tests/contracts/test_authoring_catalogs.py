@@ -354,10 +354,11 @@ def test_first_slice_authoring_accepts_exact_approved_one_output(
 
 
 def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
-    """Register only the two confirmed slices' logical contract inventory."""
+    """Register the approved npm, NuGet and Python contract inventory."""
     assert set(BUILD_DEFINITIONS) == {
         "node/npm-package-v1",
         "dotnet/nuget-package-v1",
+        "python/distribution-set-v1",
     }
     assert set(QUALITY_DEFINITIONS) == {
         "node/project-build-v1",
@@ -368,15 +369,21 @@ def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
         "node/npm-install-import-v1",
         "dotnet/nuget-artifact-contents-v1",
         "dotnet/nuget-restore-build-invoke-v1",
+        "python/distribution-contents-v1",
+        "python/wheel-install-import-v1",
+        "python/sdist-build-install-import-v1",
     }
     assert set(QUALITY_PRESETS) == {
         "node/hcoona-release-smoke-npm-v1",
         "dotnet/hcoona-release-smoke-github-packages-v1",
+        "python/hcoona-release-smoke-python-v1",
     }
     assert set(DESTINATION_DEFINITIONS) == {
         "npm/github-packages-hcoona-three-v1",
         "npm/npmjs-public-v1",
         "nuget/github-packages-hcoona-three-v1",
+        "python/testpypi-v1",
+        "python/pypi-v1",
     }
     assert set(EXECUTION_CLASSES) == {
         "control/read-only-v1",
@@ -390,10 +397,12 @@ def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
         "github/packages-read-v1",
         "github/packages-write-v1",
         "npmjs/trusted-publishing-oidc-v1",
+        "python/trusted-publishing-oidc-v1",
     }
     assert set(RELEASE_POLICIES) == {
         "hcoona-release-smoke-npm",
         "hcoona-release-smoke-github-packages",
+        "hcoona-release-smoke-python",
     }
     assert RELEASE_POLICIES["hcoona-release-smoke-npm"].path == (
         FIRST_SLICE_POLICY_PATH
@@ -420,7 +429,7 @@ def test_catalog_definitions_are_data_only_and_canonically_stable() -> None:
 
     assert second == first
     assert catalog_digest() == (
-        "sha256:98fec8147b0bb59f9cfd6f0051bd1a55817a4f74c00272fe02ad236ec2030990"
+        "sha256:3fcb84ca3ebd0e5fc02a98037bb2f71318b9d991edfd6cd0244b0aadbd9030b9"
     )
     definition_sections = (
         "build-definitions",
@@ -1338,9 +1347,10 @@ def test_npmjs_destination_uses_hypothetical_trusted_publishing_oidc() -> None:
         "github/packages-read-v1",
         "github/packages-write-v1",
         "npmjs/trusted-publishing-oidc-v1",
+        "python/trusted-publishing-oidc-v1",
     }
     assert catalog_digest() == (
-        "sha256:98fec8147b0bb59f9cfd6f0051bd1a55817a4f74c00272fe02ad236ec2030990"
+        "sha256:3fcb84ca3ebd0e5fc02a98037bb2f71318b9d991edfd6cd0244b0aadbd9030b9"
     )
 
     npmjs_capability = CAPABILITIES["npmjs/trusted-publishing-oidc-v1"]
@@ -1376,3 +1386,84 @@ def test_npmjs_destination_uses_hypothetical_trusted_publishing_oidc() -> None:
 
     buddy = DESTINATION_DEFINITIONS["npm/github-packages-hcoona-three-v1"]
     assert buddy.capability_requirements == ("github/packages-write-v1",)
+
+
+def test_python_catalog_build_binds_two_outputs_and_three_required_checks() -> (
+    None
+):
+    """One Python build yields two originals with separate consumers."""
+    build = BUILD_DEFINITIONS["python/distribution-set-v1"]
+    assert build.operation == "python-distribution-set"
+    assert build.output_kinds == ("python-wheel", "python-sdist")
+    assert build.required_native_projections == ("pep440Version",)
+    assert build.execution_class == "target-execution/unprivileged-v1"
+    assert build.capability_requirements == ()
+    preset = QUALITY_PRESETS["python/hcoona-release-smoke-python-v1"]
+    assert preset.required == (
+        "python/distribution-contents-v1",
+        "python/wheel-install-import-v1",
+        "python/sdist-build-install-import-v1",
+    )
+    assert preset.advisory == ()
+    assert tuple(
+        QUALITY_DEFINITIONS[key].subject for key in preset.required
+    ) == (
+        "python-distribution-set",
+        "python-wheel",
+        "python-sdist",
+    )
+    descriptor = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "src/public/lib/hcoona-release-smoke-python"
+            / "workflow-delivery.release-unit.yml"
+        ).read_text(encoding="utf-8")
+    )
+    assert len(descriptor["builds"]) == 1
+    bound = descriptor["builds"][0]
+    assert bound["definition"] == build.logical_id
+    assert [(o["id"], o["role"], o["kind"]) for o in bound["outputs"]] == [
+        ("wheel", "primary-package", "python-wheel"),
+        ("sdist", "source-package", "python-sdist"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("destination", "channel", "registry"),
+    [
+        ("python/testpypi-v1", "buddy", "https://test.pypi.org/legacy/"),
+        ("python/pypi-v1", "official", "https://upload.pypi.org/legacy/"),
+    ],
+)
+def test_python_catalog_destinations_bind_independent_no_tag_profiles(
+    destination: str,
+    channel: str,
+    registry: str,
+) -> None:
+    """Each registry needs native acceptance and has no tag authority."""
+    definition = DESTINATION_DEFINITIONS[destination]
+    assert definition.ecosystem == "python"
+    assert definition.registry == registry
+    assert definition.supported_channels == (channel,)
+    assert (
+        definition.live_mutation_status == "requires-python-native-acceptance"
+    )
+    assert definition.capability_requirements == (
+        "python/trusted-publishing-oidc-v1",
+    )
+    capability = CAPABILITIES["python/trusted-publishing-oidc-v1"]
+    assert capability.github_permissions == (
+        ("contents", "read"),
+        ("id-token", "write"),
+    )
+    policy_path = (
+        REPO_ROOT / RELEASE_POLICIES["hcoona-release-smoke-python"].path
+    )
+    policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+    selected = policy["channels"][channel]
+    assert set(selected) == {"destination", "governance"}
+    assert selected["destination"] == destination
+    registry_name = "testpypi" if channel == "buddy" else "pypi"
+    assert selected["governance"].endswith(
+        f"hcoona-release-smoke-python-{registry_name}.json"
+    )

@@ -1589,6 +1589,7 @@ def validate_compilation_context(  # noqa: C901
         ) is not str or context.release_unit not in {
             FIRST_SLICE_RELEASE_UNIT,
             NUGET_RELEASE_UNIT,
+            "hcoona-release-smoke-python",
         }:
             message = "simulation compilation requires the first Release Unit"
             raise ValueError(message)

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/Nerdbank.GitVersioning/main/src/NerdBank.GitVersioning/version.schema.json",
+  "version": "0.1.0-beta.{height}",
+  "pathFilters": [
+    ".",
+    "../nbgv-python",
+    "../three-workflow-delivery-v3",
+    "../../../../pyproject.toml",
+    "../../../../uv.lock",
+    "../../../../mise.toml",
+    "../../../../mise.lock",
+    "../../../../.config/dotnet-tools.json",
+    "../../../../global.json",
+    "../../../../eng/workflow-delivery/v3/policies/hcoona-release-smoke-python.yml",
+    "../../../../eng/workflow-delivery/v3/python-build-constraints.txt",
+    "../../../../.github/actions/workflow-delivery-v3-python-record",
+    "../../../../.github/actions/workflow-delivery-v3-python-setup",
+    "../../../../.github/workflows/workflow-delivery-v3-python-smoke.yml"
+  ],
+  "gitCommitIdShortFixedLength": 7,
+  "gitCommitIdShortAutoMinimum": 7,
+  "publicReleaseRefSpec": ["^refs/heads/main$"],
+  "inherit": false
+}

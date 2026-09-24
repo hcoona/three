@@ -13,6 +13,7 @@ members = [
     "azureauth-credprovider-keyring",
     "factorio-cycle-calculator",
     "git-commit-heatmap",
+    "hcoona-release-smoke-python",
     "hcoona-three-monorepo",
     "html-sm-processor",
     "llm-text-splitter",
@@ -1248,6 +1249,10 @@ sdist = { url = "https://files.pythonhosted.org/packages/69/08/33331757185504aae
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a9/84/1798b6d85ecde0e31546004efd25c5de1b1f49250644a60cce460e12593a/hatchling-1.32.0-py3-none-any.whl", hash = "sha256:0e17c9c3b9aa7c625acc8d0f5b622f107d5049af9ecf5ada4de1aada5be7cdbc", size = 78435, upload-time = "2026-08-11T05:03:42.644Z" },
 ]
+
+[[package]]
+name = "hcoona-release-smoke-python"
+source = { editable = "src/public/lib/hcoona-release-smoke-python" }
 
 [[package]]
 name = "hcoona-three-monorepo"
@@ -3747,8 +3752,11 @@ name = "three-workflow-delivery-v3"
 version = "0.1.0"
 source = { editable = "src/public/lib/three-workflow-delivery-v3" }
 dependencies = [
+    { name = "nbgv-python" },
+    { name = "packaging" },
     { name = "pyyaml" },
     { name = "rfc8785" },
+    { name = "tomli-w" },
 ]
 
 [package.dev-dependencies]
@@ -3758,8 +3766,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "nbgv-python", editable = "src/public/lib/nbgv-python" },
+    { name = "packaging", specifier = "==26.3" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rfc8785", specifier = ">=0.1.4" },
+    { name = "tomli-w", specifier = "==1.2.0" },
 ]
 
 [package.metadata.requires-dev]

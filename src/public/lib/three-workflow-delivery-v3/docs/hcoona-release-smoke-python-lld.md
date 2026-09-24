@@ -6,7 +6,7 @@ This design realizes confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice)
 the [HLD](./high-level-design.md#python-smoke-extension) and its five MLDs.
 The V3 maintainer authors and maintains this carrier; implementers and reviewers
 use it to close the Python slice's concrete contracts without turning the MLDs
-into command inventories. It specifies design, not implemented support. The
+into command inventories. It specifies the implementation contract, not native registry support. The
 [accepted Wave](../../../../../docs/delivery-wave.md#implement-the-disabled-python-v3-smoke)
 authorizes disabled implementation and local validation; native operations,
 configuration changes and publication remain separately gated.
@@ -17,7 +17,7 @@ owns staged delivery. No existing npm/NuGet permission is reused.
 
 ## Package and Build Contract
 
-The future package root is `src/public/lib/hcoona-release-smoke-python`, with
+The package root is `src/public/lib/hcoona-release-smoke-python`, with
 `src/hcoona_release_smoke_python/__init__.py` exporting `project_id()` and no
 runtime dependencies. One Release Unit uses an Ubuntu/CPython 3.14 Build
 Definition with wheel and sdist outputs. `Requires-Python` is `>=3.14`; the
@@ -30,8 +30,7 @@ selects `SemVer2`, calls the existing `nbgv-python` normalization and freezes
 the canonical facts, field and exact PEP 440 value. Normalized parseable local
 versions are valid for non-publishing CI/qualification. Release Live admission
 requires an already normalized public version without local metadata and
-rejects an ineligible projection without stripping or replacing it. The future initial lineage
-must yield a supported prerelease projection on protected main; its concrete
+rejects an ineligible projection without stripping or replacing it. The initial `0.1.0-beta.{height}` lineage must yield a supported prerelease projection on protected main; its concrete
 version baseline is closed with the implementation descriptor, not derived
 from a run number or package-index availability. Colliding coordinates fail.
 
@@ -65,8 +64,10 @@ manifest rewriting service. A missing or unsupported shape fails. `nbgv-python`
 retains its existing public API and requirements. The producer lock/pinned
 backend must bind its full resolved build closure; the sdist declares portable
 build prerequisites, with the initial consumer's actual resolved versions
-retained as evidence. Implementation pins the concrete package/tool versions
-before any build; this design does not claim those mechanisms have run.
+retained as evidence. The producer uses CPython 3.14.3, UV 0.10.9, Hatchling 1.32.0, NBGV
+3.10.94, `nbgv-python` 2.1.0.dev1 and packaging 26.3. The hash-pinned
+`eng/workflow-delivery/v3/python-build-constraints.txt` closes the Hatchling
+backend dependency set against `uv.lock`.
 
 ## Qualification and Artifact Admission
 
@@ -103,9 +104,11 @@ call that destination consumption.
 
 These names are proposed configuration, not existing resources. Each protected
 admission file under `.github/workflow-delivery/` is destination-specific,
-initially blocked with `live_enabled: false`. The implementation selects exact
-paths and workflow filenames before authorized provisioning and binds those
-literals in the relevant OIDC project registration. Do not register a wildcard,
+initially blocked with `live_enabled: false`. The workflow is `.github/workflows/workflow-delivery-v3-python-smoke.yml`.
+The protected files are
+`.github/workflow-delivery/governance/hcoona-release-smoke-python-testpypi.json`
+and `hcoona-release-smoke-python-pypi.json` in the same directory. Future OIDC
+project registrations must bind the exact workflow filename and Environment. Do not register a wildcard,
 use a pending publisher as evidence of admitted project ownership, or silently
 change a registration to get a token.
 
@@ -128,6 +131,46 @@ blocks exactness. Whole-set absence is a creation candidate, not proof that
 PyPI has never used the filenames. Deleted filename rejection remains failure.
 The native profile must exercise the actual APIs, request mapping and runtime
 rather than assuming an SDK/CLI name establishes one-shot behavior.
+
+## Hosted Integration
+
+`python -m three_workflow_delivery_v3.python_cli` exposes the bounded stages.
+The workflow separates request, Provider, compiler, CI/Release Plan, Build,
+Qualification, publication preparation, publisher and Finalizer jobs. Python CI
+conservatively selects the entire slice at the trusted tested-merge SHA; it
+makes no affected-path optimization claim. CI and Release retain separate
+Plan/Snapshot, Evidence and Decision records. Only mechanical artifact and
+consumer inspection are shared.
+
+The exact-target Model schema is `workflow-delivery/v3/python-repository-model-snapshot`.
+Python Governance uses `workflow-delivery/v3/python-governance-v1`; the other
+Python records use their explicit `python-*` discriminators. The shared
+Publication Result uses `variant: python-distribution-set`, and the shared
+Finalizer returns the existing AttemptOutcome. Parsers reject foreign variants
+and retain all current-run transitive references.
+
+Each payload uses an immutable `archive: false` artifact. The persistence
+composite downloads the returned artifact ID, requires digest validation and
+binds readback bytes before exporting the next explicit DAG edge. No artifact
+listing or name-based discovery reconstructs authority. Wheel and sdist remain
+separate original transports. The publisher exports one scalar terminal
+reference; later artifact presence cannot substitute for that output.
+
+Protected configuration attestation covers the complete writer, Environment,
+service registration and native evidence inventories. The job token cannot
+read administrative Environment, invitation, team or variable APIs. Runtime
+freshness therefore reads protected Governance plus accessible repository,
+protected-branch and collaborator metadata; current-run approval, deployment
+and the Environment sentinel establish the publisher boundary. Failed reads
+block; no administrative-token fallback or empty-inventory substitution is
+allowed. Changes outside this bounded runtime visibility still require the
+owner to disable Governance and renew its configuration attestation.
+
+The one-shot HTTPS transport uses CPython 3.14.3 with OpenSSL 3.5.5
+(27 January 2026), verified TLS 1.2 or later and a 30-second socket timeout.
+The exact version/profile check applies to the actual registry transport;
+HTTP redirects, proxies and request retries are unavailable. The later native
+acceptance must prove this actual profile separately at each destination.
 
 ## Approval and Terminal Contract
 

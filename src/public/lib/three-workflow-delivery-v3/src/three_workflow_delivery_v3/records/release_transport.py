@@ -2941,6 +2941,13 @@ def release_record_from_document(
     expected_type: type[ReleaseRecord],
 ) -> ReleaseRecord:
     """Deserialize one closed Release record selected by the trusted caller."""
+    from three_workflow_delivery_v3.release.python_publication import (  # noqa: PLC0415
+        PythonPublicationResult,
+        python_publication_result_from_document,
+    )
+
+    if expected_type is PythonPublicationResult:
+        return python_publication_result_from_document(document)
     parser = _PARSERS.get(expected_type)
     if parser is None:
         message = f"unsupported transported Release record: {expected_type!r}"
@@ -2969,6 +2976,18 @@ def simulation_identity_from_document(
 def _record_bindings(  # noqa: C901, PLR0911, PLR0912
     record: ReleaseRecord,
 ) -> tuple[str, int, int | None, str, str | None]:
+    from three_workflow_delivery_v3.release.python_publication import (  # noqa: PLC0415
+        PythonPublicationResult,
+    )
+
+    if type(record) is PythonPublicationResult:
+        return (
+            "live-release",
+            record.attempt.workflow_run_id,
+            None,
+            record.attempt.execution.target,
+            "publish-python",
+        )
     if isinstance(record, ReleaseIntent):
         return (
             record.purpose,

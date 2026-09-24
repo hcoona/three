@@ -1,0 +1,54 @@
+name: Persist Python V3 record
+description: Upload one original payload, download by returned ID, and bind readback before continuing.
+inputs:
+  role:
+    required: true
+    description: Closed record role owned by this producer.
+  path:
+    required: true
+    description: Single payload path.
+outputs:
+  references:
+    description: references
+    value: ${{ steps.bind.outputs.references }}
+  artifact-ids:
+    description: artifact-ids
+    value: ${{ steps.bind.outputs.artifact-ids }}
+runs:
+  using: composite
+  steps:
+    - id: upload
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: python-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.role }}
+        path: ${{ inputs.path }}
+        if-no-files-found: error
+        retention-days: 45
+        overwrite: false
+        archive: false
+        include-hidden-files: true
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        artifact-ids: ${{ steps.upload.outputs.artifact-id }}
+        path: .wdv3/readback
+        merge-multiple: true
+        skip-decompress: true
+        digest-mismatch: error
+    - id: bind
+      shell: bash
+      env:
+        RECORD_ROLE: ${{ inputs.role }}
+        RECORD_PATH: ${{ inputs.path }}
+        RECORD_ID: ${{ steps.upload.outputs.artifact-id }}
+        RECORD_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        RECORD_URL: ${{ steps.upload.outputs.artifact-url }}
+      run: |
+        python -m three_workflow_delivery_v3.python_cli bind --purpose "${WDV3_PURPOSE}" \
+          --role "${RECORD_ROLE}" --payload ".wdv3/readback/$(basename "${RECORD_PATH}")" \
+          --artifact-id "${RECORD_ID}" --artifact-digest "${RECORD_DIGEST}" \
+          --artifact-url "${RECORD_URL}" --output .wdv3/references.json
+    - shell: bash
+      env:
+        NEXT_REFERENCES: ${{ steps.bind.outputs.references }}
+      run: |
+        echo "WDV3_REFERENCES=${NEXT_REFERENCES}" >> "${GITHUB_ENV}"

@@ -104,6 +104,16 @@ type CatalogRecord = (
 
 BUILD_DEFINITIONS: Mapping[str, BuildDefinition] = MappingProxyType(
     {
+        "python/distribution-set-v1": BuildDefinition(
+            logical_id="python/distribution-set-v1",
+            ecosystem="python",
+            operation="python-distribution-set",
+            implementation_id="python/distribution-set-v1",
+            execution_class="target-execution/unprivileged-v1",
+            capability_requirements=(),
+            output_kinds=("python-wheel", "python-sdist"),
+            required_native_projections=("pep440Version",),
+        ),
         "node/npm-package-v1": BuildDefinition(
             logical_id="node/npm-package-v1",
             ecosystem="node",
@@ -131,6 +141,30 @@ QUALITY_DEFINITIONS: Mapping[str, QualityDefinition] = MappingProxyType(
     {
         definition.logical_id: definition
         for definition in (
+            QualityDefinition(
+                "python/distribution-contents-v1",
+                "python-distribution-set",
+                "python-distribution-contents",
+                "python/distribution-contents-v1",
+                "target-execution/unprivileged-v1",
+                (),
+            ),
+            QualityDefinition(
+                "python/wheel-install-import-v1",
+                "python-wheel",
+                "python-wheel-install-import",
+                "python/wheel-install-import-v1",
+                "target-execution/unprivileged-v1",
+                (),
+            ),
+            QualityDefinition(
+                "python/sdist-build-install-import-v1",
+                "python-sdist",
+                "python-sdist-build-install-import",
+                "python/sdist-build-install-import-v1",
+                "target-execution/unprivileged-v1",
+                (),
+            ),
             QualityDefinition(
                 "node/project-build-v1",
                 "project-node",
@@ -201,6 +235,14 @@ QUALITY_DEFINITIONS: Mapping[str, QualityDefinition] = MappingProxyType(
 
 QUALITY_PRESETS: Mapping[str, QualityPreset] = MappingProxyType(
     {
+        "python/hcoona-release-smoke-python-v1": QualityPreset(
+            logical_id="python/hcoona-release-smoke-python-v1",
+            required=(
+                "python/distribution-contents-v1",
+                "python/wheel-install-import-v1",
+                "python/sdist-build-install-import-v1",
+            ),
+        ),
         "node/hcoona-release-smoke-npm-v1": QualityPreset(
             logical_id="node/hcoona-release-smoke-npm-v1",
             required=(
@@ -222,6 +264,24 @@ DESTINATION_DEFINITIONS: Mapping[str, DestinationDefinition] = MappingProxyType(
     {
         definition.logical_id: definition
         for definition in (
+            DestinationDefinition(
+                "python/testpypi-v1",
+                "python",
+                "https://test.pypi.org/legacy/",
+                ("buddy",),
+                "side-effect/privileged-v1",
+                ("python/trusted-publishing-oidc-v1",),
+                "requires-python-native-acceptance",
+            ),
+            DestinationDefinition(
+                "python/pypi-v1",
+                "python",
+                "https://upload.pypi.org/legacy/",
+                ("official",),
+                "side-effect/privileged-v1",
+                ("python/trusted-publishing-oidc-v1",),
+                "requires-python-native-acceptance",
+            ),
             DestinationDefinition(
                 "npm/github-packages-hcoona-three-v1",
                 "npm",
@@ -290,6 +350,14 @@ CAPABILITIES: Mapping[str, CapabilityDefinition] = MappingProxyType(
         definition.logical_id: definition
         for definition in (
             CapabilityDefinition(
+                logical_id="python/trusted-publishing-oidc-v1",
+                github_permissions=(
+                    ("contents", "read"),
+                    ("id-token", "write"),
+                ),
+                permits_mutation=True,
+            ),
+            CapabilityDefinition(
                 logical_id="github/contents-read-v1",
                 github_permissions=(("contents", "read"),),
                 permits_mutation=False,
@@ -326,6 +394,11 @@ CAPABILITIES: Mapping[str, CapabilityDefinition] = MappingProxyType(
 
 RELEASE_POLICIES: Mapping[str, ReleasePolicyRegistration] = MappingProxyType(
     {
+        "hcoona-release-smoke-python": ReleasePolicyRegistration(
+            logical_id="hcoona-release-smoke-python",
+            release_unit="hcoona-release-smoke-python",
+            path="eng/workflow-delivery/v3/policies/hcoona-release-smoke-python.yml",
+        ),
         "hcoona-release-smoke-npm": ReleasePolicyRegistration(
             logical_id="hcoona-release-smoke-npm",
             release_unit="hcoona-release-smoke-npm",

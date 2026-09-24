@@ -14,10 +14,10 @@ New sessions start at the [handoff entry](docs/agent-handoff.md#starting-a-new-s
 The [NuGet delivery retrospective](docs/research/nuget-delivery-retrospective.md)
 explains reusable integration lessons and the next-task guide.
 
-The next slice is the separate `hcoona-release-smoke-python` package. Its
+The Python slice is the separate `hcoona-release-smoke-python` package. Its
 [Python design entry](docs/README.md#python-smoke-design) routes the confirmed
 requirements, HLD/MLDs, brief LLD and source evidence for TestPyPI Buddy followed
-by PyPI Official. This is accepted design, not implemented support; the
+by PyPI Official. Its implementation keeps both destinations disabled; the
 [delivery gates](docs/migration-strategy.md#python-smoke-delivery) keep
 implementation, native admission and publication separately authorized.
 The npm and NuGet smoke objectives remain complete.
@@ -28,6 +28,14 @@ reviewer inspection still read historical evidence; the original bytes and
 provenance remain retained. Old producer replay requires its exact historical
 Git revision and separate operation authorization. Current native acceptance
 and Release continue to use their existing commands and contracts.
+
+The [Python smoke package](../hcoona-release-smoke-python/README.md) provides the
+wheel/sdist proving payload. The [Python LLD](docs/hcoona-release-smoke-python-lld.md)
+owns its concrete build, qualification and disabled publication contracts.
+The Python workflow runs credential-free CI at the tested PR merge target;
+manual TestPyPI/PyPI entry first requires the destination's protected Governance.
+Both destinations remain disabled. Local validation does not establish native
+registry acceptance or publication support.
 
 The [npm smoke package](../hcoona-release-smoke-npm/README.md) owns its small
 package purpose. This project owns the

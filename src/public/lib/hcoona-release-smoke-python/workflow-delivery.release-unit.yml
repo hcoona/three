@@ -1,0 +1,13 @@
+schema: workflow-delivery/v3/release-unit
+release-unit: hcoona-release-smoke-python
+builds:
+  - id: python-distributions
+    definition: python/distribution-set-v1
+    entry-point: pyproject.toml
+    outputs:
+      - id: wheel
+        role: primary-package
+        kind: python-wheel
+      - id: sdist
+        role: source-package
+        kind: python-sdist

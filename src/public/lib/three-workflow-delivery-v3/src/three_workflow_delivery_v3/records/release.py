@@ -29,6 +29,9 @@ if TYPE_CHECKING:
     from three_workflow_delivery_v3.records.release_transport import (
         ReleaseAdmissionBindings,
     )
+    from three_workflow_delivery_v3.release.python_publication import (
+        PythonPublicationResult,
+    )
 
 RELEASE_INTENT_SCHEMA = "workflow-delivery/v3/release-intent"
 OFFICIAL_PRODUCT_IDENTITY_SCHEMA = (
@@ -5098,6 +5101,7 @@ type ReleaseRecord = (
     | ExactSatisfiedFinalizationProof
     | AttemptOutcome
     | SimulationOutcome
+    | PythonPublicationResult
 )
 
 
