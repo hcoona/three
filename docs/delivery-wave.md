@@ -12,18 +12,22 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 - **Issue:** [#843](https://github.com/hcoona/three/issues/843).
 - **Accepted inputs:** the owner's request to select Python as the next V3
-  smoke, followed by Ruby; current repository governance, V3 requirements,
-  design and engineering principles; the completed npm and NuGet boundaries;
+  smoke, first proving TestPyPI and then the formal PyPI target, followed by
+  Ruby; current repository governance, V3 requirements, design and engineering
+  principles; the completed npm and NuGet boundaries;
   and the proposed minimal-package journey in #843.
 - **Advancement and outcome:** research and confirm one dependency-free Python
   smoke package's scope, channel, version projection, artifact set and
-  publication destination, evaluating TestPyPI first. Deliver confirmed
-  requirements, applicable HLD/MLD changes, a brief LLD and validation basis
+  TestPyPI-to-PyPI destination sequence. Deliver confirmed requirements,
+  applicable HLD/MLD changes, a brief LLD and validation basis
   for target-bound NBGV versioning, wheel/sdist builds, clean installed
-  consumption and eventual actual publication verification. Resolve frozen
-  PEP 440 version consumption, source builds without Git metadata, per-file
+  consumption and eventual actual publication verification at both registries.
+  Resolve frozen PEP 440 version consumption, source builds without Git metadata, per-file
   publication and partial success, destination retention and atomic
-  non-overwrite requirements, and publisher trust before design acceptance.
+  non-overwrite requirements, channel separation and publisher trust before
+  design acceptance. Require separate qualification, admission, authorization
+  and proving evidence for TestPyPI and PyPI; the full Python smoke completes
+  only after the formal PyPI publication and clean consumer audit.
   Record unsupported capabilities and any owner decisions needed; keep Live
   blocked where required guarantees cannot be established. This outcome is
   design readiness, not completion of the end-to-end smoke.
@@ -35,9 +39,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
   existing implementation, native-operation and publication gates.
 - **Exclusions:** no package/runtime/workflow implementation, package builds,
   hosted experiments, native acceptance, release dispatch, publication,
-  provisioning, authentication/access changes or cleanup. No production PyPI
-  commitment, promotion of Buddy evidence, inherited destination exceptions,
-  or reopening completed npm/NuGet smoke operations. Implementation requires
+  provisioning, authentication/access changes or cleanup. No implicit PyPI
+  publication permission, promotion of Buddy evidence, inherited destination
+  exceptions, or reopening completed npm/NuGet smoke operations. Implementation requires
   a later accepted Wave after design acceptance. Ruby remains subsequent
   scope: after Python's independent completion audit, the owner evaluates a
   separate Ruby proposal at the Wave review closing Python; this entry grants
