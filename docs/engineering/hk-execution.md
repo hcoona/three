@@ -70,6 +70,12 @@ running workers alive during cancellation; it is reserved for the short
 `Validate` summary. See GitHub's [workflow cancellation][cancellation] and
 [status-check expressions][status-checks] references. Cancellation relies on
 GitHub's job outcome, not on a final shell step completing.
+When job status conditions or the cited GitHub semantics change, or a hosted
+run contradicts this cancellation behavior, tooling maintainers recheck the
+references and relevant ordinary-run evidence with independent evidence
+review. Every merged Delivery Wave is the existing fallback review event.
+If the contract is uncertain, pause dependent changes and claims while
+preserving required checks; do not assume cancellation completed.
 Required work does not use `continue-on-error`. Jobs wait only for inputs
 they consume, so source checks, selected language tests and independently
 built platform artifacts can run concurrently. Existing supported runner and
