@@ -170,7 +170,10 @@ non-reuse, TestPyPI pruning, distinct OIDC audiences and static Hatch metadata;
 no source establishes cross-file atomicity or implemented V3 compatibility.
 The [Python LLD](../hcoona-release-smoke-python-lld.md) selects a bounded
 one-set/two-operation action and static staged metadata. Those are design
-choices whose implementation and native gates remain unpassed.
+choices whose disabled implementation is protected-delivered through
+[PR #849](https://github.com/hcoona/three/pull/849). Native acceptance,
+configuration and publication gates remain unpassed; both destinations remain
+disabled.
 
 No runtime experiment, package build, native probe, workflow dispatch,
 registry mutation or account inspection was performed for this record.
@@ -180,7 +183,9 @@ The design author rechecks the mutable service upload, filename, retention,
 index and OIDC sources when confirming the destination or selecting its
 publisher profile, and whenever contrary behavior is reported. The independent
 evidence reviewer evaluates the outcome. The Wave review selecting
-implementation is the fallback event. Material changes update this record and
+implementation is the fallback event; its source recheck completed on
+2026-09-24 as described above. Future selection changes and contrary observations
+retain these recheck triggers. Material changes update this record and
 dependent decisions before execution; uncertainty blocks only the affected
 capability. Recheck backend/build documentation when selecting or changing its
 version. The pinned repository-code finding instead requires reevaluation when
