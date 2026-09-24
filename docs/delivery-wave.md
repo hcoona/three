@@ -36,9 +36,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
   changes, manual release dispatch/rerun, remote recovery/deletion or cleanup.
   Keep TestPyPI and PyPI `live_enabled: false`. No static-token fallback,
   partial-set completion, artifact/Approval promotion, reopened npm/NuGet
-  operations or Ruby work. Each native/provisioning protocol and each
-  TestPyPI/PyPI publication requires its own later concrete authorization and
-  current-Attempt Approval. After the Python two-destination completion audit,
+  operations or Ruby work. Each native/provisioning protocol requires its own
+  later concrete authorization. Each TestPyPI/PyPI publication additionally
+  requires its own concrete grant and current-Attempt Approval.
+  After the Python two-destination completion audit,
   the owner evaluates a separate Ruby proposal at the Wave review closing
   Python; this entry grants no Ruby work.
 
