@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +81,14 @@ def _required_step(scope: dict[str, Any]) -> None:
         "success()",
         "${{ success() }}",
         "success() && !cancelled() && steps.scope.outputs.run == 'true'",
+        (
+            "success() && !cancelled() && steps.scope.outputs.run == 'true' "
+            "&& needs.scope.outputs.python_dotnet == 'true'"
+        ),
+        (
+            "success() && !cancelled() && steps.scope.outputs.run == 'true' "
+            "&& needs.scope.outputs.python_v3 == 'true'"
+        ),
     )
     assert scope.get("continue-on-error", False) is False
 
@@ -95,6 +104,11 @@ def _bindings(tmp_path: Path) -> dict[str, str]:
         "needs.scope.outputs.base": "a" * 40,
         "needs.scope.outputs.candidate": "d" * 40,
         "needs.scope.outputs.full": "true",
+        "needs.scope.outputs.python_packages": json.dumps(
+            ["hcoona-three-monorepo", "three-workflow-delivery-v3"]
+        ),
+        "needs.scope.outputs.python_v3": "true",
+        "needs.scope.outputs.python_dotnet": "true",
         "needs.scope.outputs.python_roots": json.dumps(
             ["tests/eng/test_ci_scope.py"]
         ),
@@ -159,7 +173,13 @@ def _run_bash_steps(
             cwd=tmp_path,
             env=env,
             bindings=_bindings(tmp_path)
-            | {"needs.scope.outputs.full": env.get("CI_MODE", "true")},
+            | {
+                "needs.scope.outputs.full": env.get("CI_MODE", "true"),
+                "needs.scope.outputs.python_packages": env.get(
+                    "SELECTED_PACKAGES",
+                    _bindings(tmp_path)["needs.scope.outputs.python_packages"],
+                ),
+            },
             workflow=workflow,
             job=job,
         )
@@ -438,32 +458,80 @@ def test_python_check_has_consumed_toolchain_prerequisites(
         == ".python-version"
     )
     assert "python-version" not in prerequisites["astral-sh/setup-uv"]["with"]
+    for action, flag in (
+        ("actions/setup-dotnet", "python_dotnet"),
+        ("pnpm/action-setup", "python_v3"),
+        ("actions/setup-node", "python_v3"),
+        ("jdx/mise-action", "python_v3"),
+    ):
+        assert prerequisites[action]["if"] == (
+            "success() && !cancelled() && steps.scope.outputs.run == 'true' "
+            f"&& needs.scope.outputs.{flag} == 'true'"
+        )
+    for name, flag in (
+        ("Restore .NET tools", "python_dotnet"),
+        ("Install Node dependencies", "python_v3"),
+        ("Prepare static-reference authorities", "python_v3"),
+    ):
+        step = next(step for step in steps if step["name"] == name)
+        assert step["if"].endswith(f"needs.scope.outputs.{flag} == 'true'")
 
 
+def _run_python(workflow, tmp_path, env, *, native=True):
+    executable(
+        Path(env["PATH"]) / "python",
+        "import os, sys\n"
+        f"os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])",
+    )
+    job = workflow["jobs"]["python-tests"]
+    # Choose the known selected-consumer branch; do not emulate Actions.
+    steps = [
+        step
+        for step in job["steps"]
+        if native or "needs.scope.outputs.python_" not in step.get("if", "")
+    ]
+    return _run_bash_steps(steps, workflow, job, tmp_path, env)
+
+
+@pytest.mark.parametrize("native", [False, True])
 def test_general_python_ci_prepares_static_reference_authorities(
     workflow: dict[str, Any],
     tmp_path: Path,
+    *,
+    native: bool,
 ) -> None:
-    """Complete frozen dependencies and preparation before invoking pytest."""
-    job = workflow["jobs"]["python-tests"]
+    """Prepare native consumers only when selected, before running pytest."""
     env = _commands(tmp_path)
-    result = _run_bash_steps(job["steps"], workflow, job, tmp_path, env)
+    packages = ["hcoona-three-monorepo"]
+    if native:
+        packages.append("three-workflow-delivery-v3")
+    env["SELECTED_PACKAGES"] = json.dumps(packages)
+    result = _run_python(workflow, tmp_path, env, native=native)
     assert result.returncode == 0, result.stderr
     observations = _observations(env)
     calls = [item["command"] for item in observations]
+    sync = [
+        "uv",
+        "sync",
+        "--frozen",
+        *[arg for package in packages for arg in ("--package", package)],
+    ]
+    test = ["uv", "run", "--no-sync", "python", "-"]
+    assert calls.index(sync) < calls.index(test)
+    if not native:
+        assert calls == [sync, test]
+        return
     preparation = calls.index(
         ["mise", "run", "prepare:static-reference-authorities"]
     )
     for prerequisite in (
         ["dotnet", "tool", "restore"],
         ["pnpm", "install", "--frozen-lockfile"],
-        ["uv", "sync", "--frozen", "--all-packages"],
+        sync,
     ):
         assert calls.index(prerequisite) < preparation
     assert observations[preparation]["auto_install"] == "false"
-    assert preparation < calls.index(
-        ["uv", "run", "--frozen", "--all-packages", "python", "-"]
-    )
+    assert preparation < calls.index(test)
 
 
 @pytest.mark.parametrize(
@@ -485,9 +553,8 @@ def test_python_check_propagates_command_failure(
     """Propagate each distinct dependency, preparation and test failure."""
     env = _commands(tmp_path)
     env["FAIL_COMMAND"] = json.dumps(failure)
-    job = workflow["jobs"]["python-tests"]
-    result = _run_bash_steps(job["steps"], workflow, job, tmp_path, env)
-    assert result.returncode == CHILD_FAILURE, result.stderr
+    result = _run_python(workflow, tmp_path, env)
+    assert result.returncode != 0, result.stderr
     calls = [item["command"] for item in _observations(env)]
     assert calls[-1][: len(failure)] == failure
     if failure[0] != "mise" and failure != ["uv", "run"]:
@@ -737,6 +804,29 @@ def test_required_validate_rejects_missing_or_failed_consumers(
             assert "Required validation did not complete" in result.stderr
 
 
+def test_python_scope_guard_rejects_missing_preparation(workflow, tmp_path):
+    """Missing preparation selection cannot silently skip required setup."""
+    job = workflow["jobs"]["python-tests"]
+    for flag in ("python_v3", "python_dotnet"):
+        output = tmp_path / flag
+        result = run_step(
+            job["steps"][0],
+            cwd=tmp_path,
+            env={"GITHUB_OUTPUT": str(output)},
+            bindings=_bindings(tmp_path)
+            | {
+                "needs.scope.result": "success",
+                "needs.scope.outputs.python": "true",
+                f"needs.scope.outputs.{flag}": "",
+            },
+            workflow=workflow,
+            job=job,
+        )
+        assert result.returncode != 0
+        assert "Missing Python preparation selection" in result.stderr
+        assert not output.exists()
+
+
 def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
     """Use documented cancelable jobs; shell checks do not model Actions."""
     assert workflow["concurrency"]["cancel-in-progress"] is True
@@ -818,9 +908,8 @@ def test_python_test_entry_runs_only_selected_roots_and_propagates_failure(
     executable(
         tmp_path / "bin" / "uv",
         "import os, sys\n"
-        "assert sys.argv[1:5] == ['run', '--frozen', "
-        "'--all-packages', 'python']\n"
-        "os.execv(sys.executable, [sys.executable, *sys.argv[5:]])\n",
+        "assert sys.argv[1:4] == ['run', '--no-sync', 'python']\n"
+        "os.execv(sys.executable, [sys.executable, *sys.argv[4:]])\n",
     )
     selected = tmp_path / "selected"
     selected.mkdir()

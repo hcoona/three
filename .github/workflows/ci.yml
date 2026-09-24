@@ -30,6 +30,9 @@ jobs:
       ruby: ${{ steps.select.outputs.ruby }}
       scholarly: ${{ steps.select.outputs.scholarly }}
       python_roots: ${{ steps.select.outputs.python_roots }}
+      python_packages: ${{ steps.select.outputs.python_packages }}
+      python_v3: ${{ steps.select.outputs.python_v3 }}
+      python_dotnet: ${{ steps.select.outputs.python_dotnet }}
       base: ${{ steps.select.outputs.base }}
       candidate: ${{ steps.select.outputs.candidate }}
       full: ${{ steps.select.outputs.full }}
@@ -622,9 +625,18 @@ jobs:
         env:
           SELECTION_RESULT: ${{ needs.scope.result }}
           APPLICABLE: ${{ needs.scope.outputs.python }}
+          PREPARE_V3: ${{ needs.scope.outputs.python_v3 }}
+          PREPARE_DOTNET: ${{ needs.scope.outputs.python_dotnet }}
         run: |
           case "$SELECTION_RESULT:$APPLICABLE" in
-            success:true) echo 'run=true' >> "$GITHUB_OUTPUT" ;;
+            success:true)
+              for selected in "$PREPARE_V3" "$PREPARE_DOTNET"; do
+                case "$selected" in
+                  true|false) ;;
+                  *) echo 'Missing Python preparation selection.' >&2; exit 1 ;;
+                esac
+              done
+              echo 'run=true' >> "$GITHUB_OUTPUT" ;;
             success:false) echo 'run=false' >> "$GITHUB_OUTPUT"; echo 'Not applicable to this change.' ;;
             *) echo 'Scope selection failed or omitted applicability.' >&2; exit 1 ;;
           esac
@@ -636,19 +648,19 @@ jobs:
           fetch-depth: 0
 
       - name: Setup .NET SDK
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_dotnet == 'true'
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
       - name: Set up PNPM
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 12.5.1
 
       - name: Set up Node.js
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: '24.21.0'
@@ -656,7 +668,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Set up mise, HK, and Pkl
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           experimental: true
@@ -674,16 +686,36 @@ jobs:
         with:
           cache-dependency-glob: 'uv.lock'
 
-      - name: Install dependencies
+      - name: Restore .NET tools
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_dotnet == 'true'
+        run: dotnet tool restore
+
+      - name: Install Node dependencies
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Python dependencies
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        env:
+          PYTHON_PACKAGES: ${{ needs.scope.outputs.python_packages }}
         run: |
-          set -Eeuo pipefail
-          dotnet tool restore
-          pnpm install --frozen-lockfile
-          uv sync --frozen --all-packages
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          packages = json.loads(os.environ["PYTHON_PACKAGES"])
+          if not isinstance(packages, list) or not packages or any(
+              not isinstance(package, str) or not package.strip() for package in packages
+          ):
+              raise SystemExit("Missing or invalid selected Python packages")
+          subprocess.run(["uv", "sync", "--frozen",
+                          *[arg for package in packages for arg in ("--package", package)]],
+                         check=True)
+          PY
 
       - name: Prepare static-reference authorities
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'
         env:
           MISE_TASK_RUN_AUTO_INSTALL: 'false'
         run: mise run prepare:static-reference-authorities
@@ -693,7 +725,7 @@ jobs:
         env:
           PYTHON_TEST_ROOTS: ${{ needs.scope.outputs.python_roots }}
         run: |
-          uv run --frozen --all-packages python - <<'PY'
+          uv run --no-sync python - <<'PY'
           import json
           import os
           import subprocess

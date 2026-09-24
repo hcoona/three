@@ -1259,6 +1259,7 @@ dev = [
     { name = "hatchling" },
     { name = "pyrefly" },
     { name = "pytest" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -1269,6 +1270,7 @@ dev = [
     { name = "hatchling", specifier = ">=1.25.0" },
     { name = "pyrefly", specifier = ">=1.0.0" },
     { name = "pytest", specifier = ">=8.3.4" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "ruff", specifier = "==0.16.8" },
 ]
 

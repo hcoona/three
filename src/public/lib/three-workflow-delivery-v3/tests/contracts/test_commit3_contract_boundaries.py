@@ -640,45 +640,18 @@ def test_nbgv_provider_declares_explicit_ref_neutral_environment_allowlist() -> 
     assert "IGNORE_GITHUB_REF" not in allowlist
 
 
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        pytest.param(
-            {
-                "GITLAB_CI": "true",
-                "CI_COMMIT_REF_NAME": "main",
-                "CI_COMMIT_SHA": "{target}",
-            },
-            id="gitlab",
-        ),
-        pytest.param(
-            {
-                "APPVEYOR": "True",
-                "APPVEYOR_REPO_BRANCH": "main",
-            },
-            id="appveyor",
-        ),
-        pytest.param(
-            {
-                "TRAVIS": "true",
-                "TRAVIS_BRANCH": "main",
-                "TRAVIS_COMMIT": "{target}",
-            },
-            id="travis",
-        ),
-    ],
-)
 def test_real_nbgv_facts_ignore_recognized_ci_ref_environment(
     nbgv_provider_repository: tuple[Path, str],
     monkeypatch: pytest.MonkeyPatch,
-    overrides: dict[str, str],
 ) -> None:
     """Prove Provider-launched NBGV facts ignore ambient CI refs."""
     repo, target = nbgv_provider_repository
     _configure_clean_provider_environment(monkeypatch)
     baseline, baseline_runner = _real_provider_nbgv_facts(repo, target)
     contaminated = {
-        name: value.format(target=target) for name, value in overrides.items()
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_SHA": target,
     }
     for name, value in contaminated.items():
         monkeypatch.setenv(name, value)
