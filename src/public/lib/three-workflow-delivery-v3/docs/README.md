@@ -56,14 +56,16 @@ operating guidance, not a second normative specification.
 
 ## Python Smoke Design
 
-The accepted [Python implementation Wave](../../../../../docs/delivery-wave.md#implement-the-disabled-python-v3-smoke)
-and [Issue #843](https://github.com/hcoona/three/issues/843) select TestPyPI first,
+[Issue #843](https://github.com/hcoona/three/issues/843) tracks TestPyPI first,
 then PyPI. The owner's confirmed scope is recorded in
 [`WD-PY-*`](./requirements.md#python-smoke-slice); the HLD, five MLDs and
 [Python LLD](./hcoona-release-smoke-python-lld.md) define its design.
 The [source evidence](./research/python-smoke-evidence.md) retains service
-findings and limits. The accepted Wave selects disabled implementation; native admission and
-publication remain separately gated. Design delivery is not smoke completion.
+findings and limits. The disabled implementation is protected-delivered through
+[PR #849](https://github.com/hcoona/three/pull/849). Further work requires an
+accepted [Wave entry](../../../../../docs/delivery-wave.md); native admission and
+publication remain separately gated. Both destinations remain disabled;
+implementation delivery is not the two-destination smoke completion audit.
 
 ## NuGet Second-Slice Implementation
 

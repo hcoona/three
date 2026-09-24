@@ -46,13 +46,15 @@ For the owner's next Workflow Delivery v3 task:
    to reuse the completed integration and avoid its diagnosed failure modes.
 3. Identify the selected next project, user-visible result and remaining
    requirements from the owner's instruction and current work carrier.
-   The accepted [Python implementation Wave](../../../../../docs/delivery-wave.md#implement-the-disabled-python-v3-smoke)
-   and [Issue #843](https://github.com/hcoona/three/issues/843) select Python:
+   [Issue #843](https://github.com/hcoona/three/issues/843) tracks Python:
    TestPyPI first, then production PyPI; Ruby follows Python completion.
    Start with the confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),
    HLD/five MLDs and [Python LLD](./hcoona-release-smoke-python-lld.md), with
    the [source evidence](./research/python-smoke-evidence.md) for claim limits.
-   Apply the accepted implementation scope and existing domain gates. Both
+   The disabled implementation is protected-delivered through
+   [PR #849](https://github.com/hcoona/three/pull/849). Further work requires
+   a new accepted [Wave entry](../../../../../docs/delivery-wave.md) and the
+   applicable domain gates. Both
    Python destinations remain disabled. The Python CLI and workflow implement
    local Build/Qualification and the guarded publication state machine; local
    validation does not establish native registry behavior. Prior smoke permissions and the
