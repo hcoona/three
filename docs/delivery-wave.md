@@ -34,3 +34,31 @@ ends a grant. Git and the proposing PR retain the reason and history.
   publication, native acceptance, release dispatch, credentials/access changes,
   or reactivation of spent smoke operations. Existing publication-profile
   requirements and independent review obligations remain in force.
+
+### Reduce CI feedback time and superseded work
+
+- **Issue:** [#837](https://github.com/hcoona/three/issues/837).
+- **Accepted inputs:** the owner's approval to investigate and fix the CI
+  execution and process issues identified from #823; current engineering
+  principles, general CI selection, V3 test responsibilities and retained
+  timing evidence.
+- **Advancement and outcome:** diagnose and fix cancellation of superseded
+  ordinary CI, scope Python test preparation to its selected consumers, and
+  investigate the measured V3 .NET adapter and Node provider hotspots before
+  implementing justified scenario-layer or immutable-preparation improvements.
+  Evaluate root-tool trigger granularity and dependent-candidate sequencing;
+  retain simple conservative behavior where finer mechanisms lack benefit.
+  Record confirmed fixes, bounded evidence and justified no-change decisions.
+- **Effects and delivery:** permit public-source research, read-only CI and
+  review inspection, local dependency preparation and isolated tests, ordinary
+  CI and protected Issue/PR delivery, and independent delegated review. Record
+  queue, initialization, execution, commit time and inode observations; monitor
+  CI and comments through delivery and use open-code-review-delegate before
+  each merge. Preserve native dependency ownership, complete required-check
+  results, isolated writable test state and cleanup.
+- **Exclusions:** no publication, native acceptance, release dispatch,
+  credentials/access changes, weakened gates or independent review, broad new
+  test matrix, arbitrary test-count target, duplicate dependency admission or
+  result reuse across incompatible revisions. HK 2 compatibility remains a
+  separate concern under #647/#823. New hosted experiments require a bounded
+  protocol before execution; this entry grants no new native operation.
