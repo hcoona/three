@@ -93,12 +93,12 @@ run = "python eng/scripts/sync_python_version.py"
 [tasks."test:v3"]
 description = "Run the complete Workflow Delivery v3 self-test suite"
 depends = ["prepare:static-reference-authorities"]
-run = "uv run --frozen --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests"
+run = "uv run --exact --frozen --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests"
 
 [tasks."test:python"]
 description = "Run all Python workspace test roots"
 depends = ["prepare:static-reference-authorities"]
-run = "uv run --frozen --all-packages pytest"
+run = "python eng/scripts/run_python_tests.py"
 
 [tasks."bootstrap:pwsh"]
 description = "Bootstrap the PowerShell modules"
