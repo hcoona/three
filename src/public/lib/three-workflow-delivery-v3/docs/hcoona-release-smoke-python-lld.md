@@ -25,8 +25,10 @@ not evidence of support on every Python implementation or operating system.
 A project-local NBGV `version.json` owns the smoke lineage and public-main
 projection. The Provider reads complete history/tags at the exact target,
 selects `SemVer2`, calls the existing `nbgv-python` normalization and freezes
-the canonical facts, field and exact PEP 440 value. Only an already normalized
-public version without local metadata is admitted. The future initial lineage
+the canonical facts, field and exact PEP 440 value. Normalized parseable local
+versions are valid for non-publishing CI/qualification. Release Live admission
+requires an already normalized public version without local metadata and
+rejects an ineligible projection without stripping or replacing it. The future initial lineage
 must yield a supported prerelease projection on protected main; its concrete
 version baseline is closed with the implementation descriptor, not derived
 from a run number or package-index availability. Colliding coordinates fail.
@@ -132,7 +134,10 @@ for the two-file set. The summary presents target/version, both original file
 digests, destination/profile, two sequential uploads and possible partial effects.
 The destination-bound Environment gates the trusted publisher. After native
 current-run approval verification, that job emits the immutable Authorization
-before obtaining a short-lived OIDC token. It verifies all current bindings,
+before requesting an OIDC assertion or short-lived registry token. The job
+permission exists after Environment approval; reviewed control enforces this
+later token-acquisition order, not a cryptographic artifact-bound permission.
+It verifies all current bindings,
 final Governance/configuration and fresh whole-set absence before the marker.
 
 The action discriminator is `python-distribution-set`; its closed operations
@@ -173,6 +178,8 @@ Implementation validation covers these distinct claims before native admission:
   partial/extra/yanked/conflicting pre-state blocks; second-file failure and
   ambiguous response stop; zero-action exactness; fresh state drift; marker or
   Result persistence loss; cancellation; independent Buddy/Official lineage.
+  Include successful CI qualification with a preserved valid local-version
+  projection and rejection of that same projection at Release Live admission.
 - Strict contract tests: target/version/source closure, two-artifact ordering,
   witness and native identity, authority/profile/audience/Environment mismatch,
   cross-run/purpose/schema rejection and one-shot mutation bounds. Mocked

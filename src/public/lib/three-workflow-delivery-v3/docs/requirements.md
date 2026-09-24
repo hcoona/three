@@ -271,7 +271,8 @@ isolation are separate authority boundaries and remain unchanged.
   must obtain short-lived, destination-specific Publication Capability only in
   the action-bearing publisher after Qualification, Observation, Approval
   Bundle admission, Environment approval, and durable Publication
-  Authorization. The Approval job has no publication capability and references
+  Authorization. For the npm and NuGet GitHub Packages slices, the Approval
+  job has no publication capability and references
   the one literal Approval Environment
   `workflow-delivery-v3-buddy-approval`. The publisher has an ordinary success
   dependency on that job. It is the only step-running job with effective
@@ -297,6 +298,25 @@ isolation are separate authority boundaries and remain unchanged.
   result bundle. A package-administration change after the publisher's final
   supported readback remains inside the declared sole-writer/publisher TCB; the
   design does not claim a package-administration lock.
+
+    Python `WD-PY-007` uses a destination-bound Environment-gated publisher
+    instead of that separate Approval job and GitHub Packages permission
+    layout. A credential-free preparation job persists the complete Bundle
+    before the wait. After Environment approval, the trusted publisher verifies
+    native current-run Approval and fresh Governance, validates the Bundle and
+    profile, and durably emits Authorization before requesting any OIDC
+    assertion or registry token. Only this publisher job has `id-token: write`;
+    that platform permission becomes available after Environment approval,
+    while reviewed control enforces the later Authorization-before-token order.
+    It is not cryptographic platform enforcement of artifact authorization.
+    No `packages: write` or static-token fallback is required or admitted for
+    Python. Supported registry configuration checks and protected attestations
+    replace GitHub Packages-specific association/access fields; unexposed
+    registration scope is an explicit attestation limitation. Final fresh
+    Governance, actual-profile verification and durable marker still precede
+    the isolated mutation step. Other execution zones obtain no OIDC or
+    publication authority. The npm/NuGet layout remains unchanged.
+
 - **WD-REL-009:** Immediately before the first mutating destination operation,
   the publisher must durably persist a mutation-may-have-started marker.
   The marker must directly bind the Publication Authorization, the final
@@ -876,7 +896,10 @@ They define a new Python scope, not implemented support or an operation grant.
   Model and Build Request freeze both the original facts and exact projection.
   Build and publication must not recompute NBGV, switch fields, strip local
   metadata or add run-derived suffixes. Invalid or registry-inadmissible
-  versions block before mutation. Wheel, sdist and installed metadata must
+  versions block Live admission before mutation. Valid normalized local
+  versions remain admissible technical facts for non-publishing CI and
+  qualification; registry policy must not rewrite their frozen value.
+  Wheel, sdist and installed metadata must
   agree with the frozen version under native Python identity rules.
 - **WD-PY-003:** Both distributions must retain a byte-bound source witness.
   Qualification separately proves contents, clean wheel installation and clean

@@ -397,7 +397,10 @@ and fresh Governance, persists the current-Attempt Authorization, then obtains
 OIDC credentials and publishes. This Python job layout replaces the first-slice
 separate Approval-job layout only for Python; the logical Bundle -> Approval ->
 Authorization -> marker order and scalar terminal contract are unchanged.
-Only the Environment-gated publisher has `id-token: write`; its reviewed control
+Only the Environment-gated publisher has `id-token: write`. That job permission
+is available after Environment approval; reviewed control enforces durable
+Authorization before obtaining an OIDC assertion or registry token. It is not
+a platform claim that OIDC binds the approved artifacts. Its reviewed control
 executes no target build code. Approval is intent confirmation, not an
 independent security review. No static token or broader credential fallback is
 allowed. Zero-action finalization schedules no Environment job or token flow.
@@ -477,6 +480,10 @@ Unknown, partial, conflicting, or unprovable state is not a zero-action success.
 
 ### Action-Bearing Approval
 
+This job layout applies to npm/NuGet GitHub Packages. Python uses the
+[Python Governance layout](#python-smoke-governance) under `WD-REL-008`,
+retaining the same logical approval and authorization bindings.
+
 When the Publication Snapshot contains the one permitted action, Release
 prepares one immutable Approval Bundle before the Environment wait. The bundle
 closes:
@@ -526,6 +533,11 @@ complete validation and Publication Authorization, followed by publisher
 revalidation.
 
 ### Publisher
+
+The permission and separate-job layout in this subsection is for npm/NuGet
+GitHub Packages; Python uses its destination-bound Environment and OIDC
+layout above. Final authorization, profile, Governance and marker checks
+remain common obligations.
 
 The publisher has an ordinary success dependency on the Approval job. It:
 
@@ -797,11 +809,16 @@ Governance integration fails closed when:
   actual pinned runtime configuration differs from the profile;
 - the action-bearing Approval Bundle or any transitively referenced Snapshot,
   reviewer, artifact, action, or resource binding is missing or inconsistent;
-- the Approval job can publish or the publisher can start without its successful
-  Publication Authorization;
+- a GitHub Packages Approval job can publish or its publisher can start without
+  the successful separate Approval job and Publication Authorization;
+- a Python publisher obtains an OIDC assertion/token before its native
+  Environment Approval and durable current-Attempt Authorization;
 - any step-running job other than the publisher has effective
   `packages: write`;
-- the publisher receives a PAT or `id-token: write`;
+- a publisher receives a static-token/PAT fallback, or a GitHub Packages
+  publisher receives `id-token: write`;
+- a nonpublisher Python job receives `id-token: write` or any Python job
+  receives `packages: write`;
 - protected Governance is missing, unreadable, malformed, expired, disabled,
   binding-mismatched, or touched after eligibility;
 - Governance freshness requires equality of unrelated `main` commits rather

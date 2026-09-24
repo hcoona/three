@@ -110,9 +110,10 @@ and obtains full-history NBGV facts once. It calls `nbgv-python`'s supported
 normalization function for the configured field, retains that field and raw
 facts, and records the exact adapter/tool versions. `packaging` supplies name,
 version and distribution-filename identity rules; a handwritten PEP 440 parser
-is not a second authority. The smoke admits only a normalized public PEP 440
-version without a local component, and fails rather than rewriting a projection
-which does not already meet that contract. A project-local NBGV lineage must
+is not a second authority. The Model admits normalized parseable PEP 440
+versions, including local components for non-publishing CI/qualification.
+Release Live admission separately requires a public version without a local
+component and fails rather than rewriting an ineligible frozen projection. A project-local NBGV lineage must
 include the smoke's version-affecting inputs; unrelated root path filters must
 not silently determine its release height.
 

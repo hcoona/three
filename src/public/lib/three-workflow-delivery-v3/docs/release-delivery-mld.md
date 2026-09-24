@@ -189,7 +189,9 @@ historical NuGet packages cannot satisfy those external gates.
 `WD-PY-*` uses one Release Unit, independent TestPyPI Buddy and PyPI Official
 Attempts, and same-revision protected-main control. Each Attempt independently
 builds and qualifies one original wheel/sdist pair. The native projection and
-source witness freeze before Build. TestPyPI proving gates the later Official
+source witness freeze before Build. Live admission rejects registry-inadmissible
+versions, including a local component, without rewriting the frozen value;
+non-publishing CI/qualification can consume valid normalized local versions. TestPyPI proving gates the later Official
 journey but supplies no Official artifact, Approval or Evidence.
 
 ### Python Observation and Set Action
@@ -876,6 +878,10 @@ exact action.
 
 ### Approval Job and Publication Authorization
 
+This separate-job topology applies to npm/NuGet GitHub Packages. Python
+performs the same logical post-approval admission within its Environment-gated
+publisher under `WD-REL-008` and [Python Governance](./governance-integration-mld.md#python-smoke-governance).
+
 The Approval job references the literal
 `workflow-delivery-v3-buddy-approval` Environment. It:
 
@@ -911,6 +917,10 @@ performs the complete semantic admission, and the publisher independently
 revalidates the resulting closure.
 
 ### Publisher Authority
+
+The job dependency and repository-token permissions below apply to npm/NuGet
+GitHub Packages. Python uses the OIDC layout above; the final authorization,
+profile, Governance and marker requirements remain common.
 
 The publisher has an ordinary success dependency on the Approval job. It is the
 only step-running job with effective `packages: write`.
@@ -1491,9 +1501,12 @@ Attempt processing fails closed when:
   passed the bounded destination acceptance;
 - the Publication Snapshot contains more than one first-slice action;
 - the action-bearing Approval Bundle is incomplete;
-- the Approval job lacks approval or cannot emit a valid Publication
-  Authorization;
-- a publisher starts without ordinary success dependency on the Approval job;
+- current-Attempt native Approval or a valid durable Publication Authorization
+  is missing;
+- a GitHub Packages publisher starts without ordinary success dependency on
+  the separate Approval job;
+- a Python publisher requests an OIDC assertion/token before Environment
+  approval and durable Authorization;
 - any step-running nonpublisher job has effective `packages: write`;
 - the publisher's final Governance or authorization closure check fails;
 - the mutation marker cannot be persisted;
