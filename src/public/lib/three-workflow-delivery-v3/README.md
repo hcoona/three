@@ -14,6 +14,14 @@ New sessions start at the [handoff entry](docs/agent-handoff.md#starting-a-new-s
 The [NuGet delivery retrospective](docs/research/nuget-delivery-retrospective.md)
 explains reusable integration lessons and the next-task guide.
 
+The next slice is the separate `hcoona-release-smoke-python` package. Its
+[Python design entry](docs/README.md#python-smoke-design) routes the confirmed
+requirements, HLD/MLDs, brief LLD and source evidence for TestPyPI Buddy followed
+by PyPI Official. This is accepted design, not implemented support; the
+[delivery gates](docs/migration-strategy.md#python-smoke-delivery) keep
+implementation, native admission and publication separately authorized.
+The npm and NuGet smoke objectives remain complete.
+
 The old `governance run-fixed-acceptance-probe` command and fixed-coordinate
 Python producer APIs are retired. `governance admit-acceptance-evidence` and
 reviewer inspection still read historical evidence; the original bytes and
