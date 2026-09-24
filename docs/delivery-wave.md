@@ -8,41 +8,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Implement the disabled Python V3 smoke
-
-- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** owner-confirmed `WD-PY-*`, the accepted HLD, five MLDs
-  and brief Python LLD delivered through #845; dated public source findings;
-  existing V3 runtime; and the completed npm/NuGet boundaries. The owner
-  approved the [bounded implementation proposal](https://github.com/hcoona/three/issues/843#issuecomment-5822195747).
-- **Advancement and outcome:** implement `hcoona-release-smoke-python` and its
-  target-bound Python Provider/Model, frozen static-metadata wheel/sdist Build,
-  independent content and clean consumer Qualification, bounded
-  one-set/two-upload Release state, one-shot HTTP profile, scalar terminal
-  evidence and destination-specific disabled Governance/workflow integration.
-  Validate with scenario, contract and local integration tests, root HK and
-  normal hooks; independently review and protected-deliver a coherent disabled
-  implementation. Close exact tool versions, record discriminators, workflow
-  paths and staged-build contracts before execution. Recheck relied-on mutable
-  service/build interfaces and preserve current authority lineage.
-- **Effects and delivery:** permit local dependency preparation,
-  credential-free package builds and isolated consumers/tests,
-  documentation/runtime/workflow changes, ordinary Issue/PR/check operations
-  and ordinary CI, protected delivery, and independent delegated domain,
-  record, evidence and OCR review. Hosted ordinary CI may run the selected
-  local validation; it is not native registry acceptance or release dispatch.
-- **Exclusions:** no registry publication or native acceptance, OIDC/token
-  requests, account/project/Environment provisioning, authentication/access
-  changes, manual release dispatch/rerun, remote recovery/deletion or cleanup.
-  Keep TestPyPI and PyPI `live_enabled: false`. No static-token fallback,
-  partial-set completion, artifact/Approval promotion, reopened npm/NuGet
-  operations or Ruby work. Each native/provisioning protocol requires its own
-  later concrete authorization. Each TestPyPI/PyPI publication additionally
-  requires its own concrete grant and current-Attempt Approval.
-  After the Python two-destination completion audit,
-  the owner evaluates a separate Ruby proposal at the Wave review closing
-  Python; this entry grants no Ruby work.
-
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
