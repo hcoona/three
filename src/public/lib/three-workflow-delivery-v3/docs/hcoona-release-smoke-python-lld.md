@@ -6,8 +6,10 @@ This design realizes confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice)
 the [HLD](./high-level-design.md#python-smoke-extension) and its five MLDs.
 The V3 maintainer authors and maintains this carrier; implementers and reviewers
 use it to close the Python slice's concrete contracts without turning the MLDs
-into command inventories. It is design-only. The accepted design Wave does not
-authorize implementation, package builds or external operations.
+into command inventories. It specifies design, not implemented support. The
+[accepted Wave](../../../../../docs/delivery-wave.md#implement-the-disabled-python-v3-smoke)
+authorizes disabled implementation and local validation; native operations,
+configuration changes and publication remain separately gated.
 
 The [source record](./research/python-smoke-evidence.md) owns service findings
 and limits. The [migration policy](./migration-strategy.md#python-smoke-delivery)
