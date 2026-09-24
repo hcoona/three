@@ -64,6 +64,12 @@ scholarly-test job results. Its short result guard rejects failed, skipped,
 missing or canceled results, including workflow cancellation. Both workers
 retain explicit successful non-applicability and run independently; this
 summary does not move project tests back into HK or precede language jobs.
+Worker jobs use `!cancelled()` so failed selection still reaches the scope
+guard and superseded runs remain cancelable. Job-level `always()` would keep
+running workers alive during cancellation; it is reserved for the short
+`Validate` summary. See GitHub's [workflow cancellation][cancellation] and
+[status-check expressions][status-checks] references. Cancellation relies on
+GitHub's job outcome, not on a final shell step completing.
 Required work does not use `continue-on-error`. Jobs wait only for inputs
 they consume, so source checks, selected language tests and independently
 built platform artifacts can run concurrently. Existing supported runner and
@@ -129,3 +135,6 @@ relying on that old mitigation for release hardening, the tooling maintainer
 must verify the actual command, installed tools, and result in the intended
 Windows environment. Any change to integration behavior remains separate
 from this record relocation.
+
+[cancellation]: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation
+[status-checks]: https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions
