@@ -8,6 +8,41 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Define the Python V3 smoke scope and destination
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the owner's request to select Python as the next V3
+  smoke, followed by Ruby; current repository governance, V3 requirements,
+  design and engineering principles; the completed npm and NuGet boundaries;
+  and the proposed minimal-package journey in #843.
+- **Advancement and outcome:** research and confirm one dependency-free Python
+  smoke package's scope, channel, version projection, artifact set and
+  publication destination, evaluating TestPyPI first. Deliver confirmed
+  requirements, applicable HLD/MLD changes, a brief LLD and validation basis
+  for target-bound NBGV versioning, wheel/sdist builds, clean installed
+  consumption and eventual actual publication verification. Resolve frozen
+  PEP 440 version consumption, source builds without Git metadata, per-file
+  publication and partial success, destination retention and atomic
+  non-overwrite requirements, and publisher trust before design acceptance.
+  Record unsupported capabilities and any owner decisions needed; keep Live
+  blocked where required guarantees cannot be established. This outcome is
+  design readiness, not completion of the end-to-end smoke.
+- **Effects and delivery:** permit public-source research, read-only public
+  platform inspection, documentation validation, ordinary Issue/PR delivery
+  and CI, and independent delegated domain, record and evidence review. Recheck
+  mutable destination facts at confirmation and before later implementation
+  authorization. Preserve requirements confirmation, design ordering and
+  existing implementation, native-operation and publication gates.
+- **Exclusions:** no package/runtime/workflow implementation, package builds,
+  hosted experiments, native acceptance, release dispatch, publication,
+  provisioning, authentication/access changes or cleanup. No production PyPI
+  commitment, promotion of Buddy evidence, inherited destination exceptions,
+  or reopening completed npm/NuGet smoke operations. Implementation requires
+  a later accepted Wave after design acceptance. Ruby remains subsequent
+  scope: after Python's independent completion audit, the owner evaluates a
+  separate Ruby proposal at the Wave review closing Python; this entry grants
+  no Ruby work.
+
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
