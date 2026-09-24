@@ -22,7 +22,6 @@ from three_workflow_delivery_v3.canonical import (
 from three_workflow_delivery_v3.catalogs import catalog_digest
 from three_workflow_delivery_v3.repository.node_provider import (
     AUTHORITATIVE_REMOTE,
-    NBGV_ENVIRONMENT_ALLOWLIST,
     TAG_REFSPEC,
     CheckoutMaterialization,
     NodeProviderResult,
@@ -923,10 +922,10 @@ def test_provider_preserves_simulation_run_attempt(
     assert binding_document["run-attempt"] == RUN_ATTEMPT
 
 
-def test_provider_invokes_installed_node_nbgv_api_without_cli_fallback(
+def test_provider_filters_environment_before_loading_node_nbgv_api(
     tmp_path: Path,
 ) -> None:
-    """Import the installed API and never invoke the NBGV CLI."""
+    """Execute the emitted program against an import-time environment probe."""
     repo, project, runner, binding = _scenario(tmp_path)
 
     provide_node_repository_facts(
@@ -938,11 +937,48 @@ def test_provider_invokes_installed_node_nbgv_api_without_cli_fallback(
     )
 
     assert len(runner.nbgv_calls) == 1
-    program = runner.nbgv_calls[0][3]
-    assert '"IGNORE_GITHUB_REF": "true"' in program
-    assert "PATH" in NBGV_ENVIRONMENT_ALLOWLIST
-    assert "await import('nerdbank-gitversioning')" in program
-    assert "nbgv.getVersion(process.cwd())" in program
+    probe = tmp_path / "node-probe"
+    module = probe / "node_modules/nerdbank-gitversioning"
+    module.mkdir(parents=True)
+    (module / "package.json").write_text(
+        '{"type":"module","exports":"./index.js"}'
+    )
+    (module / "index.js").write_text(
+        "const environment = {...process.env};\n"
+        "export async function getVersion(cwd) { return {environment, cwd}; }\n"
+    )
+    forbidden = {
+        *_NBGV_CI_VARIABLES,
+        "TRAVIS",
+        "TRAVIS_BRANCH",
+        "THREE_UNKNOWN_ENVIRONMENT",
+        "github_ref",
+    }
+    environment = {
+        **os.environ,
+        **dict.fromkeys(forbidden, "untrusted-ref"),
+        "pAtH": "allowed-mixed-case",
+        "IGNORE_GITHUB_REF": "false",
+        "DOTNET_NOLOGO": "false",
+        "DOTNET_CLI_TELEMETRY_OPTOUT": "false",
+    }
+    completed = subprocess.run(  # noqa: S603 - Execute the trusted emitted Node program.
+        runner.nbgv_calls[0],
+        cwd=probe,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    observed = json.loads(completed.stdout)
+    imported = observed["environment"]
+    assert forbidden.isdisjoint(imported)
+    assert imported["PATH"] == os.environ["PATH"]
+    assert imported["pAtH"] == "allowed-mixed-case"
+    assert imported["IGNORE_GITHUB_REF"] == "true"
+    assert imported["DOTNET_NOLOGO"] == "1"
+    assert imported["DOTNET_CLI_TELEMETRY_OPTOUT"] == "1"
+    assert observed["cwd"] == str(probe)
     assert all(
         command[:2] != ("nbgv", "get-version") for command, _ in runner.commands
     )
@@ -1679,69 +1715,10 @@ def neutral_nbgv_baseline(
     )
 
 
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        pytest.param(
-            {
-                "GITHUB_ACTIONS": "true",
-                "GITHUB_REF": "refs/heads/main",
-                "GITHUB_SHA": "{target}",
-            },
-            id="github",
-        ),
-        pytest.param(
-            {
-                "GITLAB_CI": "true",
-                "CI_COMMIT_REF_NAME": "main",
-                "CI_COMMIT_SHA": "{target}",
-            },
-            id="gitlab",
-        ),
-        pytest.param(
-            {
-                "SYSTEM_TEAMPROJECTID": "project",
-                "BUILD_SOURCEBRANCH": "refs/heads/main",
-            },
-            id="azure",
-        ),
-        pytest.param(
-            {
-                "APPVEYOR": "True",
-                "APPVEYOR_REPO_BRANCH": "main",
-            },
-            id="appveyor",
-        ),
-        pytest.param(
-            {
-                "BUILD_VCS_NUMBER": "{target}",
-                "BUILD_GIT_BRANCH": "refs/heads/main",
-            },
-            id="teamcity",
-        ),
-        pytest.param(
-            {
-                "JENKINS_URL": "https://jenkins.example.invalid/",
-                "GIT_COMMIT": "{target}",
-                "GIT_LOCAL_BRANCH": "main",
-            },
-            id="jenkins",
-        ),
-        pytest.param(
-            {
-                "CIRCLECI": "true",
-                "CIRCLE_BRANCH": "main",
-                "CIRCLE_SHA1": "{target}",
-            },
-            id="circle",
-        ),
-    ],
-)
 def test_detached_target_nbgv_facts_ignore_conflicting_ci_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     neutral_nbgv_baseline: _NeutralNbgvBaseline,
-    overrides: dict[str, str],
 ) -> None:
     """Keep exact NBGV facts independent of ambient cloud-build refs."""
     baseline = neutral_nbgv_baseline
@@ -1766,8 +1743,12 @@ def test_detached_target_nbgv_facts_ignore_conflicting_ci_environment(
 
     assert _read_detached_head(repo) == expected_head
 
-    for name, value in overrides.items():
-        monkeypatch.setenv(name, value.format(target=baseline.target))
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_SHA": baseline.target,
+    }.items():
+        monkeypatch.setenv(name, value)
     assert _read_detached_head(repo) == expected_head
     conflicting_runner = _RecordingSubprocessRunner()
     conflicting = provide_node_repository_facts(
