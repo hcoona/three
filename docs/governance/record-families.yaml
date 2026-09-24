@@ -266,6 +266,15 @@ families:
     failure_mode: Documentation routing changes alter the frozen package artifact or mix proving authority into its
       product purpose.
     review_point: Changes to this interface or its owning project records
+  - id: python-smoke-interface
+    concern: Python smoke-package purpose and installed marker API
+    producer: Project maintainers
+    maintainer: Repository owner
+    consumers:
+      - Package users and V3 reviewers confirming the installed Python API and smoke-only scope
+    creation_trigger: The selected Python smoke package needs a minimal product interface.
+    failure_mode: Readers infer production support or confuse the marker API with publication authority.
+    review_point: Changes to the Python smoke purpose or installed API
   - id: shared-engineering
     concern: Shared engineering principles, workspace, compatibility, HK and bounded agent execution guidance
     producer: Repository contributors
@@ -605,6 +614,13 @@ bindings:
     state: current
     carrier: repository-file
     path: src/public/lib/hcoona-release-smoke-npm/README.md
+    format: markdown
+  - id: python-smoke-interface
+    family: python-smoke-interface
+    namespace: src/public/lib/hcoona-release-smoke-python
+    state: current
+    carrier: repository-file
+    path: src/public/lib/hcoona-release-smoke-python/README.md
     format: markdown
   - id: shared-engineering
     family: shared-engineering

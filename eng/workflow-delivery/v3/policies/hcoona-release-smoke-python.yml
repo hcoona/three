@@ -1,0 +1,13 @@
+schema: workflow-delivery/v3/python-release-policy
+release-unit: hcoona-release-smoke-python
+quality:
+  - python/distribution-contents-v1
+  - python/wheel-install-import-v1
+  - python/sdist-build-install-import-v1
+channels:
+  buddy:
+    destination: python/testpypi-v1
+    governance: .github/workflow-delivery/governance/hcoona-release-smoke-python-testpypi.json
+  official:
+    destination: python/pypi-v1
+    governance: .github/workflow-delivery/governance/hcoona-release-smoke-python-pypi.json

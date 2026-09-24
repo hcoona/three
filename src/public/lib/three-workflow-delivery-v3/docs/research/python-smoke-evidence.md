@@ -125,6 +125,34 @@ They establish no existing registration or permission in this repository. No
 account, Environment, trusted-publisher registration or token was inspected or
 changed by this research.
 
+### Hosted Runtime Permission Boundary
+
+The implementation source recheck on 2026-09-24 includes GitHub's
+[App permission matrix](https://docs.github.com/en/rest/authentication/permissions-required-for-github-apps)
+and [workflow token permissions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions).
+Repository invitations/teams require Administration read, Environment
+variables/secrets require Environments read, and repository Actions variables
+require Variables read. Those categories are not available workflow
+`GITHUB_TOKEN` permission keys. Collaborator inventory is Metadata read;
+workflow review history and Environment identity use Actions read. These are
+source findings, not observed successful or denied calls in this slice.
+
+The implementation therefore preserves the accepted protected configuration
+attestation/runtime freshness split. A normal job does not enumerate the
+administrative configuration or substitute an empty inventory on failure.
+The [Python LLD](../hcoona-release-smoke-python-lld.md#hosted-integration)
+states the remaining runtime and attestation responsibilities. The later
+separately authorized platform validation must prove the actual endpoints and
+native approval/deployment binding with the normal job token.
+
+GitHub's [hosted-runner communication requirements](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#communication-requirements-for-github-hosted-runners)
+list `*.actions.githubusercontent.com` for retrieving OIDC tokens. The
+[OIDC environment-variable contract](https://docs.github.com/en/actions/reference/security/oidc#requesting-the-jwt-using-environment-variables)
+provides `ACTIONS_ID_TOKEN_REQUEST_URL` and its request token. These sources
+support using that supplied HTTPS URL with the documented hosted-runner host
+family and selected audience. The JWT issuer is a separate concept. No OIDC
+request was made to establish this source finding.
+
 ## Decision Impact and Limits
 
 The owner [confirmed the requirements packet](https://github.com/hcoona/three/issues/843#issuecomment-5822043601)
@@ -136,8 +164,8 @@ sole-writer/operator Approval boundary. Acceptance is an owner decision, not a
 new service finding. It does not turn the TestPyPI dependency into a documented
 guarantee or promote finite future probes into universal proof.
 
-The design author re-read the cited service/build sources on 2026-09-24 when
-selecting the design. They still support one-file upload, PyPI filename
+The design and implementation source rechecks re-read the cited service/build
+sources on 2026-09-24 when selecting the design and concrete profile. They still support one-file upload, PyPI filename
 non-reuse, TestPyPI pruning, distinct OIDC audiences and static Hatch metadata;
 no source establishes cross-file atomicity or implemented V3 compatibility.
 The [Python LLD](../hcoona-release-smoke-python-lld.md) selects a bounded

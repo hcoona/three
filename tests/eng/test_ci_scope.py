@@ -71,7 +71,7 @@ LEGACY_RELEASE_TESTS = "tests/eng/test_legacy_release_contract.py"
         (
             "src/public/lib/nbgv-python/src/nbgv_python/cli.py",
             {"python", "azureauth"},
-            {NBGV_TESTS, AZURE_TESTS},
+            {NBGV_TESTS, AZURE_TESTS, V3_TESTS},
         ),
         (
             "src/private/app/workflow-delivery-v3-nuget-consumer/Program.cs",
@@ -158,6 +158,20 @@ def test_shared_tool_inputs_select_native_consumers_and_full_is_explicit():
     assert empty["python_v3"] is False
 
 
+def test_full_python_runner_change_selects_every_configured_test_root():
+    """The shared preparation entry is consumed by all configured suites."""
+    selected = scope.select(
+        ROOT, ("eng/scripts/run_python_tests.py",), base="HEAD"
+    )
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    assert (
+        selected["python_roots"]
+        == config["tool"]["pytest"]["ini_options"]["testpaths"]
+    )
+    assert selected["python_dotnet"] is True
+    assert selected["python_v3"] is True
+
+
 @pytest.mark.parametrize(
     ("paths", "packages", "dotnet", "v3"),
     [
@@ -177,6 +191,16 @@ def test_shared_tool_inputs_select_native_consumers_and_full_is_explicit():
         (
             (scope.V3 + "/tests/test_example.py",),
             {"three-workflow-delivery-v3"},
+            True,
+            True,
+        ),
+        (
+            ("src/public/lib/nbgv-python/src/nbgv_python/cli.py",),
+            {
+                "nbgv-python",
+                "azureauth-credprovider-keyring",
+                "three-workflow-delivery-v3",
+            },
             True,
             True,
         ),

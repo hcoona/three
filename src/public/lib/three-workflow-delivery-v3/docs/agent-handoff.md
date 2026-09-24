@@ -53,7 +53,9 @@ For the owner's next Workflow Delivery v3 task:
    HLD/five MLDs and [Python LLD](./hcoona-release-smoke-python-lld.md), with
    the [source evidence](./research/python-smoke-evidence.md) for claim limits.
    Apply the accepted implementation scope and existing domain gates. Both
-   Python destinations remain disabled; prior smoke permissions and the
+   Python destinations remain disabled. The Python CLI and workflow implement
+   local Build/Qualification and the guarded publication state machine; local
+   validation does not establish native registry behavior. Prior smoke permissions and the
    implementation grant do not authorize native operations or publication.
 
 Recovery uses repository records and linked GitHub carriers. A prior

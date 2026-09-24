@@ -813,12 +813,17 @@ class MissingFirstSliceReleasePolicyError(MissingFirstSliceAuthoringError):
 def _validate_slice_descriptor_inventory(
     descriptors: tuple[ReleaseUnitDescriptor, ...],
 ) -> None:
-    """Keep discovery closed to two independently registered units."""
+    """Keep discovery closed to the independently registered slice paths."""
+    registered_units = {
+        FIRST_SLICE_RELEASE_UNIT,
+        NUGET_RELEASE_UNIT,
+        "hcoona-release-smoke-python",
+    }
+    registered_paths = {
+        f"src/public/lib/{unit}/{RELEASE_UNIT_BASENAME}": unit
+        for unit in registered_units
+    }
     for descriptor in descriptors:
-        registered_paths = {
-            f"src/public/lib/{unit}/{RELEASE_UNIT_BASENAME}": unit
-            for unit in (FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT)
-        }
         if (
             descriptor.path in registered_paths
             and registered_paths[descriptor.path] != descriptor.release_unit
@@ -831,8 +836,7 @@ def _validate_slice_descriptor_inventory(
             / RELEASE_UNIT_BASENAME
         ).as_posix()
         if (
-            descriptor.release_unit
-            not in {FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT}
+            descriptor.release_unit not in registered_units
             or descriptor.path != expected
         ):
             message = (

@@ -51,6 +51,7 @@ _REPOSITORY_ONLY_PREFIXES = (
     "src/private/app/workflow-delivery-v3-nuget-consumer/",
     "src/private/lib/scholarly-publication/",
     "src/public/lib/hcoona-release-smoke-github-packages/",
+    "src/public/lib/hcoona-release-smoke-python/",
     "tests/",
 )
 _REPOSITORY_ONLY_PATHS = frozenset(

@@ -41,6 +41,7 @@ PYTHON_INPUTS = {
     "conftest.py",
     "pytest.ini",
     "eng/scripts/sync_python_version.py",
+    "eng/scripts/run_python_tests.py",
 }
 DOTNET_INPUTS = {
     ".editorconfig",

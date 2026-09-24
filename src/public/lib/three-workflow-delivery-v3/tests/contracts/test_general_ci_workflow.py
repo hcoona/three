@@ -12,6 +12,9 @@ from typing import Any
 
 import pytest
 import yaml
+from three_workflow_delivery_v3.repository.python_provider import (
+    PYTHON_TOOLCHAIN,
+)
 
 from .workflow_shell import executable, resolve, run_step
 
@@ -458,6 +461,10 @@ def test_python_check_has_consumed_toolchain_prerequisites(
         == ".python-version"
     )
     assert "python-version" not in prerequisites["astral-sh/setup-uv"]["with"]
+    assert (
+        prerequisites["astral-sh/setup-uv"]["with"]["version"]
+        == dict(PYTHON_TOOLCHAIN)["uv"]
+    )
     for action, flag in (
         ("actions/setup-dotnet", "python_dotnet"),
         ("pnpm/action-setup", "python_v3"),

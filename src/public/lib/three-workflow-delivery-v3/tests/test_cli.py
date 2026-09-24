@@ -17,6 +17,7 @@ from typing import Self, cast
 from urllib.request import Request
 
 import pytest
+import yaml
 from three_workflow_delivery_v3 import cli as cli_module
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
@@ -626,17 +627,70 @@ def test_catalog_command_emits_exact_static_catalog(
     assert set(output["build-definitions"]) == {
         "node/npm-package-v1",
         "dotnet/nuget-package-v1",
+        "python/distribution-set-v1",
     }
     assert set(output["quality-presets"]) == {
         "node/hcoona-release-smoke-npm-v1",
         "dotnet/hcoona-release-smoke-github-packages-v1",
+        "python/hcoona-release-smoke-python-v1",
     }
     assert set(output["destination-definitions"]) == {
         "npm/github-packages-hcoona-three-v1",
         "npm/npmjs-public-v1",
         "nuget/github-packages-hcoona-three-v1",
+        "python/testpypi-v1",
+        "python/pypi-v1",
     }
-    assert output["catalog-digest"].startswith("sha256:")
+    build = output["build-definitions"]["python/distribution-set-v1"]
+    assert build["operation"] == "python-distribution-set"
+    assert build["output_kinds"] == ["python-wheel", "python-sdist"]
+    assert build["required_native_projections"] == ["pep440Version"]
+    assert build["capability_requirements"] == []
+    required = output["quality-presets"][
+        "python/hcoona-release-smoke-python-v1"
+    ]["required"]
+    assert required == [
+        "python/distribution-contents-v1",
+        "python/wheel-install-import-v1",
+        "python/sdist-build-install-import-v1",
+    ]
+    assert [
+        output["quality-definitions"][key]["subject"] for key in required
+    ] == [
+        "python-distribution-set",
+        "python-wheel",
+        "python-sdist",
+    ]
+    policy_path = output["release-policies"]["hcoona-release-smoke-python"][
+        "path"
+    ]
+    policy = yaml.safe_load(
+        (REPO_ROOT / policy_path).read_text(encoding="utf-8")
+    )
+    assert policy["quality"] == required
+    assert set(policy["channels"]) == {"buddy", "official"}
+    for channel, destination, origin in (
+        ("buddy", "python/testpypi-v1", "https://test.pypi.org/legacy/"),
+        ("official", "python/pypi-v1", "https://upload.pypi.org/legacy/"),
+    ):
+        binding = policy["channels"][channel]
+        assert set(binding) == {"destination", "governance"}
+        assert binding["destination"] == destination
+        definition = output["destination-definitions"][destination]
+        assert definition["registry"] == origin
+        assert definition["supported_channels"] == [channel]
+        assert definition["capability_requirements"] == [
+            "python/trusted-publishing-oidc-v1"
+        ]
+        assert (
+            definition["live_mutation_status"]
+            == "requires-python-native-acceptance"
+        )
+    assert output["capabilities"]["python/trusted-publishing-oidc-v1"][
+        "github_permissions"
+    ] == [["contents", "read"], ["id-token", "write"]]
+    digest = output.pop("catalog-digest")
+    assert digest == canonical_sha256(output)
 
 
 def test_validate_authoring_command_reports_exact_first_slice(
