@@ -636,6 +636,32 @@ The brief LLD identifies concrete definition and Evidence bindings, cache and
 source isolation, and the consumer invocation. This extension does not migrate
 the production CI line or require a general .NET policy framework.
 
+## Python Smoke Qualification
+
+The affected-system Plan closes both wheel and sdist for `WD-PY-001` through
+`WD-PY-003`, using admitted candidate-bound facts, the frozen Python projection
+and pinned Ubuntu/CPython 3.14 toolchain. Changes to the smoke, version lineage,
+projection adapter, workspace/lock/backend or staging/control inputs reach the
+unit. Unknown classification blocks scope closure. Build and all consumers
+receive no publication authority.
+
+Three required obligations remain separately decidable:
+
+| Obligation            | Evidence                                                                                                                                                                                                                           |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Distribution contents | Exactly the two declared original files; native names/version/tags; dependency-free metadata; matching canonical witness in both; static self-contained sdist build metadata and no undeclared hook or workspace substitution.     |
+| Clean wheel consumer  | Fresh environment outside the checkout with empty cache installs the exact qualified wheel, validates installed metadata/witness and calls `project_id()`.                                                                         |
+| Clean sdist consumer  | A separate fresh environment outside Git rebuilds and installs the original qualified sdist with declared backend prerequisites and no NBGV/.NET or ambient version variable; it verifies the same installed metadata/witness/API. |
+
+The sdist consumer's rebuilt wheel is evidence, never a replacement for the
+original wheel in the publication set. Native metadata and logical archive
+bytes, not GitHub transport basenames, determine identity. Missing or malformed
+Evidence cannot become a passing Decision. Adapters retain actual artifact
+references, target/version bindings and sanitized command results. Release
+reuses these definitions but builds its own set and forms its own Evidence.
+Destination readback/consumption and native non-replacement acceptance remain
+Release/native obligations, not CI capabilities established by local success.
+
 ## CI Qualification Plan
 
 ### Obligation Identity

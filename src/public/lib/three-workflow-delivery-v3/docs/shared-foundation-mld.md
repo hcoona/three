@@ -515,6 +515,49 @@ which channel selects it, which Release Unit is delivered, whether a
 Publication Action is authorized, or how a failure affects the business
 verdict.
 
+## Python Mechanism Extension
+
+The Foundation provides Python Provider, frozen-input staging, native archive
+inspection and clean consumer mechanisms under the
+[Python Model](./repository-model-release-unit-mld.md#python-smoke-model).
+Use Python standards and maintained `packaging`/metadata readers for native
+name, version and filename semantics, Hatchling for the declared PEP 517 build,
+and UV for isolated build/consumer execution with workspace sources disabled.
+No custom resolver, NBGV version override, registry transaction service or
+universal publication aggregate is added.
+
+One Build Invocation closes a fixed two-artifact output set. Each original
+wheel/sdist has its own immutable logical digest and transport reference; its
+variant and target witness are validated before admission. Archive readers
+reject duplicate/path-traversing members, ambiguous metadata, unexpected output
+formats, conflicting names/versions and missing witnesses. Readers do not
+execute archive code. Mechanical strict tagged Python records cannot be
+admitted through npm or NuGet variants.
+
+Staging consumes the exact Build Request, copies only the admitted source
+closure, materializes static version metadata and the canonical witness, then
+builds with the declared backend. The sdist includes that same static manifest,
+source payload and witness; its build requirements resolve independently of
+workspace paths. The adapter retains transformation/input digests and actual
+backend output metadata. Build cannot use an environment-sourced version or
+invoke NBGV. Content inspection and clean consumer execution are distinct
+mechanisms; only the latter executes package/build code, without publication
+authority.
+
+HTTP clients expose supported Simple Index metadata, exact file downloads,
+OIDC exchange and one-file upload as bounded mechanical operations. Mutating
+uploads have no resend/retry, skip-existing or redirect-to-another-origin
+fallback. Read-only retries are finite and profile-bound. The client reports
+success, definitive non-success or ambiguity plus sanitized observations; it
+does not decide set success, partial recovery or action planning. Release owns
+the fixed wheel-then-sdist policy and one Result for the set action.
+
+The profile records exact client/TLS/tool versions and behavior, not just a
+command name. `uv publish` is not selected: its reconciliation behavior is not
+assumed to satisfy the strict one-shot upload contract. Native acceptance must
+exercise the selected HTTP implementation before Live admission. Neither a
+client test nor mocked upload proves registry non-replacement or OIDC scope.
+
 ## NuGet Mechanism Extension
 
 This extension realizes the mechanisms required by `WD-NUGET-001` through

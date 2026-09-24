@@ -267,6 +267,16 @@ inherit the npm arbitrary-ref waiver, native evidence, routing tags, or
 administrative-lifecycle conclusions. Design, native admission, and a verified
 real publication are distinct evidence levels.
 
+### Python Distribution-Set Action
+
+The bounded Python publication action under `WD-PY-005`: exactly one wheel
+upload followed by one sdist upload at one registry, covered by one current
+Snapshot, Approval and Authorization. It is one business action with two
+non-atomic file operations, not a registry transaction. One marker precedes the
+set and one Result records its controlled terminal state, including partial
+failure; scalar terminal transport is unchanged. See the
+[Python delivery design](./release-delivery-mld.md#python-smoke-delivery).
+
 ### Official
 
 A Release Delivery policy channel for authoritative production publication.

@@ -10,7 +10,7 @@ publication. npm and NuGet remain complete under their existing authorities.
 Workflow-delivery maintainers produce and maintain this evidence. Requirements,
 design and independent evidence reviewers consume it to avoid treating Python
 as a copy of either single-archive GitHub Packages slice. The project research
-carrier preserves recoverable sources and their limits; the Issue owns proposed
+carrier preserves recoverable sources and their limits; the Issue owns owner disposition of
 scope, decisions and delivery progress.
 
 ## Source Basis
@@ -90,11 +90,11 @@ necessarily fails.
 [Hatch project metadata, Version](https://hatch.pypa.io/latest/config/metadata/#version)
 documents static and dynamic version configuration. Its
 [environment version source](https://hatch.pypa.io/latest/plugins/version-source/env/)
-reads a named environment variable. Those are available backend mechanisms,
-not an accepted V3 choice or evidence that a consumer without that environment
-can rebuild a distribution. The Python design must choose a frozen-input path
-that satisfies both planned build and ordinary sdist consumption without
-re-resolving NBGV, an ambient override, or an undeclared Git requirement.
+reads a named environment variable. Those are available backend mechanisms, not empirical evidence of V3
+consumer behavior. The [Python Model](../repository-model-release-unit-mld.md#python-smoke-model)
+selects isolated static metadata materialization; the later build and clean
+sdist consumer must validate that choice without re-resolving NBGV, ambient
+overrides or an undeclared Git requirement.
 
 The UV build guide says `uv build` respects `tool.uv.sources` for build
 dependencies by default and recommends `--no-sources` when checking publication
@@ -125,63 +125,28 @@ They establish no existing registration or permission in this repository. No
 account, Environment, trusted-publisher registration or token was inspected or
 changed by this research.
 
-## Decision Impact
+## Decision Impact and Limits
 
-The following are recommendations for owner confirmation, not accepted Python
-requirements or relaxations of the current V3 baseline:
+The owner [confirmed the requirements packet](https://github.com/hcoona/three/issues/843#issuecomment-5822043601)
+on 2026-09-24. [`WD-PY-*`](../requirements.md#python-smoke-slice) owns the
+resulting product/trust/evidence decisions; the HLD and MLDs own their
+realization. The material choices are partial two-file failure, an explicit
+Python per-file dependency/evidence basis and bounded availability, plus the
+sole-writer/operator Approval boundary. Acceptance is an owner decision, not a
+new service finding. It does not turn the TestPyPI dependency into a documented
+guarantee or promote finite future probes into universal proof.
 
-1. Keep the selected end-to-end scope: one pure Python package, one wheel and
-   one sdist, first TestPyPI and then an independent Official PyPI Attempt.
-   Require exact-target NBGV facts, frozen Python version, content and clean
-   consumer qualification for both formats. Require each registry's own fresh
-   byte readback and destination consumption; no promotion of Buddy evidence.
-2. Treat the two immutable files as a finite publication set at one destination.
-   A later upload can fail after the first is visible. Retain that partial
-   effect as failure; stop mutation after failure or ambiguity, without rollback,
-   deletion, automatic retry or adoption of another Attempt's result. A partial
-   pre-existing release should block normal Live; exceptional recovery remains
-   a separate request. Design must reconcile this explicit two-action scenario
-   with `WD-OPS-006` and affected terminal/Approval contracts before implementation.
-3. Propose an explicit Python-specific dependency and evidence basis: rely on
-   documented PyPI filename non-reuse, and accept TestPyPI's non-replacement of
-   an existing live file as a dependency to qualify, not a documented guarantee
-   established by these sources. Require independent native acceptance for
-   each destination/profile: original wheel and sdist creation, identical-byte
-   and different-byte duplicate rejection at the same filename, a bounded
-   competing-creation case, preserved winner bytes, exact readback and clean
-   consumption. Finite requests, coordinates and operation budgets belong to
-   the separately authorized protocol. If the owner accepts this new basis,
-   propose no separate provider-authored concurrent-atomicity statement as an
-   activation prerequisite. The bounded observations do not prove all future
-   concurrency or service behavior. This would be an explicit Python amendment
-   to the current non-NuGet basis, not inheritance of NuGet's exception. Without
-   that decision, retain the existing requirement and keep TestPyPI Live blocked
-   until its required documentation/evidence is obtained. Accepting the basis
-   does not pass native/profile admission or authorize any operation.
-4. Limit the smoke's availability claim to the fresh verification event. Accept
-   TestPyPI's possible pruning and PyPI's administrative deletion as external
-   lifecycle limits only if the owner agrees; retain audit evidence separately.
-   Missing or changed remote state must never yield fresh success or authorize
-   restoration. This is a proposed evidence/retention boundary, not a service
-   guarantee or permission to weaken accepted requirements silently.
-5. Propose `hcoona` as the sole writer/operator and explicit Approval reviewer
-   for the dedicated smoke, protected-main targets, and separate project-bound
-   OIDC publisher configurations for TestPyPI and PyPI. Self-approval is operator
-   confirmation, not independent review. No static-token fallback, third-party
-   consumer compatibility promise or malicious-writer isolation is proposed.
-   Registry ownership and all setup effects remain unverified and separately
-   gated. The exact publisher/tool profile belongs in the later design.
+The design author re-read the cited service/build sources on 2026-09-24 when
+selecting the design. They still support one-file upload, PyPI filename
+non-reuse, TestPyPI pruning, distinct OIDC audiences and static Hatch metadata;
+no source establishes cross-file atomicity or implemented V3 compatibility.
+The [Python LLD](../hcoona-release-smoke-python-lld.md) selects a bounded
+one-set/two-operation action and static staged metadata. Those are design
+choices whose implementation and native gates remain unpassed.
 
-## Required Follow-Through and Limits
-
-The [requirements](../requirements.md) and [handoff](../agent-handoff.md) remain
-the accepted domain authorities. The owner's destination selection and Wave
-acceptance have not confirmed the above new per-file, retention or trust
-decisions. Record that disposition in #843 before reconciling requirements and
-the HLD, MLDs and brief LLD in order. No runtime experiment, package build,
-native probe, workflow dispatch, registry mutation or account inspection was
-performed for this record. Design readiness and end-to-end smoke completion
-remain distinct.
+No runtime experiment, package build, native probe, workflow dispatch,
+registry mutation or account inspection was performed for this record.
+Design readiness and end-to-end smoke completion remain distinct.
 
 The design author rechecks the mutable service upload, filename, retention,
 index and OIDC sources when confirming the destination or selecting its

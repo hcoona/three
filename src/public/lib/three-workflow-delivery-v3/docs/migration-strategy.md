@@ -91,6 +91,32 @@ administrator compensation, or weaker success criteria. Use the existing
 review, adjudication, contraction, and protected-delivery discipline for each
 future delivery group.
 
+## Python Smoke Delivery
+
+The Python design realizes owner-confirmed `WD-PY-*` through the HLD, five MLDs
+and [brief LLD](./hcoona-release-smoke-python-lld.md). The current design Wave
+permits no implementation or registry operation. After design review and
+protected delivery, a later owner-approved implementation Wave may select the
+following dependency order:
+
+1. Disabled Python Provider/Model and frozen two-format Build/Qualification,
+   with native metadata, witnesses and clean wheel/sdist consumers.
+2. Strict Python set-action, terminal variant, one-shot HTTP profile and
+   destination-specific blocked Governance; preserve existing npm/NuGet readers
+   or fail closed on unsupported variants before effects.
+3. Same-revision protected workflow integration with independent TestPyPI/PyPI
+   OIDC tuples, guarded Environment publication and scalar Finalizer transport.
+4. Separately authorized provisioning/native protocol and independently audited
+   admission for each destination; missing evidence keeps that destination off.
+5. Separately authorized TestPyPI Buddy proving and completion audit, followed
+   by a newly built/qualified/approved PyPI Official Attempt and its own audit.
+
+No previous smoke grant, TestPyPI artifact or Approval is promoted. Any changed
+prerequisite is revalidated before dependent work. npm and NuGet completion
+remain closed. Ruby scope follows the Python two-destination completion audit.
+The Issue/PR retain progress and exact delivery evidence; this page owns only
+the migration order and gates.
+
 ## Why v2 Is Not an Incremental Base
 
 v2 and v3 differ at architectural boundaries:

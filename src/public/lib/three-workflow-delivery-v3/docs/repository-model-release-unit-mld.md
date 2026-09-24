@@ -92,6 +92,46 @@ mechanisms. This MLD defines their repository and Release Unit semantics; the
 [Shared Foundation MLD](./shared-foundation-mld.md)
 defines their execution, trust, record, and extension boundaries.
 
+## Python Smoke Model
+
+`WD-PY-001` through `WD-PY-003` add one Project Node rooted at
+`src/public/lib/hcoona-release-smoke-python/pyproject.toml` and one Release Unit
+with exactly wheel and sdist variants. A single Build Definition produces the
+closed pair; the Model represents both outputs explicitly. Its source closure
+includes the smoke sources, manifest, NBGV lineage, workspace/lock/toolchain
+inputs, `nbgv-python` projection implementation and reviewed staging control.
+Changing any of those facts affects qualification. The compiler rejects an
+incomplete pair, duplicate variant, unresolved build prerequisite or conflicting
+version lineage; it does not guess from filenames or run a backend.
+
+The Python Provider reads exact-target `pyproject.toml` and UV workspace facts
+using TOML/native Python metadata standards, resolves declared build inputs,
+and obtains full-history NBGV facts once. It calls `nbgv-python`'s supported
+normalization function for the configured field, retains that field and raw
+facts, and records the exact adapter/tool versions. `packaging` supplies name,
+version and distribution-filename identity rules; a handwritten PEP 440 parser
+is not a second authority. The smoke admits only a normalized public PEP 440
+version without a local component, and fails rather than rewriting a projection
+which does not already meet that contract. A project-local NBGV lineage must
+include the smoke's version-affecting inputs; unrelated root path filters must
+not silently determine its release height.
+
+Provider evaluation has no publication authority. It emits technical facts;
+Release decides destination admissibility and channel policy. The Model freezes
+the exact projection and both variants. Build Request selects that same value,
+backend/toolchain and staging definition. Materializing static `project.version`
+in isolated build input is application of the frozen value, not another
+version authority. `nbgv-python` itself gains no override or fallback API.
+
+The source manifest may use the existing dynamic NBGV hook for repository
+builds. The smoke's bounded Build Definition replaces only that version source
+in staging with static PEP 621 metadata, removes the dynamic-version declaration
+and NBGV hook/build dependency there, and includes the static manifest in the
+sdist. It must reject additional target build hooks or unresolved dynamic
+metadata outside the admitted smoke shape. No source-tree manifest or shared
+adapter is rewritten. The [Python LLD](./hcoona-release-smoke-python-lld.md)
+closes staging, metadata and witness validation before implementation.
+
 ## Technical Facts
 
 ### Project Node
@@ -689,7 +729,9 @@ Adapter.
 
 - UV and build-backend metadata provide project and dependency facts.
 - One build operation may produce wheel and source-distribution outputs.
-- `nbgv-python` injects the canonical NBGV version.
+- The Provider uses `nbgv-python` for the canonical NBGV Python projection;
+  the Build Adapter applies its frozen value through the
+  [Python smoke model](#python-smoke-model).
 - The Python Build Request selects and freezes the required authoritative native
   projection from the Repository Model Snapshot; the Adapter applies and
   verifies that value without recomputing NBGV or falling back to another
