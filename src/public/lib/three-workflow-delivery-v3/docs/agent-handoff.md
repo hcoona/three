@@ -45,9 +45,13 @@ For the owner's next Workflow Delivery v3 task:
    to reuse the completed integration and avoid its diagnosed failure modes.
 3. Identify the selected next project, user-visible result and remaining
    requirements from the owner's instruction and current work carrier.
-   No next smoke or real project is selected by this handoff. Apply the
-   existing domain gates to that scope; previous smoke permissions do not
-   automatically authorize its publication.
+   The accepted [Python design Wave](../../../../../docs/delivery-wave.md#define-the-python-v3-smoke-scope-and-destination)
+   and [Issue #843](https://github.com/hcoona/three/issues/843) select Python:
+   TestPyPI first, then production PyPI; Ruby follows Python completion.
+   Start with the [Python source evidence](./research/python-smoke-evidence.md)
+   for the pending requirements decisions. Apply the existing domain gates;
+   the design grant and previous smoke permissions do not authorize its
+   implementation or publication.
 
 Recovery uses repository records and linked GitHub carriers. A prior
 conversation, local operator directory or old Agent handle is not required.

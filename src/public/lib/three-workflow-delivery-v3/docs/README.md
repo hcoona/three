@@ -54,6 +54,16 @@ effect.
 Before planning or editing v3 work, read the [Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md). It is
 operating guidance, not a second normative specification.
 
+## Python Smoke Requirements Research
+
+The accepted [Python design Wave](../../../../../docs/delivery-wave.md#define-the-python-v3-smoke-scope-and-destination)
+selects the next smoke: TestPyPI first, then production PyPI, with Ruby afterward.
+[Issue #843](https://github.com/hcoona/three/issues/843) owns scope confirmation
+and delivery. The [Python evidence](./research/python-smoke-evidence.md)
+supports the pending version, two-file publication, retention and trust decisions.
+Requirements confirmation precedes design; implementation and external operations
+retain separate gates. This research does not reopen completed npm or NuGet work.
+
 ## NuGet Second-Slice Implementation
 
 The [NuGet second-slice handoff](./nuget-smoke-research-handoff.md) retains the
