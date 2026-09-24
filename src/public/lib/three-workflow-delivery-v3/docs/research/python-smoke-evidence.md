@@ -142,12 +142,22 @@ requirements or relaxations of the current V3 baseline:
    pre-existing release should block normal Live; exceptional recovery remains
    a separate request. Design must reconcile this explicit two-action scenario
    with `WD-OPS-006` and affected terminal/Approval contracts before implementation.
-3. Rely on the documented PyPI filename non-reuse boundary and qualify each
-   selected destination/profile through independently audited bounded native
-   evidence. Do not import the NuGet exception or claim that the read sources
-   prove concurrent implementation behavior. Whether the existing non-NuGet
-   dependency/evidence basis is sufficient must be resolved explicitly in the
-   Python requirements review; missing required evidence keeps Live blocked.
+3. Propose an explicit Python-specific dependency and evidence basis: rely on
+   documented PyPI filename non-reuse, and accept TestPyPI's non-replacement of
+   an existing live file as a dependency to qualify, not a documented guarantee
+   established by these sources. Require independent native acceptance for
+   each destination/profile: original wheel and sdist creation, identical-byte
+   and different-byte duplicate rejection at the same filename, a bounded
+   competing-creation case, preserved winner bytes, exact readback and clean
+   consumption. Finite requests, coordinates and operation budgets belong to
+   the separately authorized protocol. If the owner accepts this new basis,
+   propose no separate provider-authored concurrent-atomicity statement as an
+   activation prerequisite. The bounded observations do not prove all future
+   concurrency or service behavior. This would be an explicit Python amendment
+   to the current non-NuGet basis, not inheritance of NuGet's exception. Without
+   that decision, retain the existing requirement and keep TestPyPI Live blocked
+   until its required documentation/evidence is obtained. Accepting the basis
+   does not pass native/profile admission or authorize any operation.
 4. Limit the smoke's availability claim to the fresh verification event. Accept
    TestPyPI's possible pruning and PyPI's administrative deletion as external
    lifecycle limits only if the owner agrees; retain audit evidence separately.
