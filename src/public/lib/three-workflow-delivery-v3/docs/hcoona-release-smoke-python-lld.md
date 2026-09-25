@@ -8,8 +8,9 @@ The V3 maintainer authors and maintains this carrier; implementers and reviewers
 use it to close the Python slice's concrete contracts without turning the MLDs
 into command inventories. It specifies the implementation contract, not native registry support. The
 disabled implementation is protected-delivered through
-[PR #849](https://github.com/hcoona/three/pull/849). Further work requires an
-accepted [Wave entry](../../../../../docs/delivery-wave.md); native operations,
+[PR #849](https://github.com/hcoona/three/pull/849). The accepted
+[Wave](../../../../../docs/delivery-wave.md) authorizes native-acceptance preparation;
+native operations,
 configuration changes and publication remain separately gated.
 
 The [source record](./research/python-smoke-evidence.md) owns service findings
@@ -217,6 +218,11 @@ failure, a new separately permitted dispatch starts a new build and observation;
 a partial set still blocks. Only separately requested recovery may address it.
 
 ## Evidence and Delivery Gates
+
+The [native acceptance protocol](./validation/python-native-acceptance.md)
+closes the fixed preparation and future operation schedule, exact smoke tuple,
+finite budgets, fixture validity, audit contracts and remaining operator resources.
+It grants no native effects and does not establish either destination's admission.
 
 Implementation validation covers these distinct claims before native admission:
 

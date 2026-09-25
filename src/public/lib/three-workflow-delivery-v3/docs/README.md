@@ -62,9 +62,11 @@ then PyPI. The owner's confirmed scope is recorded in
 [Python LLD](./hcoona-release-smoke-python-lld.md) define its design.
 The [source evidence](./research/python-smoke-evidence.md) retains service
 findings and limits. The disabled implementation is protected-delivered through
-[PR #849](https://github.com/hcoona/three/pull/849). Further work requires an
-accepted [Wave entry](../../../../../docs/delivery-wave.md); native admission and
-publication remain separately gated. Both destinations remain disabled;
+[PR #849](https://github.com/hcoona/three/pull/849). The accepted
+[Wave](../../../../../docs/delivery-wave.md) authorizes bounded native-acceptance
+preparation. The [Python native acceptance protocol](./validation/python-native-acceptance.md)
+defines its suite and operator prerequisites; configuration, native execution,
+admission and publication remain separately gated. Both destinations remain disabled;
 implementation delivery is not the two-destination smoke completion audit.
 
 ## NuGet Second-Slice Implementation
