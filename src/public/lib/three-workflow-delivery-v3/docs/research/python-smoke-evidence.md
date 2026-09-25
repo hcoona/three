@@ -189,7 +189,11 @@ The bootstrap protocol's initial HTTP-404 requirement is a conservative
 application gate. It does not prove global name availability or historical
 filename availability; failures and HTTP 200 block that entry. Native acceptance
 retains its complete HTTP-200 existing-project prerequisite. The delivery PR
-retains dated original source bodies/headers and hashes. Recheck when the
+retains dated original source bodies, sanitized headers and hashes in a
+recoverable archive ([part 1](https://github.com/hcoona/three/pull/860#issuecomment-5827525997),
+[part 2](https://github.com/hcoona/three/pull/860#issuecomment-5827526279)).
+All Set-Cookie values are redacted; the archive distinguishes original and
+sanitized header hashes. Recheck when the
 bootstrap publisher/transport profile changes or contrary behavior is observed;
 the next Wave merge is the fallback review event. No private account, registry,
 configuration or OIDC endpoint was queried for this source research.
