@@ -264,6 +264,13 @@ The [Python LLD](./hcoona-release-smoke-python-lld.md) closes the native evidenc
 matrix and disabled implementation entry. No set retry, deletion, reconciliation
 service or cross-registry transaction is introduced.
 
+First-project bootstrap is outside the normal-Live state machine. Its separate
+request, approval, durable marker, two-file execution result and audit follow
+[the bootstrap protocol](./validation/python-bootstrap.md). Neither an HTTP 404
+nor a pending publisher can bypass native or normal-Live admission. A successful
+bootstrap establishes only the separately audited prerequisite project state;
+it supplies no normal-Live Outcome or native acceptance evidence.
+
 ## Domain Model
 
 ### Release Intent

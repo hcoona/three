@@ -58,8 +58,9 @@ For the owner's next Workflow Delivery v3 task:
    protected-delivered through PRs #854 and #855. Preparation is complete;
    future configuration, native execution/admission and publication require
    separate authorization through the [Wave](../../../../../docs/delivery-wave.md)
-   and their domain gates. Both
-   Python destinations remain disabled. The Python CLI and workflow implement
+   and their domain gates. The [first-project bootstrap protocol](./validation/python-bootstrap.md)
+   is a separate prerequisite path being prepared under the accepted Wave.
+   Both Python destinations remain disabled. The Python CLI and workflow implement
    local Build/Qualification and the guarded publication state machine; local
    validation does not establish native registry behavior. Prior smoke permissions and the
    implementation grant do not authorize native operations or publication.

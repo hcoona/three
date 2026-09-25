@@ -424,6 +424,14 @@ boundary. Provisioning, token/native operations and each real publication
 require their separately accepted grants. This design changes no platform
 configuration and supplies none of those grants.
 
+`WD-PY-009` bootstrap has a separate protected, initially null request and
+pending-publisher configuration attestation; it cannot use ready Governance or
+claim pre-existing project ownership. Its Environment-approved authority and
+durable marker precede OIDC acquisition. Postcreation ownership and publisher
+conversion require independent evidence review before native acceptance.
+The [bootstrap protocol](./validation/python-bootstrap.md) defines these gates;
+normal-Live Governance remains disabled.
+
 ## Runtime Permission and Authority Model
 
 ### CI Qualification

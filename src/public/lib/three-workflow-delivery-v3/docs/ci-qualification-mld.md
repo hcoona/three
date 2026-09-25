@@ -662,6 +662,12 @@ reuses these definitions but builds its own set and forms its own Evidence.
 Destination readback/consumption and native non-replacement acceptance remain
 Release/native obligations, not CI capabilities established by local success.
 
+Bootstrap independently builds/qualifies its original pair and later performs
+fresh destination consumers under `destination-bootstrap` provenance. It reuses
+the same adapter obligations without adopting CI or normal Release Evidence.
+Local coverage of the [bootstrap protocol](./validation/python-bootstrap.md)
+cannot establish account configuration or service behavior.
+
 ## CI Qualification Plan
 
 ### Obligation Identity

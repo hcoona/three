@@ -114,9 +114,16 @@ interfaces do not complete destination-specific native admission.
    or fail closed on unsupported variants before effects.
 3. Same-revision protected workflow integration with independent TestPyPI/PyPI
    OIDC tuples, guarded Environment publication and scalar Finalizer transport.
-4. Separately authorized provisioning/native protocol and independently audited
+4. When the TestPyPI project does not yet exist under operator control, the
+   separate [bootstrap protocol](./validation/python-bootstrap.md) precedes
+   native acceptance. Its configuration and first publication require concrete
+   grants; independent postcreation ownership/configuration and fresh clean
+   consumption audit must pass before the existing native suite is requested
+   on two other fresh versions. Bootstrap does not supply native or normal-Live
+   evidence, and normal Governance remains disabled.
+5. Separately authorized provisioning/native protocol and independently audited
    admission for each destination; missing evidence keeps that destination off.
-5. Separately authorized TestPyPI Buddy proving and completion audit, followed
+6. Separately authorized TestPyPI Buddy proving and completion audit, followed
    by a newly built/qualified/approved PyPI Official Attempt and its own audit.
 
 No previous smoke grant, TestPyPI artifact or Approval is promoted. Any changed

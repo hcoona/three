@@ -27,6 +27,12 @@ operational request. If that tuple cannot be authorized, this protocol is
 unavailable; changing to a disposable project needs a reviewed protocol change
 and cannot admit the smoke tuple implicitly.
 
+If the exact project does not yet exist under the operator's control, the
+separate [bootstrap protocol](python-bootstrap.md) must first establish its
+independently audited ownership/configuration. Pending registration and HTTP 404
+remain insufficient for this native protocol. Its two versions must differ from
+the retained bootstrap version; no bootstrap evidence is native admission.
+
 ## Prospective Request and Fixture Closure
 
 Each destination has a protected native-request slot, initially null. A later

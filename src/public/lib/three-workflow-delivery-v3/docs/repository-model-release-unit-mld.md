@@ -133,6 +133,11 @@ metadata outside the admitted smoke shape. No source-tree manifest or shared
 adapter is rewritten. The [Python LLD](./hcoona-release-smoke-python-lld.md)
 closes staging, metadata and witness validation before implementation.
 
+Bootstrap uses the same single Release Unit and frozen public version, with
+`destination-bootstrap` witness/Provider purpose. Its one original pair and
+source/Build/consumer evidence are separate from native fixtures and normal
+Release Evidence; this adds no version source or new project abstraction.
+
 ## Technical Facts
 
 ### Project Node
