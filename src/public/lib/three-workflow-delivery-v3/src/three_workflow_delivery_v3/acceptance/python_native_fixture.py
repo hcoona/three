@@ -19,11 +19,13 @@ from three_workflow_delivery_v3.adapters.python import (
     PythonConsumerResult,
     PythonDistribution,
     PythonPackageTargetWitness,
-    _archive_members,
     build_python_distributions,
     inspect_python_distribution,
     python_package_target_witness_from_document,
     qualify_python_consumer,
+)
+from three_workflow_delivery_v3.adapters.python import (
+    _archive_members as archive_members,
 )
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
@@ -105,8 +107,8 @@ def comparison_distribution(original: PythonDistribution) -> PythonDistribution:
         )
     require(
         content != original.content
-        and _archive_members(content, original.variant)
-        == _archive_members(original.content, original.variant),
+        and archive_members(content, original.variant)
+        == archive_members(original.content, original.variant),
         "comparison must change only archive representation",
     )
     return inspect_python_distribution(
@@ -149,10 +151,10 @@ def validate_consumer_evidence(
         and bool(installed["module"]),
         "fixture clean consumer proof differs",
     )
-    _validate_commands(proof["commands"])
+    validate_commands(proof["commands"])
 
 
-def _validate_commands(commands: JsonValue) -> None:
+def validate_commands(commands: JsonValue) -> None:
     """Check the existing adapter's closed successful command evidence."""
     require(
         isinstance(commands, list) and bool(commands),
@@ -206,8 +208,8 @@ class NativeFixtures:
                     original.witness == other.witness
                     and original.filename == other.filename
                     and original.digest != other.digest
-                    and _archive_members(original.content, variant)
-                    == _archive_members(other.content, variant),
+                    and archive_members(original.content, variant)
+                    == archive_members(other.content, variant),
                     "invalid comparison fixture",
                 )
             require(
@@ -300,7 +302,7 @@ class NativeFixtures:
         )
         manifests = [
             content
-            for path, content in _archive_members(
+            for path, content in archive_members(
                 self.distributions[f"{label}/original/sdist"].content, "sdist"
             ).items()
             if path.endswith("/pyproject.toml")
@@ -312,8 +314,8 @@ class NativeFixtures:
             and build["staged-manifest-digest"] == python_digest(manifests[0]),
             "prepared Build source provenance differs",
         )
-        _validate_commands(build["commands"])
-        _validate_commands([build["versions"]])
+        validate_commands(build["commands"])
+        validate_commands([build["versions"]])
         require(
             bool(cast("dict[str, JsonValue]", build["versions"])["stdout"]),
             "prepared producer versions missing",

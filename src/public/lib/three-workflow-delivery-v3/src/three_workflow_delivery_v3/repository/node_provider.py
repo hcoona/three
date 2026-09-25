@@ -67,6 +67,7 @@ _PURPOSES = frozenset(
         "live-release",
         "release-simulation",
         "destination-acceptance",
+        "destination-bootstrap",
     }
 )
 NBGV_ENVIRONMENT_ALLOWLIST = (
