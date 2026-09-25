@@ -8,8 +8,11 @@ This protocol realizes `WD-PY-006` and `WD-PY-008` in the
 The V3 maintainer produces and maintains it. Implementers, the operator and
 independent native auditors consume the fixed schedule and evidence contract;
 the LLD routes here rather than duplicating an executable operation protocol.
-The accepted [Wave](../../../../../../docs/delivery-wave.md#prepare-python-destination-native-acceptance)
-authorizes preparation only. Neither this protocol nor its tools grants execution.
+Protocol and [tooling preparation](./python-native-readiness.md) are
+protected-delivered through PRs #854 and #855. Future configuration, native
+execution/admission and publication require separate
+[Wave](../../../../../../docs/delivery-wave.md) authorization and domain gates.
+Neither this protocol nor its tools grants execution.
 Both normal-Live Governance files remain disabled. No native observation is
 claimed by this record.
 
