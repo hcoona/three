@@ -324,6 +324,13 @@ mechanism boundaries. The [Python LLD](./hcoona-release-smoke-python-lld.md)
 closes their bounded contract choices. Design completion remains separate from
 implementation, native admission and actual publication at each destination.
 
+First-project bootstrap has a separate manual control entry and evidence
+lifecycle under `WD-PY-009`. It reuses the Python build and transport mechanisms
+while preserving native acceptance's existing-project gate. Its independently
+audited project creation is only a prerequisite to native acceptance and normal
+publication; the [bootstrap protocol](./validation/python-bootstrap.md) owns
+its finite operation and evidence boundary.
+
 ## Governance and Trust
 
 ### Context-Owned Planning and Finalization

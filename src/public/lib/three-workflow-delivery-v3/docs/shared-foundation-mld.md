@@ -558,6 +558,13 @@ assumed to satisfy the strict one-shot upload contract. Native acceptance must
 exercise the selected HTTP implementation before Live admission. Neither a
 client test nor mocked upload proves registry non-replacement or OIDC scope.
 
+Bootstrap reuses exact-target Provider/Build, archive inspection, clean consumers,
+profile-bound HTTP and immutable-artifact primitives with a distinct
+`destination-bootstrap` purpose. Shared mechanics may take an explicit closed
+workflow identity; native and bootstrap callers retain separate request types,
+initial-state rules, finite schedules and evidence verdicts. No generic
+publication policy or alternate native-acceptance path is introduced.
+
 ## NuGet Mechanism Extension
 
 This extension realizes the mechanisms required by `WD-NUGET-001` through

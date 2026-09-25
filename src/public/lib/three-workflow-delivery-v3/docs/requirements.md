@@ -955,6 +955,18 @@ They define a new Python scope, not implemented support or an operation grant.
   authentication/access changes or dispatch. npm/NuGet remain complete and
   their spent operation grants remain spent.
 
+- **WD-PY-009:** TestPyPI first-project bootstrap is a separate, explicitly
+  authorized prerequisite using one project-name-bound pending OIDC publisher,
+  one original qualified wheel/sdist pair and current-run owner approval.
+  A pending publisher does not establish ownership or reserve the project name.
+  Bootstrap requires its own accepted finite protocol, immutable authority and
+  mutation evidence, conservative initial-state gate and independently reviewed
+  postcreation ownership/configuration and clean consumption. Partial or
+  ambiguous outcomes stop without retry or compensation. Bootstrap evidence is
+  neither native admission nor normal-Live publication evidence; both normal
+  destinations remain disabled until their existing admission gates pass.
+  Preparation supplies no configuration, dispatch, token or upload permission.
+
 ### Evidence, Decisions, and Explanation
 
 - **WD-EVD-001:** Evidence Admission must verify exact ownership, target,

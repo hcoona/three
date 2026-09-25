@@ -171,6 +171,33 @@ service guarantees. Actual matching native responses and independent audit
 remain required. No OIDC, account, project or native registry endpoint was
 queried for this recheck; only public documentation was retrieved.
 
+### First-Project Bootstrap Source Recheck
+
+On 2026-09-25, bootstrap preparation rechecked the official
+[pending-publisher guide](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/),
+[registration guide](https://docs.pypi.org/trusted-publishers/adding-a-publisher/),
+[manual OIDC flow](https://docs.pypi.org/trusted-publishers/using-a-publisher/),
+[upload API](https://docs.pypi.org/api/upload/) and
+[JSON Simple Index API](https://docs.pypi.org/api/index-api/).
+The pending-publisher guide states that first publication creates the project
+and converts the publisher; registration does not reserve the name and a
+competing registration invalidates it. The manual flow applies to pending as
+well as existing publishers. These are source findings, not observations of the
+operator's account or project, atomic two-file creation, or ownership proof.
+
+The bootstrap protocol's initial HTTP-404 requirement is a conservative
+application gate. It does not prove global name availability or historical
+filename availability; failures and HTTP 200 block that entry. Native acceptance
+retains its complete HTTP-200 existing-project prerequisite. The delivery PR
+retains dated original source bodies, sanitized headers and hashes in a
+recoverable archive ([part 1](https://github.com/hcoona/three/pull/860#issuecomment-5827525997),
+[part 2](https://github.com/hcoona/three/pull/860#issuecomment-5827526279)).
+All Set-Cookie values are redacted; the archive distinguishes original and
+sanitized header hashes. Recheck when the
+bootstrap publisher/transport profile changes or contrary behavior is observed;
+the next Wave merge is the fallback review event. No private account, registry,
+configuration or OIDC endpoint was queried for this source research.
+
 ## Decision Impact and Limits
 
 The owner [confirmed the requirements packet](https://github.com/hcoona/three/issues/843#issuecomment-5822043601)

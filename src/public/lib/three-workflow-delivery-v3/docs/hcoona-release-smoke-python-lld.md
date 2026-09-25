@@ -219,6 +219,17 @@ Finalizer never searches artifacts or synthesizes missing records. After a
 failure, a new separately permitted dispatch starts a new build and observation;
 a partial set still blocks. Only separately requested recovery may address it.
 
+## First-Project Bootstrap
+
+`WD-PY-009` has a distinct manual workflow and protected request, initially null.
+The [bootstrap protocol](./validation/python-bootstrap.md) owns exact resources,
+source/artifact provenance, pending-publisher and initial-404 boundaries,
+immutable authority/marker transport, finite requests, failure semantics and
+independent project-control audit. It precedes the existing native suite without
+weakening that suite or entering the normal-Live graph. Shared mechanisms retain
+separate bootstrap, native and normal publication evidence purposes. Preparation
+is authorized by the current Wave; no external operation is authorized here.
+
 ## Evidence and Delivery Gates
 
 The [native acceptance protocol](./validation/python-native-acceptance.md)
