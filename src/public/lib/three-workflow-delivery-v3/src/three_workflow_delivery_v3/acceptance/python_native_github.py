@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 from urllib.parse import urlencode
 
 from three_workflow_delivery_v3.acceptance.python_native_contract import (
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
+    from three_workflow_delivery_v3.adapters.pypi import PythonRegistry
     from three_workflow_delivery_v3.platform.python_github import (
         PythonGitHubRuntime,
     )
@@ -28,6 +29,22 @@ _PAGE_SIZE = 100
 _MAX_DEPLOYMENTS = 5
 
 _REPO = "/repos/hcoona/three"
+
+
+class ApprovalRequest(Protocol):
+    """Common immutable facts for separately admitted Python operations."""
+
+    @property
+    def document(self) -> dict[str, JsonValue]:
+        """Return the closed operation request."""
+
+    @property
+    def registry(self) -> PythonRegistry:
+        """Return the exact destination profile."""
+
+    @property
+    def digest(self) -> str:
+        """Return the immutable request digest."""
 
 
 def git_output(root: Path, *arguments: str) -> str:
@@ -49,6 +66,25 @@ def validate_hosted(
     request: NativeRequest,
 ) -> int:
     """Reject foreign, moving, unprotected or rerun tooling before effects."""
+    return validate_hosted_targets(
+        root,
+        environment,
+        tooling_sha,
+        tuple(
+            cast("str", request.target(label)["commit"]) for label in ("a", "b")
+        ),
+        WORKFLOW,
+    )
+
+
+def validate_hosted_targets(
+    root: Path,
+    environment: Mapping[str, str],
+    tooling_sha: str,
+    targets: tuple[str, ...],
+    workflow: str,
+) -> int:
+    """Bind the specified admitted workflow to actual local protected Git."""
     commit(tooling_sha)
     expected = {
         "GITHUB_REPOSITORY": "hcoona/three",
@@ -60,7 +96,7 @@ def validate_hosted(
         "GITHUB_REF_PROTECTED": "true",
         "GITHUB_SHA": tooling_sha,
         "GITHUB_WORKFLOW_SHA": tooling_sha,
-        "GITHUB_WORKFLOW_REF": f"hcoona/three/{WORKFLOW}@refs/heads/main",
+        "GITHUB_WORKFLOW_REF": f"hcoona/three/{workflow}@refs/heads/main",
         "GITHUB_RUN_ATTEMPT": "1",
         "RUNNER_OS": "Linux",
     }
@@ -74,8 +110,8 @@ def validate_hosted(
         == tooling_sha,
         "Python native protected main moved",
     )
-    for label in ("a", "b"):
-        target = cast("str", request.target(label)["commit"])
+    for target in targets:
+        commit(target)
         git_output(root, "merge-base", "--is-ancestor", target, tooling_sha)
     run = environment.get("GITHUB_RUN_ID", "")
     require(
@@ -93,6 +129,20 @@ def prove_native_approval(
     runtime: PythonGitHubRuntime,
 ) -> bytes:
     """Read at most eight current-run facts; no pages, retry or fallback."""
+    return prove_approval(
+        request, run_id, tooling_sha, sentinel, runtime, WORKFLOW
+    )
+
+
+def prove_approval(  # noqa: PLR0913, PLR0917 - exact admitted proof tuple
+    request: ApprovalRequest,
+    run_id: int,
+    tooling_sha: str,
+    sentinel: str,
+    runtime: PythonGitHubRuntime,
+    workflow: str,
+) -> bytes:
+    """Replay or obtain the same bounded owner proof for one exact workflow."""
     config = cast("dict[str, JsonValue]", request.document["environment"])
     require(
         sentinel == config["sentinel"], "native Environment sentinel differs"
@@ -106,7 +156,7 @@ def prove_native_approval(
         and type(run.get("run_attempt")) is int
         and run["run_attempt"] == 1
         and run.get("event") == "workflow_dispatch"
-        and run.get("path") in {WORKFLOW, f"{WORKFLOW}@main"}
+        and run.get("path") in {workflow, f"{workflow}@main"}
         and run.get("head_branch") == "main",
         "native run binding differs",
     )

@@ -184,6 +184,46 @@ and independent PyPI Official Attempts retain their own complete qualification,
 Approval, native evidence and publication grants. TestPyPI pruning and other
 accepted availability limits remain; later absence does not authorize restoration.
 
+## Tooling Interface
+
+`three_workflow_delivery_v3.acceptance.python_bootstrap` implements the closed
+bootstrap phases. The manual workflow at
+`.github/workflows/workflow-delivery-v3-bootstrap-python.yml` separates prepare,
+publisher and audit jobs. The protected bootstrap request remains `null`;
+installing this tooling does not configure or execute a publisher.
+
+After local locked dependency and NBGV preparation, the operator can build a
+prospective original pair from a protected-main ancestor without registry access:
+
+```bash
+uv run --no-sync --package three-workflow-delivery-v3 \
+  python -m three_workflow_delivery_v3.acceptance.python_bootstrap build-fixtures \
+  --root '<full-history-checkout>' --target '<protected-main-ancestor-sha>' \
+  --output '<new-external-fixture-bundle>'
+```
+
+Use a configured POSIX environment such as WSL on Windows. The emitted
+source/version/original-digest summary supplies the later operational proposal;
+it is not an executable request or proof of account readiness. Existing output
+paths reject rather than overwrite retained evidence.
+
+Hosted `prepare`, `authorize`, `marker`, `execute` and `audit` require exact
+protected request/tooling identities. Bundle input flags `--prepared`,
+`--authorization`, `--marker` and `--result` bind corresponding original artifact
+references supplied by the workflow. `archive` and `digest` seal surviving
+sanitized bytes for the five original artifact creations. Authorize and execute
+retain separate subdirectories of the single result archive, so authorization
+failure evidence can survive even when mutation never starts. Audit retains its
+surviving evidence if fresh readback or either consumer fails; that artifact is
+not a successful bootstrap verdict.
+
+The registry-offline `replay` command reads all five original downloaded bundles
+and their explicit reference document through `--references`. It replays raw
+proof and registry observations, timing, lineage and retained consumer evidence.
+It grants no operational capability and does not freshly observe ownership or
+registry state. `--help` gives the exact CLI inputs; actual dispatch and operator
+artifact retrieval remain separately bounded by the later operational request.
+
 ## Validation Before Operations
 
 Local tests exercise the complete successful state sequence and ensure wrong

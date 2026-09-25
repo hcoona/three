@@ -250,5 +250,7 @@ publication gates.
 
 The [bootstrap protocol](./validation/python-bootstrap.md) defines the separately
 authorized first-project prerequisite before native acceptance. Current Wave
-authorization covers protocol and disabled tooling preparation; actual setup,
-execution and publication retain their own concrete grants.
+authorization covers protocol and disabled tooling preparation. The protocol
+also owns the [tooling interface](./validation/python-bootstrap.md#tooling-interface);
+its protected request remains null. Actual setup, execution and publication
+retain their own concrete grants.

@@ -518,6 +518,7 @@ def native_python_provider_repository(tmp_path_factory):
     ("purpose", "public"),
     [
         ("destination-acceptance", True),
+        ("destination-bootstrap", True),
         ("live-release", True),
         ("ci-pr-slice-shadow", False),
     ],

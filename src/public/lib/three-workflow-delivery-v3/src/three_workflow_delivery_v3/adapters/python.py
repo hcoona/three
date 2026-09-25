@@ -81,6 +81,7 @@ class PythonPackageTargetWitness:
                 "live-release",
                 "release-simulation",
                 "destination-acceptance",
+                "destination-bootstrap",
             }
             or any(
                 not re.fullmatch(r"sha256:[0-9a-f]{64}", d)

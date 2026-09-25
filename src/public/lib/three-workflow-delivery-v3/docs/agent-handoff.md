@@ -59,7 +59,9 @@ For the owner's next Workflow Delivery v3 task:
    future configuration, native execution/admission and publication require
    separate authorization through the [Wave](../../../../../docs/delivery-wave.md)
    and their domain gates. The [first-project bootstrap protocol](./validation/python-bootstrap.md)
-   is a separate prerequisite path being prepared under the accepted Wave.
+   is a separate prerequisite path with disabled tooling and a null protected
+   bootstrap request. Its [tooling interface](./validation/python-bootstrap.md#tooling-interface)
+   routes local fixture preparation, immutable hosted phases and offline replay.
    Both Python destinations remain disabled. The Python CLI and workflow implement
    local Build/Qualification and the guarded publication state machine; local
    validation does not establish native registry behavior. Prior smoke permissions and the
