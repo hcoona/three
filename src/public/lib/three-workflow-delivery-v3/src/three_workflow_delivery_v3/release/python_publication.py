@@ -611,13 +611,6 @@ def execute_python_publication(  # noqa: PLR0913, PLR0915
             "Python publication requires verified existing-project absence"
         )
         raise ValueError(message)
-    timed = PublicationTransport(
-        transport,
-        token,
-        monotonic,
-        deadline=deadline,
-        admit=lambda: marker.fresh_governance.require_live(clock()),
-    )
     # Platform current-run admission and concurrency own cross-process replay;
     # this exclusive task-owned claim prevents accidental reuse in this job.
     with claim_path.open("xb"):
@@ -645,12 +638,24 @@ def execute_python_publication(  # noqa: PLR0913, PLR0915
             )
             raise retention_error from error
 
+    timed = PublicationTransport(
+        transport,
+        token,
+        monotonic,
+        deadline=deadline,
+        admit=lambda: marker.fresh_governance.require_live(clock()),
+        retain_rejected=lambda content: retain(
+            "rejected-response.json", content
+        ),
+    )
+
     final_digest = None
     final_exact = False
     for ordinal, distribution in enumerate(originals):
         invocation = upload_python_once(
             snapshot.registry, distribution, token, timed
         )
+        timed.require_replayable(retention_error)
         status = {
             "definitive-success": "succeeded",
             "definitive-non-success": "failed",
@@ -716,8 +721,7 @@ def execute_python_publication(  # noqa: PLR0913, PLR0915
                 )
                 previous = final_index
             except (OSError, ValueError, TypeError):
-                if retention_error is not None:
-                    raise retention_error from retention_error.__cause__
+                timed.require_replayable(retention_error)
                 # Failure is retained; no readback can authorize a resend.
                 exact = False
         entries[ordinal] = PythonOperationResult(

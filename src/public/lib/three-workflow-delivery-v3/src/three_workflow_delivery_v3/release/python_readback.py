@@ -46,7 +46,7 @@ class _InvalidDownloadEvidenceError(ValueError):
 class PublicationTransport:
     """Time one actual send and screen credentials before public retention."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - explicit timed transport and evidence boundaries
         self,
         transport: PythonHttpTransport,
         token: str,
@@ -54,12 +54,15 @@ class PublicationTransport:
         *,
         deadline: float,
         admit: Callable[[], None],
+        retain_rejected: Callable[[bytes], None],
     ) -> None:
         """Keep the token only in the in-memory reflection screen."""
         self.transport = transport
         self.clock = clock
         self.deadline = deadline
         self.admit = admit
+        self.retain_rejected = retain_rejected
+        self.response_error: ValueError | None = None
         self.upload_started: float | None = None
         self.forbidden = tuple(
             part
@@ -100,8 +103,27 @@ class PublicationTransport:
             raise ValueError(message)
         if not started <= finished <= started + HTTP_TIMEOUT_SECONDS:
             message = "Python publication response timing differs"
-            raise ValueError(message)
+            self.response_error = ValueError(message)
+            self.retain_rejected(
+                canonicalize(
+                    {
+                        "method": method,
+                        "url": url,
+                        "start": started,
+                        "finish": finished,
+                        "response": response_document(response),
+                    }
+                )
+            )
+            raise self.response_error
         return replace(response, started=started, finished=finished)
+
+    def require_replayable(self, retention_error: OSError | None) -> None:
+        """Reject Result formation after an inadmissible timed response."""
+        if retention_error is not None:
+            raise retention_error from retention_error.__cause__
+        if self.response_error is not None:
+            raise self.response_error
 
 
 class ReadbackTransport:

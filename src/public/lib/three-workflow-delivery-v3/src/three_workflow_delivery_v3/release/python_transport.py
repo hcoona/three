@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from http import HTTPStatus
+from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3.adapters.pypi import (
     PythonIndexObservation,
     PythonRegistry,
 )
 from three_workflow_delivery_v3.adapters.python_observation import (
+    index_inventory,
     response_from_document,
 )
 from three_workflow_delivery_v3.canonical import JsonValue, canonicalize
@@ -47,6 +49,9 @@ from three_workflow_delivery_v3.repository.python_provider import (
 if TYPE_CHECKING:
     from three_workflow_delivery_v3.adapters.python import PythonDistribution
     from three_workflow_delivery_v3.records.artifacts import ArtifactReference
+
+
+_DISTRIBUTION_COUNT = 2
 
 
 def _normalized(value: JsonValue, expected: dict[str, JsonValue]) -> None:
@@ -173,21 +178,41 @@ def python_native_observation_from_document(
             raise ValueError(message)
         files.append(matches[0])
 
+    response = response_from_document(doc["index-response"])
     result = PythonIndexObservation(
         PythonRegistry(python_text(doc["registry"])),
         python_text(doc["version"]),
         python_text(doc["index-digest"]),
         tuple(files),
         python_text(doc["classification"]),
-        None
-        if doc["index-response"] is None
-        else response_from_document(doc["index-response"]),
+        response,
+    )
+    if python_digest(response.body) != result.index_digest:
+        message = "Python original index digest differs"
+        raise ValueError(message)
+    inventory = (
+        {}
+        if response.status == HTTPStatus.NOT_FOUND
+        else index_inventory(result.registry, response, result.version)
+    )
+    expected = {item.filename: item.digest for item in files}
+    actual = {
+        name: "sha256:" + python_text(cast("dict", entry)["hashes"]["sha256"])
+        for name, entry in inventory.items()
+    }
+    classification = (
+        "absent"
+        if not files
+        else "complete"
+        if len(files) == _DISTRIBUTION_COUNT
+        else "partial"
     )
     if (
-        result.index_response is not None
-        and python_digest(result.index_response.body) != result.index_digest
+        actual != expected
+        or len({item.variant for item in files}) != len(files)
+        or result.classification != classification
     ):
-        message = "Python original index digest differs"
+        message = "Python original index inventory differs from observation"
         raise ValueError(message)
     _normalized(doc, result.to_document())
     return result

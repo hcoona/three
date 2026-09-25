@@ -622,3 +622,53 @@ def test_normal_finalizer_rejects_aggregate_readback_downgrade(tmp_path):
         assert operation["readback-digest"] is not None
     with pytest.raises(ValueError, match=r"final readback.*operation evidence"):
         finalize_document(document, marker, marker_ref)
+
+
+@pytest.mark.parametrize(
+    "delayed", [0, 1, 2], ids=["upload", "index", "download"]
+)
+def test_normal_overlong_response_retains_raw_without_result(tmp_path, delayed):
+    """Safe original responses survive rejected timing without a Result."""
+    marker, marker_ref, payloads, distributions = prepared_publication()
+    marker_bytes = canonicalize(marker.to_document())
+    replies = responses(marker, distributions, pending=(0, 0))
+    boundary = Boundary(*replies, durations=[*([0] * delayed), 30.001])
+    with pytest.raises(ValueError, match="publication response timing differs"):
+        execute_python_publication(
+            marker,
+            marker_ref,
+            payloads,
+            token=_TOKEN,
+            transport=boundary,
+            claim_path=tmp_path / "claim",
+            clock=lambda: NOW + timedelta(seconds=3),
+            monotonic=boundary.clock,
+            wait=boundary.wait,
+        )
+    assert [call[0] for call in boundary.calls] == ["POST", "GET", "GET"][
+        : delayed + 1
+    ]
+    assert len(boundary.responses) == len(replies) - delayed - 1
+    assert not any(event[0] == "wait" for event in boundary.events)
+    assert (tmp_path / "claim").is_file()
+    rejected = parse_json_strict(
+        (tmp_path / "claim-observations/rejected-response.json").read_bytes()
+    )
+    assert rejected["method"] == boundary.calls[-1][0]
+    assert rejected["url"] == boundary.calls[-1][1]
+    assert rejected["start"] == boundary.calls[-1][5]
+    assert rejected["finish"] == boundary.calls[-1][5] + 30.001
+    original = replies[delayed]
+    assert base64.b64decode(rejected["response"]["body"]) == original.body
+    assert rejected["response"]["digest"] == python_digest(original.body)
+    assert rejected["response"]["status"] == original.status
+    assert rejected["response"]["content-type"] == original.content_type
+    assert canonicalize(marker.to_document()) == marker_bytes
+    outcome = _finalize(
+        replace(_inputs(marker), terminal=(marker, marker_ref)),
+        publisher_conclusion="failure",
+        publication_step_outcome="failure",
+    )
+    assert outcome.disposition == "unknown"
+    assert outcome.possibly_mutated is True
+    assert outcome.direct_predecessor.reference == marker_ref
