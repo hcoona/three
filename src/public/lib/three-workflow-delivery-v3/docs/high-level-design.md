@@ -303,6 +303,11 @@ remain; there is no per-file approval, generic transaction or compensation
 system. Missing Result after the marker is unknown and possibly mutated even
 if one file is independently observable. `published` requires two definitive
 upload successes and exact readback of both original artifacts and witnesses.
+After successful uploads, the profile-bound finite observation phase in the
+[Python LLD](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
+may retain eligible missing additions as pending. Every intermediate response
+and its timing remains audit evidence. Terminal failures never reopen, and
+waiting neither resends uploads nor renews authority.
 
 This set action is **not an atomic registry operation**. A definitive or
 ambiguous failure stops remaining uploads and remains failure. Whole-set exact
@@ -327,8 +332,11 @@ implementation, native admission and actual publication at each destination.
 First-project bootstrap has a separate manual control entry and evidence
 lifecycle under `WD-PY-009`. It reuses the Python build and transport mechanisms
 while preserving native acceptance's existing-project gate. Its independently
-audited project creation is only a prerequisite to native acceptance and normal
-publication; the [bootstrap protocol](./validation/python-bootstrap.md) owns
+audited ownership/configuration can establish the existing-project resource
+prerequisite even after partial bootstrap, without claiming bootstrap completion.
+The partial version stays untouched; a fresh native suite supplies its own
+complete-pair and consumer evidence. The
+[bootstrap protocol](./validation/python-bootstrap.md) owns this separation and
 its finite operation and evidence boundary.
 
 ## Governance and Trust

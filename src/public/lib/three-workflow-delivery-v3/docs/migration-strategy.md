@@ -117,10 +117,13 @@ interfaces do not complete destination-specific native admission.
 4. When the TestPyPI project does not yet exist under operator control, the
    separate [bootstrap protocol](./validation/python-bootstrap.md) precedes
    native acceptance. Its configuration and first publication require concrete
-   grants; independent postcreation ownership/configuration and fresh clean
-   consumption audit must pass before the existing native suite is requested
-   on two other fresh versions. Bootstrap does not supply native or normal-Live
-   evidence, and normal Governance remains disabled.
+   grants. Bootstrap completion requires independent postcreation control and
+   clean consumption audit. Under `WD-PY-009`, independently audited actual
+   ownership/configuration after partial bootstrap may instead satisfy only the
+   existing-project prerequisite to request a fresh native suite on two other
+   versions. Preserve the failed partial version; native acceptance must supply
+   its own complete pairs and clean consumers. Bootstrap does not supply native
+   or normal-Live evidence, and normal Governance remains disabled.
 5. Separately authorized provisioning/native protocol and independently audited
    admission for each destination; missing evidence keeps that destination off.
 6. Separately authorized TestPyPI Buddy proving and completion audit, followed

@@ -918,7 +918,15 @@ They define a new Python scope, not implemented support or an operation grant.
   fresh exact state may take the zero-action exact-satisfied path. Partial,
   conflicting or unknown pre-existing state blocks normal Live. Failure or
   ambiguity stops further mutation and cannot become same-Attempt success even
-  if later readback is exact. No rollback, deletion, automatic retry,
+  if later readback is exact. After definitive upload success only, an admitted
+  finite observation phase may keep eligible missing-addition states pending
+  before a terminal verdict: at most six index reads, at least ten seconds
+  after each pending response before another request, and a 60-second admission
+  window from upload-response completion, within unchanged outer deadlines.
+  Conflicting state, exhausted observation, transport/download failure and
+  failed or ambiguous upload remain terminal. Preserve all original responses,
+  timing and ordering for deterministic audit; no already failed Attempt is
+  reopened. No rollback, deletion, upload/token/file retry,
   skip-existing success or automatic partial completion is allowed. Recovery
   requires a separate request. A missing durable Result after the mutation
   marker remains unknown and possibly mutated under `WD-REL-009`.
@@ -965,6 +973,13 @@ They define a new Python scope, not implemented support or an operation grant.
   ambiguous outcomes stop without retry or compensation. Bootstrap evidence is
   neither native admission nor normal-Live publication evidence; both normal
   destinations remain disabled until their existing admission gates pass.
+  Independently audited actual ownership/configuration established by a partial
+  bootstrap may satisfy only the resource prerequisite to request a fresh native
+  suite. It does not establish bootstrap completion, which still requires the
+  complete pair and clean consumers. Preserve the failed partial version without
+  refill or deletion; it may remain partial indefinitely. The separately
+  authorized native suite must prove its own complete pairs, duplicate/race
+  behavior, exact bytes and clean consumers, and preserve all pre-existing files.
   Preparation supplies no configuration, dispatch, token or upload permission.
 
 ### Evidence, Decisions, and Explanation

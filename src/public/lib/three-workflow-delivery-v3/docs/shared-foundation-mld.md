@@ -547,7 +547,14 @@ authority.
 HTTP clients expose supported Simple Index metadata, exact file downloads,
 OIDC exchange and one-file upload as bounded mechanical operations. Mutating
 uploads have no resend/retry, skip-existing or redirect-to-another-origin
-fallback. Read-only retries are finite and profile-bound. The client reports
+fallback. Python post-upload observation uses the fixed
+[LLD policy](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation).
+A shared mechanism provides same-process timing, finite admission, original
+response retention and deterministic sequence validation for bootstrap, native
+and normal consumers. Each owning context supplies its previous/expected
+inventory, creation scope and existing outer deadline; it retains set success
+and mutation ordering. Single HTTP calls still have zero transport retries.
+The client reports
 success, definitive non-success or ambiguity plus sanitized observations; it
 does not decide set success, partial recovery or action planning. Release owns
 the fixed wheel-then-sdist policy and one Result for the set action.

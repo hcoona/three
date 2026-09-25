@@ -32,6 +32,12 @@ separate [bootstrap protocol](python-bootstrap.md) must first establish its
 independently audited ownership/configuration. Pending registration and HTTP 404
 remain insufficient for this native protocol. Its two versions must differ from
 the retained bootstrap version; no bootstrap evidence is native admission.
+Under `WD-PY-009`, independently reviewed ownership/configuration after a failed
+partial bootstrap may satisfy only this resource prerequisite. Bootstrap
+completion is not claimed. Keep its partial version untouched and retain it in
+C0; every subsequent inventory must preserve those existing entries. Native
+publisher registration, current trust/configuration, complete fresh pairs and
+clean consumers remain independently required.
 
 ## Prospective Request and Fixture Closure
 
@@ -85,8 +91,12 @@ It verifies current run, exact native owner approval, Environment deployment and
 sentinel before one OIDC assertion and one registry token exchange. Both are
 memory-only and use the actual pinned transport. No static token is accepted.
 
-A capture obtains one complete JSON Simple Index response and downloads every
-present scenario file. The same retained response supplies the two existing
+A capture obtains a complete JSON Simple Index response and downloads every
+present scenario file. C1/C2/C7/C8 alone may use the
+[bounded post-upload observation](../hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
+phase, with at most six index reads each; only the unchanged verified previous
+inventory missing the one expected addition is pending. No files are downloaded
+until the exact expected index. C0 and C3-C6 remain single reads. The same retained response supplies the two existing
 version readers; this does not claim an atomic service snapshot. The full file
 inventory, including unrelated versions, is retained and compared. Only the
 expected named additions are permitted; all other file entries must remain
@@ -113,7 +123,9 @@ start/finish intervals; overlapping client intervals establish a bounded
 competing request observation, not proof of internal server scheduling.
 No serialized pair is accepted as the requested competition. Both calls are
 already admitted as one finite step; a failure cannot cancel an already sent
-peer. Join both results and stop every later step on failure or ambiguity.
+peer. Join both results and stop every later step on failure or ambiguity. The winning
+response completion anchors its 60-second observation admission window; joining
+the peer cannot renew it. The unchanged outer probe deadline can stop earlier.
 
 A duplicate verdict needs HTTP 400 plus the retained service response explicitly
 identifying an existing/reused filename (including the PyPI filename-reuse help
@@ -124,12 +136,12 @@ recognizer is a conservative application gate, not a universal service promise.
 Unexpected response wording stops the generation for review, without retry.
 
 The cumulative maximum is 10 upload POSTs, one OIDC GET, one token-exchange POST,
-nine index GETs and eighteen exact-file GETs (27 public registry reads).
+29 index GETs and eighteen exact-file GETs (47 public registry reads).
 There are four possible newly stored files across two versions; no deletion,
 tag, access or configuration operation is part of the suite. Native HTTP
 concurrency is one except for exactly two calls at each competing step. There
-are no transport retries, redirects, token refresh, index polling or partial
-completion. Per-request bytes/timeouts reuse the accepted profile (30-second
+are no transport retries, redirects, token refresh, polling outside the four
+eligible post-success captures, or partial completion. Per-request bytes/timeouts reuse the accepted profile (30-second
 socket timeout, 2 MiB index, 4096 entries, 8 MiB file, 64 KiB upload/token reply).
 A monotonic ten-minute probe deadline forbids new requests after expiry; an
 in-flight request retains its socket bound. The hosted probe job has a
@@ -166,8 +178,13 @@ encoded forms never enter retained evidence. Sanitize upload responses against
 all in-memory secrets before persisting them; unsafe content stops the suite
 and records only a fixed failure category.
 
-Every reached capture retains raw index bytes, response status/content type,
+Every reached capture retains all original index responses, status/content type,
 complete normalized file inventory, exact downloaded scenario bytes and digests.
+The LLD phase trace binds each intermediate response to request order, upload
+completion, spacing, admission deadline and pending/terminal disposition. Audit
+reconstructs these facts from all raw responses, including failure/exhaustion;
+final-only capture evidence cannot pass. Previous inventories and successful
+race candidates must agree with the fixed schedule and actual upload journal.
 Every reached upload retains profile/request/file binding, ordinal, actual
 interval, sanitized response body/status/digest or a bounded error category.
 Retain unsuccessful/partial data, including a later exact state that does not
@@ -229,7 +246,7 @@ supply this concrete checklist, with no executable placeholder defaults:
   and repository; audience `testpypi`. Normal publication separately needs
   `workflow-delivery-v3-python-smoke.yml` registration.
 - Explicit authorization for one native dispatch, one Environment approval,
-  one OIDC assertion/exchange, the ten uploads, 27 registry reads and eight
+  one OIDC assertion/exchange, the ten uploads, 47 registry reads and eight
   GitHub proof reads above, with retained partial-state and no-retry acceptance.
 - Durable audit storage location and independent auditor; later native
   configuration/admission and each normal publication remain separate decisions.

@@ -62,6 +62,11 @@ For the owner's next Workflow Delivery v3 task:
    is a separate prerequisite path with guarded tooling and a null protected
    bootstrap request. Its [tooling interface](./validation/python-bootstrap.md#tooling-interface)
    routes local fixture preparation, immutable hosted phases and offline replay.
+   The owner-confirmed [post-upload observation contract](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
+   and resource-only continuation after partial bootstrap require coherent
+   disabled implementation and validation before a new operation proposal.
+   Retained failed evidence remains bound to its original revision; design
+   acceptance does not claim the revised runtime is delivered.
    Both Python destinations remain disabled. The Python CLI and workflow implement
    local Build/Qualification and the guarded publication state machine; local
    validation does not establish native registry behavior. Prior smoke permissions and the
