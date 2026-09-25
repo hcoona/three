@@ -24,7 +24,7 @@ ends a grant. Git and the proposing PR retain the reason and history.
   provenance, pending-publisher conversion, initial-state evidence, exact
   request/proof budgets, credential isolation, failure stops and the independent
   configuration/ownership audit design before implementation. Actual account,
-  configuration and ownership evidence collection remains separately authorized.
+  configuration and ownership evidence collection requires separate authorization.
   Deliver a concrete later
   configuration/first-publication request with exact tooling, artifacts and
   effects; return any changed risk or product scope to the owner.
