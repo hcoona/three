@@ -97,8 +97,9 @@ The Python design realizes owner-confirmed `WD-PY-*` through the HLD, five MLDs
 and [brief LLD](./hcoona-release-smoke-python-lld.md). Disabled implementation
 and local validation are protected-delivered through
 [PR #849](https://github.com/hcoona/three/pull/849). The following dependency
-order remains applicable; further work requires an accepted
-[Wave entry](../../../../../docs/delivery-wave.md). Native/configuration
+order remains applicable. The accepted [Wave](../../../../../docs/delivery-wave.md)
+authorizes preparation under the [native protocol](./validation/python-native-acceptance.md).
+Native/configuration
 operations and publication retain separate grants:
 
 1. Disabled Python Provider/Model and frozen two-format Build/Qualification,

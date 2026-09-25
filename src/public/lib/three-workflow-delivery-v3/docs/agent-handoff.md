@@ -52,9 +52,11 @@ For the owner's next Workflow Delivery v3 task:
    HLD/five MLDs and [Python LLD](./hcoona-release-smoke-python-lld.md), with
    the [source evidence](./research/python-smoke-evidence.md) for claim limits.
    The disabled implementation is protected-delivered through
-   [PR #849](https://github.com/hcoona/three/pull/849). Further work requires
-   a new accepted [Wave entry](../../../../../docs/delivery-wave.md) and the
-   applicable domain gates. Both
+   [PR #849](https://github.com/hcoona/three/pull/849). The accepted
+   [Wave](../../../../../docs/delivery-wave.md) now authorizes bounded
+   native-acceptance preparation under the
+   [Python protocol](./validation/python-native-acceptance.md). Configuration,
+   native execution/admission and publication retain separate gates. Both
    Python destinations remain disabled. The Python CLI and workflow implement
    local Build/Qualification and the guarded publication state machine; local
    validation does not establish native registry behavior. Prior smoke permissions and the

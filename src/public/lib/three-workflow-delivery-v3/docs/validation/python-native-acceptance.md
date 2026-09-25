@@ -132,10 +132,17 @@ returned deployment (at most five): eight API GETs maximum, 100 entries per
 listing, no pagination or retries; a full page or exceeded cap fails closed.
 Artifact upload/download actions and locked dependency preparation are ordinary
 hosted transport/setup, not extra registry probes. One current-run prepared
-artifact and one probe artifact are passed by immutable ID/digest; no history
-or name lookup reconstructs evidence. No dispatch/polling operator is added:
+artifact and one probe artifact use the existing `ArtifactReference` fields:
+immutable artifact-service ID, service digest and URL, plus exact selected
+payload path and logical SHA-256 of the original payload bytes. Consumers check
+both digest bindings independently, even when raw `archive: false` transport
+makes their values equal, and bind the producer, current run and tooling SHA.
+Each bundle manifest binds every retained raw file's path, byte length and
+SHA-256; raw service bytes are never JSON-canonicalized to manufacture equality.
+No history or name lookup reconstructs evidence. No dispatch/polling operator is added:
 the later authorized operator performs one explicit GitHub dispatch and retains
-the exact returned run, output artifact IDs and digests. No rerun is admissible.
+the exact returned run and complete output artifact references, including both
+service and payload digest bindings. No rerun is admissible.
 
 ## Stops and Retained Evidence
 
