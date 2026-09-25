@@ -11,7 +11,8 @@ ends a grant. Git and the proposing PR retain the reason and history.
 ### Prepare TestPyPI first-project bootstrap
 
 - **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** the owner's approval of the
+- **Accepted inputs:** the owner's
+  [approval](https://github.com/hcoona/three/issues/843#issuecomment-5827156047) of the
   [bootstrap-preparation proposal](https://github.com/hcoona/three/issues/843#issuecomment-5827147624);
   accepted Python requirements/design, disabled implementation, native
   protocol/tooling and readiness findings; and owner-reported TestPyPI username
@@ -21,8 +22,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
   implement and validate the minimum supporting tooling. Preserve the native
   suite's existing-project gate. Close source/version and original-file
   provenance, pending-publisher conversion, initial-state evidence, exact
-  request/proof budgets, credential isolation, failure stops and independent
-  configuration/ownership audit before implementation. Deliver a concrete later
+  request/proof budgets, credential isolation, failure stops and the independent
+  configuration/ownership audit design before implementation. Actual account,
+  configuration and ownership evidence collection remains separately authorized.
+  Deliver a concrete later
   configuration/first-publication request with exact tooling, artifacts and
   effects; return any changed risk or product scope to the owner.
 - **Effects and delivery:** permit relevant public documentation research,
