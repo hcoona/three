@@ -25,17 +25,17 @@ from three_workflow_delivery_v3.acceptance.python_native_fixture import (
     prepare_fixtures,
 )
 from three_workflow_delivery_v3.adapters.python import (
-    PythonPackageTargetWitness,
     inspect_python_distribution,
 )
 from three_workflow_delivery_v3.canonical import (
+    canonical_sha256,
     canonicalize,
     parse_canonical_json,
 )
-from three_workflow_delivery_v3.catalogs import catalog_digest
 from three_workflow_delivery_v3.repository.python_provider import (
     PYTHON_ROOT,
     PythonNbgvFacts,
+    python_digest,
 )
 
 from ..adapters.test_pypi import _distribution
@@ -59,12 +59,26 @@ def _members(distribution):
         return {item.name: archive.extractfile(item).read() for item in archive}
 
 
-def _synthetic_witness(label):
+def _synthetic_provider(label):
     height = 7 if label == "a" else 8
     target = label * 40
-    return PythonPackageTargetWitness(
-        target,
-        PythonNbgvFacts(
+    provider = _provider()
+    return replace(
+        provider,
+        binding=replace(
+            provider.binding,
+            request_id=f"python-native-fixture:{target}",
+            purpose="destination-acceptance",
+            workflow_run_id=_BASE_RUN,
+            target=target,
+            producer="prepare-python-native",
+            control=f"workflow-delivery-v3:{target}",
+            request_digest=canonical_sha256(
+                {"target": target, "purpose": "destination-acceptance"}
+            ),
+        ),
+        checkout=replace(provider.checkout, target=target, head=target),
+        nbgv=PythonNbgvFacts(
             canonicalize(
                 {
                     "SimpleVersion": "0.1.0",
@@ -76,10 +90,11 @@ def _synthetic_witness(label):
             ),
             f"0.1.0b{height}",
         ),
-        catalog_digest(),
-        "sha256:" + "e" * 64,
-        "destination-acceptance",
     )
+
+
+def _synthetic_witness(label):
+    return fixture_witness(_synthetic_provider(label))
 
 
 @pytest.fixture
@@ -88,7 +103,11 @@ def modeled_fixtures():
     distributions = {}
     evidence = {}
     for label in ("a", "b"):
-        witness = _synthetic_witness(label)
+        provider = _synthetic_provider(label)
+        witness = fixture_witness(provider)
+        evidence[f"provider/{label}.json"] = canonicalize(
+            provider.to_document()
+        )
         for variant in ("wheel", "sdist"):
             original = _distribution(variant, witness)
             comparison = comparison_distribution(original)
@@ -118,6 +137,41 @@ def modeled_fixtures():
                         ],
                     }
                 )
+        staged = next(
+            content
+            for name, content in _members(
+                distributions[f"{label}/original/sdist"]
+            ).items()
+            if name.endswith("/pyproject.toml")
+        )
+        evidence[f"build/{label}.json"] = canonicalize(
+            {
+                "source-manifest": [
+                    list(pair) for pair in provider.source_input_manifest
+                ],
+                "staged-manifest-digest": python_digest(staged),
+                "versions": {
+                    "argv": [
+                        "uv",
+                        "pip",
+                        "freeze",
+                        "--python",
+                        "/synthetic/producer/bin/python",
+                    ],
+                    "exit-code": 0,
+                    "stdout": "hatchling==1.32.0\n",
+                    "stderr": "",
+                },
+                "commands": [
+                    {
+                        "argv": ["uv", "build", "--sdist", "--wheel"],
+                        "exit-code": 0,
+                        "stdout": "",
+                        "stderr": "",
+                    }
+                ],
+            }
+        )
     return NativeFixtures(distributions, evidence)
 
 
@@ -325,6 +379,68 @@ def test_python_native_fixture_rejects_invalid_consumer_proof(
         NativeFixtures(modeled_fixtures.distributions, evidence).match(request)
 
 
+@pytest.mark.parametrize("kind", ["provider", "build"])
+@pytest.mark.parametrize("change", ["missing", "malformed", "foreign"])
+def test_python_native_fixtures_require_original_preparation_provenance(
+    modeled_fixtures, kind, change
+):
+    """Clean-consumer proofs cannot substitute for source/build provenance."""
+    request = fixture_request(modeled_fixtures)
+    evidence = dict(modeled_fixtures.evidence)
+    key = f"{kind}/a.json"
+    if change == "missing":
+        evidence.pop(key)
+    elif change == "malformed":
+        evidence[key] = b"not a canonical evidence object"
+    else:
+        evidence[key] = evidence[f"{kind}/b.json"]
+    with pytest.raises((ValueError, TypeError, KeyError)):
+        NativeFixtures(modeled_fixtures.distributions, evidence).match(
+            request, run_id=_BASE_RUN
+        )
+
+
+@pytest.mark.parametrize(
+    ("kind", "path", "value"),
+    [
+        ("provider", ("binding", "workflow-run-id"), 912),
+        ("provider", ("binding", "purpose"), "release-simulation"),
+        ("provider", ("binding", "producer"), "foreign-producer"),
+        ("provider", ("binding", "control"), "foreign-control"),
+        ("provider", ("binding", "request-id"), "foreign-request"),
+        ("provider", ("binding", "request-digest"), "sha256:" + "f" * 64),
+        ("provider", ("binding", "run-attempt"), 2),
+        ("provider", ("checkout", "head"), "f" * 40),
+        ("build", ("source-manifest", 0, 1), "sha256:" + "f" * 64),
+        ("build", ("staged-manifest-digest",), "sha256:" + "f" * 64),
+        ("build", ("versions", "exit-code"), 1),
+        ("build", ("versions", "stdout"), ""),
+        ("build", ("versions", "stdout"), 17),
+        ("build", ("commands",), []),
+        ("build", ("commands", 0, "exit-code"), 1),
+        ("build", ("commands", 0, "exit-code"), False),
+        ("build", ("unexpected",), True),
+    ],
+)
+def test_python_native_fixture_rejects_inconsistent_preparation_provenance(
+    modeled_fixtures, kind, path, value
+):
+    """Provider identity and successful build proof bind original bytes."""
+    request = fixture_request(modeled_fixtures)
+    evidence = dict(modeled_fixtures.evidence)
+    key = f"{kind}/a.json"
+    document = parse_canonical_json(evidence[key])
+    parent = document
+    for part in path[:-1]:
+        parent = parent[part]
+    parent[path[-1]] = value
+    evidence[key] = canonicalize(document)
+    with pytest.raises((ValueError, TypeError, KeyError)):
+        NativeFixtures(modeled_fixtures.distributions, evidence).match(
+            request, run_id=_BASE_RUN
+        )
+
+
 @pytest.fixture(scope="module")
 def actual_native_fixtures(native_python_provider_repository):
     """Build both targets and qualify all eight files with real tools."""
@@ -416,7 +532,13 @@ def test_python_native_prepared_binding_changes_without_changing_package_bytes(
 
     def built(repo_root, targets, run_id):
         calls.append((repo_root, targets, run_id))
-        return modeled_fixtures
+        evidence = dict(modeled_fixtures.evidence)
+        for label in ("a", "b"):
+            key = f"provider/{label}.json"
+            provider = parse_canonical_json(evidence[key])
+            provider["binding"]["workflow-run-id"] = run_id
+            evidence[key] = canonicalize(provider)
+        return NativeFixtures(modeled_fixtures.distributions, evidence)
 
     monkeypatch.setattr(python_native_fixture, "build_fixture_set", built)
     first_request = fixture_request(modeled_fixtures)
@@ -441,7 +563,11 @@ def test_python_native_prepared_binding_changes_without_changing_package_bytes(
         (tmp_path, {"a": "a" * 40, "b": "b" * 40}, 912),
     ]
     for name, content in modeled_fixtures.files().items():
-        assert first[name] == second[name] == content
+        if name.startswith("provider/"):
+            assert first[name] == content
+            assert first[name] != second[name]
+        else:
+            assert first[name] == second[name] == content
 
 
 def test_real_python_native_final_audit_freshly_consumes_downloaded_files(

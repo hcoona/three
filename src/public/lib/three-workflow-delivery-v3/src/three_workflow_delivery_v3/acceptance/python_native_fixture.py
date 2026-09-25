@@ -43,7 +43,9 @@ from three_workflow_delivery_v3.repository.python_provider import (
     PYTHON_RELEASE_UNIT,
     PythonProviderResult,
     provide_python_repository_facts,
+    python_digest,
     python_object,
+    python_provider_result_from_document,
     python_text,
     require_public_python_version,
 )
@@ -147,7 +149,11 @@ def validate_consumer_evidence(
         and bool(installed["module"]),
         "fixture clean consumer proof differs",
     )
-    commands = proof["commands"]
+    _validate_commands(proof["commands"])
+
+
+def _validate_commands(commands: JsonValue) -> None:
+    """Check the existing adapter's closed successful command evidence."""
     require(
         isinstance(commands, list) and bool(commands),
         "consumer command evidence missing",
@@ -217,15 +223,29 @@ class NativeFixtures:
             "fixture source identities must differ",
         )
 
-    def match(self, request: NativeRequest) -> None:
+    def match(
+        self, request: NativeRequest, *, run_id: int | None = None
+    ) -> None:
         """Verify protected digests and source projection before capability."""
         require(
             request.document["fixture-digests"]
             == {k: d.digest for k, d in self.distributions.items()},
             "protected fixture digests differ",
         )
+        require(
+            set(self.evidence)
+            == {
+                *(f"consumer/{key}.json" for key in FIXTURE_KEYS),
+                "provider/a.json",
+                "provider/b.json",
+                "build/a.json",
+                "build/b.json",
+            },
+            "prepared provenance inventory differs",
+        )
         for label in ("a", "b"):
             witness = self.distributions[f"{label}/original/wheel"].witness
+            self._validate_provenance(label, witness, run_id)
             require(
                 request.target(label)
                 == {
@@ -238,6 +258,66 @@ class NativeFixtures:
             validate_consumer_evidence(
                 self.evidence[f"consumer/{key}.json"], item
             )
+
+    def _validate_provenance(
+        self,
+        label: str,
+        witness: PythonPackageTargetWitness,
+        run_id: int | None,
+    ) -> None:
+        provider = python_provider_result_from_document(
+            parse_canonical_json(self.evidence[f"provider/{label}.json"])
+        )
+        target = witness.target
+        require(
+            fixture_witness(provider) == witness
+            and provider.binding
+            == ProviderBinding(
+                f"python-native-fixture:{target}",
+                "destination-acceptance",
+                run_id
+                if run_id is not None
+                else provider.binding.workflow_run_id,
+                1,
+                target,
+                "prepare-python-native",
+                f"workflow-delivery-v3:{target}",
+                witness.catalog_digest,
+                canonical_sha256(
+                    {"target": target, "purpose": "destination-acceptance"}
+                ),
+            ),
+            "prepared Provider provenance differs",
+        )
+        build = python_object(
+            parse_canonical_json(self.evidence[f"build/{label}.json"]),
+            {
+                "source-manifest",
+                "staged-manifest-digest",
+                "versions",
+                "commands",
+            },
+        )
+        manifests = [
+            content
+            for path, content in _archive_members(
+                self.distributions[f"{label}/original/sdist"].content, "sdist"
+            ).items()
+            if path.endswith("/pyproject.toml")
+        ]
+        require(
+            build["source-manifest"]
+            == [list(pair) for pair in provider.source_input_manifest]
+            and len(manifests) == 1
+            and build["staged-manifest-digest"] == python_digest(manifests[0]),
+            "prepared Build source provenance differs",
+        )
+        _validate_commands(build["commands"])
+        _validate_commands([build["versions"]])
+        require(
+            bool(cast("dict[str, JsonValue]", build["versions"])["stdout"]),
+            "prepared producer versions missing",
+        )
 
     def files(self) -> dict[str, bytes]:
         """Serialize original bytes separately from their parsed bindings."""
@@ -372,7 +452,7 @@ def prepare_fixtures(
         },
         run_id,
     )
-    fixtures.match(request)
+    fixtures.match(request, run_id=run_id)
     files = fixtures.files()
     files["request.json"] = request.content
     files["binding.json"] = canonicalize(

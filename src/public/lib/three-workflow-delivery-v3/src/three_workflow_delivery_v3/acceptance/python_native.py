@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3.acceptance.python_native_contract import (
+    WORKFLOW,
     NativeRequest,
     commit,
     load_request,
@@ -205,7 +206,7 @@ def probe(  # noqa: PLR0913, PLR0917 - closed native input tuple
     """Persist authority before minting and execute no target/product code."""
     _binding(prepared, request, run_id, tooling_sha)
     fixtures = fixtures_from_files(prepared)
-    fixtures.match(request)
+    fixtures.match(request, run_id=run_id)
     output.mkdir(parents=True, exist_ok=False)
     deadline = time.monotonic() + 600
     try:
@@ -333,6 +334,24 @@ def audit_native(  # noqa: PLR0913, PLR0917 - same supplied-fact tuple
         },
         "native probe binding differs",
     )
+    require(
+        parse_canonical_json(probe_files["platform.json"])
+        == {
+            "GITHUB_REPOSITORY": "hcoona/three",
+            "GITHUB_REPOSITORY_ID": "1102295886",
+            "GITHUB_ACTOR": "hcoona",
+            "GITHUB_ACTOR_ID": "712433",
+            "GITHUB_REF": "refs/heads/main",
+            "GITHUB_REF_PROTECTED": "true",
+            "GITHUB_RUN_ID": str(run_id),
+            "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_SHA": tooling_sha,
+            "GITHUB_WORKFLOW_SHA": tooling_sha,
+            "GITHUB_WORKFLOW_REF": f"hcoona/three/{WORKFLOW}@refs/heads/main",
+            "RUNNER_OS": "Linux",
+        },
+        "native platform evidence differs",
+    )
 
     class ProofReplay:
         count = 0
@@ -374,9 +393,11 @@ def audit_native(  # noqa: PLR0913, PLR0917 - same supplied-fact tuple
         == replay.count * 2,
         "native proof inventory differs",
     )
+    fixtures = fixtures_from_files(prepared)
+    fixtures.match(request, run_id=run_id)
     result = audit_suite(
         request,
-        fixtures_from_files(prepared),
+        fixtures,
         {
             k.removeprefix("suite/"): v
             for k, v in probe_files.items()

@@ -519,6 +519,76 @@ def test_python_native_audit_replays_original_hosted_proof(
     assert tuple(http.calls) == original_calls
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        (None, None),
+        ("GITHUB_REPOSITORY", "foreign/three"),
+        ("GITHUB_REPOSITORY_ID", "1"),
+        ("GITHUB_ACTOR", "foreign"),
+        ("GITHUB_ACTOR_ID", "1"),
+        ("GITHUB_REF", "refs/heads/topic"),
+        ("GITHUB_REF_PROTECTED", "false"),
+        ("GITHUB_RUN_ID", "912"),
+        ("GITHUB_RUN_ATTEMPT", "2"),
+        ("GITHUB_SHA", "d" * 40),
+        ("GITHUB_WORKFLOW_SHA", "d" * 40),
+        ("GITHUB_WORKFLOW_REF", f"hcoona/three/{WORKFLOW}@refs/heads/topic"),
+        ("RUNNER_OS", "Windows"),
+        ("unexpected", "unbound fact"),
+    ],
+)
+def test_python_native_audit_requires_exact_original_platform(
+    hosted_probe, monkeypatch, field, value
+):
+    """Raw hosted proof cannot replace contradictory platform facts."""
+    request, prepared, reference, files, http = hosted_probe
+    if field is None:
+        files.pop("platform.json")
+    else:
+        platform = parse_canonical_json(files["platform.json"])
+        platform[field] = value
+        files["platform.json"] = canonicalize(platform)
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("Invalid platform reached registry evidence audit")
+
+    monkeypatch.setattr(python_native, "audit_suite", forbidden)
+    original_calls = tuple(http.calls)
+    with pytest.raises((ValueError, KeyError)):
+        audit_native(request, prepared, files, reference, _RUN, _TOOLING)
+    assert tuple(http.calls) == original_calls
+
+
+@pytest.mark.parametrize(
+    "change", ["missing-provider", "foreign-run", "missing-build"]
+)
+def test_python_native_audit_requires_current_prepared_provenance(
+    hosted_probe, monkeypatch, change
+):
+    """A prepared envelope cannot relabel missing or foreign provenance."""
+    request, prepared, reference, files, http = hosted_probe
+    if change == "missing-provider":
+        prepared.pop("provider/a.json")
+    elif change == "missing-build":
+        prepared.pop("build/a.json")
+    else:
+        for label in ("a", "b"):
+            key = f"provider/{label}.json"
+            provider = parse_canonical_json(prepared[key])
+            provider["binding"]["workflow-run-id"] = 912
+            prepared[key] = canonicalize(provider)
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("Invalid preparation reached registry evidence audit")
+
+    monkeypatch.setattr(python_native, "audit_suite", forbidden)
+    original_calls = tuple(http.calls)
+    with pytest.raises((ValueError, KeyError)):
+        audit_native(request, prepared, files, reference, _RUN, _TOOLING)
+    assert tuple(http.calls) == original_calls
+
+
 def test_python_native_workflow_scopes_authority_and_retains_evidence():
     """Actual YAML admits manual protected execution and isolated OIDC only."""
     workflow = yaml.safe_load((_ROOT / WORKFLOW).read_text())
