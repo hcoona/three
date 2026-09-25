@@ -218,6 +218,11 @@ a partial set still blocks. Only separately requested recovery may address it.
 
 ## Evidence and Delivery Gates
 
+The [native acceptance protocol](./validation/python-native-acceptance.md)
+closes the fixed preparation and future operation schedule, exact smoke tuple,
+finite budgets, fixture validity, audit contracts and remaining operator resources.
+It grants no native effects and does not establish either destination's admission.
+
 Implementation validation covers these distinct claims before native admission:
 
 - Scenario tests: complete two-file success; wheel failure prevents sdist;

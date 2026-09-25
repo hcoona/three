@@ -153,6 +153,24 @@ support using that supplied HTTPS URL with the documented hosted-runner host
 family and selected audience. The JWT issuer is a separate concept. No OIDC
 request was made to establish this source finding.
 
+### Native Preparation Interface Recheck
+
+On 2026-09-25 the native-preparation author re-read the cited upload API,
+JSON Simple Index API, manual trusted-publisher flow, trusted-publisher security
+model and GitHub OIDC/workflow-permissions pages, plus
+[Hatch build reproducibility](https://hatch.pypa.io/latest/config/build/#reproducible-builds).
+They continue to describe one-file uploads, JSON file inventories, separate
+OIDC audiences and a short-lived minted credential. Hatch documents reproducible
+build controls; it does not establish this suite's comparison-fixture validity.
+The preparation PR retains the retrieved bodies, retrieval times and hashes.
+
+The proposed native suite reuses these unchanged APIs and the protected pinned
+transport. Its finite request counts, race intervals and filename-error
+recognizer are conservative application choices, not additional documented
+service guarantees. Actual matching native responses and independent audit
+remain required. No OIDC, account, project or native registry endpoint was
+queried for this recheck; only public documentation was retrieved.
+
 ## Decision Impact and Limits
 
 The owner [confirmed the requirements packet](https://github.com/hcoona/three/issues/843#issuecomment-5822043601)

@@ -218,6 +218,10 @@ records the exhausted dispatch authorization and separate recovery boundary.
 
 ## Historical Source Rule
 
+The [Python native acceptance protocol](./validation/python-native-acceptance.md)
+defines the bounded suite and operator prerequisites. It is an execution
+contract for separately authorized work, not native evidence or Live admission.
+
 Git history and delivery work carriers retain chronology. Current-state pages
 describe current truth and must not reproduce retry ledgers, PR narratives,
 test-count histories, artifact tables, or superseded mechanisms.
