@@ -7,8 +7,9 @@ and independent auditors. It realizes `WD-PY-009`; the existing native protocol
 continues to require an already controlled project and a complete HTTP-200
 initial index. Bootstrap is a separate prerequisite operation, not native
 admission or a normal-Live Attempt. Its evidence cannot satisfy either gate.
-The accepted [Wave](../../../../../../docs/delivery-wave.md) grants preparation
-only. Configuration and execution need later concrete owner authorization.
+Current work authorization is determined by the
+[Wave](../../../../../../docs/delivery-wave.md). Configuration and execution
+need separate concrete owner authorization.
 
 The only destination is TestPyPI project `hcoona-release-smoke-python`, using
 `workflow-delivery-v3-bootstrap-python.yml` in `hcoona/three` (1102295886),

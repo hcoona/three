@@ -227,8 +227,9 @@ source/artifact provenance, pending-publisher and initial-404 boundaries,
 immutable authority/marker transport, finite requests, failure semantics and
 independent project-control audit. It precedes the existing native suite without
 weakening that suite or entering the normal-Live graph. Shared mechanisms retain
-separate bootstrap, native and normal publication evidence purposes. Preparation
-is authorized by the current Wave; no external operation is authorized here.
+separate bootstrap, native and normal publication evidence purposes. The
+[Delivery Wave](../../../../../docs/delivery-wave.md) determines current work
+authorization; no external operation is authorized here.
 
 ## Evidence and Delivery Gates
 
