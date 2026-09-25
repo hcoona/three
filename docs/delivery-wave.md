@@ -8,6 +8,40 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Prepare TestPyPI first-project bootstrap
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the owner's approval of the
+  [bootstrap-preparation proposal](https://github.com/hcoona/three/issues/843#issuecomment-5827147624);
+  accepted Python requirements/design, disabled implementation, native
+  protocol/tooling and readiness findings; and owner-reported TestPyPI username
+  `Backspace7980`, distinct from GitHub operator `hcoona` / `712433`.
+- **Advancement and outcome:** first deliver the scoped requirements/design and
+  finite bootstrap protocol for `hcoona-release-smoke-python` on TestPyPI, then
+  implement and validate the minimum supporting tooling. Preserve the native
+  suite's existing-project gate. Close source/version and original-file
+  provenance, pending-publisher conversion, initial-state evidence, exact
+  request/proof budgets, credential isolation, failure stops and independent
+  configuration/ownership audit before implementation. Deliver a concrete later
+  configuration/first-publication request with exact tooling, artifacts and
+  effects; return any changed risk or product scope to the owner.
+- **Effects and delivery:** permit relevant public documentation research,
+  local dependency preparation, builds and tests, ordinary Issue/PR/check
+  operations and CI, independent delegated review and protected delivery.
+  Complete applicable local checks and normal hooks, domain/security,
+  record/evidence and full-manifest open-code-review-delegate review,
+  independent finding disposition, contraction and postmerge checks. Evaluate
+  applicable mutable-source rechecks at each Wave merge. Close this grant when
+  the preparation outcome is delivered.
+- **Exclusions:** no account login/inspection, Environment or publisher
+  configuration, access/credential changes, OIDC/token requests, registry
+  inspection/probes/uploads, release dispatch, bootstrap workflow execution
+  (including hosted preparation), native execution/admission, activation or
+  normal publication. Both Python destinations remain disabled and both native
+  request slots remain null; bootstrap execution authority is absent by
+  default. Configuration and first publication need separate concrete grants.
+  No npm, NuGet, PyPI operation or Ruby advancement is included.
+
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
