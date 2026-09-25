@@ -1,0 +1,348 @@
+"""Native fixtures through the credential-free Python Provider and Build."""
+
+from __future__ import annotations
+
+import copy
+import gzip
+import io
+import zipfile
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+from three_workflow_delivery_v3.acceptance.python_native_contract import (
+    FIXTURE_KEYS,
+    NativeRequest,
+    require,
+)
+from three_workflow_delivery_v3.adapters.python import (
+    PythonBuildRequest,
+    PythonConsumerResult,
+    PythonDistribution,
+    PythonPackageTargetWitness,
+    _archive_members,
+    build_python_distributions,
+    inspect_python_distribution,
+    python_package_target_witness_from_document,
+    qualify_python_consumer,
+)
+from three_workflow_delivery_v3.canonical import (
+    JsonValue,
+    canonical_sha256,
+    canonicalize,
+    parse_canonical_json,
+)
+from three_workflow_delivery_v3.catalogs import catalog_digest
+from three_workflow_delivery_v3.repository.node_provider import (
+    AUTHORITATIVE_REMOTE,
+    CheckoutMaterialization,
+    ProviderBinding,
+    _isolated_exact_target_repository,
+    _run_command,
+)
+from three_workflow_delivery_v3.repository.python_provider import (
+    PythonProviderResult,
+    provide_python_repository_facts,
+    python_text,
+    require_public_python_version,
+)
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+def fixture_witness(
+    provider: PythonProviderResult,
+) -> PythonPackageTargetWitness:
+    """Bind source identity without execution, destination or tooling SHA."""
+    require_public_python_version(provider.nbgv)
+    return PythonPackageTargetWitness(
+        provider.binding.target,
+        provider.nbgv,
+        provider.binding.catalog_digest,
+        canonical_sha256(
+            {
+                "schema": "workflow-delivery/v3/control-identity",
+                "identity": f"workflow-delivery-v3:{provider.binding.target}",
+            }
+        ),
+        "destination-acceptance",
+    )
+
+
+def comparison_distribution(original: PythonDistribution) -> PythonDistribution:
+    """Change representation while preserving every extracted member byte."""
+    if original.variant == "wheel":
+        output = io.BytesIO()
+        with (
+            zipfile.ZipFile(io.BytesIO(original.content)) as source,
+            zipfile.ZipFile(output, "w") as destination,
+        ):
+            for info in source.infolist():
+                selected = copy.copy(info)
+                selected.compress_type = (
+                    zipfile.ZIP_STORED
+                    if info.compress_type != zipfile.ZIP_STORED
+                    else zipfile.ZIP_DEFLATED
+                )
+                destination.writestr(selected, source.read(info.filename))
+        content = output.getvalue()
+    else:
+        # Change only gzip MTIME; leave the compressed tar untouched.
+        content = (
+            original.content[:4]
+            + (int.from_bytes(original.content[4:8], "little") ^ 1).to_bytes(
+                4, "little"
+            )
+            + original.content[8:]
+        )
+        require(
+            gzip.decompress(content) == gzip.decompress(original.content),
+            "comparison changed sdist payload",
+        )
+    require(
+        content != original.content
+        and _archive_members(content, original.variant)
+        == _archive_members(original.content, original.variant),
+        "comparison must change only archive representation",
+    )
+    return inspect_python_distribution(
+        original.filename, content, original.variant, original.witness
+    )
+
+
+def consumer_evidence(result: PythonConsumerResult) -> bytes:
+    """Retain actual installed metadata, original identity and commands."""
+    return canonicalize(
+        {
+            "variant": result.variant,
+            "original-digest": result.original_digest,
+            "installed": parse_canonical_json(result.installed),
+            "commands": [
+                parse_canonical_json(c) for c in result.command_evidence
+            ],
+        }
+    )
+
+
+@dataclass(frozen=True)
+class NativeFixtures:
+    """Eight inspected originals/comparisons and credential-free evidence."""
+
+    distributions: dict[str, PythonDistribution]
+    evidence: dict[str, bytes]
+
+    def __post_init__(self) -> None:
+        """Close candidate identity and preserve exact member equivalence."""
+        require(
+            set(self.distributions) == set(FIXTURE_KEYS),
+            "acceptance needs exactly eight fixtures",
+        )
+        for label in ("a", "b"):
+            for variant in ("wheel", "sdist"):
+                original = self.distributions[f"{label}/original/{variant}"]
+                other = self.distributions[f"{label}/comparison/{variant}"]
+                for item in (original, other):
+                    inspect_python_distribution(
+                        item.filename, item.content, item.variant, item.witness
+                    )
+                    require(
+                        item.variant == variant
+                        and item.witness.purpose == "destination-acceptance",
+                        "foreign acceptance fixture",
+                    )
+                    require_public_python_version(item.witness.nbgv)
+                require(
+                    original.witness == other.witness
+                    and original.filename == other.filename
+                    and original.digest != other.digest
+                    and _archive_members(original.content, variant)
+                    == _archive_members(other.content, variant),
+                    "invalid comparison fixture",
+                )
+            require(
+                self.distributions[f"{label}/original/wheel"].witness
+                == self.distributions[f"{label}/original/sdist"].witness,
+                "fixture pair witness differs",
+            )
+        a = self.distributions["a/original/wheel"].witness
+        b = self.distributions["b/original/wheel"].witness
+        require(
+            a.target != b.target
+            and a.nbgv.pep440_version != b.nbgv.pep440_version,
+            "fixture source identities must differ",
+        )
+
+    def match(self, request: NativeRequest) -> None:
+        """Verify protected digests and source projection before capability."""
+        require(
+            request.document["fixture-digests"]
+            == {k: d.digest for k, d in self.distributions.items()},
+            "protected fixture digests differ",
+        )
+        for label in ("a", "b"):
+            witness = self.distributions[f"{label}/original/wheel"].witness
+            require(
+                request.target(label)
+                == {
+                    "commit": witness.target,
+                    "version": witness.nbgv.pep440_version,
+                },
+                "protected fixture source differs",
+            )
+        for key, item in self.distributions.items():
+            proof = parse_canonical_json(self.evidence[f"consumer/{key}.json"])
+            require(
+                proof["original-digest"] == item.digest
+                and proof["variant"] == item.variant
+                and cast("dict", proof["installed"])["witness"]
+                == item.witness.to_document()
+                and bool(proof["commands"]),
+                "fixture clean consumer proof differs",
+            )
+
+    def files(self) -> dict[str, bytes]:
+        """Serialize original bytes separately from their parsed bindings."""
+        result = dict(self.evidence)
+        metadata: dict[str, JsonValue] = {}
+        for key, item in self.distributions.items():
+            result[f"fixtures/{key}.bin"] = item.content
+            metadata[key] = {
+                "filename": item.filename,
+                "variant": item.variant,
+                "witness": item.witness.to_document(),
+                "digest": item.digest,
+            }
+        result["fixtures.json"] = canonicalize(metadata)
+        return result
+
+
+def fixtures_from_files(files: dict[str, bytes]) -> NativeFixtures:
+    """Inspect each retained original instead of trusting an asserted digest."""
+    metadata = parse_canonical_json(files["fixtures.json"])
+    require(
+        set(metadata) == set(FIXTURE_KEYS),
+        "incomplete prepared fixture inventory",
+    )
+    distributions = {}
+    for key, value in metadata.items():
+        item = cast("dict[str, JsonValue]", value)
+        distribution = inspect_python_distribution(
+            python_text(item["filename"]),
+            files[f"fixtures/{key}.bin"],
+            python_text(item["variant"]),
+            python_package_target_witness_from_document(item["witness"]),
+        )
+        require(
+            distribution.digest == item["digest"],
+            "prepared fixture bytes differ",
+        )
+        distributions[key] = distribution
+    return NativeFixtures(
+        distributions,
+        {
+            k: v
+            for k, v in files.items()
+            if k.startswith(("provider/", "build/", "consumer/"))
+        },
+    )
+
+
+def build_fixture_set(
+    repo_root: Path, targets: dict[str, str], run_id: int
+) -> NativeFixtures:
+    """Build and clean-consume both representations at two exact ancestors."""
+    require(
+        set(targets) == {"a", "b"} and targets["a"] != targets["b"],
+        "two distinct fixture targets required",
+    )
+    distributions: dict[str, PythonDistribution] = {}
+    evidence: dict[str, bytes] = {}
+    for label, target in targets.items():
+        binding = ProviderBinding(
+            f"python-native-fixture:{target}",
+            "destination-acceptance",
+            run_id,
+            1,
+            target,
+            "prepare-python-native",
+            f"workflow-delivery-v3:{target}",
+            catalog_digest(),
+            canonical_sha256(
+                {"target": target, "purpose": "destination-acceptance"}
+            ),
+        )
+        with _isolated_exact_target_repository(
+            repo_root,
+            target,
+            _run_command(
+                ("git", "remote", "get-url", AUTHORITATIVE_REMOTE), repo_root
+            ).strip(),
+            runner=_run_command,
+        ) as source:
+            provider = provide_python_repository_facts(
+                source,
+                binding,
+                CheckoutMaterialization(0, credentials_persisted=False),
+            )
+        witness = fixture_witness(provider)
+        build = build_python_distributions(
+            repo_root,
+            PythonBuildRequest(
+                witness,
+                provider.source_input_manifest,
+                provider.build_constraints,
+            ),
+        )
+        evidence[f"provider/{label}.json"] = canonicalize(
+            provider.to_document()
+        )
+        evidence[f"build/{label}.json"] = canonicalize(
+            {
+                "source-manifest": [
+                    list(p) for p in provider.source_input_manifest
+                ],
+                "staged-manifest-digest": build.staged_manifest_digest,
+                "versions": parse_canonical_json(build.producer_versions),
+                "commands": [
+                    parse_canonical_json(c) for c in build.command_evidence
+                ],
+            }
+        )
+        for original in build.distributions:
+            for candidate, item in (
+                ("original", original),
+                ("comparison", comparison_distribution(original)),
+            ):
+                key = f"{label}/{candidate}/{item.variant}"
+                distributions[key] = item
+                evidence[f"consumer/{key}.json"] = consumer_evidence(
+                    qualify_python_consumer(item)
+                )
+    return NativeFixtures(distributions, evidence)
+
+
+def prepare_fixtures(
+    repo_root: Path, request: NativeRequest, run_id: int, tooling_sha: str
+) -> dict[str, bytes]:
+    """Bind qualified deterministic fixtures to the current hosted envelope."""
+    fixtures = build_fixture_set(
+        repo_root,
+        {
+            label: python_text(request.target(label)["commit"])
+            for label in ("a", "b")
+        },
+        run_id,
+    )
+    fixtures.match(request)
+    files = fixtures.files()
+    files["request.json"] = request.content
+    files["binding.json"] = canonicalize(
+        {
+            "request-digest": request.digest,
+            "tooling-sha": tooling_sha,
+            "run-id": run_id,
+            "run-attempt": 1,
+            "producer": "prepare-python-native",
+        }
+    )
+    return files

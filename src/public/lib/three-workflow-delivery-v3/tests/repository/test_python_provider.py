@@ -1,5 +1,10 @@
 """Exact native version and bounded Python Provider input contracts."""
 
+# Trusted native fixtures execute fixed local tools without a shell.
+# ruff: noqa: S603, S607
+import os
+import shutil
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -12,6 +17,7 @@ from three_workflow_delivery_v3.repository.node_provider import (
     AUTHORITATIVE_REMOTE,
     TAG_REFSPEC,
     CheckoutEvidence,
+    CheckoutMaterialization,
     ProviderBinding,
 )
 from three_workflow_delivery_v3.repository.python_provider import (
@@ -22,6 +28,7 @@ from three_workflow_delivery_v3.repository.python_provider import (
     PYTHON_SOURCE_FILES,
     PythonNbgvFacts,
     PythonProviderResult,
+    provide_python_repository_facts,
     python_digest,
     python_input_paths,
     python_nbgv_facts_from_document,
@@ -450,3 +457,110 @@ def test_python_provider_serialization_retains_live_binding_without_attempt():
     assert admitted.binding.purpose == "live-release"
     assert admitted.binding.run_attempt is None
     assert admitted.binding.workflow_run_id == _WORKFLOW_RUN_ID
+
+
+@pytest.fixture(scope="module")
+def native_python_provider_repository(tmp_path_factory):
+    """Provide a small real full-history source without rebuilding packages."""
+    root = tmp_path_factory.mktemp("python-provider-purpose")
+    origin = root / "origin"
+    origin.mkdir()
+    shutil.copytree(
+        _ROOT / PYTHON_ROOT,
+        origin / PYTHON_ROOT,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    for name in _GLOBALS:
+        destination = origin / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(_ROOT / name, destination)
+    subprocess.run(
+        ("git", "init", "--quiet", "--initial-branch=main"),
+        cwd=origin,
+        check=True,
+    )
+    subprocess.run(("git", "add", "."), cwd=origin, check=True)
+    subprocess.run(
+        (
+            "git",
+            "-c",
+            "user.name=Python Provider Test",
+            "-c",
+            "user.email=python-provider@example.invalid",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "--quiet",
+            "-m",
+            "Seed complete Python provider inputs",
+        ),
+        cwd=origin,
+        check=True,
+    )
+    source = root / "source"
+    subprocess.run(
+        ("git", "clone", "--quiet", "--no-local", str(origin), str(source)),
+        env={**os.environ, "GIT_LFS_SKIP_SMUDGE": "1"},
+        check=True,
+    )
+    subprocess.run(
+        ("git", "checkout", "--quiet", "--detach"),
+        cwd=source,
+        check=True,
+    )
+    target = subprocess.check_output(
+        ("git", "rev-parse", "HEAD"), cwd=source, text=True
+    ).strip()
+    return source, target
+
+
+@pytest.mark.parametrize(
+    ("purpose", "public"),
+    [
+        ("destination-acceptance", True),
+        ("live-release", True),
+        ("ci-pr-slice-shadow", False),
+    ],
+)
+def test_real_python_provider_preserves_purpose_version_projection(
+    native_python_provider_repository, purpose, public
+):
+    """Acceptance uses public main while detached CI keeps local facts."""
+    source, target = native_python_provider_repository
+    binding = ProviderBinding(
+        "python-purpose-regression",
+        purpose,
+        _WORKFLOW_RUN_ID,
+        None if purpose == "live-release" else 1,
+        target,
+        "python-provider",
+        target,
+        catalog_digest(),
+        "sha256:" + "b" * 64,
+    )
+    result = provide_python_repository_facts(
+        source,
+        binding,
+        CheckoutMaterialization(0, credentials_persisted=False),
+    )
+    raw = result.nbgv.to_document()["raw"]
+    assert raw["PublicRelease"] is public
+    assert raw["GitCommitId"] == target
+    assert ("+" not in result.nbgv.pep440_version) is public
+    assert result.binding == binding
+    assert result.checkout.ancestry_complete is True
+    assert result.checkout.tags_complete is True
+    if public:
+        require_public_python_version(result.nbgv)
+    else:
+        with pytest.raises(ValueError, match="public version without local"):
+            require_public_python_version(result.nbgv)
+    # Only the provider's isolated clone may gain the main ref.
+    detached = subprocess.run(
+        ("git", "symbolic-ref", "--quiet", "HEAD"),
+        cwd=source,
+        capture_output=True,
+        check=False,
+    )
+    assert detached.returncode == 1
+    assert detached.stdout == b""

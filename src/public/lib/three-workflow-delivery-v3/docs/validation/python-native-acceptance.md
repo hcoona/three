@@ -196,6 +196,9 @@ normal-Live Governance requires a later protected admission decision matching
 the normal workflow's separately configured publisher tuple. A native workflow
 registration is not the normal workflow registration.
 
+The [tooling and operator readiness](python-native-readiness.md) records the
+preparation interfaces, local evidence limits and concrete request inputs.
+
 ## Operator Request and Remaining Resources
 
 Preparation can validate the local protocol/tooling, but account ownership and
