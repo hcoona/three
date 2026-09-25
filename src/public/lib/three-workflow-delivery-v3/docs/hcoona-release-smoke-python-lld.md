@@ -8,10 +8,12 @@ The V3 maintainer authors and maintains this carrier; implementers and reviewers
 use it to close the Python slice's concrete contracts without turning the MLDs
 into command inventories. It specifies the implementation contract, not native registry support. The
 disabled implementation is protected-delivered through
-[PR #849](https://github.com/hcoona/three/pull/849). The accepted
-[Wave](../../../../../docs/delivery-wave.md) authorizes native-acceptance preparation;
-native operations,
-configuration changes and publication remain separately gated.
+[PR #849](https://github.com/hcoona/three/pull/849). The
+[native protocol](./validation/python-native-acceptance.md) and
+[tooling readiness interface](./validation/python-native-readiness.md) are
+protected-delivered through PRs #854 and #855, completing preparation.
+Future native operations, configuration changes and publication require separate
+[Wave](../../../../../docs/delivery-wave.md) authorization and domain gates.
 
 The [source record](./research/python-smoke-evidence.md) owns service findings
 and limits. The [migration policy](./migration-strategy.md#python-smoke-delivery)
