@@ -253,5 +253,5 @@ authorized first-project prerequisite before native acceptance. The
 [Delivery Wave](../../../../../docs/delivery-wave.md) determines current work
 authorization. The protocol
 also owns the [tooling interface](./validation/python-bootstrap.md#tooling-interface);
-its protected request binds a separately approved operation. Actual setup, execution and publication
+its protected request is null. Future setup, execution and publication
 retain their own concrete grants.
