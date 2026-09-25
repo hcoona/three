@@ -6,8 +6,9 @@ import yaml
 from three_workflow_delivery_v3.acceptance.python_bootstrap_contract import (
     SLOT_PATH,
     WORKFLOW,
+    BootstrapRequest,
 )
-from three_workflow_delivery_v3.canonical import parse_json_strict
+from three_workflow_delivery_v3.canonical import canonicalize, parse_json_strict
 
 _ROOT = Path(__file__).resolve().parents[6]
 
@@ -164,9 +165,11 @@ def test_bootstrap_workflow_limits_capability_and_retains_failure():
     assert '"tooling-sha": os.environ["WDV3_TOOLING_SHA"]' in final["run"]
 
 
-def test_bootstrap_preparation_does_not_admit_native_or_live():
-    """All three operation slots and both generic live gates remain disabled."""
-    assert parse_json_strict((_ROOT / SLOT_PATH).read_bytes()) is None
+def test_bootstrap_request_does_not_admit_native_or_live():
+    """A valid bootstrap request leaves native and normal gates disabled."""
+    request = parse_json_strict((_ROOT / SLOT_PATH).read_bytes())
+    if request is not None:
+        BootstrapRequest(canonicalize(request))
     native = parse_json_strict(
         (
             _ROOT / ".github/workflow-delivery/native/python-requests.json"

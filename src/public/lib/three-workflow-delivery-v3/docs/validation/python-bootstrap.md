@@ -190,8 +190,9 @@ accepted availability limits remain; later absence does not authorize restoratio
 `three_workflow_delivery_v3.acceptance.python_bootstrap` implements the closed
 bootstrap phases. The manual workflow at
 `.github/workflows/workflow-delivery-v3-bootstrap-python.yml` separates prepare,
-publisher and audit jobs. The protected bootstrap request remains `null`;
-installing this tooling does not configure or execute a publisher.
+publisher and audit jobs. The protected bootstrap request admits only a
+separately authorized operation; installing this tooling alone does not configure
+or execute a publisher.
 
 After local locked dependency and NBGV preparation, the operator can build a
 prospective original pair from a protected-main ancestor without registry access:
