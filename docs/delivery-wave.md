@@ -8,45 +8,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Configure TestPyPI and execute one first-project bootstrap
-
-- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** the owner's [explicit configuration and first-publication
-  approval](https://github.com/hcoona/three/issues/843#issuecomment-5836984234)
-  of the [concrete bounded proposal](https://github.com/hcoona/three/issues/843#issuecomment-5828144865),
-  sole control of `Backspace7980`, smoke-only/no-production-use intent, and
-  owner-reported pending publisher; accepted `WD-PY-009`, the
-  [bootstrap protocol](../src/public/lib/three-workflow-delivery-v3/docs/validation/python-bootstrap.md),
-  protected tooling from PR #861 and exact retained local originals.
-- **Advancement and outcome:** configure only the proposed GitHub Environment
-  and independently review complete GitHub and owner-provided TestPyPI facts.
-  Then protected-deliver one fresh bootstrap request for source
-  `41b3064d9037d947d8b2921cf6d4c9d7b168c0fa`, version `0.1.0b6`, and the
-  proposal's exact wheel/sdist hashes; execute its single attempt and
-  independently audit the retained original effects, consumers and
-  owner-provided project-control evidence. Retire the consumed request by
-  protected delivery and close this grant after bounded outcome disposition.
-- **Effects and delivery:** permit the proposal's at most 42 configuration GETs
-  in two rounds and three named Environment mutations, one protected request,
-  one dispatch and at most one deployment approval after exact prepare review;
-  its finite monitoring, logs and five original artifact retrievals; and the
-  protocol's two uploads, five index reads, five file reads, sixteen GitHub
-  proof reads, one OIDC assertion and mint, five original artifacts and fixed
-  600-second window. Preserve the proposal's endpoint-specific ceilings and
-  owner-performed account inspections. Permit required public-source rechecks,
-  local validation, ordinary Issue/PR/check delivery, independent delegated
-  record/evidence/domain/OCR review and protected merge/postmerge checks.
-- **Risk and stop boundary:** the owner accepts the concrete first-publication
-  effects and partial or ambiguous failure without compensation. Pending
-  registration is not name reservation or project-control proof; owner
-  attestation is not independent account observation. Incomplete or unexpected
-  configuration, additional writers, ambiguous state or exhausted budgets stop
-  dependent work. Failure consumes the generation without retry or refill.
-- **Exclusions:** no rerun, replacement dispatch/version, rollback, deletion,
-  unrelated access/configuration changes, static credentials or account-session
-  collection; no native admission or normal TestPyPI/PyPI publication. Both
-  native slots remain null and both normal Python destinations disabled.
-
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
