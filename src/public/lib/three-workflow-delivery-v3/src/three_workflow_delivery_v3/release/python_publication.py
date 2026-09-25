@@ -501,6 +501,9 @@ class PythonPublicationResult:
             raise ValueError(message)
         if self.final_readback_digest is not None:
             _digest(self.final_readback_digest, field="Python final readback")
+        if self.final_readback_exact != sdist.readback_exact:
+            message = "Python final readback differs from operation evidence"
+            raise ValueError(message)
         if self.final_readback_exact and (
             self.final_readback_digest is None
             or any(
@@ -563,6 +566,10 @@ class PythonPublicationResult:
         return canonical_sha256(self.to_document())
 
 
+class _EvidenceRetentionError(OSError):
+    """Leave Result absent when reached evidence cannot be persisted."""
+
+
 def execute_python_publication(  # noqa: PLR0913, PLR0915
     marker: PythonMutationMarker,
     marker_reference: ArtifactReference,
@@ -623,12 +630,20 @@ def execute_python_publication(  # noqa: PLR0913, PLR0915
     ]
     evidence_root = claim_path.with_name(claim_path.name + "-observations")
     evidence_root.mkdir(exist_ok=False)
+    retention_error: _EvidenceRetentionError | None = None
 
     def retain(name: str, content: bytes) -> None:
-        path = evidence_root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("xb") as stream:
-            stream.write(content)
+        nonlocal retention_error
+        try:
+            path = evidence_root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("xb") as stream:
+                stream.write(content)
+        except OSError as error:
+            retention_error = retention_error or _EvidenceRetentionError(
+                "Python observation evidence retention failed"
+            )
+            raise retention_error from error
 
     final_digest = None
     final_exact = False
@@ -701,6 +716,8 @@ def execute_python_publication(  # noqa: PLR0913, PLR0915
                 )
                 previous = final_index
             except (OSError, ValueError, TypeError):
+                if retention_error is not None:
+                    raise retention_error from retention_error.__cause__
                 # Failure is retained; no readback can authorize a resend.
                 exact = False
         entries[ordinal] = PythonOperationResult(

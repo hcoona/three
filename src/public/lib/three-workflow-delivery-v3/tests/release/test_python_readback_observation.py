@@ -526,42 +526,99 @@ def test_normal_authority_expiry_after_exact_index_blocks_file(tmp_path):
     audit_python_publication_result(result, marker)
 
 
+@pytest.mark.parametrize(
+    ("retention_fault", "pending", "expected"),
+    [
+        (
+            ("index-0.response.json", False),
+            (1, 1),
+            (["POST", "GET"], "failed"),
+        ),
+        (
+            ("download-0.json", False),
+            (0, 0),
+            (["POST", "GET", "GET"], "exact"),
+        ),
+        (
+            ("index-0.response.json", True),
+            (1, 1),
+            (["POST", "GET"], "failed"),
+        ),
+    ],
+    ids=["pending-index", "exact-download", "pending-index-reversed-clock"],
+)
 def test_normal_retention_failure_preserves_raw_and_stops_effects(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, retention_fault, pending, expected
 ):
-    """Failed persistence cannot authorize another index request or POST."""
+    """Failed evidence persistence leaves only an unknown marker outcome."""
+    failed_record, reverse_terminal_clock = retention_fault
+    methods, terminal = expected
     marker, marker_ref, payloads, distributions = prepared_publication()
-    boundary = Boundary(*responses(marker, distributions))
+    marker_bytes = canonicalize(marker.to_document())
+    replies = responses(marker, distributions, pending=pending)
+    boundary = Boundary(*replies)
+    operation_root = tmp_path / "claim-observations/operation-0"
     original_open = Path.open
 
     def fail_response_record(path, *args, **kwargs):
-        if (
-            path
-            == tmp_path / "claim-observations/operation-0/index-0.response.json"
-        ):
+        if path == operation_root / failed_record:
+            if reverse_terminal_clock:
+                boundary.now -= 1
             message = "synthetic retention unavailable"
             raise OSError(message)
         return original_open(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", fail_response_record)
-    result = execute_python_publication(
-        marker,
-        marker_ref,
-        payloads,
-        token=_TOKEN,
-        transport=boundary,
-        claim_path=tmp_path / "claim",
-        clock=lambda: NOW + timedelta(seconds=3),
-        monotonic=boundary.clock,
-        wait=boundary.wait,
+    with pytest.raises(OSError, match="evidence retention failed"):
+        execute_python_publication(
+            marker,
+            marker_ref,
+            payloads,
+            token=_TOKEN,
+            transport=boundary,
+            claim_path=tmp_path / "claim",
+            clock=lambda: NOW + timedelta(seconds=3),
+            monotonic=boundary.clock,
+            wait=boundary.wait,
+        )
+    assert [call[0] for call in boundary.calls] == methods
+    assert len(boundary.responses) == len(replies) - len(methods)
+    assert not any(event[0] == "wait" for event in boundary.events)
+    assert (tmp_path / "claim").is_file()
+    assert not (tmp_path / "claim-observations/operation-1").exists()
+    assert not (operation_root / failed_record).exists()
+    assert (operation_root / "index-0.body").read_bytes() == replies[1].body
+    admission = parse_json_strict(
+        (operation_root / "admission.json").read_bytes()
     )
-    assert result.result == "failed"
-    assert [call[0] for call in boundary.calls] == ["POST", "GET"]
-    assert (
-        tmp_path / "claim-observations/operation-0/index-0.body"
-    ).read_bytes() == _index([]).body
-    phase = parse_json_strict(
-        (tmp_path / "claim-observations/operation-0/phase.json").read_bytes()
+    assert admission["upload-started"] == boundary.calls[0][5]
+    phase = parse_json_strict((operation_root / "phase.json").read_bytes())
+    assert phase["terminal"] == terminal
+    if reverse_terminal_clock:
+        assert phase["stopped-at"] == boundary.calls[-1][5] - 1
+    assert canonicalize(marker.to_document()) == marker_bytes
+    outcome = _finalize(
+        replace(_inputs(marker), terminal=(marker, marker_ref)),
+        publisher_conclusion="failure",
+        publication_step_outcome="failure",
     )
-    assert phase["terminal"] == "failed"
-    assert result.operations[1].status == "not-attempted"
+    assert outcome.disposition == "unknown"
+    assert outcome.possibly_mutated is True
+    assert outcome.direct_predecessor.kind == "mutation-marker"
+    assert outcome.direct_predecessor.reference == marker_ref
+
+
+def test_normal_finalizer_rejects_aggregate_readback_downgrade(tmp_path):
+    """A failed aggregate cannot contradict two successful exact operations."""
+    marker, marker_ref, _, _, result = execute_case(tmp_path)
+    assert result.result == "published"
+    document = parse_json_strict(canonicalize(result.to_document()))
+    document["final-readback-exact"] = False
+    document["final-readback-digest"] = None
+    document["result"] = "failed"
+    for operation in document["operations"]:
+        assert operation["status"] == "succeeded"
+        assert operation["readback-exact"] is True
+        assert operation["readback-digest"] is not None
+    with pytest.raises(ValueError, match=r"final readback.*operation evidence"):
+        finalize_document(document, marker, marker_ref)
