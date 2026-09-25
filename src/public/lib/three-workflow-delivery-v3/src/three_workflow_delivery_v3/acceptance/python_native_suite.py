@@ -22,6 +22,7 @@ from three_workflow_delivery_v3.acceptance.python_native_contract import (
 from three_workflow_delivery_v3.acceptance.python_native_fixture import (
     NativeFixtures,
     consumer_evidence,
+    validate_consumer_evidence,
 )
 from three_workflow_delivery_v3.adapters.pypi import (
     PythonHttpResponse,
@@ -416,6 +417,22 @@ def _audit_timing(files: dict[str, bytes]) -> None:
         [item["kind"] for item in timing] == expected_kinds,
         "native request schedule differs",
     )
+    upload_timing = [item for item in timing if item["kind"] == "upload"]
+    offset = 0
+    for ordinal, keys in enumerate(SCHEDULE, 1):
+        recorded = [
+            parse_canonical_json(files[f"upload/step-{ordinal}-{number}.json"])
+            for number in range(len(keys))
+        ]
+        require(
+            sorted((item["start"], item["finish"]) for item in recorded)
+            == sorted(
+                (item["start"], item["finish"])
+                for item in upload_timing[offset : offset + len(keys)]
+            ),
+            "upload intervals differ from request timing evidence",
+        )
+        offset += len(keys)
     for index, item in enumerate(timing):
         for prior in timing[:index]:
             if cast("float", prior["finish"]) > cast("float", item["start"]):
@@ -507,12 +524,9 @@ def audit_suite(
     result = {}
     for item in before.distributions:
         proof = consumer(item)
-        require(
-            proof.original_digest == item.digest
-            and proof.variant == item.variant,
-            "fresh consumer proof differs",
-        )
-        result[f"consumer/{item.filename}.json"] = consumer_evidence(proof)
+        content = consumer_evidence(proof)
+        validate_consumer_evidence(content, item)
+        result[f"consumer/{item.filename}.json"] = content
     require(len(result) == _FINAL_FILES, "four fresh native consumers required")
     result["audit.json"] = canonicalize(
         {

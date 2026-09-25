@@ -102,6 +102,11 @@ authorizes preparation under the [native protocol](./validation/python-native-ac
 Native/configuration
 operations and publication retain separate grants:
 
+The [tooling readiness interface](./validation/python-native-readiness.md)
+provides fixture preparation, bounded probe/capture, supplied-fact replay and
+the manual hosted entry. Both native request slots remain null. These local
+interfaces do not complete destination-specific native admission.
+
 1. Disabled Python Provider/Model and frozen two-format Build/Qualification,
    with native metadata, witnesses and clean wheel/sdist consumers.
 2. Strict Python set-action, terminal variant, one-shot HTTP profile and

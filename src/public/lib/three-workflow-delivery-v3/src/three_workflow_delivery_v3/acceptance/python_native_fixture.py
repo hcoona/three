@@ -40,8 +40,10 @@ from three_workflow_delivery_v3.repository.node_provider import (
     _run_command,
 )
 from three_workflow_delivery_v3.repository.python_provider import (
+    PYTHON_RELEASE_UNIT,
     PythonProviderResult,
     provide_python_repository_facts,
+    python_object,
     python_text,
     require_public_python_version,
 )
@@ -124,6 +126,49 @@ def consumer_evidence(result: PythonConsumerResult) -> bytes:
     )
 
 
+def validate_consumer_evidence(
+    content: bytes, item: PythonDistribution
+) -> None:
+    """Require successful commands and the exact closed installed identity."""
+    proof = python_object(
+        parse_canonical_json(content),
+        {"variant", "original-digest", "installed", "commands"},
+    )
+    installed = python_object(
+        proof["installed"], {"version", "project-id", "witness", "module"}
+    )
+    require(
+        proof["original-digest"] == item.digest
+        and proof["variant"] == item.variant
+        and installed["version"] == item.witness.nbgv.pep440_version
+        and installed["project-id"] == PYTHON_RELEASE_UNIT
+        and installed["witness"] == item.witness.to_document()
+        and isinstance(installed["module"], str)
+        and bool(installed["module"]),
+        "fixture clean consumer proof differs",
+    )
+    commands = proof["commands"]
+    require(
+        isinstance(commands, list) and bool(commands),
+        "consumer command evidence missing",
+    )
+    for value in cast("list[JsonValue]", commands):
+        command = python_object(
+            value, {"argv", "exit-code", "stdout", "stderr"}
+        )
+        argv = command["argv"]
+        require(
+            isinstance(argv, list)
+            and bool(argv)
+            and all(isinstance(arg, str) and bool(arg) for arg in argv)
+            and type(command["exit-code"]) is int
+            and command["exit-code"] == 0
+            and isinstance(command["stdout"], str)
+            and isinstance(command["stderr"], str),
+            "consumer command did not establish successful qualification",
+        )
+
+
 @dataclass(frozen=True)
 class NativeFixtures:
     """Eight inspected originals/comparisons and credential-free evidence."""
@@ -190,14 +235,8 @@ class NativeFixtures:
                 "protected fixture source differs",
             )
         for key, item in self.distributions.items():
-            proof = parse_canonical_json(self.evidence[f"consumer/{key}.json"])
-            require(
-                proof["original-digest"] == item.digest
-                and proof["variant"] == item.variant
-                and cast("dict", proof["installed"])["witness"]
-                == item.witness.to_document()
-                and bool(proof["commands"]),
-                "fixture clean consumer proof differs",
+            validate_consumer_evidence(
+                self.evidence[f"consumer/{key}.json"], item
             )
 
     def files(self) -> dict[str, bytes]:

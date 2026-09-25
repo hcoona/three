@@ -2,6 +2,7 @@
 
 import base64
 import threading
+from dataclasses import replace
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -472,6 +473,94 @@ def test_python_native_failed_fresh_consumer_blocks_audit(
     with pytest.raises(ValueError, match="fresh consumer failed"):
         audit_suite(request, modeled_fixtures, files, consumer=failed)
     assert len(consumed) == 1
+
+
+@pytest.mark.parametrize(
+    "change", ["failed-command", "version", "project", "module-type", "schema"]
+)
+def test_python_native_audit_rejects_invalid_fresh_consumer_proof(
+    modeled_fixtures, tmp_path, change
+):
+    """Fresh qualification must return successful and bound consumer facts."""
+    request, _, files = _run(modeled_fixtures, tmp_path / "probe")
+    consumed = []
+    consume = _consumer(consumed)
+
+    def invalid(item):
+        result = consume(item)
+        if change == "failed-command":
+            command = parse_canonical_json(result.command_evidence[0])
+            command["exit-code"] = 1
+            return replace(result, command_evidence=(canonicalize(command),))
+        installed = parse_canonical_json(result.installed)
+        if change == "version":
+            installed["version"] = "99.0.0"
+        elif change == "project":
+            installed["project-id"] = "foreign-project"
+        elif change == "module-type":
+            installed["module"] = 17
+        else:
+            installed["unexpected"] = True
+        return replace(result, installed=canonicalize(installed))
+
+    with pytest.raises((ValueError, TypeError)):
+        audit_suite(request, modeled_fixtures, files, consumer=invalid)
+    assert len(consumed) == 1
+
+
+@pytest.mark.parametrize("change", ["serialized-log", "single-step"])
+def test_python_native_audit_binds_upload_intervals_to_request_log(
+    modeled_fixtures, tmp_path, change
+):
+    """Separately valid timelines cannot contradict each other in an audit."""
+    request, _, files = _run(modeled_fixtures, tmp_path / "probe")
+    if change == "serialized-log":
+        requests = parse_json_strict(files["requests.json"])
+        start = parse_canonical_json(files["budget.json"])["start"]
+        for number, item in enumerate(requests):
+            item["start"] = start + number
+            item["finish"] = start + number + 0.5
+        files["requests.json"] = canonicalize(requests)
+    else:
+        name = "upload/step-1-0.json"
+        record = parse_canonical_json(files[name])
+        record["start"] -= 0.0001
+        files[name] = canonicalize(record)
+    consumed = []
+    with pytest.raises(ValueError, match=r"timing|interval|request"):
+        audit_suite(
+            request, modeled_fixtures, files, consumer=_consumer(consumed)
+        )
+    assert consumed == []
+
+
+@pytest.mark.parametrize("order", [(0, 1), (1, 0)])
+def test_python_native_audit_accepts_either_race_completion_order(
+    modeled_fixtures, tmp_path, order
+):
+    """Request completion order need not match fixed contender record order."""
+    request, _, files = _run(modeled_fixtures, tmp_path / "probe")
+    requests = parse_json_strict(files["requests.json"])
+    uploads = [i for i, item in enumerate(requests) if item["kind"] == "upload"]
+    for ordinal, positions in ((7, uploads[6:8]), (8, uploads[8:10])):
+        for position, contender in zip(positions, order, strict=True):
+            record = parse_canonical_json(
+                files[f"upload/step-{ordinal}-{contender}.json"]
+            )
+            requests[position] = {
+                "kind": "upload",
+                "start": record["start"],
+                "finish": record["finish"],
+            }
+    files["requests.json"] = canonicalize(requests)
+    consumed = []
+    result = audit_suite(
+        request, modeled_fixtures, files, consumer=_consumer(consumed)
+    )
+    assert len(consumed) == _CONSUMERS
+    assert (
+        parse_canonical_json(result["audit.json"])["native-admission"] is False
+    )
 
 
 @pytest.mark.parametrize("body", [b"Project not found", _index([]).body])

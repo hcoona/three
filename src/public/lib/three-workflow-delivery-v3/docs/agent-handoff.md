@@ -61,6 +61,10 @@ For the owner's next Workflow Delivery v3 task:
    local Build/Qualification and the guarded publication state machine; local
    validation does not establish native registry behavior. Prior smoke permissions and the
    implementation grant do not authorize native operations or publication.
+   The [tooling readiness interface](./validation/python-native-readiness.md)
+   routes local fixtures, the manual prepare/probe/audit workflow and replay.
+   Both protected native request slots are null; operator resources remain
+   unverified pending a separately authorized operational request.
 
 Recovery uses repository records and linked GitHub carriers. A prior
 conversation, local operator directory or old Agent handle is not required.

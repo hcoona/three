@@ -36,6 +36,10 @@ The Python workflow runs credential-free CI at the tested PR merge target;
 manual TestPyPI/PyPI entry first requires the destination's protected Governance.
 Both destinations remain disabled. Local validation does not establish native
 registry acceptance or publication support.
+The [native tooling and operator readiness](docs/validation/python-native-readiness.md)
+cover local fixtures, the manual prepare/probe/audit entry and supplied-fact
+replay. Both native request slots are null; configuration, native execution and
+normal publication remain separately authorized.
 
 The [npm smoke package](../hcoona-release-smoke-npm/README.md) owns its small
 package purpose. This project owns the

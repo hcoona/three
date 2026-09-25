@@ -284,6 +284,47 @@ def test_python_native_fixtures_match_rejects_unbound_preparation(
         fixtures.match(NativeRequest(canonicalize(document)))
 
 
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("unexpected",), True),
+        (("installed", "version"), "99.0.0"),
+        (("installed", "project-id"), "foreign-project"),
+        (("installed", "module"), 17),
+        (("installed", "module"), ""),
+        (("installed", "unexpected"), True),
+        (("installed",), {}),
+        (("commands",), {}),
+        (("commands", 0), "success"),
+        (("commands", 0, "exit-code"), 1),
+        (("commands", 0, "exit-code"), False),
+        (("commands", 0, "exit-code"), "0"),
+        (("commands", 0, "argv"), "synthetic-consumer"),
+        (("commands", 0, "argv"), []),
+        (("commands", 0, "argv"), [17]),
+        (("commands", 0, "stdout"), None),
+        (("commands", 0, "stderr"), []),
+        (("commands", 0, "unexpected"), True),
+        (("commands", 0), {"exit-code": 0}),
+    ],
+)
+def test_python_native_fixture_rejects_invalid_consumer_proof(
+    modeled_fixtures, path, value
+):
+    """A matching witness cannot hide failed commands or malformed proof."""
+    request = fixture_request(modeled_fixtures)
+    evidence = dict(modeled_fixtures.evidence)
+    key = "consumer/a/original/wheel.json"
+    proof = parse_canonical_json(evidence[key])
+    parent = proof
+    for part in path[:-1]:
+        parent = parent[part]
+    parent[path[-1]] = value
+    evidence[key] = canonicalize(proof)
+    with pytest.raises((ValueError, TypeError, KeyError)):
+        NativeFixtures(modeled_fixtures.distributions, evidence).match(request)
+
+
 @pytest.fixture(scope="module")
 def actual_native_fixtures(native_python_provider_repository):
     """Build both targets and qualify all eight files with real tools."""
