@@ -67,7 +67,7 @@ def request_tuple(kind):
         ("authorize", "proof", 8),
         ("authorize", "index", 1),
         ("execute", "proof", 8),
-        ("execute", "index", 3),
+        ("execute", "index", 13),
         ("execute", "file", 3),
         ("execute", "upload", 2),
         ("execute", "oidc", 1),

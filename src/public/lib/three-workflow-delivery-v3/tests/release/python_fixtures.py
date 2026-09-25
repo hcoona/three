@@ -14,17 +14,21 @@ from three_workflow_delivery_v3.release.python_publication import (
 )
 from three_workflow_delivery_v3.repository.python_provider import python_digest
 
+from ..adapters.test_pypi import _entry, _index
 from ..python_fixtures import NOW, governance, qualification, reference
 
 
 def native_observation(decision, distributions=(), classification="absent"):
     """Describe modeled readback without native destination evidence claims."""
+    registry = decision.snapshot.governance.registry
+    response = _index([_entry(registry, item) for item in distributions])
     return PythonIndexObservation(
         decision.snapshot.governance.registry,
         decision.snapshot.model.provider.nbgv.pep440_version,
-        "sha256:" + "d" * 64,
+        python_digest(response.body),
         tuple(distributions),
         classification,
+        response,
     )
 
 

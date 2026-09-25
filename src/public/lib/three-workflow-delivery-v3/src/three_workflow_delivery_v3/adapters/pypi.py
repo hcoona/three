@@ -42,6 +42,14 @@ MAX_INDEX_BYTES = 2 * 1024 * 1024
 MAX_INDEX_FILES = 4096
 MAX_RESPONSE_BYTES = 64 * 1024
 HTTP_TIMEOUT_SECONDS = 30
+POST_UPLOAD_OBSERVATION_POLICY: dict[str, JsonValue] = {
+    "id": "python-post-upload-observation-v1",
+    "maximum-index-reads": 6,
+    "pending-spacing-seconds": 10,
+    "admission-window-seconds": 60,
+    "initial-bootstrap-pending": "404-only",
+    "existing-project-pending": "unchanged-verified-inventory",
+}
 _DISTRIBUTION_COUNT = 2
 _PYTHON_VERSION = "3.14.3"
 _TLS_VERSION = "OpenSSL 3.5.5 27 Jan 2026"
@@ -131,6 +139,7 @@ class PythonRegistry:
             "file-byte-budget": MAX_FILE_BYTES,
             "response-byte-budget": MAX_RESPONSE_BYTES,
             "upload-posts-per-file": 1,
+            "post-upload-observation": POST_UPLOAD_OBSERVATION_POLICY,
             "multipart-mapping": "python-smoke-metadata-v1",
         }
 
@@ -163,6 +172,8 @@ class PythonHttpResponse:
     status: int
     body: bytes
     content_type: str
+    started: float | None = None
+    finished: float | None = None
 
 
 class PythonHttpTransport(Protocol):
@@ -243,10 +254,18 @@ class PythonIndexObservation:
     index_digest: str
     files: tuple[PythonDistribution, ...]
     classification: str
+    index_response: PythonHttpResponse | None = None
 
     def to_document(self) -> dict[str, JsonValue]:
-        """Retain only sanitized hashes and actual download identities."""
+        """Retain the raw public index and exact download identities."""
+        from three_workflow_delivery_v3.adapters.python_observation import (  # noqa: PLC0415 - response serialization avoids module cycle
+            response_document,
+        )
+
         return {
+            "index-response": None
+            if self.index_response is None
+            else response_document(self.index_response),
             "registry": self.registry.name,
             "version": self.version,
             "index-digest": self.index_digest,
@@ -284,7 +303,9 @@ def read_python_index(  # noqa: C901, PLR0912, PLR0915
     )
     digest = python_digest(response.body)
     if response.status == HTTPStatus.NOT_FOUND:
-        return PythonIndexObservation(registry, version, digest, (), "absent")
+        return PythonIndexObservation(
+            registry, version, digest, (), "absent", response
+        )
     if (
         response.status != HTTPStatus.OK
         or response.content_type.split(";", 1)[0].strip()
@@ -331,7 +352,9 @@ def read_python_index(  # noqa: C901, PLR0912, PLR0915
         if identity[1] == Version(version):
             selected.append((variant, filename, item))
     if not selected:
-        return PythonIndexObservation(registry, version, digest, (), "absent")
+        return PythonIndexObservation(
+            registry, version, digest, (), "absent", response
+        )
     if len(selected) > _DISTRIBUTION_COUNT or len(
         {s[0] for s in selected}
     ) != len(selected):
@@ -371,6 +394,7 @@ def read_python_index(  # noqa: C901, PLR0912, PLR0915
         digest,
         tuple(downloaded),
         "complete" if len(downloaded) == _DISTRIBUTION_COUNT else "partial",
+        response,
     )
 
 
@@ -409,6 +433,7 @@ class PythonUploadResponse:
     classification: str
     status: int | None
     response_digest: str | None
+    finished: float | None = None
 
 
 def upload_python_once(
@@ -482,4 +507,5 @@ def upload_python_once(
         else "definitive-non-success",
         response.status,
         python_digest(response.body),
+        response.finished,
     )

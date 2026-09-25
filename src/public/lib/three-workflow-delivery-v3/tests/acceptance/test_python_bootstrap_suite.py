@@ -108,6 +108,8 @@ class Scenario:
         self.fixtures = fixtures
         self.root = root
         self.now = 1000.0
+        self.monotonic_now = 2000.0
+        self.waits = []
         self.context = BootstrapContext(
             bootstrap_request(fixtures), RUN, TOOLING, {}
         )
@@ -122,6 +124,16 @@ class Scenario:
     def clock(self):
         """Return a trusted synthetic runner UTC instant."""
         return self.now
+
+    def monotonic(self):
+        """Keep process elapsed time separate from the runner UTC authority."""
+        return self.monotonic_now
+
+    def wait(self, seconds):
+        """Advance both controlled clocks without real sleeping."""
+        self.waits.append(seconds)
+        self.now += seconds
+        self.monotonic_now += seconds
 
     def artifact(self, role, files):
         """Archive and re-read exact immutable IDs, names and both digests."""
@@ -200,6 +212,8 @@ class Scenario:
             self.exec_http,
             self.environment,
             clock=self.clock,
+            monotonic=self.monotonic,
+            wait=self.wait,
         )
         self.result = self.artifact(
             "result", files_from_directory(self.root / "result")
@@ -317,13 +331,206 @@ def test_bootstrap_success_preserves_closed_sequence_and_budgets(scenario):
     )
 
 
+def delayed_responses(scenario, p2_pending, p3_pending):
+    """Insert approved pending replies before the two original readbacks."""
+    immediate = scenario.execution_responses()
+    wheel_index = observation_responses(scenario.fixtures, ("wheel",))[0]
+    return [
+        *immediate[:12],
+        *([_ABSENT] * p2_pending),
+        *immediate[12:15],
+        *([wheel_index] * p3_pending),
+        *immediate[15:],
+    ]
+
+
+def test_bootstrap_pending_phases_preserve_full_budget_and_offline_replay(
+    scenario, monkeypatch
+):
+    """Both sixth reads may succeed, with no downloads during pending states."""
+    scenario.authorize()
+    scenario.execute(delayed_responses(scenario, 5, 5))
+    scenario.audit()
+    records = parse_json_strict(scenario.result["execution/requests.json"])
+    assert [record["kind"] for record in records] == [
+        *(["proof"] * 8),
+        "index",
+        "oidc",
+        "mint",
+        "upload",
+        *(["index"] * 6),
+        "file",
+        "upload",
+        *(["index"] * 6),
+        "file",
+        "file",
+    ]
+    all_records = [
+        *parse_json_strict(scenario.authorization["requests.json"]),
+        *records,
+        *parse_json_strict(scenario.audited["requests.json"]),
+    ]
+    assert Counter(record["kind"] for record in all_records) == {
+        "proof": 16,
+        "index": 15,
+        "file": 5,
+        "upload": 2,
+        "oidc": 1,
+        "mint": 1,
+    }
+    assert scenario.waits == [10] * 10
+    assert [record["monotonic-start"] for record in records[12:18]] == [
+        2000,
+        2010,
+        2020,
+        2030,
+        2040,
+        2050,
+    ]
+    assert [record["monotonic-start"] for record in records[20:26]] == [
+        2050,
+        2060,
+        2070,
+        2080,
+        2090,
+        2100,
+    ]
+    for phase in ("p2", "p3"):
+        trace = parse_json_strict(
+            scenario.result[f"execution/observation/{phase}/phase.json"]
+        )
+        assert [read["classification"] for read in trace["reads"]] == [
+            *(["pending"] * 5),
+            "exact",
+        ]
+        assert trace["terminal"] == "exact"
+    uploads = [
+        call
+        for call in scenario.exec_http.calls
+        if call[1] == scenario.context.request.registry.upload_url
+    ]
+    assert [
+        scenario.fixtures.distributions[variant].content in call[3]
+        for call, variant in zip(uploads, ("wheel", "sdist"), strict=True)
+    ] == [True, True]
+
+    def denied_wait(_seconds):
+        pytest.fail("Offline bootstrap replay attempted to sleep")
+
+    monkeypatch.setattr("time.sleep", denied_wait)
+    assert (
+        parse_json_strict(scenario.replay()["result.json"])["status"]
+        == "success"
+    )
+    assert len(scenario.context.references) == 5
+
+
+@pytest.mark.parametrize("phase", ["p2", "p3"])
+def test_bootstrap_pending_exhaustion_never_reaches_later_effects(
+    scenario, phase
+):
+    """A partial bootstrap remains failed after its sixth pending response."""
+    scenario.authorize()
+    responses = delayed_responses(
+        scenario, 6 if phase == "p2" else 0, 6 if phase == "p3" else 0
+    )
+    with pytest.raises(ValueError, match="exhausted"):
+        scenario.execute(responses)
+    files = files_from_directory(scenario.root / "result/execution")
+    records = parse_json_strict(files["requests.json"])
+    assert Counter(record["kind"] for record in records) == {
+        "proof": 8,
+        "index": 7 if phase == "p2" else 8,
+        "oidc": 1,
+        "mint": 1,
+        "upload": 1 if phase == "p2" else 2,
+        **({"file": 1} if phase == "p3" else {}),
+    }
+    assert len(scenario.exec_http.responses) == (6 if phase == "p2" else 3)
+    assert scenario.waits == [10] * 5
+    trace = parse_json_strict(files[f"observation/{phase}/phase.json"])
+    assert trace["terminal"] == "exhausted"
+    assert [read["classification"] for read in trace["reads"]] == [
+        "pending"
+    ] * 6
+    assert parse_json_strict(files["result.json"])["status"] == "failed"
+    assert not (scenario.root / f"python-bootstrap-result-r{RUN}.zip").exists()
+
+
+def test_bootstrap_utc_expiry_during_pending_wait_blocks_next_read(scenario):
+    """Monotonic observation allowance cannot renew the UTC publisher grant."""
+    scenario.authorize()
+
+    def expiry_wait(seconds):
+        scenario.waits.append(seconds)
+        scenario.monotonic_now += seconds
+        scenario.now = 1600
+
+    scenario.wait = expiry_wait
+    with pytest.raises(ValueError, match=r"expired|exhausted|window"):
+        scenario.execute(delayed_responses(scenario, 1, 0))
+    files = files_from_directory(scenario.root / "result/execution")
+    records = parse_json_strict(files["requests.json"])
+    assert len(records) == 13
+    assert records[-1]["status"] == 404
+    assert scenario.waits == [10]
+    assert sum(record["kind"] == "upload" for record in records) == 1
+    assert parse_json_strict(files["result.json"])["status"] == "failed"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing-pending",
+        "raw-pending",
+        "spacing",
+        "url",
+        "surplus",
+        "terminal-after-next-file",
+    ],
+)
+def test_bootstrap_delayed_replay_binds_phase_to_original_journal(
+    scenario, change
+):
+    """Exact files cannot hide altered intermediate observation history."""
+    scenario.authorize()
+    scenario.execute(delayed_responses(scenario, 1, 1))
+    scenario.audit()
+    prefix = "execution/observation/p2/"
+    trace = parse_json_strict(scenario.result[prefix + "phase.json"])
+    if change == "missing-pending":
+        trace["reads"].pop(0)
+    elif change == "raw-pending":
+        scenario.result[prefix + "index-0.body"] = b"changed pending body"
+    elif change == "spacing":
+        trace["reads"][1]["start"] = 2009
+    elif change == "url":
+        trace["reads"][0]["url"] = "https://foreign.invalid/simple/"
+    elif change == "terminal-after-next-file":
+        records = parse_json_strict(scenario.result["execution/requests.json"])
+        next_file = next(
+            record for record in records if record["kind"] == "file"
+        )
+        trace["stopped-at"] = next_file["monotonic-start"] + 0.001
+    else:
+        scenario.result[prefix + "index-2.body"] = _ABSENT.body
+    scenario.result[prefix + "phase.json"] = canonicalize(trace)
+    with pytest.raises(
+        (ValueError, KeyError, TypeError),
+        match="observation termination"
+        if change == "terminal-after-next-file"
+        else None,
+    ):
+        scenario.replay()
+
+
 @pytest.mark.parametrize(
     ("position", "response", "expected_uploads"),
     [
         (8, _index([]), 0),
         (11, PythonHttpResponse(400, b"File already exists", "text/plain"), 1),
         (11, TimeoutError("lost response"), 1),
-        (12, _ABSENT, 1),
+        (12, _index([]), 1),
         (
             13,
             PythonHttpResponse(

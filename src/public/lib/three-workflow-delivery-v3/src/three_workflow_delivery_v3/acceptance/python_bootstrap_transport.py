@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import base64
 import time
+from dataclasses import replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
 from urllib.parse import parse_qsl, quote, urlsplit
 
 from three_workflow_delivery_v3.acceptance.python_bootstrap_contract import (
+    WINDOW_SECONDS,
     authority_window,
     utc_number,
 )
@@ -41,7 +43,7 @@ PHASE_LIMITS = {
     "authorize": {"proof": 8, "index": 1},
     "execute": {
         "proof": 8,
-        "index": 3,
+        "index": 13,
         "file": 3,
         "upload": 2,
         "oidc": 1,
@@ -61,6 +63,9 @@ RECORD_FIELDS = {
     "body-digest",
     "request-body-digest",
     "redacted",
+    "monotonic-start",
+    "monotonic-finish",
+    "monotonic-deadline",
 }
 
 
@@ -123,6 +128,7 @@ class JournalTransport:
         *,
         window: JsonValue = None,
         clock: Callable[[], float] = time.time,
+        monotonic: Callable[[], float] = time.monotonic,
         secrets: tuple[str, ...] = (),
     ) -> None:
         """Hold the fixed authority and credentials only within this process."""
@@ -132,7 +138,7 @@ class JournalTransport:
         self.retain = retain
         self.window = window
         self.clock = clock
-        self.monotonic = time.monotonic
+        self.monotonic = monotonic
         self.monotonic_deadline = float("inf")
         if window is not None:
             _, deadline = authority_window(window, clock())
@@ -168,6 +174,7 @@ class JournalTransport:
             kind in self.limits and self.counts[kind] < self.limits[kind],
             "bootstrap effect budget exhausted",
         )
+        monotonic_start = self.monotonic()
         begin = utc_number(self.clock())
         if self.window is not None:
             authority_window(self.window, begin)
@@ -188,6 +195,11 @@ class JournalTransport:
         ordinal = len(self.records)
         redacted = kind in {"oidc", "mint"}
         record: dict[str, JsonValue] = {
+            "monotonic-start": monotonic_start,
+            "monotonic-finish": None,
+            "monotonic-deadline": self.monotonic_deadline
+            if self.window is not None
+            else None,
             "kind": kind,
             "method": method,
             "url": url,
@@ -206,6 +218,8 @@ class JournalTransport:
             response = self.transport.request(
                 method, url, headers, body, maximum_bytes
             )
+            record["monotonic-finish"] = self.monotonic()
+            record["finish"] = self.clock()
             require(
                 len(response.body) <= maximum_bytes,
                 "bootstrap response too large",
@@ -229,9 +243,16 @@ class JournalTransport:
                 <= begin + HTTP_TIMEOUT_SECONDS,
                 "bootstrap request exceeded its completion bound",
             )
-            return response
+            return replace(
+                response,
+                started=monotonic_start,
+                finished=cast("float", record["monotonic-finish"]),
+            )
         finally:
-            record["finish"] = self.clock()
+            if record["finish"] is None:
+                record["finish"] = self.clock()
+            if record["monotonic-finish"] is None:
+                record["monotonic-finish"] = self.monotonic()
             self.records.append(record)
             self.retain(f"http/{ordinal}.json", canonicalize(record))
 
@@ -255,10 +276,13 @@ class ReplayTransport:
         ]
         self.files = files
         self.position = 0
+        self.not_before = 0.0
         limits = PHASE_LIMITS[phase]
         counts = dict.fromkeys(limits, 0)
         expected = {"requests.json"}
         last = 0.0
+        last_monotonic = 0.0
+        self.monotonic_deadline: float | None = None
         for ordinal, record in enumerate(self.records):
             require(
                 files[f"http/{ordinal}.json"] == canonicalize(record),
@@ -287,6 +311,34 @@ class ReplayTransport:
                 "bootstrap request timing differs",
             )
             last = finish
+            monotonic_start = utc_number(record["monotonic-start"])
+            monotonic_finish = utc_number(record["monotonic-finish"])
+            require(
+                last_monotonic
+                <= monotonic_start
+                <= monotonic_finish
+                <= monotonic_start + HTTP_TIMEOUT_SECONDS,
+                "bootstrap monotonic request timing differs",
+            )
+            last_monotonic = monotonic_finish
+            if window is None:
+                require(
+                    record["monotonic-deadline"] is None,
+                    "foreign bootstrap monotonic deadline",
+                )
+            else:
+                bound = utc_number(record["monotonic-deadline"])
+                require(
+                    monotonic_start < bound
+                    and bound - monotonic_start <= WINDOW_SECONDS,
+                    "bootstrap monotonic admission expired",
+                )
+                if self.monotonic_deadline is None:
+                    self.monotonic_deadline = bound
+                require(
+                    self.monotonic_deadline == bound,
+                    "bootstrap monotonic deadline renewed",
+                )
             if window is not None:
                 authority_window(window, begin)
             require(
@@ -339,6 +391,10 @@ class ReplayTransport:
         )
         record = self.records[self.position]
         require(
+            utc_number(record["monotonic-start"]) >= self.not_before,
+            "bootstrap effect precedes observation termination",
+        )
+        require(
             (record["method"], record["url"], record["maximum-bytes"])
             == (method, url, maximum_bytes)
             and record["redacted"] is False,
@@ -359,6 +415,8 @@ class ReplayTransport:
             cast("int", record["status"]),
             content,
             cast("str", record["content-type"]),
+            cast("float", record["monotonic-start"]),
+            cast("float", record["monotonic-finish"]),
         )
 
     def credential(self, kind: str) -> None:

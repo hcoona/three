@@ -2,6 +2,7 @@
 
 import base64
 import csv
+import gzip
 import hashlib
 import io
 import ssl
@@ -138,7 +139,7 @@ def _distribution(variant, witness):
         members[f"{prefix}/RECORD"] = record.getvalue().encode()
         with zipfile.ZipFile(output, "w") as archive:
             for name, data in members.items():
-                archive.writestr(name, data)
+                archive.writestr(zipfile.ZipInfo(name), data)
         filename = f"{PYTHON_IMPORT}-{version}-py3-none-any.whl"
     else:
         manifest = validate_python_source_manifest(
@@ -157,7 +158,10 @@ def _distribution(variant, witness):
             f"src/{PYTHON_IMPORT}/__init__.py": module,
             f"src/{WITNESS_PATH}": witness.canonical_bytes,
         }
-        with tarfile.open(fileobj=output, mode="w:gz") as archive:
+        with (
+            gzip.GzipFile(fileobj=output, mode="wb", mtime=0) as compressed,
+            tarfile.open(fileobj=compressed, mode="w") as archive,
+        ):
             for name, data in members.items():
                 info = tarfile.TarInfo(f"{PYTHON_IMPORT}-{version}/{name}")
                 info.size = len(data)

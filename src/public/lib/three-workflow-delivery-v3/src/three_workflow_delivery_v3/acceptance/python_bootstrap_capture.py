@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
 
+from three_workflow_delivery_v3.acceptance.python_bootstrap_transport import (
+    ReplayTransport,
+)
 from three_workflow_delivery_v3.acceptance.python_native_contract import require
 from three_workflow_delivery_v3.adapters.pypi import (
     MAX_INDEX_BYTES,
@@ -13,9 +17,16 @@ from three_workflow_delivery_v3.adapters.pypi import (
     read_python_index,
     upload_python_once,
 )
+from three_workflow_delivery_v3.adapters.python_observation import (
+    IndexPhase,
+    ObservationBasis,
+    replay_retained_phase,
+)
 from three_workflow_delivery_v3.canonical import parse_json_strict
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from three_workflow_delivery_v3.adapters.pypi import PythonHttpTransport
     from three_workflow_delivery_v3.adapters.python import PythonDistribution
 
@@ -66,16 +77,20 @@ class _IndexReadback:
 
 
 def capture_exact(
-    http: PythonHttpTransport, originals: tuple[PythonDistribution, ...]
+    http: PythonHttpTransport,
+    originals: tuple[PythonDistribution, ...],
+    *,
+    response: PythonHttpResponse | None = None,
 ) -> tuple[PythonDistribution, ...]:
     """Reject any foreign project inventory before downloading an exact set."""
-    response = http.request(
-        "GET",
-        REGISTRY.index_url,
-        {"Accept": "application/vnd.pypi.simple.v1+json"},
-        None,
-        MAX_INDEX_BYTES,
-    )
+    if response is None:
+        response = http.request(
+            "GET",
+            REGISTRY.index_url,
+            {"Accept": "application/vnd.pypi.simple.v1+json"},
+            None,
+            MAX_INDEX_BYTES,
+        )
     require(
         response.status == HTTPStatus.OK,
         "bootstrap project readback unavailable",
@@ -104,18 +119,58 @@ def capture_exact(
     return observation.files
 
 
-def upload_pair(
+def upload_pair(  # noqa: PLR0913 - fixed execution and offline replay seams
     http: PythonHttpTransport,
     originals: dict[str, PythonDistribution],
     token: str,
+    *,
+    retain: Callable[[str, bytes], None],
+    deadline: float | None,
+    clock: Callable[[], float] = time.monotonic,
+    wait: Callable[[float], None] = time.sleep,
+    replay: dict[str, bytes] | None = None,
 ) -> None:
     """U1/P2 must succeed before U2/P3; no duplicate success or repair."""
     wheel, sdist = originals["wheel"], originals["sdist"]
-    for item, expected in ((wheel, (wheel,)), (sdist, (wheel, sdist))):
+    previous = None
+    for ordinal, (item, expected) in enumerate(
+        ((wheel, (wheel,)), (sdist, (wheel, sdist)))
+    ):
         response = upload_python_once(REGISTRY, item, token, http)
         require(
             response.status == HTTPStatus.OK
             and response.classification == "definitive-success",
             "bootstrap original upload failed or ambiguous",
         )
-        capture_exact(http, expected)
+        basis = ObservationBasis(
+            REGISTRY,
+            f"bootstrap-p{ordinal + 2}",
+            item,
+            previous,
+            response,
+            deadline,
+        )
+        prefix = f"observation/p{ordinal + 2}/"
+        if replay is None:
+            phase = IndexPhase(basis)
+            previous = phase.run(
+                http,
+                retain=lambda name, content, prefix=prefix: retain(
+                    prefix + name, content
+                ),
+                clock=clock,
+                wait=wait,
+            )
+        else:
+            previous = replay_retained_phase(replay, prefix, basis, http)
+            require(
+                isinstance(http, ReplayTransport),
+                "bootstrap replay transport differs",
+            )
+            cast("ReplayTransport", http).not_before = cast(
+                "float",
+                cast("dict", parse_json_strict(replay[prefix + "phase.json"]))[
+                    "stopped-at"
+                ],
+            )
+        capture_exact(http, expected, response=previous)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, urlsplit
@@ -81,7 +81,7 @@ class NativeTransport:
         if method == "POST" and url == self.registry.upload_url:
             kind, limit, maximum = "upload", 10, MAX_RESPONSE_BYTES
         elif method == "GET" and url == self.registry.index_url:
-            kind, limit, maximum = "index", 9, MAX_INDEX_BYTES
+            kind, limit, maximum = "index", 29, MAX_INDEX_BYTES
         else:
             parsed = urlsplit(url)
             require(
@@ -126,7 +126,11 @@ class NativeTransport:
             ),
             "unsafe acceptance response",
         )
-        return response
+        return replace(
+            response,
+            started=cast("float", record["start"]),
+            finished=cast("float", record["finish"]),
+        )
 
 
 @dataclass(frozen=True)
@@ -226,22 +230,24 @@ class _IndexReplay:
         return response
 
 
-def collect_capture(
+def collect_capture(  # noqa: PLR0913 - raw response reuse and evidence retention
     registry: PythonRegistry,
     witnesses: tuple[PythonPackageTargetWitness, PythonPackageTargetWitness],
     transport: PythonHttpTransport,
     *,
     retain: Callable[[str, bytes], None] | None = None,
     ordinal: int = 0,
+    response: PythonHttpResponse | None = None,
 ) -> Capture:
     """Fetch the index once, then reuse both existing version readers."""
-    response = transport.request(
-        "GET",
-        registry.index_url,
-        {"Accept": "application/vnd.pypi.simple.v1+json"},
-        None,
-        MAX_INDEX_BYTES,
-    )
+    if response is None:
+        response = transport.request(
+            "GET",
+            registry.index_url,
+            {"Accept": "application/vnd.pypi.simple.v1+json"},
+            None,
+            MAX_INDEX_BYTES,
+        )
     require(len(response.body) <= MAX_INDEX_BYTES, "oversized acceptance index")
     if retain is not None:
         retain(f"capture/c{ordinal}/index.body", response.body)

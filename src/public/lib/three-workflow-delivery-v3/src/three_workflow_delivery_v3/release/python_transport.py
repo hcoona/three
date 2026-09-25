@@ -9,6 +9,9 @@ from three_workflow_delivery_v3.adapters.pypi import (
     PythonIndexObservation,
     PythonRegistry,
 )
+from three_workflow_delivery_v3.adapters.python_observation import (
+    response_from_document,
+)
 from three_workflow_delivery_v3.canonical import JsonValue, canonicalize
 from three_workflow_delivery_v3.records.artifacts import (
     artifact_reference_from_document,
@@ -36,6 +39,7 @@ from three_workflow_delivery_v3.repository.python_model import (
     python_repository_model_from_document,
 )
 from three_workflow_delivery_v3.repository.python_provider import (
+    python_digest,
     python_object,
     python_text,
 )
@@ -142,7 +146,14 @@ def python_native_observation_from_document(
     """
     doc = python_object(
         value,
-        {"registry", "version", "index-digest", "classification", "files"},
+        {
+            "registry",
+            "version",
+            "index-digest",
+            "classification",
+            "files",
+            "index-response",
+        },
     )
     if not isinstance(doc["files"], list):
         message = "Python observed files must be a list"
@@ -161,13 +172,23 @@ def python_native_observation_from_document(
             message = "Python observed file is not the approved original"
             raise ValueError(message)
         files.append(matches[0])
+
     result = PythonIndexObservation(
         PythonRegistry(python_text(doc["registry"])),
         python_text(doc["version"]),
         python_text(doc["index-digest"]),
         tuple(files),
         python_text(doc["classification"]),
+        None
+        if doc["index-response"] is None
+        else response_from_document(doc["index-response"]),
     )
+    if (
+        result.index_response is not None
+        and python_digest(result.index_response.body) != result.index_digest
+    ):
+        message = "Python original index digest differs"
+        raise ValueError(message)
     _normalized(doc, result.to_document())
     return result
 

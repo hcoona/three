@@ -63,10 +63,12 @@ For the owner's next Workflow Delivery v3 task:
    bootstrap request. Its [tooling interface](./validation/python-bootstrap.md#tooling-interface)
    routes local fixture preparation, immutable hosted phases and offline replay.
    The owner-confirmed [post-upload observation contract](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
-   and resource-only continuation after partial bootstrap require coherent
-   disabled implementation and validation before a new operation proposal.
-   Retained failed evidence remains bound to its original revision; design
-   acceptance does not claim the revised runtime is delivered.
+   is implemented across bootstrap, native acceptance and normal publication.
+   Original response traces, fixed deadlines and complete Result replay are
+   required by the changed operation profile. Resource-only continuation after
+   partial bootstrap still requires a separately authorized configuration audit
+   and fresh native suite. Retained failed evidence stays bound to its original
+   revision and supplies no admission for the new profile.
    Both Python destinations remain disabled. The Python CLI and workflow implement
    local Build/Qualification and the guarded publication state machine; local
    validation does not establish native registry behavior. Prior smoke permissions and the
