@@ -5,6 +5,10 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from three_workflow_delivery_v3.adapters.pypi import PythonHttpResponse
+from three_workflow_delivery_v3.adapters.python_observation import (
+    response_document,
+)
 from three_workflow_delivery_v3.release.python_transport import (
     admit_python_publication_snapshot,
     admit_python_qualification_decision,
@@ -16,9 +20,12 @@ from three_workflow_delivery_v3.release.python_transport import (
     python_qualification_snapshot_from_document,
     python_remote_observation_from_document,
 )
+from three_workflow_delivery_v3.repository.python_provider import python_digest
 
-from ..python_fixtures import qualification
+from ..adapters.test_pypi import _entry, _index
+from ..python_fixtures import qualification, reference
 from .python_fixtures import native_observation, prepared_publication
+from .test_python_finalizer import _exact_inputs, _finalize
 
 
 @pytest.fixture
@@ -203,6 +210,108 @@ def test_python_native_replay_rejects_unknown_or_ambiguous_file_identity(
         document["files"][0][change] = "foreign"
     with pytest.raises((ValueError, TypeError), match="Python"):
         python_native_observation_from_document(document, originals)
+
+
+@pytest.mark.parametrize(
+    "change", ["null", "404", "empty", "yanked", "hash", "classification"]
+)
+def test_python_native_replay_rejects_index_claim_contradictions(change):
+    """Approved file identities cannot override the original scoped index."""
+    decision, _, originals = qualification()
+    native = native_observation(decision, originals, "complete")
+    document = native.to_document()
+    if change == "null":
+        document["index-response"] = None
+    elif change == "classification":
+        document["classification"] = "partial"
+    else:
+        entries = [_entry(native.registry, item) for item in originals]
+        if change == "yanked":
+            entries[0]["yanked"] = True
+        elif change == "hash":
+            entries[0]["hashes"]["sha256"] = "f" * 64
+        response = (
+            PythonHttpResponse(404, b"not found", "text/plain")
+            if change == "404"
+            else _index([] if change == "empty" else entries)
+        )
+        document["index-response"] = response_document(response)
+        document["index-digest"] = python_digest(response.body)
+    assert len(document["files"]) == len(originals)
+    with pytest.raises((ValueError, TypeError)):
+        python_native_observation_from_document(document, originals)
+
+
+def finalize_replayed_native(document, originals):
+    """Admit a fresh native proof before calling the actual shared Finalizer."""
+    native = python_native_observation_from_document(document, originals)
+    inputs = _exact_inputs()
+    proof = replace(inputs.exact_proof[0], native=native)
+    proof_ref = reference(proof.to_document(), 509)
+    outcome = _finalize(
+        replace(inputs, exact_proof=(proof, proof_ref)),
+        publisher_conclusion="skipped",
+        publication_step_outcome=None,
+        publication_terminal_reference=None,
+    )
+    return native, proof_ref, outcome
+
+
+def test_python_native_replay_cannot_forge_exact_satisfied_proof():
+    """A 404 with declared complete files cannot enter zero-action proof."""
+    decision, _, originals = qualification()
+    response = PythonHttpResponse(404, b"missing project", "text/plain")
+    native = replace(
+        native_observation(decision, originals, "complete"),
+        index_response=response,
+        index_digest=python_digest(response.body),
+    )
+    with pytest.raises(ValueError, match=r"Python.*(?:index|inventory|files)"):
+        finalize_replayed_native(native.to_document(), originals)
+
+
+@pytest.mark.parametrize("scenario", ["404-absence", "unrelated-version"])
+def test_python_native_replay_preserves_absence_and_unrelated_versions(
+    scenario,
+):
+    """Replay preserves valid absence and exact originals in version scope."""
+    decision, _, originals = qualification()
+    native = native_observation(decision, originals, "complete")
+    if scenario == "404-absence":
+        response = PythonHttpResponse(404, b"missing project", "text/plain")
+        absent = replace(
+            native,
+            index_response=response,
+            index_digest=python_digest(response.body),
+            files=(),
+            classification="absent",
+        )
+        admitted = python_native_observation_from_document(
+            absent.to_document(), originals
+        )
+        assert admitted == absent
+        assert admitted.files == ()
+        assert admitted.classification == "absent"
+        return
+    entries = [_entry(native.registry, item) for item in originals]
+    unrelated = deepcopy(entries[0])
+    unrelated["filename"] = unrelated["filename"].replace(
+        native.version, "9.9.9"
+    )
+    response = _index([*entries, unrelated])
+    native = replace(
+        native,
+        index_response=response,
+        index_digest=python_digest(response.body),
+    )
+    admitted, proof_ref, outcome = finalize_replayed_native(
+        native.to_document(), originals
+    )
+    assert admitted == native
+    assert all(a is b for a, b in zip(admitted.files, originals, strict=True))
+    assert outcome.disposition == "exact-satisfied"
+    assert outcome.possibly_mutated is False
+    assert outcome.direct_predecessor.reference == proof_ref
 
 
 def test_python_decision_replay_rejects_another_run_or_missing_evidence(replay):

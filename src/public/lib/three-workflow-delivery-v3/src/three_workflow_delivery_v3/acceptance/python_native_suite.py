@@ -27,6 +27,7 @@ from three_workflow_delivery_v3.acceptance.python_native_fixture import (
 from three_workflow_delivery_v3.adapters.pypi import (
     PythonHttpResponse,
     PythonHttpTransport,
+    PythonUploadResponse,
     upload_python_once,
 )
 from three_workflow_delivery_v3.adapters.python import (
@@ -34,12 +35,18 @@ from three_workflow_delivery_v3.adapters.python import (
     PythonDistribution,
     qualify_python_consumer,
 )
+from three_workflow_delivery_v3.adapters.python_observation import (
+    IndexPhase,
+    ObservationBasis,
+    replay_retained_phase,
+)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonicalize,
     parse_canonical_json,
     parse_json_strict,
 )
+from three_workflow_delivery_v3.repository.python_provider import python_digest
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -51,6 +58,9 @@ _FIRST_RACE_STEP = 7
 _RACE_WIDTH = 2
 _UPLOAD_COUNT = 10
 _DOWNLOAD_COUNT = 18
+_MIN_INDEX_COUNT = 9
+_MAX_INDEX_COUNT = 29
+_MAX_PHASE_READS = 6
 _FINAL_FILES = 4
 _DEADLINE_SECONDS = 600
 
@@ -166,6 +176,36 @@ def validate_step(
     )
 
 
+def _observation_basis(  # noqa: PLR0913, PLR0917 - fixed native scenario inputs
+    request: NativeRequest,
+    fixtures: NativeFixtures,
+    ordinal: int,
+    before: Capture,
+    results: tuple[tuple[dict[str, JsonValue], PythonHttpResponse], ...],
+    deadline: float,
+) -> ObservationBasis:
+    winners = [
+        (record, response)
+        for record, response in results
+        if response.status == HTTPStatus.OK
+    ]
+    require(len(winners) == 1, "native observation lacks one winner")
+    record, response = winners[0]
+    return ObservationBasis(
+        request.registry,
+        f"native-c{ordinal}",
+        fixtures.distributions[cast("str", record["key"])],
+        before.index,
+        PythonUploadResponse(
+            "definitive-success",
+            response.status,
+            python_digest(response.body),
+            cast("float", record["finish"]),
+        ),
+        deadline,
+    )
+
+
 class _UploadRecorder:
     def __init__(
         self,
@@ -220,6 +260,7 @@ def run_suite(  # noqa: C901, PLR0913, PLR0915 - fixed protocol with bounded ext
     secrets: tuple[str, ...] = (),
     clock: Callable[[], float] = time.monotonic,
     deadline: float | None = None,
+    wait: Callable[[float], None] = time.sleep,
 ) -> dict[str, bytes]:
     """Execute the fixed schedule once, retaining partial facts on any stop."""
     fixtures.match(request)
@@ -321,19 +362,41 @@ def run_suite(  # noqa: C901, PLR0913, PLR0915 - fixed protocol with bounded ext
                     < min(cast("float", r[0]["finish"]) for r in results),
                     "competing requests did not overlap",
                 )
+            index_response = None
+            if ordinal in {1, 2, 7, 8}:
+                basis = _observation_basis(
+                    request,
+                    fixtures,
+                    ordinal,
+                    before,
+                    tuple(results),
+                    native.deadline,
+                )
+                prefix = f"observation/c{ordinal}/"
+                index_response = IndexPhase(basis).run(
+                    native,
+                    retain=lambda name, data, prefix=prefix: retain(
+                        prefix + name, data
+                    ),
+                    clock=clock,
+                    wait=wait,
+                )
             after = collect_capture(
                 request.registry,
                 witnesses,
                 native,
                 retain=retain,
                 ordinal=ordinal,
+                response=index_response,
             )
             for name, content in after.files(ordinal).items():
                 retain(name, content)
             validate_step(ordinal, before, after, tuple(results), fixtures)
             before = after
         require(
-            native.counts == {"upload": 10, "index": 9, "file": 18},
+            native.counts["upload"] == _UPLOAD_COUNT
+            and native.counts["file"] == _DOWNLOAD_COUNT
+            and _MIN_INDEX_COUNT <= native.counts["index"] <= _MAX_INDEX_COUNT,
             "acceptance effect totals differ",
         )
         retain("requests.json", canonicalize(cast("JsonValue", native.calls)))
@@ -348,6 +411,7 @@ def run_suite(  # noqa: C901, PLR0913, PLR0915 - fixed protocol with bounded ext
             ),
         )
     except Exception:  # noqa: BLE001 - never retain credential-bearing exceptions
+        retain("requests.json", canonicalize(cast("JsonValue", native.calls)))
         retain(
             "failure.json",
             canonicalize(
@@ -363,7 +427,7 @@ def run_suite(  # noqa: C901, PLR0913, PLR0915 - fixed protocol with bounded ext
     return files
 
 
-def _audit_timing(files: dict[str, bytes]) -> None:
+def _audit_timing(files: dict[str, bytes]) -> dict[str, int]:
     """Check finite timing, effect order and the two admitted race pairs."""
     budget = parse_canonical_json(files["budget.json"])
     require(
@@ -379,7 +443,9 @@ def _audit_timing(files: dict[str, bytes]) -> None:
     requests = parse_json_strict(files["requests.json"])
     require(
         isinstance(requests, list)
-        and len(requests) == _UPLOAD_COUNT + _DOWNLOAD_COUNT + 9,
+        and _UPLOAD_COUNT + _DOWNLOAD_COUNT + 9
+        <= len(requests)
+        <= _UPLOAD_COUNT + _DOWNLOAD_COUNT + 29,
         "incomplete request timing evidence",
     )
     counts = {"upload": 0, "index": 0, "file": 0}
@@ -396,21 +462,53 @@ def _audit_timing(files: dict[str, bytes]) -> None:
         require(
             kind in counts
             and start <= begin < deadline
-            and begin <= finish <= deadline + 30,
+            and begin <= finish <= begin + 30,
             "request exceeded its native deadline",
         )
         counts[kind] += 1
     require(
-        counts == {"upload": 10, "index": 9, "file": 18},
+        counts["upload"] == _UPLOAD_COUNT
+        and counts["file"] == _DOWNLOAD_COUNT
+        and _MIN_INDEX_COUNT <= counts["index"] <= _MAX_INDEX_COUNT,
         "request budget evidence differs",
     )
     expected_kinds = ["index"]
     for ordinal, keys in enumerate(SCHEDULE, 1):
         expected_kinds.extend(["upload"] * len(keys))
+        index_count = 1
+        if ordinal in {1, 2, 7, 8}:
+            phase = parse_json_strict(
+                files[f"observation/c{ordinal}/phase.json"]
+            )
+            reads = cast("dict", phase)["reads"]
+            require(
+                isinstance(reads, list) and 1 <= len(reads) <= _MAX_PHASE_READS,
+                "invalid native observation reads",
+            )
+            index_count = len(reads)
+            next_request = cast("list[dict]", requests)[
+                len(expected_kinds) + index_count
+            ]
+            require(
+                cast("float", cast("dict", phase)["stopped-at"])
+                <= cast("float", next_request["start"]),
+                "native download precedes observation termination",
+            )
+            phase_requests = cast("list[dict]", requests)[
+                len(expected_kinds) : len(expected_kinds) + index_count
+            ]
+            require(
+                [(entry["start"], entry["finish"]) for entry in reads]
+                == [
+                    (entry["start"], entry["finish"])
+                    for entry in phase_requests
+                ],
+                "native observation timing differs from journal",
+            )
         expected_kinds.extend(
-            ["index"] + ["file"] * min(ordinal, 2)
-            if ordinal < _FIRST_RACE_STEP
-            else ["index"] + ["file"] * (ordinal - 4)
+            ["index"] * index_count
+            + ["file"]
+            * (min(ordinal, 2) if ordinal < _FIRST_RACE_STEP else ordinal - 4)
         )
     timing = cast("list[dict[str, JsonValue]]", requests)
     require(
@@ -443,6 +541,8 @@ def _audit_timing(files: dict[str, bytes]) -> None:
                     "unadmitted request concurrency",
                 )
 
+    return counts
+
 
 def audit_suite(
     request: NativeRequest,
@@ -460,13 +560,13 @@ def audit_suite(
         and files["request.json"] == request.content,
         "failed or foreign acceptance evidence",
     )
-    _audit_timing(files)
+    counts = _audit_timing(files)
     summary = parse_canonical_json(files["suite.json"])
     require(
         summary
         == {
             "request-digest": request.digest,
-            "counts": {"upload": 10, "index": 9, "file": 18},
+            "counts": counts,
             "result": "supplied-facts-pass",
         },
         "incomplete acceptance suite",
@@ -510,6 +610,22 @@ def audit_suite(
             )
             uploads += 1
         after = replay_capture(files, ordinal, request.registry, witnesses)
+        if ordinal in {1, 2, 7, 8}:
+            deadline = cast(
+                "float", parse_canonical_json(files["budget.json"])["deadline"]
+            )
+            basis = _observation_basis(
+                request, fixtures, ordinal, before, tuple(results), deadline
+            )
+            prefix = f"observation/c{ordinal}/"
+            index_response = replay_retained_phase(files, prefix, basis)
+            require(
+                index_response == after.index,
+                "native capture differs from final phase response",
+            )
+            expected_paths.update(
+                name for name in files if name.startswith(prefix)
+            )
         expected_paths.update(after.files(ordinal))
         downloads += len(after.downloads)
         validate_step(ordinal, before, after, tuple(results), fixtures)

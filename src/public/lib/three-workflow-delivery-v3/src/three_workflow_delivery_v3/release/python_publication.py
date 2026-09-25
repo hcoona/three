@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3.adapters.pypi import (
     PythonHttpTransport,
     PythonIndexObservation,
     PythonRegistry,
+    PythonUploadResponse,
     read_python_index,
     upload_python_once,
+)
+from three_workflow_delivery_v3.adapters.python_observation import (
+    ExpectedAddition,
+    IndexPhase,
+    ObservationBasis,
+    index_inventory,
+    number,
+    replay_failed_index_phase,
+    replay_index_phase,
 )
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
@@ -30,14 +42,20 @@ from three_workflow_delivery_v3.release.python_governance import (
     PYTHON_PUBLISHER,
     PythonGovernance,
 )
+from three_workflow_delivery_v3.release.python_readback import (
+    PublicationTransport,
+    ReadbackTransport,
+    replay_readback,
+    validate_observation_document,
+)
 from three_workflow_delivery_v3.repository.python_provider import (
     python_digest,
     python_object,
+    python_text,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from datetime import datetime
     from pathlib import Path
 
     from three_workflow_delivery_v3.release.python_qualification import (
@@ -405,6 +423,7 @@ class PythonOperationResult:
     response_digest: str | None
     readback_digest: str | None
     readback_exact: bool
+    observation: JsonValue = None
 
     def __post_init__(self) -> None:
         """Reject unsupported operation states or invented response evidence."""
@@ -447,6 +466,7 @@ class PythonOperationResult:
             "response-digest": self.response_digest,
             "readback-digest": self.readback_digest,
             "readback-exact": self.readback_exact,
+            "observation": self.observation,
         }
 
 
@@ -481,6 +501,9 @@ class PythonPublicationResult:
             raise ValueError(message)
         if self.final_readback_digest is not None:
             _digest(self.final_readback_digest, field="Python final readback")
+        if self.final_readback_exact != sdist.readback_exact:
+            message = "Python final readback differs from operation evidence"
+            raise ValueError(message)
         if self.final_readback_exact and (
             self.final_readback_digest is None
             or any(
@@ -543,7 +566,11 @@ class PythonPublicationResult:
         return canonical_sha256(self.to_document())
 
 
-def execute_python_publication(  # noqa: PLR0913
+class _EvidenceRetentionError(OSError):
+    """Leave Result absent when reached evidence cannot be persisted."""
+
+
+def execute_python_publication(  # noqa: PLR0913, PLR0915
     marker: PythonMutationMarker,
     marker_reference: ArtifactReference,
     payloads: tuple[bytes, bytes],
@@ -552,15 +579,38 @@ def execute_python_publication(  # noqa: PLR0913
     transport: PythonHttpTransport,
     claim_path: Path,
     clock: Callable[[], datetime],
+    monotonic: Callable[[], float] = time.monotonic,
+    wait: Callable[[float], None] = time.sleep,
 ) -> PythonPublicationResult:
     """Consume a read-admitted durable marker, then send each original once."""
     _reference(marker_reference, marker.to_document())
     snapshot = marker.authorization.bundle.snapshot
     decision = snapshot.observation.decision
-    marker.fresh_governance.require_live(clock())
+    admitted_utc = clock()
+    marker.fresh_governance.require_live(admitted_utc)
+    admitted_monotonic = number(monotonic())
+    expiry = datetime.fromisoformat(
+        python_text(marker.fresh_governance.document["expires-at"])
+    )
+    deadline = admitted_monotonic + (expiry - admitted_utc).total_seconds()
+    authority: dict[str, JsonValue] = {
+        "utc": _instant(admitted_utc),
+        "monotonic": admitted_monotonic,
+        "deadline": deadline,
+    }
     originals = tuple(
         a.inspect(p) for a, p in zip(decision.artifacts, payloads, strict=True)
     )
+    previous = marker.absence.index_response
+    if (
+        previous is None
+        or python_digest(previous.body) != marker.absence.index_digest
+        or index_inventory(snapshot.registry, previous, marker.absence.version)
+    ):
+        message = (
+            "Python publication requires verified existing-project absence"
+        )
+        raise ValueError(message)
     # Platform current-run admission and concurrency own cross-process replay;
     # this exclusive task-owned claim prevents accidental reuse in this job.
     with claim_path.open("xb"):
@@ -571,12 +621,41 @@ def execute_python_publication(  # noqa: PLR0913
         )
         for i in (0, 1)
     ]
+    evidence_root = claim_path.with_name(claim_path.name + "-observations")
+    evidence_root.mkdir(exist_ok=False)
+    retention_error: _EvidenceRetentionError | None = None
+
+    def retain(name: str, content: bytes) -> None:
+        nonlocal retention_error
+        try:
+            path = evidence_root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("xb") as stream:
+                stream.write(content)
+        except OSError as error:
+            retention_error = retention_error or _EvidenceRetentionError(
+                "Python observation evidence retention failed"
+            )
+            raise retention_error from error
+
+    timed = PublicationTransport(
+        transport,
+        token,
+        monotonic,
+        deadline=deadline,
+        admit=lambda: marker.fresh_governance.require_live(clock()),
+        retain_rejected=lambda content: retain(
+            "rejected-response.json", content
+        ),
+    )
+
     final_digest = None
     final_exact = False
     for ordinal, distribution in enumerate(originals):
         invocation = upload_python_once(
-            snapshot.registry, distribution, token, transport
+            snapshot.registry, distribution, token, timed
         )
+        timed.require_replayable(retention_error)
         status = {
             "definitive-success": "succeeded",
             "definitive-non-success": "failed",
@@ -584,20 +663,74 @@ def execute_python_publication(  # noqa: PLR0913
         }[invocation.classification]
         readback_digest = None
         exact = False
+        observation: JsonValue = None
         if status == "succeeded":
+            phase = IndexPhase(
+                ObservationBasis(
+                    snapshot.registry,
+                    f"normal-{ordinal}",
+                    distribution,
+                    previous,
+                    invocation,
+                    deadline,
+                )
+            )
+            downloads: list[JsonValue] = []
+            observation = {
+                "authority": authority,
+                "phase": phase.trace,
+                "downloads": downloads,
+                "upload-started": timed.upload_started,
+            }
+            prefix = f"operation-{ordinal}/"
+            retain(
+                prefix + "admission.json",
+                canonicalize(
+                    {
+                        "authority": authority,
+                        "upload-started": timed.upload_started,
+                        "basis": phase.basis.document(),
+                    }
+                ),
+            )
             try:
+                final_index = phase.run(
+                    timed,
+                    retain=lambda name, content, prefix=prefix: retain(
+                        prefix + name, content
+                    ),
+                    clock=monotonic,
+                    wait=wait,
+                )
                 readback = read_python_index(
-                    snapshot.registry, distribution.witness, transport
+                    snapshot.registry,
+                    distribution.witness,
+                    ReadbackTransport(
+                        snapshot.registry,
+                        final_index,
+                        timed,
+                        downloads,
+                        retain=lambda name, content, prefix=prefix: retain(
+                            prefix + name, content
+                        ),
+                    ),
                 )
                 readback_digest = canonical_sha256(readback.to_document())
                 exact = _exact_files(
                     readback, decision, wheel_only=ordinal == 0
                 )
+                previous = final_index
             except (OSError, ValueError, TypeError):
+                timed.require_replayable(retention_error)
                 # Failure is retained; no readback can authorize a resend.
                 exact = False
         entries[ordinal] = PythonOperationResult(
-            ordinal, status, invocation.response_digest, readback_digest, exact
+            ordinal,
+            status,
+            invocation.response_digest,
+            readback_digest,
+            exact,
+            observation,
         )
         if status != "succeeded" or not exact:
             break
@@ -655,8 +788,14 @@ def python_publication_result_from_document(
                 "response-digest",
                 "readback-digest",
                 "readback-exact",
+                "observation",
             },
         )
+        if operation["status"] == "succeeded":
+            validate_observation_document(operation["observation"])
+        elif operation["observation"] is not None:
+            message = "Python Result has observation without upload success"
+            raise ValueError(message)
         entries.append(
             PythonOperationResult(
                 cast("int", operation["ordinal"]),
@@ -664,6 +803,7 @@ def python_publication_result_from_document(
                 cast("str | None", operation["response-digest"]),
                 cast("str | None", operation["readback-digest"]),
                 cast("bool", operation["readback-exact"]),
+                operation["observation"],
             )
         )
     result = PythonPublicationResult(
@@ -679,3 +819,142 @@ def python_publication_result_from_document(
         )
         raise ValueError(message)
     return result
+
+
+def audit_python_publication_result(  # noqa: C901, PLR0912, PLR0915 - strict ordered evidence replay
+    result: PythonPublicationResult, marker: PythonMutationMarker
+) -> None:
+    """Verify immutable observations against the approved artifacts."""
+    decision = marker.authorization.bundle.snapshot.observation.decision
+    previous = marker.absence.index_response
+    if (
+        previous is None
+        or python_digest(previous.body) != marker.absence.index_digest
+        or index_inventory(
+            marker.absence.registry, previous, marker.absence.version
+        )
+    ):
+        message = "Python Result lacks verified previous inventory"
+        raise ValueError(message)
+    previous_finish = 0.0
+    original_authority = None
+    for operation, artifact in zip(
+        result.operations, decision.artifacts, strict=True
+    ):
+        if operation.status != "succeeded":
+            if (
+                operation.observation is not None
+                or operation.readback_exact
+                or operation.readback_digest is not None
+            ):
+                message = "Python Result has readback without upload success"
+                raise ValueError(message)
+            continue
+        evidence = python_object(
+            operation.observation,
+            {"phase", "downloads", "upload-started", "authority"},
+        )
+        phase = cast("dict[str, JsonValue]", evidence["phase"])
+        if not isinstance(phase, dict):
+            message = "Python Result lacks complete observation phase"
+            raise ValueError(message)  # noqa: TRY004 - invalid phase document
+        authority = python_object(
+            evidence["authority"], {"utc", "monotonic", "deadline"}
+        )
+        admitted_utc = datetime.fromisoformat(python_text(authority["utc"]))
+        marker.fresh_governance.require_live(admitted_utc)
+        expiry = datetime.fromisoformat(
+            python_text(marker.fresh_governance.document["expires-at"])
+        )
+        deadline = (
+            number(authority["monotonic"])
+            + (expiry - admitted_utc).total_seconds()
+        )
+        if (
+            admitted_utc < marker.observed_at
+            or number(authority["deadline"]) != deadline
+            or (
+                original_authority is not None
+                and original_authority != authority
+            )
+        ):
+            message = "Python Result authority window differs"
+            raise ValueError(message)
+        original_authority = authority
+        upload_start = number(evidence["upload-started"])
+        if not number(authority["monotonic"]) <= upload_start < deadline:
+            message = "Python Result upload authority expired"
+            raise ValueError(message)
+        if (
+            not previous_finish
+            <= upload_start
+            <= number(phase.get("upload-finished"))
+            <= upload_start + 30
+        ):
+            message = "Python Result upload order differs"
+            raise ValueError(message)
+        basis = ObservationBasis(
+            marker.absence.registry,
+            f"normal-{operation.ordinal}",
+            ExpectedAddition(
+                artifact.filename,
+                artifact.reference.payload_digest,
+                artifact.witness,
+            ),
+            previous,
+            PythonUploadResponse(
+                "definitive-success",
+                200,
+                operation.response_digest,
+                cast("float", phase.get("upload-finished")),
+            ),
+            deadline,
+        )
+        if phase.get("terminal") != "exact":
+            replay_failed_index_phase(phase, basis)
+            if (
+                operation.readback_exact
+                or operation.readback_digest is not None
+                or evidence["downloads"] != []
+            ):
+                message = "Python Result failed phase has exact readback"
+                raise ValueError(message)
+            continue
+        final_index = replay_index_phase(phase, basis)
+        readback = replay_readback(
+            marker.absence.registry,
+            artifact.witness,
+            final_index,
+            evidence["downloads"],
+            after=number(phase["stopped-at"]),
+            deadline=deadline,
+        )
+        if readback is None:
+            if (
+                operation.readback_exact
+                or operation.readback_digest is not None
+            ):
+                message = "Python Result exact claim lacks downloaded originals"
+                raise ValueError(message) from None
+            continue
+        exact = _exact_files(
+            readback, decision, wheel_only=operation.ordinal == 0
+        )
+        if (
+            operation.readback_digest
+            != canonical_sha256(readback.to_document())
+            or operation.readback_exact is not exact
+        ):
+            message = "Python Result readback differs from original evidence"
+            raise ValueError(message)
+        previous = final_index
+        if any(
+            number(cast("dict", item)["start"]) >= deadline
+            for item in cast("list", evidence["downloads"])
+        ):
+            message = "Python Result download authority expired"
+            raise ValueError(message)
+        previous_finish = max(
+            number(cast("dict", item)["finish"])
+            for item in cast("list", evidence["downloads"])
+        )

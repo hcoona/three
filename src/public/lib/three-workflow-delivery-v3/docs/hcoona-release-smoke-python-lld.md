@@ -138,8 +138,7 @@ rather than assuming an SDK/CLI name establishes one-shot behavior.
 
 ## Bounded Post-Upload Observation
 
-This contract requires a subsequent disabled implementation and validation
-before operational use. It realizes the owner-confirmed `WD-PY-005` reliability choice,
+The disabled implementation realizes the owner-confirmed `WD-PY-005` reliability choice,
 not a service visibility guarantee. It applies only after a definitive HTTP-200
 upload, before its readback terminates. Bootstrap P2/P3, native C1/C2/C7/C8 and
 normal publication's two post-upload readbacks share the mechanism. Initial

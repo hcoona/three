@@ -2,9 +2,12 @@
 
 import base64
 import threading
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from email import policy
 from email.parser import BytesParser
+from http import HTTPStatus
 from pathlib import Path
 
 import pytest
@@ -38,6 +41,7 @@ _TOKEN = "pypi-suite-synthetic-secret"  # noqa: S105 - synthetic local capabilit
 _UPLOADS = 10
 _READS = 27
 _CONSUMERS = 4
+_MAX_INDEX_READS = 29
 _FIXED_STEPS = (
     ("a/original/wheel",),
     ("a/original/sdist",),
@@ -165,6 +169,68 @@ class RegistryBoundary:
         )
 
 
+class ObservationClock:
+    """Advance tiny trusted ticks under real races and virtual policy waits."""
+
+    def __init__(self):
+        """Keep the mutable instant shared safely by both upload contenders."""
+        self.now = 100.0
+        self.lock = threading.Lock()
+        self.waits = []
+
+    def __call__(self):
+        """Return ordered instants without depending on scheduler speed."""
+        with self.lock:
+            self.now += 0.0001
+            return self.now
+
+    def wait(self, seconds):
+        """Advance finite observation spacing without real sleep."""
+        with self.lock:
+            self.waits.append(seconds)
+            self.now += seconds
+
+
+class DelayedRegistry(RegistryBoundary):
+    """Hide only the newest addition during selected finite index reads."""
+
+    def __init__(self, fixtures, *, pending=5, **options):
+        """Retain a pre-existing single-wheel version throughout the suite."""
+        super().__init__(fixtures, **options)
+        self.pending = pending
+        self.pending_left = pending
+        self.visible_count = 0
+        self.index_history = []
+
+    def request(self, method, url, headers, body, maximum_bytes):
+        """Delay visibility while actual multipart storage and races remain."""
+        if (
+            method == "GET"
+            and url == self.registry.index_url
+            and len(self.stored) > self.visible_count
+        ):
+            if self.pending_left:
+                self.pending_left -= 1
+                self.reads.append(url)
+                response = _index(
+                    [
+                        self.unrelated,
+                        *[
+                            _entry(self.registry, item)
+                            for item in list(self.stored.values())[:-1]
+                        ],
+                    ]
+                )
+                self.index_history.append(parse_json_strict(response.body))
+                return response
+            self.visible_count = len(self.stored)
+            self.pending_left = self.pending
+        response = super().request(method, url, headers, body, maximum_bytes)
+        if method == "GET" and url == self.registry.index_url:
+            self.index_history.append(parse_json_strict(response.body))
+        return response
+
+
 def _consumer(calls):
     def consume(item):
         calls.append(item)
@@ -245,6 +311,188 @@ def test_python_native_competing_creation_accepts_independent_winners(
         _TOKEN.encode() not in data
         for data in (*files.values(), *audit.values())
     )
+
+
+@pytest.mark.parametrize("winner", ["original", "comparison"])
+def test_native_delayed_observations_preserve_partial_version_and_budget(
+    modeled_fixtures, tmp_path, monkeypatch, winner
+):
+    """Each phase may use six reads while preserving older partial versions."""
+    request = fixture_tests.fixture_request(modeled_fixtures)
+    clock = ObservationClock()
+    http = DelayedRegistry(modeled_fixtures, winners=(winner, winner))
+    files = run_suite(
+        request,
+        modeled_fixtures,
+        http,
+        _TOKEN,
+        tmp_path / "probe",
+        clock=clock,
+        wait=clock.wait,
+    )
+    records = parse_json_strict(files["requests.json"])
+    assert Counter(record["kind"] for record in records) == {
+        "index": 29,
+        "upload": 10,
+        "file": 18,
+    }
+    expected = ["index"]
+    for ordinal, keys in enumerate(_FIXED_STEPS, 1):
+        expected.extend(["upload"] * len(keys))
+        expected.extend(["index"] * (6 if ordinal in {1, 2, 7, 8} else 1))
+        expected.extend(
+            ["file"] * (ordinal - 4 if ordinal in {7, 8} else min(ordinal, 2))
+        )
+    assert [record["kind"] for record in records] == expected
+    assert len(http.index_history) == _MAX_INDEX_READS
+    assert all(
+        document["files"][0] == http.unrelated
+        for document in http.index_history
+    )
+    assert http.unrelated["filename"] not in http.stored
+    assert len(clock.waits) == 20  # noqa: PLR2004 - five waits in four phases
+    assert all(9 < delay <= 10 for delay in clock.waits)  # noqa: PLR2004 - controlled tick margin
+    for ordinal in (1, 2, 7, 8):
+        trace = parse_json_strict(files[f"observation/c{ordinal}/phase.json"])
+        assert [read["classification"] for read in trace["reads"]] == [
+            *(["pending"] * 5),
+            "exact",
+        ]
+        assert [read["ordinal"] for read in trace["reads"]] == list(range(6))
+        assert trace["reads"][-1]["start"] < trace["upload-finished"] + 60
+        if ordinal in {7, 8}:
+            uploads = [
+                parse_json_strict(files[f"upload/step-{ordinal}-{number}.json"])
+                for number in (0, 1)
+            ]
+            successful = next(
+                upload
+                for upload in uploads
+                if upload["status"] == HTTPStatus.OK
+            )
+            assert trace["upload-finished"] == successful["finish"]
+            assert trace["addition"]["digest"] == successful["digest"]
+
+    def denied_wait(_seconds):
+        pytest.fail("Native offline audit attempted to sleep")
+
+    monkeypatch.setattr("time.sleep", denied_wait)
+    consumed = []
+    audited = audit_suite(
+        request, modeled_fixtures, files, consumer=_consumer(consumed)
+    )
+    assert len(consumed) == _CONSUMERS
+    assert {item.digest for item in consumed} == {
+        item.digest for item in http.stored.values()
+    }
+    assert parse_json_strict(audited["audit.json"])["native-admission"] is False
+
+
+def test_native_late_race_join_exhausts_winner_window_before_read(
+    modeled_fixtures, tmp_path, monkeypatch
+):
+    """Both real contenders finish, but delayed join cannot renew the winner."""
+    clock = ObservationClock()
+    joins = []
+
+    class DelayedJoin(ThreadPoolExecutor):
+        def __exit__(self, *args):
+            result = super().__exit__(*args)
+            joins.append(clock())
+            clock.wait(60)
+            return result
+
+    monkeypatch.setattr(python_native_suite, "ThreadPoolExecutor", DelayedJoin)
+    http = RegistryBoundary(modeled_fixtures)
+    output = tmp_path / "probe"
+    with pytest.raises(ValueError, match="generation remains spent"):
+        run_suite(
+            fixture_tests.fixture_request(modeled_fixtures),
+            modeled_fixtures,
+            http,
+            _TOKEN,
+            output,
+            clock=clock,
+            wait=clock.wait,
+        )
+    assert len(joins) == 1
+    assert set(http.posts[6:]) == set(_FIXED_STEPS[6])
+    assert len(http.posts) == 8  # noqa: PLR2004 - both wheel contenders joined
+    assert (output / "upload/step-7-0.json").is_file()
+    assert (output / "upload/step-7-1.json").is_file()
+    assert not (output / "capture/c7.json").exists()
+    assert not (output / "upload/step-8.marker.json").exists()
+    trace = parse_json_strict(
+        (output / "observation/c7/phase.json").read_bytes()
+    )
+    assert trace["terminal"] == "exhausted"
+    assert trace["reads"] == []
+    assert trace["stopped-at"] >= trace["upload-finished"] + 60
+    assert (
+        parse_json_strict((output / "failure.json").read_bytes())["result"]
+        == "spent-possibly-mutated"
+    )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "raw-pending",
+        "timing",
+        "missing-pending",
+        "previous-partial",
+        "terminal-after-next-file",
+    ],
+)
+def test_native_delayed_audit_rejects_changed_observation_history(
+    modeled_fixtures, tmp_path, change
+):
+    """Clean final files cannot replace unchanged original pending evidence."""
+    clock = ObservationClock()
+    http = DelayedRegistry(modeled_fixtures, pending=1)
+    request = fixture_tests.fixture_request(modeled_fixtures)
+    files = run_suite(
+        request,
+        modeled_fixtures,
+        http,
+        _TOKEN,
+        tmp_path / "probe",
+        clock=clock,
+        wait=clock.wait,
+    )
+    prefix = "observation/c7/"
+    trace = parse_json_strict(files[prefix + "phase.json"])
+    if change == "raw-pending":
+        files[prefix + "index-0.body"] = b"{}"
+    elif change == "timing":
+        trace["reads"][1]["start"] = trace["reads"][0]["finish"] + 9
+    elif change == "missing-pending":
+        trace["reads"].pop(0)
+    elif change == "terminal-after-next-file":
+        records = parse_json_strict(files["requests.json"])
+        next_file = next(
+            record
+            for record in records
+            if record["kind"] == "file"
+            and record["start"] >= trace["reads"][-1]["finish"]
+        )
+        trace["stopped-at"] = next_file["start"] + 0.001
+    else:
+        before = parse_json_strict(files["capture/c6/index.body"])
+        before["files"].pop(0)
+        files["capture/c6/index.body"] = canonicalize(before)
+    files[prefix + "phase.json"] = canonicalize(trace)
+    consumed = []
+    with pytest.raises(
+        (ValueError, KeyError),
+        match="observation termination"
+        if change == "terminal-after-next-file"
+        else None,
+    ):
+        audit_suite(
+            request, modeled_fixtures, files, consumer=_consumer(consumed)
+        )
+    assert consumed == []
 
 
 @pytest.mark.parametrize(

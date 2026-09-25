@@ -162,7 +162,7 @@ def _summary(
                 "TestPyPI first-project bootstrap "
                 "(separate owner grant required)\n\n"
                 "```json\n" + canonicalize(facts).decode() + "\n```\n\n"
-                "At most 2 uploads, 5 index reads, 5 file reads, "
+                "At most 2 uploads, 15 index reads, 5 file reads, "
                 "16 GitHub proof reads, 1 OIDC assertion, 1 exchange "
                 "and 5 immutable artifacts. "
                 "Authorization and marker readback precede credentials. "

@@ -98,7 +98,9 @@ def test_python_native_capture_reuses_index_and_preserves_inventory(
     replayed = replay_capture(
         files, 0, transport.registry, witnesses(modeled_fixtures)
     )
-    assert replayed == capture
+    assert replayed.inventory == capture.inventory
+    assert replayed.distributions == capture.distributions
+    assert replayed.files(0) == files
     assert len(http.calls) == _CAPTURE_READS
 
 
@@ -199,7 +201,7 @@ def test_python_native_failed_capture_retains_reached_raw_evidence(
     ("kind", "method", "limit", "maximum"),
     [
         ("upload", "POST", 10, MAX_RESPONSE_BYTES),
-        ("index", "GET", 9, MAX_INDEX_BYTES),
+        ("index", "GET", 29, MAX_INDEX_BYTES),
         ("file", "GET", 18, MAX_FILE_BYTES),
     ],
 )

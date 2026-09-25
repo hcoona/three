@@ -534,7 +534,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915 - closed CLI ph
                         "(separate owner approval required)\n\n```json\n"
                         + request.content.decode()
                         + "\n```\n\nThis run permits at most 10 uploads, "
-                        "27 registry reads, 8 GitHub proof reads, one OIDC "
+                        "47 registry reads, 8 GitHub proof reads, one OIDC "
                         "request and one exchange. Four files may remain. "
                         "No retries, reruns or cleanup. Missing evidence "
                         "leaves the generation spent and possibly mutated.\n"

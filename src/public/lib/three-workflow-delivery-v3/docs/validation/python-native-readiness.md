@@ -28,6 +28,11 @@ The module `three_workflow_delivery_v3.acceptance.python_native` exposes:
 - `archive` and `digest`: retain surviving evidence and expose exact logical
   bytes for immutable artifact transport. No command dispatches or polls a run.
 
+The tooling implements the [bounded post-upload observer](../hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
+for C1/C2/C7/C8 and audits every original pending response and its timing.
+The changed operation profile requires a fresh native suite. Existing failed
+bootstrap evidence cannot qualify it.
+
 The manual-only hosted entry is
 [Native Python acceptance workflow](../../../../../../.github/workflows/workflow-delivery-v3-native-python-acceptance.yml).
 Only its Environment-gated probe job requests OIDC. Preparation and audit never

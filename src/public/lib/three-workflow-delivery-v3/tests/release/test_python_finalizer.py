@@ -2,8 +2,11 @@
 
 from dataclasses import replace
 from datetime import timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
+from three_workflow_delivery_v3.adapters.pypi import PythonHttpResponse
 from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.records.release import (
     AttemptOutcome,
@@ -22,13 +25,14 @@ from three_workflow_delivery_v3.release.python_finalizer import (
     PythonFinalizationInputs,
 )
 from three_workflow_delivery_v3.release.python_publication import (
-    PythonOperationResult,
     PythonPublicationResult,
+    execute_python_publication,
 )
 from three_workflow_delivery_v3.release.python_qualification import (
     PythonQualificationDecision,
 )
 
+from ..adapters.test_pypi import FakeHttp
 from ..python_fixtures import (
     NOW,
     RUN_ID,
@@ -42,8 +46,10 @@ from .python_fixtures import (
     prepared_publication,
     publication_snapshot,
 )
+from .test_python_publication import _readback
 
 _DIGEST = "sha256:" + "1" * 64
+_TOKEN = "pypi-synthetic-test-only"  # noqa: S105 - synthetic local fixture
 
 
 def _inputs(marker):
@@ -62,23 +68,29 @@ def _inputs(marker):
 
 
 def _result(marker, marker_ref, state="published"):
-    wheel = PythonOperationResult(
-        0, "succeeded", _DIGEST, _DIGEST, readback_exact=True
-    )
-    sdist = PythonOperationResult(
-        1, "succeeded", _DIGEST, _DIGEST, readback_exact=True
-    )
-    if state == "failed":
-        sdist = PythonOperationResult(
-            1, "unknown", None, None, readback_exact=False
+    _, payloads, distributions = qualification(marker.absence.registry.name)
+    registry = marker.absence.registry
+    ok = PythonHttpResponse(200, b"created", "text/plain")
+    ending = (
+        (TimeoutError("lost response"),)
+        if state == "failed"
+        else (
+            (ok, PythonHttpResponse(404, b"missing", "text/plain"))
+            if state == "readback-failed"
+            else (ok, *_readback(registry, distributions))
         )
-    return PythonPublicationResult(
-        marker.attempt,
-        marker_ref,
-        (wheel, sdist),
-        _DIGEST if state == "published" else None,
-        final_readback_exact=state == "published",
     )
+    http = FakeHttp(ok, *_readback(registry, distributions[:1]), *ending)
+    with TemporaryDirectory() as directory:
+        return execute_python_publication(
+            marker,
+            marker_ref,
+            payloads,
+            token=_TOKEN,
+            transport=http,
+            claim_path=Path(directory) / "claim",
+            clock=lambda: NOW + timedelta(seconds=3),
+        )
 
 
 def _finalize(inputs, **overrides):
@@ -546,16 +558,7 @@ def test_python_finalizer_rejects_terminal_lineage_or_scalar_substitution(
 def test_python_failed_final_readback_retains_known_mutation_flag():
     """Two completed uploads cannot be reported as an unmutated failure."""
     marker, marker_ref, _, _ = prepared_publication()
-    published = _result(marker, marker_ref)
-    result = replace(
-        published,
-        operations=(
-            published.operations[0],
-            replace(published.operations[1], readback_exact=False),
-        ),
-        final_readback_exact=False,
-        final_readback_digest=None,
-    )
+    result = _result(marker, marker_ref, "readback-failed")
     assert result.result == "failed"
     assert result.mutation_classification == "mutated"
     admitted = admit_release_record(
@@ -567,7 +570,7 @@ def test_python_failed_final_readback_retains_known_mutation_flag():
         ),
     )
     assert admitted.final_readback_digest is None
-    assert admitted.operations[1].readback_digest == _DIGEST
+    assert admitted.operations[1].readback_digest is None
     assert admitted.operations[1].readback_exact is False
     assert admitted.result == "failed"
     inputs = replace(

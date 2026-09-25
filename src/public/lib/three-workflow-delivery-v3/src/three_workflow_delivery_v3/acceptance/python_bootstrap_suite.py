@@ -120,7 +120,12 @@ class BootstrapContext:
         actual = {
             name
             for name in files
-            if name != "requests.json" and not name.startswith("http/")
+            if name != "requests.json"
+            and not name.startswith("http/")
+            and not (
+                phase == "execute"
+                and name.startswith(("observation/p2/", "observation/p3/"))
+            )
         }
         require(
             actual == BASE_NAMES | names
@@ -310,6 +315,8 @@ def execute(  # noqa: PLR0913, PLR0917 - exact phase artifact tuple
     environment: Mapping[str, str],
     *,
     clock: Callable[[], float] = time.time,
+    monotonic: Callable[[], float] = time.monotonic,
+    wait: Callable[[float], None] = time.sleep,
 ) -> None:
     """P1 and one token exchange precede U1/P2/U2/P3, without recovery sends."""
     fixtures = validate_prepared(
@@ -335,6 +342,7 @@ def execute(  # noqa: PLR0913, PLR0917 - exact phase artifact tuple
         retain,
         window=window,
         clock=clock,
+        monotonic=monotonic,
         secrets=(
             environment["GITHUB_TOKEN"],
             environment["ACTIONS_ID_TOKEN_REQUEST_TOKEN"],
@@ -357,7 +365,15 @@ def execute(  # noqa: PLR0913, PLR0917 - exact phase artifact tuple
         journal.add_secret(assertion)
         token = mint_python_token(context.request.registry, assertion, journal)
         journal.add_secret(token)
-        upload_pair(journal, fixtures.distributions, token)
+        upload_pair(
+            journal,
+            fixtures.distributions,
+            token,
+            retain=retain,
+            deadline=journal.monotonic_deadline,
+            clock=journal.monotonic,
+            wait=wait,
+        )
     except Exception:
         retain(
             "result.json",
@@ -424,7 +440,14 @@ def replay_execution(
     require_absent(replay)
     replay.credential("oidc")
     replay.credential("mint")
-    upload_pair(replay, fixtures.distributions, "pypi-offline-replay")
+    upload_pair(
+        replay,
+        fixtures.distributions,
+        "pypi-offline-replay",
+        retain=lambda _name, _content: None,
+        deadline=replay.monotonic_deadline,
+        replay=files,
+    )
     replay.finished()
     return fixtures
 

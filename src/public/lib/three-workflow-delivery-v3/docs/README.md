@@ -67,6 +67,10 @@ findings and limits. The disabled implementation is protected-delivered through
 and [tooling and operator readiness](./validation/python-native-readiness.md)
 are protected-delivered through PRs #854 and #855, completing preparation.
 They define the suite, preparation interfaces and unverified operator resources.
+The [bounded post-upload observer](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
+is implemented with original-response replay across bootstrap, native and normal
+publication. Its changed profile requires new native evidence; retained failed
+bootstrap evidence is not upgraded or resumed.
 Future configuration, native execution/admission and publication require separate
 [Wave](../../../../../docs/delivery-wave.md) authorization and domain gates. Both destinations remain disabled;
 implementation delivery is not the two-destination smoke completion audit.

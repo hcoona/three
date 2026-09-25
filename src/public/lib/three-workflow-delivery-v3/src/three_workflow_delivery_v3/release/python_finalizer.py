@@ -19,6 +19,7 @@ from three_workflow_delivery_v3.release.python_publication import (
     _exact_files,
     _instant,
     _reference,
+    audit_python_publication_result,
 )
 
 if TYPE_CHECKING:
@@ -244,6 +245,7 @@ def finalize_python_attempt_outcome(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 message = "Python Result lacks its exact marker predecessor"
                 raise ValueError(message)
             marker = inputs.result_marker[0]
+            audit_python_publication_result(terminal, marker)
             predecessor = DirectPredecessor("publication-result", terminal_ref)
             disposition = (
                 "published"

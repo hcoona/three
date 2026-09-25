@@ -33,6 +33,7 @@ artifacts = [
   "src/three_workflow_delivery_v3/release/python_finalizer.py",
   "src/three_workflow_delivery_v3/release/python_governance.py",
   "src/three_workflow_delivery_v3/release/python_publication.py",
+  "src/three_workflow_delivery_v3/release/python_readback.py",
   "src/three_workflow_delivery_v3/release/python_qualification.py",
   "src/three_workflow_delivery_v3/release/python_transport.py",
 ]
