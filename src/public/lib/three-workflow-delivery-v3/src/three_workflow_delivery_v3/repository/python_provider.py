@@ -499,7 +499,7 @@ def provide_python_repository_facts(
         # Give NBGV the protected-main ref in the disposable clone only. This
         # preserves the project's publicReleaseRefSpec instead of editing a
         # computed version. CI keeps its detached, possibly local projection.
-        if binding.purpose == "live-release":
+        if binding.purpose in {"live-release", "destination-acceptance"}:
             _run_command(
                 ("git", "checkout", "-B", "main", binding.target), isolated
             )

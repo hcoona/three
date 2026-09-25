@@ -1,0 +1,197 @@
+# Preparation delivery leaves both protected native-request slots null.
+name: Workflow Delivery v3 native Python acceptance
+'on':
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: Separately authorized destination generation
+        type: choice
+        required: true
+        options: [testpypi, pypi]
+      request_digest:
+        description: Exact protected prospective request SHA-256
+        type: string
+        required: true
+      tooling_sha:
+        description: Exact reviewed protected-main tooling commit
+        type: string
+        required: true
+permissions: {}
+concurrency:
+  group: wdv3-python-project-${{ inputs.registry }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+env:
+  WDV3_REGISTRY: ${{ inputs.registry }}
+  WDV3_REQUEST_DIGEST: ${{ inputs.request_digest }}
+  WDV3_TOOLING_SHA: ${{ inputs.tooling_sha }}
+jobs:
+  prepare:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' && github.repository_id == '1102295886' &&
+      github.actor == 'hcoona' && github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' && github.ref_protected &&
+      github.sha == inputs.tooling_sha && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact protected tooling without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-python-setup
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Restore pinned NBGV
+        run: dotnet tool restore
+      - name: Qualify the exact protected eight-file fixture set
+        run: python -m three_workflow_delivery_v3.acceptance.python_native prepare --registry "$WDV3_REGISTRY" --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --output .wdv3/python-native-prepare-r${{ github.run_id }}.zip
+      - name: Bind original prepare payload bytes
+        id: seal
+        run: python -m three_workflow_delivery_v3.acceptance.python_native digest --output .wdv3/python-native-prepare-r${{ github.run_id }}.zip
+      - name: Retain immutable prepare artifact
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-native-prepare-r${{ github.run_id }}.zip
+          path: .wdv3/python-native-prepare-r${{ github.run_id }}.zip
+          archive: false
+          overwrite: false
+          if-no-files-found: error
+          retention-days: 45
+          include-hidden-files: true
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+      payload-digest: ${{ steps.seal.outputs.digest }}
+  probe:
+    needs: prepare
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' && github.repository_id == '1102295886' &&
+      github.actor == 'hcoona' && github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' && github.ref_protected &&
+      github.sha == inputs.tooling_sha && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: workflow-delivery-v3-python-${{ inputs.registry }}
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      id-token: write
+    env:
+      WDV3_PREPARED_REFERENCE: >-
+        {"artifact-id":${{ needs.prepare.outputs.artifact-id }},"artifact-digest":"sha256:${{ needs.prepare.outputs.artifact-digest }}","artifact-url":"${{ needs.prepare.outputs.artifact-url }}","payload-path":"python-native-prepare-r${{ github.run_id }}.zip","payload-digest":"${{ needs.prepare.outputs.payload-digest }}"}
+    steps:
+      - name: Check out exact protected tooling without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-python-setup
+      - name: Download current-run immutable prepare
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Prove native approval and execute the fixed suite once
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WDV3_APPROVAL_ENVIRONMENT_MARKER: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
+        run: python -m three_workflow_delivery_v3.acceptance.python_native probe --registry "$WDV3_REGISTRY" --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-native-prepare-r${{ github.run_id }}.zip --output .wdv3/probe
+      - name: Archive all surviving evidence, including failed steps
+        if: always()
+        run: python -m three_workflow_delivery_v3.acceptance.python_native archive --directory .wdv3/probe --output .wdv3/python-native-probe-r${{ github.run_id }}.zip
+      - name: Bind original probe payload bytes
+        id: seal
+        if: always()
+        run: python -m three_workflow_delivery_v3.acceptance.python_native digest --output .wdv3/python-native-probe-r${{ github.run_id }}.zip
+      - name: Retain immutable probe artifact
+        id: upload
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-native-probe-r${{ github.run_id }}.zip
+          path: .wdv3/python-native-probe-r${{ github.run_id }}.zip
+          archive: false
+          overwrite: false
+          if-no-files-found: error
+          retention-days: 45
+          include-hidden-files: true
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+      payload-digest: ${{ steps.seal.outputs.digest }}
+  audit:
+    needs: [prepare, probe]
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' && github.repository_id == '1102295886' &&
+      github.actor == 'hcoona' && github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' && github.ref_protected &&
+      github.sha == inputs.tooling_sha && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    env:
+      WDV3_PREPARED_REFERENCE: >-
+        {"artifact-id":${{ needs.prepare.outputs.artifact-id }},"artifact-digest":"sha256:${{ needs.prepare.outputs.artifact-digest }}","artifact-url":"${{ needs.prepare.outputs.artifact-url }}","payload-path":"python-native-prepare-r${{ github.run_id }}.zip","payload-digest":"${{ needs.prepare.outputs.payload-digest }}"}
+      WDV3_PROBE_REFERENCE: >-
+        {"artifact-id":${{ needs.probe.outputs.artifact-id }},"artifact-digest":"sha256:${{ needs.probe.outputs.artifact-digest }}","artifact-url":"${{ needs.probe.outputs.artifact-url }}","payload-path":"python-native-probe-r${{ github.run_id }}.zip","payload-digest":"${{ needs.probe.outputs.payload-digest }}"}
+    steps:
+      - name: Check out exact protected tooling without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-python-setup
+      - name: Download current-run immutable prepare
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download current-run immutable probe
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.probe.outputs.artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Replay original observations and run fresh clean consumers
+        run: python -m three_workflow_delivery_v3.acceptance.python_native audit --registry "$WDV3_REGISTRY" --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-native-prepare-r${{ github.run_id }}.zip --probe .wdv3/input/python-native-probe-r${{ github.run_id }}.zip --output .wdv3/python-native-audit-r${{ github.run_id }}.zip
+      - name: Bind original audit payload bytes
+        id: seal
+        run: python -m three_workflow_delivery_v3.acceptance.python_native digest --output .wdv3/python-native-audit-r${{ github.run_id }}.zip
+      - name: Retain immutable audit artifact
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-native-audit-r${{ github.run_id }}.zip
+          path: .wdv3/python-native-audit-r${{ github.run_id }}.zip
+          archive: false
+          overwrite: false
+          if-no-files-found: error
+          retention-days: 45
+          include-hidden-files: true

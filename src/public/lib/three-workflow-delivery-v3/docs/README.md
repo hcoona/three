@@ -65,7 +65,9 @@ findings and limits. The disabled implementation is protected-delivered through
 [PR #849](https://github.com/hcoona/three/pull/849). The accepted
 [Wave](../../../../../docs/delivery-wave.md) authorizes bounded native-acceptance
 preparation. The [Python native acceptance protocol](./validation/python-native-acceptance.md)
-defines its suite and operator prerequisites; configuration, native execution,
+defines its suite and operator prerequisites. The
+[tooling and operator readiness](./validation/python-native-readiness.md)
+identifies preparation interfaces and unverified resources; configuration, native execution,
 admission and publication remain separately gated. Both destinations remain disabled;
 implementation delivery is not the two-destination smoke completion audit.
 
