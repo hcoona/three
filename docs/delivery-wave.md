@@ -62,3 +62,46 @@ ends a grant. Git and the proposing PR retain the reason and history.
   result reuse across incompatible revisions. HK 2 compatibility remains a
   separate concern under #647/#823. New hosted experiments require a bounded
   protocol before execution; this entry grants no new native operation.
+
+### Verify TestPyPI operational readiness
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the owner's instruction to continue after preparation
+  closeout #856; accepted Python requirements, native protocol and readiness
+  interface; protected protocol/tooling through #854/#855 and their verified
+  delivery evidence.
+- **Advancement and outcome:** establish the actual remaining TestPyPI resource
+  gaps and prepare a concrete, reviewable configuration/native-operation
+  request for `hcoona-release-smoke-python`. Inspect only the selected
+  `hcoona/three` repository, protected main and
+  `workflow-delivery-v3-python-testpypi` Environment; reconcile owner-supplied
+  TestPyPI account/project-control and publisher facts with the protocol.
+  Recheck applicable official setup/ownership/bootstrap documentation. If the
+  project is absent or control is unproved, report the prerequisite and a
+  bounded proposed creation path rather than interpreting a pending publisher
+  as established ownership. Deliver sanitized readiness evidence and the
+  exact next proposal in #843, then close this grant.
+- **Effects and delivery:** permit ordinary Issue/PR/check operations, local
+  documentation and validation, protected delivery/closeout, and independent
+  domain/security, record, research-evidence and full-manifest OCR review with
+  separate finding triage. After this entry merges, permit read-only GitHub
+  inspection of the named repository's identity, writer inventories, branch
+  protection/rules and exact Environment configuration/sentinel, plus one
+  public JSON Simple Index GET for the exact TestPyPI project. Read no secret
+  values or unrelated accounts/projects. Bound GitHub inspection to 32 GETs,
+  at most two 100-entry pages per inventory, with no request retries. Retain
+  complete inventories within those bounds and original sanitized responses;
+  do not poll or silently interpret failed,
+  truncated or inaccessible reads as absence. The index read establishes
+  current public visibility only, not ownership or historical availability.
+  Use owner-supplied account facts without requesting credentials or inferring
+  private browser/account access. Recheck mutable interfaces before changed
+  reliance; record remaining uncertainty explicitly.
+- **Exclusions:** both Python destinations remain disabled and native request
+  slots remain null. No account/project/Environment creation or modification,
+  publisher registration, access/authentication change, OIDC/token request,
+  file download, native-suite or release dispatch/rerun, upload, activation,
+  recovery/deletion or cleanup. Configuration, any initial project creation,
+  native execution and each normal publication require their own concrete
+  owner authorization and domain gates. No PyPI inspection/operation, artifact
+  or approval promotion, reopened npm/NuGet operation or Ruby work.
