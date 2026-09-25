@@ -8,6 +8,41 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Diagnose Python readback and prepare disabled continuation
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the owner's
+  [approval and dependency clarification](https://github.com/hcoona/three/issues/843#issuecomment-5838336683)
+  of the [readback preparation scope](https://github.com/hcoona/three/issues/843#issuecomment-5838288725),
+  the retained failed bootstrap and completed ownership/publisher attestation,
+  current V3 Python requirements, protocols and engineering principles.
+- **Advancement and outcome:** diagnose the retained upload/readback failure
+  using original evidence and public official sources; prepare the smallest
+  justified coherent readback design across affected bootstrap, native and
+  normal Python paths, including a no-change conclusion when warranted.
+  Explicitly resolve the existing-project continuation prerequisites without
+  relabeling the failed bootstrap. Present material requirement or risk changes
+  to the owner before dependent implementation. After accepted design/domain
+  gates, implement justified changes in the disabled state, validate finite
+  bounds, failure ordering and audit replay, and prepare a concrete later
+  TestPyPI operational proposal. Close this preparation grant after delivery.
+- **Effects and delivery:** permit public official-documentation reads,
+  offline evidence examination, local dependency/fixture preparation and
+  controlled validation within the exclusions below, ordinary Issue/PR/check
+  delivery and CI, independent delegated record/evidence/domain/OCR review,
+  protected merge and postmerge checks. The owner separately permits normal
+  build/test dependency downloads from production PyPI under locked
+  configuration. Evaluate applicable source rechecks.
+- **Exclusions:** no TestPyPI request or smoke-project registry observation,
+  OIDC assertion/mint,
+  account inspection, publisher/Environment/access change, manual release,
+  native or bootstrap dispatch, deployment approval, upload, refill,
+  replacement execution, deletion or rollback. Preserve the failed
+  `0.1.0b6` and spent operation budgets. Both normal destinations remain
+  disabled and bootstrap/native request slots remain null. The later
+  operational proposal grants no execution; TestPyPI and PyPI retain separate
+  configuration, native-admission and publication authorization.
+
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
