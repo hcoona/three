@@ -56,6 +56,10 @@ _TOOLING = "c" * 40
 _GITHUB_TOKEN = "synthetic-github-token"  # noqa: S105
 _ASSERTION = "synthetic-oidc-assertion"
 _OIDC_TOKEN = "synthetic-oidc-request-token"  # noqa: S105
+_OIDC_URL = (
+    "https://run.actions.githubusercontent.com/idtoken"
+    "?api-version=2.0&audience=testpypi"
+)
 _PROOF_MAXIMUM = 8
 
 
@@ -365,11 +369,10 @@ class HostedBoundary:
             return PythonHttpResponse(
                 200, canonicalize(data), "application/json"
             )
-        if "actions.githubusercontent.com/" in url:
+        if url == _OIDC_URL:
             assert (self.output / "approval.json").is_file()
             assert (self.output / "binding.json").is_file()
             assert (self.output / "platform.json").is_file()
-            assert "audience=testpypi" in url
             return PythonHttpResponse(
                 200, canonicalize({"value": _ASSERTION}), "application/json"
             )
@@ -433,7 +436,7 @@ def test_python_native_probe_orders_authority_and_never_builds(
         ("GET", "https://api.github.com" + route)
         for route, _ in github_facts(http.request_spec)
     ]
-    assert "actions.githubusercontent.com" in http.calls[4][1]
+    assert http.calls[4] == ("GET", _OIDC_URL)
     assert http.calls[5] == ("POST", "https://test.pypi.org/_/oidc/mint-token")
     assert "suite/suite.json" in files
     for content in files.values():
