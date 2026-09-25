@@ -11,8 +11,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
 ### Diagnose Python readback and prepare disabled continuation
 
 - **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** the owner's approved
-  [readback preparation scope](https://github.com/hcoona/three/issues/843#issuecomment-5838288725),
+- **Accepted inputs:** the owner's
+  [approval and dependency clarification](https://github.com/hcoona/three/issues/843#issuecomment-5838336683)
+  of the [readback preparation scope](https://github.com/hcoona/three/issues/843#issuecomment-5838288725),
   the retained failed bootstrap and completed ownership/publisher attestation,
   current V3 Python requirements, protocols and engineering principles.
 - **Advancement and outcome:** diagnose the retained upload/readback failure
