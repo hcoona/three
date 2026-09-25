@@ -15,7 +15,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
   [approval and dependency clarification](https://github.com/hcoona/three/issues/843#issuecomment-5838336683)
   of the [readback preparation scope](https://github.com/hcoona/three/issues/843#issuecomment-5838288725),
   the retained failed bootstrap and completed ownership/publisher attestation,
-  current V3 Python requirements, protocols and engineering principles.
+  current V3 Python requirements, protocols and engineering principles, and the
+  owner's [two requirement/risk decisions](https://github.com/hcoona/three/issues/843#issuecomment-5839240843)
+  accepting finite post-upload observation and resource-only continuation while
+  leaving the failed partial bootstrap version untouched indefinitely.
 - **Advancement and outcome:** diagnose the retained upload/readback failure
   using original evidence and public official sources; prepare the smallest
   justified coherent readback design across affected bootstrap, native and

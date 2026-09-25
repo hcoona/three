@@ -91,7 +91,7 @@ installed by preparation.
 | Fixture hashes            | Eight exact original/comparison wheel/sdist logical SHA-256 values from accepted tooling                                                                |
 | Generation                | Fresh 32-character lowercase hexadecimal identity, not previously dispatched                                                                            |
 | Dispatch binding          | Exact accepted protected-main tooling SHA and canonical protected request SHA-256; attempt one only                                                     |
-| Finite permission         | One explicit dispatch/approval, one OIDC assertion/exchange, ten uploads, 27 registry reads and at most eight GitHub proof reads                        |
+| Finite permission         | One explicit dispatch/approval, one OIDC assertion/exchange, ten uploads, 47 registry reads and at most eight GitHub proof reads                        |
 | Failure disposition       | Partial success/lost evidence leaves the generation spent and possibly mutated; no retry, rerun, refill, replacement dispatch or cleanup authority      |
 | Evidence custody          | Durable operator storage location and named independent auditor; copy complete artifact references and original bytes before 45-day Actions expiration  |
 

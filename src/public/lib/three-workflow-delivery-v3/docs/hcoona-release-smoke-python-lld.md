@@ -136,6 +136,84 @@ PyPI has never used the filenames. Deleted filename rejection remains failure.
 The native profile must exercise the actual APIs, request mapping and runtime
 rather than assuming an SDK/CLI name establishes one-shot behavior.
 
+## Bounded Post-Upload Observation
+
+This contract requires a subsequent disabled implementation and validation
+before operational use. It realizes the owner-confirmed `WD-PY-005` reliability choice,
+not a service visibility guarantee. It applies only after a definitive HTTP-200
+upload, before its readback terminates. Bootstrap P2/P3, native C1/C2/C7/C8 and
+normal publication's two post-upload readbacks share the mechanism. Initial
+checks, native duplicate captures, zero-action proofs and independent final
+audits remain single reads. HTTP transport retries, cache-bypass headers, token
+refresh and file-download retries remain unavailable.
+
+Each phase closes the successful upload response, comparison scope, previously
+verified inventory and exactly one expected addition before reading. Bootstrap
+and native compare complete project file inventories; normal publication keeps
+its target-version scope. Compare complete normalized file entries, including
+URL, declared hashes, Python constraints and yanked state; ignore only index-level
+serial/timestamp metadata. An expected addition must have the approved filename
+and SHA-256, accepted URL and metadata. Native competition uses the actual
+successful candidate. Raw index bytes are always retained unchanged.
+
+| Index observation                                                                                                                                                 | Phase transition                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Exact expected inventory with unchanged previous entries                                                                                                          | Download and verify expected original/winner bytes and witnesses once; success only if all pass. |
+| Existing-project HTTP 200 exactly equal to its previously verified HTTP-200 inventory, missing only the expected addition (never initial bootstrap P2)            | Pending; no downloads.                                                                           |
+| HTTP 404 at first-project bootstrap P2 only                                                                                                                       | Pending; no ownership or successful-publication claim.                                           |
+| Existing-project 404, other status, malformed/oversized index, changed/missing prior entries, extra/foreign/conflicting/yanked files, transport or download error | Terminal failure; no later upload.                                                               |
+
+The first read has no deliberate delay. At most six index requests may start.
+Let `u` be the successful upload response's completion instant on the trusted
+process monotonic clock. A request starts only at `t` with `u <= t < u + 60`
+seconds and before every existing outer deadline. After a pending response
+finishes at `f`, another request requires `t >= f + 10`. Read the clock again
+after waiting; scheduler delay cannot extend a window. Exhaustion terminates
+without another request. An admitted in-flight call retains the 30-second
+socket timeout; the 60-second admission window is not a completion guarantee.
+File requests retain their own existing outer authority and socket bounds.
+Non-finite or reversed timing fails closed. Waiting never extends bootstrap's
+UTC authority, native's probe deadline or normal publication's current authority.
+Monotonic instants are compared only within one process; runner UTC retains
+its existing bootstrap authority role, with both guards enforced there.
+
+For native races, admit both competitors under the existing barrier and join
+both results. Only one definitive success plus one required duplicate permits
+readback. Anchor `u` to the winning response completion, never to the later
+join. If the admission window expired while joining, stop without a read.
+
+Retain a strict ordered phase trace binding its policy/profile, operation or
+capture ordinal, successful upload response, previous/expected inventory,
+clock domain, upload completion and applicable deadline. Each reached request
+retains admission/completion instants, URL, original sanitized status/content
+type/body and digest, or a bounded transport error, plus its classification.
+Retain the exact final downloads and their bindings; a pending response triggers
+none. Record exhaustion/cancellation/validation failure as a terminal cause.
+Persist reached evidence before admitting a later request or upload. Interrupted
+or unsafe response retention cannot yield success; preserve surviving evidence
+under the existing missing-Result/possibly-mutated rules. Never retain tokens
+or authorization headers. Clock values are trusted runner observations, not
+external time attestations.
+
+Bootstrap/native raw journals and immutable bundles retain the full trace;
+normal Publication Result carries or explicitly references its immutable trace
+through the existing artifact transport. Strict parsers and deterministic
+registry-offline audit reconstruct classifications from raw responses, verify
+all timing/count/deadline and previous-state bindings, enforce upload/download
+ordering and reject missing, reordered, surplus or post-terminal requests.
+They must not trust a serialized `pending`, `exact` or success flag. The native
+race's two already admitted uploads are the sole concurrency exception. Replay
+performs no sleep, destination read or token request. Finalizer admits the bound
+replayed evidence without making network observations.
+
+The destination operation profile binds this policy and its finite parameters;
+bootstrap/native protocol identities bind their revised budgets. Old evidence
+remains evidence of its original revision and is not coerced into the new
+contract. No current native admission qualifies the changed profile. Strict
+transport/record changes and their consumers must ship together in the disabled
+implementation. The existing build, Model and CI qualification contracts need
+no change.
+
 ## Hosted Integration
 
 `python -m three_workflow_delivery_v3.python_cli` exposes the bounded stages.
@@ -225,8 +303,11 @@ a partial set still blocks. Only separately requested recovery may address it.
 The [bootstrap protocol](./validation/python-bootstrap.md) owns exact resources,
 source/artifact provenance, pending-publisher and initial-404 boundaries,
 immutable authority/marker transport, finite requests, failure semantics and
-independent project-control audit. It precedes the existing native suite without
-weakening that suite or entering the normal-Live graph. Shared mechanisms retain
+independent project-control audit. Independently audited resource facts after
+partial bootstrap may satisfy only the prerequisite to request a fresh native
+suite; complete pair and clean consumers remain necessary to claim bootstrap
+completion. The failed version remains untouched. This does not weaken the
+native suite or enter the normal-Live graph. Shared mechanisms retain
 separate bootstrap, native and normal publication evidence purposes. The
 [Delivery Wave](../../../../../docs/delivery-wave.md) determines current work
 authorization; no external operation is authorized here.
@@ -239,6 +320,15 @@ finite budgets, fixture validity, audit contracts and remaining operator resourc
 It grants no native effects and does not establish either destination's admission.
 
 Implementation validation covers these distinct claims before native admission:
+
+- Observation scenarios: immediate exactness, pending then exact, all six
+  pending, spacing/deadline boundaries and scheduler overshoot; first-project
+  pending 404 versus terminal empty HTTP 200, and existing-project terminal 404; unchanged prior entries versus drift; failed
+  download prevents later mutation. No pending read downloads files.
+- Evidence contracts: full response/timing retention, failure interruption,
+  altered/missing/reordered/excess traces, changed policy/profile and offline
+  replay without requests or sleeps. Native race join cannot reset the winning
+  response's window; bootstrap's independent UTC deadline cannot renew.
 
 - Scenario tests: complete two-file success; wheel failure prevents sdist;
   partial/extra/yanked/conflicting pre-state blocks; second-file failure and

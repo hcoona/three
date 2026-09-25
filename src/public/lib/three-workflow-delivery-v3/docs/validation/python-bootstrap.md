@@ -114,20 +114,22 @@ No credential is persisted or logged. The pinned 30-second socket timeout bounds
 an already admitted in-flight request; expiry forbids new publisher requests,
 not completion of that request or credential-free evidence archival. P4 is a
 separate mandatory credential-free audit with its fixed read counts; it does
-not renew the publisher window. No retry, pagination expansion, polling or
+not renew the publisher window. Only P2/P3 permit the
+[bounded post-upload observation](../hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
+phase. No transport/upload retry, pagination expansion, other polling or
 mutating redirect is admitted.
 
-| Step | Required observation and effect                                                                                                        |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| P0   | Authorization: exact project index returns HTTP 404; persist raw response.                                                             |
-| P1   | After durable marker, repeat proof and exact index HTTP 404; one OIDC assertion and one mint exchange.                                 |
-| U1   | Upload the original wheel once; require definitive HTTP 200.                                                                           |
-| P2   | One complete HTTP-200 JSON index containing only that filename; download and inspect its exact original bytes/witness.                 |
-| U2   | Upload the original sdist once, only after P2 passes; require definitive HTTP 200.                                                     |
-| P3   | One complete HTTP-200 index containing exactly the pair; download both and inspect exact original bytes/witnesses.                     |
-| P4   | Credential-free audit: one fresh HTTP-200 index and both fresh downloads; require the same exact pair and run two new clean consumers. |
+| Step | Required observation and effect                                                                                                                       |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0   | Authorization: exact project index returns HTTP 404; persist raw response.                                                                            |
+| P1   | After durable marker, repeat proof and exact index HTTP 404; one OIDC assertion and one mint exchange.                                                |
+| U1   | Upload the original wheel once; require definitive HTTP 200.                                                                                          |
+| P2   | At most six index reads; only HTTP 404 may remain pending; HTTP 200 empty inventory fails; exact wheel inventory then original byte/witness download. |
+| U2   | Upload the original sdist once, only after P2 passes; require definitive HTTP 200.                                                                    |
+| P3   | At most six index reads; unchanged verified wheel inventory may remain pending; exact pair then both original byte/witness downloads.                 |
+| P4   | Credential-free audit: one fresh HTTP-200 index and both fresh downloads; require the same exact pair and run two new clean consumers.                |
 
-The entire generation permits at most two upload POSTs, five index GETs, five
+The entire generation permits at most two upload POSTs, fifteen index GETs, five
 file GETs, sixteen GitHub approval-proof GETs (eight per proof), one OIDC
 assertion request and one token-exchange POST. No unused allowance is reusable.
 Each approval inventory is one page below 100 entries; at most five matching
@@ -152,7 +154,8 @@ inside the hosted generation.
 
 ## Failure, Audit and Later Admission
 
-Any non-success, ambiguous upload, failed readback, name collision, cancellation
+An eligible pending P2/P3 observation is not a terminal failure. Every other
+non-success, ambiguous upload, exhausted/failed readback, name collision, cancellation
 or missing evidence stops subsequent uploads. P2 failure prevents U2. A failure
 cannot become success through later exact state. Preserve the definitive or
 unknown per-file effects; no automatic partial completion, rollback, deletion,
@@ -160,7 +163,11 @@ replacement version, static-token fallback or cleanup is allowed. A durable
 marker without a durable execution result means unknown/possibly-mutated.
 
 The result retains the exact original responses, bindings and fixed step
-sequence; the auditor replays them rather than trusting a claimed verdict.
+sequence, including every pending P2/P3 response and the LLD timing trace;
+the auditor replays them rather than trusting a claimed verdict. Count, spacing,
+upload-completion anchor and both monotonic/UTC deadlines are enforced in live
+admission and replay. Missing intermediate responses cannot be replaced by the
+final exact index. The fifteen-index budget is shared across P0 through P4.
 Success requires both definitive uploads, P2/P3 exactness and a passing P4
 consumer audit. A successful upload result with failed P4 is not bootstrap
 completion. Keep original and downloaded bytes, raw response metadata and
@@ -177,8 +184,19 @@ The bootstrap publisher remains a configured capability until explicitly changed
 no removal is inferred. Native and normal workflow registrations require their
 own later configuration grants.
 
-Only after that audit may the existing native suite be requested on two other
-fresh versions. Both Governance destinations remain `live_enabled: false`, and
+Bootstrap completion still requires the full audit above. A failed bootstrap
+may instead supply independently reviewed actual ownership/configuration only
+as the existing-project resource prerequisite under `WD-PY-009`. Preserve its
+failed verdict and partial version indefinitely without refill, deletion or
+another absent-project bootstrap. That narrower resource audit must close
+actual owner and converted publisher facts from retained effects and authorized
+account-side evidence; missing or unexpected facts block continuation.
+
+A separately authorized native suite on two other fresh unchanged NBGV versions
+must independently close its native publisher registration, current trust and
+configuration, exact fixtures and complete initial HTTP-200 inventory. It
+preserves every pre-existing entry, including the partial bootstrap version,
+and proves its own complete pairs, duplicate/race behavior and clean consumers. Both Governance destinations remain `live_enabled: false`, and
 both native slots remain null throughout preparation/bootstrap. Bootstrap grants
 no native admission, activation or normal publication. Subsequent TestPyPI Buddy
 and independent PyPI Official Attempts retain their own complete qualification,

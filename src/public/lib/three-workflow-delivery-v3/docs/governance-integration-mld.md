@@ -429,6 +429,11 @@ pending-publisher configuration attestation; it cannot use ready Governance or
 claim pre-existing project ownership. Its Environment-approved authority and
 durable marker precede OIDC acquisition. Postcreation ownership and publisher
 conversion require independent evidence review before native acceptance.
+A failed bootstrap can establish only these resource facts under `WD-PY-009`;
+it cannot establish bootstrap completion or native admission. Native publisher
+registration and current trust/configuration remain separate prerequisites.
+Observation-policy/profile changes require fresh native qualification at each
+destination, with no reuse of an earlier admission identity.
 The [bootstrap protocol](./validation/python-bootstrap.md) defines these gates;
 normal-Live Governance remains disabled.
 

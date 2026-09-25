@@ -67,6 +67,37 @@ V3's current rule that a conflicting or ambiguous mutation response remains
 failed in that Attempt. A concrete publisher profile needs a review of actual
 retry, skip, reconciliation and attestation behavior before selection.
 
+### Retained Immediate-Readback Failure and Observation Limits
+
+The [original operation audit](https://github.com/hcoona/three/issues/843#issuecomment-5837752058)
+and [independent custody review](https://github.com/hcoona/three/issues/843#issuecomment-5837789337)
+retain run `36174486595`, attempt 1. Its result ZIP has SHA-256
+`764ba65f7228c5ddca1b83e9dc9024692b2a35005762293236ee1b82a5c42fb9`.
+Original `execution/http/7.json` records wheel HTTP 200 finishing at
+`1790361675.077622`; `execution/http/8.json` records index admission at
+`1790361675.0781198` and HTTP 404 completion at `1790361675.0907018`.
+The approximately 0.5 ms interval is a client observation, not server commit or
+cache timing. The publisher stopped before sdist upload, file download or clean
+consumer audit. The failed partial bootstrap remains failed; cause is unknown.
+
+The [diagnosis and independent review](https://github.com/hcoona/three/issues/843#issuecomment-5838645186)
+verify original response-body digests and distinguish later reviewed owner
+attestation from agent observations. Cache/propagation delay remains a
+hypothesis. Existing code followed the then-accepted immediate single-read
+contract; this observation does not prove an implementation defect.
+
+The five sources named in the first-project source recheck were freshly
+retrieved on 2026-09-25 for the observation-policy design and remain byte-identical
+to the accepted originals. The upload and index documentation supplies no
+immediate-visibility guarantee or explanation for this 404. The design PR
+retains these bodies, retrieval instants and hashes. No smoke registry,
+configuration or OIDC endpoint was queried. The owner
+[accepted](https://github.com/hcoona/three/issues/843#issuecomment-5839240843)
+finite pending observation and resource-only continuation after partial bootstrap.
+These are product/risk decisions, not proof that waiting will succeed or that
+the original bootstrap completed. The requirements and LLD own that behavior;
+changed profiles still require separately authorized actual native evidence.
+
 ### Version and Build Inputs
 
 [Python version specifiers, Local version identifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/#local-version-identifiers)

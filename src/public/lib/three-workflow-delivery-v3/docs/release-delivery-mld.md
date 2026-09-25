@@ -234,7 +234,15 @@ timeout, cancellation, ambiguous response or failed readback stops subsequent
 mutation. After two definitive successes, whole-set readback must still find
 exactly the approved files with matching bytes/witnesses and no conflicting
 state. No readback can upgrade a failed upload response to success. Read-only
-retry is bounded by the profile and never repeats a mutation.
+observation after definitive success follows the
+[Python LLD](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation):
+only its eligible missing addition may remain pending within finite count,
+spacing and admission limits. Other reads remain single observations. Release
+owns the previous/expected target-version inventory and terminal decision;
+Shared Foundation supplies bounded timing, raw retention and sequence replay.
+The Result binds the complete reached sequence, including failure evidence;
+a final exact response alone cannot satisfy admission. Waiting never repeats a
+mutation, renews authority or reopens a terminal failure.
 
 A controlled terminal path forms one Python Publication Result, with an ordered
 entry for each operation: `not-attempted`, `succeeded`, `failed` or `unknown`,
