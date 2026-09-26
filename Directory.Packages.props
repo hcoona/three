@@ -44,7 +44,7 @@
     <PackageVersion Include="Svg" Version="3.4.8" />
     <PackageVersion Include="Svg.Skia" Version="5.2.3" />
     <PackageVersion Include="System.IO.Compression.ZipFile" Version="4.3.0" />
-    <PackageVersion Include="System.CommandLine" Version="2.0.11" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.12" />
     <PackageVersion Include="System.IO.Hashing" Version="10.0.11" />
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.8" Condition="'$(MSBuildProjectName)' == 'WorkflowDeliveryV3DotnetProvider'" />
     <PackageVersion Include="System.Text.Json" Version="10.0.11" />
