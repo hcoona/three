@@ -8,6 +8,45 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Audit TestPyPI resources and execute one native generation
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the owner's [bounded operation approval](https://github.com/hcoona/three/issues/843#issuecomment-5842947654)
+  of the [exact reviewed proposal](https://github.com/hcoona/three/issues/843#issuecomment-5840445911),
+  the delivered disabled Python observation implementation and recovered
+  eight-file fixture evidence, current Python requirements, native protocol,
+  readiness and engineering principles. The owner accepts smoke-only use and
+  retention of at most four new files at `0.1.0b2` and `0.1.0b3`, while the
+  failed partial `0.1.0b6` remains untouched indefinitely.
+- **Advancement and outcome:** independently audit current GitHub configuration
+  and owner-attested existing-project control/native publisher; protected-deliver
+  one exact TestPyPI native request for generation
+  `3b90ea26758a4cc1a17798101557a3f6` with the proposal's targets, profile and
+  eight fixture hashes. After its prerequisite gates and prepared-original
+  review, execute the single fixed native suite, preserve surviving original
+  evidence, independently audit provenance, complete deltas and fresh consumers,
+  then retire the consumed request and close this grant. Failed or incomplete
+  evidence remains failed or incomplete and supplies no native admission.
+- **Effects and delivery:** permit the proposal's one GitHub configuration round
+  of at most 21 GETs, owner inspection and one project-bound native publisher
+  addition only if absent, one dispatch/current-run Environment approval, one
+  OIDC assertion/exchange, ten upload POSTs, 29 index and 18 file GETs, and at
+  most eight current-run GitHub proof GETs. Operator monitoring and artifact/log
+  retrieval retain the proposal's separate finite bounds and exhaustion rules.
+  No preliminary registry probe precedes C0. Permit locked dependency/fixture
+  preparation, fresh local consumers, public-source rechecks, ordinary
+  Issue/PR/check delivery and CI, independent delegated record/evidence/domain/OCR
+  review, protected merge/postmerge checks, and durable original-byte custody
+  with independently verified remote recovery before Actions expiry.
+- **Exclusions:** no repeated allowance from repeated owner confirmations;
+  no bootstrap replay, retry, rerun, replacement dispatch, cancellation, refill,
+  deletion, rollback or inferred recovery. No GitHub configuration/access
+  mutation, unrelated publisher change, native-admission installation,
+  `live_enabled` activation, normal publisher configuration or normal publication.
+  Both normal destinations stay disabled; PyPI requires separate authorization.
+  Preserve all existing project entries and stop on drift, conflict, ambiguity,
+  exhausted bounds or missing evidence as the proposal and native protocol require.
+
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
