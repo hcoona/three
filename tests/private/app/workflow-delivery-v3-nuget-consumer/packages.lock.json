@@ -218,15 +218,15 @@
       },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "/ldVgSfImIBp6fLWS7sLH0BnmtFj0ZwGlZo4Xx2q0K3ZhJNDbW45kj2f6zPoC+L+BTINuHdMzTsopuwmkbgcNA=="
+        "resolved": "10.0.12",
+        "contentHash": "wO0W8VDMeRJZakRySOmemAnrBZMwEFRlbfBtATxUiLf2I3IhSRnCp1Vt157NWptdE4IJ7eftd5n8q9LtaKHFTQ=="
       },
       "workflowdeliveryv3nugetconsumer": {
         "type": "Project",
         "dependencies": {
           "NuGet.Commands": "[7.9.0, )",
           "NuGet.Protocol": "[7.9.0, )",
-          "System.Security.Cryptography.ProtectedData": "[10.0.8, )"
+          "System.Security.Cryptography.ProtectedData": "[10.0.12, )"
         }
       },
       "Microsoft.Testing.Platform.MSBuild": {
