@@ -43,7 +43,7 @@ ends a grant. Git and the proposing PR retain the reason and history.
   deletion, rollback or inferred recovery. No GitHub configuration/access
   mutation, unrelated publisher change, native-admission installation,
   `live_enabled` activation, normal publisher configuration or normal publication.
-  Both normal destinations stay disabled; PyPI remains separately authorized.
+  Both normal destinations stay disabled; PyPI requires separate authorization.
   Preserve all existing project entries and stop on drift, conflict, ambiguity,
   exhausted bounds or missing evidence as the proposal and native protocol require.
 
