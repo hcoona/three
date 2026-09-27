@@ -61,6 +61,7 @@ dotenv-linter = "latest"
 # Utilities
 #
 fd = "latest"
+gopass = "1.16.1"
 ripgrep = "latest"
 github-cli = "latest"
 "github:microsoft/apm" = "v0.29.0"
@@ -127,6 +128,16 @@ run = "uv run --package three-workflow-delivery-v3 python eng/scripts/workflow_d
 #
 # Tasks
 #
+
+[tasks.playwright-mcp]
+description = "Run Playwright MCP with the browser extension token from gopass"
+run = "pnpm dlx @playwright/mcp@0.0.79 --extension"
+raw = true
+env = { PLAYWRIGHT_MCP_EXTENSION_TOKEN = { value = "{{ exec(command='gopass show -o infra/playwright-mcp/token') }}", tools = true, redact = true }, PLAYWRIGHT_MCP_BROWSER = "msedge" }
+
+[tasks.mcp-sync]
+description = "Sync APM-managed MCP registrations for Copilot and VS Code"
+run = "apm install --only mcp"
 
 [tasks."records:check"]
 description = "Validate repository records against an explicit base and candidate"

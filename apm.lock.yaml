@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-09-27T20:12:11.319188+00:00'
+generated_at: '2026-09-27T20:25:24.339797+00:00'
 apm_version: 0.29.0
 dependencies:
 - repo_url: _local/enterprise-translation-team
@@ -4666,7 +4666,7 @@ deployments:
 - kind: uri
   target: mcp
   value: binlog
-  runtime: codex
+  runtime: copilot
   scope: project
   owners:
   - .
@@ -4675,7 +4675,7 @@ deployments:
 - kind: uri
   target: mcp
   value: io.github.upstash/context7
-  runtime: codex
+  runtime: copilot
   scope: project
   owners:
   - .
@@ -4684,7 +4684,7 @@ deployments:
 - kind: uri
   target: mcp
   value: microsoft-learn
-  runtime: codex
+  runtime: copilot
   scope: project
   owners:
   - .
@@ -4693,7 +4693,7 @@ deployments:
 - kind: uri
   target: mcp
   value: playwright
-  runtime: codex
+  runtime: copilot
   scope: project
   owners:
   - .
@@ -4702,7 +4702,7 @@ deployments:
 - kind: uri
   target: mcp
   value: binlog
-  runtime: copilot
+  runtime: vscode
   scope: project
   owners:
   - .
@@ -4711,7 +4711,7 @@ deployments:
 - kind: uri
   target: mcp
   value: io.github.upstash/context7
-  runtime: copilot
+  runtime: vscode
   scope: project
   owners:
   - .
@@ -4720,24 +4720,6 @@ deployments:
 - kind: uri
   target: mcp
   value: microsoft-learn
-  runtime: copilot
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: null
-- kind: uri
-  target: mcp
-  value: playwright
-  runtime: copilot
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: null
-- kind: uri
-  target: mcp
-  value: io.github.upstash/context7
   runtime: vscode
   scope: project
   owners:
@@ -4793,27 +4775,22 @@ mcp_configs:
     name: playwright
     transport: stdio
     args:
-    - exec
-    - --
-    - pnpm
-    - dlx
-    - '@playwright/mcp@0.0.82'
-    - --extension
+    - run
+    - --raw
+    - --quiet
+    - playwright-mcp
     registry: false
     command: mise
 mcp_target_servers:
-  codex:
-  - binlog
-  - io.github.upstash/context7
-  - microsoft-learn
-  - playwright
   copilot:
   - binlog
   - io.github.upstash/context7
   - microsoft-learn
   - playwright
   vscode:
+  - binlog
   - io.github.upstash/context7
+  - microsoft-learn
   - playwright
 lsp_servers:
 - csharp

@@ -8,12 +8,10 @@
       "id": "",
       "command": "mise",
       "args": [
-        "exec",
-        "--",
-        "pnpm",
-        "dlx",
-        "@playwright/mcp@0.0.82",
-        "--extension"
+        "run",
+        "--raw",
+        "--quiet",
+        "playwright-mcp"
       ]
     },
     "context7": {

@@ -3,7 +3,6 @@ version: 1.0.0
 description: APM configuration for shared agent skills.
 targets:
   - copilot
-  - codex
   - vscode
 dependencies:
   apm:
@@ -64,12 +63,10 @@ dependencies:
       transport: stdio
       command: mise
       args:
-        - exec
-        - --
-        - pnpm
-        - dlx
-        - '@playwright/mcp@0.0.82'
-        - --extension
+        - run
+        - --raw
+        - --quiet
+        - playwright-mcp
     - name: io.github.upstash/context7
       registry: false
       transport: stdio

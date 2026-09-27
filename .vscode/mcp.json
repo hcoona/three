@@ -1,5 +1,15 @@
 {
   "servers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "mise",
+      "args": [
+        "run",
+        "--raw",
+        "--quiet",
+        "playwright-mcp"
+      ]
+    },
     "io.github.upstash/context7": {
       "type": "stdio",
       "command": "mise",
@@ -30,25 +40,13 @@
         "Microsoft.AITools.BinlogMcp",
         "--yes"
       ]
-    },
-    "playwright": {
-      "type": "stdio",
-      "command": "mise",
-      "args": [
-        "exec",
-        "--",
-        "pnpm",
-        "dlx",
-        "@playwright/mcp@0.0.82",
-        "--extension"
-      ]
     }
   },
   "inputs": [
     {
-      "id": "CONTEXT7_API_KEY",
       "type": "promptString",
-      "description": "API key for authentication",
+      "id": "CONTEXT7_API_KEY",
+      "description": "CONTEXT7_API_KEY for MCP server io.github.upstash/context7",
       "password": true
     }
   ]
