@@ -3,7 +3,6 @@
 import io
 import zipfile
 from copy import deepcopy
-from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -18,7 +17,7 @@ from three_workflow_delivery_v3.acceptance.python_native_contract import (
     write_exclusive,
 )
 from three_workflow_delivery_v3.adapters.pypi import PythonRegistry
-from three_workflow_delivery_v3.canonical import canonicalize, parse_json_strict
+from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.repository.python_provider import python_digest
 
 
@@ -145,13 +144,12 @@ def test_python_native_protected_slots_are_disabled_and_destination_bound(
     tmp_path,
 ):
     """Only one exact non-null protected slot and digest can load a request."""
-    root = Path(__file__).resolve().parents[6]
-    assert parse_json_strict((root / SLOT_PATH).read_bytes()) == {
-        "testpypi": None,
-        "pypi": None,
-    }
     path = tmp_path / SLOT_PATH
     path.parent.mkdir(parents=True)
+    path.write_bytes(canonicalize({"testpypi": None, "pypi": None}))
+    for registry in ("testpypi", "pypi"):
+        with pytest.raises(ValueError, match="request slot is disabled"):
+            load_request(tmp_path, registry, "sha256:" + "f" * 64)
     document = request_document()
     request = NativeRequest(canonicalize(document))
     path.write_bytes(canonicalize({"testpypi": document, "pypi": None}))

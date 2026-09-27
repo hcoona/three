@@ -1,1 +1,47 @@
-{ "pypi": null, "testpypi": null }
+{
+  "pypi": null,
+  "testpypi": {
+    "schema": "workflow-delivery/v3/python-native-request",
+    "generation": "3b90ea26758a4cc1a17798101557a3f6",
+    "registry": "testpypi",
+    "project": "hcoona-release-smoke-python",
+    "profile-digest": "sha256:7f1cf4f8ac33b284e6a6a8e7c8440601b117412a20233bfa564a65460163559f",
+    "fixture-digests": {
+      "a/comparison/sdist": "sha256:a407c742960dedb0043492bee4d0d990228dbd2ff2243a3d24a4fb20f4fe2792",
+      "a/comparison/wheel": "sha256:d2b9f2b88ca13b7cdab6a05b59a9659a2ce1c646aa81e62cee0a384e4fa34903",
+      "a/original/sdist": "sha256:1eb12cfe56c9bcae1a78db5650137766e74f3de9552dbb98f403f06c598d70ec",
+      "a/original/wheel": "sha256:ba69c49a1f59a48e503fe41b495c9ab87da051e07e25559826ce55af6d4609a0",
+      "b/comparison/sdist": "sha256:bf2db532c34a5829af1b7f69bbc1d558830ad8142203229c17f5da9a5ee93b86",
+      "b/comparison/wheel": "sha256:2dc8c40edebce6c17dde12f98d11dd40e7edfb6e98041ff01574c9337fa53d23",
+      "b/original/sdist": "sha256:a19458c3dd13d0f56be41a13ee59d2a00d7e606d9130c3506099c62da99937e1",
+      "b/original/wheel": "sha256:1b8470b6e14e39dbe8de9ecf728f390158f326c1f671bd570cd293cef619e1aa"
+    },
+    "targets": {
+      "a": {
+        "commit": "1fad19a38727811d22901826454e79810dda377d",
+        "version": "0.1.0b2"
+      },
+      "b": {
+        "commit": "e3cb92d0daea4ff466fe155e2eba170ce2d0c7dc",
+        "version": "0.1.0b3"
+      }
+    },
+    "environment": {
+      "id": 22765954016,
+      "name": "workflow-delivery-v3-python-testpypi",
+      "sentinel": "workflow-delivery-v3-python-testpypi/v1"
+    },
+    "authorization": {
+      "url": "https://github.com/hcoona/three/issues/843#issuecomment-5842947654",
+      "digest": "sha256:5cc32629fc4ae7507761f8b2d627add053bb1c9babea3473d28f297d6abd9cdb"
+    },
+    "configuration": {
+      "url": "https://github.com/hcoona/three/issues/843#issuecomment-5859510317",
+      "digest": "sha256:690ad24ff84c7f8c21a87815ff23aab2c70084ff051075e7984e5531407c5fe9"
+    },
+    "ownership": {
+      "url": "https://github.com/hcoona/three/issues/843#issuecomment-5859500538",
+      "digest": "sha256:28e70660bc688d1f1fbcb241868dcf7f9502355f6fa9502c2c6a9dc4552b92f3"
+    }
+  }
+}

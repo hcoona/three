@@ -75,8 +75,9 @@ For the owner's next Workflow Delivery v3 task:
    implementation grant do not authorize native operations or publication.
    The [tooling readiness interface](./validation/python-native-readiness.md)
    routes local fixtures, the manual prepare/probe/audit workflow and replay.
-   Both protected native request slots are null; operator resources remain
-   unverified pending a separately authorized operational request.
+   Protected native request slots hold only separately authorized operational
+   requests; a null slot disables that destination. Issue #843 retains the
+   independently accepted resource evidence for each populated request.
 
 Recovery uses repository records and linked GitHub carriers. A prior
 conversation, local operator directory or old Agent handle is not required.
