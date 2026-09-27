@@ -38,8 +38,9 @@ Both destinations remain disabled. Local validation does not establish native
 registry acceptance or publication support.
 The [native tooling and operator readiness](docs/validation/python-native-readiness.md)
 cover local fixtures, the manual prepare/probe/audit entry and supplied-fact
-replay. Both native request slots are null; configuration, native execution and
-normal publication remain separately authorized.
+replay. Protected native request slots record separately authorized operations;
+a null slot disables that destination. Configuration, native execution and
+normal publication retain their separate authorization gates.
 
 The [npm smoke package](../hcoona-release-smoke-npm/README.md) owns its small
 package purpose. This project owns the

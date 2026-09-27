@@ -37,9 +37,10 @@ The manual-only hosted entry is
 [Native Python acceptance workflow](../../../../../../.github/workflows/workflow-delivery-v3-native-python-acceptance.yml).
 Only its Environment-gated probe job requests OIDC. Preparation and audit never
 receive registry capability. The probe executes no target build or product code.
-Both slots in
+The protected slots in
 [native Python request slots](../../../../../../.github/workflow-delivery/native/python-requests.json)
-are null. Both normal-Live Governance destinations remain disabled.
+hold only separately authorized operational requests; a null slot disables
+that destination. Both normal-Live Governance destinations remain disabled.
 
 For local preparation from an initialized checkout, run this PowerShell command
 with two reviewed protected-main ancestor commits and a new output filename:
@@ -88,8 +89,8 @@ installed by preparation.
 | Native workflow           | `.github/workflows/workflow-delivery-v3-native-python-acceptance.yml`                                                                                   |
 | Destination/project       | `testpypi`; `hcoona-release-smoke-python`; pinned `PythonRegistry("testpypi").profile_digest`                                                           |
 | Owner authorization       | Reviewed HTTPS request URL and SHA-256; explicit smoke-only/no-production-use acceptance and permission to retain four files                            |
-| Ownership                 | Actual owner account/project control, reviewed evidence URL and SHA-256; not yet inspected                                                              |
-| Configuration             | Exact existing or separately provisioned trusted-publisher/Environment configuration, reviewed evidence URL and SHA-256; not yet inspected              |
+| Ownership                 | Actual owner account/project control, independently reviewed evidence URL and SHA-256                                                                   |
+| Configuration             | Exact existing or separately provisioned trusted-publisher/Environment configuration, independently reviewed evidence URL and SHA-256                   |
 | Environment               | `workflow-delivery-v3-python-testpypi`; actual numeric ID and sentinel; sole owner reviewer, no bypass, protected main, reviewed complete configuration |
 | Publisher                 | Project-bound registration for the native workflow and exact Environment/repository; audience `testpypi`                                                |
 | Sources                   | Two distinct protected-main ancestor commits and their unchanged distinct public smoke prereleases                                                      |

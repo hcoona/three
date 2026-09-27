@@ -702,12 +702,16 @@ def test_python_native_cli_disabled_slot_prevents_execution(
     command, tmp_path, capsys
 ):
     """A valid-looking CLI request cannot cross either null protected slot."""
+    root = tmp_path / "repository"
+    slots = root / ".github/workflow-delivery/native/python-requests.json"
+    slots.parent.mkdir(parents=True)
+    slots.write_bytes(canonicalize({"testpypi": None, "pypi": None}))
     output = tmp_path / "never-produced.zip"
     result = python_native.main(
         [
             command,
             "--root",
-            str(_ROOT),
+            str(root),
             "--registry",
             "testpypi",
             "--request-digest",

@@ -227,9 +227,10 @@ preparation interfaces, local evidence limits and concrete request inputs.
 
 ## Operator Request and Remaining Resources
 
-Preparation can validate the local protocol/tooling, but account ownership and
-actual resource IDs are deliberately unverified. The later TestPyPI request must
-supply this concrete checklist, with no executable placeholder defaults:
+Local preparation validates the protocol/tooling, not account ownership or
+actual resource IDs. Each operational TestPyPI request must supply independently
+reviewed resource evidence and this concrete checklist, with no executable
+placeholder defaults:
 
 - Exact owner-controlled `hcoona-release-smoke-python` TestPyPI project and owner
   account; smoke-only/no-production-use confirmation and permission to retain
