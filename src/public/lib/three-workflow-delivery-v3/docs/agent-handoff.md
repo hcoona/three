@@ -78,6 +78,14 @@ For the owner's next Workflow Delivery v3 task:
    Protected native request slots hold only separately authorized operational
    requests; a null slot disables that destination. Issue #843 retains the
    independently accepted resource evidence for each populated request.
+   The [failed TestPyPI native audit](https://github.com/hcoona/three/issues/843#issuecomment-5859869282)
+   retains the observed identical-wheel HTTP 200 counterexample to required
+   duplicate rejection. Its consumed request is retired; both native slots
+   are null. The last complete capture verified the new pair and preserved
+   the partial bootstrap entry, but no post-duplicate capture or complete
+   native consumer proof exists. The generation supplies no admission or retry
+   authority. Any further work must first resolve the service-assumption gap
+   through separately authorized requirements/design and native gates.
 
 Recovery uses repository records and linked GitHub carriers. A prior
 conversation, local operator directory or old Agent handle is not required.

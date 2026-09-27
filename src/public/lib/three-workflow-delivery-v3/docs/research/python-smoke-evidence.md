@@ -229,6 +229,33 @@ bootstrap publisher/transport profile changes or contrary behavior is observed;
 the next Wave merge is the fallback review event. No private account, registry,
 configuration or OIDC endpoint was queried for this source research.
 
+### Retained Identical-Duplicate Counterexample
+
+The [independent native audit](https://github.com/hcoona/three/issues/843#issuecomment-5859869282)
+and [independent finding disposition](https://github.com/hcoona/three/issues/843#issuecomment-5859867456)
+retain the failed TestPyPI generation. After the original wheel and sdist were
+created and read back with matching bytes, the identical active wheel upload
+returned HTTP 200. The accepted native contract requires duplicate rejection,
+so the suite stopped before the next capture. This is a contrary response
+observation, not proof of overwrite, idempotent preservation or native success.
+The later duplicate and race scenarios and fresh registry consumers remain
+unproved. The last complete capture preserved the pre-existing bootstrap entry;
+it does not establish current availability or post-duplicate state.
+
+The contrary observation triggered a fresh public-documentation recheck on
+2026-09-27 of the upload API, filename/help, TestPyPI retention, Simple Index,
+OIDC and publisher-registration sources. The upload API still describes one-file
+uploads without definitive identical-duplicate response semantics. The Help
+page lists filename/content reuse errors and prohibits filename reuse, but does
+not specify the exact same-filename/same-bytes response observed on TestPyPI.
+Neither source proves mandatory HTTP-400 rejection for that tuple. The Issue
+retains original source bodies, retrieval metadata and independent review.
+
+The current native capability remains unqualified. Changing the expected
+duplicate response is a prospective requirements/design decision; this failed
+generation cannot be reinterpreted as passing. No service guarantee, acceptance
+criterion, publisher profile or normal admission is changed by this evidence.
+
 ## Decision Impact and Limits
 
 The owner [confirmed the requirements packet](https://github.com/hcoona/three/issues/843#issuecomment-5822043601)
@@ -248,11 +275,12 @@ The [Python LLD](../hcoona-release-smoke-python-lld.md) selects a bounded
 one-set/two-operation action and static staged metadata. Those are design
 choices whose disabled implementation is protected-delivered through
 [PR #849](https://github.com/hcoona/three/pull/849). Native acceptance,
-configuration and publication gates remain unpassed; both destinations remain
-disabled.
+native-admission and normal publication gates remain unpassed; both destinations
+remain disabled.
 
-No runtime experiment, package build, native probe, workflow dispatch,
-registry mutation or account inspection was performed for this record.
+The initial public-source study performed no runtime experiment, package build,
+native probe, workflow dispatch, registry mutation or account inspection. The
+separately authorized runtime observations above retain their own evidence.
 Design readiness and end-to-end smoke completion remain distinct.
 
 The design author rechecks the mutable service upload, filename, retention,

@@ -58,7 +58,8 @@ not exist. Never substitute these local supplied facts for native observations.
 
 ## Local Fixture Readiness
 
-Credential-free validation on 2026-09-25 used these protected source ancestors:
+The spent TestPyPI candidate set used these protected source ancestors for
+credential-free validation on 2026-09-25:
 
 | Slot | Exact target                               | Public NBGV version |
 | ---- | ------------------------------------------ | ------------------- |
@@ -72,10 +73,18 @@ The native names are
 `hcoona_release_smoke_python-0.1.0b3.tar.gz`.
 Each has an original and valid different-byte comparison candidate. The delivery
 PR retains the exact eight hashes, producer/consumer evidence, test results and
-reviewed tooling identity. These candidates are not reservations: actual
-availability remains unknown until a separately authorized initial native read.
-The later request must use freshly verified exact hashes from accepted tooling;
-this prose is not a second fixture manifest.
+reviewed tooling identity. The [failed native audit](https://github.com/hcoona/three/issues/843#issuecomment-5859869282)
+records creation and exact readback of the `0.1.0b2` pair through C2, followed
+by the identical-wheel HTTP 200 response that stopped the suite before C3.
+`0.1.0b3` was not uploaded. No post-duplicate or current registry state is
+established. This candidate set and its request are spent, not reusable defaults;
+both protected native slots are null.
+
+Any later request requires separately accepted requirements/design and native
+authorization, fresh eligible coordinates and freshly verified exact hashes from
+accepted tooling. Coordinate availability must be established by that request's
+authorized initial native capture. This record authorizes no new preparation,
+registry read or retry and is not a second fixture manifest.
 
 ## Concrete TestPyPI Request Template
 
