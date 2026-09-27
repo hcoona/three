@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-09-27T23:02:38.744915+00:00'
+generated_at: '2026-09-27T23:12:24.356335+00:00'
 apm_version: 0.29.0
 dependencies:
 - repo_url: _local/enterprise-translation-team
@@ -4666,6 +4666,42 @@ deployments:
 - kind: uri
   target: mcp
   value: binlog
+  runtime: codex
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: io.github.upstash/context7
+  runtime: codex
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: microsoft-learn
+  runtime: codex
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: playwright
+  runtime: codex
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: binlog
   runtime: copilot
   scope: project
   owners:
@@ -4779,6 +4815,11 @@ mcp_configs:
     registry: false
     command: mise
 mcp_target_servers:
+  codex:
+  - binlog
+  - io.github.upstash/context7
+  - microsoft-learn
+  - playwright
   copilot:
   - binlog
   - io.github.upstash/context7

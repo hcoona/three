@@ -1,9 +1,24 @@
-# Codex registers Playwright and Context7; APM manages Copilot and VS Code registrations.
-# Keep these launch commands aligned with their entries in apm.yml.
 [mcp_servers.playwright]
 command = "mise"
 args = ["run", "--raw", "--quiet", "playwright-mcp"]
+id = ""
+
+[mcp_servers.playwright.env]
 
 [mcp_servers.context7]
 command = "mise"
 args = ["run", "--raw", "--quiet", "context7-mcp"]
+id = ""
+
+[mcp_servers.context7.env]
+
+[mcp_servers.microsoft-learn]
+url = "https://learn.microsoft.com/api/mcp"
+id = ""
+
+[mcp_servers.binlog]
+command = "mise"
+args = ["exec", "--", "dotnet", "dnx", "Microsoft.AITools.BinlogMcp", "--yes"]
+id = ""
+
+[mcp_servers.binlog.env]

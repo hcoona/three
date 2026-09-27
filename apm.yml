@@ -4,6 +4,7 @@ description: APM configuration for shared agent skills.
 targets:
   - copilot
   - vscode
+  - codex
 dependencies:
   apm:
     - path: ./src/private/lib/enterprise-translation-team

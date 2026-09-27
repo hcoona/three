@@ -142,7 +142,7 @@ raw = true
 env = { CONTEXT7_API_KEY = { value = "{{ exec(command='gopass show -o copilot/context7/api-key') }}", tools = true, redact = true } }
 
 [tasks.mcp-sync]
-description = "Sync APM-managed MCP registrations for Copilot and VS Code"
+description = "Sync APM-managed MCP registrations for Copilot, VS Code, and Codex"
 run = "apm install --only mcp"
 
 [tasks."records:check"]
