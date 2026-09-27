@@ -131,13 +131,13 @@ run = "uv run --package three-workflow-delivery-v3 python eng/scripts/workflow_d
 
 [tasks.playwright-mcp]
 description = "Run Playwright MCP with the browser extension token from gopass"
-run = "pnpm dlx @playwright/mcp@0.0.79 --extension"
+run = "pnpm exec playwright-mcp --extension"
 raw = true
 env = { PLAYWRIGHT_MCP_EXTENSION_TOKEN = { value = "{{ exec(command='gopass show -o infra/playwright-mcp/token') }}", tools = true, redact = true }, PLAYWRIGHT_MCP_BROWSER = "msedge" }
 
 [tasks.context7-mcp]
 description = "Run Context7 MCP with the API key from gopass"
-run = "pnpm dlx @upstash/context7-mcp@3.2.5"
+run = "pnpm exec context7-mcp"
 raw = true
 env = { CONTEXT7_API_KEY = { value = "{{ exec(command='gopass show -o copilot/context7/api-key') }}", tools = true, redact = true } }
 
