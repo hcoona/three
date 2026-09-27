@@ -13,19 +13,22 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Issue:** [#843](https://github.com/hcoona/three/issues/843).
 - **Accepted inputs:** the owner's [approval](https://github.com/hcoona/three/issues/843#issuecomment-5860636805)
   of the [reviewed diagnosis/design proposal](https://github.com/hcoona/three/issues/843#issuecomment-5860095587),
-  retained failed TestPyPI native evidence and independent disposition,
-  current Python requirements, design, native protocol and engineering principles.
-  Preserve the accepted per-file non-replacement dependency, two-file partial
-  failure, no automatic refill/rollback and destination-specific native evidence.
-- **Advancement and outcome:** inspect official public Warehouse implementation
-  and documentation with retained original evidence to distinguish identical
-  replay, conflicting same-name bytes and concurrency semantics. Present a
-  reviewable requirements revision without inferring safe replay from HTTP 200
-  or retrospectively passing the failed generation. After owner requirements
-  confirmation, revise and protected-deliver the corresponding HLD, all five
-  MLDs, Python LLD and native protocol as justified, with their current consumers.
-  Preserve source findings, runtime observations and remaining proof gaps as
-  distinct claims; close this grant when the approved design outcome is delivered.
+  and subsequent [platform-reliance decision](https://github.com/hcoona/three/issues/843#issuecomment-5860732497),
+  retained failed TestPyPI evidence, pinned public Warehouse source findings,
+  current Python records and engineering principles. The owner accepts file
+  non-replacement and identical-replay behavior as platform dependencies without
+  further duplicate/concurrency probes. Preserve two-file partial failure, no
+  automatic refill/rollback and each destination's actual publication/readback
+  and clean-consumer completion evidence.
+- **Advancement and outcome:** revise and protected-deliver Python requirements
+  and corresponding HLD, all five MLDs, Python LLD and affected admission,
+  protocol and current-consumer records under that confirmed reliance decision.
+  Remove prerequisite platform-proving operations without relabeling failed
+  generations or weakening validation of V3's own behavior. Distinguish HTTP-200
+  acknowledgement from proof of unique insertion or complete publication.
+  Preserve source findings, runtime observations and accepted dependencies as
+  distinct claims; return material additional scope/risk choices to the owner.
+  Close this grant when the approved design outcome is delivered.
 - **Effects and delivery:** permit public documentation/source reads, local
   retained-byte analysis, requirements/design drafting and independent delegated
   record, research, domain and OCR review; ordinary Issue/PR/check delivery,
