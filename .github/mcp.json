@@ -1,7 +1,11 @@
 {
-  "servers": {
+  "mcpServers": {
     "playwright": {
-      "type": "stdio",
+      "type": "local",
+      "tools": [
+        "*"
+      ],
+      "id": "",
       "command": "mise",
       "args": [
         "run",
@@ -10,8 +14,12 @@
         "playwright-mcp"
       ]
     },
-    "io.github.upstash/context7": {
-      "type": "stdio",
+    "context7": {
+      "type": "local",
+      "tools": [
+        "*"
+      ],
+      "id": "",
       "command": "mise",
       "args": [
         "run",
@@ -23,10 +31,17 @@
     "microsoft-learn": {
       "type": "http",
       "url": "https://learn.microsoft.com/api/mcp",
-      "headers": {}
+      "tools": [
+        "*"
+      ],
+      "id": ""
     },
     "binlog": {
-      "type": "stdio",
+      "type": "local",
+      "tools": [
+        "*"
+      ],
+      "id": "",
       "command": "mise",
       "args": [
         "exec",
@@ -37,6 +52,5 @@
         "--yes"
       ]
     }
-  },
-  "inputs": []
+  }
 }
