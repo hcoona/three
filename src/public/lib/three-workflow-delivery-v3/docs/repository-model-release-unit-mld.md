@@ -135,8 +135,10 @@ closes staging, metadata and witness validation before implementation.
 
 Bootstrap uses the same single Release Unit and frozen public version, with
 `destination-bootstrap` witness/Provider purpose. Its one original pair and
-source/Build/consumer evidence are separate from native fixtures and normal
-Release Evidence; this adds no version source or new project abstraction.
+source/Build/consumer evidence are separate from normal Release Evidence;
+this adds no version source or new project abstraction. Retired native fixtures
+cannot become normal Release artifacts. Platform reliance changes admission,
+not the Model, version source or original two-file Build contract.
 
 ## Technical Facts
 

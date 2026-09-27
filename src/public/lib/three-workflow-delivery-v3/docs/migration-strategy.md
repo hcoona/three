@@ -93,48 +93,45 @@ future delivery group.
 
 ## Python Smoke Delivery
 
-The Python design realizes owner-confirmed `WD-PY-*` through the HLD, five MLDs
-and [brief LLD](./hcoona-release-smoke-python-lld.md). Disabled implementation
-and local validation are protected-delivered through
-[PR #849](https://github.com/hcoona/three/pull/849). The following dependency
-order remains applicable. The [native protocol](./validation/python-native-acceptance.md)
-and tooling are protected-delivered through PRs #854 and #855, completing
-preparation. Future native/configuration operations and publication require
-separate [Wave](../../../../../docs/delivery-wave.md) authorization and domain gates.
+The Python requirements and design adopt the owner's platform-reliance decision
+under `WD-PY-006`. The [Python LLD](./hcoona-release-smoke-python-lld.md)
+owns the successor admission contract. Existing runtime and both disabled v1
+Governance files still implement the earlier contract; design delivery alone
+cannot enable them. The [retired native interface](./validation/python-native-readiness.md)
+exists for failed-evidence consumers, not new operation requests.
 
-The [tooling readiness interface](./validation/python-native-readiness.md)
-provides fixture preparation, bounded probe/capture, supplied-fact replay and
-the manual hosted entry. Protected native request slots record separately
-authorized operations; a null slot disables that destination. These local
-interfaces do not complete destination-specific native admission.
+1. Under a later implementation Wave, migrate Python Governance to v2 across
+   strict producers/readers, protected blocked files and tests. Preserve the
+   exact-target Provider, original two-format Build/Qualification, one-shot
+   transport, bounded observation and scalar terminal contract. Retire the
+   Python duplicate/race producer route without breaking historical readers;
+   npm/NuGet contracts and evidence remain unchanged.
+2. Validate V3's success, rejection, ambiguity, partial failure, authority and
+   evidence behavior locally and through ordinary CI, then independently review
+   and protected-deliver with both destinations disabled and all operation slots
+   null. No native-generation placeholder or automatic v1 admission migration.
+3. Under separate concrete authorization, review each destination's actual
+   project ownership, normal-workflow publisher, Environment and writer/reviewer
+   controls, and install its protected admission from the accepted platform
+   dependency and reviewed configuration. Existing owner-confirmed TestPyPI
+   resource facts persist unless changed or contradicted. The bootstrap/native
+   workflow registrations do not register the normal workflow.
+4. If a project does not exist, its separately scoped establishment must close
+   the resource prerequisite. The TestPyPI [bootstrap protocol](./validation/python-bootstrap.md)
+   owns its first-project path. Independently audited ownership/configuration
+   after partial bootstrap can establish resource facts, but cannot establish
+   bootstrap completion, refill a failed version or supply normal-Live evidence.
+5. Execute separately authorized TestPyPI Buddy publication and completion audit,
+   then a newly built/qualified/approved PyPI Official Attempt and its own audit.
+   Each must retain actual publication, fresh original file bytes and both clean
+   consumers. No prerequisite duplicate/race proving is required.
 
-1. Disabled Python Provider/Model and frozen two-format Build/Qualification,
-   with native metadata, witnesses and clean wheel/sdist consumers.
-2. Strict Python set-action, terminal variant, one-shot HTTP profile and
-   destination-specific blocked Governance; preserve existing npm/NuGet readers
-   or fail closed on unsupported variants before effects.
-3. Same-revision protected workflow integration with independent TestPyPI/PyPI
-   OIDC tuples, guarded Environment publication and scalar Finalizer transport.
-4. When the TestPyPI project does not yet exist under operator control, the
-   separate [bootstrap protocol](./validation/python-bootstrap.md) precedes
-   native acceptance. Its configuration and first publication require concrete
-   grants. Bootstrap completion requires independent postcreation control and
-   clean consumption audit. Under `WD-PY-009`, independently audited actual
-   ownership/configuration after partial bootstrap may instead satisfy only the
-   existing-project prerequisite to request a fresh native suite on two other
-   versions. Preserve the failed partial version; native acceptance must supply
-   its own complete pairs and clean consumers. Bootstrap does not supply native
-   or normal-Live evidence, and normal Governance remains disabled.
-5. Separately authorized provisioning/native protocol and independently audited
-   admission for each destination; missing evidence keeps that destination off.
-6. Separately authorized TestPyPI Buddy proving and completion audit, followed
-   by a newly built/qualified/approved PyPI Official Attempt and its own audit.
-
-No previous smoke grant, TestPyPI artifact or Approval is promoted. Any changed
-prerequisite is revalidated before dependent work. npm and NuGet completion
-remain closed. Ruby scope follows the Python two-destination completion audit.
-The Issue/PR retain progress and exact delivery evidence; this page owns only
-the migration order and gates.
+No previous smoke grant, artifact or Approval is promoted. Original failures
+remain failed and spent. Revalidate changed prerequisites before dependent work;
+trust in platform behavior does not infer a configuration change or publication
+permission. npm and NuGet completion remain closed. Ruby follows Python's
+two-destination completion audit. Issue/PR carriers retain progress and exact
+delivery evidence; this page owns only migration order and gates.
 
 ## Why v2 Is Not an Incremental Base
 

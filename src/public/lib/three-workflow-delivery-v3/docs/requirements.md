@@ -926,24 +926,31 @@ They define a new Python scope, not implemented support or an operation grant.
   Conflicting state, exhausted observation, transport/download failure and
   failed or ambiguous upload remain terminal. Preserve all original responses,
   timing and ordering for deterministic audit; no already failed Attempt is
-  reopened. No rollback, deletion, upload/token/file retry,
+  reopened. An HTTP-200 acknowledgement, including identical-file replay,
+  is a definitive upload success, not proof that this request inserted a new
+  file. Exact original bytes/witnesses and the complete set remain mandatory.
+  A duplicate rejection or ambiguous response remains failed; later exactness
+  cannot turn it into skip-existing success. No rollback, deletion, upload/token/file retry,
   skip-existing success or automatic partial completion is allowed. Recovery
   requires a separate request. A missing durable Result after the mutation
   marker remains unknown and possibly mutated under `WD-REL-009`.
-- **WD-PY-006:** Rely on documented PyPI filename non-reuse and accept
-  non-replacement of an existing TestPyPI live file as a service dependency to
-  qualify, not a documented guarantee established by the
-  [source findings](./research/python-smoke-evidence.md). Each destination and
-  profile requires its own independently audited native acceptance: creation
-  of wheel and sdist, same-byte and different-byte duplicate rejection at the
-  same filename, a bounded competing-creation case, winner-byte preservation,
-  exact readback and clean consumption. No provider-authored concurrent
-  atomicity statement is an additional prerequisite. Finite observations do
-  not prove universal future service behavior, cross-file atomicity or global
-  read linearizability. Missing required evidence blocks Live. Availability is
-  claimed only at the fresh verification event: TestPyPI can prune and PyPI
-  files can be removed. Retain audit evidence outside the registry; loss or
-  change of remote state cannot yield success or authorize restoration.
+- **WD-PY-006:** Rely on PyPI filename non-reuse and TestPyPI live-file
+  non-replacement as platform dependencies under the owner's
+  [platform-reliance decision](https://github.com/hcoona/three/issues/843#issuecomment-5860732497).
+  Accept successful identical-file replay; do not require duplicate rejection
+  for identical bytes or claim that HTTP 200 establishes unique insertion.
+  The [source findings](./research/python-smoke-evidence.md) explain the
+  dependency and its limits, not a proof of deployed or universal behavior.
+  No duplicate-upload or competing-creation probes, native acceptance generation,
+  or provider-authored concurrency statement is a prerequisite for Python Live.
+  Validate V3's own request, authority, failure and evidence handling, and each
+  destination's actual publication, fresh exact readback and clean consumption
+  under `WD-PY-004`. Trust does not establish configuration or grant publication.
+  No cross-file atomicity or global read linearizability is assumed.
+  Availability is claimed only at the fresh verification event: TestPyPI can
+  prune and PyPI files can be removed. Retain audit evidence outside the
+  registry; loss or change of remote state cannot yield success or authorize
+  restoration. Preserve earlier failed generations without reclassification.
 - **WD-PY-007:** `hcoona` is the sole accepted writer/operator and explicit
   Approval reviewer. Self-approval confirms intent, not independent security
   review. Live uses protected-main targets and same-revision reviewed control.
@@ -955,10 +962,11 @@ They define a new Python scope, not implemented support or an operation grant.
   accepted writer. Relevant actor, reviewer, ownership or access changes
   require renewed trust review.
 - **WD-PY-008:** Requirements confirmation precedes HLD, all five MLDs and a
-  brief LLD. Implementation needs a later accepted Wave. Native acceptance
-  additionally needs a concrete authorized protocol with coordinates, finite
-  requests/budgets, isolation, stop conditions and retained evidence. Each
-  real publication needs its own concrete grant and current-Attempt Approval.
+  brief LLD. Implementation needs a later accepted Wave. Python platform-proving
+  probes are retired under `WD-PY-006`; configuration/admission and each real
+  publication remain separately gated. Each publication needs a concrete grant
+  with coordinates, finite requests/budgets, stop conditions and retained
+  evidence, plus current-Attempt Approval.
   Design acceptance does not authorize builds, probes, provisioning,
   authentication/access changes or dispatch. npm/NuGet remain complete and
   their spent operation grants remain spent.
@@ -971,15 +979,15 @@ They define a new Python scope, not implemented support or an operation grant.
   mutation evidence, conservative initial-state gate and independently reviewed
   postcreation ownership/configuration and clean consumption. Partial or
   ambiguous outcomes stop without retry or compensation. Bootstrap evidence is
-  neither native admission nor normal-Live publication evidence; both normal
-  destinations remain disabled until their existing admission gates pass.
-  Independently audited actual ownership/configuration established by a partial
-  bootstrap may satisfy only the resource prerequisite to request a fresh native
-  suite. It does not establish bootstrap completion, which still requires the
-  complete pair and clean consumers. Preserve the failed partial version without
-  refill or deletion; it may remain partial indefinitely. The separately
-  authorized native suite must prove its own complete pairs, duplicate/race
-  behavior, exact bytes and clean consumers, and preserve all pre-existing files.
+  not normal-Live publication evidence; both destinations remain disabled until
+  their independent configuration/admission gates pass. Independently audited
+  actual ownership/configuration established by a partial bootstrap may satisfy
+  only the existing-project resource prerequisite for normal admission. It does
+  not establish bootstrap completion, which still requires the complete pair
+  and clean consumers. Preserve the failed partial version without refill or
+  deletion; it may remain partial indefinitely. A separately authorized normal
+  Attempt must build and qualify its own pair at an eligible version, preserve
+  pre-existing files and complete actual publication and clean-consumer audit.
   Preparation supplies no configuration, dispatch, token or upload permission.
 
 ### Evidence, Decisions, and Explanation

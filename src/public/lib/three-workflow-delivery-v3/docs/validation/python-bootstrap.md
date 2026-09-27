@@ -3,10 +3,11 @@
 ## Purpose and Authority
 
 The V3 maintainer maintains this protocol for implementers, the smoke operator
-and independent auditors. It realizes `WD-PY-009`; the existing native protocol
-continues to require an already controlled project and a complete HTTP-200
-initial index. Bootstrap is a separate prerequisite operation, not native
-admission or a normal-Live Attempt. Its evidence cannot satisfy either gate.
+and independent auditors. It realizes `WD-PY-009` as a separate first-project
+resource operation, not a normal-Live Attempt or automatic normal admission.
+The retained failed bootstrap established owner-reviewed resource facts; it
+does not authorize repeating the absent-project path for the existing project.
+The former native suite is retired under `WD-PY-006`.
 Current work authorization is determined by the
 [Wave](../../../../../../docs/delivery-wave.md). Configuration and execution
 need separate concrete owner authorization.
@@ -181,8 +182,10 @@ under authorized account-side evidence collection. Public file presence alone
 cannot establish owner `Backspace7980`. Unexpected owner/publisher state or
 unavailable evidence blocks all dependent work even if both files are visible.
 The bootstrap publisher remains a configured capability until explicitly changed;
-no removal is inferred. Native and normal workflow registrations require their
-own later configuration grants.
+no removal is inferred. The owner has also confirmed the native registration.
+Carry these resource facts forward unless changed or contradicted, without
+routine reconfirmation. The distinct normal workflow registration still needs
+its own later configuration grant; neither existing tuple supplies it.
 
 Bootstrap completion still requires the full audit above. A failed bootstrap
 may instead supply independently reviewed actual ownership/configuration only
@@ -192,16 +195,16 @@ another absent-project bootstrap. That narrower resource audit must close
 actual owner and converted publisher facts from retained effects and authorized
 account-side evidence; missing or unexpected facts block continuation.
 
-A separately authorized native suite on two other fresh unchanged NBGV versions
-must independently close its native publisher registration, current trust and
-configuration, exact fixtures and complete initial HTTP-200 inventory. It
-preserves every pre-existing entry, including the partial bootstrap version,
-and proves its own complete pairs, duplicate/race behavior and clean consumers. Both Governance destinations remain `live_enabled: false`, and
-both native slots remain null throughout preparation/bootstrap. Bootstrap grants
-no native admission, activation or normal publication. Subsequent TestPyPI Buddy
-and independent PyPI Official Attempts retain their own complete qualification,
-Approval, native evidence and publication grants. TestPyPI pruning and other
-accepted availability limits remain; later absence does not authorize restoration.
+Normal admission independently closes its normal publisher registration,
+current trust/configuration and accepted source-evidence basis. No duplicate/race
+suite is required. A separately authorized TestPyPI Buddy Attempt builds and
+qualifies its own pair at an eligible version, preserves pre-existing files and
+obtains its own Approval, publication/readback and clean-consumer audit. PyPI
+Official retains an independent admission and Attempt. Both Governance
+sources remain disabled pending those separately authorized stages; both native
+slots remain null. Bootstrap grants no activation or normal publication.
+TestPyPI pruning and other accepted availability limits remain; later absence
+does not authorize restoration.
 
 ## Tooling Interface
 

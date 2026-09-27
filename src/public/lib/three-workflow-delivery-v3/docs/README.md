@@ -57,24 +57,17 @@ operating guidance, not a second normative specification.
 ## Python Smoke Design
 
 [Issue #843](https://github.com/hcoona/three/issues/843) tracks TestPyPI first,
-then PyPI. The owner's confirmed scope is recorded in
-[`WD-PY-*`](./requirements.md#python-smoke-slice); the HLD, five MLDs and
-[Python LLD](./hcoona-release-smoke-python-lld.md) define its design.
-The [source evidence](./research/python-smoke-evidence.md) retains service
-findings and limits. The disabled implementation is protected-delivered through
-[PR #849](https://github.com/hcoona/three/pull/849). The
-[Python native acceptance protocol](./validation/python-native-acceptance.md)
-and [tooling and operator readiness](./validation/python-native-readiness.md)
-are protected-delivered through PRs #854 and #855, completing preparation.
-They define the suite, preparation interfaces and resource prerequisites, and
-route populated requests to their accepted resource evidence.
-The [bounded post-upload observer](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
-is implemented with original-response replay across bootstrap, native and normal
-publication. Its changed profile requires new native evidence; retained failed
-bootstrap evidence is not upgraded or resumed.
-Future configuration, native execution/admission and publication require separate
-[Wave](../../../../../docs/delivery-wave.md) authorization and domain gates. Both destinations remain disabled;
-implementation delivery is not the two-destination smoke completion audit.
+then PyPI. The owner's confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),
+HLD, five MLDs and [Python LLD](./hcoona-release-smoke-python-lld.md) adopt
+platform reliance without duplicate/race proving. The
+[source evidence](./research/python-smoke-evidence.md) distinguishes source
+findings, the retained failed runs and that owner decision.
+The [migration policy](./migration-strategy.md#python-smoke-delivery) routes the
+later disabled implementation, configuration/admission and actual publication
+stages. Existing v1 runtime and both Governance files remain disabled; this
+revised design does not claim implementation or two-destination completion.
+The [retired native interface](./validation/python-native-readiness.md) retains
+historical evidence-reader consumers only.
 
 ## NuGet Second-Slice Implementation
 
@@ -254,7 +247,7 @@ publication gates.
 ## Python First-Project Bootstrap
 
 The [bootstrap protocol](./validation/python-bootstrap.md) defines the separately
-authorized first-project prerequisite before native acceptance. The
+authorized first-project resource path under `WD-PY-009`. The
 [Delivery Wave](../../../../../docs/delivery-wave.md) determines current work
 authorization. The protocol
 also owns the [tooling interface](./validation/python-bootstrap.md#tooling-interface);

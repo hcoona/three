@@ -380,10 +380,11 @@ claim. Actor, reviewer, ownership and access changes reopen trust review.
 
 TestPyPI and PyPI each have an independent protected admission source binding
 project name, registry origin, OIDC audience, repository owner/name, workflow
-filename, exact Environment, operation-profile digest, native generation and
-source-evidence revision. Admission also binds required reviewer/protection
+filename, exact Environment, operation-profile digest and source-evidence
+revision closing the accepted `WD-PY-006` platform reliance. The versioned
+Python admission defined in the LLD has no native-generation prerequisite. Admission also binds required reviewer/protection
 configuration, same-revision control and freshness. No npm/NuGet ready record
-or TestPyPI acceptance enables PyPI. Account ownership and registration facts
+or TestPyPI admission enables PyPI. Account ownership and registration facts
 are verified through authorized native setup/readback; they are not inferred
 from public package metadata. Where the service exposes no runtime registration
 inventory, retain the reviewed configuration attestation and its limitation,
@@ -415,27 +416,28 @@ publisher Environment has the required reviewer, selected protected branch,
 self-approval policy and sentinel declared by its protected admission.
 
 `WD-PY-006` supplies the file-level dependency and bounded evidence basis.
-Each registry requires its own independently audited native suite and fresh
-configuration before `live_enabled` can become true. Profile/toolchain,
+Each registry requires independently reviewed configuration and protected
+admission before `live_enabled` can become true. Profile/toolchain,
 registration/Environment, accepted service behavior or evidence-scope changes
-reopen affected admission. The existing protected-path, expiry and disablement
-checks apply to each Python source; publication rechecks them at the mutation
-boundary. Provisioning, token/native operations and each real publication
-require their separately accepted grants. This design changes no platform
-configuration and supplies none of those grants.
+reopen affected admission through source/configuration review and applicable
+V3 tests, not a replacement duplicate/race suite. The existing protected-path,
+expiry and disablement checks apply to each Python source; publication rechecks
+them at the mutation boundary. Provisioning, authentication and each real
+publication require their separately accepted grants. This design changes no
+platform configuration and supplies none of those grants.
 
 `WD-PY-009` bootstrap has a separate protected, initially null request and
 pending-publisher configuration attestation; it cannot use ready Governance or
 claim pre-existing project ownership. Its Environment-approved authority and
-durable marker precede OIDC acquisition. Postcreation ownership and publisher
-conversion require independent evidence review before native acceptance.
-A failed bootstrap can establish only these resource facts under `WD-PY-009`;
-it cannot establish bootstrap completion or native admission. Native publisher
-registration and current trust/configuration remain separate prerequisites.
-Observation-policy/profile changes require fresh native qualification at each
-destination, with no reuse of an earlier admission identity.
-The [bootstrap protocol](./validation/python-bootstrap.md) defines these gates;
-normal-Live Governance remains disabled.
+durable marker precede OIDC acquisition. Independently reviewed postcreation
+ownership and publisher conversion can establish resource facts after partial
+bootstrap, but not bootstrap completion or normal admission. Carry forward the
+owner-confirmed Sole Owner and existing bootstrap/native publisher tuples
+unless changed or contradicted; do not routinely ask for reconfirmation.
+The normal workflow's distinct publisher and current trust/configuration still
+require their own review. The [bootstrap protocol](./validation/python-bootstrap.md)
+defines the resource boundary; normal-Live Governance remains disabled pending
+the later implementation and admission deliveries.
 
 ## Runtime Permission and Authority Model
 
@@ -806,17 +808,17 @@ Governance integration fails closed when:
   readback;
 - repository Actions retention has not been authenticated as permitting at
   least 45 days;
-- the selected destination primitive, exact operation profile, or bound
-  lower-layer/API contract has not passed the bounded documented-and-observable
-  native acceptance applicable to that destination; NuGet uses the dependency
-  and evidence basis in `WD-NUGET-006` and `WD-NUGET-007`, while Python uses
-  `WD-PY-006` and its separate per-registry admission;
-- the acceptance lacks definitive failure and an empty complete active-state
-  delta for either active duplicate, exact creation readback, or, for first-slice
-  npm, the bounded tag-race proof;
+- the npm/NuGet destination primitive, profile or contract lacks its required
+  native acceptance; NuGet uses `WD-NUGET-006` and `WD-NUGET-007`;
+- Python lacks its separate per-registry platform-reliance/configuration
+  admission under `WD-PY-006` and the [Python governance contract](#python-smoke-governance);
+- npm/NuGet acceptance lacks definitive failure and an empty complete
+  active-state delta for either active duplicate, exact creation readback,
+  or, for first-slice npm, the bounded tag-race proof;
 - publisher-boundary supported package-control readback no longer matches
   accepted owner, repository association, visibility, or exposed access facts;
-- native acceptance is older than 90 days for an action-bearing admission;
+- npm/NuGet native acceptance is older than 90 days for an action-bearing
+  admission; Python retains its own configuration/Governance freshness limit;
 - the action's operation-profile digest differs from current Governance, the
   immutable action is not a valid profile instantiation, or the publisher's
   actual pinned runtime configuration differs from the profile;

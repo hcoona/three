@@ -96,7 +96,8 @@ configuration or OIDC endpoint was queried. The owner
 finite pending observation and resource-only continuation after partial bootstrap.
 These are product/risk decisions, not proof that waiting will succeed or that
 the original bootstrap completed. The requirements and LLD own that behavior;
-changed profiles still require separately authorized actual native evidence.
+the later owner platform-reliance decision below retires prerequisite native
+probes while preserving actual publication/readback/consumer evidence.
 
 ### Version and Build Inputs
 
@@ -173,8 +174,8 @@ attestation/runtime freshness split. A normal job does not enumerate the
 administrative configuration or substitute an empty inventory on failure.
 The [Python LLD](../hcoona-release-smoke-python-lld.md#hosted-integration)
 states the remaining runtime and attestation responsibilities. The later
-separately authorized platform validation must prove the actual endpoints and
-native approval/deployment binding with the normal job token.
+separately authorized normal publication must exercise the actual endpoints
+and native approval/deployment binding with the normal job token.
 
 GitHub's [hosted-runner communication requirements](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#communication-requirements-for-github-hosted-runners)
 list `*.actions.githubusercontent.com` for retrieving OIDC tokens. The
@@ -195,11 +196,11 @@ OIDC audiences and a short-lived minted credential. Hatch documents reproducible
 build controls; it does not establish this suite's comparison-fixture validity.
 The preparation PR retains the retrieved bodies, retrieval times and hashes.
 
-The proposed native suite reuses these unchanged APIs and the protected pinned
+The then-proposed native suite reused these unchanged APIs and the protected pinned
 transport. Its finite request counts, race intervals and filename-error
 recognizer are conservative application choices, not additional documented
 service guarantees. Actual matching native responses and independent audit
-remain required. No OIDC, account, project or native registry endpoint was
+were required by that now-retired protocol. No OIDC, account, project or native registry endpoint was
 queried for this recheck; only public documentation was retrieved.
 
 ### First-Project Bootstrap Source Recheck
@@ -218,8 +219,8 @@ operator's account or project, atomic two-file creation, or ownership proof.
 
 The bootstrap protocol's initial HTTP-404 requirement is a conservative
 application gate. It does not prove global name availability or historical
-filename availability; failures and HTTP 200 block that entry. Native acceptance
-retains its complete HTTP-200 existing-project prerequisite. The delivery PR
+filename availability; failures and HTTP 200 block that entry. The now-retired native protocol retained its complete HTTP-200
+existing-project prerequisite. The delivery PR
 retains dated original source bodies, sanitized headers and hashes in a
 recoverable archive ([part 1](https://github.com/hcoona/three/pull/860#issuecomment-5827525997),
 [part 2](https://github.com/hcoona/three/pull/860#issuecomment-5827526279)).
@@ -235,7 +236,7 @@ The [independent native audit](https://github.com/hcoona/three/issues/843#issuec
 and [independent finding disposition](https://github.com/hcoona/three/issues/843#issuecomment-5859867456)
 retain the failed TestPyPI generation. After the original wheel and sdist were
 created and read back with matching bytes, the identical active wheel upload
-returned HTTP 200. The accepted native contract requires duplicate rejection,
+returned HTTP 200. The contract accepted for that run required duplicate rejection,
 so the suite stopped before the next capture. This is a contrary response
 observation, not proof of overwrite, idempotent preservation or native success.
 The later duplicate and race scenarios and fresh registry consumers remain
@@ -251,10 +252,53 @@ not specify the exact same-filename/same-bytes response observed on TestPyPI.
 Neither source proves mandatory HTTP-400 rejection for that tuple. The Issue
 retains original source bodies, retrieval metadata and independent review.
 
-The current native capability remains unqualified. Changing the expected
-duplicate response is a prospective requirements/design decision; this failed
-generation cannot be reinterpreted as passing. No service guarantee, acceptance
-criterion, publisher profile or normal admission is changed by this evidence.
+That generation remains failed and cannot be reinterpreted as passing. The
+source diagnosis and subsequent owner decision below change the future design
+basis; they supply none of the missing runtime evidence or normal admission.
+
+### Warehouse Identical-File Handling and Owner Reliance
+
+The public-source diagnosis selected Warehouse commit
+[`02dae5a1510bf9ba3fc5ff9ec0d94440055d92ec`](https://github.com/pypi/warehouse/commit/02dae5a1510bf9ba3fc5ff9ec0d94440055d92ec)
+on 2026-09-27. These are pinned source findings, not assertions about the
+revision deployed by either registry:
+
+- [`_is_duplicate_file`, lines 354–383](https://github.com/pypi/warehouse/blob/02dae5a1510bf9ba3fc5ff9ec0d94440055d92ec/warehouse/forklift/legacy.py#L354)
+  matches the filename and SHA-256/BLAKE2 digests; it does not perform a full
+  byte comparison.
+- [The upload branch, lines 1075–1096](https://github.com/pypi/warehouse/blob/02dae5a1510bf9ba3fc5ff9ec0d94440055d92ec/warehouse/forklift/legacy.py#L1075)
+  dooms the request transaction and returns HTTP 200 for an identical match
+  before file creation/storage. A conflicting existing file returns HTTP 400.
+  Deleted-filename rejection is a separate branch at lines 1098–1111.
+- [The corresponding tests, lines 2291–2397](https://github.com/pypi/warehouse/blob/02dae5a1510bf9ba3fc5ff9ec0d94440055d92ec/tests/unit/forklift/test_legacy.py#L2291)
+  encode successful identical-file no-op and different-content rejection.
+  These tests were read, not executed by this research.
+
+The source provides an explanation consistent with the observed HTTP 200 and
+contradicts the assumption that every identical upload must be rejected. It
+does not fill C3, prove the run's post-duplicate state or establish concurrency
+response guarantees. Database uniqueness, retry configuration and nontransactional
+file storage are not promoted into a universal atomicity claim.
+
+The [diagnosis and independent review](https://github.com/hcoona/three/issues/843#issuecomment-5860775965)
+retain the selected revision, original files and exact source locations. The
+[seven-part original packet](https://github.com/hcoona/three/issues/843#issuecomment-5860766427)
+is 275164 bytes, SHA-256
+`8ba485fc7792665627c3c9d3bec7d23a4624ed71b34f5fbd45def0114bbe0788`.
+It includes Warehouse's Apache-2.0 license and retrieval/hash manifests. Source
+bodies are unchanged; cookie response-header values are redacted with an
+explicit original/retained hash mapping. Independent remote recovery verified
+all 39 members. Six official mutable documentation pages re-fetched for the
+diagnosis were byte-identical to retained originals; no smoke registry,
+configuration or OIDC endpoint was queried.
+
+The owner then [directed reliance on platform behavior without further verification](https://github.com/hcoona/three/issues/843#issuecomment-5860732497).
+This is an accepted product/risk decision, distinct from both the pinned source
+and the failed runtime observation. The revised `WD-PY-006` relies on live-file
+non-replacement and successful identical replay without duplicate/race probes.
+It preserves V3 request/authority/evidence tests and each destination's actual
+publication, exact original-byte readback and clean consumption. No platform
+experiment follows from this decision; original failures remain failed.
 
 ## Decision Impact and Limits
 
@@ -264,8 +308,9 @@ resulting product/trust/evidence decisions; the HLD and MLDs own their
 realization. The material choices are partial two-file failure, an explicit
 Python per-file dependency/evidence basis and bounded availability, plus the
 sole-writer/operator Approval boundary. Acceptance is an owner decision, not a
-new service finding. It does not turn the TestPyPI dependency into a documented
-guarantee or promote finite future probes into universal proof.
+new service finding. The subsequent owner reliance decision above removes
+prerequisite duplicate/race proving; it does not turn the TestPyPI dependency
+into a documented guarantee or promote source inspection into empirical proof.
 
 The design and implementation source rechecks re-read the cited service/build
 sources on 2026-09-24 when selecting the design and concrete profile. They still support one-file upload, PyPI filename
@@ -274,9 +319,10 @@ no source establishes cross-file atomicity or implemented V3 compatibility.
 The [Python LLD](../hcoona-release-smoke-python-lld.md) selects a bounded
 one-set/two-operation action and static staged metadata. Those are design
 choices whose disabled implementation is protected-delivered through
-[PR #849](https://github.com/hcoona/three/pull/849). Native acceptance,
-native-admission and normal publication gates remain unpassed; both destinations
-remain disabled.
+[PR #849](https://github.com/hcoona/three/pull/849). The successor design removes
+native-generation admission; its implementation and separately authorized
+configuration/admission and normal publication remain outstanding. Both
+destinations remain disabled.
 
 The initial public-source study performed no runtime experiment, package build,
 native probe, workflow dispatch, registry mutation or account inspection. The
