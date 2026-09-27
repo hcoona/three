@@ -129,6 +129,8 @@ run = "uv run --package three-workflow-delivery-v3 python eng/scripts/workflow_d
 # Tasks
 #
 
+# Both MCP launchers require raw stdio. Child stdout/stderr are unfiltered;
+# redact = true does not mask credentials emitted by the server or launcher.
 [tasks.playwright-mcp]
 description = "Run Playwright MCP with the browser extension token from gopass"
 run = "pnpm exec playwright-mcp --extension"
