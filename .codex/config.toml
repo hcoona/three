@@ -1,5 +1,9 @@
-# Codex registers only Playwright; APM manages Copilot and VS Code registrations.
-# Keep this launch command aligned with the Playwright entry in apm.yml.
+# Codex registers Playwright and Context7; APM manages Copilot and VS Code registrations.
+# Keep these launch commands aligned with their entries in apm.yml.
 [mcp_servers.playwright]
 command = "mise"
 args = ["run", "--raw", "--quiet", "playwright-mcp"]
+
+[mcp_servers.context7]
+command = "mise"
+args = ["run", "--raw", "--quiet", "context7-mcp"]

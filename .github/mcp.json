@@ -21,15 +21,11 @@
       ],
       "id": "",
       "command": "mise",
-      "env": {
-        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
-      },
       "args": [
-        "exec",
-        "--",
-        "pnpm",
-        "dlx",
-        "@upstash/context7-mcp@3.2.5"
+        "run",
+        "--raw",
+        "--quiet",
+        "context7-mcp"
       ]
     },
     "microsoft-learn": {

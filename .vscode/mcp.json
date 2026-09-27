@@ -14,15 +14,11 @@
       "type": "stdio",
       "command": "mise",
       "args": [
-        "exec",
-        "--",
-        "pnpm",
-        "dlx",
-        "@upstash/context7-mcp@3.2.5"
-      ],
-      "env": {
-        "CONTEXT7_API_KEY": "${input:CONTEXT7_API_KEY}"
-      }
+        "run",
+        "--raw",
+        "--quiet",
+        "context7-mcp"
+      ]
     },
     "microsoft-learn": {
       "type": "http",
@@ -42,12 +38,5 @@
       ]
     }
   },
-  "inputs": [
-    {
-      "type": "promptString",
-      "id": "CONTEXT7_API_KEY",
-      "description": "CONTEXT7_API_KEY for MCP server io.github.upstash/context7",
-      "password": true
-    }
-  ]
+  "inputs": []
 }

@@ -72,13 +72,10 @@ dependencies:
       transport: stdio
       command: mise
       args:
-        - exec
-        - --
-        - pnpm
-        - dlx
-        - '@upstash/context7-mcp@3.2.5'
-      env:
-        CONTEXT7_API_KEY: '${input:CONTEXT7_API_KEY}'
+        - run
+        - --raw
+        - --quiet
+        - context7-mcp
     - name: microsoft-learn
       registry: false
       transport: http

@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-09-27T20:25:24.339797+00:00'
+generated_at: '2026-09-27T23:02:38.744915+00:00'
 apm_version: 0.29.0
 dependencies:
 - repo_url: _local/enterprise-translation-team
@@ -4756,14 +4756,11 @@ mcp_configs:
   io.github.upstash/context7:
     name: io.github.upstash/context7
     transport: stdio
-    env:
-      CONTEXT7_API_KEY: ${input:CONTEXT7_API_KEY}
     args:
-    - exec
-    - --
-    - pnpm
-    - dlx
-    - '@upstash/context7-mcp@3.2.5'
+    - run
+    - --raw
+    - --quiet
+    - context7-mcp
     registry: false
     command: mise
   microsoft-learn:
