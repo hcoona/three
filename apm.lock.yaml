@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-08-24T19:17:11.263740+00:00'
+generated_at: '2026-09-27T20:12:11.319188+00:00'
 apm_version: 0.29.0
 dependencies:
 - repo_url: _local/enterprise-translation-team
@@ -1009,6 +1009,33 @@ deployments:
   - dotnet/skills/plugins/dotnet-ai
   active_owner: dotnet/skills/plugins/dotnet-ai
   content_hash: sha256:20ca0bedebdac6e8d3c9361b658809d418cdce8943262c1885909c85cb071c61
+- kind: project-relative
+  target: agents
+  value: .agents/skills/migrate-xunit-to-mstest
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: project-relative
+  target: agents
+  value: .agents/skills/migrate-xunit-to-mstest/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:32e0196f8a06c5ccd9aa9b77a90401731a7e166f2f7fbfa9f161f39b6c451c35
+- kind: project-relative
+  target: agents
+  value: .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:d1c49125048396aa6e3f33d30aac37eb3d9f7d6a069684282ef9afd0d3fec558
 - kind: project-relative
   target: copilot
   value: .agents/skills/analyzing-dotnet-performance
@@ -4639,7 +4666,70 @@ deployments:
 - kind: uri
   target: mcp
   value: binlog
-  runtime: vscode
+  runtime: codex
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: io.github.upstash/context7
+  runtime: codex
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: microsoft-learn
+  runtime: codex
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: playwright
+  runtime: codex
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: binlog
+  runtime: copilot
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: io.github.upstash/context7
+  runtime: copilot
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: microsoft-learn
+  runtime: copilot
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: uri
+  target: mcp
+  value: playwright
+  runtime: copilot
   scope: project
   owners:
   - .
@@ -4656,44 +4746,18 @@ deployments:
   content_hash: null
 - kind: uri
   target: mcp
-  value: microsoft-learn
+  value: playwright
   runtime: vscode
   scope: project
   owners:
   - .
   active_owner: .
   content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/migrate-xunit-to-mstest
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/migrate-xunit-to-mstest/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: sha256:32e0196f8a06c5ccd9aa9b77a90401731a7e166f2f7fbfa9f161f39b6c451c35
-- kind: project-relative
-  target: agents
-  value: .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: sha256:d1c49125048396aa6e3f33d30aac37eb3d9f7d6a069684282ef9afd0d3fec558
 mcp_servers:
 - binlog
 - io.github.upstash/context7
 - microsoft-learn
+- playwright
 mcp_configs:
   binlog:
     name: binlog
@@ -4725,11 +4789,32 @@ mcp_configs:
     transport: http
     registry: false
     url: https://learn.microsoft.com/api/mcp
+  playwright:
+    name: playwright
+    transport: stdio
+    args:
+    - exec
+    - --
+    - pnpm
+    - dlx
+    - '@playwright/mcp@0.0.82'
+    - --extension
+    registry: false
+    command: mise
 mcp_target_servers:
-  vscode:
+  codex:
   - binlog
   - io.github.upstash/context7
   - microsoft-learn
+  - playwright
+  copilot:
+  - binlog
+  - io.github.upstash/context7
+  - microsoft-learn
+  - playwright
+  vscode:
+  - io.github.upstash/context7
+  - playwright
 lsp_servers:
 - csharp
 lsp_configs:

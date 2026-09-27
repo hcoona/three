@@ -1,0 +1,25 @@
+[mcp_servers.playwright]
+command = "mise"
+args = ["exec", "--", "pnpm", "dlx", "@playwright/mcp@0.0.82", "--extension"]
+id = ""
+
+[mcp_servers.playwright.env]
+
+[mcp_servers.context7]
+command = "mise"
+args = ["exec", "--", "pnpm", "dlx", "@upstash/context7-mcp@3.2.5"]
+id = ""
+
+[mcp_servers.context7.env]
+CONTEXT7_API_KEY = "${input:CONTEXT7_API_KEY}"
+
+[mcp_servers.microsoft-learn]
+url = "https://learn.microsoft.com/api/mcp"
+id = ""
+
+[mcp_servers.binlog]
+command = "mise"
+args = ["exec", "--", "dotnet", "dnx", "Microsoft.AITools.BinlogMcp", "--yes"]
+id = ""
+
+[mcp_servers.binlog.env]

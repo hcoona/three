@@ -3,6 +3,8 @@ version: 1.0.0
 description: APM configuration for shared agent skills.
 targets:
   - copilot
+  - codex
+  - vscode
 dependencies:
   apm:
     - path: ./src/private/lib/enterprise-translation-team
@@ -57,6 +59,17 @@ dependencies:
       ref: v0.5.0
     - alibaba/open-code-review/plugins/open-code-review/skills/open-code-review-delegate#v1.8.8
   mcp:
+    - name: playwright
+      registry: false
+      transport: stdio
+      command: mise
+      args:
+        - exec
+        - --
+        - pnpm
+        - dlx
+        - '@playwright/mcp@0.0.82'
+        - --extension
     - name: io.github.upstash/context7
       registry: false
       transport: stdio
