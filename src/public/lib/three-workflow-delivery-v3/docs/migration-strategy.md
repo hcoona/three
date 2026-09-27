@@ -104,7 +104,8 @@ separate [Wave](../../../../../docs/delivery-wave.md) authorization and domain g
 
 The [tooling readiness interface](./validation/python-native-readiness.md)
 provides fixture preparation, bounded probe/capture, supplied-fact replay and
-the manual hosted entry. Both native request slots remain null. These local
+the manual hosted entry. Protected native request slots record separately
+authorized operations; a null slot disables that destination. These local
 interfaces do not complete destination-specific native admission.
 
 1. Disabled Python Provider/Model and frozen two-format Build/Qualification,

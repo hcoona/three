@@ -66,7 +66,8 @@ findings and limits. The disabled implementation is protected-delivered through
 [Python native acceptance protocol](./validation/python-native-acceptance.md)
 and [tooling and operator readiness](./validation/python-native-readiness.md)
 are protected-delivered through PRs #854 and #855, completing preparation.
-They define the suite, preparation interfaces and unverified operator resources.
+They define the suite, preparation interfaces and resource prerequisites, and
+route populated requests to their accepted resource evidence.
 The [bounded post-upload observer](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
 is implemented with original-response replay across bootstrap, native and normal
 publication. Its changed profile requires new native evidence; retained failed
