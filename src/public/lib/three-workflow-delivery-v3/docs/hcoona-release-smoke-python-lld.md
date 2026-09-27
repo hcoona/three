@@ -6,13 +6,13 @@ This design realizes confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice)
 the [HLD](./high-level-design.md#python-smoke-extension) and its five MLDs.
 The V3 maintainer authors and maintains this carrier; implementers and reviewers
 use it to close the Python slice's concrete contracts without turning the MLDs
-into command inventories. It specifies the implementation contract, not native registry support. The
-disabled implementation is protected-delivered through
-[PR #849](https://github.com/hcoona/three/pull/849). The
-[native protocol](./validation/python-native-acceptance.md) and
-[tooling readiness interface](./validation/python-native-readiness.md) are
-protected-delivered through PRs #854 and #855, completing preparation.
-Future native operations, configuration changes and publication require separate
+into command inventories. The revised contract trusts platform non-replacement
+and identical replay under `WD-PY-006`. It is a design for the next disabled
+implementation, not a claim that the existing v1 runtime already supports the
+new admission. Both destinations stay disabled. The
+[retired native interface](./validation/python-native-readiness.md) preserves
+failed-evidence consumers only; no duplicate/race suite is a prerequisite.
+Implementation, configuration/admission and publication require their separate
 [Wave](../../../../../docs/delivery-wave.md) authorization and domain gates.
 
 The [source record](./research/python-smoke-evidence.md) owns service findings
@@ -106,7 +106,11 @@ call that destination consumption.
 | OIDC audience        | `testpypi`                             | `pypi`                             |
 | Proposed Environment | `workflow-delivery-v3-python-testpypi` | `workflow-delivery-v3-python-pypi` |
 
-These names are proposed configuration, not existing resources. Each protected
+These are the required normal-publication tuples, not evidence that their
+registrations exist. The owner has confirmed TestPyPI Sole Owner status and
+bootstrap/native registrations for the same Environment; those workflow tuples
+do not grant the normal workflow. Carry them forward without routine
+reconfirmation unless changed or contradicted. Each protected
 admission file under `.github/workflow-delivery/` is destination-specific,
 initially blocked with `live_enabled: false`. The workflow is `.github/workflows/workflow-delivery-v3-python-smoke.yml`.
 The protected files are
@@ -121,8 +125,10 @@ profile. It closes runtime/client/TLS versions, trusted HTTPS origins, timeouts,
 finite read budgets, multipart metadata mapping and exactly one POST per
 file. Upload uses the original qualified bytes; no rebuild, signing, metadata
 rewrite, skip-existing option or automatic resend is allowed. No mutating
-redirect fallback is admitted. Timeout after send is ambiguous. Even a returned
-duplicate response remains failure. Retry transport only for immutable record
+redirect fallback is admitted. Timeout after send is ambiguous. HTTP 200 acknowledges success even for an
+identical existing file; it does not identify a new insertion. A duplicate
+rejection, other non-success or ambiguous response remains failed regardless
+of later exact readback. Retry transport only for immutable record
 persistence, not token-accompanied upload. Token acquisition fails closed; no
 credential appears in persistent logs or artifacts.
 
@@ -133,34 +139,36 @@ no credentials accompany public downloads. Missing/inconsistent listing,
 unknown filename/version, extra or yanked file, or failed byte/witness readback
 blocks exactness. Whole-set absence is a creation candidate, not proof that
 PyPI has never used the filenames. Deleted filename rejection remains failure.
-The native profile must exercise the actual APIs, request mapping and runtime
-rather than assuming an SDK/CLI name establishes one-shot behavior.
+V3 tests must exercise its actual request mapping, response classification and
+one-shot bounds. The actual publication journey tests destination integration;
+no SDK/CLI name or mocked response proves platform behavior.
 
 ## Bounded Post-Upload Observation
 
 The disabled implementation realizes the owner-confirmed `WD-PY-005` reliability choice,
 not a service visibility guarantee. It applies only after a definitive HTTP-200
-upload, before its readback terminates. Bootstrap P2/P3, native C1/C2/C7/C8 and
-normal publication's two post-upload readbacks share the mechanism. Initial
-checks, native duplicate captures, zero-action proofs and independent final
-audits remain single reads. HTTP transport retries, cache-bypass headers, token
+upload, before its readback terminates. Bootstrap P2/P3 and normal publication's
+two post-upload readbacks share the mechanism. Initial checks, zero-action
+proofs and independent final audits remain single reads. The retired native
+reader retains its historical policy only for the original failed evidence. HTTP transport retries, cache-bypass headers, token
 refresh and file-download retries remain unavailable.
 
 Each phase closes the successful upload response, comparison scope, previously
 verified inventory and exactly one expected addition before reading. Bootstrap
-and native compare complete project file inventories; normal publication keeps
+compares complete project file inventories; normal publication keeps
 its target-version scope. Compare complete normalized file entries, including
 URL, declared hashes, Python constraints and yanked state; ignore only index-level
 serial/timestamp metadata. An expected addition must have the approved filename
-and SHA-256, accepted URL and metadata. Native competition uses the actual
-successful candidate. Raw index bytes are always retained unchanged.
+and SHA-256, accepted URL and metadata. Raw index bytes are always retained
+unchanged. An acknowledged identical replay uses the same expected original
+bytes; it does not relax previous-entry preservation or final set exactness.
 
-| Index observation                                                                                                                                                 | Phase transition                                                                                 |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Exact expected inventory with unchanged previous entries                                                                                                          | Download and verify expected original/winner bytes and witnesses once; success only if all pass. |
-| Existing-project HTTP 200 exactly equal to its previously verified HTTP-200 inventory, missing only the expected addition (never initial bootstrap P2)            | Pending; no downloads.                                                                           |
-| HTTP 404 at first-project bootstrap P2 only                                                                                                                       | Pending; no ownership or successful-publication claim.                                           |
-| Existing-project 404, other status, malformed/oversized index, changed/missing prior entries, extra/foreign/conflicting/yanked files, transport or download error | Terminal failure; no later upload.                                                               |
+| Index observation                                                                                                                                                 | Phase transition                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Exact expected inventory with unchanged previous entries                                                                                                          | Download and verify expected original bytes and witnesses once; success only if all pass. |
+| Existing-project HTTP 200 exactly equal to its previously verified HTTP-200 inventory, missing only the expected addition (never initial bootstrap P2)            | Pending; no downloads.                                                                    |
+| HTTP 404 at first-project bootstrap P2 only                                                                                                                       | Pending; no ownership or successful-publication claim.                                    |
+| Existing-project 404, other status, malformed/oversized index, changed/missing prior entries, extra/foreign/conflicting/yanked files, transport or download error | Terminal failure; no later upload.                                                        |
 
 The first read has no deliberate delay. At most six index requests may start.
 Let `u` be the successful upload response's completion instant on the trusted
@@ -172,14 +180,9 @@ without another request. An admitted in-flight call retains the 30-second
 socket timeout; the 60-second admission window is not a completion guarantee.
 File requests retain their own existing outer authority and socket bounds.
 Non-finite or reversed timing fails closed. Waiting never extends bootstrap's
-UTC authority, native's probe deadline or normal publication's current authority.
+UTC authority or normal publication's current authority.
 Monotonic instants are compared only within one process; runner UTC retains
 its existing bootstrap authority role, with both guards enforced there.
-
-For native races, admit both competitors under the existing barrier and join
-both results. Only one definitive success plus one required duplicate permits
-readback. Anchor `u` to the winning response completion, never to the later
-join. If the admission window expired while joining, stop without a read.
 
 Retain a strict ordered phase trace binding its policy/profile, operation or
 capture ordinal, successful upload response, previous/expected inventory,
@@ -194,21 +197,20 @@ under the existing missing-Result/possibly-mutated rules. Never retain tokens
 or authorization headers. Clock values are trusted runner observations, not
 external time attestations.
 
-Bootstrap/native raw journals and immutable bundles retain the full trace;
+Bootstrap raw journals and immutable bundles retain the full trace;
 normal Publication Result carries or explicitly references its immutable trace
 through the existing artifact transport. Strict parsers and deterministic
 registry-offline audit reconstruct classifications from raw responses, verify
 all timing/count/deadline and previous-state bindings, enforce upload/download
 ordering and reject missing, reordered, surplus or post-terminal requests.
-They must not trust a serialized `pending`, `exact` or success flag. The native
-race's two already admitted uploads are the sole concurrency exception. Replay
+They must not trust a serialized `pending`, `exact` or success flag. Replay
 performs no sleep, destination read or token request. Finalizer admits the bound
 replayed evidence without making network observations.
 
 The destination operation profile binds this policy and its finite parameters;
-bootstrap/native protocol identities bind their revised budgets. Old evidence
-remains evidence of its original revision and is not coerced into the new
-contract. No current native admission qualifies the changed profile. Strict
+bootstrap protocol identities bind their budgets. Old native/bootstrap
+evidence remains evidence of its original revision and is not coerced into the
+new contract. No failed run supplies normal publication evidence. Strict
 transport/record changes and their consumers must ship together in the disabled
 implementation. The existing build, Model and CI qualification contracts need
 no change.
@@ -224,7 +226,8 @@ Plan/Snapshot, Evidence and Decision records. Only mechanical artifact and
 consumer inspection are shared.
 
 The exact-target Model schema is `workflow-delivery/v3/python-repository-model-snapshot`.
-Python Governance uses `workflow-delivery/v3/python-governance-v1`; the other
+The successor Python Governance uses `workflow-delivery/v3/python-governance-v2`
+as defined below; the other
 Python records use their explicit `python-*` discriminators. The shared
 Publication Result uses `variant: python-distribution-set`, and the shared
 Finalizer returns the existing AttemptOutcome. Parsers reject foreign variants
@@ -238,7 +241,7 @@ separate original transports. The publisher exports one scalar terminal
 reference; later artifact presence cannot substitute for that output.
 
 Protected configuration attestation covers the complete writer, Environment,
-service registration and native evidence inventories. The job token cannot
+service registration and source-evidence basis. The job token cannot
 read administrative Environment, invitation, team or variable APIs. Runtime
 freshness therefore reads protected Governance plus accessible repository,
 protected-branch and collaborator metadata; current-run approval, deployment
@@ -250,8 +253,46 @@ owner to disable Governance and renew its configuration attestation.
 The one-shot HTTPS transport uses CPython 3.14.3 with OpenSSL 3.5.5
 (27 January 2026), verified TLS 1.2 or later and a 30-second socket timeout.
 The exact version/profile check applies to the actual registry transport;
-HTTP redirects, proxies and request retries are unavailable. The later native
-acceptance must prove this actual profile separately at each destination.
+HTTP redirects, proxies and request retries are unavailable. Each actual
+publication binds and checks this profile, with independent destination
+readback/consumer audit; no separate duplicate/race execution qualifies it.
+
+## Python Governance v2 Migration
+
+The later disabled implementation replaces v1 atomically across the strict
+parser, constructors, serialized consumers, tests and both protected Governance
+files. The v2 schema retains the existing exact top-level fields except
+`native-acceptance`, which is removed, not set to a synthetic passing value.
+The fields are `schema`, `publisher`, `accepted-operator`, `live_enabled`,
+`state`, `operation-profile-digest`, `inspected-at`, `expires-at`,
+`configuration` and `source-evidence-revision`. No native generation, suite,
+passed flag or substitute platform-proof record is accepted. Reject v1, hybrid,
+missing or extra fields at the new runtime boundary; historical bytes remain
+bound to their original reader and revision.
+
+Blocked v2 retains the exact destination publisher/operator/profile constants,
+`state: blocked`, `live_enabled: false` and null configuration, source revision
+and timestamps. Ready v2 requires `state: ready`, `live_enabled: true`, the
+unchanged strict configuration tuple/attestation, protected source provenance
+and a 40-hex `source-evidence-revision` pinning the accepted `WD-PY-006`, its
+owner reliance decision and source findings. Inspection/expiry remains a
+positive UTC interval of at most 90 days; existing observed-at, current-main
+path continuity, freshness and mutation-boundary checks remain mandatory.
+The configuration object keeps its existing closed fields and checks for the
+actual Environment identity, sole reviewer/writer, no bypass, protected-main
+selection, sentinel, no secrets and reviewed project-bound registration.
+Nothing in v2 infers configuration from a successful upload or source research.
+
+Migration must first ship both destinations blocked with no authentication,
+registry read, publisher registration or publication. This design PR leaves
+actual v1 files and runtime untouched. After implementation delivery, a
+separately authorized configuration/admission change may make one destination
+ready from reviewed configuration and the accepted dependency basis. It does
+not require a completed publication before the first authorized publication.
+That later Attempt and its independent audit establish integration completion,
+not admission by circular evidence. TestPyPI admission does not enable PyPI.
+The retained bootstrap/native registrations are not the normal workflow tuple;
+any needed normal registration is a concrete later configuration change.
 
 ## Approval and Terminal Contract
 
@@ -283,12 +324,17 @@ list of independent actions or backward-compatible coercion is added.
 | Terminal evidence                                                 | Set outcome                                                                          |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Pre-marker rejection/cancellation                                 | No upload authorized or Result; current DAG explains failure.                        |
-| Both uploads definitively succeed and final exact readback passes | `published`, known mutation.                                                         |
+| Both uploads definitively succeed and final exact readback passes | `published`, verified published state; no unique-insertion claim.                    |
 | Wheel fails definitively                                          | Failed; sdist is not attempted; mutation facts require supported evidence.           |
 | Wheel succeeds; sdist fails or is not attempted                   | Failed with retained partial mutation; no compensation.                              |
 | Any ambiguous upload or unsuccessful final readback               | Failed, retaining known and possible effects; never exact-satisfied in this Attempt. |
 | Durable marker but no durable Result                              | Unknown and possibly mutated, irrespective of subsequent registry reads.             |
 | No action and fresh complete exact proof                          | Exact-satisfied without Environment, token or publisher.                             |
+
+A successful acknowledgement can be a service no-op. Result mutation facts
+record the reached uploads and observed state; they do not attribute unique
+creation or count new insertions. Preserve failure/ambiguity classification and
+the marker-before-upload rule even when replay is possible.
 
 Result/marker/null remains one scalar terminal reference. Rerun/other-Attempt
 records, malformed references and missing publisher outputs fail admission;
@@ -303,22 +349,21 @@ The [bootstrap protocol](./validation/python-bootstrap.md) owns exact resources,
 source/artifact provenance, pending-publisher and initial-404 boundaries,
 immutable authority/marker transport, finite requests, failure semantics and
 independent project-control audit. Independently audited resource facts after
-partial bootstrap may satisfy only the prerequisite to request a fresh native
-suite; complete pair and clean consumers remain necessary to claim bootstrap
-completion. The failed version remains untouched. This does not weaken the
-native suite or enter the normal-Live graph. Shared mechanisms retain
-separate bootstrap, native and normal publication evidence purposes. The
-[Delivery Wave](../../../../../docs/delivery-wave.md) determines current work
-authorization; no external operation is authorized here.
+partial bootstrap may satisfy only the existing-project prerequisite for
+normal admission; complete pair and clean consumers remain necessary to claim
+bootstrap completion. The failed version remains untouched. Normal Release
+builds and qualifies its own pair and obtains its own Approval and authority.
+The [Delivery Wave](../../../../../docs/delivery-wave.md) determines current
+work authorization; no external operation is authorized here.
 
 ## Evidence and Delivery Gates
 
-The [native acceptance protocol](./validation/python-native-acceptance.md)
-closes the fixed preparation and future operation schedule, exact smoke tuple,
-finite budgets, fixture validity, audit contracts and remaining operator resources.
-It grants no native effects and does not establish either destination's admission.
+The [retired native protocol](./validation/python-native-acceptance.md) retains
+the failed run's interpretation and historical reader boundary. It is not an
+operational prerequisite. Trusting the platform does not waive V3 validation
+or the actual two-destination completion journey.
 
-Implementation validation covers these distinct claims before native admission:
+Implementation validation covers these distinct claims before normal admission:
 
 - Observation scenarios: immediate exactness, pending then exact, all six
   pending, spacing/deadline boundaries and scheduler overshoot; first-project
@@ -326,42 +371,40 @@ Implementation validation covers these distinct claims before native admission:
   download prevents later mutation. No pending read downloads files.
 - Evidence contracts: full response/timing retention, failure interruption,
   altered/missing/reordered/excess traces, changed policy/profile and offline
-  replay without requests or sleeps. Native race join cannot reset the winning
-  response's window; bootstrap's independent UTC deadline cannot renew.
+  replay without requests or sleeps. Bootstrap's independent UTC deadline
+  cannot renew.
 
 - Scenario tests: complete two-file success; wheel failure prevents sdist;
   partial/extra/yanked/conflicting pre-state blocks; second-file failure and
-  ambiguous response stop; zero-action exactness; fresh state drift; marker or
+  ambiguous response stop; HTTP-200 identical replay still requires exact
+  readback; rejected duplicate cannot become skip-existing success; zero-action
+  exactness; fresh state drift; marker or
   Result persistence loss; cancellation; independent Buddy/Official lineage.
   Include successful CI qualification with a preserved valid local-version
   projection and rejection of that same projection at Release Live admission.
 - Strict contract tests: target/version/source closure, two-artifact ordering,
   witness and native identity, authority/profile/audience/Environment mismatch,
-  cross-run/purpose/schema rejection and one-shot mutation bounds. Mocked
+  cross-run/purpose/schema rejection, v1/hybrid Governance rejection, blocked
+  v2 and independently configured ready v2, and one-shot mutation bounds. Mocked
   responses prove only application behavior.
 - Real local integration: full-history NBGV projection, static Hatch metadata,
   original wheel/sdist contents, isolated clean consumers and reproducible
   bytes for the same target and frozen build inputs. Any reproducibility gap
   blocks this slice; sealed-artifact resume is outside scope.
-- Separately authorized native acceptance at each destination/profile: fresh
-  creation of both formats; same-byte and different-byte same-filename
-  duplicate rejection; bounded competing creation with either winner allowed;
-  preserved winner bytes; exact original readback and both clean consumers.
-  Each concrete protocol must define fresh coordinates, before/after comparison,
-  finite requests/concurrency, stop conditions and retained sanitized evidence.
-  Disposable project OIDC configuration must be separately authorized; moving
-  to the smoke project requires exact tuple/configuration binding and fresh
-  admission, not blind reuse of a different project's ready record.
+- Reviewed destination-specific configuration/admission: project ownership,
+  exact normal-workflow OIDC tuple, Environment and writer/reviewer controls,
+  current profile and accepted source-evidence revision. Preserve the stated
+  attestation/runtime visibility limits. No duplicate/race probes or synthetic
+  native evidence are required.
 - Separately authorized TestPyPI publication, then PyPI publication: audit each
   current Attempt's target/version, original artifacts, Qualification, Snapshot,
   Approval/Authorization, terminal evidence/Outcome, destination downloads and
   consumers. Retain evidence outside the registry. Failed consumer audit blocks
   completion even when upload mutation succeeded.
 
-No native protocol is executed from this LLD. It specifies the evidence needed;
-the later bounded request supplies concrete coordinates/counts and permission.
-Local passing tests cannot replace either destination's native or publication
-proof. PyPI filename non-reuse and the accepted TestPyPI live-file dependency
-are the `WD-PY-006` basis; no cross-file transaction or unlimited retention is
+No registry operation is authorized by this LLD. Later bounded requests supply
+concrete coordinates/counts and permission. Local passing tests cannot replace
+either destination's actual publication/consumer evidence. Platform reliance is
+the `WD-PY-006` basis; no cross-file transaction or unlimited retention is
 claimed. Review mutable source findings again when choosing the implementation
 profile and at the implementation-Wave gate.

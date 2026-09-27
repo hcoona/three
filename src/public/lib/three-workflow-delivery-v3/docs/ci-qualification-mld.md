@@ -659,8 +659,10 @@ bytes, not GitHub transport basenames, determine identity. Missing or malformed
 Evidence cannot become a passing Decision. Adapters retain actual artifact
 references, target/version bindings and sanitized command results. Release
 reuses these definitions but builds its own set and forms its own Evidence.
-Destination readback/consumption and native non-replacement acceptance remain
-Release/native obligations, not CI capabilities established by local success.
+Destination readback and consumption remain Release completion obligations,
+not CI capabilities established by local success. `WD-PY-006` treats registry
+non-replacement as a platform dependency; CI validates V3 behavior without
+attempting to re-prove that service guarantee.
 
 Bootstrap independently builds/qualifies its original pair and later performs
 fresh destination consumers under `destination-bootstrap` provenance. It reuses

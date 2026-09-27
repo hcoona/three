@@ -550,8 +550,8 @@ uploads have no resend/retry, skip-existing or redirect-to-another-origin
 fallback. Python post-upload observation uses the fixed
 [LLD policy](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation).
 A shared mechanism provides same-process timing, finite admission, original
-response retention and deterministic sequence validation for bootstrap, native
-and normal consumers. Each owning context supplies its previous/expected
+response retention and deterministic sequence validation for bootstrap
+and normal consumers. Retired native evidence keeps its original replay contract. Each owning context supplies its previous/expected
 inventory, creation scope and existing outer deadline; it retains set success
 and mutation ordering. Single HTTP calls still have zero transport retries.
 The client reports
@@ -561,16 +561,20 @@ the fixed wheel-then-sdist policy and one Result for the set action.
 
 The profile records exact client/TLS/tool versions and behavior, not just a
 command name. `uv publish` is not selected: its reconciliation behavior is not
-assumed to satisfy the strict one-shot upload contract. Native acceptance must
-exercise the selected HTTP implementation before Live admission. Neither a
-client test nor mocked upload proves registry non-replacement or OIDC scope.
+assumed to satisfy the strict one-shot upload contract. Application tests
+exercise the selected HTTP implementation; separately authorized actual
+publication exercises its destination integration. Registry non-replacement
+is an accepted dependency, not a claim established by mocked uploads.
+HTTP 200 acknowledges success, including identical replay, without an insertion
+count. Non-success/ambiguity remains terminal; OIDC scope remains separately bound.
 
 Bootstrap reuses exact-target Provider/Build, archive inspection, clean consumers,
 profile-bound HTTP and immutable-artifact primitives with a distinct
 `destination-bootstrap` purpose. Shared mechanics may take an explicit closed
-workflow identity; native and bootstrap callers retain separate request types,
-initial-state rules, finite schedules and evidence verdicts. No generic
-publication policy or alternate native-acceptance path is introduced.
+workflow identity; bootstrap retains its own request type, initial-state rules,
+finite schedule and evidence verdict. Retired native readers preserve historical
+contracts without becoming an admission or alternate publication path. No
+generic publication policy is introduced.
 
 ## NuGet Mechanism Extension
 

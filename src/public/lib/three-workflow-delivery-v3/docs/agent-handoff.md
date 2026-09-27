@@ -51,41 +51,32 @@ For the owner's next Workflow Delivery v3 task:
    Start with the confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),
    HLD/five MLDs and [Python LLD](./hcoona-release-smoke-python-lld.md), with
    the [source evidence](./research/python-smoke-evidence.md) for claim limits.
-   The disabled implementation is protected-delivered through
-   [PR #849](https://github.com/hcoona/three/pull/849). The
-   [Python protocol](./validation/python-native-acceptance.md) and
-   [tooling readiness interface](./validation/python-native-readiness.md) are
-   protected-delivered through PRs #854 and #855. Preparation is complete;
-   future configuration, native execution/admission and publication require
-   separate authorization through the [Wave](../../../../../docs/delivery-wave.md)
-   and their domain gates. The [first-project bootstrap protocol](./validation/python-bootstrap.md)
-   is a separate prerequisite path with guarded tooling and a null protected
-   bootstrap request. Its [tooling interface](./validation/python-bootstrap.md#tooling-interface)
-   routes local fixture preparation, immutable hosted phases and offline replay.
-   The owner-confirmed [post-upload observation contract](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
-   is implemented across bootstrap, native acceptance and normal publication.
-   Original response traces, fixed deadlines and complete Result replay are
-   required by the changed operation profile. Resource-only continuation after
-   partial bootstrap still requires a separately authorized configuration audit
-   and fresh native suite. Retained failed evidence stays bound to its original
-   revision and supplies no admission for the new profile.
-   Both Python destinations remain disabled. The Python CLI and workflow implement
-   local Build/Qualification and the guarded publication state machine; local
-   validation does not establish native registry behavior. Prior smoke permissions and the
-   implementation grant do not authorize native operations or publication.
-   The [tooling readiness interface](./validation/python-native-readiness.md)
-   routes local fixtures, the manual prepare/probe/audit workflow and replay.
-   Protected native request slots hold only separately authorized operational
-   requests; a null slot disables that destination. Issue #843 retains the
-   independently accepted resource evidence for each populated request.
-   The [failed TestPyPI native audit](https://github.com/hcoona/three/issues/843#issuecomment-5859869282)
-   retains the observed identical-wheel HTTP 200 counterexample to required
-   duplicate rejection. Its consumed request is retired; both native slots
-   are null. The last complete capture verified the new pair and preserved
-   the partial bootstrap entry, but no post-duplicate capture or complete
-   native consumer proof exists. The generation supplies no admission or retry
-   authority. Any further work must first resolve the service-assumption gap
-   through separately authorized requirements/design and native gates.
+   The revised design adopts the owner's
+   [platform-reliance decision](https://github.com/hcoona/three/issues/843#issuecomment-5860732497):
+   no duplicate-upload or competing-creation probes and no native-generation
+   prerequisite. HTTP-200 identical replay may succeed only with required exact
+   file/set readback; a rejected or ambiguous upload remains failed.
+   The [LLD migration](./hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
+   specifies v2 admission without a fake passing native record. Existing runtime
+   and both blocked v1 Governance files remain unchanged pending separately
+   authorized implementation. Then independently review the normal-workflow
+   configuration/admission and actual TestPyPI publication, followed by PyPI.
+   The [migration order](./migration-strategy.md#python-smoke-delivery) owns
+   these stages; design acceptance grants no configuration, OIDC or dispatch.
+   Carry forward Backspace7980's confirmed Sole Owner status and both configured
+   TestPyPI publisher tuples (bootstrap and native workflows, repository
+   `hcoona/three`, Environment `workflow-delivery-v3-python-testpypi`) unless
+   changed or contradicted. Do not routinely ask the owner to recheck them.
+   They are not the normal workflow's publisher registration.
+   The [retired native interface](./validation/python-native-readiness.md)
+   preserves old evidence readers with both native request slots null.
+   The [failed TestPyPI audit](https://github.com/hcoona/three/issues/843#issuecomment-5859869282)
+   remains failed: `0.1.0b2` pair verified through C2, identical wheel HTTP 200,
+   stop before C3; `0.1.0b3` was not uploaded. The partial bootstrap `0.1.0b6`
+   also remains failed and untouched. Missing captures and consumers cannot be
+   inferred from source code or the owner's reliance decision. Neither failure
+   grants retry, refill, deletion or another generation. Normal publication
+   still needs its own complete pair, Approval, exact readback and clean consumers.
 
 Recovery uses repository records and linked GitHub carriers. A prior
 conversation, local operator directory or old Agent handle is not required.
@@ -695,8 +686,8 @@ applicable documentation and repository gates but keeps the same validate-before
 - Rely on documented lower-layer guarantees. If one is absent, block the capability rather than simulate a weaker one.
   The NuGet-specific dependency and evidence basis follows `WD-NUGET-006`;
   do not reintroduce its superseded service-statement prerequisite. Python
-  separately follows `WD-PY-006` for its per-file dependency and native evidence
-  basis; it assumes no atomic two-file release or unlimited registry retention.
+  separately follows `WD-PY-006` for its per-file platform dependency and actual
+  publication evidence basis, without prerequisite duplicate/race probes; it assumes no atomic two-file release or unlimited registry retention.
 - Add an abstraction only when concrete scenarios prove independent identity, behavior, lifecycle, or policy.
 - Do not freeze non-authoritative topology, shell choreography, parser branches, or inventory counts as architecture.
 

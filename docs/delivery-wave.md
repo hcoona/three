@@ -8,42 +8,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Resolve Python duplicate-upload assumptions and revise the design
-
-- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** the owner's [approval](https://github.com/hcoona/three/issues/843#issuecomment-5860636805)
-  of the [reviewed diagnosis/design proposal](https://github.com/hcoona/three/issues/843#issuecomment-5860095587),
-  and subsequent [platform-reliance decision](https://github.com/hcoona/three/issues/843#issuecomment-5860732497),
-  retained failed TestPyPI evidence, pinned public Warehouse source findings,
-  current Python records and engineering principles. The owner accepts file
-  non-replacement and identical-replay behavior as platform dependencies without
-  further duplicate/concurrency probes. Preserve two-file partial failure, no
-  automatic refill/rollback and each destination's actual publication/readback
-  and clean-consumer completion evidence.
-- **Advancement and outcome:** revise and protected-deliver Python requirements
-  and corresponding HLD, all five MLDs, Python LLD and affected admission,
-  protocol and current-consumer records under that confirmed reliance decision.
-  Remove prerequisite platform-proving operations without relabeling failed
-  generations or weakening validation of V3's own behavior. Distinguish HTTP-200
-  acknowledgement from proof of unique insertion or complete publication.
-  Preserve source findings, runtime observations and accepted dependencies as
-  distinct claims; return material additional scope/risk choices to the owner.
-  Close this grant when the approved design outcome is delivered.
-- **Effects and delivery:** permit public documentation/source reads, local
-  retained-byte analysis, requirements/design drafting and independent delegated
-  record, research, domain and OCR review; ordinary Issue/PR/check delivery,
-  existing locked dependency preparation and ordinary CI, protected merge and
-  postmerge checks, and durable evidence custody. Evaluate applicable source
-  rechecks at each Wave change. Carry forward the confirmed Sole Owner and two
-  existing publisher tuples without routine configuration reconfirmation.
-- **Exclusions:** no implementation, smoke registry-state/file observation,
-  configuration or access changes, OIDC, dispatch, upload, normal admission,
-  activation or publication, retry, rerun, cleanup, refill or new generation.
-  Both failed generations and retained files remain untouched; both normal
-  destinations stay disabled. Later implementation/native operations require
-  separate scope decisions and gates. Production PyPI remains separate; Ruby
-  follows completion of Python smoke.
-
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).

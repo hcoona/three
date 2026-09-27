@@ -313,13 +313,14 @@ This set action is **not an atomic registry operation**. A definitive or
 ambiguous failure stops remaining uploads and remains failure. Whole-set exact
 state can be freshly verified without an action; partial/conflicting/unknown
 state blocks normal Live. `WD-PY-006` supplies the explicit per-file service
-dependency, separate native gates and bounded availability claim. Native
-acceptance qualifies each registry/profile independently, without assuming a
-provider statement proving concurrency or promoting finite observations into
-universal guarantees.
+dependency, accepted identical-replay behavior and bounded availability claim.
+No prerequisite duplicate/race suite re-proves the platform. V3 tests its own
+use of that contract; each destination independently completes its actual
+publication/readback/consumer journey. Successful acknowledgements do not prove
+unique insertion, and a rejected upload cannot be rescued by later exactness.
 
 Governance binds separate project OIDC publishers, audiences, protected
-Environments and native evidence for each destination. The publisher receives
+Environments, reviewed configuration and the accepted platform reliance for each destination. The publisher receives
 short-lived authority only after current-Attempt approval, executes no target
 build code and consumes verified immutable artifacts. The sole-writer risk is
 explicit; source research establishes no existing registration or native grant.
@@ -327,15 +328,15 @@ explicit; source research establishes no existing registration or native grant.
 The five MLDs define the model, governance, CI qualification, release state and
 mechanism boundaries. The [Python LLD](./hcoona-release-smoke-python-lld.md)
 closes their bounded contract choices. Design completion remains separate from
-implementation, native admission and actual publication at each destination.
+implementation, configuration/admission and actual publication at each destination.
 
 First-project bootstrap has a separate manual control entry and evidence
 lifecycle under `WD-PY-009`. It reuses the Python build and transport mechanisms
-while preserving native acceptance's existing-project gate. Its independently
-audited ownership/configuration can establish the existing-project resource
-prerequisite even after partial bootstrap, without claiming bootstrap completion.
-The partial version stays untouched; a fresh native suite supplies its own
-complete-pair and consumer evidence. The
+with a distinct first-project purpose. Its independently audited ownership and
+configuration can establish the existing-project resource prerequisite for
+normal admission even after partial bootstrap, without claiming bootstrap
+completion. The partial version stays untouched; normal publication supplies
+its own complete-pair and consumer evidence. The
 [bootstrap protocol](./validation/python-bootstrap.md) owns this separation and
 its finite operation and evidence boundary.
 
@@ -1365,7 +1366,7 @@ marker before mutation.
 | `WD-RET-*`        | Platform-aware records, durable destination identities, fail-closed expiration                                                                                                                                  |
 | `WD-SLICE-*`      | Same-revision Buddy control, accepted writer TCB and repository-principal blast radius, static-reference policy, one Approval Environment, Publication Authorization, publisher ordering, and one-PR activation |
 | `WD-NFR-*`        | Context separation, adapter extension model, explanation contract, CI objective                                                                                                                                 |
-| `WD-PY-*`         | Python Provider, frozen two-format build/qualification, bounded set action, separate OIDC/native admission and destination proving                                                                              |
+| `WD-PY-*`         | Python Provider, frozen two-format build/qualification, bounded set action, separate OIDC/configuration admission and destination proving                                                                       |
 | `WD-NUGET-*`      | NuGet second-slice Provider, package and consumer qualification, protected-main Governance, destination contract, and independently authorized validation gates                                                 |
 
 ## Middle-Layer Design Decomposition

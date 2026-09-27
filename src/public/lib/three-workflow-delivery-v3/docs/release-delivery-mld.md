@@ -231,7 +231,10 @@ first upload. That marker's authority transitively closes both operations.
 Upload the wheel once. Only a definitive successful response and exact wheel
 byte/witness readback permit the sdist upload, also once. A definitive failure,
 timeout, cancellation, ambiguous response or failed readback stops subsequent
-mutation. After two definitive successes, whole-set readback must still find
+mutation. HTTP 200, including an identical-file acknowledgement, is successful
+without claiming this request uniquely inserted the file. Rejected duplicates
+remain failures, with no skip-existing reconciliation. After two definitive
+successes, whole-set readback must still find
 exactly the approved files with matching bytes/witnesses and no conflicting
 state. No readback can upgrade a failed upload response to success. Read-only
 observation after definitive success follows the
@@ -268,16 +271,16 @@ and sdist consumers; a failed consumer audit prevents smoke completion without
 rewriting a successful mutation into an invented rollback. Retain the exact
 Attempt lineage, original and downloaded bytes, both consumer results and
 limitations outside each registry. `WD-PY-006` bounds availability to that event.
-The [Python LLD](./hcoona-release-smoke-python-lld.md) closes the native evidence
-matrix and disabled implementation entry. No set retry, deletion, reconciliation
+The [Python LLD](./hcoona-release-smoke-python-lld.md) closes the application/integration evidence
+matrix and disabled implementation migration. No set retry, deletion, reconciliation
 service or cross-registry transaction is introduced.
 
 First-project bootstrap is outside the normal-Live state machine. Its separate
 request, approval, durable marker, two-file execution result and audit follow
 [the bootstrap protocol](./validation/python-bootstrap.md). Neither an HTTP 404
-nor a pending publisher can bypass native or normal-Live admission. A successful
+nor a pending publisher can bypass normal-Live admission. A successful
 bootstrap establishes only the separately audited prerequisite project state;
-it supplies no normal-Live Outcome or native acceptance evidence.
+it supplies no normal-Live Outcome or automatic admission.
 
 ## Domain Model
 
