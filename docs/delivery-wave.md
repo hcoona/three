@@ -8,53 +8,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Execute one normal TestPyPI publication with explicit local CA selection
-
-- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** the [recovery proposal](https://github.com/hcoona/three/issues/843#issuecomment-5862862174)
-  and [owner approval](https://github.com/hcoona/three/issues/843#issuecomment-5863022450),
-  unchanged ready TestPyPI Governance v2 from PR #885, current Python requirements,
-  LLD and publication profile, and the separately reviewed
-  [replacement protocol](https://github.com/hcoona/three/issues/843#issuecomment-5863030771)
-  (SHA-256 `665199b63bda2659f0518da581697da1203e203b1b85126140ea094872d813ea`).
-- **Advancement and outcome:** execute at most one new normal TestPyPI Attempt for
-  `hcoona-release-smoke-python` version `0.1.0b20`, wheel
-  `hcoona_release_smoke_python-0.1.0b20-py3-none-any.whl` and sdist
-  `hcoona_release_smoke_python-0.1.0b20.tar.gz`. Independently review current-run
-  original artifacts, clean qualification, Snapshot and Bundle before one
-  Environment approval; audit terminal lineage, actual destination downloads and
-  separate clean wheel/sdist consumers. Retain the truthful result and close this
-  grant. The prior stopped operator remains incomplete before dispatch.
-- **Revision and prerequisites:** target and same-revision tooling are the protected
-  merge of this Wave-only change atop `7ada879440af110271de4d1aed1865cf1d45b024`.
-  Before dispatch bind the actual SHA and reviewed/merged tree in the Issue, require
-  applicable exact-merge CI, verify actual full-history public NBGV projection
-  `0.1.0b20` and fresh ready admission. Any main movement, mismatch, failed
-  prerequisite or expiry stops without a replacement.
-- **Effects and bounds:** select the existing system CA bundle through process-local
-  `SSL_CERT_FILE` for the operator and in-process HTTPS final audit, preserving
-  certificate/hostname verification and the unchanged isolated consumer environments.
-  Permit one new four-hour operator lifetime with its own immutable ledger, one
-  owner/manual attempt-1 normal-workflow dispatch on main for `testpypi`, at most
-  one approval for Environment `22765954016`, one OIDC assertion/token exchange,
-  and at most wheel POST then sdist POST with required exact readback. Preserve
-  the replacement protocol's finite GitHub/runtime/transfer budgets and maximum
-  15 index GETs and 6 file GETs across runtime and final audit. Permit locked
-  dependency preparation, local consumers, ordinary CI, independent domain,
-  record, research-evidence and OCR reviews, and protected evidence delivery.
-- **Risk and stopping:** preserve confirmed owner and all three publishers;
-  trust platform file non-replacement without duplicate/race probes. No atomic
-  pair or indefinite retention is promised. The first initial-main GET is the
-  bounded connection check; failure stops without alternate transport or retry.
-  Exact existing pair uses zero actions without approval/token/upload. Partial,
-  rejected, ambiguous or incomplete results stay failed/incomplete. The old
-  ledger is immutable; this owner-approved new lifetime is not a budget refill.
-- **Exclusions:** no publisher/access/Environment/host configuration changes,
-  disabled TLS validation, PyPI or Ruby operation, native/bootstrap generation,
-  duplicate/race probe, registry preflight outside the named flow, automatic
-  resend/rerun/replacement, rollback/deletion/cleanup, version rewrite or old
-  evidence adoption. PyPI remains blocked and retired request slots remain null.
-
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
