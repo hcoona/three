@@ -6,7 +6,9 @@
     <RootNamespace>ImageOcclusionEditorWinUI3</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x64</Platforms>
-    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <!-- Keep restore independent of the host OS, including Renovate's Linux runner. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
 
     <AssemblyName>ImageOcclusionEditor</AssemblyName>
     <ApplicationIcon>..\imageocclusioneditor.ico</ApplicationIcon>
