@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling==1.32.0", "nbgv-python"]
+requires = ["hatchling==1.32.4", "nbgv-python"]
 build-backend = "hatchling.build"
 
 [project]

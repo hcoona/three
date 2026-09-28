@@ -281,6 +281,20 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
     check = "python eng/scripts/hk_exec.py python eng/scripts/sync_python_version.py"
   }
 
+  ["python-build-backend-authority"] {
+    profiles = List("small")
+    glob =
+      List(
+        "src/public/lib/hcoona-release-smoke-python/pyproject.toml",
+        "uv.lock",
+        "eng/scripts/sync_python_build_backend.py",
+        "eng/workflow-delivery/v3/python-build-constraints.txt",
+        "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_build_backend.py",
+        "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/repository/python_backend.py",
+      )
+    check = "python eng/scripts/hk_exec.py python eng/scripts/sync_python_build_backend.py"
+  }
+
   ["node-mise-authority"] {
     profiles = List("small")
     glob =

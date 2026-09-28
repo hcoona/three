@@ -29,6 +29,9 @@ from packaging.utils import (
 )
 from packaging.version import Version
 
+from three_workflow_delivery_v3._python_build_backend import (
+    HATCHLING_REQUIREMENT,
+)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonicalize,
@@ -314,7 +317,7 @@ def _inspect_sdist(members: dict[str, bytes], version: str) -> bytes:
         valid = (
             project.get("version") == version
             and "dynamic" not in project
-            and backend["requires"] == ["hatchling==1.32.0"]
+            and backend["requires"] == [HATCHLING_REQUIREMENT]
             and "version" not in hatch
             and "uv" not in tool
         )
@@ -509,7 +512,7 @@ def build_python_distributions(
         project = manifest["project"]
         project.pop("dynamic")
         project["version"] = request.witness.nbgv.pep440_version
-        manifest["build-system"]["requires"] = ["hatchling==1.32.0"]
+        manifest["build-system"]["requires"] = [HATCHLING_REQUIREMENT]
         manifest["tool"]["hatch"].pop("version")
         manifest["tool"].pop("uv")
         staged = tomli_w.dumps(manifest).encode("utf-8")

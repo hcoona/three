@@ -21,6 +21,9 @@ from pathlib import Path
 import pytest
 import tomli_w
 from nbgv_python.versioning import normalize_version_field
+from three_workflow_delivery_v3._python_build_backend import (
+    HATCHLING_REQUIREMENT,
+)
 from three_workflow_delivery_v3.adapters.python import (
     WITNESS_PATH,
     PythonBuildRequest,
@@ -103,7 +106,7 @@ def _members(variant, witness):
     )
     manifest["project"].pop("dynamic")
     manifest["project"]["version"] = version
-    manifest["build-system"]["requires"] = ["hatchling==1.32.0"]
+    manifest["build-system"]["requires"] = [HATCHLING_REQUIREMENT]
     manifest["tool"]["hatch"].pop("version")
     manifest["tool"].pop("uv")
     return {
@@ -531,7 +534,7 @@ def test_real_python_build_freezes_native_facts_and_original_pair(
     assert b"nbgv" not in b"".join(result.command_evidence)
     assert (source / ".git").is_dir()
     frozen = parse_canonical_json(result.producer_versions)
-    assert "hatchling==1.32.0" in frozen["stdout"]
+    assert HATCHLING_REQUIREMENT in frozen["stdout"]
 
 
 def test_real_python_build_is_reproducible_for_frozen_inputs(
