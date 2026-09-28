@@ -431,7 +431,7 @@ jobs:
     needs: qualify-python
     env:
       WDV3_REFERENCES: ${{ needs.qualify-python.outputs.references }}
-    if: github.event_name == 'workflow_dispatch'
+    if: "!cancelled() && github.event_name == 'workflow_dispatch' && needs.qualify-python.result == 'success'"
   publish-python:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -506,8 +506,9 @@ jobs:
     needs: prepare-python-publication
     env:
       WDV3_REFERENCES: ${{ needs.prepare-python-publication.outputs.references }}
-    if: github.event_name == 'workflow_dispatch' && needs.prepare-python-publication.outputs.action-required ==
-      'true'
+    if:
+      "!cancelled() && github.event_name == 'workflow_dispatch' && needs.prepare-python-publication.result == 'success' && needs.prepare-python-publication.outputs.action-required ==
+      'true'"
     environment:
       name: ${{ needs.prepare-python-publication.outputs.environment }}
   finalize-attempt:
