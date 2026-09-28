@@ -355,9 +355,37 @@ def test_python_workflow_build_failure_can_reach_qualification_with_valid_plan(
     decision = steps[_stage(steps, "decision")]
     assert "if" not in decision
     assert decision["continue-on-error"] is True
-    prepare = workflow["jobs"]["prepare-python-publication"]
-    assert "qualify-python" in prepare["needs"]
-    assert prepare["if"] == "github.event_name == 'workflow_dispatch'"
+
+
+@pytest.mark.parametrize(
+    ("job_name", "predecessor", "action_guard"),
+    [
+        ("prepare-python-publication", "qualify-python", ""),
+        (
+            "publish-python",
+            "prepare-python-publication",
+            (
+                " && needs.prepare-python-publication.outputs.action-required"
+                " == 'true'"
+            ),
+        ),
+    ],
+)
+def test_python_publication_job_condition_requires_direct_success(
+    workflow, job_name, predecessor, action_guard
+):
+    """Explicit status bypasses ancestor gating but requires direct success.
+
+    Failed, skipped or cancelled direct predecessors cannot admit publication;
+    zero actions cannot admit the publisher. Hosted scheduling still needs
+    real evidence.
+    """
+    job = workflow["jobs"][job_name]
+    assert job["needs"] == predecessor
+    assert " ".join(job["if"].split()) == (
+        "!cancelled() && github.event_name == 'workflow_dispatch'"
+        f" && needs.{predecessor}.result == 'success'{action_guard}"
+    )
 
 
 @pytest.mark.parametrize("output", ["references", "artifact-ids"])
