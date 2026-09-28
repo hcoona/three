@@ -13,6 +13,8 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Issue:** [#843](https://github.com/hcoona/three/issues/843).
 - **Accepted inputs:** the owner's [complete bounded delegation](https://github.com/hcoona/three/issues/843#issuecomment-5878115110),
   its [operation proposal](https://github.com/hcoona/three/issues/843#issuecomment-5878081917),
+  the owner's [ordinary-read policy acceptance](https://github.com/hcoona/three/issues/843#issuecomment-5880355879)
+  of the [revised proposal](https://github.com/hcoona/three/issues/843#issuecomment-5879961542),
   accepted Python recovery requirements/design/runtime, and the existing ready
   TestPyPI admission. The owner accepts intentional wheel-only partial
   publication and retained failed versions within this smoke-only boundary.
@@ -35,9 +37,13 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Cumulative bounds:** at most five sequential new-version scenarios, each
   with one fixed protected source, four fresh dispatches and four reached or
   uncertain file-upload POSTs; at most 20 dispatches and 20 file POSTs overall.
-  Reserve effects before sends/approval; no reset, refill or overlapping
-  publisher lifetime. Retain the approved four-hour per-Attempt operator and
-  finite read/transfer budgets in the accepted protocol and tested callers.
+  Reserve mutation effects before sends/approval; no reset, refill or overlapping
+  publisher lifetime. Replace owner-replenished ordinary evidence-read counts
+  with persistent pacing, backoff, service-directed waits and resource limits
+  in the accepted protocol and tested callers. Preserve the original four-hour
+  per-Attempt lifetime, response/transfer size and scope limits, and diagnostics.
+  Read retries do not retry dispatch, approval, OIDC or uploads, alter the
+  publication profile, or turn incomplete evidence into success.
   Stop at first independently audited success, owner cancellation, exhaustion
   or unchanged Governance expiry `2026-10-05T02:27:04.836609Z`.
 - **Prerequisites and exclusions:** accept affected design/protocol before
