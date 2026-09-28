@@ -17,7 +17,21 @@
   "branchConcurrentLimit": 8,
   "prHourlyLimit": 2,
   "rebaseWhen": "behind-base-branch",
-  "enabledManagers": ["bundler", "github-actions", "mise", "npm", "nuget", "pep621"],
+  "enabledManagers": ["bundler", "custom.regex", "github-actions", "mise", "npm", "nuget", "pep621"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^src/private/lib/hk/Config\\.pkl$/"],
+      "matchStrings": [
+        "amends \"package://github\\.com/jdx/hk/releases/download/v(?<currentValue>[^/]+)/hk@[^#]+#/Config\\.pkl\""
+      ],
+      "depNameTemplate": "jdx/hk",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "autoReplaceStringTemplate": "amends \"package://github.com/jdx/hk/releases/download/v{{newValue}}/hk@{{newValue}}#/Config.pkl\""
+    }
+  ],
   "ignorePaths": ["**/node_modules/**", "**/bower_components/**", "**/vendor/**"],
   "lockFileMaintenance": {
     "enabled": true,
@@ -602,6 +616,13 @@
         "github-cli"
       ],
       "groupName": "Mise Repository Tools",
+      "automerge": true
+    },
+    {
+      "description": "Update the HK binary and its Pkl schema together.",
+      "matchManagers": ["mise", "custom.regex"],
+      "matchDepNames": ["aqua:jdx/hk", "jdx/hk"],
+      "groupName": "HK Runtime and Schema",
       "automerge": true
     },
     {

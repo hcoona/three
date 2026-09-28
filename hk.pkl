@@ -2,7 +2,7 @@ amends "src/private/lib/hk/Config.pkl"
 
 import "src/private/lib/hk/Steps.pkl"
 
-min_hk_version = "1.56.1"
+min_hk_version = "2.2.0"
 display_skip_reasons =
   List(
     "profile-not-enabled",
@@ -396,7 +396,7 @@ local code_generation_guard = new Mapping<String, Step> {
 }
 
 local commit_message_linters = new Mapping<String, Step> {
-  ["commitlint"] = Steps.commitlint
+  ["commitlint"] = (Steps.commitlint) { check_first = true }
 }
 
 local file_steps = new Mapping<String, Step> {
@@ -416,10 +416,10 @@ local file_steps = new Mapping<String, Step> {
   ...dotenv_linter
 }
 
-local all_steps = new Mapping<String, Step> {
+local configured_steps = (file_steps) {
   // Preserve complete impact paths; only file readers omit absent operands.
   for (name, step in file_steps) {
-    [name] = (step) {
+    [name] {
       env {
         ["HK_SKIP_MISSING_FILES"] = "1"
       }
@@ -430,6 +430,13 @@ local all_steps = new Mapping<String, Step> {
   ...code_generation_guard
   ["uv-lock"] = (Steps.uv_lock) {
     profiles = List("small")
+  }
+}
+
+// HK 2 defaults to fixing first; retain the established check-before-fix behavior.
+local all_steps = (configured_steps) {
+  for (name, step in configured_steps) {
+    [name] { check_first = true }
   }
 }
 

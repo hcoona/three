@@ -44,6 +44,7 @@ def test_root_hk_consumes_index_scanner_and_preparation() -> None:
     """Keep source checks in hooks while project suites have explicit owners."""
     hooks = _effective_hooks()
     assert hooks["pre-commit"]["stash"] == "git"
+    assert hooks["commit-msg"]["steps"]["commitlint"]["check_first"] is True
     for hook in ("check", "pre-commit"):
         steps = hooks[hook]["steps"]
         assert "hcoona-release-smoke-npm-consumer-policy" not in steps
@@ -57,6 +58,7 @@ def test_root_hk_consumes_index_scanner_and_preparation() -> None:
             assert not steps[name].get("glob")
             assert not steps[name].get("when")
         for step in steps.values():
+            assert step["check_first"] is True
             command = step.get("check", "")
             assert "workflow_delivery_v3_consumer_policy.py" not in command
             assert "--consumer-policy" not in command
@@ -436,6 +438,105 @@ def test_root_hk_executes_consumed_commands(
         assert arguments[arguments.index("--repository-root") + 1] == "."
         assert arguments[arguments.index("--source-kind") + 1] == "index"
         assert "--target" not in arguments
+
+
+@pytest.mark.parametrize("operation", ["check", "fix"])
+@pytest.mark.parametrize("child_exit", [0, 73])
+def test_hk_executes_imported_typos_commands(
+    tmp_path: Path,
+    operation: str,
+    child_exit: int,
+) -> None:
+    """Keep imported check/fix commands intact through native Pkl evaluation."""
+    repo = tmp_path / "repo"
+    _initialize_repository(repo, baseline_paths=("sample.txt",))
+    for name in ("hk_exec.py", "hk_file_operands.py"):
+        shutil.copy2(REPO_ROOT / "eng/scripts" / name, repo / "eng/scripts")
+    log = tmp_path / "typos.jsonl"
+    executable(
+        tmp_path / "bin" / "typos",
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        f"with Path({str(log)!r}).open('a', encoding='utf-8') as stream:\n"
+        "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        f"sys.exit({child_exit})\n",
+    )
+    result = subprocess.run(  # noqa: S603
+        [
+            _hk_executable(),
+            "--no-progress",
+            "--profile",
+            "small",
+            operation,
+            "--step",
+            "typos",
+            "sample.txt",
+        ],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert (result.returncode == 0) is (child_exit == 0), result.stderr
+    assert log.exists(), result.stdout + result.stderr
+    invocations = [json.loads(line) for line in log.read_text().splitlines()]
+    assert invocations == [
+        ["-c", ".typos.toml", "--force-exclude"]
+        + (["-w"] if operation == "fix" else [])
+        + ["sample.txt"]
+    ]
+
+
+@pytest.mark.parametrize("child_exit", [0, 73])
+def test_hk_executes_imported_commitlint_command(
+    tmp_path: Path, child_exit: int
+) -> None:
+    """Run the imported commit hook command and propagate its rejection."""
+    repo = tmp_path / "repo"
+    _initialize_repository(repo)
+    _write(
+        repo, ".git/COMMIT_EDITMSG", "test(hk): Exercise Imported Commands\n"
+    )
+    log = tmp_path / "commitlint.json"
+    executable(
+        tmp_path / "bin" / "pnpm",
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        f"Path({str(log)!r}).write_text(json.dumps(sys.argv[1:]))\n"
+        f"sys.exit({child_exit})\n",
+    )
+    result = subprocess.run(  # noqa: S603
+        [
+            _hk_executable(),
+            "--no-progress",
+            "run",
+            "commit-msg",
+            ".git/COMMIT_EDITMSG",
+        ],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert (result.returncode == 0) is (child_exit == 0), result.stderr
+    assert log.exists(), result.stdout + result.stderr
+    assert json.loads(log.read_text()) == [
+        "exec",
+        "--",
+        "commitlint",
+        "--strict",
+        "--edit",
+    ]
 
 
 @pytest.mark.parametrize("preparation_exit", [0, 73])
