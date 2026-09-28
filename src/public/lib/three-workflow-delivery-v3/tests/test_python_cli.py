@@ -62,6 +62,8 @@ def hosted(monkeypatch, tmp_path):
         + "@refs/heads/main",
         "GITHUB_OUTPUT": str(tmp_path / "outputs"),
         "GITHUB_JOB": "plan-python-ci",
+        "WDV3_PYTHON_PROOF": "none",
+        "WDV3_REGISTRY": "testpypi",
     }
     for key, value in values.items():
         monkeypatch.setenv(key, value)
@@ -119,9 +121,11 @@ def publication_files(hosted, monkeypatch, request):
     monkeypatch.setenv("GITHUB_JOB", "publish-python")
     monkeypatch.setenv("GITHUB_ENV", str(hosted / "environment"))
     monkeypatch.setenv("WDV3_PYPI_TOKEN", "pypi-test-only-token")
-    marker, _, _, distributions = prepared_publication(
-        retained=getattr(request, "param", ())
-    )
+    options = getattr(request, "param", ())
+    if not isinstance(options, dict):
+        options = {"retained": options}
+    monkeypatch.setenv("WDV3_PYTHON_PROOF", options.get("proof_mode", "none"))
+    marker, _, _, distributions = prepared_publication(**options)
     authorization = marker.authorization
     bundle = authorization.bundle
     publication = bundle.snapshot
@@ -1073,7 +1077,9 @@ def test_python_cli_exact_proof_rejects_foreign_branch_before_native_reads(
         refs[change] = {}
     else:
         snapshot = prepared_publication()[0].authorization.bundle.snapshot
-    inputs = SimpleNamespace(publication=lambda: snapshot, references=refs)
+    inputs = SimpleNamespace(
+        purpose="live-release", publication=lambda: snapshot, references=refs
+    )
     arguments = SimpleNamespace(
         command="exact-proof", output=hosted / "proof.json"
     )
@@ -1115,6 +1121,7 @@ def test_python_cli_exact_proof_is_fresh_and_owned_by_finalizer(
         SimpleNamespace(now=lambda _zone: NOW + timedelta(seconds=3)),
     )
     inputs = SimpleNamespace(
+        purpose="live-release",
         publication=lambda: proof.snapshot,
         references={},
         reference=lambda _role: proof.snapshot_reference,
@@ -1266,3 +1273,112 @@ def test_python_cli_partial_marker_drift_stops_before_post(
     assert all(call[0] == "GET" for call in transport.calls)
     assert not (hosted / "result.json").exists()
     assert not (hosted / "upload-started").exists()
+
+
+@pytest.mark.parametrize(
+    "publication_files",
+    [{"proof_mode": "none"}, {"proof_mode": "stop-after-wheel"}],
+    indirect=True,
+)
+@pytest.mark.parametrize("command", ["authorize", "token", "marker", "execute"])
+def test_python_cli_proof_input_mismatch_stops_before_effects(
+    hosted, publication_files, monkeypatch, command
+):
+    """Changing the request cannot override an immutable approved mode."""
+    refs, marker, _, _ = publication_files
+    stored = marker.authorization.bundle.snapshot.proof_mode
+    monkeypatch.setenv(
+        "WDV3_PYTHON_PROOF",
+        "none" if stored == "stop-after-wheel" else "stop-after-wheel",
+    )
+    assert _run(hosted, command, refs, purpose="live-release") == 1
+    assert not (hosted / "result.json").exists()
+    assert not (hosted / "upload-started").exists()
+    assert not (hosted / "environment").exists()
+
+
+@pytest.mark.parametrize(
+    "scenario", ["pr", "pypi", "unknown", "registry-argument"]
+)
+def test_python_cli_proof_rejects_unsupported_request(
+    hosted, monkeypatch, scenario
+):
+    """Proof rejection precedes Governance, credentials and request outputs."""
+    monkeypatch.setenv("WDV3_PYTHON_PROOF", "stop-after-wheel")
+    if scenario != "pr":
+        _live(monkeypatch)
+    if scenario == "pypi":
+        monkeypatch.setenv("WDV3_REGISTRY", "pypi")
+    elif scenario == "unknown":
+        monkeypatch.setenv("WDV3_PYTHON_PROOF", "other")
+    assert (
+        _run(
+            hosted,
+            "request",
+            purpose="ci-pr-slice-shadow"
+            if scenario == "pr"
+            else "live-release",
+            extra=(
+                "--registry",
+                "pypi"
+                if scenario in {"pypi", "registry-argument"}
+                else "testpypi",
+            ),
+        )
+        == 1
+    )
+    assert not (hosted / "intent.json").exists()
+    assert not (hosted / "governance.json").exists()
+    assert not (hosted / "result.json").exists()
+
+
+@pytest.mark.parametrize(
+    "publication_files",
+    [{"proof_mode": "none"}, {"proof_mode": "stop-after-wheel"}],
+    indirect=True,
+)
+def test_python_cli_prepare_binds_current_proof_input(
+    hosted, publication_files
+):
+    """Preparation seals actual mode in the durable Snapshot without effects."""
+    refs, marker, _, _ = publication_files
+    assert _run(hosted, "prepare", refs, purpose="live-release") == 0
+    document = parse_canonical_json((hosted / "result.json").read_bytes())
+    assert (
+        document["proof-mode"]
+        == marker.authorization.bundle.snapshot.proof_mode
+    )
+    assert document == marker.authorization.bundle.snapshot.to_document()
+
+
+@pytest.mark.parametrize(
+    "publication_files", [{"proof_mode": "stop-after-wheel"}], indirect=True
+)
+def test_python_cli_proof_persists_truthful_failed_result_before_terminal(
+    hosted, publication_files, monkeypatch
+):
+    """Intentional stop persists failure without failing terminal export."""
+    refs, marker, _, distributions = publication_files
+    transport = FakeHttp(
+        PythonHttpResponse(200, b"created", "text/plain"),
+        *_readback(marker.pre_state.registry, distributions[:1]),
+    )
+    monkeypatch.setattr(python_cli, "PythonHttpsTransport", lambda: transport)
+    assert _run(hosted, "execute", refs, purpose="live-release") == 0
+    result = parse_canonical_json((hosted / "result.json").read_bytes())
+    assert result["result"] == "failed"
+    assert [entry["status"] for entry in result["operations"]] == [
+        "succeeded",
+        "not-attempted",
+    ]
+    assert result["mutation-classification"] == "mutated"
+    assert result["mutation-marker-reference"] == refs["marker"]
+    assert [call[0] for call in transport.calls] == ["POST", "GET", "GET"]
+    assert transport.responses == []
+    result_ref = _store(hosted, result, name="result.json", artifact_id=2001)
+    refs["result"] = result_ref.to_document()
+    assert _run(hosted, "terminal", refs, purpose="live-release") == 0
+    assert (
+        canonicalize(result_ref.to_document()).decode()
+        in (hosted / "outputs").read_text()
+    )

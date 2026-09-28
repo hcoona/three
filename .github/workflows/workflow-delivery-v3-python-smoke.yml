@@ -10,6 +10,14 @@ name: Workflow Delivery v3 Python smoke
         options:
           - testpypi
           - pypi
+      recovery-proof:
+        description: Authorized TestPyPI proof only; intentionally fail after verified wheel upload.
+        type: choice
+        required: false
+        default: none
+        options:
+          - none
+          - stop-after-wheel
 permissions: {}
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('wdv3-python-ci-{0}', github.event.pull_request.number)
@@ -21,6 +29,7 @@ defaults:
 env:
   WDV3_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-pr-slice-shadow' || 'live-release' }}
   WDV3_REGISTRY: ${{ inputs.registry || 'testpypi' }}
+  WDV3_PYTHON_PROOF: ${{ inputs.recovery-proof || 'none' }}
 jobs:
   request-python:
     runs-on: ubuntu-24.04

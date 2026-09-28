@@ -373,7 +373,28 @@ def _github() -> PythonGitHubRuntime:
     )
 
 
+def _proof_mode(purpose: str) -> str:
+    """Read the protected workflow's projection of the actual manual input."""
+    mode = os.environ.get("WDV3_PYTHON_PROOF", "none")
+    if mode not in {"none", "stop-after-wheel"}:
+        message = "Python hosted proof mode is unsupported"
+        raise ValueError(message)
+    if mode == "stop-after-wheel" and (
+        purpose != "live-release"
+        or os.environ.get("WDV3_REGISTRY") != "testpypi"
+    ):
+        message = "Python hosted proof requires TestPyPI Live"
+        raise ValueError(message)
+    return mode
+
+
 def _request(arguments: argparse.Namespace, inputs: PythonInputs) -> None:
+    if (
+        _proof_mode(inputs.purpose) == "stop-after-wheel"
+        and arguments.registry != "testpypi"
+    ):
+        message = "Python hosted proof request requires TestPyPI"
+        raise ValueError(message)
     if inputs.purpose == "live-release":
         registry = PythonRegistry(arguments.registry)
         governance = _github().governance(registry)
@@ -576,10 +597,16 @@ def _bind(arguments: argparse.Namespace, inputs: PythonInputs) -> None:
     _write(arguments.output, inputs.references)
 
 
-def _publication(  # noqa: C901, PLR0915 - closed hosted stage dispatch
+def _publication(  # noqa: C901, PLR0912, PLR0915 - closed hosted stage dispatch
     arguments: argparse.Namespace, inputs: PythonInputs
 ) -> None:
     command = arguments.command
+    mode = _proof_mode(inputs.purpose)
+    if command in {"authorize", "token", "marker", "execute"} and (
+        inputs.publication().proof_mode != mode
+    ):
+        message = "Python hosted proof input differs from approved Snapshot"
+        raise ValueError(message)
     if command == "observe":
         decision = inputs.decision()
         _github().governance(
@@ -596,7 +623,7 @@ def _publication(  # noqa: C901, PLR0915 - closed hosted stage dispatch
         )
     elif command == "prepare":
         record = PythonPublicationSnapshot(
-            inputs.observation(), inputs.reference("observation")
+            inputs.observation(), inputs.reference("observation"), mode
         )
         _outputs(
             {
@@ -850,6 +877,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0912, PLR0915
     parser.add_argument("--observation-conclusion")
     arguments = parser.parse_args(argv)
     try:
+        _proof_mode(arguments.purpose)
         inputs = PythonInputs(
             arguments.directory, arguments.purpose, arguments.references
         )

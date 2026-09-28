@@ -64,7 +64,8 @@ Result/Finalizer replay. Joined real-build and controlled-transport tests cover
 fresh recovery while preserving the earlier failed Outcome. This is capability
 validation; no hosted recovery has been executed. The current Wave separately
 authorizes the [bounded hosted proof](./validation/python-hosted-recovery.md),
-subject to its remaining implementation and independent execution gates.
+with the temporary default-off interruption and bounded operator implemented.
+Protected delivery and independent execution gates remain before effects.
 
 [Issue #843](https://github.com/hcoona/three/issues/843) tracks TestPyPI first,
 then PyPI. The owner's confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),

@@ -464,3 +464,30 @@ def test_python_workflow_evidence_failure_leaves_decision_persistence_reachable(
         == "${{ steps.decision.outputs.qualification-result }}"
     )
     assert not steps[stop].get("continue-on-error", False)
+
+
+def test_python_workflow_proof_is_default_off_and_bound_to_actual_input(
+    workflow,
+):
+    """The stable entry discloses only the scoped temporary manual proof."""
+    choice = workflow["on"]["workflow_dispatch"]["inputs"]["recovery-proof"]
+    assert choice["type"] == "choice"
+    assert choice["default"] == "none"
+    assert choice["options"] == ["none", "stop-after-wheel"]
+    assert "fail" in choice["description"]
+    assert "TestPyPI" in choice["description"]
+    assert (
+        workflow["env"]["WDV3_PYTHON_PROOF"]
+        == "${{ inputs.recovery-proof || 'none' }}"
+    )
+    assert (
+        workflow["env"]["WDV3_REGISTRY"]
+        == "${{ inputs.registry || 'testpypi' }}"
+    )
+    for job in workflow["jobs"].values():
+        assert "WDV3_PYTHON_PROOF" not in job.get("env", {})
+        assert all(
+            "WDV3_PYTHON_PROOF" not in step.get("env", {})
+            for step in job["steps"]
+        )
+    assert _WORKFLOW.name == "workflow-delivery-v3-python-smoke.yml"

@@ -30,7 +30,8 @@ completion, missing-file uploads and strict terminal audit. Real-build and
 controlled-transport recovery tests preserve prior failures. No hosted recovery
 is claimed. The current Wave authorizes the separate
 [hosted recovery protocol](docs/validation/python-hosted-recovery.md); its
-implementation and independent execution gates remain prerequisites.
+temporary default-off interruption and bounded operator are implemented.
+Protected delivery and independent execution gates remain prerequisites.
 
 The old `governance run-fixed-acceptance-probe` command and fixed-coordinate
 Python producer APIs are retired. `governance admit-acceptance-evidence` and

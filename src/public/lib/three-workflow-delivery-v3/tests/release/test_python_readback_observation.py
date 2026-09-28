@@ -533,13 +533,16 @@ def test_normal_authority_expiry_after_exact_index_blocks_file(tmp_path):
     ],
     ids=["pending-index", "exact-download", "pending-index-reversed-clock"],
 )
-def test_normal_retention_failure_preserves_raw_and_stops_effects(
-    tmp_path, monkeypatch, retention_fault, pending, expected
+@pytest.mark.parametrize("proof_mode", ["none", "stop-after-wheel"])
+def test_normal_retention_failure_preserves_raw_and_stops_effects(  # noqa: PLR0913, PLR0917 - mode and persistence fault axes
+    tmp_path, monkeypatch, retention_fault, pending, expected, proof_mode
 ):
     """Failed evidence persistence leaves only an unknown marker outcome."""
     failed_record, reverse_terminal_clock = retention_fault
     methods, terminal = expected
-    marker, marker_ref, payloads, distributions = prepared_publication()
+    marker, marker_ref, payloads, distributions = prepared_publication(
+        proof_mode=proof_mode
+    )
     marker_bytes = canonicalize(marker.to_document())
     replies = responses(marker, distributions, pending=pending)
     boundary = Boundary(*replies)
