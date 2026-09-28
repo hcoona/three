@@ -16,5 +16,5 @@ def existing_operands(paths: list[str]) -> list[str]:
             Path(path).lstat()
         except (FileNotFoundError, NotADirectoryError):
             continue
-        result.append(path)
+        result.append(f"./{path}" if path.startswith("-") else path)
     return result
