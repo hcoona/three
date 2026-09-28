@@ -429,6 +429,18 @@ temporary input, mode field and stop branch after accepted proof; retained
 evidence remains replayable at its pinned source. This is validation tooling,
 not a new release destination, generic fault framework or retry contract.
 
+The external proof operator separates idempotent evidence reads from one-shot
+publication effects. Its persisted read scheduler and resumable immutable
+captures follow the [protocol](./validation/python-hosted-recovery.md#finite-campaign-and-autonomous-continuation).
+A narrow GET-only continuation may complete a terminal audit across an operator
+correction; it binds the new caller separately from the pinned historical
+publication reader and never inherits mutation methods. Each Attempt retains
+its own immutable protocol and callers for historical closure. The
+[continuation contract](./validation/python-hosted-recovery.md#read-only-continuation-across-a-protected-operator-correction)
+owns admission, evidence preservation and successor conditions. These external
+tooling changes do not alter the runtime transport profile or distribution
+bytes.
+
 ## First-Project Bootstrap
 
 `WD-PY-009` has a distinct manual workflow and protected request, initially null.
