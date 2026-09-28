@@ -8,59 +8,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Execute one normal TestPyPI publication and audit
-
-- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** the [owner-approved
-  proposal](https://github.com/hcoona/three/issues/843#issuecomment-5861383218) and
-  [approval](https://github.com/hcoona/three/issues/843#issuecomment-5861978161),
-  reviewed ready Governance v2 delivered by PR #885 at
-  `ebc97ca0551be0ce39e70f4da28ea7400bc7d33e`, and the current Python requirements,
-  LLD and publication profile. The independently reviewed concrete protocol is
-  [publication protocol](https://github.com/hcoona/three/issues/843#issuecomment-5862463902)
-  (SHA-256 `bf6624a3843ed8b853de54d9c084cf2eac2356ddf1423b333df63973d31d6360`); its
-  original bytes and digest are retained there.
-- **Advancement and outcome:** execute at most one new normal TestPyPI Attempt for
-  `hcoona-release-smoke-python` version 0.1.0b19, wheel
-  `hcoona_release_smoke_python-0.1.0b19-py3-none-any.whl` and sdist
-  `hcoona_release_smoke_python-0.1.0b19.tar.gz`. Independently review current-run
-  original qualified artifacts, Snapshot and Bundle before one Environment approval;
-  audit terminal lineage, actual destination downloads and separate clean
-  wheel/sdist consumers. Retain the truthful success, exact-satisfied, failure or
-  incomplete result, then close this grant.
-- **Revision and prerequisites:** target and same-revision tooling are the protected
-  merge of this Wave-only change atop `ebc97ca0551be0ce39e70f4da28ea7400bc7d33e`,
-  with the unchanged accepted runtime/profile/Governance. Before dispatch bind that
-  actual SHA and reviewed/merged tree in the Issue, require applicable post-merge
-  CI, confirm unchanged full-history NBGV public projection 0.1.0b19 and fresh ready
-  admission. Any intervening main change, mismatch, failed prerequisite or expired
-  evidence stops dependent execution without replacement.
-- **Effects and bounds:** permit exactly one owner/manual attempt 1 dispatch of
-  `workflow-delivery-v3-python-smoke.yml` on `main` with `registry=testpypi`; at
-  most one approval for Environment `22765954016` after independent original-byte
-  review; one GitHub OIDC assertion and one TestPyPI token exchange; at most one
-  wheel POST then one sdist POST with required exact readback. Runtime plus
-  independent audit has at most 15 index GETs and 6 file GETs, retaining the profile's
-  post-upload visibility, byte, origin, timing and authority bounds. Bound GitHub
-  control/transfer and operator evidence requests by the reviewed protocol. Permit
-  locked dependency preparation, isolated local consumers, ordinary CI, independent
-  engineering/domain/record/research-evidence/OCR reviews and protected Issue/PR
-  evidence delivery.
-- **Risk and stopping:** preserve sole-writer/owner and retained three-publisher
-  configuration unless contradicted; trust platform file non-replacement without
-  duplicate/race probes. No atomic pair or indefinite retention is promised. Exact
-  existing pair uses the zero-action path without approval/token/upload. Rejection,
-  partial upload, ambiguous mutation or incomplete evidence remains
-  failed/incomplete and consumes its reached slots; no automatic resend or
-  replacement Attempt. Do not promote old failed evidence or infer creation from
-  HTTP 200 alone.
-- **Exclusions:** no PyPI or Ruby operation, native/bootstrap generation,
-  duplicate/race probe, registry preflight outside the named flow,
-  rerun/retry/refill, cleanup/deletion/rollback, version rewrite,
-  access/publisher/Environment change, credential export or administrative
-  credential in Actions. PyPI remains blocked and native/bootstrap slots remain
-  null.
-
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
