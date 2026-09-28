@@ -10,7 +10,7 @@ import json
 import re
 import zipfile
 
-from capture_artifact import retain_artifact, validate_artifacts
+from capture_artifact import retain_artifact, retain_bytes, validate_artifacts
 from dispatch_normal import ROOT, TARGET
 from normal_operator import Operator
 
@@ -21,16 +21,15 @@ def main() -> None:
     assert (directory / "ledger.json").exists()
     op = Operator(directory, TARGET)
     with op.deadline():
-        assert "terminal_capture_started" not in op.ledger
         run_id = op.ledger["run"]
         endpoint = f"repos/hcoona/three/actions/runs/{run_id}"
-        run = op.get(endpoint, "terminal-run")
+        run = op.capture_get(endpoint, "terminal-run")
         assert run["head_sha"] == TARGET
         assert run["run_attempt"] == 1
         assert run["status"] == "completed"
-        op.ledger["terminal_capture_started"] = op.now()
+        op.ledger.setdefault("terminal_capture_started", op.now())
         op.save()
-        jobs = op.get(endpoint + "/jobs?per_page=100", "terminal-jobs")
+        jobs = op.capture_get(endpoint + "/jobs?per_page=100", "terminal-jobs")
         assert jobs["total_count"] <= 100
         assert all(
             j["run_id"] == run_id
@@ -38,11 +37,11 @@ def main() -> None:
             and j["run_attempt"] == 1
             for j in jobs["jobs"]
         )
-        op.get(endpoint + "/approvals", "terminal-approval-history")
+        op.capture_get(endpoint + "/approvals", "terminal-approval-history")
         raw = op.transfer("log", endpoint + "/logs", "terminal-logs")
-        (directory / "terminal-logs.zip").write_bytes(raw)
+        retain_bytes(directory / "terminal-logs.zip", raw)
         logs = directory / "terminal-logs"
-        logs.mkdir()
+        logs.mkdir(exist_ok=True)
         maps = []
         with zipfile.ZipFile(io.BytesIO(raw)) as archive:
             infos = archive.infolist()
@@ -55,7 +54,7 @@ def main() -> None:
                 content = archive.read(item)
                 # Assign a local numeric path, never extract the archive path.
                 local = f"{ordinal:03d}.log"
-                (logs / local).write_bytes(content)
+                retain_bytes(logs / local, content)
                 for line_no, line in enumerate(
                     content.decode("utf-8").splitlines(), 1
                 ):
@@ -74,7 +73,10 @@ def main() -> None:
                                 "references": value,
                             }
                         )
-        (logs / "edge-trace.json").write_text(json.dumps(maps, indent=2) + "\n")
+        retain_bytes(
+            logs / "edge-trace.json",
+            (json.dumps(maps, indent=2) + "\n").encode(),
+        )
         assert maps
         refs = {}
         for item in maps:
@@ -117,7 +119,7 @@ def main() -> None:
             else {}
         )
         assert all(refs.get(role) == value for role, value in previous.items())
-        metadata = op.get(
+        metadata = op.capture_get(
             endpoint + "/artifacts?per_page=100", "terminal-artifacts"
         )
         assert metadata["total_count"] <= 32
@@ -131,10 +133,11 @@ def main() -> None:
                 artifacts[ref["artifact-id"]],
                 previous=role in previous,
             )
-        (inputs / "terminal-references.json").write_text(
-            json.dumps(refs, sort_keys=True, separators=(",", ":"))
+        retain_bytes(
+            inputs / "terminal-references.json",
+            json.dumps(refs, sort_keys=True, separators=(",", ":")).encode(),
         )
-        op.ledger["terminal_capture_completed"] = op.now()
+        op.ledger.setdefault("terminal_capture_completed", op.now())
         op.save()
 
 

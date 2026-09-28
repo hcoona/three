@@ -23,6 +23,7 @@ from typing import Any, Never
 from urllib.parse import urlsplit
 
 from campaign import save_json
+from read_policy import ReadPacer, ReadPending, ReadStopped
 
 
 class OperatorDeadlineExceeded(BaseException):
@@ -145,7 +146,8 @@ class Operator:
         )
         requests = self.ledger["requests"]
         previous = [r for r in requests if r["category"] == category]
-        assert len(previous) < count_limit
+        if method == "POST":
+            assert len(previous) < count_limit
         if byte_limit is not None:
             body_limit = min(
                 body_limit,
@@ -155,7 +157,6 @@ class Operator:
         if poll:
             polls = [r for r in requests if r.get("poll")]
             assert category == "json"
-            assert len(polls) < 240
             if polls:
                 assert (
                     now - datetime.datetime.fromisoformat(polls[-1]["started"])
@@ -195,6 +196,87 @@ class Operator:
             assert document["state"] == "approved"
         assert name
         assert Path(name).name == name
+        pacer = None
+        if method == "GET":
+            control = self.ledger.setdefault("read_control", {})
+            if control.get("stopped"):
+                raise ReadStopped(control["stopped"])
+            if (
+                control.get("next_not_before")
+                and (
+                    datetime.datetime.fromisoformat(control["next_not_before"])
+                    - now
+                ).total_seconds()
+                >= self.remaining()
+            ):
+                control["stopped"] = "original read deadline exhausted"
+                self.save()
+                raise ReadStopped(control["stopped"])
+            if control.get(
+                "next_not_before"
+            ) and now < datetime.datetime.fromisoformat(
+                control["next_not_before"]
+            ):
+                raise ReadPending(control["next_not_before"])
+            key = (
+                "github-polls"
+                if poll
+                else getattr(self, "_active_transfer_key", None)
+                or hashlib.sha256(url.encode()).hexdigest()
+            )
+            pacing = self.ledger.setdefault("read_pacing", {}).setdefault(
+                key, {}
+            )
+            pacing["consecutive_errors"] = control.get("consecutive_errors", 0)
+            deadline = (
+                self.ledger.get("deadline")
+                or (
+                    datetime.datetime.fromisoformat(self.ledger["started"])
+                    + datetime.timedelta(hours=4)
+                ).isoformat()
+            )
+
+            def save_pacing() -> None:
+                """Keep the stage breaker and transient wait across endpoints."""
+                control["consecutive_errors"] = pacing.get(
+                    "consecutive_errors", 0
+                )
+                if pacing.get("stopped"):
+                    control["stopped"] = pacing["stopped"]
+                service_due = max(
+                    (
+                        datetime.datetime.fromisoformat(value)
+                        for value in (
+                            control.get("service_not_before"),
+                            pacing.get("service_not_before"),
+                        )
+                        if value
+                    ),
+                    default=None,
+                )
+                waits = []
+                if service_due and service_due > datetime.datetime.now(
+                    datetime.UTC
+                ):
+                    control["service_not_before"] = service_due.isoformat()
+                    waits.append(service_due)
+                else:
+                    control.pop("service_not_before", None)
+                if control["consecutive_errors"]:
+                    waits.append(
+                        datetime.datetime.fromisoformat(
+                            pacing["next_not_before"]
+                        )
+                    )
+                if waits:
+                    control["next_not_before"] = max(waits).isoformat()
+                else:
+                    control.pop("next_not_before", None)
+                self.save()
+
+            pacer = ReadPacer(pacing, deadline, save=save_pacing)
+            if not getattr(self, "_transfer_redirect", False):
+                pacer.before("github" if poll else "transfer")
         ordinal = len(requests) + 1
         stem = f"{ordinal:03d}-{name}"
         entry = {
@@ -224,13 +306,17 @@ class Operator:
                 "User-Agent": "wdv3-reviewed-hosted-recovery-operator",
             }
             if api and not getattr(self, "_transfer_redirect", False):
-                credential = subprocess.run(
-                    ["gh", "auth", "token"],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=min(30, self.remaining()),
-                ).stdout.strip()
+                credential = getattr(self, "_credential", None)
+                if credential is None:
+                    credential = subprocess.run(
+                        ["gh", "auth", "token"],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=min(30, self.remaining()),
+                    ).stdout.strip()
+                    assert credential
+                    self._credential = credential
                 headers["Authorization"] = "Bearer " + credential
                 headers["X-GitHub-Api-Version"] = "2022-11-28"
             body = None if document is None else json.dumps(document).encode()
@@ -287,6 +373,15 @@ class Operator:
             assert len(content) <= body_limit, (
                 "operator response budget exceeded"
             )
+            if pacer is not None:
+                pacer.after(
+                    "github" if poll else "transfer",
+                    status=response.status,
+                    headers=response_headers,
+                    github=api,
+                    reset_errors=response.status
+                    not in (301, 302, 303, 307, 308),
+                )
             assert response.status in (200, 201, 204) or (
                 category in ("artifact", "log")
                 and response.status in (301, 302, 303, 307, 308)
@@ -303,6 +398,12 @@ class Operator:
                     retained_sha256=hashlib.sha256(retained).hexdigest(),
                 )
             self.save()
+            if pacer is not None and not isinstance(
+                error, (ReadPending, ReadStopped)
+            ):
+                pacer.after(
+                    "github" if poll else "transfer", error=error, github=api
+                )
             raise
         finally:
             if connection is not None:
@@ -313,7 +414,22 @@ class Operator:
         _, _, content = self.request(
             "json", name, "https://api.github.com/" + endpoint, poll=poll
         )
-        return json.loads(content)
+        try:
+            return json.loads(content)
+        except (ValueError, UnicodeError):
+            key = (
+                "github-polls"
+                if poll
+                else hashlib.sha256(
+                    ("https://api.github.com/" + endpoint).encode()
+                ).hexdigest()
+            )
+            self.ledger["read_pacing"][key]["stopped"] = "malformed GitHub JSON"
+            self.ledger.setdefault("read_control", {})["stopped"] = (
+                "malformed GitHub JSON"
+            )
+            self.save()
+            raise
 
     def dispatch_document(self) -> Any:
         """Bind the actual workflow dispatch input."""
@@ -350,24 +466,44 @@ class Operator:
         """Retain one immutable service transfer with counted redirects."""
         assert category in ("artifact", "log")
         transfers = self.ledger.setdefault("transfers", [])
-        assert endpoint not in transfers, "immutable transfer already consumed"
+        completed = self.ledger.setdefault("completed_transfers", {})
+        if endpoint in completed:
+            retained = completed[endpoint]
+            path = self.directory / retained["body"]
+            assert path.parent == self.directory
+            content = path.read_bytes()
+            assert hashlib.sha256(content).hexdigest() == retained["sha256"]
+            return content
         if category == "artifact":
             assert "/actions/artifacts/" in endpoint
             assert (
-                len([x for x in transfers if "/actions/artifacts/" in x]) < 32
+                endpoint in transfers
+                or len([x for x in transfers if "/actions/artifacts/" in x])
+                < 32
             )
-        transfers.append(endpoint)
+        if endpoint not in transfers:
+            transfers.append(endpoint)
         self.save()
         url = "https://api.github.com/" + endpoint
         for hop in range(3):
             self._transfer_redirect = hop > 0
+            self._active_transfer_key = hashlib.sha256(
+                endpoint.encode()
+            ).hexdigest()
             try:
                 status, headers, content = self.request(
                     category, f"{name}-{hop}", url
                 )
             finally:
                 self._transfer_redirect = False
+                self._active_transfer_key = None
             if status == 200:
+                entry = self.ledger["requests"][-1]
+                completed[endpoint] = {
+                    "body": entry["body"],
+                    "sha256": entry["sha256"],
+                }
+                self.save()
                 return content
             locations = [
                 v for k, v in headers.items() if k.lower() == "location"
@@ -376,3 +512,24 @@ class Operator:
             url = locations[0]
         msg = "operator redirect bound exhausted"
         raise RuntimeError(msg)
+
+    def capture_get(self, endpoint: Any, name: Any) -> Any:
+        """Reuse verified retained stage facts during immutable capture replay."""
+        captures = self.ledger.setdefault("captured_json", {})
+        if name in captures:
+            item = captures[name]
+            assert item["endpoint"] == endpoint
+            path = self.directory / item["body"]
+            assert path.parent == self.directory
+            content = path.read_bytes()
+            assert hashlib.sha256(content).hexdigest() == item["sha256"]
+            return json.loads(content)
+        result = self.get(endpoint, name)
+        entry = self.ledger["requests"][-1]
+        captures[name] = {
+            "endpoint": endpoint,
+            "body": entry["body"],
+            "sha256": entry["sha256"],
+        }
+        self.save()
+        return result

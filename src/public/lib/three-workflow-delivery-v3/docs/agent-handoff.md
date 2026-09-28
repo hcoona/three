@@ -35,10 +35,9 @@ Result/Finalizer replay. Joined real-build and controlled-transport tests cover
 fresh recovery while preserving the earlier failed Outcome. This is capability
 validation; no hosted recovery has been executed. The current Wave separately
 authorizes the [bounded hosted proof](./validation/python-hosted-recovery.md).
-Its temporary default-off control is implemented under the Python LLD. The
-revised protocol owns ordinary-read pacing and terminal-audit continuation;
-these require tested protected callers and independent exact operation
-admission before use. Preserve the stable publisher/Environment and
+Its temporary default-off control and protocol-bound ordinary-read pacing
+and terminal-audit continuation are implemented. Protected delivery and
+independent exact operation admission remain prerequisites before use. Preserve the stable publisher/Environment and
 all historical failures. Do not reopen the completed normal campaign.
 
 The npm and NuGet GitHub Packages smoke objectives are complete. Use the

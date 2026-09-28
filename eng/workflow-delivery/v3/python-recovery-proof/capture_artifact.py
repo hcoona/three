@@ -11,6 +11,15 @@ from pathlib import Path
 from typing import Any
 
 
+def retain_bytes(path: Path, content: bytes) -> None:
+    """Reuse identical output; reject changed retained evidence."""
+    if path.exists():
+        assert path.read_bytes() == content, "retained capture bytes changed"
+    else:
+        with path.open("xb") as stream:
+            stream.write(content)
+
+
 def validate_artifacts(
     references: Any, metadata: Any, run: Any, target: Any
 ) -> Any:
@@ -54,16 +63,15 @@ def retain_artifact(
 ) -> None:
     """Retain a new immutable ID once or verify its existing bytes."""
     path = inputs / reference["payload-path"]
-    if previous:
+    if previous or path.exists():
         content = path.read_bytes()
     else:
-        assert not path.exists()
         content = operator.transfer(
             "artifact",
             f"repos/hcoona/three/actions/artifacts/{artifact['id']}/zip",
             "artifact-" + role,
         )
     assert "sha256:" + hashlib.sha256(content).hexdigest() == artifact["digest"]
-    if not previous:
+    if not path.exists():
         with path.open("xb") as stream:
             stream.write(content)

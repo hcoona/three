@@ -336,12 +336,45 @@ def test_closed_old_callers_retained_when_new_scenario_uses_reviewed_correction(
     (campaign.directory / "proof_checks.py").write_text(
         "# independently reviewed corrected source fixture\n"
     )
+    (campaign.directory / "protocol.md").write_text(
+        "Accepted corrected protocol for the next scenario"
+    )
     next_op, _ = construct(campaign, scenario="02", version="0.1.0b32")
     assert next_op.started != op.started
     assert (
         digest(op.directory.parent / "callers/proof_checks.py")
         == binding["files_sha256"]["proof_checks.py"]
     )
+    assert (
+        digest(op.directory.parent / "admission/protocol.md")
+        == binding["protocol_sha256"]
+    )
+    assert (
+        read(next_op.directory.parent / "execution-binding.json")[
+            "protocol_sha256"
+        ]
+        != binding["protocol_sha256"]
+    )
+    assert len(campaign.read()["scenarios"]) == 2
+
+
+def test_changed_historical_protocol_blocks_successor_without_refilling_effects(
+    campaign,
+):
+    """A protocol upgrade cannot replace the prior Attempt's admitted contract."""
+    op, binding = construct(campaign)
+    with op.deadline():
+        campaign.reserve_upload("01", "01", TARGET)
+    close(campaign, op, binding)
+    (op.directory.parent / "admission/protocol.md").write_text(
+        "Changed old authority"
+    )
+    prepare(campaign, scenario="02", version="0.1.0b32")
+    with pytest.raises(AssertionError):
+        campaign.reserve("02", "01")
+    state = campaign.read()
+    assert len(state["scenarios"]) == 1
+    assert state["scenarios"][0]["attempts"][0]["uploads_reserved"] == ["wheel"]
 
 
 def test_gate_path_escape_is_rejected(campaign) -> None:

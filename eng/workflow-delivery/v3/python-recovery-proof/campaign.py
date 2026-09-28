@@ -1,7 +1,7 @@
 # Runtime assertions are mandatory; campaign import rejects optimized Python.
 # Native records and operator JSON retain their dynamic external schema.
 # Literal IDs, URLs and limits mirror the accepted fixed protocol.
-# ruff: noqa: ANN401, E501, PLR2004, S101
+# ruff: noqa: ANN401, E501, PLR2004, S101, PLR0915
 
 """Finite isolated hosted-recovery campaign. Importing has no effects."""
 
@@ -26,6 +26,7 @@ AUTHORS = {
     "/root",
     "/root/python_hosted_operator",
     "/root/python_recovery_test_generator",
+    "/root/read_test_generator",
 }
 
 
@@ -63,6 +64,9 @@ def bound_files(directory: Any, files: Any) -> None:
     assert files
     directory = Path(directory).resolve()
     for name, expected in files.items():
+        assert isinstance(name, str)
+        assert not Path(name).is_absolute()
+        assert ".." not in Path(name).parts
         path = (directory / name).resolve()
         assert path.is_relative_to(directory)
         assert path != directory
@@ -169,9 +173,15 @@ class Campaign:
         assert re.fullmatch(r"[0-9a-f]{40}", binding["target"])
         assert re.fullmatch(r"[0-9a-f]{40}", binding["tree"])
         assert binding["mode"] in ("none", "stop-after-wheel")
-        assert (
-            digest(self.directory / "protocol.md") == binding["protocol_sha256"]
+        protocol = (
+            directory / "admission/protocol.md"
+            if historical
+            else self.directory / "protocol.md"
         )
+        if historical and not protocol.exists():
+            # Legacy history can only migrate from byte-identical retained authority.
+            protocol = self.directory / "protocol.md"
+        assert digest(protocol) == binding["protocol_sha256"]
         caller_directory = (
             directory / "callers" if historical else self.directory
         )
@@ -188,6 +198,23 @@ class Campaign:
             f"hcoona_release_smoke_python-{version}.tar.gz",
         ]
         return binding
+
+    def retain_protocol(
+        self, scenario: Any, attempt: Any, source_path: Any
+    ) -> None:
+        """Add verified historical provenance without rewriting old bindings."""
+        with self.locked():
+            directory = self.attempt_directory(scenario, attempt)
+            binding = read(directory / "execution-binding.json")
+            assert digest(source_path) == binding["protocol_sha256"]
+            output = directory / "admission/protocol.md"
+            output.parent.mkdir(exist_ok=True)
+            if output.exists():
+                assert digest(output) == binding["protocol_sha256"]
+            else:
+                with output.open("xb") as stream:
+                    stream.write(Path(source_path).read_bytes())
+            assert digest(output) == binding["protocol_sha256"]
 
     def _verify_closure(self, scenario: Any, attempt: Any) -> Any:
         """Validate the verify closure caller boundary."""
@@ -211,7 +238,30 @@ class Campaign:
             assert proof["dispatch_sent"] is False
         else:
             assert digest(ledger) == attempt["ledger_sha256"]
+        self._verify_continuation(directory, proof)
         return proof
+
+    @staticmethod
+    def _verify_continuation(directory: Any, proof: Any) -> None:
+        """Require independently bound supplementary completion when present."""
+        sidecar = directory / "read-continuation"
+        if not sidecar.exists():
+            return
+        for name in ("binding", "ledger", "completion"):
+            assert proof[f"read_continuation_{name}_sha256"] == digest(
+                sidecar / f"{name}.json"
+            )
+        completion = read(sidecar / "completion.json")
+        assert completion["destination_state"] == "wheel-only"
+        assert completion["binding_sha256"] == digest(sidecar / "binding.json")
+        assert completion["ledger_sha256"] == digest(sidecar / "ledger.json")
+        assert completion["original_ledger_sha256"] == digest(
+            directory / "operation/ledger.json"
+        )
+        bound_files(sidecar, completion["files_sha256"])
+        assert read(sidecar / "ledger.json")["classification"] == "complete"
+        assert proof["destination_state"] == "wheel-only"
+        assert proof["native_audit_complete"] is True
 
     def reserve(self, scenario_id: Any, attempt_id: Any) -> None:
         """Reserve a fresh bounded Attempt after independent admission."""
@@ -240,7 +290,11 @@ class Campaign:
                     "no-dispatch",
                     "terminal-no-upload",
                     "exact-partial",
-                    "abandoned-terminal",
+                )
+                assert closure["destination_state"] in (
+                    "absent",
+                    "wheel-only",
+                    "complete",
                 )
             if not scenarios or scenario_id != scenarios[-1]["id"]:
                 assert len(scenarios) < 5
@@ -297,6 +351,12 @@ class Campaign:
             for name in binding["files_sha256"]:
                 shutil.copyfile(self.directory / name, callers / name)
             bound_files(callers, binding["files_sha256"])
+            protocol = directory / "admission/protocol.md"
+            protocol.parent.mkdir(exist_ok=True)
+            if not protocol.exists():
+                with protocol.open("xb") as stream:
+                    stream.write((self.directory / "protocol.md").read_bytes())
+            assert digest(protocol) == binding["protocol_sha256"]
             started = datetime.now(UTC)
             attempts.append(
                 {
@@ -362,7 +422,7 @@ class Campaign:
             )
             assert attempt["closure"] is None
             directory = self.attempt_directory(scenario_id, attempt_id)
-            binding = self.validate_binding(directory)
+            binding = self.validate_binding(directory, historical=True)
             proof = gate(
                 directory, "independent-closure-gate.json", binding, "closure"
             )
@@ -371,7 +431,6 @@ class Campaign:
                 "no-dispatch",
                 "terminal-no-upload",
                 "exact-partial",
-                "abandoned-terminal",
                 "audited-success",
             )
             ledger_path = directory / "operation/ledger.json"
@@ -411,6 +470,7 @@ class Campaign:
                     assert proof["seed_proof_accepted"] is True
                     assert proof["recovery_proof_accepted"] is True
                     assert proof["clean_consumers"] == "passed"
+            self._verify_continuation(directory, proof)
             attempt.update(
                 closure=conclusion,
                 closure_gate_sha256=digest(

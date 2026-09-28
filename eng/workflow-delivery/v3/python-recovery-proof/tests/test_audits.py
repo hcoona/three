@@ -222,10 +222,10 @@ def test_terminal_controls_reject_missing_ambiguous_or_changed_original(
         ("diagnostic", ["wheel"]),
     ],
 )
-def test_native_audit_shares_one_allowance_and_only_complete_proof_runs_consumers(
+def test_native_audit_separates_diagnostic_and_proof_consumer_requirements(
     campaign, monkeypatch, purpose, variants
 ) -> None:
-    """Verify native audit shares one allowance and only complete proof runs consumers."""
+    """Diagnostic state evidence never substitutes for complete-pair consumer proof."""
     mode = "none" if purpose == "recovery-proof" else "stop-after-wheel"
     root, binding = prepare(campaign, mode=mode)
     directory = root / "operation"
@@ -258,6 +258,7 @@ def test_native_audit_shares_one_allowance_and_only_complete_proof_runs_consumer
         def __init__(self, *_args) -> None:
             """Provide the controlled   init   fixture."""
             self.ledger = ledger
+            self.original_deadline = "2026-09-28T16:00:00+00:00"
 
         def deadline(self):
             """Provide the controlled deadline fixture."""
@@ -313,42 +314,24 @@ def test_native_audit_shares_one_allowance_and_only_complete_proof_runs_consumer
             decision=lambda: decision, content=lambda role: role.encode()
         ),
     )
-    transfers, consumers = [], []
+    audits, consumers = [], []
 
-    class Transport:
-        """Provide the controlled Transport fixture."""
+    class Audit:
+        """The native parser journey is exercised by test_registry_read."""
 
-        def request(self, method, url, _headers, _body, _maximum_bytes):
-            """Provide the controlled request fixture."""
-            transfers.append((method, url))
-            content = (
-                b"index"
-                if url == registry.index_url
-                else url.rsplit("/", 1)[-1].encode()
+        def __init__(
+            self, output, _state, _deadline, _registry, expected, **_kwargs
+        ):
+            output.mkdir(exist_ok=True)
+            audits.append(
+                tuple(distribution.variant for distribution in expected)
             )
-            return NS(status=200, body=content, content_type="application/json")
 
-    monkeypatch.setattr(module, "PythonHttpsTransport", Transport)
+        def step(self):
+            selected = tuple(x for x in originals if x.variant in variants)
+            return NS(files=selected, to_document=lambda: {"files": variants})
 
-    def observe(_reg, _witness, transport):
-        """Provide the controlled observe fixture."""
-        transport.request("GET", registry.index_url, {}, None, 2 << 20)
-        for variant in variants:
-            transport.request(
-                "GET",
-                "https://" + registry.file_host + "/packages/" + variant,
-                {},
-                None,
-                8 << 20,
-            )
-        selected = tuple(x for x in originals if x.variant in variants)
-        return NS(
-            classification="complete" if len(selected) == 2 else "partial",
-            files=selected,
-            to_document=lambda: {"files": variants},
-        )
-
-    monkeypatch.setattr(module, "read_python_index", observe)
+    monkeypatch.setattr(module, "RegistryAudit", Audit)
 
     def consumer(distribution):
         """Provide the controlled consumer fixture."""
@@ -363,17 +346,11 @@ def test_native_audit_shares_one_allowance_and_only_complete_proof_runs_consumer
 
     monkeypatch.setattr(module, "qualify_python_consumer", consumer)
     module.main()
-    assert len(transfers) == 1 + len(variants)
-    assert [r["kind"] for r in ledger["registry_audit_requests"]] == [
-        "index"
-    ] + ["file"] * len(variants)
+    assert audits == [tuple(variants)]
     assert consumers == (
         ["wheel", "sdist"] if purpose == "recovery-proof" else []
     )
     assert "registry_audit_completed" in ledger
-    with pytest.raises(AssertionError):
-        module.main()
-    assert len(transfers) == 1 + len(variants)
 
 
 @pytest.mark.parametrize("changed", ["none", "head", "tree", "dirty", "reader"])
