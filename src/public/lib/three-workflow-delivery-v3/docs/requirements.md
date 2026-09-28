@@ -348,8 +348,10 @@ isolation are separate authority boundaries and remain unchanged.
     running publisher is not null and fails admission.
 
     For Python, one set action uses this same scalar marker/Result transport.
-    Its destination-specific Result records each of the two file operations;
-    `published` requires both definitive successes and exact whole-set readback.
+    Its destination-specific Result records both ordered file dispositions;
+    `published` requires definitive success for every planned upload, exact
+    retained-file proof, at least one successful actual upload, and exact
+    whole-set readback.
     Any missing Result after the set marker remains unknown and possibly mutated.
 
     The Result must directly bind the durable marker, which reaches the
