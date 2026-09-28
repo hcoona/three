@@ -96,7 +96,9 @@ future delivery group.
 The Python requirements and design adopt the owner's platform-reliance decision
 under `WD-PY-006`. The [Python LLD](./hcoona-release-smoke-python-lld.md)
 owns the v2 admission contract. Runtime and both protected Governance files
-implement the blocked v2 form; implementation delivery alone cannot enable them. The [retired native interface](./validation/python-native-readiness.md)
+implement strict v2; implementation delivery alone cannot enable them. TestPyPI
+has reviewed ready admission and PyPI remains blocked. The [handoff](./agent-handoff.md#starting-a-new-session)
+routes current evidence and remaining gates. The [retired native interface](./validation/python-native-readiness.md)
 exists for failed-evidence consumers, not new operation requests.
 
 1. The disabled implementation migrates Python Governance to v2 across

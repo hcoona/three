@@ -58,16 +58,22 @@ For the owner's next Workflow Delivery v3 task:
    file/set readback; a rejected or ambiguous upload remains failed.
    The [LLD migration](./hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
    specifies v2 admission without a fake passing native record. Runtime and both
-   protected Governance files now use strict blocked v2; the duplicate/race
-   producer and hosted workflow are removed. Independently review the normal-workflow
-   configuration/admission and actual TestPyPI publication, followed by PyPI.
+   protected Governance files now use strict v2. TestPyPI has reviewed ready
+   admission; PyPI remains blocked. The duplicate/race producer and hosted
+   workflow are removed. Prepare the separately authorized concrete TestPyPI
+   publication Wave, then independently audit its actual publication before PyPI.
    The [migration order](./migration-strategy.md#python-smoke-delivery) owns
    these stages; design acceptance grants no configuration, OIDC or dispatch.
-   Carry forward Backspace7980's confirmed Sole Owner status and both configured
-   TestPyPI publisher tuples (bootstrap and native workflows, repository
+   Carry forward Backspace7980's confirmed Sole Owner status and all three configured
+   TestPyPI publisher tuples (bootstrap, retired native and normal smoke workflows, repository
    `hcoona/three`, Environment `workflow-delivery-v3-python-testpypi`) unless
    changed or contradicted. Do not routinely ask the owner to recheck them.
-   They are not the normal workflow's publisher registration.
+   The normal entry is `workflow-delivery-v3-python-smoke.yml`; preserve this
+   stable entry and existing registrations. Its [owner confirmation](https://github.com/hcoona/three/issues/843#issuecomment-5862180876)
+   joins the independently reviewed [GitHub configuration evidence](https://github.com/hcoona/three/issues/843#issuecomment-5862183420).
+   The protected TestPyPI Governance file binds the exact attestation digest,
+   accepted source-evidence revision and finite inspection/expiry interval.
+   Ready admission does not grant dispatch or establish publication completion.
    The [retired native interface](./validation/python-native-readiness.md)
    preserves old evidence readers with both native request slots null.
    The [failed TestPyPI audit](https://github.com/hcoona/three/issues/843#issuecomment-5859869282)

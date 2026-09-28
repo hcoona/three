@@ -64,9 +64,10 @@ platform reliance without duplicate/race proving. The
 findings, the retained failed runs and that owner decision.
 The [migration policy](./migration-strategy.md#python-smoke-delivery) routes the
 disabled implementation, configuration/admission and actual publication
-stages. Runtime and both protected files use strict Python Governance v2 with
-both destinations blocked. Configuration/admission and actual two-destination
-publication remain outstanding.
+stages. Runtime and both protected files use strict Python Governance v2.
+TestPyPI has reviewed ready admission; PyPI remains blocked. Actual
+two-destination publication remains outstanding; the [handoff](./agent-handoff.md#starting-a-new-session)
+routes admission evidence and the next operation gate.
 The [retired native interface](./validation/python-native-readiness.md) retains
 historical evidence-reader consumers only.
 
