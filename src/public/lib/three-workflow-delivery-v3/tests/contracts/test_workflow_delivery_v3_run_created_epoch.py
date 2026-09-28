@@ -59,7 +59,7 @@ HELPER = _load_helper()
 class _RecordingStream:
     def __init__(self, payload: bytes) -> None:
         self._payload = payload
-        self._offset = 0
+        self.bytes_read = 0
         self.read_sizes: list[int] = []
 
     def read(self, size: int = -1) -> bytes:
@@ -67,14 +67,20 @@ class _RecordingStream:
         end = (
             len(self._payload)
             if size < 0
-            else min(self._offset + size, len(self._payload))
+            else min(self.bytes_read + size, len(self._payload))
         )
-        chunk = self._payload[self._offset : end]
-        self._offset = end
+        chunk = self._payload[self.bytes_read : end]
+        self.bytes_read = end
         return chunk
 
     def close(self) -> None:
         pass
+
+
+def _assert_bounded_read(stream: _RecordingStream, limit: int) -> None:
+    assert stream.read_sizes
+    assert all(0 < size <= limit + 1 for size in stream.read_sizes)
+    assert stream.bytes_read <= limit + 1
 
 
 class _Response:
@@ -229,11 +235,26 @@ def test_main_performs_one_authenticated_bounded_request(
     assert request.get_header("Authorization") == f"Bearer {TOKEN}"
     assert TOKEN not in request.full_url
     assert timeout == REQUEST_TIMEOUT_SECONDS
-    assert response.stream.read_sizes == [MAX_RESPONSE_BYTES + 1]
+    _assert_bounded_read(response.stream, MAX_RESPONSE_BYTES)
     assert sleeps == []
-    assert [type(handler).__name__ for handler in handlers] == [
-        "_RejectRedirects"
+    redirect_handlers = [
+        handler
+        for handler in handlers
+        if isinstance(handler, urllib.request.HTTPRedirectHandler)
     ]
+    assert redirect_handlers
+    for handler in redirect_handlers:
+        assert (
+            handler.redirect_request(
+                request,
+                None,
+                302,
+                "redirect",
+                _headers(),
+                "https://redirect.example",
+            )
+            is None
+        )
 
 
 def test_enterprise_api_path_prefix_is_preserved(
@@ -253,22 +274,6 @@ def test_enterprise_api_path_prefix_is_preserved(
     assert opener.calls[0][0].full_url == (
         "https://github.example/api/v3/"
         f"repos/{REPOSITORY}/actions/runs/{RUN_ID}"
-    )
-
-
-def test_redirect_handler_never_reuses_credentials() -> None:
-    handler = HELPER._RejectRedirects()  # noqa: SLF001
-
-    assert (
-        handler.redirect_request(
-            object(),
-            object(),
-            302,
-            "redirect",
-            object(),
-            "https://redirect.example",
-        )
-        is None
     )
 
 
@@ -348,7 +353,7 @@ def test_success_and_error_response_reads_are_bounded(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _set_valid_environment(monkeypatch)
-    oversized = _Response(b"x" * (MAX_RESPONSE_BYTES + 1))
+    oversized = _Response(b"x" * (MAX_RESPONSE_BYTES * 2))
     opener, sleeps, _handlers = _install_transport(
         monkeypatch,
         [oversized],
@@ -358,7 +363,7 @@ def test_success_and_error_response_reads_are_bounded(
 
     assert result == 1
     assert len(opener.calls) == 1
-    assert oversized.stream.read_sizes == [MAX_RESPONSE_BYTES + 1]
+    _assert_bounded_read(oversized.stream, MAX_RESPONSE_BYTES)
     assert sleeps == []
     assert "exceeds the size limit" in stderr
 
@@ -381,7 +386,7 @@ def test_success_and_error_response_reads_are_bounded(
 
     assert result == 1
     assert len(opener.calls) == 1
-    assert stream.read_sizes == [MAX_ERROR_BYTES + 1]
+    _assert_bounded_read(stream, MAX_ERROR_BYTES)
     assert sleeps == []
     assert TOKEN not in stderr
     assert "Authorization" not in stderr
@@ -558,7 +563,7 @@ def test_terminal_failures_stop_after_one_attempt(
     outcome: _Response | BaseException,
 ) -> None:
     _set_valid_environment(monkeypatch)
-    opener, sleeps, handlers = _install_transport(monkeypatch, [outcome])
+    opener, sleeps, _handlers = _install_transport(monkeypatch, [outcome])
 
     result, stdout, stderr = _run_main(capsys)
 
@@ -567,9 +572,6 @@ def test_terminal_failures_stop_after_one_attempt(
     assert sleeps == []
     assert len(stderr.splitlines()) == 1
     assert TOKEN not in stderr
-    assert [type(handler).__name__ for handler in handlers] == [
-        "_RejectRedirects"
-    ]
 
 
 @pytest.mark.parametrize(

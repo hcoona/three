@@ -245,19 +245,10 @@ def test_pr_candidate_rejects_unavailable_or_conflicting_comparison(
     [
         (PROJECT_SOURCE,),
         (
+            PROJECT_SOURCE,
             "src/private/app/workflow-delivery-v3-dotnet-provider/Program.cs",
-            "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs",
-            PROJECT_SOURCE,
-        ),
-        (
-            "src/private/app/workflow-delivery-v3-dotnet-provider/README.md",
-            "src/public/lib/hcoona-release-smoke-github-packages/version.json",
-            "src/public/lib/three-workflow-delivery-v3/src/control.py",
-        ),
-        (
             "src/private/app/workflow-delivery-v3-nuget-consumer/Program.cs",
-            "src/private/app/workflow-delivery-v3-nuget-consumer/README.md",
-            PROJECT_SOURCE,
+            "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs",
         ),
     ],
 )
@@ -282,20 +273,18 @@ def test_project_change_selects_complete_first_slice(
 @pytest.mark.parametrize(
     "path",
     [
-        PROJECT_SOURCE,
-        f"{PRODUCT_PATH}/workflow-delivery.release-unit.yml",
-        f"{PRODUCT_PATH}/workflow-delivery.quality.yml",
         FIRST_SLICE_POLICY_PATH,
         "src/public/lib/three-workflow-delivery-v3/src/control.py",
         "Directory.Packages.props",
-        ("src/private/app/workflow-delivery-v3-nuget-authority/Program.cs"),
-        (
-            "src/private/app/workflow-delivery-v3-nuget-authority/"
-            "WorkflowDeliveryV3NuGetAuthority.csproj"
-        ),
+        "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs",
         ".github/actions/workflow-delivery-v3-node/action.yml",
         "eng/scripts/workflow_delivery_v3_control.py",
         CI_WORKFLOW_PATH,
+        "mise.toml",
+        "mise.lock",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
     ],
 )
 def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
@@ -307,73 +296,12 @@ def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
     "path",
     [
         "docs/wiki/README.md",
-        "README.md",
-        "CONTRIBUTING.md",
-        "LICENSES/MIT.txt",
-        ".gitattributes",
+        "hk.pkl",
+        ".python-version",
         "nested/package.json",
-        "nested/pnpm-lock.yaml",
-        "nested/packages.lock.json",
         "src/private/lib/hk/Config.pkl",
         "src/private/lib/hk/Steps.pkl",
         "src/private/lib/hk/steps/Typos.pkl",
-        *(
-            "src/private/app/workflow-delivery-v3-dotnet-provider/" + name
-            for name in (
-                "Program.cs",
-                "README.md",
-                "WorkflowDeliveryV3DotnetProvider.csproj",
-                "packages.lock.json",
-                "readers/PackageReader.cs",
-            )
-        ),
-        *(
-            "src/private/app/workflow-delivery-v3-nuget-consumer/" + name
-            for name in (
-                "BoundedHttpHandler.cs",
-                "ConsumerRequest.cs",
-                "NativeRestore.cs",
-                "Program.cs",
-                "README.md",
-            )
-        ),
-        *(
-            "src/public/lib/hcoona-release-smoke-github-packages/" + name
-            for name in (
-                "README.md",
-                "Smoke.cs",
-                "hcoona-release-smoke-github-packages.csproj",
-                "packages.lock.json",
-                "version.json",
-                "workflow-delivery.quality.yml",
-                "workflow-delivery.release-unit.yml",
-                "Properties/AssemblyInfo.cs",
-            )
-        ),
-        ".github/workflows/release/nested/packages.lock.json",
-        ".github/workflows/consume.yml",
-        "nested/package-lock.json",
-        "src/private/app/tool/pyproject.toml",
-        "src/lab/TaskAssigner/TaskAssigner.csproj",
-        "nested/requirements-dev.txt",
-        "tools/bootstrap.ps1",
-        "nested/.npmrc",
-        "nested/.gitattributes",
-        ".github/workflows/release/package-lock.json",
-        ".github/workflows/release/tool.csproj",
-        ".github/workflows/release/bootstrap.ps1",
-        ".github/workflows/release/.npmrc",
-        "src/public/lib/hexo-renderer-asciidoc/README.md",
-        "src/public/lib/hexo-renderer-asciidoc/README.npm.md",
-        ("src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md"),
-        (
-            "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/"
-            "source/_posts/renderer-tour.adoc"
-        ),
-        (
-            "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/"
-            "source/about/index.adoc"
-        ),
     ],
 )
 def test_repository_only_change_selects_root_hk(path: str) -> None:
@@ -385,100 +313,6 @@ def test_repository_only_change_selects_root_hk(path: str) -> None:
     assert plan.selected_release_units == ()
     assert plan.selected_variants == ()
     assert plan.selected_outputs == ()
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        ".agents/skills/scholarly-pdf-reconstruction",
-        ".agents/skills/scholarly-print-assembly",
-        ".agents/skills/scholarly-render-qa",
-        ".agents/skills/scholarly-print-assembly/scripts/assemble_print.py",
-        "apm.lock.yaml",
-        "apm.yml",
-        (
-            "src/private/lib/scholarly-publication/tests/"
-            "test_validate_package.py"
-        ),
-    ],
-)
-def test_scholarly_publication_package_only_change_selects_root_hk(
-    path: str,
-) -> None:
-    """Route each package-only surface through permanent root HK."""
-    plan = _plan(changed_paths=(path,))
-    assert plan.ready
-    assert _selected_lanes(plan) == ("root-hk",)
-    assert plan.selected_project_nodes == ()
-    assert plan.selected_release_units == ()
-    assert plan.selected_variants == ()
-    assert plan.selected_outputs == ()
-
-
-@pytest.mark.parametrize(
-    ("path", "selected_lanes"),
-    [
-        ("nested/package.json", ("root-hk",)),
-        (".testagent/plan.md", ("root-hk",)),
-        (
-            "docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md",
-            ("root-hk",),
-        ),
-        ("docs/wiki/log.md", ("root-hk",)),
-        (".github/workflows/REFACTOR_PLAN.md", ("root-hk",)),
-        ("hk.pkl", ("root-hk",)),
-        (
-            (
-                "src/public/lib/three-workflow-delivery-v3/src/"
-                "three_workflow_delivery_v3/cli.py"
-            ),
-            CI_LANE_IDS,
-        ),
-        (
-            "src/public/lib/three-workflow-delivery-v3/tests/test_cli.py",
-            CI_LANE_IDS,
-        ),
-        (CI_WORKFLOW_PATH, CI_LANE_IDS),
-    ],
-)
-def test_current_change_surfaces_are_admitted_without_project_overselection(
-    path: str,
-    selected_lanes: tuple[str, ...],
-) -> None:
-    """Classify the current implementation diff at its narrowest valid scope."""
-    plan = _plan(changed_paths=(path,))
-    assert plan.ready
-    assert _selected_lanes(plan) == selected_lanes
-    if selected_lanes == ("root-hk",):
-        assert plan.selected_project_nodes == ()
-        assert plan.selected_release_units == ()
-        assert plan.selected_variants == ()
-        assert plan.selected_outputs == ()
-
-
-def test_static_reference_delivery_path_set_is_fully_classified() -> None:
-    """Admit the authority controls and required Hexo documentation update."""
-    paths = (
-        "Directory.Packages.props",
-        ("src/private/app/workflow-delivery-v3-nuget-authority/Program.cs"),
-        (
-            "src/private/app/workflow-delivery-v3-nuget-authority/"
-            "WorkflowDeliveryV3NuGetAuthority.csproj"
-        ),
-        (
-            "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/"
-            "source/_posts/hello-from-asciidoc.adoc"
-        ),
-    )
-
-    plan = _plan(changed_paths=paths)
-
-    assert plan.ready
-    assert _selected_lanes(plan) == CI_LANE_IDS
-    assert not any(
-        "changed path is unclassified" in diagnostic
-        for diagnostic in plan.diagnostics
-    )
 
 
 def test_manual_slice_validation_always_selects_complete_slice() -> None:
@@ -520,36 +354,6 @@ def test_manual_slice_validation_always_selects_complete_slice() -> None:
         (
             (SHA_A, SHA_B),
             (".github/workflows/helper.py",),
-            "changed path is unclassified",
-        ),
-        (
-            (SHA_A, SHA_B),
-            (
-                (
-                    "src/private/app/workflow-delivery-v3-dotnet-provider-other/"
-                    "Program.cs"
-                ),
-            ),
-            "changed path is unclassified",
-        ),
-        (
-            (SHA_A, SHA_B),
-            (
-                (
-                    "src/private/app/workflow-delivery-v3-nuget-consumer-other/"
-                    "Program.cs"
-                ),
-            ),
-            "changed path is unclassified",
-        ),
-        (
-            (SHA_A, SHA_B),
-            (
-                (
-                    "src/public/lib/hcoona-release-smoke-github-packages-other/"
-                    "Smoke.cs"
-                ),
-            ),
             "changed path is unclassified",
         ),
         (

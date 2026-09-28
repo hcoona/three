@@ -29,6 +29,9 @@ if TYPE_CHECKING:
     from three_workflow_delivery_v3.records.release_transport import (
         ReleaseAdmissionBindings,
     )
+    from three_workflow_delivery_v3.release.python_publication import (
+        PythonPublicationResult,
+    )
 
 RELEASE_INTENT_SCHEMA = "workflow-delivery/v3/release-intent"
 OFFICIAL_PRODUCT_IDENTITY_SCHEMA = (
@@ -534,7 +537,7 @@ class ReleaseIntent:
         return canonical_sha256(self.to_document())
 
 
-@dataclass(frozen=True, slots=True, order=True)
+@dataclass(frozen=True, slots=True)
 class OfficialProductIdentity:
     """Official channel, Release Unit, and canonical NBGV product identity."""
 
@@ -563,7 +566,7 @@ class OfficialProductIdentity:
         }
 
 
-@dataclass(frozen=True, slots=True, order=True)
+@dataclass(frozen=True, slots=True)
 class OfficialExecutionIdentity:
     """Official Product Identity plus immutable target."""
 
@@ -5098,6 +5101,7 @@ type ReleaseRecord = (
     | ExactSatisfiedFinalizationProof
     | AttemptOutcome
     | SimulationOutcome
+    | PythonPublicationResult
 )
 
 

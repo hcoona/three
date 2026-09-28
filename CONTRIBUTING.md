@@ -32,40 +32,42 @@ not require a new engineering review or report.
 
 ## Local Checks
 
-Before an expensive validation or commit, inspect the selected checks and
-validate the intended commit message with the existing rules:
-
-```powershell
-git diff --cached --check
-mise exec -- python eng/scripts/workflow_delivery_v3_hk.py --staged --files0 -- `
-  hk --profile small --profile medium --profile large check --plan --json
-mise exec -- python eng/scripts/workflow_delivery_v3_hk.py --staged --files0 -- hk run impact-check --plan --json
-'perf(hk): Select Validation by Consumed Inputs' | pnpm exec -- commitlint --strict
-```
-
-Use your actual intended message in the last command. A passing plan is only
-a selection preview; it does not run checks. The first plan shows file checks
-and the impact dispatcher; the second shows product suite selection. The
-[HK execution guide](docs/engineering/hk-execution.md#selecting-checks-by-their-inputs)
-explains input scope and the checks that remain unconditional. The normal
-pre-commit and commit-msg hooks still apply when committing.
-
 Use the [repository toolchain guidance](README.md#repository-toolchain) and
 existing `hk.pkl` checks. With the pinned tools available, check the intended
-staged files using the CI profile set:
+staged change paths, including deletions and rename sources, using the CI
+profile set:
 
 ```powershell
-mise exec -- python eng/scripts/workflow_delivery_v3_hk.py --staged --files0 -- `
-  hk --profile small --profile medium --profile large check --check --no-stage --no-progress --no-fail-fast
+python eng/scripts/workflow_delivery_v3_hk.py --staged --files0 -- `
+  mise exec -- hk --profile small --profile medium --profile large `
+  check --check --no-stage --no-progress --no-fail-fast
 ```
 
-The helper retains staged deletions and both rename paths for HK selection;
-file-reading wrappers pass existing operands to their tools. Record the snapshot and scope
-actually checked. CI uses the same helper with explicit base/head refs;
+The helper selects staged paths; `--from-ref <base> --to-ref <candidate>`
+selects a commit range instead. These commands select paths without stashing
+unstaged content. Record the snapshot and scope actually checked.
+CI compares its base with the actual tested checkout;
 local pre-commit uses HK's configured stashing. Do not claim staged/worktree
 equivalence without evidence. Existing profile and path exclusions still apply.
-The [checker contract](docs/governance/checker-contract.md) defines record
-validation interfaces; no new general checker is installed.
+For record changes, run `mise run records:check -- --base <accepted-commit>
+--worktree --output ../three-record-review.json` and retain its report with the reviewed
+snapshot. Use `--candidate <commit>` instead of `--worktree` for an immutable
+candidate. The [checker contract](docs/governance/checker-contract.md) defines
+the advisory tool's scope, limitations and separate contextual review. Run
+`mise run records:test` when changing that implementation. Preserve the report
+bytes or a retrievable artifact, not only a temporary path or digest.
+Write the report outside the worktree so it does not become an input to the
+next validation run.
+
+HK checks source/configuration conformance. Run affected project tests
+explicitly before independent implementation review; `mise run test:v3` runs
+Workflow Delivery v3 and `mise run test:python` runs all configured Python
+roots. General CI selects affected work from its actual Git comparison; its
+explicit full mode selects all suites. See the
+[execution contract](docs/engineering/hk-execution.md#ci-execution-contract).
+Record normal commit/command elapsed time and relevant JUnit/CI step durations
+in the work carrier, along with actual scope and results. For native tests,
+retain the [temporary-file and inode constraints](docs/engineering/workspaces.md#python).
 
 ## Pull Requests and Review
 

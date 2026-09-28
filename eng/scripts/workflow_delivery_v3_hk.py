@@ -139,41 +139,6 @@ def _write_files(directory: Path, paths: tuple[str, ...]) -> Path:
     return path
 
 
-def _dispatch_impact(repository: Path, hook: str, *, plan: bool) -> int:
-    """Delegate matching to HK using complete paths, without file linters."""
-    raw_paths = sys.stdin.buffer.read().decode("utf-8", "strict")
-    if raw_paths and not raw_paths.endswith("\0"):
-        message = "impact input must be NUL-terminated"
-        raise ChangedPathError(message)
-    selected_paths = tuple(
-        _canonical_repo_path(path) for path in raw_paths.split("\0")[:-1]
-    )
-    if hook == "pre-commit":
-        # The outer pre-commit hook has already stashed unstaged changes.
-        paths = tuple(
-            dict.fromkeys((*selected_paths, *staged_paths(repository)))
-        )
-    else:
-        paths = selected_paths
-    with tempfile.TemporaryDirectory(prefix="hk-impact-") as temporary:
-        files = _write_files(Path(temporary), paths)
-        command = [
-            "hk",
-            "--profile",
-            "small",
-            "run",
-            "impact-check",
-            "--check",
-            "--no-stage",
-            "--no-progress",
-            "--files0-from",
-            str(files),
-        ]
-        if plan:
-            command.extend(("--plan", "--json"))
-        return subprocess.run(command, cwd=repository, check=False).returncode
-
-
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", type=Path, default=Path.cwd())
@@ -181,9 +146,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--to-ref")
     parser.add_argument("--staged", action="store_true")
     parser.add_argument("--files0", action="store_true")
-    parser.add_argument("--dispatch-impact", action="store_true")
-    parser.add_argument("--hook", choices=("pre-commit", "check", "fix"))
-    parser.add_argument("--plan-impact", action="store_true")
     parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
@@ -193,28 +155,10 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
-    """Print complete paths, invoke outer HK, or dispatch impact validation."""
+    """Print complete paths or invoke HK with the selected Git history."""
     parser = _parser()
     options = parser.parse_args(arguments)
     repository = options.repository.resolve()
-    if options.dispatch_impact:
-        if not options.hook or any(
-            (
-                options.staged,
-                options.from_ref,
-                options.to_ref,
-                options.files0,
-                options.command,
-            )
-        ):
-            parser.error(
-                "dispatch requires --hook and does not accept a diff or command"
-            )
-        return _dispatch_impact(
-            repository, options.hook, plan=options.plan_impact
-        )
-    if options.hook or options.plan_impact:
-        parser.error("--hook and --plan-impact require --dispatch-impact")
     if options.staged:
         if options.from_ref or options.to_ref:
             parser.error("--staged cannot be combined with refs")

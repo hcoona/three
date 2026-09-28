@@ -275,6 +275,71 @@ inconsistent or delayed observations producing no success. Native admission
 binds this accepted integration contract and its evidence; a separate
 GitHub-owned concurrent-atomicity statement is not required.
 
+## Python Smoke Extension
+
+The confirmed `WD-PY-*` requirements add one Release Unit and two independent
+channel/destination bindings: TestPyPI Buddy, then PyPI Official. One Attempt
+addresses one registry. The completed npm and NuGet slices keep their contracts.
+
+The Python Provider evaluates exact-target Python/NBGV inputs without
+publication authority and freezes the `nbgv-python` projection. Build consumes
+that value through isolated static metadata materialization. The generated
+sdist carries the static version and declared backend prerequisites so its
+consumer does not need Git, NBGV or the producer's environment. No new version
+source or ambient override is added to `nbgv-python`.
+
+CI and Release independently qualify both formats. Native package readers
+verify metadata and embedded witnesses; separate clean consumers install the
+wheel and rebuild/install the sdist. The Shared Foundation provides these
+mechanisms; each context retains its own Plans, Evidence and Decisions.
+
+Release models **one Python distribution-set action**, with exactly two ordered
+file operations (wheel, then sdist). One Snapshot, Approval Bundle and
+Authorization close both immutable files and their destination. One durable
+marker precedes the first upload, and one destination-specific Result records
+the complete controlled outcome, including unattempted or partially successful
+operations. The existing nullable scalar terminal reference and Finalizer
+remain; there is no per-file approval, generic transaction or compensation
+system. Missing Result after the marker is unknown and possibly mutated even
+if one file is independently observable. `published` requires two definitive
+upload successes and exact readback of both original artifacts and witnesses.
+After successful uploads, the profile-bound finite observation phase in the
+[Python LLD](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
+may retain eligible missing additions as pending. Every intermediate response
+and its timing remains audit evidence. Terminal failures never reopen, and
+waiting neither resends uploads nor renews authority.
+
+This set action is **not an atomic registry operation**. A definitive or
+ambiguous failure stops remaining uploads and remains failure. Whole-set exact
+state can be freshly verified without an action; partial/conflicting/unknown
+state blocks normal Live. `WD-PY-006` supplies the explicit per-file service
+dependency, accepted identical-replay behavior and bounded availability claim.
+No prerequisite duplicate/race suite re-proves the platform. V3 tests its own
+use of that contract; each destination independently completes its actual
+publication/readback/consumer journey. Successful acknowledgements do not prove
+unique insertion, and a rejected upload cannot be rescued by later exactness.
+
+Governance binds separate project OIDC publishers, audiences, protected
+Environments, reviewed configuration and the accepted platform reliance for each destination. The publisher receives
+short-lived authority only after current-Attempt approval, executes no target
+build code and consumes verified immutable artifacts. The sole-writer risk is
+explicit; source research establishes no existing registration or native grant.
+
+The five MLDs define the model, governance, CI qualification, release state and
+mechanism boundaries. The [Python LLD](./hcoona-release-smoke-python-lld.md)
+closes their bounded contract choices. Design completion remains separate from
+implementation, configuration/admission and actual publication at each destination.
+
+First-project bootstrap has a separate manual control entry and evidence
+lifecycle under `WD-PY-009`. It reuses the Python build and transport mechanisms
+with a distinct first-project purpose. Its independently audited ownership and
+configuration can establish the existing-project resource prerequisite for
+normal admission even after partial bootstrap, without claiming bootstrap
+completion. The partial version stays untouched; normal publication supplies
+its own complete-pair and consumer evidence. The
+[bootstrap protocol](./validation/python-bootstrap.md) owns this separation and
+its finite operation and evidence boundary.
+
 ## Governance and Trust
 
 ### Context-Owned Planning and Finalization
@@ -482,12 +547,21 @@ The catalog covers only disjoint path selectors paired with an exact Ecosystem
 Authority Graph in the first-slice LLD. Git Source Authority supplies exact
 bytes directly or materializes only declared exact-source files into a
 Session-owned isolated snapshot for file-oriented APIs or commands. Each graph
-binds authoritative artifact schemas and standards, exact library/CLI/runtime
-identities and versions, lock or checksum provenance, public APIs or commands,
+binds authoritative artifact schemas and standards, required libraries and
+public APIs or commands,
 input mode, admitted format generation, required normalized facts, applicable
 prohibited forms, and unsupported cases. Raw-byte, strict-UTF-8, and XML input
 modes are explicit; no adapter performs replacement decoding or hidden
 normalization.
+
+Native package managers own dependency resolution, locked installation and
+integrity. Managed preparation selects the configured tools, restores locked
+dependencies and builds the helper before scanning; failure stops execution.
+Static-reference policy contains no duplicate lockfile hash or dependency
+version admission. Actual loaded versions are diagnostic observations, not
+an independent compatibility or completeness proof. Tool upgrades use the
+existing affected validation. The separate publication profile and approved
+artifact identity remain Release-owned requirements.
 
 Authoritative manifests or lockfiles, official ecosystem libraries or CLIs,
 and published standards own manifest, lock, descriptor, locator, workspace,
@@ -513,8 +587,8 @@ digest binds the full authority graph. The invocation schema rejects an omitted
 or unknown source kind and malformed required source parameters before Result
 construction. Once the source request is admitted, exact-source acquisition
 failure is `source-acquisition-failed`; encoding or authority rejection,
-authority execution failure, inability to project a required fact, authority
-mismatch, and required-root cleanup failure are distinct fail-closed errors.
+authority execution failure, inability to project a required fact, and
+required-root cleanup failure are distinct fail-closed errors.
 Candidate paths and graph-owned projections follow one deterministic declared
 traversal. The first typed non-cleanup failure is canonical; required cleanup
 failure overrides it and preserves the earlier sanitized cause only as
@@ -706,14 +780,12 @@ candidate input but does not inspect HK profiles, steps, file applicability, or
 internal planning.
 
 Whenever root HK runs, its lightweight static-reference policy runs in the
-caller-selected `index` or `worktree` feedback mode. Separately, HK includes an
-expensive path-selected v3 control-package pytest step for the complete v3
-control package/catalog/test tree, first-slice descriptors, the exact
-first-slice Release policy, every v3 workflow consumer, direct Python
-workspace/lock inputs, and HK configuration/helpers. Unrelated product source
-alone does not trigger that pytest step. Manual `slice-validation` runs it
-unconditionally. Both remain internal to the opaque root-HK invocation and do
-not create another CI obligation, Evidence record, or job.
+caller-selected `index` or `worktree` feedback mode. It remains internal to
+the opaque root-HK invocation and creates no separate CI obligation or
+Evidence record. Project unit, scenario and integration tests belong to CI;
+the [CI MLD](./ci-qualification-mld.md#control-package-tests) owns v3 self-test
+selection and execution. The [execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
+records the replacement of the former HK test owner.
 
 Executors resolve only mechanical details required to perform an immutable
 Plan. They may not add, remove, substitute, or downgrade planned scope.
@@ -961,6 +1033,9 @@ the exact active version and take `exact-satisfied`. Differing active version
 bytes fail closed. Release never uses active-version overwrite, a
 publisher-owned delete-and-recreate sequence, or compensation.
 
+Python's file-level dependency and evidence follow `WD-PY-006` through the
+[Python extension](#python-smoke-extension).
+
 NuGet's corresponding dependency and evidence follow `WD-NUGET-006` and
 `WD-NUGET-007` through the [NuGet extension](#nuget-second-slice-extension).
 
@@ -1143,6 +1218,8 @@ failure may leave no durable Attempt Outcome.
 Multi-action or multi-destination publication is outside the first slice and
 requires a concrete scenario and a new reviewed design. This design does not
 preselect a generic transaction, compensation, rollback, or Saga protocol.
+The [Python extension](#python-smoke-extension) defines the separately confirmed
+one-set/two-operation case within the same scalar terminal transport.
 Break-Glass Remediation remains separately approved, uses expected-state checks
 and scoped capability, and records append-only before-and-after state without
 rewriting the original Attempt.
@@ -1289,6 +1366,7 @@ marker before mutation.
 | `WD-RET-*`        | Platform-aware records, durable destination identities, fail-closed expiration                                                                                                                                  |
 | `WD-SLICE-*`      | Same-revision Buddy control, accepted writer TCB and repository-principal blast radius, static-reference policy, one Approval Environment, Publication Authorization, publisher ordering, and one-PR activation |
 | `WD-NFR-*`        | Context separation, adapter extension model, explanation contract, CI objective                                                                                                                                 |
+| `WD-PY-*`         | Python Provider, frozen two-format build/qualification, bounded set action, separate OIDC/configuration admission and destination proving                                                                       |
 | `WD-NUGET-*`      | NuGet second-slice Provider, package and consumer qualification, protected-main Governance, destination contract, and independently authorized validation gates                                                 |
 
 ## Middle-Layer Design Decomposition

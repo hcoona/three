@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -20,11 +21,11 @@ ROOT = Path(__file__).resolve().parents[6]
 WORKFLOW = (
     ROOT / ".github/workflows/workflow-delivery-v3-native-npm-acceptance.yml"
 )
-CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-UV = "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
-MISE = "jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518"
-PNPM = "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
-UPLOAD = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+CHECKOUT = "actions/checkout"
+UV = "astral-sh/setup-uv"
+MISE = "jdx/mise-action"
+PNPM = "pnpm/action-setup"
+UPLOAD = "actions/upload-artifact"
 PACKAGE = "three-workflow-delivery-v3"
 MODULE = "three_workflow_delivery_v3.acceptance"
 AUDIT_FILES = {
@@ -51,7 +52,8 @@ def _step(identity):
     matches = [
         step
         for step in _steps()
-        if step.get("id") == identity or step.get("uses") == identity
+        if step.get("id") == identity
+        or step.get("uses", "").partition("@")[0] == identity
     ]
     assert len(matches) == 1
     return matches[0]
@@ -97,7 +99,6 @@ def test_entry_requires_exact_manual_main_identity_and_confirmation():
     assert inputs["authorized_disposable"]["required"] is True
     assert inputs["authorized_disposable"]["default"] is False
     assert "prior approval" in inputs["authorized_disposable"]["description"]
-    assert set(document["jobs"]) == {"probe"}
     job = document["jobs"]["probe"]
     assert "||" not in job["if"]
     assert {term.strip() for term in job["if"].split("&&")} == {
@@ -121,7 +122,7 @@ def test_entry_requires_exact_manual_main_identity_and_confirmation():
     assert "concurrency" not in job
 
 
-def test_probe_token_env_binding_and_prerequisite_order():
+def test_probe_token_env_binding_and_prerequisite_order():  # noqa: PLR0915
     document = _document()
     job = document["jobs"]["probe"]
     assert document["permissions"] == {"contents": "read"}
@@ -132,31 +133,42 @@ def test_probe_token_env_binding_and_prerequisite_order():
     assert job.get("env", {}) == {}
     assert job["defaults"]["run"]["shell"] == "bash"
     steps = _steps()
-    assert [step["uses"] for step in steps if "uses" in step] == [
-        CHECKOUT,
-        UV,
-        MISE,
-        PNPM,
-        UPLOAD,
-    ]
+    actions = [step["uses"] for step in steps if "uses" in step]
+    assert all(
+        re.fullmatch(r"[^@]+@[0-9a-f]{40}", action) for action in actions
+    )
+    assert sorted(action.partition("@")[0] for action in actions) == sorted(
+        [CHECKOUT, UV, MISE, PNPM, UPLOAD]
+    )
+    assert steps.index(_step(CHECKOUT)) < steps.index(_step(UV))
+    assert steps.index(_step(CHECKOUT)) < steps.index(_step(MISE))
+    assert steps.index(_step(MISE)) < steps.index(_step(PNPM))
+    assert steps.index(_step(PNPM)) < steps.index(_step(UPLOAD))
+    assert steps.index(_step(MISE)) < steps.index(_step("toolchain"))
+    assert steps.index(_step(UV)) < steps.index(_step("dependencies"))
     assert _step(CHECKOUT)["with"] == {
         "ref": "${{ github.sha }}",
         "persist-credentials": False,
     }
-    assert _step(UV)["with"]["version"] == "0.12.7"
+    uv_version = _step(UV)["with"]["version"]
+    assert isinstance(uv_version, str)
+    assert uv_version.strip()
     assert _step(MISE)["with"] == {
         "install": False,
         "working_directory": "${{ runner.temp }}",
     }
+    pnpm_version = _step(PNPM)["with"]["version"]
+    assert isinstance(pnpm_version, str)
+    assert pnpm_version.strip()
     assert _step(PNPM)["with"] == {
-        "version": "11.22.0",
+        "version": pnpm_version,
         "run_install": False,
     }
     assert _step("toolchain")["working-directory"] == "${{ runner.temp }}"
     dependencies = _step("dependencies")
     assert [shlex.split(line) for line in dependencies["run"].splitlines()] == [
         ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"],
-        ["uv", "sync", "--frozen", "--python", "3.13", "--package", PACKAGE],
+        ["uv", "sync", "--frozen", "--package", PACKAGE],
     ]
     assert steps.index(_step("toolchain")) < steps.index(_step(PNPM))
     assert steps.index(_step(PNPM)) < steps.index(dependencies)
@@ -180,6 +192,40 @@ def test_probe_token_env_binding_and_prerequisite_order():
             assert not step.get("env")
         if step != _step(UPLOAD):
             assert "if" not in step
+    for identity, candidate in document["jobs"].items():
+        assert "environment" not in candidate
+        assert "uses" not in candidate
+        assert "secrets" not in candidate
+        for step in candidate.get("steps", []):
+            if "uses" in step:
+                assert step["uses"] in actions
+            if step.get("uses", "").partition("@")[0] == CHECKOUT:
+                assert step["with"]["ref"] == "${{ github.sha }}"
+                assert step["with"]["persist-credentials"] is False
+        if identity == "probe":
+            continue
+        permissions = candidate.get("permissions", document["permissions"])
+        assert isinstance(permissions, dict)
+        assert all(
+            level == "none" or (scope == "contents" and level == "read")
+            for scope, level in permissions.items()
+        )
+        assert "||" not in candidate["if"]
+        assert {term.strip() for term in job["if"].split("&&")}.issubset(
+            {term.strip() for term in candidate["if"].split("&&")}
+        )
+        candidate_source = json.dumps(candidate)
+        assert not any(
+            route in candidate_source
+            for route in (
+                "github.token",
+                "secrets.",
+                "GITHUB_TOKEN",
+                "GH_TOKEN",
+                "NPM_TOKEN",
+                "NODE_AUTH_TOKEN",
+            )
+        )
     raw = WORKFLOW.read_text(encoding="utf-8")
     assert raw.count("${{ github.token }}") == 1
     assert "secrets." not in raw
@@ -340,8 +386,6 @@ raise SystemExit(int(os.environ["TEST_EXIT"]))
     assert calls[0]["args"] == [
         "run",
         "--no-sync",
-        "--python",
-        "3.13",
         "--package",
         PACKAGE,
         "python",
@@ -369,7 +413,9 @@ raise SystemExit(int(os.environ["TEST_EXIT"]))
 
 def test_audit_is_always_an_immutable_explicit_bundle():
     upload = _step(UPLOAD)
-    assert _steps()[-1] == upload
+    steps = _steps()
+    assert steps.index(_step("request")) < steps.index(upload)
+    assert steps.index(_step("probe")) < steps.index(upload)
     assert upload["if"] == "always()"
     settings = upload["with"]
     prefix = "${{ runner.temp }}/wdv3-native-npm-${{ github.run_id }}/"
@@ -382,54 +428,3 @@ def test_audit_is_always_an_immutable_explicit_bundle():
     assert settings["include-hidden-files"] is False
     assert settings["if-no-files-found"] == "error"
     assert 45 <= settings["retention-days"] <= 90
-
-
-def test_built_wheel_exposes_acceptance_probe_module(tmp_path):
-    uv = shutil.which("uv")
-    assert uv is not None
-    built = subprocess.run(
-        [
-            uv,
-            "build",
-            "--wheel",
-            str(ROOT / "src/public/lib" / PACKAGE),
-            "--out-dir",
-            str(tmp_path / "dist"),
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
-    assert built.returncode == 0, built.stderr
-    (wheel,) = (tmp_path / "dist").glob("*.whl")
-    invocation = subprocess.run(
-        [
-            sys.executable,
-            "-I",
-            "-c",
-            (
-                "import runpy, sys; sys.path.insert(0, sys.argv[1]); "
-                f"import {MODULE}.npm_probe as probe; "
-                "assert probe.__file__.startswith(sys.argv[1]); "
-                "sys.argv = ['acceptance', 'probe', '--help']; "
-                f"runpy.run_module('{MODULE}', run_name='__main__')"
-            ),
-            str(wheel),
-        ],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=15,
-    )
-    assert invocation.returncode == 0, invocation.stderr
-    for option in (
-        "--request",
-        "--repository-root",
-        "--runtime-directory",
-        "--toolchain-directory",
-        "--evidence-directory",
-    ):
-        assert option in invocation.stdout

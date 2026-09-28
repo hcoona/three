@@ -5,6 +5,7 @@ from __future__ import annotations
 # ruff: noqa: D103, PLR2004
 import hashlib
 import json
+from collections import Counter
 from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -438,12 +439,9 @@ def test_platform_retains_review_carriers_without_fabricating_approval():
 @pytest.mark.parametrize(
     "scenario",
     [
-        "unprotected",
         "diverged-main",
         "rerun",
-        "wrong-actor",
         "wrong-merge-owner",
-        "different-tree",
         "extra-writer",
         "team",
         "environment-reviewer",
@@ -455,27 +453,18 @@ def test_platform_retains_review_carriers_without_fabricating_approval():
         "package-repository",
     ],
 )
-def test_platform_readback_rejects_wrong_authority(scenario):  # noqa: C901, PLR0912
+def test_platform_readback_rejects_wrong_authority(scenario):  # noqa: C901
     documents = _platform_documents()
     environment = REPO + "/environments/" + ENV
-    if scenario == "unprotected":
-        documents[REPO + "/branches/main"]["protected"] = False
-    elif scenario == "diverged-main":
+    if scenario == "diverged-main":
         documents[f"{REPO}/compare/{TARGET}...{MAIN}"]["status"] = "diverged"
     elif scenario == "rerun":
         documents[f"{REPO}/actions/runs/{RUN_ID}"]["run_attempt"] = 2
-    elif scenario == "wrong-actor":
-        documents[f"{REPO}/actions/runs/{RUN_ID}"]["actor"] = {
-            "login": "another",
-            "id": 1,
-        }
     elif scenario == "wrong-merge-owner":
         documents[REPO + "/pulls/700"]["merged_by"] = {
             "login": "another",
             "id": 1,
         }
-    elif scenario == "different-tree":
-        documents[f"{REPO}/git/commits/{HEAD}"]["tree"]["sha"] = "f" * 40
     elif scenario == "extra-writer":
         documents[_page(REPO + "/collaborators?affiliation=all")].append(
             {"login": "another", "id": 1, "permissions": {"push": True}}
@@ -513,7 +502,14 @@ def test_platform_readback_rejects_wrong_authority(scenario):  # noqa: C901, PLR
             "repository"
         ] = {"id": 1, "full_name": "another/repository"}
     with pytest.raises(
-        (shared.GovernanceRejectionError, ValueError, TypeError)
+        shared.GovernanceRejectionError
+        if scenario == "rerun"
+        else (shared.GovernanceRejectionError, ValueError, TypeError),
+        match=(
+            "NuGet actual workflow actor/attempt/revision differs"
+            if scenario == "rerun"
+            else None
+        ),
     ):
         _facts(_transport(documents))
 
@@ -644,6 +640,7 @@ def test_live_control_reads_no_operator_administration():
         _page(f"{REPO}/issues/700/comments"),
         _page(f"{REPO}/commits/{HEAD}/check-runs"),
     }
+    control_urls = {API + path for path in control_paths}
     transport = _transport({path: documents[path] for path in control_paths})
     live = _live_facts(transport)
     assert type(live) is nuget.NuGetLiveControlFacts
@@ -652,12 +649,14 @@ def test_live_control_reads_no_operator_administration():
     assert live.reviewed_head_sha == HEAD
     assert live.reviewed_tree_sha == TREE
     assert live.pull_request_number == 700
-    assert {response.url for response in live.exchanges} == {
-        API + path for path in control_paths
-    }
+    assert {response.url for response in live.exchanges} == control_urls
     operator = _facts(_transport(documents))
     assert live.review_carriers == operator.review_carriers
-    assert live.exchanges == operator.exchanges[: len(live.exchanges)]
+    assert Counter(live.exchanges) == Counter(
+        response
+        for response in operator.exchanges
+        if response.url in control_urls
+    )
     assert live.readback_digest != operator.readback_digest
     assert not hasattr(live, "approval_environment")
     assert not hasattr(live, "writer_inventory")

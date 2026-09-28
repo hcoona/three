@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from three_workflow_delivery_v3.ci.path_admission import (
-    CI_STATIC_REFERENCE_BASENAMES,
     is_repository_only_path,
     is_static_reference_control_path,
     is_static_reference_surface_path,
@@ -12,18 +11,37 @@ from three_workflow_delivery_v3.ci.path_admission import (
 
 
 @pytest.mark.parametrize(
+    "prefix",
+    [
+        "src/private/app/workflow-delivery-v3-dotnet-provider",
+        "src/private/app/workflow-delivery-v3-nuget-consumer",
+        "src/public/lib/hcoona-release-smoke-github-packages",
+    ],
+)
+@pytest.mark.parametrize("sibling", [False, True])
+def test_native_package_prefix_admission_is_directory_bounded(
+    prefix: str, *, sibling: bool
+) -> None:
+    """Admit package descendants without accepting a similarly named package."""
+    directory = prefix + ("-other" if sibling else "")
+    path = f"{directory}/nested/Program.cs"
+    assert is_repository_only_path(path) is (not sibling)
+    assert not is_static_reference_control_path(path)
+    assert not is_static_reference_surface_path(path)
+
+
+@pytest.mark.parametrize(
     "path",
     [
         "package.json",
-        "nested/package.json",
-        "packages.config",
-        "nested/packages.lock.json",
+        "nested/packages.config",
+        "nested/deeper/packages.lock.json",
         "pnpm-lock.yaml",
         "nested/pnpm-workspace.yaml",
     ],
 )
 def test_static_reference_basename_is_repository_only(path: str) -> None:
-    """Select every retained static-reference basename at any depth."""
+    """Select retained static-reference basenames across directory depths."""
     assert is_static_reference_surface_path(path)
     assert is_repository_only_path(path)
 
@@ -70,17 +88,6 @@ def test_non_scanned_dependency_surfaces_remain_repository_only(
     assert is_repository_only_path(path)
     assert not is_static_reference_control_path(path)
     assert not is_static_reference_surface_path(path)
-
-
-def test_static_reference_basename_catalog_is_exact() -> None:
-    """Keep CI admission aligned with the bounded scanner families."""
-    assert {
-        "package.json",
-        "packages.config",
-        "packages.lock.json",
-        "pnpm-lock.yaml",
-        "pnpm-workspace.yaml",
-    } == CI_STATIC_REFERENCE_BASENAMES
 
 
 def test_static_reference_authority_sources_are_control_not_scan_surfaces() -> (

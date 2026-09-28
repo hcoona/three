@@ -91,6 +91,48 @@ administrator compensation, or weaker success criteria. Use the existing
 review, adjudication, contraction, and protected-delivery discipline for each
 future delivery group.
 
+## Python Smoke Delivery
+
+The Python requirements and design adopt the owner's platform-reliance decision
+under `WD-PY-006`. The [Python LLD](./hcoona-release-smoke-python-lld.md)
+owns the successor admission contract. Existing runtime and both disabled v1
+Governance files still implement the earlier contract; design delivery alone
+cannot enable them. The [retired native interface](./validation/python-native-readiness.md)
+exists for failed-evidence consumers, not new operation requests.
+
+1. Under a later implementation Wave, migrate Python Governance to v2 across
+   strict producers/readers, protected blocked files and tests. Preserve the
+   exact-target Provider, original two-format Build/Qualification, one-shot
+   transport, bounded observation and scalar terminal contract. Retire the
+   Python duplicate/race producer route without breaking historical readers;
+   npm/NuGet contracts and evidence remain unchanged.
+2. Validate V3's success, rejection, ambiguity, partial failure, authority and
+   evidence behavior locally and through ordinary CI, then independently review
+   and protected-deliver with both destinations disabled and all operation slots
+   null. No native-generation placeholder or automatic v1 admission migration.
+3. Under separate concrete authorization, review each destination's actual
+   project ownership, normal-workflow publisher, Environment and writer/reviewer
+   controls, and install its protected admission from the accepted platform
+   dependency and reviewed configuration. Existing owner-confirmed TestPyPI
+   resource facts persist unless changed or contradicted. The bootstrap/native
+   workflow registrations do not register the normal workflow.
+4. If a project does not exist, its separately scoped establishment must close
+   the resource prerequisite. The TestPyPI [bootstrap protocol](./validation/python-bootstrap.md)
+   owns its first-project path. Independently audited ownership/configuration
+   after partial bootstrap can establish resource facts, but cannot establish
+   bootstrap completion, refill a failed version or supply normal-Live evidence.
+5. Execute separately authorized TestPyPI Buddy publication and completion audit,
+   then a newly built/qualified/approved PyPI Official Attempt and its own audit.
+   Each must retain actual publication, fresh original file bytes and both clean
+   consumers. No prerequisite duplicate/race proving is required.
+
+No previous smoke grant, artifact or Approval is promoted. Original failures
+remain failed and spent. Revalidate changed prerequisites before dependent work;
+trust in platform behavior does not infer a configuration change or publication
+permission. npm and NuGet completion remain closed. Ruby follows Python's
+two-destination completion audit. Issue/PR carriers retain progress and exact
+delivery evidence; this page owns only migration order and gates.
+
 ## Why v2 Is Not an Incremental Base
 
 v2 and v3 differ at architectural boundaries:
@@ -168,6 +210,39 @@ their selected-revision control strictly admits the active Governance schema.
 
 ## Implementation-Line Strategy
 
+### CI Execution Ownership Cutover
+
+[Issue #817](https://github.com/hcoona/three/issues/817) establishes general
+Python CI as the sole ordinary CI owner of the v3 self-test collection.
+Root HK and its pre-commit hook now run source/configuration conformance;
+they do not invoke project pytest or scholarly-publication tests. Manual
+`slice-validation` keeps its first-slice scope without implicitly invoking
+v3 self-tests through HK. Explicit `mise run test:v3` and `mise run test:python`
+retain complete local validation. Required GitHub contexts reject failed or
+missing selection, while successful non-applicability omits unrelated work.
+
+The requirements/design prerequisite was accepted before implementation.
+Independent implementation review verifies the replacement owner and absence
+of a validation gap or duplicate ordinary owner. Wave closure remains the
+fallback review of this cutover.
+
+Active v3 workflows, scripts, local commands and tests
+consume the repository's mise-managed Python 3.14 selection and exact lock
+resolution. A generated root `.python-version` serves uv and `actions/setup-python`;
+a generated package runtime constant serves the installed adapter. These are
+projections of `mise.lock`, checked together with the `mise.toml` selector,
+not independently maintained version choices. Trusted `tooling` checkouts
+resolve their own version file. Existing environments are synchronized before
+commands relying on `--no-sync` execute.
+
+The NuGet [HTTP profile contract](./hcoona-release-smoke-github-packages-lld.md#observation-publication-and-terminal-evidence)
+retains exact runtime/source and complete actual-profile comparison. Runtime
+and source migration must execute the real profile and loopback fault proofs
+on the unified interpreter, without runtime-based skips. Original imported
+profiles retain their original identities and remain readable. They do not
+admit the new runtime for native or Live use. Fresh native/profile admission
+retains its existing separate authorization and evidence gates.
+
 ### Static-Reference Policy Contraction
 
 The implementation phase introduces a new schema and policy ID. It must:
@@ -178,8 +253,8 @@ The implementation phase introduces a new schema and policy ID. It must:
   separate HK feedback sources;
 - run the lightweight policy whenever root HK runs in the caller-selected
   feedback mode;
-- preserve the expensive v3 pytest suite as path-selected, except that manual
-  `slice-validation` runs it unconditionally;
+- preserve required v3 self-tests through the
+  [CI execution ownership cutover](#ci-execution-ownership-cutover);
 - remove Tree-sitter and every handwritten ecosystem grammar, lexer, locator
   splitter, and competing-authority hardening layer;
 - introduce one exact Ecosystem Authority Graph per retained selector,

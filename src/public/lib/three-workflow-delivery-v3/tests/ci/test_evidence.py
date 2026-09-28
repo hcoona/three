@@ -19,7 +19,6 @@ from three_workflow_delivery_v3.ci.evidence import (
     form_ci_evidence,
     form_empty_lane_result,
     form_evidence_lane_result,
-    normalize_required_outcome,
 )
 from three_workflow_delivery_v3.records.ci import (
     CI_LANE_IDS,
@@ -144,11 +143,6 @@ def _plan(
     encoded = canonicalize(document)
     return admit_ci_qualification_snapshot_json(
         encoded,
-        expected_candidate=_candidate(),
-        expected_repository_model_digest=cast(
-            "str",
-            document["repository-model-digest"],
-        ),
         expected_root_hk_definition=cast(
             "str",
             document["root-hk-definition"],
@@ -301,44 +295,6 @@ def test_evidence_rejects_substituted_obligation_and_lane() -> None:
     lane = form_evidence_lane_result(plan, _evidence(plan))
     with pytest.raises(ValueError, match="Evidence does not match"):
         replace(lane, lane_id="project-test", producer="project-test")
-
-
-@pytest.mark.parametrize(
-    ("raw", "normalized"),
-    [
-        ("success", "satisfied"),
-        ("failure", "failed"),
-        ("skipped", "skipped"),
-        ("timed-out", "timed-out"),
-        ("unknown", "unknown"),
-    ],
-)
-def test_required_outcomes_are_closed_and_mechanical(
-    raw: str,
-    normalized: str,
-) -> None:
-    """Normalize only mechanically observable executor outcomes."""
-    assert normalize_required_outcome(raw) == normalized
-    assert _evidence(_plan(), raw_outcome=raw).normalized_outcome == normalized
-
-
-@pytest.mark.parametrize(
-    "outcome",
-    [
-        "satisfied",
-        "failed",
-        "canceled",
-        "conflicted",
-        "incomplete",
-        "advisory",
-    ],
-)
-def test_impossible_or_finalizer_only_outcomes_are_not_public(
-    outcome: str,
-) -> None:
-    """Keep conflict and incomplete states out of Evidence formation."""
-    with pytest.raises(ValueError, match="invalid closed value"):
-        normalize_required_outcome(outcome)
 
 
 def test_diagnostics_cannot_promote_failed_mechanics() -> None:

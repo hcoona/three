@@ -295,8 +295,8 @@ def active_transport(case: ObservationCase):
     )
 
 
-def exact_finalization_arguments(case: ObservationCase) -> dict:
-    """Create a real-byte proof and its full read-only Finalizer closure."""
+def exact_snapshot_arguments(case: ObservationCase) -> dict:
+    """Construct the zero-action Snapshot and its Observation closure."""
     observation = _observation(case)
     publication = materialize_publication_snapshot(
         case.snapshot,
@@ -312,6 +312,19 @@ def exact_finalization_arguments(case: ObservationCase) -> dict:
         payload_path="publication-snapshot.json",
         payload_digest=publication.snapshot_digest,
     )
+    return {
+        "publication_snapshot": publication,
+        "publication_snapshot_reference": reference,
+        "observations": (observation,),
+    }
+
+
+def exact_finalization_arguments(case: ObservationCase) -> dict:
+    """Create a real-byte proof and its full read-only Finalizer closure."""
+    closure = exact_snapshot_arguments(case)
+    publication = closure["publication_snapshot"]
+    reference = closure["publication_snapshot_reference"]
+    observation = closure["observations"][0]
     proof = prove_exact_satisfied(
         **case.arguments(),
         publication_snapshot=publication,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # ruff: noqa: D103
-import inspect
+from collections.abc import Callable
 from dataclasses import FrozenInstanceError, fields, replace
 from pathlib import Path
 
@@ -25,12 +25,15 @@ from three_workflow_delivery_v3.release.identity import (
     derive_simulation_binding,
     normalize_official_simulation_intent,
 )
-from three_workflow_delivery_v3.release.planner import (
-    plan_official_simulation_qualification,
-)
 from three_workflow_delivery_v3.repository.compiler import (
     AdmittedRepositoryModelSnapshot,
+    CompilationContext,
+    RepositoryModelSnapshot,
     admit_repository_model_snapshot,
+    validate_first_slice_repository_model_snapshot,
+)
+from three_workflow_delivery_v3.repository.descriptors import (
+    FIRST_SLICE_RELEASE_UNIT,
 )
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -65,33 +68,18 @@ def test_canonical_intent_and_repository_model_fixtures(
     assert intent_digest == intent.intent_digest
     assert model_bytes == admitted_repository_model.canonical_bytes
     assert model_digest == admitted_repository_model.canonical_digest
-    assert (
-        admit_release_record(
-            intent_bytes,
-            expected=intent,
-            expected_digest=intent_digest,
-        )
-        is intent
+    admitted_intent = admit_release_record(
+        intent_bytes,
+        expected=intent,
+        expected_digest=intent_digest,
     )
-    assert (
-        admit_repository_model_snapshot(
-            model_bytes,
-            expected_context=admitted_repository_model.snapshot.context,
-            expected_digest=model_digest,
-        )
-        == admitted_repository_model
-    )
-
-
-def test_ready_repository_model_round_trips_through_canonical_admission(
-    admitted_repository_model: AdmittedRepositoryModelSnapshot,
-) -> None:
+    assert type(admitted_intent) is ReleaseIntent
+    assert admitted_intent == intent
     admitted = admit_repository_model_snapshot(
-        admitted_repository_model.canonical_bytes,
+        model_bytes,
         expected_context=admitted_repository_model.snapshot.context,
-        expected_digest=admitted_repository_model.canonical_digest,
+        expected_digest=model_digest,
     )
-
     assert admitted == admitted_repository_model
     assert admitted.snapshot.ready is True
 
@@ -162,15 +150,8 @@ def test_repository_model_admission_rejects_prior_attempt_context(
 
 
 def test_simulation_identity_requires_admitted_current_model(
-    intent: ReleaseIntent,
     admitted_repository_model: AdmittedRepositoryModelSnapshot,
 ) -> None:
-    with pytest.raises(TypeError, match="admitted Repository Model"):
-        derive_simulation_binding(
-            intent,
-            admitted_repository_model.snapshot,  # type: ignore[arg-type]
-        )
-
     with pytest.raises(ValueError, match="admission integrity"):
         AdmittedRepositoryModelSnapshot(
             snapshot=replace(
@@ -228,7 +209,7 @@ def test_release_intent_is_stable_while_simulation_reruns_are_distinct(
     assert rerun_binding.simulation.identity != binding.simulation.identity
 
 
-def test_release_records_are_exact_frozen_slotted_dataclasses(
+def test_release_records_are_exact_frozen_dataclasses(
     intent: ReleaseIntent,
     binding: SimulationBinding,
 ) -> None:
@@ -240,31 +221,20 @@ def test_release_records_are_exact_frozen_slotted_dataclasses(
 
     for record in records:
         assert fields(record)
-        assert hasattr(type(record), "__slots__")
         with pytest.raises(FrozenInstanceError):
             record.__setattr__(fields(record)[0].name, "mutated")
 
 
-def test_identity_field_order_and_live_identity_shapes_are_exact() -> None:
-    products = (
-        OfficialProductIdentity("official", "unit-b", "1.0.0"),
-        OfficialProductIdentity("official", "unit-a", "2.0.0"),
-        OfficialProductIdentity("official", "unit-a", "1.0.0"),
-    )
-
-    assert tuple(sorted(products)) == (
-        OfficialProductIdentity("official", "unit-a", "1.0.0"),
-        OfficialProductIdentity("official", "unit-a", "2.0.0"),
-        OfficialProductIdentity("official", "unit-b", "1.0.0"),
-    )
-    execution = OfficialExecutionIdentity(products[0], "a" * 40)
+def test_live_attempt_wire_shape_preserves_workflow_run_identity() -> None:
+    product = OfficialProductIdentity("official", "unit-b", "1.0.0")
+    execution = OfficialExecutionIdentity(product, "a" * 40)
     attempt = ReleaseAttemptIdentity(execution, 91)
     retry = ReleaseAttemptIdentity(execution, 92)
-    assert tuple(attempt.to_document()) == (
+    assert set(attempt.to_document()) == {
         "schema",
         "execution",
         "workflow-run-id",
-    )
+    }
     assert retry != attempt
 
 
@@ -277,7 +247,8 @@ def test_canonical_release_record_admission_rejects_tampering(
         expected=intent,
         expected_digest=intent.intent_digest,
     )
-    assert admitted is intent
+    assert type(admitted) is ReleaseIntent
+    assert admitted == intent
 
     tampered = dict(intent.to_document())
     tampered["actor"] = "other-actor"
@@ -295,9 +266,6 @@ def test_official_simulation_plan_is_the_exact_closed_first_slice(
 ) -> None:
     snapshot = qualification_snapshot
 
-    assert tuple(
-        inspect.signature(plan_official_simulation_qualification).parameters
-    ) == ("intent", "binding", "admitted_repository_model")
     assert admitted_repository_model.snapshot.release_policy is not None
     assert snapshot.release_policy_digest == (
         admitted_repository_model.snapshot.release_policy.policy_digest
@@ -366,3 +334,158 @@ def test_simulation_identity_document_contains_no_live_identity(
     assert "official-execution-identity" not in serialized
     assert "release-attempt-identity" not in serialized
     assert isinstance(binding.simulation, SimulationIdentity)
+
+
+def _with_snapshot_channel(
+    context: CompilationContext,
+) -> CompilationContext:
+    return replace(context, channel="official")
+
+
+def _with_snapshot_release_unit(
+    context: CompilationContext,
+) -> CompilationContext:
+    return replace(context, release_unit=FIRST_SLICE_RELEASE_UNIT)
+
+
+type CompilationContextMutation = Callable[
+    [CompilationContext], CompilationContext
+]
+
+type SnapshotMutation = Callable[
+    [RepositoryModelSnapshot], RepositoryModelSnapshot
+]
+
+
+@pytest.mark.parametrize(
+    ("context_mutation", "field_name"),
+    [
+        (_with_snapshot_channel, "channel"),
+        (_with_snapshot_release_unit, "release_unit"),
+    ],
+    ids=["channel-set", "release-unit-set"],
+)
+def test_repository_model_admission_rejects_live_selection(
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    context_mutation: CompilationContextMutation,
+    field_name: str,
+) -> None:
+    """Reject live Repository Model contexts carrying simulation selection."""
+    base_snapshot = live_admitted_repository_model.snapshot
+    snapshot = replace(
+        base_snapshot,
+        context=context_mutation(base_snapshot.context),
+    )
+
+    with pytest.raises(ValueError, match="simulation selection"):
+        validate_first_slice_repository_model_snapshot(snapshot)
+
+    assert getattr(snapshot.context, field_name) is not None
+    assert snapshot.context.purpose == "live-release"
+    validate_first_slice_repository_model_snapshot(
+        live_admitted_repository_model.snapshot
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda snapshot: replace(snapshot, release_units=()),
+            "must contain one Release Unit",
+        ),
+        (
+            lambda snapshot: replace(snapshot, quality=()),
+            "Quality closure mismatch",
+        ),
+        (
+            lambda snapshot: replace(
+                snapshot,
+                project_nodes=(
+                    replace(snapshot.project_nodes[0], path="src/substitute"),
+                ),
+            ),
+            "Project Node closure mismatch",
+        ),
+        (
+            lambda snapshot: replace(
+                snapshot,
+                release_units=(
+                    replace(
+                        snapshot.release_units[0],
+                        builds=(
+                            replace(
+                                snapshot.release_units[0].builds[0],
+                                outputs=(
+                                    replace(
+                                        snapshot.release_units[0]
+                                        .builds[0]
+                                        .outputs[0],
+                                        output_id="substituted-tarball",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            "output closure mismatch",
+        ),
+        (
+            lambda snapshot: replace(
+                snapshot,
+                nbgv=replace(snapshot.nbgv, git_commit_id="d" * 40),
+            ),
+            "NBGV facts are incomplete",
+        ),
+    ],
+    ids=[
+        "missing-release-unit",
+        "missing-quality",
+        "substituted-project",
+        "substituted-output",
+        "target-unbound-nbgv",
+    ],
+)
+def test_repository_model_admission_rejects_incomplete_or_substituted_closure(
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    mutate: SnapshotMutation,
+    message: str,
+) -> None:
+    """Reject self-consistent Snapshots without first-slice closure."""
+    snapshot = mutate(live_admitted_repository_model.snapshot)
+
+    with pytest.raises(ValueError, match=message):
+        validate_first_slice_repository_model_snapshot(snapshot)
+
+    validate_first_slice_repository_model_snapshot(
+        live_admitted_repository_model.snapshot
+    )
+
+
+def test_repository_model_admission_rejects_live_run_attempt(
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+) -> None:
+    """Reject the retired run-attempt field at the model boundary."""
+    current_snapshot = live_admitted_repository_model.snapshot
+    prior_snapshot = replace(
+        current_snapshot,
+        context=replace(current_snapshot.context, run_attempt=2),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="live compilation cannot bind run_attempt",
+    ):
+        validate_first_slice_repository_model_snapshot(prior_snapshot)
+
+    validate_first_slice_repository_model_snapshot(
+        live_admitted_repository_model.snapshot
+    )
+
+
+def test_admitted_repository_model_is_frozen(
+    admitted_repository_model: AdmittedRepositoryModelSnapshot,
+) -> None:
+    with pytest.raises(FrozenInstanceError):
+        admitted_repository_model.canonical_digest = "sha256:" + "0" * 64  # type: ignore[misc]

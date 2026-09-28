@@ -59,6 +59,19 @@ records unless independent consumers justify a separate authority. Existing
 package, contract, evidence and skill-source paths remain when their actual
 consumers require those interfaces.
 
+The catalog separates shared record responsibilities (`families`) from concrete
+project/path ownership (`bindings`). A family owns its producer, maintainer,
+consumers, admission trigger, failure mode and review point. A binding names its
+family, owning namespace, path, representation and lifecycle; an optional purpose
+explains a location-specific role. Keep genuinely different responsibilities in
+different families. Adding another location with the same responsibilities does
+not require copying the family's review or admission rules. Binding IDs preserve
+the former version-2 family-instance IDs; they are not product requirement IDs.
+
+Path coverage does not admit a new concern or establish its semantic authority.
+Project portals and the applicable review procedures retain concern-specific
+routing even when several record types share a path binding.
+
 ## Record Admission
 
 Before adding a record or control, identify:
@@ -288,12 +301,16 @@ Use:
 - Agent Skills for repeatable contextual review;
 - human review for product value, risk, scope, and release decisions.
 
-The [checker contract](checker-contract.md) defines bounded validation inputs and
-review interfaces. No general repository-record
-checker is installed. Reviewers perform the required coverage,
-reference, namespace, schema, and routing checks and retain their results in the
-work carrier. A future checker begins advisory unless deterministic behavior and
-remediation justify an explicitly accepted blocking control.
+The [checker contract](checker-contract.md) defines bounded validation inputs,
+commands and review interfaces. The repository's record checker supplies
+repeatable mechanical validation and an explicit inventory/report for reviewers.
+Run it against an explicit accepted base and candidate snapshot and retain its
+report in the work carrier. Reviewers resolve unprepared ownership and inspect
+semantic admission, requirement meaning, evidence and domain gates; a clean
+mechanical report does not decide those concerns. The checker is advisory and
+does not install an automatic CI or blocking hook gate. Blocking activation
+requires demonstrated snapshot semantics, deterministic remediation and an
+explicitly accepted control change.
 
 Candidate discovery must be independent of the mutable family catalog and
 include root interfaces, repository and project document roots, hidden legacy

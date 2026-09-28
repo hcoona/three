@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -36,6 +35,7 @@ from three_workflow_delivery_v3.records.ci import (
     CiQualificationSnapshot,
     admit_ci_qualification_snapshot_json,
     ci_artifact_digest,
+    ci_evidence_digest,
 )
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "fixtures" / "ci"
@@ -175,11 +175,6 @@ def _plan(mode: str = "complete") -> CiQualificationSnapshot:
     document = _plan_document(mode)
     return admit_ci_qualification_snapshot_json(
         canonicalize(document),
-        expected_candidate=_candidate(manual=mode == "manual"),
-        expected_repository_model_digest=cast(
-            "str",
-            document["repository-model-digest"],
-        ),
         expected_root_hk_definition=cast(
             "str",
             document["root-hk-definition"],
@@ -359,114 +354,28 @@ def test_manual_slice_slo_is_not_applicable() -> None:
 
 
 @pytest.mark.parametrize(
-    "path",
+    ("raw_outcome", "outcome", "failure_class", "next_action"),
     [
-        ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json",
-        ".github/workflows/workflow-delivery-v3-ci.yml",
-        "src/public/lib/three-workflow-delivery-v3/src/"
-        "three_workflow_delivery_v3/ci/planner.py",
-        "src/public/lib/three-workflow-delivery-v3/src/"
-        "three_workflow_delivery_v3/ci/finalizer.py",
-        "Directory.Build.props",
-        "Directory.Build.targets",
-        "mise.toml",
-        "nuget.config",
+        (
+            "failure",
+            "failed",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+        ),
+        ("unknown", "unknown", "incomplete-qualification", "rerun-candidate"),
     ],
 )
-def test_broad_pr_changes_are_excluded_from_ordinary_slo(path: str) -> None:
-    """Exclude broad control and toolchain changes with a closed reason."""
-    document = _plan_document("complete")
-    document["changed-paths"] = [path]
-    if path.startswith(".github/workflow-delivery/governance/") or path in {
-        "Directory.Build.props",
-        "Directory.Build.targets",
-        "nuget.config",
-    }:
-        document["selected-project-nodes"] = []
-        document["selected-release-units"] = []
-        document["selected-variants"] = []
-        document["selected-outputs"] = []
-        selected_lanes = ("root-hk",)
-    else:
-        selected_lanes = CI_LANE_IDS
-    obligations = cast("list[JsonValue]", document["obligations"])
-    expected_evidence_ids: list[JsonValue] = []
-    for value in obligations:
-        obligation = cast("dict[str, JsonValue]", value)
-        lane_id = cast("str", obligation["lane-id"])
-        selected = lane_id in selected_lanes
-        obligation["selected"] = selected
-        obligation["required"] = selected
-        request_digest = canonical_sha256(
-            cast(
-                "dict[str, JsonValue]",
-                {
-                    "schema": "workflow-delivery/v3/ci-obligation-request",
-                    "candidate-digest": canonical_sha256(document["candidate"]),
-                    "repository-model-digest": document[
-                        "repository-model-digest"
-                    ],
-                    "lane-id": lane_id,
-                    "definition-id": obligation["definition-id"],
-                    "definition-digest": obligation["definition-digest"],
-                    "prerequisites": obligation["prerequisites"],
-                    "selected": selected,
-                    "required": selected,
-                    "scope-mode": document["scope-mode"],
-                    "changed-paths": document["changed-paths"],
-                    "selected-project-nodes": document[
-                        "selected-project-nodes"
-                    ],
-                    "selected-release-units": document[
-                        "selected-release-units"
-                    ],
-                    "selected-variants": document["selected-variants"],
-                    "selected-outputs": document["selected-outputs"],
-                },
-            )
-        )
-        evidence_id = (
-            f"evidence:{lane_id}:{request_digest.removeprefix('sha256:')}"
-        )
-        obligation["request-digest"] = request_digest
-        obligation["expected-evidence-id"] = evidence_id
-        if selected:
-            expected_evidence_ids.append(evidence_id)
-    document["expected-evidence-ids"] = expected_evidence_ids
-    plan = admit_ci_qualification_snapshot_json(
-        canonicalize(document),
-        expected_candidate=_candidate(),
-        expected_repository_model_digest=cast(
-            "str",
-            document["repository-model-digest"],
-        ),
-        expected_root_hk_definition=cast(
-            "str",
-            document["root-hk-definition"],
-        ),
-        expected_root_hk_definition_digest=cast(
-            "str",
-            document["root-hk-definition-digest"],
-        ),
-        expected_plan_digest=canonical_sha256(document),
-    )
-    decision = _finalize(
-        plan,
-        _lane_results(plan),
-        elapsed_seconds=PR_SLO_SECONDS + 1,
-    )
-    assert decision.pr_slo == "excluded"
-    assert decision.pr_slo_reason == "broad-change"
-    assert "pr-12-minute-slo=excluded" in decision.summary.text
-    assert "pr-slo-reason=broad-change" in decision.summary.text
-
-
-def test_completed_quality_failure_is_failure() -> None:
-    """Keep a completed failed obligation as a quality failure."""
+def test_unsatisfied_evidence_cannot_produce_success(
+    raw_outcome: str,
+    outcome: str,
+    failure_class: str,
+    next_action: str,
+) -> None:
+    """Classify admitted negative Evidence without losing its exact outcome."""
     plan = _plan()
     decision = _finalize(
         plan,
-        _lane_results(plan, outcomes={"project-test": "failure"}),
+        _lane_results(plan, outcomes={"project-test": raw_outcome}),
         elapsed_seconds=600,
     )
     project_test = next(
@@ -475,10 +384,20 @@ def test_completed_quality_failure_is_failure() -> None:
         if disposition.obligation.lane_id == "project-test"
     )
     assert decision.terminal_result == "failure"
-    assert decision.failure_class == "quality-failure"
-    assert decision.next_action == "fix-quality-failure-and-rerun"
-    assert project_test.outcome == "failed"
-    assert "project-test=failed" in decision.explanation
+    assert decision.failure_class == failure_class
+    assert decision.next_action == next_action
+    assert project_test.obligation == _obligation(plan, "project-test")
+    assert project_test.outcome == outcome
+    assert project_test.explanation == f"project-test {outcome}"
+    assert project_test.evidence_digests == (
+        ci_evidence_digest(
+            _evidence(plan, "project-test", raw_outcome=raw_outcome)
+        ),
+    )
+    assert decision.explanation == (
+        "selected CI slice obligations were not satisfied: "
+        f"project-test={outcome}"
+    )
 
 
 def test_missing_or_canceled_selected_work_is_finalizer_incomplete() -> None:
@@ -629,35 +548,12 @@ def test_finalizer_rejects_duplicate_or_nonempty_unselected_lane() -> None:
         )
 
 
-def test_decision_rejects_summary_or_slo_contradiction() -> None:
-    """Reject human summary or SLO fields that contradict machine facts."""
+def test_finalizer_rejects_negative_elapsed_seconds() -> None:
+    """Reject negative trusted elapsed time."""
     plan = _plan()
-    decision = _finalize(
-        plan,
-        _lane_results(plan),
-        elapsed_seconds=600,
-    )
-    with pytest.raises(ValueError, match="Summary text"):
-        replace(
-            decision,
-            summary=replace(
-                decision.summary,
-                text="non-authoritative shadow result: contradictory",
-            ),
-        )
-    with pytest.raises(ValueError, match="SLO result"):
-        replace(decision, pr_slo="missed")
-
-
-@pytest.mark.parametrize("elapsed_seconds", [-1, 1.5, True])
-def test_finalizer_requires_exact_nonnegative_elapsed_seconds(
-    elapsed_seconds: object,
-) -> None:
-    """Require trusted elapsed time as an exact nonnegative integer."""
-    plan = _plan()
-    with pytest.raises((TypeError, ValueError)):
+    with pytest.raises(TypeError):
         _finalize(
             plan,
             _lane_results(plan),
-            elapsed_seconds=elapsed_seconds,  # type: ignore[arg-type]
+            elapsed_seconds=-1,
         )

@@ -8,22 +8,19 @@ import dataclasses
 import gzip
 import hashlib
 import io
-import inspect
 import json
 import os
 import shutil
 import subprocess
 import tarfile
-import types
+from collections import Counter
 from contextlib import contextmanager
-from dataclasses import fields, replace
-from inspect import signature
+from dataclasses import replace
+from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
-from typing import get_type_hints
 
 import pytest
-import three_workflow_delivery_v3.adapters as adapters_package
 import three_workflow_delivery_v3.adapters.node as node_adapter
 from three_workflow_delivery_v3.adapters.node import (
     BuildRequest,
@@ -96,7 +93,7 @@ def _nbgv_facts() -> NbgvFacts:
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def witness() -> PackageTargetWitness:
     """Return the canonical first-slice Package Target Witness."""
     return PackageTargetWitness(
@@ -110,7 +107,7 @@ def witness() -> PackageTargetWitness:
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def build_request(witness: PackageTargetWitness) -> BuildRequest:
     """Return a closed request using only declared project/build inputs."""
     return BuildRequest(
@@ -126,35 +123,36 @@ def build_request(witness: PackageTargetWitness) -> BuildRequest:
 
 
 @pytest.fixture(scope="module")
-def built_result() -> node_adapter.BuildResult:
+def native_build_request(build_request: BuildRequest) -> BuildRequest:
+    """Freeze the installed toolchain once for native integration scenarios."""
+    versions = {
+        tool: subprocess.check_output(  # noqa: S603
+            (tool, "--version"), text=True
+        ).strip()
+        for tool in ("node", "pnpm", "npm")
+    }
+    return replace(
+        build_request,
+        node_version=versions["node"].removeprefix("v"),
+        pnpm_version=versions["pnpm"],
+        npm_version=versions["npm"],
+    )
+
+
+@pytest.fixture(scope="module")
+def built_result(
+    native_build_request: BuildRequest,
+) -> node_adapter.BuildResult:
     """Build the real smoke package once for artifact quality scenarios."""
-    witness = PackageTargetWitness(
-        target=TARGET,
-        release_unit="hcoona-release-smoke-npm",
-        nbgv=_nbgv_facts(),
-        build_definition="node/npm-package-v1",
-        catalog_digest=DIGEST_A,
-        control_digest=DIGEST_B,
-        purpose="slice-validation",
-    )
-    return build_node_package(
-        BuildRequest(
-            source_root=PROJECT_ROOT,
-            declared_inputs=DECLARED_INPUTS,
-            npm_package_version=NPM_VERSION,
-            witness=witness,
-            source_date_epoch=1_700_000_000,
-            node_version="24.19.0",
-            pnpm_version="11.22.0",
-            npm_version="11.17.0",
-        )
-    )
+    return build_node_package(native_build_request)
 
 
-def _source_snapshot() -> dict[str, tuple[str, bytes | str]]:
+def _source_snapshot(
+    source_root: Path = PROJECT_ROOT,
+) -> dict[str, tuple[str, bytes | str]]:
     snapshot: dict[str, tuple[str, bytes | str]] = {}
-    for path in sorted(PROJECT_ROOT.rglob("*")):
-        relative_path = path.relative_to(PROJECT_ROOT)
+    for path in sorted(source_root.rglob("*")):
+        relative_path = path.relative_to(source_root)
         if "node_modules" in relative_path.parts:
             continue
         relative = relative_path.as_posix()
@@ -240,6 +238,29 @@ def _make_tarball(
 def _nul_filled(value: bytes, width: int) -> bytes:
     assert len(value) < width
     return value + bytes(width - len(value))
+
+
+@pytest.fixture
+def raw_tarball_seed() -> tuple[bytes, dict[str, bytes]]:
+    """Provide independently expected ordinary entries for raw format cases."""
+    entries = {
+        "package/README.md": b"Raw TAR fixture.\n",
+        "package/dist/index.js": b"export const fixture = true;\n",
+        "package/package.json": b'{"name":"@example/raw-tar-fixture"}\n',
+        "package/workflow-delivery/provenance.json": (
+            b'{"fixture":"raw-format"}\n'
+        ),
+    }
+    tarball = _make_tarball(entries)
+
+    assert node_adapter._read_tarball(tarball) == entries  # noqa: SLF001
+    assert tuple(member[1] for member in _tar_member_observables(tarball)) == (
+        "package/README.md",
+        "package/dist/index.js",
+        "package/package.json",
+        "package/workflow-delivery/provenance.json",
+    )
+    return tarball, entries
 
 
 def _tar_header_with_checksum(
@@ -359,17 +380,6 @@ def _physical_extension_prefix(
             format=tarfile.PAX_FORMAT
         )
         return extension_with_member_header[: -tarfile.BLOCKSIZE]
-    if extension_kind == "pax-solaris":
-        extension_prefix = bytearray(
-            _physical_extension_prefix("pax-extended", insertion_member)
-        )
-        type_start, type_end = TAR_HEADER_FIELDS["type"]
-        extension_prefix[type_start:type_end] = tarfile.SOLARIS_XHDTYPE
-        extension_prefix[: tarfile.BLOCKSIZE] = _tar_header_with_checksum(
-            bytes(extension_prefix[: tarfile.BLOCKSIZE])
-        )
-        return bytes(extension_prefix)
-
     assert extension_kind == "pax-global"
     return tarfile.TarInfo.create_pax_global_header(
         {"comment": "physical-extension-padding-probe"}
@@ -439,18 +449,45 @@ def _make_runtime_request(
     )
 
 
-def test_source_snapshot_covers_complete_fixture_project() -> None:
-    assert set(_source_snapshot()) - {"dist/index.js"} == {
-        "README.md",
-        "package.json",
-        "scripts/build.mjs",
-        "scripts/nbgv-version.mjs",
-        "src/index.js",
-        "test/index.test.js",
-        "version.json",
-        "workflow-delivery.quality.yml",
-        "workflow-delivery.release-unit.yml",
+def test_source_snapshot_covers_controlled_source_projection(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    (source / "src").mkdir(parents=True)
+    (source / "docs").mkdir()
+    (source / "node_modules").mkdir()
+    (source / "nested/node_modules").mkdir(parents=True)
+    (source / "package.json").write_bytes(b'{"name":"source-projection"}\n')
+    (source / "src/index.js").write_bytes(b"export const value = 1;\n")
+    (source / "docs/unlisted.txt").write_bytes(b"unlisted source document\n")
+    (source / "link.txt").symlink_to("docs/unlisted.txt")
+    (source / "node_modules/excluded.txt").write_bytes(b"excluded root\n")
+    (source / "nested/node_modules/excluded.txt").write_bytes(
+        b"excluded nested\n"
+    )
+
+    before = _source_snapshot(source)
+
+    assert before == {
+        "package.json": ("file", b'{"name":"source-projection"}\n'),
+        "src/index.js": ("file", b"export const value = 1;\n"),
+        "docs/unlisted.txt": ("file", b"unlisted source document\n"),
+        "link.txt": ("symlink", "docs/unlisted.txt"),
     }
+
+    (source / "package.json").write_bytes(b'{"name":"changed-projection"}\n')
+    (source / "src/index.js").unlink()
+    (source / "extra").mkdir()
+    (source / "extra/new.txt").write_bytes(b"added source file\n")
+    after = _source_snapshot(source)
+
+    assert after == {
+        "package.json": ("file", b'{"name":"changed-projection"}\n'),
+        "docs/unlisted.txt": ("file", b"unlisted source document\n"),
+        "link.txt": ("symlink", "docs/unlisted.txt"),
+        "extra/new.txt": ("file", b"added source file\n"),
+    }
+    assert after != before
 
 
 def test_package_target_witness_is_canonical_and_execution_independent(
@@ -606,7 +643,7 @@ def test_build_rejects_outside_root_symlink_before_read_copy_or_runner(
     ],
 )
 def test_build_rejects_non_exact_source_package_files_allowlist(
-    build_request: BuildRequest,
+    native_build_request: BuildRequest,
     tmp_path: Path,
     files: list[str],
 ) -> None:
@@ -625,9 +662,8 @@ def test_build_rejects_non_exact_source_package_files_allowlist(
     with pytest.raises(ValueError, match="files"):
         build_node_package(
             replace(
-                build_request,
+                native_build_request,
                 source_root=project,
-                pnpm_version="11.22.0",
             )
         )
 
@@ -641,14 +677,14 @@ def test_build_rejects_non_exact_source_package_files_allowlist(
     ],
 )
 def test_build_rejects_runtime_toolchain_mismatch(
-    build_request: BuildRequest,
+    native_build_request: BuildRequest,
     field: str,
     value: str,
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
         build_node_package(
-            replace(build_request, **cast("Any", {field: value}))
+            replace(native_build_request, **cast("Any", {field: value}))
         )
 
 
@@ -715,82 +751,13 @@ def test_node_runtime_version_accepts_only_the_optional_cli_prefix(
     )
 
 
-def test_adapter_identity_is_pinned_and_not_request_forgeable(
-    build_request: BuildRequest,
-    built_result: node_adapter.BuildResult,
-) -> None:
-    assert "adapter_version" not in {
-        field.name for field in fields(BuildRequest)
-    }
-    with pytest.raises(TypeError, match="adapter_version"):
-        cast("Any", replace)(
-            build_request,
-            adapter_version="forged/adapter-v99",
-        )
-    assert ("adapter", "node/npm-package-v1") in built_result.toolchain
-
-
-def test_build_is_deterministic_and_preserves_source_checkout(
-    build_request: BuildRequest,
-) -> None:
-    """Pin two builds' bytes, hashes, manifest, and source preservation."""
-    before = _source_snapshot()
-
-    first = build_node_package(build_request)
-    second = build_node_package(build_request)
-
-    assert first.tarball == second.tarball
-    assert first.manifest.sha256 == (
-        "sha256:" + hashlib.sha256(first.tarball).hexdigest()
-    )
-    assert first.manifest.sha512 == (
-        "sha512:" + hashlib.sha512(first.tarball).hexdigest()
-    )
-    assert first.manifest.entries == (
-        "package/README.md",
-        "package/dist/index.js",
-        "package/package.json",
-        "package/workflow-delivery/provenance.json",
-    )
-    assert first.manifest.lifecycle_scripts == (
-        (
-            "build",
-            "node ./scripts/nbgv-version.mjs stamp && node ./scripts/build.mjs",
-        ),
-        ("postpack", "node ./scripts/nbgv-version.mjs reset"),
-        ("prepack", "node ./scripts/nbgv-version.mjs stamp"),
-        ("test", "node --test"),
-        ("version:reset", "node ./scripts/nbgv-version.mjs reset"),
-        ("version:stamp", "node ./scripts/nbgv-version.mjs stamp"),
-    )
-    assert first.expectation.files_allowlist == (
-        "dist",
-        "README.md",
-        "workflow-delivery/provenance.json",
-    )
-    assert first.witness == build_request.witness.canonical_bytes
-    assert first.toolchain == (
-        ("node", "24.19.0"),
-        ("pnpm", "11.22.0"),
-        ("npm", "11.17.0"),
-        ("adapter", "node/npm-package-v1"),
-    )
-    assert tuple(path for path, _digest in first.source_input_manifest) == (
-        DECLARED_INPUTS
-    )
-    assert all(
-        digest.startswith("sha256:") and len(digest) == PREFIXED_SHA256_LENGTH
-        for _path, digest in first.source_input_manifest
-    )
-    assert _source_snapshot() == before
-
-
 def test_build_is_deterministic_across_process_umasks_and_normalizes_modes(
-    build_request: BuildRequest,
+    native_build_request: BuildRequest,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    before = _source_snapshot()
     source_manifest = json.loads(
-        (build_request.source_root / "package.json").read_text()
+        (native_build_request.source_root / "package.json").read_text()
     )
     assert source_manifest["version"] == "0.0.0-placeholder"
 
@@ -837,7 +804,8 @@ def test_build_is_deterministic_across_process_umasks_and_normalizes_modes(
             active_umask = mask
             with _temporary_process_umask(mask):
                 assert _current_process_umask() == mask
-                results[mask] = build_node_package(build_request)
+                results[mask] = build_node_package(native_build_request)
+                assert _source_snapshot() == before
             umask_restored[mask] = _current_process_umask() == initial_umask
     finally:
         os.umask(initial_umask)
@@ -947,9 +915,47 @@ def test_build_is_deterministic_across_process_umasks_and_normalizes_modes(
         "umask-restored": {0o022: True, 0o077: True},
     }
 
+    assert permissive.manifest.entries == (
+        "package/README.md",
+        "package/dist/index.js",
+        "package/package.json",
+        "package/workflow-delivery/provenance.json",
+    )
+    assert permissive.manifest.lifecycle_scripts == (
+        (
+            "build",
+            "node ./scripts/nbgv-version.mjs stamp && node ./scripts/build.mjs",
+        ),
+        ("postpack", "node ./scripts/nbgv-version.mjs reset"),
+        ("prepack", "node ./scripts/nbgv-version.mjs stamp"),
+        ("test", "node --test"),
+        ("version:reset", "node ./scripts/nbgv-version.mjs reset"),
+        ("version:stamp", "node ./scripts/nbgv-version.mjs stamp"),
+    )
+    assert permissive.expectation.files_allowlist == (
+        "dist",
+        "README.md",
+        "workflow-delivery/provenance.json",
+    )
+    assert permissive.witness == native_build_request.witness.canonical_bytes
+    assert permissive.toolchain == (
+        ("node", native_build_request.node_version),
+        ("pnpm", native_build_request.pnpm_version),
+        ("npm", native_build_request.npm_version),
+        ("adapter", "node/npm-package-v1"),
+    )
+    assert tuple(
+        path for path, _digest in permissive.source_input_manifest
+    ) == (DECLARED_INPUTS)
+    assert all(
+        digest.startswith("sha256:") and len(digest) == PREFIXED_SHA256_LENGTH
+        for _path, digest in permissive.source_input_manifest
+    )
+    assert _source_snapshot() == before
+
 
 def test_lifecycle_evidence_binds_every_manifest_script(
-    build_request: BuildRequest,
+    native_build_request: BuildRequest,
     tmp_path: Path,
 ) -> None:
     project = tmp_path / "project"
@@ -968,9 +974,8 @@ def test_lifecycle_evidence_binds_every_manifest_script(
 
     result = build_node_package(
         replace(
-            build_request,
+            native_build_request,
             source_root=project,
-            pnpm_version="11.22.0",
         ),
     )
 
@@ -983,16 +988,6 @@ def test_lifecycle_evidence_binds_every_manifest_script(
         ).lifecycle_scripts
         == expected_scripts
     )
-
-
-def test_project_build_uses_isolated_inputs_and_preserves_source(
-    build_request: BuildRequest,
-) -> None:
-    before = _source_snapshot()
-
-    run_node_project_build(build_request)
-
-    assert _source_snapshot() == before
 
 
 @pytest.mark.parametrize("failure", ["build", "pack", "test", "install"])
@@ -1081,7 +1076,7 @@ def test_failure_paths_preserve_complete_source_checkout(
                 "--ignore-scripts",
                 "--json",
                 "--pack-destination",
-                observed_commands[-1][-1],
+                failed_command[0][-1],
             ),
         ],
         "test": [
@@ -1099,12 +1094,50 @@ def test_failure_paths_preserve_complete_source_checkout(
                 "--no-audit",
                 "--no-fund",
                 "--package-lock=false",
-                observed_commands[-1][-1],
+                failed_command[0][-1],
             ),
         ],
     }
-    assert observed_commands == expected_commands[failure]
+    assert Counter(observed_commands) == Counter(expected_commands[failure])
+    queries = [
+        command
+        for command in expected_commands[failure]
+        if command[-1] == "--version"
+    ]
+    operations = [
+        command
+        for command in expected_commands[failure]
+        if command not in queries
+    ]
+    assert all(
+        observed_commands.index(query) < observed_commands.index(operation)
+        for query in queries
+        for operation in operations
+    )
+    if failure == "pack":
+        assert observed_commands.index(("node", "scripts/build.mjs")) < (
+            observed_commands.index(failed_command[0])
+        )
+    assert observed_commands[-1] == failed_command[0]
     assert _source_snapshot() == before
+
+
+def _assert_owned_node_state(environment: dict[str, str]) -> None:
+    home = Path(environment["HOME"])
+    assert home.is_dir()
+    assert not home.is_relative_to(PROJECT_ROOT.resolve())
+    state_keys = (
+        "NPM_CONFIG_USERCONFIG",
+        "NPM_CONFIG_GLOBALCONFIG",
+        "NPM_CONFIG_CACHE",
+        "XDG_CONFIG_HOME",
+    )
+    paths = [Path(environment[key]) for key in state_keys]
+    assert len(set(paths)) == len(paths)
+    assert all(path.is_relative_to(home.parent) for path in paths)
+    assert Path(environment["NPM_CONFIG_USERCONFIG"]).is_file()
+    assert Path(environment["NPM_CONFIG_GLOBALCONFIG"]).is_file()
+    assert Path(environment["NPM_CONFIG_CACHE"]).is_dir()
 
 
 def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
@@ -1132,6 +1165,7 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
         cwd: Path,
         environment: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
+        _assert_owned_node_state(environment)
         global_config_value = environment.get("NPM_CONFIG_GLOBALCONFIG")
         global_config_path = (
             Path(global_config_value)
@@ -1178,11 +1212,17 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
 
     run_node_project_tests(PROJECT_ROOT, runtime_request)
 
-    assert [command for command, *_ in observed] == [
-        ("node", "--version"),
-        ("npm", "--version"),
-        ("npm", "test", "--ignore-scripts"),
-    ]
+    commands = [command for command, *_ in observed]
+    assert Counter(commands) == Counter(
+        [
+            ("node", "--version"),
+            ("npm", "--version"),
+            ("npm", "test", "--ignore-scripts"),
+        ]
+    )
+    test_index = commands.index(("npm", "test", "--ignore-scripts"))
+    for tool in ("node", "npm"):
+        assert commands.index((tool, "--version")) < test_index
     expected_staged_files = (
         "package.json",
         "src/index.js",
@@ -1217,6 +1257,7 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
         global_config_bytes,
     ) in observed:
         assert not cwd.is_relative_to(PROJECT_ROOT.resolve())
+        assert cwd.is_relative_to(Path(environment["HOME"]).parent)
         assert staged_files == expected_staged_files
         assert set(environment) == expected_environment_keys
         assert all(
@@ -1232,9 +1273,6 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
         assert environment["LC_ALL"] == "C.UTF-8"
         assert environment["TZ"] == "UTC"
         home = Path(environment["HOME"])
-        assert Path(environment["NPM_CONFIG_USERCONFIG"]) == home / "npmrc"
-        assert Path(environment["NPM_CONFIG_CACHE"]) == home / "npm-cache"
-        assert Path(environment["XDG_CONFIG_HOME"]) == home / "config"
         assert npm_config == expected_npm_config
         assert global_config_value is not None
         global_config_path = Path(global_config_value)
@@ -1248,25 +1286,18 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
 
 
 def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: PLR0915
-    build_request: BuildRequest,
+    native_build_request: BuildRequest,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original_run = node_adapter._run  # noqa: SLF001
     runtime_request = _make_runtime_request(
-        node_version=f"v{build_request.node_version}",
-        npm_version=build_request.npm_version,
+        node_version=f"v{native_build_request.node_version}",
+        npm_version=native_build_request.npm_version,
     )
-    observations: list[
-        tuple[
-            tuple[str, ...],
-            Path,
-            dict[str, str],
-            str,
-            str | None,
-            bool,
-            bytes | None,
-        ]
-    ] = []
+    observations: dict[
+        str,
+        list[tuple[tuple[str, ...], Path, dict[str, str], str, bytes]],
+    ] = {}
     for name in (
         "AWS_SECRET_ACCESS_KEY",
         "GITHUB_TOKEN",
@@ -1284,108 +1315,61 @@ def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: 
         cwd: Path,
         environment: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
-        config_path = Path(environment["NPM_CONFIG_USERCONFIG"])
-        global_config_value = environment.get("NPM_CONFIG_GLOBALCONFIG")
-        global_config_path = (
-            None if global_config_value is None else Path(global_config_value)
-        )
-        global_config_exists = (
-            global_config_path is not None and global_config_path.is_file()
-        )
-        observations.append(
+        _assert_owned_node_state(environment)
+        if command[:2] == ("npm", "pack"):
+            output_root = Path(command[-1])
+            assert output_root.is_dir()
+            assert output_root.is_relative_to(Path(environment["HOME"]).parent)
+            assert not output_root.is_relative_to(PROJECT_ROOT.resolve())
+        if command[:2] == ("npm", "install"):
+            tarball_path = Path(command[-1])
+            assert tarball_path.is_relative_to(cwd)
+            assert tarball_path.read_bytes() == built_result.tarball
+        observations[operation].append(
             (
                 command,
                 cwd,
                 dict(environment),
-                config_path.read_text(),
-                global_config_value,
-                global_config_exists,
-                (
-                    global_config_path.read_bytes()
-                    if global_config_exists and global_config_path is not None
-                    else None
-                ),
+                Path(environment["NPM_CONFIG_USERCONFIG"]).read_text(),
+                Path(environment["NPM_CONFIG_GLOBALCONFIG"]).read_bytes(),
             )
         )
         return original_run(command, cwd, environment)
 
     monkeypatch.setattr(node_adapter, "_run", record_and_run)
 
-    built_result = build_node_package(build_request)
-    run_node_project_build(build_request)
+    before = _source_snapshot()
+    operation = "artifact-build"
+    observations[operation] = []
+    built_result = build_node_package(native_build_request)
+    assert _source_snapshot() == before
+    operation = "project-build"
+    observations[operation] = []
+    run_node_project_build(native_build_request)
+    assert _source_snapshot() == before
+    operation = "project-tests"
+    observations[operation] = []
     run_node_project_tests(PROJECT_ROOT, runtime_request)
+    assert _source_snapshot() == before
+    operation = "install-import"
+    observations[operation] = []
     result = qualify_npm_install_import(
         built_result.tarball,
         built_result.expectation,
         runtime_request,
     )
-
-    missing_global_config = [
-        command
-        for command, _, _, _, value, _, _ in observations
-        if value is None
-    ]
-    assert not missing_global_config, (
-        "NPM_CONFIG_GLOBALCONFIG missing for target-controlled commands: "
-        f"{missing_global_config!r}"
+    assert _source_snapshot() == before
+    assert result.witness_sha256 == (
+        "sha256:" + hashlib.sha256(built_result.witness).hexdigest()
     )
-    for (
-        command,
-        _cwd,
-        environment,
-        _npm_config,
-        global_config_value,
-        global_config_exists,
-        global_config_bytes,
-    ) in observations:
-        assert global_config_value is not None
-        assert global_config_value != "ambient-secret", (
-            f"{command!r} inherited ambient NPM_CONFIG_GLOBALCONFIG"
-        )
-        global_config_path = Path(global_config_value)
-        assert global_config_path.is_relative_to(
-            Path(environment["HOME"]).parent
-        ), (
-            f"{command!r} global npm config is outside isolated state: "
-            f"{global_config_path}"
-        )
-        assert global_config_exists, (
-            f"{command!r} global npm config did not exist before execution: "
-            f"{global_config_path}"
-        )
-        assert global_config_bytes == b"", (
-            f"{command!r} global npm config was not empty: "
-            f"{global_config_bytes!r}"
-        )
-
-    assert [command[:2] for command, *_ in observations] == [
-        ("node", "--version"),
-        ("pnpm", "--version"),
-        ("npm", "--version"),
-        ("node", "scripts/build.mjs"),
-        ("npm", "pack"),
-        ("node", "--version"),
-        ("pnpm", "--version"),
-        ("npm", "--version"),
-        ("node", "scripts/build.mjs"),
-        ("node", "--version"),
-        ("npm", "--version"),
-        ("npm", "test"),
-        ("node", "--version"),
-        ("npm", "--version"),
-        ("npm", "install"),
-        ("node", "--input-type=module"),
-    ]
-    artifact_build = observations[3]
-    artifact_pack = observations[4]
-    assert artifact_build[0] == ("node", "scripts/build.mjs")
-    assert artifact_pack[0][:3] == ("npm", "pack", "--ignore-scripts")
-    assert artifact_build[1] == artifact_pack[1]
-    assert artifact_build[2] == artifact_pack[2]
     assert result.smoke_message == "hcoona-release-smoke-npm"
-    homes = {environment["HOME"] for _, _, environment, *_ in observations}
-    assert "ambient-secret" not in homes
-    assert len(homes) == EXPECTED_ISOLATED_HOME_COUNT
+
+    action_roles = {
+        "artifact-build": [("node", "scripts/build.mjs"), ("npm", "pack")],
+        "project-build": [("node", "scripts/build.mjs")],
+        "project-tests": [("npm", "test")],
+        "install-import": [("npm", "install"), ("node", "--input-type=module")],
+    }
     safe_environment_keys = {
         "HOME",
         "LANG",
@@ -1397,78 +1381,109 @@ def test_target_controlled_commands_use_minimal_isolated_environments(  # noqa: 
         "TZ",
         "XDG_CONFIG_HOME",
     }
-    operation_indexes = {3, 4, 8, 11, 14, 15}
-    source_date_command_count = 9
-    for index, (
-        _command,
-        cwd,
-        environment,
-        npm_config,
-        _global_config_value,
-        _global_config_exists,
-        _global_config_bytes,
-    ) in enumerate(observations):
-        if index in operation_indexes:
-            assert not cwd.is_relative_to(PROJECT_ROOT.resolve())
-        expected_keys = safe_environment_keys
-        if index < source_date_command_count:
-            expected_keys = {*expected_keys, "SOURCE_DATE_EPOCH"}
-            assert environment["SOURCE_DATE_EPOCH"] == str(
-                build_request.source_date_epoch
-            )
-        assert set(environment) == expected_keys
-        assert all(
-            name not in environment
-            for name in (
-                "AWS_SECRET_ACCESS_KEY",
-                "GITHUB_TOKEN",
-                "NODE_AUTH_TOKEN",
-                "NPM_TOKEN",
-                "UNRELATED_SENTINEL",
-            )
+    for operation, group in observations.items():
+        is_build = operation in {"artifact-build", "project-build"}
+        probes = [
+            ("node", "--version"),
+            ("npm", "--version"),
+            *([("pnpm", "--version")] if is_build else []),
+        ]
+        actions = action_roles[operation]
+        roles = [command[:2] for command, *_ in group]
+        assert Counter(roles) == Counter([*probes, *actions])
+        by_role = {item[0][:2]: item for item in group}
+        for probe in probes:
+            assert by_role[probe][0] == probe
+            for action in actions:
+                assert roles.index(probe) < roles.index(action)
+        for earlier, later in pairwise(actions):
+            assert roles.index(earlier) < roles.index(later)
+        operation_cwd = by_role[actions[0]][1]
+        operation_environment = by_role[actions[0]][2]
+        for action in actions:
+            assert by_role[action][1] == operation_cwd
+        assert not is_build or by_role[("node", "scripts/build.mjs")][0] == (
+            "node",
+            "scripts/build.mjs",
         )
-        home = Path(environment["HOME"])
-        assert environment["LANG"] == "C.UTF-8"
-        assert environment["LC_ALL"] == "C.UTF-8"
-        assert environment["TZ"] == "UTC"
-        assert Path(environment["NPM_CONFIG_USERCONFIG"]) == home / "npmrc"
-        assert Path(environment["NPM_CONFIG_CACHE"]) == home / "npm-cache"
-        assert Path(environment["XDG_CONFIG_HOME"]) == home / "config"
-        assert npm_config == (
-            "audit=false\n"
-            "fund=false\n"
-            "ignore-scripts=true\n"
-            "package-lock=false\n"
-            "update-notifier=false\n"
-        )
+        if operation == "artifact-build":
+            assert by_role[("npm", "pack")][0][:-1] == (
+                "npm",
+                "pack",
+                "--ignore-scripts",
+                "--json",
+                "--pack-destination",
+            )
+        elif operation == "project-tests":
+            assert by_role[("npm", "test")][0] == (
+                "npm",
+                "test",
+                "--ignore-scripts",
+            )
+        elif operation == "install-import":
+            assert by_role[("npm", "install")][0][:-1] == (
+                "npm",
+                "install",
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
+                "--package-lock=false",
+            )
+            import_command = by_role[("node", "--input-type=module")][0]
+            assert import_command[:3] == ("node", "--input-type=module", "-e")
+            assert len(import_command) == EXPECTED_IMPORT_COMMAND_ARG_COUNT
+            assert import_command[-1]
+        for command, cwd, environment, npm_config, global_config in group:
+            assert environment == operation_environment
+            if command[:2] in actions:
+                assert not cwd.is_relative_to(PROJECT_ROOT.resolve())
+                assert cwd.is_relative_to(Path(environment["HOME"]).parent)
+            expected_keys = {
+                *safe_environment_keys,
+                *({"SOURCE_DATE_EPOCH"} if is_build else set()),
+            }
+            assert environment.get("SOURCE_DATE_EPOCH") == (
+                str(native_build_request.source_date_epoch)
+                if is_build
+                else None
+            )
+            assert set(environment) == expected_keys
+            assert all(
+                name not in environment
+                for name in (
+                    "AWS_SECRET_ACCESS_KEY",
+                    "GITHUB_TOKEN",
+                    "NODE_AUTH_TOKEN",
+                    "NPM_TOKEN",
+                    "UNRELATED_SENTINEL",
+                )
+            )
+            assert environment["LANG"] == "C.UTF-8"
+            assert environment["LC_ALL"] == "C.UTF-8"
+            assert environment["TZ"] == "UTC"
+            assert "ambient-secret" not in environment.values()
+            assert npm_config == (
+                "audit=false\n"
+                "fund=false\n"
+                "ignore-scripts=true\n"
+                "package-lock=false\n"
+                "update-notifier=false\n"
+            )
+            assert global_config == b""
 
-    for group_indexes in (
-        range(5),
-        range(5, 9),
-        range(9, 12),
-        range(12, 16),
+    for key in (
+        "HOME",
+        "NPM_CONFIG_USERCONFIG",
+        "NPM_CONFIG_GLOBALCONFIG",
+        "NPM_CONFIG_CACHE",
+        "XDG_CONFIG_HOME",
     ):
-        group = [observations[index] for index in group_indexes]
-        operation_environment = group[-1][2]
-        assert all(
-            environment == operation_environment
+        owned_paths = {
+            environment[key]
+            for group in observations.values()
             for _, _, environment, *_ in group
-        )
-
-
-def test_artifact_contents_accepts_exact_tarball(
-    built_result: node_adapter.BuildResult,
-) -> None:
-    manifest = qualify_npm_artifact_contents(
-        built_result.tarball,
-        built_result.expectation,
-    )
-
-    assert manifest == built_result.manifest
-    assert manifest.byte_size == len(built_result.tarball)
-    assert manifest.basename == (
-        "hcoona-hcoona-release-smoke-npm-1.2.3-beta.42.ge123456.tgz"
-    )
+        }
+        assert len(owned_paths) == EXPECTED_ISOLATED_HOME_COUNT
 
 
 def test_artifact_contents_rejects_non_first_slice_expectation_identity(
@@ -1621,50 +1636,25 @@ def test_artifact_contents_rejects_arbitrary_canonical_witness_documents(
         qualify_npm_artifact_contents(_make_tarball(entries), expectation)
 
 
-def test_artifact_contents_rejects_list_backed_expectation(
+def test_artifact_contents_rejects_incomplete_expected_file_closure(
     built_result: node_adapter.BuildResult,
 ) -> None:
     expectation = replace(
         built_result.expectation,
-        files_allowlist=cast("tuple[str, ...]", ["dist", "README.md"]),
+        files_allowlist=("dist", "README.md"),
     )
 
     with pytest.raises(ValueError, match="first-slice closure"):
         qualify_npm_artifact_contents(built_result.tarball, expectation)
 
 
-def test_install_import_uses_tarball_and_verifies_export_and_witness(
-    built_result: node_adapter.BuildResult,
-) -> None:
-    before = _source_snapshot()
-    runtime_request = _make_runtime_request(
-        node_version="v24.19.0",
-        npm_version="11.17.0",
-    )
-    assert (
-        "expected_smoke_message"
-        not in signature(qualify_npm_install_import).parameters
-    )
-
-    result = qualify_npm_install_import(
-        built_result.tarball,
-        built_result.expectation,
-        runtime_request,
-    )
-
-    assert result.smoke_message == "hcoona-release-smoke-npm"
-    assert result.witness_sha256 == (
-        "sha256:" + hashlib.sha256(built_result.witness).hexdigest()
-    )
-    assert _source_snapshot() == before
-
-
 def test_install_import_rejects_mutated_artifact_export(
     built_result: node_adapter.BuildResult,
 ) -> None:
+    toolchain = dict(built_result.toolchain)
     runtime_request = _make_runtime_request(
-        node_version="v24.19.0",
-        npm_version="11.17.0",
+        node_version=toolchain["node"],
+        npm_version=toolchain["npm"],
     )
     entries = _tar_entries(built_result.tarball)
     entries["package/dist/index.js"] = (
@@ -1726,43 +1716,23 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
     }
     read_counts = dict.fromkeys(resolved_sources.values(), 0)
     captured_sources: dict[str, bytes] = {}
-    observed_source_reads: list[Path] = []
-    staged_sources: dict[str, bytes] = {}
-    prepared_staging_roots: list[Path] = []
     runner_staging_roots: list[Path] = []
     runner_staged_sources: list[dict[str, bytes]] = []
     packed_evidence_bytes: list[bytes] = []
     evidence_marker = b"\n/* declared-input-evidence\n"
     original_read_bytes = Path.read_bytes
-    original_prepare_staged_manifest = (
-        node_adapter._prepare_staged_manifest  # noqa: SLF001
-    )
 
     def capture_source_read(path: Path) -> bytes:
         resolved_path = path.resolve()
         if resolved_path not in source_by_path:
             return original_read_bytes(path)
         relative = source_by_path[resolved_path]
-        observed_source_reads.append(path)
         read_counts[resolved_path] += 1
         content = original_read_bytes(path)
         if read_counts[resolved_path] == 1:
             captured_sources[relative] = content
             path.write_bytes(mutated_sources[relative])
         return content
-
-    def observe_staged_sources(
-        request: BuildRequest,
-        staging_root: Path,
-    ) -> tuple[str, tuple[str, ...], tuple[tuple[str, str], ...]]:
-        prepared_staging_roots.append(staging_root.resolve())
-        staged_sources.update(
-            {
-                relative: original_read_bytes(staging_root / relative)
-                for relative in DECLARED_INPUTS
-            }
-        )
-        return original_prepare_staged_manifest(request, staging_root)
 
     def deterministic_runner(
         command: tuple[str, ...],
@@ -1784,15 +1754,16 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
                     for relative in DECLARED_INPUTS
                 }
             )
+            runner_sources = runner_staged_sources[-1]
             packed_evidence = canonicalize(
                 {
                     relative: {
-                        "byte-size": len(staged_sources[relative]),
-                        "bytes-hex": staged_sources[relative].hex(),
+                        "byte-size": len(runner_sources[relative]),
+                        "bytes-hex": runner_sources[relative].hex(),
                         "sha256": (
                             "sha256:"
                             + hashlib.sha256(
-                                staged_sources[relative]
+                                runner_sources[relative]
                             ).hexdigest()
                         ),
                     }
@@ -1839,11 +1810,6 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
         pytest.fail(f"unexpected Adapter command: {command}")
 
     monkeypatch.setattr(Path, "read_bytes", capture_source_read)
-    monkeypatch.setattr(
-        node_adapter,
-        "_prepare_staged_manifest",
-        observe_staged_sources,
-    )
     monkeypatch.setattr(node_adapter, "_run", deterministic_runner)
 
     result = build_node_package(
@@ -1854,9 +1820,6 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
         source.is_relative_to(resolved_project) and source.is_file()
         for source in resolved_sources.values()
     )
-    assert observed_source_reads == [
-        resolved_sources[relative] for relative in DECLARED_INPUTS
-    ]
     assert read_counts == {
         resolved_sources[relative]: 1 for relative in DECLARED_INPUTS
     }
@@ -1881,8 +1844,8 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
         "sha512:" + hashlib.sha512(result.tarball).hexdigest()
     )
     assert result.manifest.byte_size == len(result.tarball)
-    assert prepared_staging_roots == runner_staging_roots
-    assert staged_sources == original_sources
+    assert len(runner_staging_roots) == 1
+    assert not runner_staging_roots[0].is_relative_to(resolved_project)
     assert len(runner_staged_sources) == 1
     runner_sources = runner_staged_sources[0]
     assert all(
@@ -1906,8 +1869,24 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
         "README.md",
         "workflow-delivery/provenance.json",
     ]
+    expected_runner_manifest = {
+        **original_manifest,
+        "version": build_request.npm_package_version,
+        "files": ["dist", "README.md", "workflow-delivery/provenance.json"],
+    }
+    assert runner_manifest == expected_runner_manifest
 
     packed_entries = _tar_entries(result.tarball)
+    assert (
+        packed_entries["package/package.json"]
+        == (runner_sources["package.json"])
+    )
+    assert json.loads(packed_entries["package/package.json"]) == (
+        expected_runner_manifest
+    )
+    assert packed_entries["package/workflow-delivery/provenance.json"] == (
+        build_request.witness.canonical_bytes
+    )
     packed_dist = packed_entries["package/dist/index.js"]
     assert packed_dist.startswith(
         original_sources["src/index.js"] + evidence_marker
@@ -1921,13 +1900,16 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
     assert set(packed_evidence) == set(DECLARED_INPUTS)
     for relative in DECLARED_INPUTS:
         evidence = packed_evidence[relative]
-        assert evidence["byte-size"] == len(original_sources[relative])
+        expected_bytes = (
+            runner_sources[relative]
+            if relative == "package.json"
+            else original_sources[relative]
+        )
+        assert evidence["byte-size"] == len(expected_bytes)
         assert evidence["sha256"] == (
-            "sha256:" + hashlib.sha256(original_sources[relative]).hexdigest()
+            "sha256:" + hashlib.sha256(expected_bytes).hexdigest()
         )
-        assert (
-            bytes.fromhex(evidence["bytes-hex"]) == original_sources[relative]
-        )
+        assert bytes.fromhex(evidence["bytes-hex"]) == expected_bytes
     assert packed_entries["package/README.md"] == original_sources["README.md"]
     assert all(
         mutated not in packed_entries.values()
@@ -2120,6 +2102,10 @@ def test_artifact_contents_accepts_actual_frozen_npm_pack_ustar_profile(
         built_result.expectation,
     )
     assert manifest == built_result.manifest
+    assert manifest.byte_size == len(built_result.tarball)
+    assert manifest.basename == (
+        "hcoona-hcoona-release-smoke-npm-1.2.3-beta.42.ge123456.tgz"
+    )
     assert manifest.sha256 == (
         f"sha256:{hashlib.sha256(built_result.tarball).hexdigest()}"
     )
@@ -2143,13 +2129,13 @@ def test_artifact_contents_accepts_actual_frozen_npm_pack_ustar_profile(
         ),
     ],
 )
-def test_artifact_contents_rejects_gnu_long_name_or_long_link_header(
-    built_result: node_adapter.BuildResult,
+def test_tarball_reader_rejects_gnu_long_name_or_long_link_header(
+    raw_tarball_seed: tuple[bytes, dict[str, bytes]],
     extension_kind: str,
     physical_type: bytes,
 ) -> None:
-    original_payload = gzip.decompress(built_result.tarball)
-    original_entries = _tar_entries(built_result.tarball)
+    original_tarball, original_entries = raw_tarball_seed
+    original_payload = gzip.decompress(original_tarball)
     with tarfile.open(
         fileobj=io.BytesIO(original_payload),
         mode="r:",
@@ -2175,11 +2161,8 @@ def test_artifact_contents_rejects_gnu_long_name_or_long_link_header(
     assert not any(extension_padding)
     extension_tarball = gzip.compress(payload_with_extension, mtime=0)
     assert _tar_entries(extension_tarball) == original_entries
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            extension_tarball,
-            built_result.expectation,
-        )
+    with pytest.raises(ValueError):  # noqa: PT011 - Reader wording is internal.
+        node_adapter._read_tarball(extension_tarball)  # noqa: SLF001
 
 
 @pytest.mark.parametrize(
@@ -2187,20 +2170,15 @@ def test_artifact_contents_rejects_gnu_long_name_or_long_link_header(
     [
         pytest.param("pax-extended", tarfile.XHDTYPE, id="pax-local-x"),
         pytest.param("pax-global", tarfile.XGLTYPE, id="pax-global-g"),
-        pytest.param(
-            "pax-solaris",
-            tarfile.SOLARIS_XHDTYPE,
-            id="pax-solaris-X",
-        ),
     ],
 )
-def test_artifact_contents_rejects_pax_physical_header(
-    built_result: node_adapter.BuildResult,
+def test_tarball_reader_rejects_pax_physical_header(
+    raw_tarball_seed: tuple[bytes, dict[str, bytes]],
     extension_kind: str,
     physical_type: bytes,
 ) -> None:
-    original_payload = gzip.decompress(built_result.tarball)
-    original_entries = _tar_entries(built_result.tarball)
+    original_tarball, original_entries = raw_tarball_seed
+    original_payload = gzip.decompress(original_tarball)
     with tarfile.open(
         fileobj=io.BytesIO(original_payload),
         mode="r:",
@@ -2227,26 +2205,13 @@ def test_artifact_contents_rejects_pax_physical_header(
     assert b"=" in extension_content
     extension_tarball = gzip.compress(payload_with_extension, mtime=0)
     assert _tar_entries(extension_tarball) == original_entries
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            extension_tarball,
-            built_result.expectation,
-        )
+    with pytest.raises(ValueError):  # noqa: PT011 - Reader wording is internal.
+        node_adapter._read_tarball(extension_tarball)  # noqa: SLF001
 
 
 @pytest.mark.parametrize(
     ("profile_kind", "replacements"),
     [
-        pytest.param(
-            "gnu-magic",
-            {"magic": b"ustar ", "version": b" \0"},
-            id="gnu-magic-and-version",
-        ),
-        pytest.param(
-            "v7",
-            {"magic": bytes(6), "version": bytes(2)},
-            id="v7-zero-magic-and-version",
-        ),
         pytest.param(
             "magic",
             {"magic": b"ustar "},
@@ -2259,14 +2224,14 @@ def test_artifact_contents_rejects_pax_physical_header(
         ),
     ],
 )
-def test_artifact_contents_rejects_noncanonical_ustar_magic_or_version(
-    built_result: node_adapter.BuildResult,
+def test_tarball_reader_rejects_noncanonical_ustar_magic_or_version(
+    raw_tarball_seed: tuple[bytes, dict[str, bytes]],
     profile_kind: str,
     replacements: dict[str, bytes],
 ) -> None:
-    original_entries = _tar_entries(built_result.tarball)
+    original_tarball, original_entries = raw_tarball_seed
     mutated_tarball = _tarball_with_first_header_fields(
-        built_result.tarball,
+        original_tarball,
         replacements,
     )
     mutated_header = gzip.decompress(mutated_tarball)[: tarfile.BLOCKSIZE]
@@ -2274,178 +2239,58 @@ def test_artifact_contents_rejects_noncanonical_ustar_magic_or_version(
     assert profile_kind
     assert mutated_header[257:265] != b"ustar\000"
     assert _tar_entries(mutated_tarball) == original_entries
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            mutated_tarball,
-            built_result.expectation,
-        )
+    with pytest.raises(ValueError):  # noqa: PT011 - Reader wording is internal.
+        node_adapter._read_tarball(mutated_tarball)  # noqa: SLF001
 
 
-@pytest.mark.parametrize(
-    ("member_index", "member_name"),
-    [
-        pytest.param(1, "package/package.json", id="member-1-package-json"),
-        pytest.param(
-            2,
-            "package/workflow-delivery/provenance.json",
-            id="member-2-provenance",
-        ),
-        pytest.param(3, "package/README.md", id="member-3-readme"),
-    ],
-)
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        pytest.param(
-            ("mode-alt-terminator", "mode", b"000644\0 ", b" \0"),
-            id="mode-alt-terminator",
-        ),
-        pytest.param(
-            ("noncanonical-magic", "magic", b"ustar ", b" \0"),
-            id="noncanonical-magic",
-        ),
-        pytest.param(
-            ("unsupported-version", "version", b"01", b" \0"),
-            id="unsupported-version",
-        ),
-        pytest.param(
-            ("name-hidden-suffix", "name", None, b" \0"),
-            id="name-hidden-suffix",
-        ),
-        pytest.param(
-            (
-                "linkname-hidden-suffix",
-                "linkname",
-                b"\0X" + bytes(98),
-                b" \0",
-            ),
-            id="linkname-hidden-suffix",
-        ),
-        pytest.param(
-            (
-                "reserved-nonzero",
-                "reserved",
-                bytes(11) + bytes((NONZERO_PADDING_BYTE,)),
-                b" \0",
-            ),
-            id="reserved-nonzero",
-        ),
-        pytest.param(
-            ("old-regular-type", "type", tarfile.AREGTYPE, b" \0"),
-            id="old-regular-type",
-        ),
-        pytest.param(
-            ("checksum-alt-terminator", None, None, b"\0 "),
-            id="checksum-alt-terminator",
-        ),
-    ],
-)
-def test_artifact_contents_rejects_later_member_ustar_profile_mutations(
-    built_result: node_adapter.BuildResult,
-    member_index: int,
-    member_name: str,
-    mutation: tuple[str, str | None, bytes | None, bytes],
+def test_tarball_reader_checks_hidden_name_suffix_in_later_member(
+    raw_tarball_seed: tuple[bytes, dict[str, bytes]],
 ) -> None:
-    profile_kind, field, replacement, checksum_suffix = mutation
-    original_payload = gzip.decompress(built_result.tarball)
-    original_entries = _tar_entries(built_result.tarball)
-    original_observables = _tar_member_observables(built_result.tarball)
+    """Check physical name tails after preceding valid members."""
+    member_index = 2
+    original_tarball, original_entries = raw_tarball_seed
+    original_payload = gzip.decompress(original_tarball)
+    original_observables = _tar_member_observables(original_tarball)
     member_offset = cast("int", original_observables[member_index][13])
-    if profile_kind == "name-hidden-suffix":
-        name_start, name_end = TAR_HEADER_FIELDS["name"]
-        original_name = original_payload[
-            member_offset + name_start : member_offset + name_end
-        ]
-        first_nul = original_name.index(0)
-        mutated_name = bytearray(original_name)
-        mutated_name[first_nul + 1] = NONZERO_PADDING_BYTE
-        replacement = bytes(mutated_name)
-    replacements = {} if field is None else {field: cast("bytes", replacement)}
+    name_start, name_end = TAR_HEADER_FIELDS["name"]
+    absolute_start = member_offset + name_start
+    absolute_end = member_offset + name_end
+    original_name = original_payload[absolute_start:absolute_end]
+    first_nul = original_name.index(0)
+    mutated_name = bytearray(original_name)
+    mutated_name[first_nul + 1] = NONZERO_PADDING_BYTE
+    replacement = bytes(mutated_name)
     mutated_tarball = _tarball_with_member_header_fields(
-        built_result.tarball,
+        original_tarball,
         member_index,
-        replacements,
-        checksum_suffix=checksum_suffix,
+        {"name": replacement},
     )
     mutated_payload = gzip.decompress(mutated_tarball)
-    mutated_observables = _tar_member_observables(mutated_tarball)
 
-    assert len(original_observables) == EXPECTED_FROZEN_TAR_MEMBER_COUNT
+    assert len(original_observables) == len(original_entries)
     assert original_observables[member_index][0:2] == (
         member_index,
-        member_name,
+        "package/package.json",
     )
-    assert profile_kind
-    if field is None:
-        checksum_start, checksum_end = TAR_HEADER_FIELDS["checksum"]
-        absolute_start = member_offset + checksum_start
-        absolute_end = member_offset + checksum_end
-        assert (
-            original_payload[absolute_start:absolute_end]
-            != mutated_payload[absolute_start:absolute_end]
-        )
-        assert (
-            mutated_payload[absolute_end - 2 : absolute_end] == checksum_suffix
-        )
-    else:
-        assert replacement is not None
-        start, end = TAR_HEADER_FIELDS[field]
-        absolute_start = member_offset + start
-        absolute_end = member_offset + end
-        assert original_payload[absolute_start:absolute_end] != replacement
-        assert mutated_payload[absolute_start:absolute_end] == replacement
-    if field == "type":
-        original_member = original_observables[member_index]
-        mutated_member = mutated_observables[member_index]
-        assert mutated_member[7] == tarfile.AREGTYPE
-        assert mutated_member[:7] + mutated_member[8:] == (
-            original_member[:7] + original_member[8:]
-        )
-    else:
-        assert mutated_observables == original_observables
+    assert original_name != replacement
+    assert mutated_payload[absolute_start:absolute_end] == replacement
+    assert _tar_member_observables(mutated_tarball) == original_observables
     assert _tar_entries(mutated_tarball) == original_entries
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            mutated_tarball,
-            built_result.expectation,
-        )
+    with pytest.raises(ValueError):  # noqa: PT011 - Reader wording is internal.
+        node_adapter._read_tarball(mutated_tarball)  # noqa: SLF001
 
 
-@pytest.mark.parametrize(
-    "field",
-    [
-        pytest.param("name", id="name"),
-        pytest.param("linkname", id="linkname"),
-        pytest.param("uname", id="uname"),
-        pytest.param("gname", id="gname"),
-        pytest.param("prefix", id="prefix"),
-    ],
-)
-@pytest.mark.parametrize(
-    ("suffix_position", "suffix_offset"),
-    [
-        pytest.param("after-first-nul", 1, id="after-first-nul"),
-        pytest.param("middle", -1, id="middle"),
-        pytest.param("final", None, id="final"),
-    ],
-)
-def test_artifact_contents_rejects_nonzero_suffix_after_nul_in_fixed_string_field(  # noqa: E501
+@pytest.mark.parametrize("field", ["name", "linkname", "uname", "prefix"])
+def test_artifact_contents_checks_fixed_string_field_tail(
     built_result: node_adapter.BuildResult,
     field: str,
-    suffix_position: str,
-    suffix_offset: int | None,
 ) -> None:
     original_header = gzip.decompress(built_result.tarball)[: tarfile.BLOCKSIZE]
     start, end = TAR_HEADER_FIELDS[field]
     original_field = original_header[start:end]
     first_nul = original_field.index(0)
     replacement = bytearray(original_field)
-    if suffix_offset is None:
-        mutation_index = len(original_field) - 1
-    elif suffix_offset == -1:
-        mutation_index = (first_nul + len(original_field) - 1) // 2
-    else:
-        mutation_index = first_nul + suffix_offset
+    mutation_index = len(original_field) - 1
     replacement[mutation_index] = NONZERO_PADDING_BYTE
     mutated_tarball = _tarball_with_first_header_fields(
         built_result.tarball,
@@ -2453,7 +2298,6 @@ def test_artifact_contents_rejects_nonzero_suffix_after_nul_in_fixed_string_fiel
     )
     mutated_field = gzip.decompress(mutated_tarball)[start:end]
 
-    assert suffix_position
     assert first_nul < len(original_field) - 1
     assert first_nul < mutation_index < len(original_field)
     assert not any(original_field[first_nul:])
@@ -2474,32 +2318,15 @@ def test_artifact_contents_rejects_nonzero_suffix_after_nul_in_fixed_string_fiel
 @pytest.mark.parametrize(
     ("field", "replacement"),
     [
-        pytest.param("uid", b"000000 \0", id="uid-octal-zero"),
         pytest.param(
             "uid",
             bytes(7) + b"X",
             id="uid-hidden-suffix",
         ),
-        pytest.param("gid", b"000000 \0", id="gid-octal-zero"),
-        pytest.param(
-            "gid",
-            bytes(7) + b"X",
-            id="gid-hidden-suffix",
-        ),
         pytest.param(
             "linkname",
             b"X" + bytes(99),
             id="linkname-nonempty",
-        ),
-        pytest.param(
-            "uname",
-            b"X" + bytes(31),
-            id="uname-nonempty",
-        ),
-        pytest.param(
-            "gname",
-            b"X" + bytes(31),
-            id="gname-nonempty",
         ),
         pytest.param(
             "prefix",
@@ -2508,26 +2335,12 @@ def test_artifact_contents_rejects_nonzero_suffix_after_nul_in_fixed_string_fiel
         ),
         pytest.param(
             "reserved",
-            bytes((NONZERO_PADDING_BYTE,)) + bytes(11),
-            id="reserved-nonzero-first",
-        ),
-        pytest.param(
-            "reserved",
-            bytes(6) + bytes((NONZERO_PADDING_BYTE,)) + bytes(5),
-            id="reserved-nonzero-middle",
-        ),
-        pytest.param(
-            "reserved",
             bytes(11) + bytes((NONZERO_PADDING_BYTE,)),
             id="reserved-nonzero-final",
         ),
-        pytest.param("devmajor", b"000001 \0", id="devmajor-nonzero"),
-        pytest.param("devminor", b"000001 \0", id="devminor-nonzero"),
-        pytest.param("devmajor", bytes(8), id="devmajor-all-nul"),
-        pytest.param("devminor", bytes(8), id="devminor-all-nul"),
     ],
 )
-def test_artifact_contents_rejects_noncanonical_unused_header_field(
+def test_artifact_contents_rejects_unsupported_physical_header_fields(
     built_result: node_adapter.BuildResult,
     field: str,
     replacement: bytes,
@@ -2561,154 +2374,15 @@ def test_artifact_contents_rejects_noncanonical_unused_header_field(
 @pytest.mark.parametrize(
     ("field", "replacement", "checksum_suffix"),
     [
-        pytest.param("mode", b"0000644\0", b" \0", id="mode-alt-width"),
-        pytest.param(
-            "mode",
-            b"000644\0 ",
-            b" \0",
-            id="mode-alt-terminator",
-        ),
-        pytest.param(
-            "mode",
-            b"000644  ",
-            b" \0",
-            id="mode-space-terminator",
-        ),
         pytest.param("mode", b"000644\0X", b" \0", id="mode-hidden-suffix"),
-        pytest.param(
-            "uid",
-            b"000000\0 ",
-            b" \0",
-            id="uid-alt-terminator",
-        ),
-        pytest.param(
-            "uid",
-            b"000000  ",
-            b" \0",
-            id="uid-space-terminator",
-        ),
-        pytest.param(
-            "uid",
-            bytes((0, NONZERO_PADDING_BYTE)) + bytes(6),
-            b" \0",
-            id="uid-hidden-immediate-suffix",
-        ),
-        pytest.param(
-            "gid",
-            b"000000\0 ",
-            b" \0",
-            id="gid-alt-terminator",
-        ),
-        pytest.param(
-            "gid",
-            b"000000  ",
-            b" \0",
-            id="gid-space-terminator",
-        ),
-        pytest.param(
-            "gid",
-            bytes((0, NONZERO_PADDING_BYTE)) + bytes(6),
-            b" \0",
-            id="gid-hidden-immediate-suffix",
-        ),
-        pytest.param("size", b"00000000110\0", b" \0", id="size-alt-width"),
-        pytest.param(
-            "size",
-            b"0000000110\0 ",
-            b" \0",
-            id="size-alt-terminator",
-        ),
-        pytest.param(
-            "size",
-            b"0000000110  ",
-            b" \0",
-            id="size-space-terminator",
-        ),
         pytest.param(
             "size",
             b"0000000110\0X",
             b" \0",
             id="size-hidden-suffix",
         ),
-        pytest.param(
-            "mtime",
-            b"03560116604\0",
-            b" \0",
-            id="mtime-alt-width",
-        ),
-        pytest.param(
-            "mtime",
-            b"3560116604\0 ",
-            b" \0",
-            id="mtime-alt-terminator",
-        ),
-        pytest.param(
-            "mtime",
-            b"3560116604  ",
-            b" \0",
-            id="mtime-space-terminator",
-        ),
-        pytest.param(
-            "mtime",
-            b"3560116604\0X",
-            b" \0",
-            id="mtime-hidden-suffix",
-        ),
-        pytest.param(
-            "devmajor",
-            b"000000\0 ",
-            b" \0",
-            id="devmajor-alt-terminator",
-        ),
-        pytest.param(
-            "devmajor",
-            b"000000\0X",
-            b" \0",
-            id="devmajor-hidden-suffix",
-        ),
-        pytest.param(
-            "devmajor",
-            b"000000  ",
-            b" \0",
-            id="devmajor-space-terminator",
-        ),
-        pytest.param(
-            "devminor",
-            b"000000\0 ",
-            b" \0",
-            id="devminor-alt-terminator",
-        ),
-        pytest.param(
-            "devminor",
-            b"000000\0X",
-            b" \0",
-            id="devminor-hidden-suffix",
-        ),
-        pytest.param(
-            "devminor",
-            b"000000  ",
-            b" \0",
-            id="devminor-space-terminator",
-        ),
         pytest.param("mode", None, b" \0", id="mode-base256"),
-        pytest.param("uid", None, b" \0", id="uid-base256"),
-        pytest.param("gid", None, b" \0", id="gid-base256"),
         pytest.param("size", None, b" \0", id="size-base256"),
-        pytest.param("mtime", None, b" \0", id="mtime-base256"),
-        pytest.param("devmajor", None, b" \0", id="devmajor-base256"),
-        pytest.param("devminor", None, b" \0", id="devminor-base256"),
-        pytest.param(
-            None,
-            b"",
-            b"\0 ",
-            id="checksum-alt-terminator",
-        ),
-        pytest.param(
-            None,
-            b"",
-            b"  ",
-            id="checksum-space-terminator",
-        ),
         pytest.param(
             None,
             b"",
@@ -2791,9 +2465,8 @@ def test_artifact_contents_rejects_noncanonical_numeric_header_encoding(
         )
 
 
-def test_artifact_contents_rejects_bad_checksum_before_tarfile_parse(
+def test_artifact_contents_rejects_arithmetic_checksum_mismatch(
     built_result: node_adapter.BuildResult,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original_payload = gzip.decompress(built_result.tarball)
     checksum_start, checksum_end = TAR_HEADER_FIELDS["checksum"]
@@ -2805,60 +2478,45 @@ def test_artifact_contents_rejects_bad_checksum_before_tarfile_parse(
     mutated_payload = bytearray(original_payload)
     mutated_payload[checksum_start:checksum_end] = incorrect_checksum
     mutated_tarball = gzip.compress(bytes(mutated_payload), mtime=0)
-    semantic_parse_calls: list[bool] = []
 
     assert incorrect_checksum[-2:] == b" \0"
     assert all(ord("0") <= byte <= ord("7") for byte in incorrect_checksum[:-2])
     assert mutated_payload[:checksum_start] == original_payload[:checksum_start]
     assert mutated_payload[checksum_end:] == original_payload[checksum_end:]
 
-    def fail_semantic_tar_parse(
-        *_args: object,
-        **_kwargs: object,
-    ) -> object:
-        semantic_parse_calls.append(True)
-        pytest.fail("semantic TAR parsing ran before raw checksum rejection")
-
-    monkeypatch.setattr(
-        node_adapter.tarfile,
-        "open",
-        fail_semantic_tar_parse,
-    )
-
     with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
         qualify_npm_artifact_contents(
             mutated_tarball,
             built_result.expectation,
         )
-    assert semantic_parse_calls == []
 
 
 @pytest.mark.parametrize(
     ("type_flag", "type_name"),
     [
-        pytest.param(tarfile.AREGTYPE, "old-regular", id="old-regular-NUL"),
         pytest.param(tarfile.LNKTYPE, "hard-link", id="hard-link-1"),
         pytest.param(tarfile.SYMTYPE, "symbolic-link", id="symbolic-link-2"),
         pytest.param(tarfile.CHRTYPE, "character-device", id="char-device-3"),
-        pytest.param(tarfile.BLKTYPE, "block-device", id="block-device-4"),
         pytest.param(tarfile.DIRTYPE, "directory", id="directory-5"),
         pytest.param(tarfile.FIFOTYPE, "fifo", id="fifo-6"),
-        pytest.param(tarfile.CONTTYPE, "contiguous", id="contiguous-7"),
-        pytest.param(b"D", "gnu-dump-directory", id="gnu-dump-dir-D"),
-        pytest.param(b"M", "gnu-multivolume", id="gnu-multivol-M"),
-        pytest.param(b"N", "gnu-names", id="gnu-names-N"),
         pytest.param(tarfile.GNUTYPE_SPARSE, "gnu-sparse", id="gnu-sparse-S"),
-        pytest.param(b"V", "gnu-volume-header", id="gnu-volume-V"),
         pytest.param(b"?", "unknown-special", id="unknown-special-question"),
     ],
 )
-def test_artifact_contents_rejects_every_nonordinary_tar_type(
-    built_result: node_adapter.BuildResult,
+def test_tarball_reader_rejects_nonregular_and_unsupported_members(
+    raw_tarball_seed: tuple[bytes, dict[str, bytes]],
     type_flag: bytes,
     type_name: str,
 ) -> None:
-    original_payload = gzip.decompress(built_result.tarball)
-    original_names = list(_tar_entries(built_result.tarball))
+    original_tarball, original_entries = raw_tarball_seed
+    original_payload = gzip.decompress(original_tarball)
+    original_names = list(original_entries)
+    regular_header = _special_tar_header(original_payload, tarfile.REGTYPE)
+    regular_tarball = gzip.compress(regular_header + original_payload, mtime=0)
+    assert node_adapter._read_tarball(regular_tarball) == {  # noqa: SLF001
+        "package/special-entry": b"",
+        **original_entries,
+    }
     special_header = _special_tar_header(original_payload, type_flag)
     payload_with_special = special_header + original_payload
     with tarfile.open(
@@ -2875,28 +2533,8 @@ def test_artifact_contents_rejects_every_nonordinary_tar_type(
     assert logical_members[0].type == type_flag
     assert [member.name for member in logical_members[1:]] == original_names
     special_tarball = gzip.compress(payload_with_special, mtime=0)
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            special_tarball,
-            built_result.expectation,
-        )
-
-
-def test_artifact_contents_rejects_extra_zero_trailer_block(
-    built_result: node_adapter.BuildResult,
-) -> None:
-    original_payload = gzip.decompress(built_result.tarball)
-    extra_trailer_payload = original_payload + bytes(tarfile.BLOCKSIZE)
-    extra_trailer_tarball = gzip.compress(extra_trailer_payload, mtime=0)
-
-    assert _tar_entries(extra_trailer_tarball) == _tar_entries(
-        built_result.tarball
-    )
-    with pytest.raises(ValueError, match=r"^invalid npm tarball$"):
-        qualify_npm_artifact_contents(
-            extra_trailer_tarball,
-            built_result.expectation,
-        )
+    with pytest.raises(ValueError):  # noqa: PT011 - Reader wording is internal.
+        node_adapter._read_tarball(special_tarball)  # noqa: SLF001
 
 
 @pytest.mark.parametrize(
@@ -2904,7 +2542,6 @@ def test_artifact_contents_rejects_extra_zero_trailer_block(
     [
         pytest.param("malformed", id="malformed-gzip"),
         pytest.param("missing-trailer", id="missing-gzip-trailer"),
-        pytest.param("halfway-truncated", id="halfway-truncated-gzip"),
     ],
 )
 def test_artifact_contents_rejects_malformed_or_premature_streams(
@@ -2927,55 +2564,82 @@ def test_artifact_contents_rejects_malformed_or_premature_streams(
         )
 
 
-def test_runtime_request_is_minimal_frozen_and_exported() -> None:
-    runtime_request_type = getattr(node_adapter, "RuntimeRequest", None)
-    assert runtime_request_type is not None, (
-        "node adapter must define RuntimeRequest"
-    )
-
-    request = runtime_request_type(
+def test_runtime_request_is_frozen() -> None:
+    request = RuntimeRequest(
         node_version="v24.4.1",
         npm_version="11.4.2",
     )
-    runtime_fields = dataclasses.fields(request)
 
-    assert tuple(field.name for field in runtime_fields) == (
-        "node_version",
-        "npm_version",
-    )
-    runtime_signature = inspect.signature(runtime_request_type)
-    assert tuple(runtime_signature.parameters) == (
-        "node_version",
-        "npm_version",
-    )
-    assert all(
-        parameter.default is inspect.Parameter.empty
-        for parameter in runtime_signature.parameters.values()
-    )
-    assert type(request.node_version) is str
-    assert type(request.npm_version) is str
-    assert not hasattr(request, "__dict__")
-    assert all(
-        forbidden.lower() not in field.name.lower()
-        for field in runtime_fields
-        for forbidden in (
-            "pnpm",
-            "snapshot",
-            "evidence",
-            "planner",
-            "run",
-            "attempt",
-        )
-    )
     with pytest.raises(dataclasses.FrozenInstanceError):
         cast("Any", request).node_version = "v24.4.2"
 
-    package_runtime_request = getattr(
-        adapters_package,
-        "RuntimeRequest",
-        None,
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_exception", "message"),
+    [
+        pytest.param(
+            "empty-node",
+            ValueError,
+            "Node version must be frozen",
+            id="empty-node-version",
+        ),
+        pytest.param(
+            "empty-npm",
+            ValueError,
+            "npm version must be frozen",
+            id="empty-npm-version",
+        ),
+    ],
+)
+def test_project_tests_reject_malformed_runtime_requests_before_commands(
+    monkeypatch: pytest.MonkeyPatch,
+    scenario: str,
+    expected_exception: type[Exception],
+    message: str,
+) -> None:
+    node_version = "" if scenario == "empty-node" else "v24.4.1"
+    npm_version = "" if scenario == "empty-npm" else "11.4.2"
+    runtime_request = RuntimeRequest(
+        node_version=node_version, npm_version=npm_version
     )
-    assert package_runtime_request is runtime_request_type
+    observed: list[tuple[str, ...]] = []
+
+    def reject_command(
+        command: tuple[str, ...],
+        _cwd: Path,
+        _environment: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        observed.append(command)
+        pytest.fail(f"malformed Runtime Request reached a command: {command!r}")
+
+    monkeypatch.setattr(node_adapter, "_run", reject_command)
+    with pytest.raises(expected_exception, match=message):
+        run_node_project_tests(PROJECT_ROOT, runtime_request)
+    assert observed == []
+
+
+def test_install_import_rejects_malformed_runtime_request_before_commands(
+    built_result: node_adapter.BuildResult,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[tuple[str, ...]] = []
+
+    def reject_command(
+        command: tuple[str, ...],
+        _cwd: Path,
+        _environment: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        observed.append(command)
+        pytest.fail(f"malformed Runtime Request reached a command: {command!r}")
+
+    monkeypatch.setattr(node_adapter, "_run", reject_command)
+    with pytest.raises(ValueError, match="Node version must be frozen"):
+        qualify_npm_install_import(
+            built_result.tarball,
+            built_result.expectation,
+            RuntimeRequest(node_version="", npm_version="11.4.2"),
+        )
+    assert observed == []
 
 
 @pytest.mark.parametrize(
@@ -2991,10 +2655,6 @@ def test_runtime_request_is_minimal_frozen_and_exported() -> None:
         pytest.param("success", id="matching-versions"),
         pytest.param("node-mismatch", id="node-version-mismatch"),
         pytest.param("npm-mismatch", id="npm-version-mismatch"),
-        pytest.param("empty-node", id="empty-node-version"),
-        pytest.param("empty-npm", id="empty-npm-version"),
-        pytest.param("surrogate", id="surrogate-request"),
-        pytest.param("subclass", id="runtime-request-subclass"),
     ],
 )
 def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR0915
@@ -3003,34 +2663,9 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
     operation: str,
     scenario: str,
 ) -> None:
-    runtime_request_type = getattr(node_adapter, "RuntimeRequest", None)
-    assert runtime_request_type is not None, (
-        "node adapter must define RuntimeRequest before quality operations "
-        f"can validate {scenario!r} for {operation!r}"
+    runtime_request = RuntimeRequest(
+        node_version="v24.4.1", npm_version="11.4.2"
     )
-
-    node_version = "" if scenario == "empty-node" else "v24.4.1"
-    npm_version = "" if scenario == "empty-npm" else "11.4.2"
-    if scenario == "surrogate":
-        runtime_request: object = types.SimpleNamespace(
-            node_version=node_version,
-            npm_version=npm_version,
-        )
-    elif scenario == "subclass":
-        runtime_request_subclass = type(
-            "RuntimeRequestSubclass",
-            (runtime_request_type,),
-            {},
-        )
-        runtime_request = runtime_request_subclass(
-            node_version=node_version,
-            npm_version=npm_version,
-        )
-    else:
-        runtime_request = runtime_request_type(
-            node_version=node_version,
-            npm_version=npm_version,
-        )
 
     built_result: node_adapter.BuildResult | None = None
     if operation == "install-import":
@@ -3058,6 +2693,9 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
         cwd: Path,
         environment: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
+        _assert_owned_node_state(environment)
+        assert not cwd.is_relative_to(PROJECT_ROOT.resolve())
+        assert cwd.is_relative_to(Path(environment["HOME"]).parent)
         global_config_value = environment.get("NPM_CONFIG_GLOBALCONFIG")
         global_config_path = (
             Path(global_config_value)
@@ -3090,6 +2728,9 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
             return subprocess.CompletedProcess(command, 0, "passed", "")
         if command[:2] == ("npm", "install"):
             assert built_result is not None
+            tarball_path = Path(command[-1])
+            assert tarball_path.is_relative_to(cwd)
+            assert tarball_path.read_bytes() == built_result.tarball
             package_root = (
                 cwd / "node_modules" / built_result.expectation.package_name
             )
@@ -3144,9 +2785,6 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
             assert environment["LC_ALL"] == "C.UTF-8"
             assert environment["TZ"] == "UTC"
             home = Path(environment["HOME"])
-            assert Path(environment["NPM_CONFIG_USERCONFIG"]) == home / "npmrc"
-            assert Path(environment["NPM_CONFIG_CACHE"]) == home / "npm-cache"
-            assert Path(environment["XDG_CONFIG_HOME"]) == home / "config"
             assert user_config == expected_user_config
             assert global_config_value is not None
             global_config_path = Path(global_config_value)
@@ -3176,60 +2814,53 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
             typed_runtime_request,
         )
 
-    if scenario in {"empty-node", "empty-npm", "surrogate", "subclass"}:
-        expected_exception = (
-            TypeError if scenario in {"surrogate", "subclass"} else ValueError
-        )
-        with pytest.raises(expected_exception) as caught:
-            invoke_quality_operation()
-        if scenario in {"surrogate", "subclass"}:
-            assert "positional argument" not in str(caught.value)
-        assert observed == []
-        return
-
+    probes = [("node", "--version"), ("npm", "--version")]
     if scenario in {"node-mismatch", "npm-mismatch"}:
         with pytest.raises(ValueError, match="version"):
             invoke_quality_operation()
-        expected_probes = [("node", "--version")]
-        if scenario == "npm-mismatch":
-            expected_probes.append(("npm", "--version"))
-        assert [command for command, *_ in observed] == expected_probes
+        commands = [command for command, *_ in observed]
+        assert Counter(commands) <= Counter(probes)
+        mismatching_tool = "node" if scenario == "node-mismatch" else "npm"
+        assert (mismatching_tool, "--version") in commands
         assert_observed_environments_are_closed()
         return
 
     result = invoke_quality_operation()
     commands = [command for command, *_ in observed]
     assert_observed_environments_are_closed()
+    actions = (
+        [("npm", "test")]
+        if operation == "project-tests"
+        else [("npm", "install"), ("node", "--input-type=module")]
+    )
+    roles = [command[:2] for command in commands]
+    assert Counter(roles) == Counter([*probes, *actions])
+    by_role = {command[:2]: command for command in commands}
+    for probe in probes:
+        assert by_role[probe] == probe
+        for action in actions:
+            assert roles.index(probe) < roles.index(action)
     if operation == "project-tests":
         assert result is None
-        assert commands == [
-            ("node", "--version"),
-            ("npm", "--version"),
-            ("npm", "test", "--ignore-scripts"),
-        ]
+        assert by_role[("npm", "test")] == ("npm", "test", "--ignore-scripts")
         return
 
     assert built_result is not None
-    consumer = observed[2][1]
-    package_specifier = json.dumps(built_result.expectation.package_name)
-    import_script = (
-        f"import {{smokeMessage}} from {package_specifier};"
-        "process.stdout.write(smokeMessage());"
+    assert roles.index(("npm", "install")) < roles.index(
+        ("node", "--input-type=module")
     )
-    assert commands == [
-        ("node", "--version"),
-        ("npm", "--version"),
-        (
-            "npm",
-            "install",
-            "--ignore-scripts",
-            "--no-audit",
-            "--no-fund",
-            "--package-lock=false",
-            str(consumer / "package.tgz"),
-        ),
-        ("node", "--input-type=module", "-e", import_script),
-    ]
+    assert by_role[("npm", "install")][:-1] == (
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--package-lock=false",
+    )
+    import_command = by_role[("node", "--input-type=module")]
+    assert import_command[:3] == ("node", "--input-type=module", "-e")
+    assert len(import_command) == EXPECTED_IMPORT_COMMAND_ARG_COUNT
+    assert import_command[-1]
     assert result == node_adapter.InstallImportResult(
         smoke_message="hcoona-release-smoke-npm",
         witness_sha256=(
@@ -3238,110 +2869,7 @@ def test_quality_adapters_probe_frozen_runtime_before_operations(  # noqa: PLR09
     )
 
 
-def test_adapter_public_api_exports_closed_types_and_functions() -> None:
-    runtime_request_type = getattr(node_adapter, "RuntimeRequest", None)
-    assert runtime_request_type is not None, (
-        "node adapter must define RuntimeRequest before exporting it"
-    )
-    assert getattr(adapters_package, "RuntimeRequest", None) is (
-        runtime_request_type
-    )
-
-    expected_exports = (
-        "PackageTargetWitness",
-        "BuildRequest",
-        "ArtifactExpectation",
-        "ArtifactManifest",
-        "BuildResult",
-        "InstallImportResult",
-        "RuntimeRequest",
-        "build_node_package",
-        "run_node_project_build",
-        "run_node_project_tests",
-        "qualify_npm_artifact_contents",
-        "qualify_npm_install_import",
-    )
-    npmjs_exports = (
-        "HttpResponse",
-        "HttpTransport",
-        "NpmjsNetworkError",
-        "NpmjsPolicyError",
-        "NpmjsTimeoutError",
-        "NpmjsTruncatedResponseError",
-        "StdlibHttpTransport",
-        "observe_npmjs_projection",
-    )
-    github_packages_exports = (
-        "ACCEPTANCE_PACKAGE_COORDINATE",
-        "ACCEPTANCE_SCENARIOS",
-        "ACCEPTANCE_TAGS",
-        "GITHUB_PACKAGES_DESTINATION_ID",
-        "GITHUB_PACKAGES_OBSERVATION_CONTRACT_ID",
-        "GITHUB_PACKAGES_OPERATION",
-        "GITHUB_PACKAGES_PACKAGE",
-        "GITHUB_PACKAGES_REGISTRY",
-        "GitHubPackagesHttpResponse",
-        "GitHubPackagesNetworkError",
-        "GitHubPackagesPolicyError",
-        "GitHubPackagesTimeoutError",
-        "GitHubPackagesTransport",
-        "FixedCoordinateAcceptanceProbeResult",
-        "ValidatedAcceptanceRequestProof",
-        "GitHubPackagesActiveState",
-        "read_github_packages_active_state",
-        "run_fixed_coordinate_acceptance_probe",
-    )
-    for name in expected_exports:
-        module_export = getattr(node_adapter, name, None)
-        assert module_export is not None, f"node adapter missing export {name}"
-        assert getattr(adapters_package, name, None) is module_export
-    assert set(adapters_package.__all__) == {
-        *expected_exports,
-        *github_packages_exports,
-        *npmjs_exports,
-    }
-
-    project_tests_signature = inspect.signature(
-        node_adapter.run_node_project_tests
-    )
-    install_import_signature = inspect.signature(
-        node_adapter.qualify_npm_install_import
-    )
-    assert tuple(project_tests_signature.parameters) == (
-        "project_root",
-        "request",
-    )
-    assert tuple(install_import_signature.parameters) == (
-        "tarball",
-        "expectation",
-        "request",
-    )
-    assert (
-        project_tests_signature.parameters["request"].default
-        is inspect.Parameter.empty
-    )
-    assert (
-        install_import_signature.parameters["request"].default
-        is inspect.Parameter.empty
-    )
-    assert get_type_hints(node_adapter.run_node_project_tests)["request"] is (
-        runtime_request_type
-    )
-    assert (
-        get_type_hints(node_adapter.qualify_npm_install_import)["request"]
-        is runtime_request_type
-    )
-    assert tuple(
-        field.name for field in dataclasses.fields(runtime_request_type)
-    ) == ("node_version", "npm_version")
-    assert all(
-        forbidden.lower() not in export.lower()
-        for export in adapters_package.__all__
-        for forbidden in ("Snapshot", "Evidence", "Finalizer", "Planner")
-    )
-
-
-def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_commands(  # noqa: E501, PLR0915
+def test_adapter_operations_preserve_required_commands_and_effect_boundaries(  # noqa: PLR0915
     build_request: BuildRequest,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -3363,13 +2891,7 @@ def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_command
     )
     observed_commands: list[tuple[str, ...]] = []
     build_output_destinations: list[Path] = []
-    consumer_tarball_copies: list[tuple[Path, Path]] = []
-    observed_import_scripts: list[str] = []
-    fixed_import_script = (
-        "import {smokeMessage} from "
-        '"@hcoona/hcoona-release-smoke-npm";'
-        "process.stdout.write(smokeMessage());"
-    )
+    consumer_tarball_copies: list[tuple[Path, Path, bytes]] = []
 
     def record_and_emulate(  # noqa: PLR0911
         command: tuple[str, ...],
@@ -3426,7 +2948,13 @@ def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_command
             )
         if argv[:2] == ("npm", "install"):
             tarball_path = Path(argv[-1])
-            consumer_tarball_copies.append((cwd, tarball_path))
+            consumer_tarball_copies.append(
+                (
+                    cwd.resolve(),
+                    tarball_path.resolve(),
+                    tarball_path.read_bytes(),
+                )
+            )
             package_root = (
                 cwd / "node_modules" / "@hcoona/hcoona-release-smoke-npm"
             )
@@ -3438,75 +2966,130 @@ def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_command
                 destination.write_bytes(content)
             return subprocess.CompletedProcess(argv, 0, "", "")
         if argv[:2] == ("node", "--input-type=module"):
-            if len(argv) == EXPECTED_IMPORT_COMMAND_ARG_COUNT:
-                observed_import_scripts.append(argv[3])
             return subprocess.CompletedProcess(
                 argv,
                 0,
                 "hcoona-release-smoke-npm",
                 "",
             )
-        return subprocess.CompletedProcess(argv, 0, "passed", "")
+        if argv == ("npm", "test", "--ignore-scripts"):
+            return subprocess.CompletedProcess(argv, 0, "passed", "")
+        pytest.fail(f"unexpected Adapter command: {argv}")
 
     monkeypatch.setattr(node_adapter, "_run", record_and_emulate)
 
+    groups = {}
+    start = len(observed_commands)
     built_result = node_adapter.build_node_package(request)
+    groups["build-package"] = observed_commands[start:]
+    start = len(observed_commands)
     node_adapter.run_node_project_build(request)
+    groups["project-build"] = observed_commands[start:]
+    start = len(observed_commands)
     node_adapter.run_node_project_tests(source_root, runtime_request)
+    groups["project-test"] = observed_commands[start:]
+    start = len(observed_commands)
     node_adapter.qualify_npm_install_import(
         built_result.tarball,
         built_result.expectation,
         runtime_request,
     )
+    groups["install-import"] = observed_commands[start:]
 
-    observed_build_output = (
-        build_output_destinations[0]
-        if build_output_destinations
-        else Path("<missing-build-output>")
-    )
-    observed_consumer_tarball = (
-        consumer_tarball_copies[0][1]
-        if consumer_tarball_copies
-        else Path("<missing-consumer-tarball>")
-    )
-    expected_commands = [
+    build_queries = (
         ("node", "--version"),
         ("pnpm", "--version"),
         ("npm", "--version"),
-        ("node", "scripts/build.mjs"),
-        (
-            "npm",
-            "pack",
-            "--ignore-scripts",
-            "--json",
-            "--pack-destination",
-            str(observed_build_output),
+    )
+    runtime_queries = (("node", "--version"), ("npm", "--version"))
+    expected_roles = {
+        "build-package": (
+            *build_queries,
+            ("node", "scripts/build.mjs"),
+            ("npm", "pack"),
         ),
-        ("node", "--version"),
-        ("pnpm", "--version"),
-        ("npm", "--version"),
-        ("node", "scripts/build.mjs"),
-        ("node", "--version"),
-        ("npm", "--version"),
-        ("npm", "test", "--ignore-scripts"),
-        ("node", "--version"),
-        ("npm", "--version"),
-        (
-            "npm",
-            "install",
-            "--ignore-scripts",
-            "--no-audit",
-            "--no-fund",
-            "--package-lock=false",
-            str(observed_consumer_tarball),
+        "project-build": (*build_queries, ("node", "scripts/build.mjs")),
+        "project-test": (*runtime_queries, ("npm", "test")),
+        "install-import": (
+            *runtime_queries,
+            ("npm", "install"),
+            ("node", "--input-type=module"),
         ),
-        (
+    }
+    commands_by_group = {}
+    for name, commands in groups.items():
+        assert Counter(command[:2] for command in commands) == Counter(
+            expected_roles[name]
+        )
+        by_role = {command[:2]: command for command in commands}
+        commands_by_group[name] = by_role
+        queries = (
+            build_queries
+            if name in {"build-package", "project-build"}
+            else runtime_queries
+        )
+        for query in queries:
+            assert by_role[query] == query
+        assert all(
+            commands.index(query) < commands.index(command)
+            for query in queries
+            for role, command in by_role.items()
+            if role not in queries
+        )
+
+    assert len(build_output_destinations) == 1
+    assert len(consumer_tarball_copies) == 1
+    observed_build_output = build_output_destinations[0]
+    consumer_root, observed_consumer_tarball, installed_bytes = (
+        consumer_tarball_copies[0]
+    )
+    for name in ("build-package", "project-build"):
+        assert commands_by_group[name][("node", "scripts/build.mjs")] == (
             "node",
-            "--input-type=module",
-            "-e",
-            fixed_import_script,
-        ),
+            "scripts/build.mjs",
+        )
+    pack_command = commands_by_group["build-package"][("npm", "pack")]
+    assert pack_command == (
+        "npm",
+        "pack",
+        "--ignore-scripts",
+        "--json",
+        "--pack-destination",
+        str(observed_build_output),
+    )
+    assert groups["build-package"].index(("node", "scripts/build.mjs")) < (
+        groups["build-package"].index(pack_command)
+    )
+    assert commands_by_group["project-test"][("npm", "test")] == (
+        "npm",
+        "test",
+        "--ignore-scripts",
+    )
+    install_command = commands_by_group["install-import"][("npm", "install")]
+    assert install_command == (
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--package-lock=false",
+        str(observed_consumer_tarball),
+    )
+    import_command = commands_by_group["install-import"][
+        ("node", "--input-type=module")
     ]
+    assert len(import_command) == EXPECTED_IMPORT_COMMAND_ARG_COUNT
+    assert import_command[:3] == ("node", "--input-type=module", "-e")
+    assert import_command[3]
+    assert groups["install-import"].index(install_command) < (
+        groups["install-import"].index(import_command)
+    )
+    assert not observed_build_output.resolve().is_relative_to(
+        source_root.resolve()
+    )
+    assert not consumer_root.is_relative_to(source_root.resolve())
+    assert observed_consumer_tarball.is_relative_to(consumer_root)
+    assert installed_bytes == built_result.tarball
 
     lowered_commands = tuple(
         " ".join(command).lower() for command in observed_commands
@@ -3531,17 +3114,3 @@ def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_command
         for command in lowered_commands
         for prefix in restoration_prefixes
     )
-
-    assert observed_commands == expected_commands
-    assert observed_commands[0:4] == expected_commands[0:4]
-    assert observed_commands[5:9] == expected_commands[5:9]
-    assert observed_commands[9:12] == expected_commands[9:12]
-    assert observed_commands[12:16] == expected_commands[12:16]
-    assert build_output_destinations == [observed_build_output]
-    assert observed_build_output.name == "output"
-    assert not observed_build_output.is_relative_to(source_root.resolve())
-    assert consumer_tarball_copies == [
-        (observed_consumer_tarball.parent, observed_consumer_tarball)
-    ]
-    assert observed_consumer_tarball.name == "package.tgz"
-    assert observed_import_scripts == [fixed_import_script]

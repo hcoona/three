@@ -1,0 +1,314 @@
+# Preparation delivery leaves the protected bootstrap request null.
+name: Workflow Delivery v3 TestPyPI bootstrap
+'on':
+  workflow_dispatch:
+    inputs:
+      request_digest:
+        description: Exact separately authorized protected bootstrap request SHA-256
+        type: string
+        required: true
+      tooling_sha:
+        description: Exact reviewed protected-main tooling commit
+        type: string
+        required: true
+permissions: {}
+concurrency:
+  group: wdv3-python-project-testpypi
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+env:
+  WDV3_REQUEST_DIGEST: ${{ inputs.request_digest }}
+  WDV3_TOOLING_SHA: ${{ inputs.tooling_sha }}
+jobs:
+  prepare:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' && github.repository_id == '1102295886' &&
+      github.actor == 'hcoona' && github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' && github.ref_protected &&
+      github.sha == inputs.tooling_sha && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact protected tooling without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-python-setup
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.300
+      - name: Restore pinned NBGV
+        run: dotnet tool restore
+      - name: Qualify exact original pair and write reviewer summary
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap prepare --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --output .wdv3/python-bootstrap-prepare-r${{ github.run_id }}.zip
+      - name: Bind original prepare payload bytes
+        id: prepare-seal
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap digest --output .wdv3/python-bootstrap-prepare-r${{ github.run_id }}.zip
+      - name: Retain immutable prepare artifact
+        id: prepare-upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-bootstrap-prepare-r${{ github.run_id }}.zip
+          path: .wdv3/python-bootstrap-prepare-r${{ github.run_id }}.zip
+          archive: false
+          overwrite: false
+          if-no-files-found: error
+          retention-days: 45
+          include-hidden-files: true
+    outputs:
+      artifact-id: ${{ steps.prepare-upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.prepare-upload.outputs.artifact-digest }}
+      artifact-url: ${{ steps.prepare-upload.outputs.artifact-url }}
+      payload-digest: ${{ steps.prepare-seal.outputs.digest }}
+  publisher:
+    needs: prepare
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' && github.repository_id == '1102295886' &&
+      github.actor == 'hcoona' && github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' && github.ref_protected &&
+      github.sha == inputs.tooling_sha && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: workflow-delivery-v3-python-testpypi
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      id-token: write
+    env:
+      WDV3_PREPARED_REFERENCE: >-
+        {"artifact-id":${{ needs.prepare.outputs.artifact-id }},"artifact-digest":"sha256:${{ needs.prepare.outputs.artifact-digest }}","artifact-url":"${{ needs.prepare.outputs.artifact-url }}","payload-path":"python-bootstrap-prepare-r${{ github.run_id }}.zip","payload-digest":"${{ needs.prepare.outputs.payload-digest }}"}
+    steps:
+      - name: Check out exact protected tooling without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-python-setup
+      - name: Download original prepare by returned artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Bind current approval and actual initial HTTP 404
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WDV3_APPROVAL_ENVIRONMENT_MARKER: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap authorize --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --output .wdv3/bootstrap-result/authorization
+      - name: Archive surviving authorization evidence
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap archive --directory .wdv3/bootstrap-result/authorization --output .wdv3/python-bootstrap-authorization-r${{ github.run_id }}.zip
+      - name: Bind original authorization payload bytes
+        id: authorization-seal
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap digest --output .wdv3/python-bootstrap-authorization-r${{ github.run_id }}.zip
+      - name: Retain immutable authorization artifact
+        id: authorization-upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-bootstrap-authorization-r${{ github.run_id }}.zip
+          path: .wdv3/python-bootstrap-authorization-r${{ github.run_id }}.zip
+          archive: false
+          overwrite: false
+          if-no-files-found: error
+          retention-days: 45
+          include-hidden-files: true
+      - name: Download original authorization by returned artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ steps.authorization-upload.outputs.artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Form marker from downloaded immutable authorization
+        env:
+          WDV3_AUTHORIZATION_REFERENCE: >-
+            {"artifact-id":${{ steps.authorization-upload.outputs.artifact-id }},"artifact-digest":"sha256:${{ steps.authorization-upload.outputs.artifact-digest }}","artifact-url":"${{ steps.authorization-upload.outputs.artifact-url }}","payload-path":"python-bootstrap-authorization-r${{ github.run_id }}.zip","payload-digest":"${{ steps.authorization-seal.outputs.digest }}"}
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap marker --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --authorization .wdv3/input/python-bootstrap-authorization-r${{ github.run_id }}.zip --output .wdv3/python-bootstrap-marker-r${{ github.run_id }}.zip
+      - name: Bind original marker payload bytes
+        id: marker-seal
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap digest --output .wdv3/python-bootstrap-marker-r${{ github.run_id }}.zip
+      - name: Retain immutable marker artifact
+        id: marker-upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-bootstrap-marker-r${{ github.run_id }}.zip
+          path: .wdv3/python-bootstrap-marker-r${{ github.run_id }}.zip
+          archive: false
+          overwrite: false
+          if-no-files-found: error
+          retention-days: 45
+          include-hidden-files: true
+      - name: Download original marker by returned artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ steps.marker-upload.outputs.artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify durable marker and execute the bounded first publication
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WDV3_APPROVAL_ENVIRONMENT_MARKER: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
+          WDV3_AUTHORIZATION_REFERENCE: >-
+            {"artifact-id":${{ steps.authorization-upload.outputs.artifact-id }},"artifact-digest":"sha256:${{ steps.authorization-upload.outputs.artifact-digest }}","artifact-url":"${{ steps.authorization-upload.outputs.artifact-url }}","payload-path":"python-bootstrap-authorization-r${{ github.run_id }}.zip","payload-digest":"${{ steps.authorization-seal.outputs.digest }}"}
+          WDV3_MARKER_REFERENCE: >-
+            {"artifact-id":${{ steps.marker-upload.outputs.artifact-id }},"artifact-digest":"sha256:${{ steps.marker-upload.outputs.artifact-digest }}","artifact-url":"${{ steps.marker-upload.outputs.artifact-url }}","payload-path":"python-bootstrap-marker-r${{ github.run_id }}.zip","payload-digest":"${{ steps.marker-seal.outputs.digest }}"}
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap execute --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --authorization .wdv3/input/python-bootstrap-authorization-r${{ github.run_id }}.zip --marker .wdv3/input/python-bootstrap-marker-r${{ github.run_id }}.zip --output .wdv3/bootstrap-result/execution
+      - name: Archive surviving result evidence
+        if: always()
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap archive --directory .wdv3/bootstrap-result --output .wdv3/python-bootstrap-result-r${{ github.run_id }}.zip
+      - name: Bind original result payload bytes
+        id: result-seal
+        if: always()
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap digest --output .wdv3/python-bootstrap-result-r${{ github.run_id }}.zip
+      - name: Retain immutable result artifact
+        id: result-upload
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-bootstrap-result-r${{ github.run_id }}.zip
+          path: .wdv3/python-bootstrap-result-r${{ github.run_id }}.zip
+          archive: false
+          overwrite: false
+          if-no-files-found: error
+          retention-days: 45
+          include-hidden-files: true
+    outputs:
+      authorization-artifact-id: ${{ steps.authorization-upload.outputs.artifact-id }}
+      authorization-artifact-digest: ${{ steps.authorization-upload.outputs.artifact-digest }}
+      authorization-artifact-url: ${{ steps.authorization-upload.outputs.artifact-url }}
+      authorization-payload-digest: ${{ steps.authorization-seal.outputs.digest }}
+      marker-artifact-id: ${{ steps.marker-upload.outputs.artifact-id }}
+      marker-artifact-digest: ${{ steps.marker-upload.outputs.artifact-digest }}
+      marker-artifact-url: ${{ steps.marker-upload.outputs.artifact-url }}
+      marker-payload-digest: ${{ steps.marker-seal.outputs.digest }}
+      result-artifact-id: ${{ steps.result-upload.outputs.artifact-id }}
+      result-artifact-digest: ${{ steps.result-upload.outputs.artifact-digest }}
+      result-artifact-url: ${{ steps.result-upload.outputs.artifact-url }}
+      result-payload-digest: ${{ steps.result-seal.outputs.digest }}
+  audit:
+    needs: [prepare, publisher]
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'hcoona/three' && github.repository_id == '1102295886' &&
+      github.actor == 'hcoona' && github.actor_id == '712433' &&
+      github.ref == 'refs/heads/main' && github.ref_protected &&
+      github.sha == inputs.tooling_sha && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    env:
+      WDV3_PREPARED_REFERENCE: >-
+        {"artifact-id":${{ needs.prepare.outputs.artifact-id }},"artifact-digest":"sha256:${{ needs.prepare.outputs.artifact-digest }}","artifact-url":"${{ needs.prepare.outputs.artifact-url }}","payload-path":"python-bootstrap-prepare-r${{ github.run_id }}.zip","payload-digest":"${{ needs.prepare.outputs.payload-digest }}"}
+      WDV3_AUTHORIZATION_REFERENCE: >-
+        {"artifact-id":${{ needs.publisher.outputs.authorization-artifact-id }},"artifact-digest":"sha256:${{ needs.publisher.outputs.authorization-artifact-digest }}","artifact-url":"${{ needs.publisher.outputs.authorization-artifact-url }}","payload-path":"python-bootstrap-authorization-r${{ github.run_id }}.zip","payload-digest":"${{ needs.publisher.outputs.authorization-payload-digest }}"}
+      WDV3_MARKER_REFERENCE: >-
+        {"artifact-id":${{ needs.publisher.outputs.marker-artifact-id }},"artifact-digest":"sha256:${{ needs.publisher.outputs.marker-artifact-digest }}","artifact-url":"${{ needs.publisher.outputs.marker-artifact-url }}","payload-path":"python-bootstrap-marker-r${{ github.run_id }}.zip","payload-digest":"${{ needs.publisher.outputs.marker-payload-digest }}"}
+      WDV3_RESULT_REFERENCE: >-
+        {"artifact-id":${{ needs.publisher.outputs.result-artifact-id }},"artifact-digest":"sha256:${{ needs.publisher.outputs.result-artifact-digest }}","artifact-url":"${{ needs.publisher.outputs.result-artifact-url }}","payload-path":"python-bootstrap-result-r${{ github.run_id }}.zip","payload-digest":"${{ needs.publisher.outputs.result-payload-digest }}"}
+    steps:
+      - name: Check out exact protected tooling without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-python-setup
+      - name: Download original prepare by returned artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download original authorization by returned artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.publisher.outputs.authorization-artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download original marker by returned artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.publisher.outputs.marker-artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download original result by returned artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.publisher.outputs.result-artifact-id }}
+          path: .wdv3/input
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Replay exact original effects and freshly consume both distributions
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap audit --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --authorization .wdv3/input/python-bootstrap-authorization-r${{ github.run_id }}.zip --marker .wdv3/input/python-bootstrap-marker-r${{ github.run_id }}.zip --result .wdv3/input/python-bootstrap-result-r${{ github.run_id }}.zip --output .wdv3/bootstrap-audit
+      - name: Archive surviving audit evidence
+        if: always()
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap archive --directory .wdv3/bootstrap-audit --output .wdv3/python-bootstrap-audit-r${{ github.run_id }}.zip
+      - name: Bind original audit payload bytes
+        id: audit-seal
+        if: always()
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap digest --output .wdv3/python-bootstrap-audit-r${{ github.run_id }}.zip
+      - name: Retain immutable audit artifact
+        id: audit-upload
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-bootstrap-audit-r${{ github.run_id }}.zip
+          path: .wdv3/python-bootstrap-audit-r${{ github.run_id }}.zip
+          archive: false
+          overwrite: false
+          if-no-files-found: error
+          retention-days: 45
+          include-hidden-files: true
+      - name: Expose exact original references for independent retrieval
+        env:
+          WDV3_AUDIT_REFERENCE: >-
+            {"artifact-id":${{ steps.audit-upload.outputs.artifact-id }},"artifact-digest":"sha256:${{ steps.audit-upload.outputs.artifact-digest }}","artifact-url":"${{ steps.audit-upload.outputs.artifact-url }}","payload-path":"python-bootstrap-audit-r${{ github.run_id }}.zip","payload-digest":"${{ steps.audit-seal.outputs.digest }}"}
+        run: |
+          python - <<'PYREF'
+          import json
+          import os
+          from pathlib import Path
+
+          from three_workflow_delivery_v3.canonical import canonicalize
+
+          references = {
+              "run-id": int(os.environ["GITHUB_RUN_ID"]),
+              "tooling-sha": os.environ["WDV3_TOOLING_SHA"],
+              **{
+                  role: json.loads(os.environ[f"WDV3_{role.upper()}_REFERENCE"])
+                  for role in ("prepared", "authorization", "marker", "result", "audit")
+              },
+          }
+          content = canonicalize(references).decode()
+          print(content)
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
+              summary.write("Original bootstrap references for independent retrieval/replay:\n\n```json\n" + content + "\n```\n")
+          PYREF
+    outputs:
+      artifact-id: ${{ steps.audit-upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.audit-upload.outputs.artifact-digest }}
+      artifact-url: ${{ steps.audit-upload.outputs.artifact-url }}
+      payload-digest: ${{ steps.audit-seal.outputs.digest }}

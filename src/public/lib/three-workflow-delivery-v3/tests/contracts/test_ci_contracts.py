@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import replace
+from operator import setitem
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
 import pytest
+from three_workflow_delivery_v3 import cli as cli_module
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
@@ -32,18 +34,16 @@ from three_workflow_delivery_v3.records.ci import (
     CiQualificationSnapshot,
     CiSliceDecision,
     CiSliceSummary,
-    admit_ci_artifact_json,
-    admit_ci_candidate_json,
-    admit_ci_evidence_json,
+    admit_ci_bootstrap_projection_decision_json,
     admit_ci_lane_result_json,
     admit_ci_qualification_snapshot_json,
-    admit_ci_slice_decision_json,
     ci_artifact_digest,
     ci_candidate_digest,
     ci_evidence_digest,
     ci_lane_result_digest,
     ci_qualification_snapshot_digest,
     ci_slice_decision_digest,
+    derive_ci_pr_slo,
 )
 
 if TYPE_CHECKING:
@@ -145,10 +145,6 @@ def _rebind_plan_document(
         ],
     )
     if manual:
-        document["candidate"] = cast(
-            "dict[str, JsonValue]",
-            json.loads((FIXTURE_ROOT / "manual-candidate.json").read_bytes()),
-        )
         document["scope-mode"] = "slice-validation"
         document["changed-paths"] = []
         document["diagnostics"] = [
@@ -163,8 +159,10 @@ def _rebind_plan_document(
         document["selected-variants"] = []
         document["selected-outputs"] = []
         document["diagnostics"] = [
-            "incremental comparison selected repository "
-            "source-tree conformance only"
+            (
+                "incremental comparison selected repository "
+                "source-tree conformance only"
+            )
         ]
     document["ready"] = ready
     if not ready:
@@ -218,11 +216,16 @@ def _plan_document(
     ready: bool = True,
     manual: bool = False,
     complete_scope: bool | None = None,
+    candidate: CiCandidate | None = None,
 ) -> dict[str, JsonValue]:
     source = cast(
         "dict[str, JsonValue]",
         json.loads((FIXTURE_ROOT / "ready-plan.json").read_bytes()),
     )
+    candidate = _candidate(manual=manual) if candidate is None else candidate
+    source["candidate"] = candidate.to_document()
+    source["workflow-run-id"] = candidate.workflow_run_id
+    source["run-attempt"] = candidate.run_attempt
     return _rebind_plan_document(
         source,
         selected_lanes=selected_lanes,
@@ -257,14 +260,18 @@ def _obligation_from_document(
 
 def _snapshot_from_document(
     document: dict[str, JsonValue],
+    *,
+    candidate: CiCandidate | None = None,
 ) -> CiQualificationSnapshot:
     obligations = tuple(
         _obligation_from_document(cast("dict[str, JsonValue]", value))
         for value in cast("list[JsonValue]", document["obligations"])
     )
     return CiQualificationSnapshot(
-        candidate=_candidate(
-            manual=document["scope-mode"] == "slice-validation",
+        candidate=(
+            _candidate(manual=document["scope-mode"] == "slice-validation")
+            if candidate is None
+            else candidate
         ),
         producer=cast("str", document["producer"]),
         workflow_run_id=cast("int", document["workflow-run-id"]),
@@ -317,13 +324,16 @@ def _snapshot(
     selected_lanes: tuple[str, ...] = CI_LANE_IDS,
     ready: bool = True,
     manual: bool = False,
+    candidate: CiCandidate | None = None,
 ) -> CiQualificationSnapshot:
     return _snapshot_from_document(
         _plan_document(
             selected_lanes=selected_lanes,
             ready=ready,
             manual=manual,
-        )
+            candidate=candidate,
+        ),
+        candidate=candidate,
     )
 
 
@@ -403,8 +413,8 @@ def _lane_results(
     )
 
 
-def _decision() -> CiSliceDecision:
-    plan = _snapshot()
+def _decision(plan: CiQualificationSnapshot | None = None) -> CiSliceDecision:
+    plan = _snapshot() if plan is None else plan
     return finalize_ci_slice(
         plan,
         _lane_results(plan),
@@ -413,20 +423,20 @@ def _decision() -> CiSliceDecision:
     )
 
 
-def _golden_records() -> dict[str, object]:
-    repository_only = _snapshot(selected_lanes=("root-hk",))
-    return {
-        "pr-candidate": _candidate(),
-        "manual-candidate": _candidate(manual=True),
-        "ready-plan": _snapshot(),
-        "npm-artifact": _artifact(_snapshot()),
-        "empty-lane-result": form_empty_lane_result(
-            repository_only,
+def _golden_record(fixture_name: str) -> object:
+    factories: dict[str, Callable[[], object]] = {
+        "pr-candidate": _candidate,
+        "manual-candidate": lambda: _candidate(manual=True),
+        "ready-plan": _snapshot,
+        "npm-artifact": lambda: _artifact(_snapshot()),
+        "empty-lane-result": lambda: form_empty_lane_result(
+            _snapshot(selected_lanes=("root-hk",)),
             lane_id="project-build",
         ),
-        "satisfied-evidence": _evidence(_snapshot()),
-        "non-authoritative-decision": _decision(),
+        "satisfied-evidence": lambda: _evidence(_snapshot()),
+        "non-authoritative-decision": _decision,
     }
+    return factories[fixture_name]()
 
 
 @pytest.mark.parametrize(
@@ -438,7 +448,7 @@ def test_ci_contract_golden_fixtures_and_digests(
     digest: str,
 ) -> None:
     """Keep canonical fixture bytes and public record digests stable."""
-    record = _golden_records()[fixture_name]
+    record = _golden_record(fixture_name)
     fixture = (FIXTURE_ROOT / f"{fixture_name}.json").read_bytes()
     document = cast(
         "dict[str, JsonValue]",
@@ -449,10 +459,8 @@ def test_ci_contract_golden_fixtures_and_digests(
         CiCandidate: lambda value: ci_candidate_digest(
             cast("CiCandidate", value)
         ),
-        CiQualificationSnapshot: lambda value: (
-            ci_qualification_snapshot_digest(
-                cast("CiQualificationSnapshot", value)
-            )
+        CiQualificationSnapshot: lambda value: ci_qualification_snapshot_digest(
+            cast("CiQualificationSnapshot", value)
         ),
         CiArtifact: lambda value: ci_artifact_digest(cast("CiArtifact", value)),
         CiEvidence: lambda value: ci_evidence_digest(cast("CiEvidence", value)),
@@ -466,144 +474,112 @@ def test_ci_contract_golden_fixtures_and_digests(
     assert digesters[type(record)](record) == digest
 
 
-def test_ci_records_are_frozen_slotted_and_tuple_backed() -> None:
-    """Preserve frozen slotted records and immutable tuple collections."""
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("purpose", "slice-validation", "purpose does not match event kind"),
+        ("producer", "plan", "producer must be the request job"),
+        ("workflow_sha", SHA_B, "control SHA must equal the selected target"),
+        ("tested_merge_sha", SHA_B, "target must be the tested merge SHA"),
+    ],
+)
+def test_candidate_rejects_intrinsic_identity_contradictions(
+    field: str, value: str, message: str
+) -> None:
+    """Reject contradictory Candidate identity at checked construction."""
+    candidate = _candidate()
+
+    with pytest.raises(ValueError, match=message):
+        replace(candidate, **{field: value})
+
+
+def test_ci_record_fields_cannot_change_after_construction() -> None:
+    """Preserve admitted identity through the public record interface."""
+    plan = _snapshot()
     decision = _decision()
-    records = (
-        _candidate(),
-        _snapshot(),
-        _artifact(_snapshot()),
-        _evidence(_snapshot()),
-        _lane_results(_snapshot())[0],
-        decision.obligation_dispositions[0],
-        decision.summary,
-        decision,
+    mutations = (
+        (_candidate(), "repository", "forged"),
+        (plan, "candidate", _candidate(manual=True)),
+        (plan.obligations[0], "selected", False),
+        (_artifact(plan), "artifact_id", 9002),
+        (_evidence(plan), "normalized_outcome", "failed"),
+        (_lane_results(plan)[0], "disposition", "failed"),
+        (decision.obligation_dispositions[0], "outcome", "failed"),
+        (decision.summary, "text", "forged"),
+        (decision, "terminal_result", "failure"),
     )
-    for record in records:
-        assert not hasattr(record, "__dict__")
-    candidate = _candidate()
-    with pytest.raises(FrozenInstanceError):
-        candidate.repository = "forged"  # type: ignore[misc]
-    assert type(_snapshot().obligations) is tuple
-    assert type(_evidence(_snapshot()).output_digests) is tuple
-    assert type(_artifact(_snapshot()).entries) is tuple
+    for record, field, value in mutations:
+        before = canonicalize(record.to_document())
+        with pytest.raises(AttributeError):
+            setattr(record, field, value)
+        assert canonicalize(record.to_document()) == before
 
 
-def test_candidate_admission_requires_canonical_closed_json_and_binding() -> (
-    None
-):
-    """Reject noncanonical, open, duplicate, or wrongly bound Candidates."""
-    candidate = _candidate()
-    document = candidate.to_document()
-    encoded = canonicalize(document)
-    assert (
-        admit_ci_candidate_json(
-            encoded,
-            expected_candidate=candidate,
-        )
-        == candidate
-    )
-    with pytest.raises(ValueError, match="canonical"):
-        admit_ci_candidate_json(
-            b" " + encoded,
-            expected_candidate=candidate,
-        )
-    opened = dict(document)
-    opened["extra"] = "forged"
-    with pytest.raises(ValueError, match="unknown field"):
-        admit_ci_candidate_json(
-            canonicalize(opened),
-            expected_candidate=candidate,
-        )
-    duplicate = encoded[:-1] + b',"purpose":"ci-pr-slice-shadow"}'
-    with pytest.raises(ValueError, match="duplicate"):
-        admit_ci_candidate_json(
-            duplicate,
-            expected_candidate=candidate,
-        )
-    with pytest.raises(ValueError, match="trusted current candidate"):
-        admit_ci_candidate_json(
-            encoded,
-            expected_candidate=_candidate(manual=True),
-        )
-
-
-def test_ci_artifact_admission_is_canonical_and_current_candidate_bound() -> (
-    None
-):
-    """Bind retained npm artifacts to exact platform and candidate facts."""
+def test_ci_record_collections_cannot_replace_bound_members() -> None:
+    """Prevent in-place substitution of obligations, outputs, and entries."""
     plan = _snapshot()
     artifact = _artifact(plan)
-    encoded = canonicalize(artifact.to_document())
-    assert artifact.artifact_name.endswith(".tgz")
-    assert artifact.to_document()["artifact-url"] == artifact.artifact_url
-    assert (
-        artifact.output_id,
-        artifact.logical_role,
-        artifact.media_kind,
-    ) == ("npm-tarball", "primary-package", "npm-tarball")
-    assert (
-        admit_ci_artifact_json(
-            encoded,
-            expected_candidate=plan.candidate,
-            expected_artifact_id=artifact.artifact_id,
-            expected_artifact_name=artifact.artifact_name,
-            expected_artifact_url=artifact.artifact_url,
-            expected_transport_digest=artifact.transport_digest,
-            expected_output_id=artifact.output_id,
-            expected_logical_role=artifact.logical_role,
-            expected_media_kind=artifact.media_kind,
-        )
-        == artifact
+    evidence = _evidence(plan)
+    decision = _decision()
+    mutations = (
+        (plan, plan.obligations, plan.obligations[1]),
+        (artifact, artifact.entries, "package/other.txt"),
+        (evidence, evidence.output_digests, DIGEST_D),
+        (
+            decision,
+            decision.obligation_dispositions,
+            decision.obligation_dispositions[1],
+        ),
     )
-    with pytest.raises(ValueError, match="trusted current candidate"):
-        admit_ci_artifact_json(
-            encoded,
-            expected_candidate=_candidate(manual=True),
-            expected_artifact_id=artifact.artifact_id,
-            expected_artifact_name=artifact.artifact_name,
-            expected_artifact_url=artifact.artifact_url,
-            expected_transport_digest=artifact.transport_digest,
-            expected_output_id=artifact.output_id,
-            expected_logical_role=artifact.logical_role,
-            expected_media_kind=artifact.media_kind,
-        )
-    with pytest.raises(ValueError, match="trusted platform metadata"):
-        admit_ci_artifact_json(
-            encoded,
-            expected_candidate=plan.candidate,
-            expected_artifact_id=artifact.artifact_id + 1,
-            expected_artifact_name=artifact.artifact_name,
-            expected_artifact_url=artifact.artifact_url,
-            expected_transport_digest=artifact.transport_digest,
-            expected_output_id=artifact.output_id,
-            expected_logical_role=artifact.logical_role,
-            expected_media_kind=artifact.media_kind,
-        )
-    with pytest.raises(ValueError, match="trusted platform metadata"):
-        admit_ci_artifact_json(
-            encoded,
-            expected_candidate=plan.candidate,
-            expected_artifact_id=artifact.artifact_id,
-            expected_artifact_name=artifact.artifact_name,
-            expected_artifact_url=artifact.artifact_url,
-            expected_transport_digest=artifact.transport_digest,
-            expected_output_id=artifact.output_id,
-            expected_logical_role="secondary-package",
-            expected_media_kind=artifact.media_kind,
-        )
-    with pytest.raises(ValueError, match="trusted platform metadata"):
-        admit_ci_artifact_json(
-            encoded,
-            expected_candidate=plan.candidate,
-            expected_artifact_id=artifact.artifact_id,
-            expected_artifact_name=artifact.artifact_name,
-            expected_artifact_url=artifact.artifact_url + "?forged=1",
-            expected_transport_digest=artifact.transport_digest,
-            expected_output_id=artifact.output_id,
-            expected_logical_role=artifact.logical_role,
-            expected_media_kind=artifact.media_kind,
-        )
+    for record, collection, replacement in mutations:
+        before = canonicalize(record.to_document())
+        with pytest.raises(TypeError):
+            setitem(collection, 0, replacement)
+        assert canonicalize(record.to_document()) == before
+
+
+def test_ci_record_documents_do_not_alias_immutable_state() -> None:
+    """Editing exported nested objects and arrays cannot change their record."""
+    plan = _snapshot()
+    artifact = _artifact(plan)
+    evidence = _evidence(plan)
+    decision = _decision()
+
+    plan_document = plan.to_document()
+    cast("dict[str, JsonValue]", plan_document["candidate"])["target"] = SHA_B
+    cast("list[JsonValue]", plan_document["obligations"]).clear()
+    artifact_document = artifact.to_document()
+    entries = cast("list[JsonValue]", artifact_document["entries"])
+    entries[0] = "package/forged.txt"
+    evidence_document = evidence.to_document()
+    cast("list[JsonValue]", evidence_document["output-digests"]).clear()
+    cast("dict[str, JsonValue]", evidence_document["obligation"])[
+        "selected"
+    ] = False
+    decision_document = decision.to_document()
+    cast("dict[str, JsonValue]", decision_document["summary"])["text"] = (
+        "forged"
+    )
+    dispositions = cast(
+        "list[dict[str, JsonValue]]",
+        decision_document["obligation-dispositions"],
+    )
+    cast("list[JsonValue]", dispositions[0]["evidence-digests"]).clear()
+
+    assert (
+        ci_qualification_snapshot_digest(plan) == GOLDEN_DIGESTS["ready-plan"]
+    )
+    assert ci_artifact_digest(artifact) == GOLDEN_DIGESTS["npm-artifact"]
+    assert ci_evidence_digest(evidence) == GOLDEN_DIGESTS["satisfied-evidence"]
+    assert (
+        ci_slice_decision_digest(decision)
+        == GOLDEN_DIGESTS["non-authoritative-decision"]
+    )
+
+
+def test_ci_artifact_value_binds_platform_url_and_name() -> None:
+    """Bind the Artifact URL and name to its own checked platform identity."""
+    artifact = _artifact(_snapshot())
     forged_urls = (
         artifact.artifact_url.replace(
             "/hcoona/three/",
@@ -621,167 +597,197 @@ def test_ci_artifact_admission_is_canonical_and_current_candidate_bound() -> (
             artifact,
             artifact_name=artifact.artifact_name.removesuffix(".tgz"),
         )
-    opened = artifact.to_document()
-    opened["platform-metadata"] = "forged"
-    with pytest.raises(ValueError, match="unknown field"):
-        admit_ci_artifact_json(
-            canonicalize(opened),
-            expected_candidate=plan.candidate,
-            expected_artifact_id=artifact.artifact_id,
-            expected_artifact_name=artifact.artifact_name,
-            expected_artifact_url=artifact.artifact_url,
-            expected_transport_digest=artifact.transport_digest,
-            expected_output_id=artifact.output_id,
-            expected_logical_role=artifact.logical_role,
-            expected_media_kind=artifact.media_kind,
+
+
+@pytest.mark.parametrize(
+    "alternate_context",
+    ["workflow-run", "attempt", "target", "manual", "plan-diagnostic"],
+)
+def test_lane_loader_rejects_coherent_foreign_context(
+    tmp_path: Path,
+    alternate_context: str,
+) -> None:
+    """Reject valid foreign Lane bytes against the receiving Plan."""
+    plan = _snapshot()
+    candidate = plan.candidate
+    if alternate_context == "workflow-run":
+        candidate = replace(candidate, workflow_run_id=7002)
+    elif alternate_context == "attempt":
+        candidate = replace(candidate, run_attempt=3)
+    elif alternate_context == "target":
+        candidate = replace(
+            candidate,
+            target=SHA_B,
+            workflow_sha=SHA_B,
+            tested_merge_sha=SHA_B,
+        )
+    elif alternate_context == "manual":
+        candidate = _candidate(manual=True)
+    alternate = _snapshot(
+        candidate=candidate,
+        manual=alternate_context == "manual",
+    )
+    if alternate_context == "plan-diagnostic":
+        alternate = replace(alternate, diagnostics=("alternate scope reason",))
+    lane = form_evidence_lane_result(alternate, _evidence(alternate))
+    path = tmp_path / "foreign-lane.json"
+    encoded = canonicalize(lane.to_document())
+    path.write_bytes(encoded)
+    assert (
+        cli_module._load_lane_result(  # noqa: SLF001
+            str(path), plan=alternate
+        )
+        == lane
+    )
+    error = (
+        "trusted Plan digest"
+        if alternate_context == "plan-diagnostic"
+        else "trusted current candidate"
+    )
+    with pytest.raises(ValueError, match=error):
+        cli_module._load_lane_result(str(path), plan=plan)  # noqa: SLF001
+    assert path.read_bytes() == encoded
+
+
+def test_plan_loader_binds_supplied_digest_and_current_root_hk(
+    tmp_path: Path,
+) -> None:
+    """Bind original Plan bytes to the supplied digest and current rules."""
+    plan = _snapshot()
+    path = tmp_path / "plan.json"
+    path.write_bytes(canonicalize(plan.to_document()))
+    assert (
+        cli_module._load_ci_plan(  # noqa: SLF001
+            str(path), ci_qualification_snapshot_digest(plan)
+        )
+        == plan
+    )
+    with pytest.raises(ValueError, match="trusted Plan digest"):
+        cli_module._load_ci_plan(str(path), DIGEST_E)  # noqa: SLF001
+    document = plan.to_document()
+    document["root-hk-definition-digest"] = DIGEST_E
+    path.write_bytes(canonicalize(document))
+    with pytest.raises(ValueError, match="root-HK definition is not current"):
+        cli_module._load_ci_plan(  # noqa: SLF001
+            str(path), canonical_sha256(document)
         )
 
 
-def test_transported_records_reject_single_current_candidate_mutations() -> (
-    None
-):
-    """Reject one-field current-candidate drift in every transported record."""
-    candidate = _candidate()
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("definition-id", "node/project-test-v1"),
+        ("definition-digest", DIGEST_E),
+        ("prerequisites", ["ci:root-hk"]),
+        ("request-digest", DIGEST_E),
+    ],
+)
+def test_plan_admission_rejects_canonical_fixed_obligation_forgery(
+    field: str,
+    value: JsonValue,
+) -> None:
+    """Reject forged fixed work even with matching request and outer hashes."""
+    source = cast(
+        "dict[str, JsonValue]",
+        json.loads((FIXTURE_ROOT / "ready-plan.json").read_bytes()),
+    )
+    obligations = cast("list[dict[str, JsonValue]]", source["obligations"])
+    obligations[1][field] = value
+    document = _rebind_plan_document(
+        source,
+        selected_lanes=CI_LANE_IDS,
+        ready=True,
+        complete_scope=True,
+    )
+    if field == "request-digest":
+        obligations = cast(
+            "list[dict[str, JsonValue]]", document["obligations"]
+        )
+        obligations[1][field] = value
+        evidence_id = "evidence:project-build:" + ("e" * 64)
+        obligations[1]["expected-evidence-id"] = evidence_id
+        cast("list[JsonValue]", document["expected-evidence-ids"])[1] = (
+            evidence_id
+        )
+
     plan = _snapshot()
-    artifact = _artifact(plan)
-    evidence = _evidence(plan)
-    lane_result = form_evidence_lane_result(plan, evidence)
-    decision = finalize_ci_slice(
-        plan,
-        _lane_results(plan),
-        elapsed_seconds=ELAPSED_SECONDS,
-        supersession_state="not-superseded",
-    )
-    expected_evidence = tuple(
-        _evidence(plan, obligation.lane_id) for obligation in plan.obligations
-    )
-    admissions: tuple[
-        tuple[str, dict[str, JsonValue], Callable[[bytes], object]],
-        ...,
-    ] = (
-        (
-            "Candidate",
-            candidate.to_document(),
-            lambda payload: admit_ci_candidate_json(
-                payload,
-                expected_candidate=candidate,
-            ),
-        ),
-        (
-            "Artifact",
-            artifact.to_document(),
-            lambda payload: admit_ci_artifact_json(
-                payload,
-                expected_candidate=candidate,
-                expected_artifact_id=artifact.artifact_id,
-                expected_artifact_name=artifact.artifact_name,
-                expected_artifact_url=artifact.artifact_url,
-                expected_transport_digest=artifact.transport_digest,
-                expected_output_id=artifact.output_id,
-                expected_logical_role=artifact.logical_role,
-                expected_media_kind=artifact.media_kind,
-            ),
-        ),
-        (
-            "Plan",
-            plan.to_document(),
-            lambda payload: admit_ci_qualification_snapshot_json(
-                payload,
-                expected_candidate=candidate,
-                expected_repository_model_digest=plan.repository_model_digest,
-                expected_root_hk_definition=plan.root_hk_definition,
-                expected_root_hk_definition_digest=(
-                    plan.root_hk_definition_digest
-                ),
-                expected_plan_digest=ci_qualification_snapshot_digest(plan),
-            ),
-        ),
-        (
-            "Evidence",
-            evidence.to_document(),
-            lambda payload: admit_ci_evidence_json(
-                payload,
-                expected_candidate=candidate,
-                expected_plan_digest=ci_qualification_snapshot_digest(plan),
-                expected_obligation=evidence.obligation,
-            ),
-        ),
-        (
-            "Lane",
-            lane_result.to_document(),
-            lambda payload: admit_ci_lane_result_json(
-                payload,
-                expected_candidate=candidate,
-                expected_plan_digest=ci_qualification_snapshot_digest(plan),
-                expected_lane_id=lane_result.lane_id,
-            ),
-        ),
-        (
-            "Decision",
-            decision.to_document(),
-            lambda payload: admit_ci_slice_decision_json(
-                payload,
-                expected_plan=plan,
-                expected_evidence=expected_evidence,
-                expected_elapsed_seconds=ELAPSED_SECONDS,
-                expected_supersession_state="not-superseded",
-            ),
-        ),
-    )
-    mutations: tuple[tuple[str, JsonValue], ...] = (
-        ("purpose", "slice-validation"),
-        ("target", SHA_B),
-        ("producer", "forged"),
-        ("workflow-run-id", 7002),
-        ("run-attempt", 3),
-    )
-
-    for record_name, document, admit in admissions:
-        for field, value in mutations:
-            transported = copy.deepcopy(document)
-            candidate_document = (
-                transported
-                if record_name == "Candidate"
-                else cast(
-                    "dict[str, JsonValue]",
-                    transported["candidate"],
-                )
-            )
-            candidate_document[field] = value
-            with pytest.raises((TypeError, ValueError)):
-                admit(canonicalize(transported))
-
-
-def test_plan_admission_binds_trusted_candidate_model_and_digest() -> None:
-    """Bind admitted Plans to trusted candidate, model, and digest facts."""
-    plan = _snapshot()
-    encoded = canonicalize(plan.to_document())
-    admitted = admit_ci_qualification_snapshot_json(
-        encoded,
-        expected_candidate=plan.candidate,
-        expected_repository_model_digest=plan.repository_model_digest,
-        expected_root_hk_definition=plan.root_hk_definition,
-        expected_root_hk_definition_digest=plan.root_hk_definition_digest,
-        expected_plan_digest=ci_qualification_snapshot_digest(plan),
-    )
-    assert admitted == plan
-    with pytest.raises(ValueError, match="Repository Model digest"):
+    with pytest.raises(ValueError, match="does not match fixed definition"):
         admit_ci_qualification_snapshot_json(
-            encoded,
-            expected_candidate=plan.candidate,
-            expected_repository_model_digest="sha256:" + ("f" * 64),
+            canonicalize(document),
             expected_root_hk_definition=plan.root_hk_definition,
             expected_root_hk_definition_digest=plan.root_hk_definition_digest,
+            expected_plan_digest=canonical_sha256(document),
+        )
+
+
+def test_lane_admission_rejects_nested_outcome_contradiction() -> None:
+    """Reject a nested success claim whose raw execution failed."""
+    plan = _snapshot()
+    lane = form_evidence_lane_result(plan, _evidence(plan))
+    document = lane.to_document()
+    assert (
+        admit_ci_lane_result_json(
+            canonicalize(document),
+            expected_candidate=plan.candidate,
             expected_plan_digest=ci_qualification_snapshot_digest(plan),
         )
-    with pytest.raises(ValueError, match="trusted Plan digest"):
-        admit_ci_qualification_snapshot_json(
-            encoded,
+        == lane
+    )
+    evidence = cast("dict[str, JsonValue]", document["evidence"])
+    evidence["raw-outcome"] = "failure"
+    with pytest.raises(ValueError, match="does not match raw mechanics"):
+        admit_ci_lane_result_json(
+            canonicalize(document),
             expected_candidate=plan.candidate,
-            expected_repository_model_digest=plan.repository_model_digest,
-            expected_root_hk_definition=plan.root_hk_definition,
-            expected_root_hk_definition_digest=plan.root_hk_definition_digest,
-            expected_plan_digest="sha256:" + ("f" * 64),
+            expected_plan_digest=ci_qualification_snapshot_digest(plan),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("terminal-result", "success", "terminal result contradicts"),
+        ("explanation", "all work passed", "explanation is not deterministic"),
+        ("failure-class", "quality-failure", "failure class or next action"),
+        ("next-action", "rerun-candidate", "failure class or next action"),
+        (
+            "supersession-reason",
+            "platform-proof-unavailable",
+            "supersession reason is not deterministic",
+        ),
+        (
+            "disposition-explanation",
+            "root-hk failed",
+            "disposition explanation is not deterministic",
+        ),
+    ],
+)
+def test_decision_admission_rejects_canonical_rule_contradictions(
+    field: str,
+    value: str,
+    error: str,
+) -> None:
+    """Keep intrinsic Decision derivation checks at bootstrap admission."""
+    plan = _snapshot(selected_lanes=(), ready=False)
+    decision = _decision(plan)
+    document = decision.to_document()
+    assert (
+        admit_ci_bootstrap_projection_decision_json(
+            canonicalize(document), expected_plan=plan
+        )
+        == decision
+    )
+    if field == "disposition-explanation":
+        dispositions = cast(
+            "list[dict[str, JsonValue]]", document["obligation-dispositions"]
+        )
+        dispositions[0]["explanation"] = value
+    else:
+        document[field] = value
+    with pytest.raises(ValueError, match=error):
+        admit_ci_bootstrap_projection_decision_json(
+            canonicalize(document),
+            expected_plan=plan,
         )
 
 
@@ -804,11 +810,6 @@ def test_admitted_self_consistent_partial_ready_plan_is_rejected() -> None:
     with pytest.raises(ValueError, match="invalid partial scope"):
         admit_ci_qualification_snapshot_json(
             canonicalize(document),
-            expected_candidate=_candidate(),
-            expected_repository_model_digest=cast(
-                "str",
-                document["repository-model-digest"],
-            ),
             expected_root_hk_definition=cast(
                 "str",
                 document["root-hk-definition"],
@@ -818,6 +819,27 @@ def test_admitted_self_consistent_partial_ready_plan_is_rejected() -> None:
                 document["root-hk-definition-digest"],
             ),
             expected_plan_digest=canonical_sha256(document),
+        )
+
+
+@pytest.mark.parametrize("field", ["ready", "selected", "required"])
+def test_plan_admission_rejects_integer_boolean_fields(field: str) -> None:
+    """Keep readiness and obligation selection as Booleans, not integers."""
+    plan = _snapshot()
+    document = plan.to_document()
+    if field == "ready":
+        document[field] = 1
+    else:
+        obligations = cast(
+            "list[dict[str, JsonValue]]", document["obligations"]
+        )
+        obligations[0][field] = 1
+    with pytest.raises(TypeError, match="must be a Boolean"):
+        admit_ci_qualification_snapshot_json(
+            canonicalize(document),
+            expected_root_hk_definition=plan.root_hk_definition,
+            expected_root_hk_definition_digest=plan.root_hk_definition_digest,
+            expected_plan_digest=ci_qualification_snapshot_digest(plan),
         )
 
 
@@ -854,80 +876,24 @@ def test_manual_and_blocked_plan_shapes_are_exact() -> None:
         )
 
 
-def test_evidence_and_lane_admission_bind_exact_plan_position() -> None:
-    """Bind admitted Evidence and lane results to one exact Plan position."""
-    plan = _snapshot()
-    evidence = _evidence(plan)
-    assert (
-        admit_ci_evidence_json(
-            canonicalize(evidence.to_document()),
-            expected_candidate=plan.candidate,
-            expected_plan_digest=ci_qualification_snapshot_digest(plan),
-            expected_obligation=evidence.obligation,
-        )
-        == evidence
-    )
-    with pytest.raises(ValueError, match="trusted obligation"):
-        admit_ci_evidence_json(
-            canonicalize(evidence.to_document()),
-            expected_candidate=plan.candidate,
-            expected_plan_digest=ci_qualification_snapshot_digest(plan),
-            expected_obligation=_obligation(plan, "project-test"),
-        )
-
-    lane = form_evidence_lane_result(plan, evidence)
-    assert (
-        admit_ci_lane_result_json(
-            canonicalize(lane.to_document()),
-            expected_candidate=plan.candidate,
-            expected_plan_digest=ci_qualification_snapshot_digest(plan),
-            expected_lane_id="root-hk",
-        )
-        == lane
-    )
-    with pytest.raises(ValueError, match="trusted static lane"):
-        admit_ci_lane_result_json(
-            canonicalize(lane.to_document()),
-            expected_candidate=plan.candidate,
-            expected_plan_digest=ci_qualification_snapshot_digest(plan),
-            expected_lane_id="project-test",
-        )
-
-
-def test_decision_admission_binds_plan_evidence_and_elapsed_time() -> None:
-    """Bind admitted Decisions to Plan, Evidence, and trusted elapsed time."""
-    plan = _snapshot()
-    evidence = tuple(
-        _evidence(plan, obligation.lane_id) for obligation in plan.obligations
-    )
-    decision = _decision()
-    encoded = canonicalize(decision.to_document())
-    assert (
-        admit_ci_slice_decision_json(
-            encoded,
-            expected_plan=plan,
-            expected_evidence=evidence,
-            expected_elapsed_seconds=ELAPSED_SECONDS,
-            expected_supersession_state="not-superseded",
-        )
-        == decision
-    )
-    with pytest.raises(ValueError, match="trusted elapsed time"):
-        admit_ci_slice_decision_json(
-            encoded,
-            expected_plan=plan,
-            expected_evidence=evidence,
-            expected_elapsed_seconds=ELAPSED_SECONDS + 1,
-            expected_supersession_state="not-superseded",
-        )
-    with pytest.raises(ValueError, match="trusted admitted Evidence"):
-        admit_ci_slice_decision_json(
-            encoded,
-            expected_plan=plan,
-            expected_evidence=evidence[:-1],
-            expected_elapsed_seconds=ELAPSED_SECONDS,
-            expected_supersession_state="not-superseded",
-        )
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".github/workflow-delivery/governance/example.json",
+        "src/public/lib/three-workflow-delivery-v3/src/control.py",
+        ".github/workflows/workflow-delivery-v3-ci.yml",
+        "mise.toml",
+        ".python-version",
+    ],
+)
+def test_broad_change_rules_exclude_ordinary_pr_slo(path: str) -> None:
+    """Exclude governance, control, workflow, and toolchain changes."""
+    assert derive_ci_pr_slo(
+        _candidate(),
+        changed_paths=(path,),
+        elapsed_seconds=721,
+        supersession_state="not-superseded",
+    ) == ("excluded", "broad-change")
 
 
 def test_decision_summary_and_slo_are_exact_derivations() -> None:
@@ -1003,84 +969,138 @@ def test_incomplete_is_finalizer_only_and_has_no_evidence() -> None:
         replace(_lane_results(plan)[0], disposition="incomplete")
 
 
+@pytest.mark.parametrize("record_kind", ["plan", "lane", "bootstrap-decision"])
 @pytest.mark.parametrize(
-    ("fixture_name", "admit"),
+    "fault",
     [
-        (
-            "pr-candidate",
-            lambda data: admit_ci_candidate_json(
-                data,
-                expected_candidate=_candidate(),
-            ),
-        ),
-        (
-            "ready-plan",
-            lambda data: admit_ci_qualification_snapshot_json(
-                data,
-                expected_candidate=_snapshot().candidate,
-                expected_repository_model_digest=(
-                    _snapshot().repository_model_digest
-                ),
-                expected_root_hk_definition=_snapshot().root_hk_definition,
-                expected_root_hk_definition_digest=(
-                    _snapshot().root_hk_definition_digest
-                ),
-                expected_plan_digest=ci_qualification_snapshot_digest(
-                    _snapshot()
-                ),
-            ),
-        ),
-        (
-            "npm-artifact",
-            lambda data: admit_ci_artifact_json(
-                data,
-                expected_candidate=_snapshot().candidate,
-                expected_artifact_id=_artifact(_snapshot()).artifact_id,
-                expected_artifact_name=_artifact(_snapshot()).artifact_name,
-                expected_artifact_url=_artifact(_snapshot()).artifact_url,
-                expected_transport_digest=(
-                    _artifact(_snapshot()).transport_digest
-                ),
-                expected_output_id=_artifact(_snapshot()).output_id,
-                expected_logical_role=_artifact(_snapshot()).logical_role,
-                expected_media_kind=_artifact(_snapshot()).media_kind,
-            ),
-        ),
-        (
-            "satisfied-evidence",
-            lambda data: admit_ci_evidence_json(
-                data,
-                expected_candidate=_snapshot().candidate,
-                expected_plan_digest=ci_qualification_snapshot_digest(
-                    _snapshot()
-                ),
-                expected_obligation=_obligation(_snapshot(), "root-hk"),
-            ),
-        ),
-        (
-            "non-authoritative-decision",
-            lambda data: admit_ci_slice_decision_json(
-                data,
-                expected_plan=_snapshot(),
-                expected_evidence=tuple(
-                    _evidence(_snapshot(), obligation.lane_id)
-                    for obligation in _snapshot().obligations
-                ),
-                expected_elapsed_seconds=ELAPSED_SECONDS,
-                expected_supersession_state="not-superseded",
-            ),
-        ),
+        "noncanonical",
+        "unknown-field",
+        "missing-field",
+        "boolean-run-id",
     ],
 )
-def test_fixture_admission_rejects_unknown_top_level_field(
-    fixture_name: str,
-    admit: Callable[[bytes], object],
+def test_ci_record_admission_rejects_invalid_envelopes(
+    record_kind: str,
+    fault: str,
 ) -> None:
-    """Keep each admitted top-level record schema closed."""
+    """Require canonical, closed, typed input at each used CI entry."""
+    record: _Record
+    if record_kind == "plan":
+        plan = _snapshot()
+        record = plan
+    elif record_kind == "lane":
+        plan = _snapshot(selected_lanes=("root-hk",))
+        record = form_empty_lane_result(plan, lane_id="project-build")
+    else:
+        assert record_kind == "bootstrap-decision"
+        plan = _snapshot(selected_lanes=(), ready=False)
+        record = _decision(plan)
+
+    def admit(data: bytes) -> _Record:
+        if record_kind == "plan":
+            return admit_ci_qualification_snapshot_json(
+                data,
+                expected_root_hk_definition=plan.root_hk_definition,
+                expected_root_hk_definition_digest=(
+                    plan.root_hk_definition_digest
+                ),
+                expected_plan_digest=ci_qualification_snapshot_digest(plan),
+            )
+        if record_kind == "lane":
+            return admit_ci_lane_result_json(
+                data,
+                expected_candidate=plan.candidate,
+                expected_plan_digest=ci_qualification_snapshot_digest(plan),
+            )
+        return admit_ci_bootstrap_projection_decision_json(
+            data, expected_plan=plan
+        )
+
+    encoded = canonicalize(record.to_document())
+    admitted = cast("_Record", admit(encoded))
+    assert canonicalize(admitted.to_document()) == encoded
     document = cast(
         "dict[str, JsonValue]",
-        json.loads((FIXTURE_ROOT / f"{fixture_name}.json").read_bytes()),
+        json.loads(encoded),
     )
-    document["unknown"] = "forged"
-    with pytest.raises(ValueError, match="unknown field"):
-        admit(canonicalize(document))
+    error: type[Exception] = ValueError
+    message: str
+    if fault == "noncanonical":
+        encoded = b" " + encoded
+        message = "canonical"
+    elif fault == "unknown-field":
+        document["unknown"] = "forged"
+        encoded = canonicalize(document)
+        message = "unknown field"
+    elif fault == "missing-field":
+        del document["producer"]
+        encoded = canonicalize(document)
+        message = "missing required field: producer"
+    else:
+        assert fault == "boolean-run-id"
+        document["workflow-run-id"] = True
+        encoded = canonicalize(document)
+        error = TypeError
+        message = "workflow-run-id must be an integer"
+    with pytest.raises(error, match=message):
+        admit(encoded)
+
+
+@pytest.mark.parametrize(
+    "nested_record",
+    ["plan-candidate", "lane-evidence", "lane-artifact"],
+)
+@pytest.mark.parametrize(
+    "fault",
+    ["unknown-field", "missing-field", "boolean-run-id"],
+)
+def test_ci_admission_rejects_nested_field_map_faults(
+    tmp_path: Path,
+    nested_record: str,
+    fault: str,
+) -> None:
+    """Reach each nested closed field map through a used receiving boundary."""
+    plan = _snapshot()
+    record: _Record
+    if nested_record == "plan-candidate":
+        record = plan
+    else:
+        lane_id = (
+            "npm-artifact-build"
+            if nested_record == "lane-artifact"
+            else "root-hk"
+        )
+        record = form_evidence_lane_result(plan, _evidence(plan, lane_id))
+    document = record.to_document()
+    path = tmp_path / "nested-record.json"
+    path.write_bytes(canonicalize(document))
+
+    def load() -> _Record:
+        if nested_record == "plan-candidate":
+            return cli_module._load_ci_plan(  # noqa: SLF001
+                str(path), canonical_sha256(document)
+            )
+        return cli_module._load_lane_result(str(path), plan=plan)  # noqa: SLF001
+
+    assert load() == record
+    if nested_record == "plan-candidate":
+        nested = cast("dict[str, JsonValue]", document["candidate"])
+    else:
+        nested = cast("dict[str, JsonValue]", document["evidence"])
+        if nested_record == "lane-artifact":
+            nested = cast("list[dict[str, JsonValue]]", nested["artifacts"])[0]
+    error: type[Exception] = ValueError
+    if fault == "unknown-field":
+        nested["unknown"] = "forged"
+        message = "unknown field"
+    elif fault == "missing-field":
+        del nested["producer"]
+        message = "missing required field: producer"
+    else:
+        assert fault == "boolean-run-id"
+        nested["workflow-run-id"] = True
+        error = TypeError
+        message = "workflow-run-id must be an integer"
+    path.write_bytes(canonicalize(document))
+    with pytest.raises(error, match=message):
+        load()

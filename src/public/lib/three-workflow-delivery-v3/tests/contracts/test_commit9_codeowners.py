@@ -2,21 +2,12 @@
 
 from __future__ import annotations
 
-import importlib.util
-import inspect
-import json
 import re
-import socket
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from three_workflow_delivery_v3 import cli as cli_module
-from three_workflow_delivery_v3.cli import main
-from three_workflow_delivery_v3.release.identity import (
-    normalize_buddy_live_intent,
-)
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 CODEOWNERS_PATH = REPO_ROOT / ".github/CODEOWNERS"
@@ -26,6 +17,8 @@ GOVERNANCE_PATH = (
 )
 ROOT_PYTHON_INPUTS = ("pyproject.toml", "uv.lock")
 SYNTHETIC_FUTURE_SURFACES = (
+    "eng/workflow-delivery/v3/future-policy.yml",
+    "src/private/lib/hk/Commit9Future.pkl",
     "src/workflow-delivery.release-unit.yml",
     "src/workflow-delivery.quality.yml",
     "src/public/app/new-product/workflow-delivery.release-unit.yml",
@@ -34,23 +27,6 @@ SYNTHETIC_FUTURE_SURFACES = (
     ".github/actions/workflow-delivery-v3-future/action.yml",
     ".github/actions/workflow-delivery-v3/future/action.yml",
 )
-OVERRIDE_EXEMPLARS = (
-    *SYNTHETIC_FUTURE_SURFACES,
-    "eng/scripts/workflow_delivery_v3_static_reference.py",
-    "eng/scripts/workflow_delivery_v3_hk.py",
-)
-_BUDDY_CONTRACT_SPEC = importlib.util.spec_from_file_location(
-    "_commit9_buddy_workflow_contract",
-    Path(__file__).with_name("test_buddy_workflows.py"),
-)
-assert _BUDDY_CONTRACT_SPEC is not None
-assert _BUDDY_CONTRACT_SPEC.loader is not None
-_BUDDY_CONTRACT = importlib.util.module_from_spec(_BUDDY_CONTRACT_SPEC)
-_BUDDY_CONTRACT_SPEC.loader.exec_module(_BUDDY_CONTRACT)
-CALLER = _BUDDY_CONTRACT.CALLER
-_document = _BUDDY_CONTRACT._document  # noqa: SLF001
-_run = _BUDDY_CONTRACT._run  # noqa: SLF001
-_step = _BUDDY_CONTRACT._step  # noqa: SLF001
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,8 +49,10 @@ def _parse_rules(content: str) -> tuple[CodeOwnersRule, ...]:
 
 
 def _pattern_expression(pattern: str) -> re.Pattern[str]:
+    """Match the demonstrated rooted, subtree, and descriptor shapes."""
+    rooted = pattern.startswith("/")
     normalized = pattern.removeprefix("/")
-    if "/" not in normalized:
+    if not rooted and "/" not in normalized:
         normalized = f"**/{normalized}"
     expression: list[str] = []
     index = 0
@@ -229,228 +207,74 @@ def test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_
     assert set(SYNTHETIC_FUTURE_SURFACES) <= governed_paths
     assert GOVERNANCE_PATH in governed_paths
     assert GOVERNANCE_PATH in _workspace_paths()
-    assert _coverage_failures(ACTUAL_RULES, governed_paths) == {}
+    ownership_only_paths = {
+        ".github/workflows/buddy.yml",
+        ".github/workflows/release-buddy.yml",
+        ".github/workflows/legacy-buddy.yml",
+        ".github/workflows/compatibility.yml",
+        ".github/workflows/new-buddy-compatibility.yml",
+    }
+    ownership_paths = governed_paths | ownership_only_paths
     assert {
-        path: _final_owners(ACTUAL_RULES, path) for path in governed_paths
-    } == dict.fromkeys(governed_paths, (REQUIRED_OWNER,))
+        path: _final_owners(ACTUAL_RULES, path) for path in ownership_paths
+    } == dict.fromkeys(ownership_paths, (REQUIRED_OWNER,))
 
 
 @pytest.mark.parametrize(
-    ("pattern", "exemplars"),
+    ("pattern", "path", "matches"),
     [
+        ("/uv.lock", "uv.lock", True),
+        ("/uv.lock", "nested/uv.lock", False),
+        ("/governed/exact.py", "governed/exact.py", True),
+        ("/governed/exact.py", "nested/governed/exact.py", False),
+        ("/governed/**", "governed/nested/file.py", True),
+        ("/governed/**", "other/governed/file.py", False),
         (
-            "/.github/workflows/**",
-            (".github/workflows/workflow-delivery-v3-future.yml",),
-        ),
-        (
-            "/.github/actions/**",
-            (
-                ".github/actions/workflow-delivery-v3-future/action.yml",
-                ".github/actions/workflow-delivery-v3/future/action.yml",
-            ),
-        ),
-        (
-            "/eng/scripts/**",
-            (
-                "eng/scripts/workflow_delivery_v3_static_reference.py",
-                "eng/scripts/workflow_delivery_v3_hk.py",
-            ),
-        ),
-        (
-            "/src/public/lib/three-workflow-delivery-v3/**",
-            (
-                (
-                    "src/public/lib/three-workflow-delivery-v3/"
-                    "src/three_workflow_delivery_v3/cli.py"
-                ),
-            ),
-        ),
-        (
-            "/eng/workflow-delivery/v3/**",
-            ("eng/workflow-delivery/v3/future-policy.yml",),
+            "/src/**/workflow-delivery.release-unit.yml",
+            "src/workflow-delivery.release-unit.yml",
+            True,
         ),
         (
             "/src/**/workflow-delivery.release-unit.yml",
-            ("src/public/app/future/workflow-delivery.release-unit.yml",),
+            "src/nested/project/workflow-delivery.release-unit.yml",
+            True,
         ),
         (
-            "/src/**/workflow-delivery.quality.yml",
-            ("src/private/app/future/workflow-delivery.quality.yml",),
+            "/src/**/workflow-delivery.release-unit.yml",
+            "src/nested/not-workflow-delivery.release-unit.yml",
+            False,
         ),
         (
-            f"/{GOVERNANCE_PATH}",
-            (GOVERNANCE_PATH,),
+            "/src/**/workflow-delivery.release-unit.yml",
+            "src/nested/workflow-delivery.release-unit.yml.extra",
+            False,
         ),
-        ("/hk.pkl", ("hk.pkl",)),
-        (
-            "/src/private/lib/hk/**",
-            ("src/private/lib/hk/Commit9Future.pkl",),
-        ),
-        ("/pyproject.toml", ("pyproject.toml",)),
-        ("/uv.lock", ("uv.lock",)),
-        ("/.github/CODEOWNERS", (".github/CODEOWNERS",)),
     ],
 )
-def test_removing_each_actual_governing_rule_exposes_its_exact_surface(
-    pattern: str,
-    exemplars: tuple[str, ...],
+def test_codeowners_test_oracle_matches_supported_path_shapes(
+    pattern: str, path: str, *, matches: bool
 ) -> None:
-    """Remove one real rule and require its surface to become uncovered."""
-    matching_rules = [rule for rule in ACTUAL_RULES if rule.pattern == pattern]
-    assert matching_rules == [CodeOwnersRule(pattern, (REQUIRED_OWNER,))]
-    mutated = tuple(rule for rule in ACTUAL_RULES if rule.pattern != pattern)
-    expected = dict.fromkeys(exemplars, ())
+    """Distinguish matching and nonmatching paths in the local oracle."""
+    rules = (CodeOwnersRule(pattern, (REQUIRED_OWNER,)),)
 
-    assert {
-        path: _final_owners(mutated, path) for path in exemplars
-    } == expected
-    assert _coverage_failures(mutated, set(exemplars)) == expected
-
-
-@pytest.mark.parametrize("path", OVERRIDE_EXEMPLARS)
-def test_later_replacement_owner_override_fails_exact_final_match(
-    path: str,
-) -> None:
-    """Reject a later exact-path replacement owner."""
-    mutated = (
-        *ACTUAL_RULES,
-        CodeOwnersRule(f"/{path}", ("@replacement-owner",)),
-    )
-
-    assert _final_owners(mutated, path) == ("@replacement-owner",)
-    assert _coverage_failures(mutated, {path}) == {
-        path: ("@replacement-owner",)
-    }
-
-
-@pytest.mark.parametrize("path", OVERRIDE_EXEMPLARS)
-def test_later_hcoona_coowner_override_fails_exact_final_match(
-    path: str,
-) -> None:
-    """Reject a later exact-path rule that adds a co-owner."""
-    mutated = (
-        *ACTUAL_RULES,
-        CodeOwnersRule(f"/{path}", (REQUIRED_OWNER, "@co-owner")),
-    )
-
-    assert _final_owners(mutated, path) == (REQUIRED_OWNER, "@co-owner")
-    assert _coverage_failures(mutated, {path}) == {
-        path: (REQUIRED_OWNER, "@co-owner")
-    }
+    assert _final_owners(rules, path) == ((REQUIRED_OWNER,) if matches else ())
+    assert _coverage_failures(rules, {path}) == ({} if matches else {path: ()})
 
 
 @pytest.mark.parametrize(
-    "selected_ref",
-    [
-        "refs/heads/contributor/arbitrary-buddy-source",
-        "refs/tags/arbitrary-buddy-candidate",
-    ],
-    ids=["branch", "tag"],
+    "owners",
+    [("@replacement-owner",), (REQUIRED_OWNER, "@co-owner")],
+    ids=["replacement", "additional-coowner"],
 )
-def test_public_cli_normalizes_arbitrary_buddy_branch_and_tag_without_codeowners_gate(  # noqa: E501
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    selected_ref: str,
+def test_codeowners_test_oracle_rejects_later_nonsole_owner(
+    owners: tuple[str, ...],
 ) -> None:
-    """Preserve arbitrary refs through the public offline CLI boundary."""
-
-    def unexpected_network(*_args: object, **_kwargs: object) -> None:
-        message = "normalization attempted network access"
-        raise AssertionError(message)
-
-    monkeypatch.setattr(cli_module, "urlopen", unexpected_network)
-    monkeypatch.setattr(socket, "create_connection", unexpected_network)
-    output = tmp_path / "intent.json"
-    target = "1234567890abcdef1234567890abcdef12345678"
-
-    status = main(
-        [
-            "release",
-            "normalize-live-request",
-            "--repository",
-            "hcoona/three",
-            "--selected-ref",
-            selected_ref,
-            "--target",
-            target,
-            "--actor",
-            "commit9-test",
-            "--workflow-run-id",
-            "9009",
-            "--run-attempt",
-            "2",
-            "--output",
-            str(output),
-        ]
+    """A later matching rule determines whether ownership is exactly sole."""
+    path = "governed/file.py"
+    rules = (
+        CodeOwnersRule("/governed/**", (REQUIRED_OWNER,)),
+        CodeOwnersRule(f"/{path}", owners),
     )
-    intent = json.loads(output.read_bytes())
 
-    assert status == 0
-    assert {
-        field: intent[field]
-        for field in (
-            "workflow-ref",
-            "selected-ref",
-            "workflow-sha",
-            "target",
-            "event-kind",
-            "channel",
-            "mode",
-            "purpose",
-        )
-    } == {
-        "workflow-ref": selected_ref,
-        "selected-ref": selected_ref,
-        "workflow-sha": target,
-        "target": target,
-        "event-kind": "workflow_dispatch",
-        "channel": "buddy",
-        "mode": "live",
-        "purpose": "live-release",
-    }
-    boundary_source = (
-        inspect.getsource(
-            cli_module._release_normalize_live_request_command  # noqa: SLF001
-        )
-        + inspect.getsource(normalize_buddy_live_intent)
-    ).casefold()
-    assert "codeowners" not in boundary_source
-    assert selected_ref in output.read_text(encoding="utf-8")
-
-
-def test_actual_buddy_workflow_passes_github_ref_as_selected_ref_without_ownership_gate() -> (  # noqa: E501
-    None
-):
-    """Pin actual selected-ref wiring and offline ownership scope."""
-    caller = _document(CALLER)
-    request = caller["jobs"]["request"]
-    normalization_step = _step(request, "Normalize fixed live request")
-    command = _run(normalization_step)
-    folded = command.casefold()
-    conditions = [
-        condition
-        for job in caller["jobs"].values()
-        for condition in (
-            job.get("if"),
-            *(
-                step.get("if")
-                for step in job.get("steps", ())
-                if isinstance(step, dict)
-            ),
-        )
-        if isinstance(condition, str)
-    ]
-
-    assert "release normalize-live-request" in command
-    assert '--selected-ref "${GITHUB_REF}"' in command
-    assert 'echo "selected-ref=${GITHUB_REF}" >> "${GITHUB_OUTPUT}"' in command
-    assert request["if"] == "github.run_attempt == 1"
-    assert "if" not in normalization_step
-    assert all(
-        "github.ref" not in condition.casefold() for condition in conditions
-    )
-    assert "refs/heads/" not in command
-    assert "codeowners" not in folded
-    assert "api.github.com" not in folded
-    assert "curl " not in folded
-    assert "wget " not in folded
+    assert _final_owners(rules, path) == owners
+    assert _coverage_failures(rules, {path}) == {path: owners}

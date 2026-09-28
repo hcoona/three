@@ -18,7 +18,7 @@ and `.asciidoc`.
 
 - [mise](https://mise.jdx.dev/) installed
 - Node.js 22 or newer (matching the main project requirements)
-- pnpm 11.22.0 (already pinned in the repo)
+- pnpm at the version pinned in the [project mise configuration](../../.mise.toml)
 
 ## Clean-checkout setup and generation
 

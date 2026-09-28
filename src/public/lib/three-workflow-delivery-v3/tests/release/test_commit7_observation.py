@@ -352,39 +352,6 @@ def test_direct_projection_observation_rejects_producer_substitution(
         )
 
 
-def test_successful_simulation_rejects_empty_observation_tuple(
-    qualified_simulation: QualifiedSimulation,
-) -> None:
-    with pytest.raises(ValueError, match="exactly one Observation"):
-        finalize_simulation(
-            qualified_simulation.snapshot,
-            qualified_simulation.decision,
-            observations=(),
-            artifacts=(qualified_simulation.artifact,),
-        )
-
-
-def test_failed_or_incomplete_qualification_needs_no_observation(
-    qualified_simulation: QualifiedSimulation,
-) -> None:
-    failed = replace(
-        qualified_simulation.decision,
-        terminal_result="failure",
-        failure_class="quality-failure",
-        next_action="fix-quality-failure-and-rerun",
-    )
-
-    outcome = finalize_simulation(
-        qualified_simulation.snapshot,
-        failed,
-    )
-
-    assert outcome.terminal_result == "failure"
-    assert outcome.failure_class == "quality-failure"
-    assert outcome.observation_digests == ()
-    assert outcome.hypothetical_actions == ()
-
-
 def test_observation_set_rejects_producer_substitution(
     qualified_simulation: QualifiedSimulation,
 ) -> None:
@@ -570,6 +537,7 @@ def test_cli_observe_npmjs_skips_network_for_failed_qualification(
 
 def test_cli_finalize_rejects_hypothetical_action_substitution(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
     qualified_simulation: QualifiedSimulation,
 ) -> None:
     scenario = qualified_simulation
@@ -659,3 +627,9 @@ def test_cli_finalize_rejects_hypothetical_action_substitution(
     )
 
     assert result == 1
+    assert (
+        capsys.readouterr().err
+        == "Hypothetical actions report substitution mismatch\n"
+    )
+    assert not (tmp_path / "outcome.json").exists()
+    assert not (tmp_path / "summary.md").exists()

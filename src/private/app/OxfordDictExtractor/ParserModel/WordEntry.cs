@@ -34,7 +34,8 @@ namespace OxfordDictExtractor.ParserModel
 
         public static WordEntry ParseFromDictContent(HtmlNode entryDiv)
         {
-            var h1Node = entryDiv.SelectSingleNode(".//h1[@class='headword']");
+            var h1Node = entryDiv.SelectSingleNode(".//h1[@class='headword']")
+                ?? throw new InvalidDataException("Cannot find entry headword.");
             var name = h1Node.GetDirectInnerText();
             var posSpan = entryDiv.SelectSingleNode(".//span[@class='pos']");
             if (posSpan == null && char.IsLower(name[0]))

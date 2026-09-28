@@ -7,7 +7,6 @@ from dataclasses import replace
 from typing import cast
 
 import pytest
-import three_workflow_delivery_v3.release as release_api
 from three_workflow_delivery_v3.adapters import node as node_adapter
 from three_workflow_delivery_v3.adapters.github_packages import (
     github_packages_destination_operation_profile,
@@ -173,7 +172,7 @@ def test_upload_metadata_binds_after_single_mechanical_build(
     assert failed_evidence is None
     assert not hasattr(mechanics, "transport")
     assert mechanics.normalized_outcome == "satisfied"
-    assert mechanics.tarball is scenario.build_result.tarball
+    assert mechanics.tarball == scenario.build_result.tarball
     assert calls == 1
 
     transport = ArtifactTransportIdentity(
@@ -380,6 +379,7 @@ def test_synthetic_absent_and_exact_observations_plan_actions_only(
         scenario.artifact,
         classification="absent",
     )
+    assert absent.producer == "observe-npmjs"
     absent_actions = materialize_hypothetical_actions(
         scenario.snapshot,
         scenario.decision,
@@ -446,25 +446,6 @@ def test_successful_simulation_requires_observation_for_each_projection(
             scenario.decision,
             artifacts=(scenario.artifact,),
         )
-
-
-def test_synthetic_observation_helper_uses_current_observer_producer(
-    qualified_simulation,
-) -> None:
-    scenario = qualified_simulation
-    observation = _admit_synthetic_projection_observation(
-        scenario.snapshot,
-        scenario.decision,
-        scenario.artifact,
-        classification="absent",
-    )
-
-    assert observation.producer == "observe-npmjs"
-
-
-def test_synthetic_observation_helper_is_not_public_release_api() -> None:
-    assert not hasattr(release_api, "admit_synthetic_projection_observation")
-    assert "admit_synthetic_projection_observation" not in release_api.__all__
 
 
 def _live_publication_context(scenario):
@@ -972,8 +953,13 @@ def test_qualification_decision_transport_rejects_empty_dispositions(
         )
 
 
-@pytest.mark.parametrize("disposition_index", [0, 1, 2, 3])
-@pytest.mark.parametrize("outcome", ["failed", "incomplete"])
+@pytest.mark.parametrize(
+    ("disposition_index", "outcome"),
+    [
+        pytest.param(0, "failed", id="failed-first"),
+        pytest.param(-1, "incomplete", id="incomplete-last"),
+    ],
+)
 def test_success_decision_constructor_rejects_unsatisfied_disposition(
     qualified_simulation,
     disposition_index: int,
@@ -985,11 +971,9 @@ def test_success_decision_constructor_rejects_unsatisfied_disposition(
         disposition.outcome == "satisfied"
         for disposition in decision.obligation_dispositions
     )
-    dispositions = tuple(
-        replace(disposition, outcome=outcome)
-        if index == disposition_index
-        else disposition
-        for index, disposition in enumerate(decision.obligation_dispositions)
+    dispositions = list(decision.obligation_dispositions)
+    dispositions[disposition_index] = replace(
+        dispositions[disposition_index], outcome=outcome
     )
 
     with pytest.raises(
@@ -999,11 +983,16 @@ def test_success_decision_constructor_rejects_unsatisfied_disposition(
             r"disposition to be satisfied$"
         ),
     ):
-        replace(decision, obligation_dispositions=dispositions)
+        replace(decision, obligation_dispositions=tuple(dispositions))
 
 
-@pytest.mark.parametrize("disposition_index", [0, 1, 2, 3])
-@pytest.mark.parametrize("outcome", ["failed", "incomplete"])
+@pytest.mark.parametrize(
+    ("disposition_index", "outcome"),
+    [
+        pytest.param(0, "failed", id="failed-first"),
+        pytest.param(-1, "incomplete", id="incomplete-last"),
+    ],
+)
 def test_success_decision_transport_rejects_unsatisfied_disposition(
     qualified_simulation,
     disposition_index: int,

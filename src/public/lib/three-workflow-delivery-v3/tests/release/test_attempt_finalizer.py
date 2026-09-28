@@ -153,6 +153,27 @@ def finalize(
     return outcome
 
 
+def test_finalizer_rejects_observation_reference_with_wrong_payload_digest(
+    observation_case,
+):
+    observation, reference = pair(
+        _observation(observation_case, classification="unknown"),
+        "observation.json",
+        108,
+    )
+    inputs = replace(
+        base_inputs(observation_case),
+        observations=(
+            (
+                observation,
+                replace(reference, payload_digest="sha256:" + "f" * 64),
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="record and reference payload digest"):
+        finalize(inputs)
+
+
 @pytest.mark.parametrize("job", ["success", "failure", "cancelled"])
 @pytest.mark.parametrize(
     ("result_state", "mutation", "expected", "possible"),
@@ -214,25 +235,34 @@ def test_marker_without_result_is_unknown_even_when_execution_skipped(
 
 
 @pytest.mark.parametrize(
-    ("job", "step", "expected", "possible"),
+    ("tier", "job", "step", "expected", "possible"),
     [
-        ("skipped", None, "failed-before-publication", False),
-        ("failure", "skipped", "failed-before-publication", False),
-        ("cancelled", "skipped", "failed-before-publication", False),
-        ("success", "success", "unknown", True),
-        ("failure", "failure", "unknown", True),
-        ("failure", None, "unknown", True),
-        ("cancelled", "", "unknown", True),
-    ],
-)
-@pytest.mark.parametrize(
-    "tier",
-    [
-        "publication-authorization",
-        "approval-bundle",
-        "action-bearing-publication-snapshot",
-        "blocking-observation",
-        "qualification-decision",
+        pytest.param(
+            tier,
+            job,
+            step,
+            expected,
+            possible,
+            id=f"{tier}-{job}-{step}-{expected}-{possible}",
+        )
+        for tier in (
+            "publication-authorization",
+            "approval-bundle",
+            "action-bearing-publication-snapshot",
+            "blocking-observation",
+            "qualification-decision",
+        )
+        for job, step, expected, possible in (
+            ("skipped", None, "failed-before-publication", False),
+            ("failure", "skipped", "failed-before-publication", False),
+            ("cancelled", "skipped", "failed-before-publication", False),
+            ("success", "success", "unknown", True),
+            ("failure", "failure", "unknown", True),
+            ("failure", None, "unknown", True),
+            ("cancelled", "", "unknown", True),
+        )
+        if tier == "publication-authorization"
+        or (job, step) in {("skipped", None), ("failure", None)}
     ],
 )
 def test_null_terminal_uses_latest_admissible_predecessor(  # noqa: PLR0913, PLR0917

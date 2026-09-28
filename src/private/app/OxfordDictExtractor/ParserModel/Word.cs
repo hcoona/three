@@ -50,7 +50,8 @@ namespace OxfordDictExtractor.ParserModel
             html.LoadHtml(content);
 
             var htmlEntries =
-                html.DocumentNode.SelectNodes("/div[@id='entryContent']/div[@class='entry']");
+                html.DocumentNode.SelectNodes("/div[@id='entryContent']/div[@class='entry']")
+                ?? throw new InvalidDataException("Cannot find dictionary entries.");
             return new Word
             {
                 Key = key,

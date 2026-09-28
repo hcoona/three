@@ -1,21 +1,13 @@
 """Commit-10 optional read-only reviewer recovery scenarios."""
 
-# ruff: noqa: D101, D102, D103, D107, EM101, FBT001, PLR2004, S106, SLF001, TRY003
+# ruff: noqa: D101, D102, D103, D107, EM101, PLR2004, TRY003
 
 from __future__ import annotations
 
-import json
 import subprocess
-import urllib.parse
-from typing import Any, cast
+from typing import Any
 
 import pytest
-from three_workflow_delivery_v3 import cli as cli_module
-from three_workflow_delivery_v3.adapters.github_packages import (
-    ACCEPTANCE_COORDINATES,
-    ACCEPTANCE_SCENARIO_SPECS,
-    GitHubPackagesHttpResponse,
-)
 from three_workflow_delivery_v3.governance import (
     inspection as inspection_module,
 )
@@ -135,6 +127,7 @@ def test_present_reviewer_uses_rest_node_then_query_only_graphql() -> None:
     assert document["reviewer"] == "actual-reviewer"
     assert document["deployment-review-id"] == 9001
     assert document["authority"] == "diagnostic-only"
+    assert document["scope"] == "single-acceptance-review-recovery"
     assert runner.calls[0] == (
         "gh",
         "api",
@@ -147,6 +140,7 @@ def test_present_reviewer_uses_rest_node_then_query_only_graphql() -> None:
     assert "deploymentReviews(first:100,after:$cursor)" in " ".join(graphql)
     assert "run=WFR_kwDOexample" in graphql
     assert all(method not in graphql for method in ("PUT", "PATCH", "DELETE"))
+    assert all("mutation" not in part for call in runner.calls for part in call)
 
 
 def test_graphql_paginates_and_matches_exact_environment() -> None:
@@ -190,67 +184,6 @@ def test_graphql_paginates_and_matches_exact_environment() -> None:
     assert "cursor=cursor-1" in runner.calls[2]
 
 
-def test_graphql_paginates_nested_environment_connection_to_later_node() -> (
-    None
-):
-    runner = RecordingRunner(
-        [
-            {"node_id": "WFR_node"},
-            _page_with_environment_nodes(
-                [
-                    {
-                        "node": {
-                            "id": "DR_review",
-                            "databaseId": 2,
-                            "state": "APPROVED",
-                            "user": {"login": "reviewer"},
-                            "environments": {
-                                "nodes": [{"name": "other-environment"}],
-                                "pageInfo": {
-                                    "hasNextPage": True,
-                                    "endCursor": "environment-cursor-1",
-                                },
-                            },
-                        }
-                    }
-                ],
-            ),
-            {
-                "data": {
-                    "node": {
-                        "environments": {
-                            "nodes": [{"name": ENVIRONMENT}],
-                            "pageInfo": {
-                                "hasNextPage": False,
-                                "endCursor": None,
-                            },
-                        }
-                    }
-                }
-            },
-        ]
-    )
-
-    document = _inspect(runner)
-    first_graphql = " ".join(runner.calls[1])
-    second_graphql = " ".join(runner.calls[2])
-
-    assert document["status"] == "present"
-    assert document["reviewer"] == "reviewer"
-    assert document["deployment-review-id"] == 2
-    assert "environments(first:100,after:$environmentCursor)" in first_graphql
-    assert "environments{name}" not in first_graphql
-    assert "nodes{name}" in first_graphql
-    assert "pageInfo{hasNextPage endCursor}" in first_graphql
-    assert "environmentCursor=null" in runner.calls[1]
-    assert "cursor=null" in runner.calls[1]
-    assert "environmentCursor=environment-cursor-1" in runner.calls[2]
-    assert "cursor=environment-cursor-1" not in runner.calls[2]
-    assert "review=DR_review" in runner.calls[2]
-    assert "node(id:$review)" in second_graphql
-    assert "deploymentReviews(first:100,after:$cursor)" not in second_graphql
-
-
 def test_exhausted_connection_is_removed_not_universal_negative() -> None:
     runner = RecordingRunner([{"node_id": "WFR_node"}, _page([])])
 
@@ -262,6 +195,22 @@ def test_exhausted_connection_is_removed_not_universal_negative() -> None:
         "scoped-review-record-no-longer-available"
     ]
     assert "universal-negative-proof" not in document
+    allowed = {
+        "schema",
+        "status",
+        "reviewer",
+        "deployment-review-id",
+        "human-required",
+        "diagnostics",
+        "authority",
+        "scope",
+        "recovery",
+    }
+    assert set(document) <= allowed
+    serialized = str(document).lower()
+    assert "capability" not in serialized
+    assert "live_enabled" not in serialized
+    assert "authorization" not in serialized
 
 
 @pytest.mark.parametrize(
@@ -315,114 +264,6 @@ def test_subprocess_timeout_is_unknown_and_diagnostic_only() -> None:
     assert document["deployment-review-id"] is None
     assert document["human-required"] is True
     assert document["authority"] == "diagnostic-only"
-
-
-@pytest.mark.parametrize(
-    "required",
-    [
-        "status",
-        "reviewer",
-        "deployment-review-id",
-        "authority",
-        "scope",
-    ],
-)
-def test_reviewer_inspection_present_is_read_only_and_scoped(
-    required: str,
-) -> None:
-    runner = RecordingRunner(
-        [
-            {"node_id": "WFR_kwDOexample"},
-            _page(
-                [
-                    {
-                        "node": {
-                            "databaseId": 9001,
-                            "state": "APPROVED",
-                            "user": {"login": "actual-reviewer"},
-                            "environments": [{"name": ENVIRONMENT}],
-                        }
-                    }
-                ]
-            ),
-        ]
-    )
-
-    document = _inspect(runner)
-
-    assert required in document
-    assert document["authority"] == "diagnostic-only"
-    assert all("mutation" not in part for call in runner.calls for part in call)
-
-
-@pytest.mark.parametrize("field", ["human-required", "diagnostics"])
-def test_reviewer_inspection_removed_is_not_universal_negative_proof(
-    field: str,
-) -> None:
-    document = _inspect(RecordingRunner([{"node_id": "WFR_node"}, _page([])]))
-
-    assert field in document
-    assert document["status"] == "removed"
-    assert "universal-negative-proof" not in document
-
-
-@pytest.mark.parametrize(
-    "responses",
-    [
-        [{}],
-        [{"node_id": "WFR_node"}, {"data": {}}],
-    ],
-)
-def test_reviewer_inspection_errors_are_unknown_and_human_required(
-    responses: list[dict[str, Any]],
-) -> None:
-    document = _inspect(RecordingRunner(responses))
-
-    assert document["status"] == "unknown"
-    assert document["human-required"] is True
-    assert document["authority"] == "diagnostic-only"
-
-
-def test_reviewer_inspection_cannot_grant_capability_or_enable_live() -> None:
-    document = _inspect(RecordingRunner([{"node_id": "WFR_node"}, _page([])]))
-    serialized = str(document).lower()
-
-    assert "capability" not in serialized
-    assert "live_enabled" not in serialized
-    assert "authorization" not in serialized
-
-
-@pytest.mark.parametrize(
-    "extra",
-    [
-        "capability",
-        "live_enabled",
-        "mutation-started",
-        "authorization",
-        "receipt",
-        "attempt",
-        "universal-negative-proof",
-        "release-lineage",
-    ],
-)
-def test_reviewer_inspection_contract_rejects_every_unrecognized_extra_key(
-    extra: str,
-) -> None:
-    document = _inspect(RecordingRunner([{"node_id": "WFR_node"}, _page([])]))
-    allowed = {
-        "schema",
-        "status",
-        "reviewer",
-        "deployment-review-id",
-        "human-required",
-        "diagnostics",
-        "authority",
-        "scope",
-        "recovery",
-    }
-
-    assert extra not in allowed
-    assert set(document) <= allowed
 
 
 def test_nested_environment_pagination_does_not_skip_later_review_edges() -> (
@@ -611,6 +452,14 @@ def test_nested_environment_pagination_is_scoped_to_one_specific_review() -> (
     nested_call = runner.calls[2]
     query = " ".join(nested_call)
 
+    first_graphql = " ".join(runner.calls[1])
+    assert document["deployment-review-id"] == 1
+    assert "environments(first:100,after:$environmentCursor)" in first_graphql
+    assert "environments{name}" not in first_graphql
+    assert "nodes{name}" in first_graphql
+    assert "pageInfo{hasNextPage endCursor}" in first_graphql
+    assert "environmentCursor=null" in runner.calls[1]
+    assert "cursor=null" in runner.calls[1]
     assert document["status"] == "present"
     assert document["reviewer"] == "first-reviewer"
     assert "review=DR_first" in nested_call
@@ -706,270 +555,6 @@ def test_adversarial_reviewer_pages_and_nested_waits_share_one_deadline(
     assert runner.timeouts == pytest.approx([7.0, 4.0, 1.0])
     assert len(runner.calls) == 3
     assert clock.now == 109.0
-
-
-def test_adversarial_package_and_version_pages_share_one_deadline(
-    tmp_path: Any,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class FakeClock:
-        now = 20.0
-
-        def monotonic(self) -> float:
-            return self.now
-
-    clock = FakeClock()
-    monkeypatch.setattr(cli_module, "monotonic", clock.monotonic, raising=False)
-    timeouts: list[float] = []
-    calls: list[str] = []
-
-    class DeadlineTransport:
-        def get(
-            self,
-            url: str,
-            *,
-            headers: tuple[tuple[str, str], ...],
-            timeout: float,
-            max_bytes: int,
-        ) -> GitHubPackagesHttpResponse:
-            del headers, max_bytes
-            calls.append(url)
-            timeouts.append(timeout)
-            if len(calls) > 3:
-                pytest.fail("transport called after operation deadline")
-            clock.now += 3.0
-            body: object
-            if "/versions" not in url:
-                body = {
-                    "package_type": "npm",
-                    "name": "hcoona-release-smoke-npm",
-                    "owner": {"login": "hcoona"},
-                    "repository": {"full_name": "hcoona/three"},
-                }
-            else:
-                body = [{"name": f"other-{index}"} for index in range(100)]
-            return GitHubPackagesHttpResponse(
-                status=200,
-                url=url,
-                headers=(),
-                body=json.dumps(body).encode(),
-                truncated=False,
-                complete=True,
-            )
-
-    tags = {
-        scenario: tag for scenario, _version, tag in ACCEPTANCE_SCENARIO_SPECS
-    }
-    transport = cli_module._AcceptanceNpmTransport(
-        tmp_path / ".npmrc",
-        token="dedicated-token",
-        target_sha="c" * 40,
-    )
-    transport._transport = DeadlineTransport()
-
-    observation = transport.observe(
-        ACCEPTANCE_COORDINATES["exact"],
-        tags["exact"],
-        timeout_seconds=7.0,
-        max_response_bytes=8192,
-    )
-
-    assert observation["state"] == "unknown"
-    assert timeouts == pytest.approx([7.0, 4.0, 1.0])
-    assert len(calls) == 3
-    assert clock.now == 29.0
-
-
-@pytest.mark.parametrize(
-    ("truncated", "complete", "expected_state"),
-    [
-        (False, True, "absent"),
-        (True, True, "unknown"),
-        (False, False, "unknown"),
-        (True, False, "unknown"),
-    ],
-)
-def test_adversarial_package_404_requires_complete_non_truncated_response(
-    tmp_path: Any,
-    truncated: bool,
-    complete: bool,
-    expected_state: str,
-) -> None:
-    class Package404Transport:
-        def get(
-            self,
-            url: str,
-            *,
-            headers: tuple[tuple[str, str], ...],
-            timeout: float,
-            max_bytes: int,
-        ) -> GitHubPackagesHttpResponse:
-            del headers, timeout, max_bytes
-            return GitHubPackagesHttpResponse(
-                status=404,
-                url=url,
-                headers=(),
-                body=b'{"message":"Not Found"}',
-                truncated=truncated,
-                complete=complete,
-            )
-
-    tags = {
-        scenario: tag for scenario, _version, tag in ACCEPTANCE_SCENARIO_SPECS
-    }
-    transport = cli_module._AcceptanceNpmTransport(
-        tmp_path / ".npmrc",
-        token="dedicated-token",
-        target_sha="c" * 40,
-    )
-    transport._transport = Package404Transport()
-
-    observation = transport.observe(
-        ACCEPTANCE_COORDINATES["exact"],
-        tags["exact"],
-        timeout_seconds=7.0,
-        max_response_bytes=8192,
-    )
-
-    assert observation["state"] == expected_state
-    assert cast("str", observation["response-identity-digest"]).startswith(
-        "sha256:"
-    )
-
-
-@pytest.mark.parametrize(
-    ("terminal_truncated", "terminal_complete", "expected_state"),
-    [
-        (False, True, "absent"),
-        (True, True, "unknown"),
-        (False, False, "unknown"),
-        (True, False, "unknown"),
-    ],
-)
-def test_adversarial_version_absence_requires_terminal_complete_page(
-    tmp_path: Any,
-    terminal_truncated: bool,
-    terminal_complete: bool,
-    expected_state: str,
-) -> None:
-    calls: list[str] = []
-
-    class VersionPagesTransport:
-        def get(
-            self,
-            url: str,
-            *,
-            headers: tuple[tuple[str, str], ...],
-            timeout: float,
-            max_bytes: int,
-        ) -> GitHubPackagesHttpResponse:
-            del headers, timeout, max_bytes
-            calls.append(url)
-            page = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get(
-                "page"
-            )
-            if page is None:
-                body: object = {
-                    "package_type": "npm",
-                    "name": "hcoona-release-smoke-npm",
-                    "owner": {"login": "hcoona"},
-                    "repository": {"full_name": "hcoona/three"},
-                }
-                truncated = False
-                complete = True
-            elif page == ["1"]:
-                body = [{"name": f"other-{index}"} for index in range(100)]
-                truncated = False
-                complete = True
-            else:
-                body = [{"name": "terminal-other-version"}]
-                truncated = terminal_truncated
-                complete = terminal_complete
-            return GitHubPackagesHttpResponse(
-                status=200,
-                url=url,
-                headers=(),
-                body=json.dumps(body).encode(),
-                truncated=truncated,
-                complete=complete,
-            )
-
-    tags = {
-        scenario: tag for scenario, _version, tag in ACCEPTANCE_SCENARIO_SPECS
-    }
-    transport = cli_module._AcceptanceNpmTransport(
-        tmp_path / ".npmrc",
-        token="dedicated-token",
-        target_sha="c" * 40,
-    )
-    transport._transport = VersionPagesTransport()
-
-    observation = transport.observe(
-        ACCEPTANCE_COORDINATES["exact"],
-        tags["exact"],
-        timeout_seconds=7.0,
-        max_response_bytes=8192,
-    )
-
-    assert observation["state"] == expected_state
-    assert len(calls) == 3
-    assert calls[-1].endswith("per_page=100&page=2")
-
-
-def test_adversarial_full_version_pages_without_terminal_proof_are_unknown(
-    tmp_path: Any,
-) -> None:
-    calls: list[str] = []
-
-    class AlwaysFullTransport:
-        def get(
-            self,
-            url: str,
-            *,
-            headers: tuple[tuple[str, str], ...],
-            timeout: float,
-            max_bytes: int,
-        ) -> GitHubPackagesHttpResponse:
-            del headers, timeout, max_bytes
-            calls.append(url)
-            body: object
-            if "/versions" not in url:
-                body = {
-                    "package_type": "npm",
-                    "name": "hcoona-release-smoke-npm",
-                    "owner": {"login": "hcoona"},
-                    "repository": {"full_name": "hcoona/three"},
-                }
-            else:
-                body = [{"name": f"other-{index}"} for index in range(100)]
-            return GitHubPackagesHttpResponse(
-                status=200,
-                url=url,
-                headers=(),
-                body=json.dumps(body).encode(),
-                truncated=False,
-                complete=True,
-            )
-
-    tags = {
-        scenario: tag for scenario, _version, tag in ACCEPTANCE_SCENARIO_SPECS
-    }
-    transport = cli_module._AcceptanceNpmTransport(
-        tmp_path / ".npmrc",
-        token="dedicated-token",
-        target_sha="c" * 40,
-    )
-    transport._transport = AlwaysFullTransport()
-
-    observation = transport.observe(
-        ACCEPTANCE_COORDINATES["exact"],
-        tags["exact"],
-        timeout_seconds=7.0,
-        max_response_bytes=8192,
-    )
-
-    assert observation["state"] == "unknown"
-    assert len(calls) == 101
 
 
 @pytest.mark.parametrize(

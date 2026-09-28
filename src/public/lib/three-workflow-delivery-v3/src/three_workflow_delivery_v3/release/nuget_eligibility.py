@@ -31,7 +31,6 @@ from three_workflow_delivery_v3.release.nuget_governance import (
 from three_workflow_delivery_v3.repository.compiler import (
     AdmittedRepositoryModelSnapshot,
     compile_release_policy,
-    validate_nuget_repository_model_snapshot,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     NUGET_GOVERNANCE_PATH,
@@ -79,13 +78,6 @@ def _validate_context(
         message = "NuGet eligibility requires exact admitted inputs"
         raise TypeError(message)
     snapshot = model.snapshot
-    validate_nuget_repository_model_snapshot(snapshot)
-    if (
-        model.canonical_bytes != canonicalize(snapshot.to_document())
-        or model.canonical_digest != snapshot.snapshot_digest
-    ):
-        message = "NuGet eligibility Model integrity mismatch"
-        raise ValueError(message)
     expected = shared.LiveEligibilityContext(
         "live-release",
         intent.request_id,

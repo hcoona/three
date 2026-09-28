@@ -3,6 +3,8 @@ version: 1.0.0
 description: APM configuration for shared agent skills.
 targets:
   - copilot
+  - vscode
+  - codex
 dependencies:
   apm:
     - path: ./src/private/lib/enterprise-translation-team
@@ -29,6 +31,11 @@ dependencies:
     - git: https://github.com/dotnet/skills.git
       path: plugins/dotnet-test-migration
       ref: main
+      skills:
+        - migrate-mstest-v1v2-to-v3
+        - migrate-mstest-v3-to-v4
+        - migrate-vstest-to-mtp
+        - migrate-xunit-to-xunit-v3
     - git: https://github.com/dotnet/skills.git
       path: plugins/dotnet-test
       ref: main
@@ -52,18 +59,24 @@ dependencies:
       ref: v0.5.0
     - alibaba/open-code-review/plugins/open-code-review/skills/open-code-review-delegate#v1.8.8
   mcp:
+    - name: playwright
+      registry: false
+      transport: stdio
+      command: mise
+      args:
+        - run
+        - --raw
+        - --quiet
+        - playwright-mcp
     - name: io.github.upstash/context7
       registry: false
       transport: stdio
       command: mise
       args:
-        - exec
-        - --
-        - pnpm
-        - dlx
-        - '@upstash/context7-mcp@3.2.5'
-      env:
-        CONTEXT7_API_KEY: '${input:CONTEXT7_API_KEY}'
+        - run
+        - --raw
+        - --quiet
+        - context7-mcp
     - name: microsoft-learn
       registry: false
       transport: http

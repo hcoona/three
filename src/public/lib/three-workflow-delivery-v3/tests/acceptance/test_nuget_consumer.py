@@ -508,10 +508,9 @@ def test_consumer_request_rejects_expansion_and_unselected_inputs(
     ],
 )
 def test_consumer_limits_require_finite_unambiguous_allowances(inputs, changes):
-    request, kwargs = inputs
+    request, _kwargs = inputs
     with pytest.raises(ValueError, match=r"invalid|unsupported"):
         replace(request.limits, **changes)
-    assert not kwargs["audit_directory"].exists()
 
 
 @pytest.mark.parametrize(

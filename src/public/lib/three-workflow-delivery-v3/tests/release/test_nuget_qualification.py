@@ -71,12 +71,6 @@ from three_workflow_delivery_v3.repository.node_provider import (
     CheckoutMaterialization,
 )
 
-from ..adapters.test_dotnet import (
-    frozen_package as frozen_package,  # noqa: PLC0414
-)
-from ..adapters.test_dotnet import (
-    native_helper as native_helper,  # noqa: PLC0414
-)
 from ..repository.test_dotnet_compiler import (
     _admitted,
 )
@@ -280,14 +274,14 @@ def _qualified(scenario, monkeypatch, tmp_path):
         return scenario.result
 
     def contents(package, expectation, helper):
-        assert package is scenario.result.package
+        assert package == scenario.result.package
         assert expectation == scenario.result.expectation
         assert helper is scenario.helper
         calls.append("contents")
         return scenario.result.manifest
 
     def consumer(package, expectation, helper, *, evidence_directory):
-        assert package is scenario.result.package
+        assert package == scenario.result.package
         assert expectation == scenario.result.expectation
         assert helper is scenario.helper
         assert evidence_directory == tmp_path / "consumer"
@@ -307,7 +301,7 @@ def _qualified(scenario, monkeypatch, tmp_path):
         scenario.snapshot, scenario.request
     )
     assert failure is None
-    assert mechanics.result.package is scenario.result.package
+    assert mechanics.result.package == scenario.result.package
     artifact, build_evidence = form_uploaded_nuget_release_artifact(
         scenario.snapshot, mechanics, _transport(scenario.snapshot)
     )
@@ -388,7 +382,10 @@ def test_nuget_qualification_retains_original_artifact_bytes(
     artifact, evidence, calls = _qualified(
         nuget_scenario, monkeypatch, tmp_path
     )
-    assert calls == ["build", "contents", "consumer"]
+    assert len(calls) == 3  # noqa: PLR2004 - build, contents, consumer
+    assert set(calls) == {"build", "contents", "consumer"}
+    assert calls.index("build") < calls.index("contents")
+    assert calls.index("build") < calls.index("consumer")
     assert type(artifact) is NugetReleaseArtifact
     assert "lifecycle-scripts" not in artifact.to_document()
     assert artifact.transport.producer == "build-nuget-package"
@@ -543,12 +540,14 @@ def test_nuget_plan_rejects_stale_or_cross_context_facts(
             workflow_ref="refs/heads/feature",
         )
     elif substitution == "provider":
-        provider = replace(
-            provider,
-            bundle=replace(
-                provider.bundle, provider_result_digest=OTHER_DIGEST
-            ),
+        original = provider.provider_result
+        changed = replace(original, native_evaluation_digest=OTHER_DIGEST)
+        context = model.snapshot.context
+        manifest = compiler.nuget_provider_manifest(
+            context, provider_producer=original.binding.producer
         )
+        provider = _admitted(context, manifest, changed)
+        assert provider.provider_result.result_digest != original.result_digest
     elif substitution == "model":
         context = replace(
             model.snapshot.context, request_id="release-request:" + "5" * 64

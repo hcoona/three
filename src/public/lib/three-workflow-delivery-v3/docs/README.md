@@ -54,6 +54,21 @@ effect.
 Before planning or editing v3 work, read the [Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md). It is
 operating guidance, not a second normative specification.
 
+## Python Smoke Design
+
+[Issue #843](https://github.com/hcoona/three/issues/843) tracks TestPyPI first,
+then PyPI. The owner's confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),
+HLD, five MLDs and [Python LLD](./hcoona-release-smoke-python-lld.md) adopt
+platform reliance without duplicate/race proving. The
+[source evidence](./research/python-smoke-evidence.md) distinguishes source
+findings, the retained failed runs and that owner decision.
+The [migration policy](./migration-strategy.md#python-smoke-delivery) routes the
+later disabled implementation, configuration/admission and actual publication
+stages. Existing v1 runtime and both Governance files remain disabled; this
+revised design does not claim implementation or two-destination completion.
+The [retired native interface](./validation/python-native-readiness.md) retains
+historical evidence-reader consumers only.
+
 ## NuGet Second-Slice Implementation
 
 The [NuGet second-slice handoff](./nuget-smoke-research-handoff.md) retains the
@@ -132,8 +147,9 @@ Read the current v3 documents in this order:
     - [Release Delivery](./release-delivery-mld.md)
     - [Shared Foundation](./shared-foundation-mld.md)
 5. [Migration and Document Policy](./migration-strategy.md)
-6. Applicable slice LLD: [npm](./hcoona-release-smoke-npm-lld.md) or
-   [NuGet](./hcoona-release-smoke-github-packages-lld.md)
+6. Applicable slice LLD: [npm](./hcoona-release-smoke-npm-lld.md),
+   [NuGet](./hcoona-release-smoke-github-packages-lld.md), or
+   [Python](./hcoona-release-smoke-python-lld.md)
 
 Higher layers constrain lower ones, and the current set must be reconciled if a conflict appears. v1 and v2 may supply
 a mechanism only when a v3 document explicitly requires extraction and revalidation.
@@ -149,6 +165,8 @@ The first vertical slice is `hcoona-release-smoke-npm`:
 Prior retry-5 destination acceptance is complete historical evidence. Exact
 `.17` through `.20` versions and tags remain intentionally retained, but their
 chronology is not current architecture.
+The [project entry](../README.md) describes the retired fixed-coordinate
+producer surface and the retained historical reader.
 
 ## Current External Boundary
 
@@ -225,3 +243,13 @@ Generic record lifecycle and contribution procedure route to the
 [Delivery Wave](../../../../../docs/delivery-wave.md) owns repository work grants.
 The domain handoffs retain the separate design, implementation, native, and
 publication gates.
+
+## Python First-Project Bootstrap
+
+The [bootstrap protocol](./validation/python-bootstrap.md) defines the separately
+authorized first-project resource path under `WD-PY-009`. The
+[Delivery Wave](../../../../../docs/delivery-wave.md) determines current work
+authorization. The protocol
+also owns the [tooling interface](./validation/python-bootstrap.md#tooling-interface);
+its protected request is null. Future setup, execution and publication
+retain their own concrete grants.

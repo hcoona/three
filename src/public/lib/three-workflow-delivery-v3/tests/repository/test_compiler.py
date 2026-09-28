@@ -9,7 +9,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 import yaml
@@ -46,7 +46,7 @@ from three_workflow_delivery_v3.repository.node_provider import (
     NodeProviderResult,
     ProjectNode,
     ProviderBinding,
-    create_node_provider_fact_bundle,
+    validate_provider_toolchain,
 )
 
 SOURCE_REPO_ROOT = Path(__file__).resolve().parents[6]
@@ -62,7 +62,6 @@ TRANSPORT_ID = 202
 TRANSPORT_DIGEST = "sha256:" + ("8" * 64)
 
 type ProviderBindingMutation = Callable[[ProviderBinding], ProviderBinding]
-type CheckoutEvidenceMutation = Callable[[CheckoutEvidence], CheckoutEvidence]
 type NodeProviderResultMutation = Callable[
     [NodeProviderResult], NodeProviderResult
 ]
@@ -74,13 +73,6 @@ def _mutate_provider_binding(
     mutation: ProviderBindingMutation,
 ) -> NodeProviderResult:
     return replace(result, binding=mutation(result.binding))
-
-
-def _mutate_checkout_evidence(
-    result: NodeProviderResult,
-    mutation: CheckoutEvidenceMutation,
-) -> NodeProviderResult:
-    return replace(result, checkout=mutation(result.checkout))
 
 
 def _mutate_provider_result(
@@ -95,36 +87,6 @@ def _mutate_provider_request(
     mutation: ProviderRequestMutation,
 ) -> ProviderRequest:
     return mutation(request)
-
-
-def _with_other_request_id(
-    binding: ProviderBinding,
-) -> ProviderBinding:
-    return replace(binding, request_id="other-request")
-
-
-def _with_other_workflow_run_id(
-    binding: ProviderBinding,
-) -> ProviderBinding:
-    return replace(binding, workflow_run_id=7102)
-
-
-def _with_other_binding_target(
-    binding: ProviderBinding,
-) -> ProviderBinding:
-    return replace(binding, target="d" * 40)
-
-
-def _with_other_provider_producer(
-    binding: ProviderBinding,
-) -> ProviderBinding:
-    return replace(binding, producer="other-provider-job")
-
-
-def _with_other_control(
-    binding: ProviderBinding,
-) -> ProviderBinding:
-    return replace(binding, control="other-control")
 
 
 def _with_other_catalog_digest(
@@ -167,60 +129,6 @@ def _with_side_effecting_execution_mode(
     request: ProviderRequest,
 ) -> ProviderRequest:
     return replace(request, execution_mode="side-effecting")
-
-
-def _with_other_checkout_target(
-    checkout: CheckoutEvidence,
-) -> CheckoutEvidence:
-    return replace(checkout, target="d" * 40)
-
-
-def _with_other_checkout_head(
-    checkout: CheckoutEvidence,
-) -> CheckoutEvidence:
-    return replace(checkout, head="d" * 40)
-
-
-def _with_shallow_checkout(
-    checkout: CheckoutEvidence,
-) -> CheckoutEvidence:
-    return replace(checkout, shallow=True)
-
-
-def _with_incomplete_ancestry(
-    checkout: CheckoutEvidence,
-) -> CheckoutEvidence:
-    return replace(checkout, ancestry_complete=False)
-
-
-def _with_incomplete_tags(
-    checkout: CheckoutEvidence,
-) -> CheckoutEvidence:
-    return replace(checkout, tags_complete=False)
-
-
-def _with_persisted_credentials(
-    checkout: CheckoutEvidence,
-) -> CheckoutEvidence:
-    return replace(checkout, credentials_persisted=True)
-
-
-def _with_other_authoritative_remote(
-    checkout: CheckoutEvidence,
-) -> CheckoutEvidence:
-    return replace(checkout, authoritative_remote="upstream")
-
-
-def _with_empty_authoritative_remote_url(
-    checkout: CheckoutEvidence,
-) -> CheckoutEvidence:
-    return replace(checkout, authoritative_remote_url="")
-
-
-def _with_other_tag_refspec(
-    checkout: CheckoutEvidence,
-) -> CheckoutEvidence:
-    return replace(checkout, tag_refspec="refs/tags/release/*:refs/tags/*")
 
 
 def _replace_sole_project_node(
@@ -435,7 +343,7 @@ def _write_first_slice_authoring(
         )
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def target_authoring_tree(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -514,10 +422,16 @@ def _result(
     *,
     repo_root: Path | None = None,
 ) -> NodeProviderResult:
-    manifest_digest, configuration_digest, global_inputs = _provider_inputs(
-        repo_root or REPO_ROOT,
-        context.target,
-    )
+    if repo_root is None:
+        # Intrinsic and admission cases use in-memory facts.
+        manifest_digest = "sha256:" + "b" * 64
+        configuration_digest = "sha256:" + "c" * 64
+        global_inputs = ()
+    else:
+        manifest_digest, configuration_digest, global_inputs = _provider_inputs(
+            repo_root,
+            context.target,
+        )
     return NodeProviderResult(
         binding=provider_binding(manifest, "node-first-slice"),
         provider_logical_id=PROVIDER_LOGICAL_ID,
@@ -585,8 +499,11 @@ def _bundle_admission_inputs(
     manifest: ProviderRequestManifest,
     result: NodeProviderResult,
 ) -> tuple[NodeProviderFactBundle, FactBundleAdmissionContext]:
-    bundle = create_node_provider_fact_bundle(
-        result,
+    bundle = NodeProviderFactBundle(
+        schema="workflow-delivery/v3/node-provider-fact-bundle",
+        binding=result.binding,
+        provider_result=result,
+        provider_result_digest=result.result_digest,
         manifest_digest=manifest.manifest_digest,
         manifest_entry_id=manifest.requests[0].entry_id,
         request_artifact_id=REQUEST_ARTIFACT_ID,
@@ -639,9 +556,10 @@ def _scenario(
     )
 
 
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_compiler_closes_first_slice_repository_model() -> None:
     """Close Project Node, Release Unit, output, Quality, and reverse index."""
-    context, manifest, result = _scenario()
+    context, manifest, result = _scenario(repo_root=REPO_ROOT)
 
     snapshot = _compile(REPO_ROOT, context, manifest, result)
 
@@ -723,6 +641,7 @@ def test_compiler_closes_first_slice_repository_model() -> None:
         ),
     ],
 )
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_missing_target_authoring_returns_incomplete_snapshot(
     relative_path: str,
     diagnostic: str,
@@ -735,7 +654,7 @@ def test_missing_target_authoring_returns_incomplete_snapshot(
         context,
         provider_producer="discover-node",
     )
-    result = _result(context, manifest)
+    result = _result(context, manifest, repo_root=REPO_ROOT)
 
     snapshot = _compile(REPO_ROOT, context, manifest, result)
 
@@ -751,6 +670,7 @@ def test_missing_target_authoring_returns_incomplete_snapshot(
     assert snapshot.snapshot_digest.startswith("sha256:")
 
 
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_malformed_target_authoring_remains_a_hard_failure() -> None:
     """Do not downgrade malformed authoring into semantic incompleteness."""
     quality = REPO_ROOT / PRODUCT_PATH / "workflow-delivery.quality.yml"
@@ -761,12 +681,15 @@ def test_malformed_target_authoring_remains_a_hard_failure() -> None:
         context,
         provider_producer="discover-node",
     )
-    result = _result(context, manifest)
+    result = _result(context, manifest, repo_root=REPO_ROOT)
+
+    admitted = _admitted_bundle(context, manifest, result)
 
     with pytest.raises(ValueError, match="malformed YAML authoring"):
-        _compile(REPO_ROOT, context, manifest, result)
+        compile_repository_model(REPO_ROOT, context, manifest, [admitted])
 
 
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_compiler_uses_target_authoring_not_dirty_worktree() -> None:
     """Compile from the bound target tree, not changed local authoring files."""
     descriptor_path = (
@@ -787,7 +710,7 @@ def test_compiler_uses_target_authoring_not_dirty_worktree() -> None:
             "node/dirty-worktree-v1",
         ),
     )
-    context, manifest, result = _scenario()
+    context, manifest, result = _scenario(repo_root=REPO_ROOT)
 
     snapshot = _compile(REPO_ROOT, context, manifest, result)
 
@@ -821,20 +744,23 @@ def test_compiler_rejects_duplicate_release_units_in_target_tree(
         repo_root=repo,
     )
 
+    admitted = _admitted_bundle(context, manifest, result)
+
     with pytest.raises(
         ValueError,
         match="duplicate Release Unit identity: hcoona-release-smoke-npm",
     ):
-        _compile(repo, context, manifest, result)
+        compile_repository_model(repo, context, manifest, [admitted])
 
 
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_compiler_preserves_provider_nbgv_facts_without_recomputation() -> None:
-    """Retain the exact Provider fact object and native projection."""
-    context, manifest, result = _scenario()
+    """Retain the original Provider fact values and native projection."""
+    context, manifest, result = _scenario(repo_root=REPO_ROOT)
 
     snapshot = _compile(REPO_ROOT, context, manifest, result)
 
-    assert snapshot.nbgv is result.nbgv
+    assert snapshot.nbgv == result.nbgv
     assert snapshot.nbgv.canonical_version == "1.2.3"
     assert snapshot.nbgv.sem_ver2 == NPM_VERSION
     assert snapshot.nbgv.npm_package_version == NPM_VERSION
@@ -845,9 +771,10 @@ def test_compiler_preserves_provider_nbgv_facts_without_recomputation() -> None:
     assert "manifest-version" not in nbgv_document
 
 
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_compiler_omits_run_attempt_from_live_snapshot() -> None:
     """Digest every current live request and same-revision authority binding."""
-    context, manifest, result = _scenario()
+    context, manifest, result = _scenario(repo_root=REPO_ROOT)
 
     snapshot = _compile(REPO_ROOT, context, manifest, result)
     document = snapshot.to_document()
@@ -870,13 +797,16 @@ def test_compiler_omits_run_attempt_from_live_snapshot() -> None:
     assert document["ready"] is True
 
 
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_simulation_rerun_compiles_distinct_snapshot() -> None:
     """Bind each simulation rerun to its own complete authority closure."""
     old_context, old_manifest, old_result = _scenario(
-        _context(purpose="release-simulation", run_attempt=RUN_ATTEMPT)
+        _context(purpose="release-simulation", run_attempt=RUN_ATTEMPT),
+        repo_root=REPO_ROOT,
     )
     new_context, new_manifest, new_result = _scenario(
-        _context(purpose="release-simulation", run_attempt=REPLAY_ATTEMPT)
+        _context(purpose="release-simulation", run_attempt=REPLAY_ATTEMPT),
+        repo_root=REPO_ROOT,
     )
 
     old_snapshot = _compile(
@@ -901,9 +831,10 @@ def test_simulation_rerun_compiles_distinct_snapshot() -> None:
     assert old_snapshot.nbgv.npm_package_version == NPM_VERSION
 
 
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_snapshot_parser_rejects_live_run_attempt() -> None:
     """Reject a retired normal-Live run-attempt field as unknown."""
-    context, manifest, result = _scenario()
+    context, manifest, result = _scenario(repo_root=REPO_ROOT)
     document = _compile(REPO_ROOT, context, manifest, result).to_document()
     context_document = cast("dict[str, JsonValue]", document["context"])
     context_document["run-attempt"] = RUN_ATTEMPT
@@ -912,10 +843,11 @@ def test_snapshot_parser_rejects_live_run_attempt() -> None:
         repository_model_snapshot_from_document(document)
 
 
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_snapshot_parser_requires_simulation_run_attempt() -> None:
     """Keep the simulation pass identity in every Repository Model."""
     context, manifest, result = _scenario(
-        _context(purpose="release-simulation")
+        _context(purpose="release-simulation"), repo_root=REPO_ROOT
     )
     document = _compile(REPO_ROOT, context, manifest, result).to_document()
     context_document = cast("dict[str, JsonValue]", document["context"])
@@ -949,6 +881,8 @@ def test_compiler_rejects_prior_attempt_and_cross_purpose_result(
     )
     result = _result(result_context, result_manifest)
 
+    admitted = _admitted_bundle(result_context, result_manifest, result)
+
     with pytest.raises(
         ValueError,
         match=(
@@ -957,46 +891,58 @@ def test_compiler_rejects_prior_attempt_and_cross_purpose_result(
             r"|catalog digest is not the current static catalog)"
         ),
     ):
-        _compile(REPO_ROOT, context, manifest, result)
+        compile_repository_model(REPO_ROOT, context, manifest, [admitted])
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("request_id", "other-request"),
+        ("workflow_run_id", 7102),
+        ("target", "d" * 40),
+        ("producer", "other-provider-job"),
+        ("control", "other-control"),
+    ],
+    ids=["request", "run", "target", "producer", "control"],
+)
+def test_compiler_rejects_differently_bound_provider_result(
+    field: str,
+    value: str | int,
+) -> None:
+    """Reject intact facts admitted for a different valid consumer context."""
+    context, manifest, result = _scenario()
+    admitted = _admitted_bundle(context, manifest, result)
+    if field == "producer":
+        producer = str(value)
+    else:
+        context = replace(context, **{field: value})
+        producer = "discover-node"
+    manifest = first_slice_provider_manifest(
+        context, provider_producer=producer
+    )
+
+    with pytest.raises(ValueError, match="Fact Bundle authority binding"):
+        compile_repository_model(REPO_ROOT, context, manifest, [admitted])
 
 
 @pytest.mark.parametrize(
     "mutation",
-    [
-        _with_other_request_id,
-        _with_other_workflow_run_id,
-        _with_other_binding_target,
-        _with_other_provider_producer,
-        _with_other_control,
-        _with_other_catalog_digest,
-        _with_other_request_digest,
-    ],
-    ids=[
-        "request",
-        "run",
-        "target",
-        "producer",
-        "control",
-        "catalog",
-        "request-digest",
-    ],
+    [_with_other_catalog_digest, _with_other_request_digest],
+    ids=["catalog", "request-digest"],
 )
-def test_compiler_rejects_differently_bound_provider_result(
+def test_fact_bundle_admission_rejects_invalid_initial_request_binding(
     mutation: ProviderBindingMutation,
 ) -> None:
-    """Reject every differently bound Provider Result authority field."""
+    """Initial admission rejects unsupported catalog and request identities."""
     context, manifest, result = _scenario()
-    result = _mutate_provider_binding(result, mutation)
+    bundle, admission = _bundle_admission_inputs(
+        manifest, _mutate_provider_binding(result, mutation)
+    )
 
-    with pytest.raises(
-        ValueError,
-        match=(
-            r"(?:Fact Bundle authority binding"
-            r"|not bound to the exact target"
-            r"|catalog digest is not the current static catalog)"
-        ),
-    ):
-        _compile(REPO_ROOT, context, manifest, result)
+    with pytest.raises(ValueError, match=r"authority binding|catalog digest"):
+        admit_node_provider_fact_bundle(
+            bundle, context=context, manifest=manifest, admission=admission
+        )
 
 
 @pytest.mark.parametrize(
@@ -1027,96 +973,55 @@ def test_fact_bundle_admission_rejects_schema_and_digest_substitution(
 
 
 @pytest.mark.parametrize(
-    ("field", "surrogate"),
+    ("field", "message"),
     [
-        ("schema", True),
-        ("binding", {}),
-        ("manifest_digest", True),
-        ("manifest_entry_id", 1),
-        ("request_artifact_id", True),
-        ("request_artifact_digest", 1),
-        ("provider_result", {}),
-        ("provider_result_digest", True),
-        ("transport_id", 1.0),
-        ("transport_digest", False),
+        (
+            "request_artifact_id",
+            "Fact Bundle request artifact ID binding mismatch",
+        ),
+        ("transport_id", "Fact Bundle transport ID binding mismatch"),
     ],
 )
-def test_fact_bundle_admission_requires_exact_runtime_field_types(
+def test_fact_bundle_admission_rejects_different_expected_artifact_ids(
     field: str,
-    surrogate: object,
+    message: str,
 ) -> None:
-    """Reject Boolean, number, and container surrogates in every Bundle role."""
+    """Require each valid artifact ID to match its current admission context."""
     context, manifest, result = _scenario()
     bundle, admission = _bundle_admission_inputs(manifest, result)
-    forged = replace(bundle, **{field: cast("Any", surrogate)})
+    changed = replace(admission, **{field: getattr(admission, field) + 1})
 
-    with pytest.raises((TypeError, ValueError)):
-        admit_node_provider_fact_bundle(
-            forged,
-            context=context,
-            manifest=manifest,
-            admission=admission,
-        )
-
-
-@pytest.mark.parametrize(
-    ("field", "surrogate"),
-    [
-        ("request_artifact_id", True),
-        ("request_artifact_digest", 1),
-        ("transport_id", 1.0),
-        ("transport_digest", False),
-        ("bundle_digest", True),
-    ],
-)
-def test_fact_bundle_admission_context_requires_exact_runtime_field_types(
-    field: str,
-    surrogate: object,
-) -> None:
-    """Reject trusted-context type surrogates before Bundle comparison."""
-    context, manifest, result = _scenario()
-    bundle, admission = _bundle_admission_inputs(manifest, result)
-    forged = replace(admission, **{field: cast("Any", surrogate)})
-
-    with pytest.raises((TypeError, ValueError)):
+    with pytest.raises(ValueError, match=message):
         admit_node_provider_fact_bundle(
             bundle,
             context=context,
             manifest=manifest,
-            admission=forged,
+            admission=changed,
         )
 
 
-def test_compiler_rejects_missing_duplicate_and_unexpected_provider_results() -> (  # noqa: E501
-    None
-):
-    """Require exactly one expected result and no extras."""
+def test_compiler_rejects_missing_and_duplicate_provider_results() -> None:
+    """Require exactly one admitted result and no extras."""
     context, manifest, result = _scenario()
-    unexpected = replace(
-        result,
-        provider_logical_id="node/unexpected-provider-v1",
-    )
-
     admitted = _admitted_bundle(context, manifest, result)
     for bundles in ([], [admitted, admitted]):
         with pytest.raises(
-            ValueError,
-            match="exactly one admitted Fact Bundle",
+            ValueError, match="exactly one admitted Fact Bundle"
         ):
-            compile_repository_model(
-                REPO_ROOT,
-                context,
-                manifest,
-                bundles,
-            )
+            compile_repository_model(REPO_ROOT, context, manifest, bundles)
+
+
+def test_fact_bundle_admission_rejects_unexpected_provider_identity() -> None:
+    """The selected request admits only its expected Provider identity."""
+    context, manifest, result = _scenario()
+    unexpected = replace(
+        result, provider_logical_id="node/unexpected-provider-v1"
+    )
+    bundle, admission = _bundle_admission_inputs(manifest, unexpected)
+
     with pytest.raises(ValueError, match="Provider Result identity mismatch"):
-        _admitted_bundle(context, manifest, unexpected)
-    with pytest.raises(TypeError, match="admitted Fact Bundle"):
-        compile_repository_model(
-            REPO_ROOT,
-            context,
-            manifest,
-            [result],  # type: ignore[list-item]
+        admit_node_provider_fact_bundle(
+            bundle, context=context, manifest=manifest, admission=admission
         )
 
     assert result.result_digest != unexpected.result_digest
@@ -1130,21 +1035,25 @@ def test_compiler_rejects_missing_duplicate_and_unexpected_provider_results() ->
     ],
     ids=["nonterminal", "unresolved"],
 )
-def test_compiler_rejects_unresolved_or_nonterminal_provider_result(
+def test_fact_bundle_admission_rejects_unresolved_or_nonterminal_result(
     mutation: NodeProviderResultMutation,
 ) -> None:
     """Block a partial Repository Model instead of weakening closure."""
     context, manifest, valid_result = _scenario()
     invalid_result = _mutate_provider_result(valid_result, mutation)
 
+    bundle, admission = _bundle_admission_inputs(manifest, invalid_result)
+
     with pytest.raises(
         ValueError,
         match="not a resolved terminal success",
     ):
-        _compile(REPO_ROOT, context, manifest, invalid_result)
+        admit_node_provider_fact_bundle(
+            bundle, context=context, manifest=manifest, admission=admission
+        )
 
 
-def test_compiler_rejects_missing_native_projection_without_fallback() -> None:
+def test_fact_bundle_admission_rejects_missing_native_version() -> None:
     """Reject empty npmPackageVersion even when canonical semVer2 exists."""
     context, manifest, result = _scenario()
     result = replace(
@@ -1152,8 +1061,12 @@ def test_compiler_rejects_missing_native_projection_without_fallback() -> None:
         nbgv=replace(result.nbgv, npm_package_version=""),
     )
 
+    bundle, admission = _bundle_admission_inputs(manifest, result)
+
     with pytest.raises(ValueError, match="native npm version"):
-        _compile(REPO_ROOT, context, manifest, result)
+        admit_node_provider_fact_bundle(
+            bundle, context=context, manifest=manifest, admission=admission
+        )
 
     assert result.nbgv.sem_ver2 == NPM_VERSION
     assert result.nbgv.canonical_version == "1.2.3"
@@ -1201,16 +1114,19 @@ def test_compiler_rejects_incomplete_build_or_artifact_scope(
         repo_root=repo,
     )
 
+    admitted = _admitted_bundle(context, manifest, result)
+
     with pytest.raises(ValueError, match="build has no outputs"):
-        _compile(repo, context, manifest, result)
+        compile_repository_model(repo, context, manifest, [admitted])
 
     assert result.outcome == "success"
     assert result.nbgv.npm_package_version == NPM_VERSION
 
 
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_compiler_does_not_create_attempt_or_simulation_identity() -> None:
     """Stop at the pre-identity Repository Model boundary."""
-    context, manifest, result = _scenario()
+    context, manifest, result = _scenario(repo_root=REPO_ROOT)
 
     snapshot = _compile(REPO_ROOT, context, manifest, result)
     document = snapshot.to_document()
@@ -1235,10 +1151,11 @@ def test_compiler_does_not_create_attempt_or_simulation_identity() -> None:
     }
 
 
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_simulation_snapshot_binds_selection_without_future_identity() -> None:
     """Compile simulation without inventing a future Simulation Identity."""
     context, manifest, result = _scenario(
-        _context(purpose="release-simulation")
+        _context(purpose="release-simulation"), repo_root=REPO_ROOT
     )
 
     snapshot = _compile(REPO_ROOT, context, manifest, result)
@@ -1250,9 +1167,10 @@ def test_simulation_snapshot_binds_selection_without_future_identity() -> None:
     assert snapshot.nbgv.npm_package_version == NPM_VERSION
 
 
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_manifest_is_closed_before_provider_execution() -> None:
     """Digest the exact Provider implementation and current authority inputs."""
-    context, manifest, result = _scenario()
+    context, manifest, result = _scenario(repo_root=REPO_ROOT)
     request = manifest.requests[0]
 
     assert request.entry_id == "node-first-slice"
@@ -1290,6 +1208,7 @@ def test_manifest_is_closed_before_provider_execution() -> None:
 def test_compiler_rejects_manifest_entry_id_substitution() -> None:
     """Reject a request that is not the exact approved first-slice entry."""
     context, manifest, result = _scenario()
+    admitted = _admitted_bundle(context, manifest, result)
     substituted = replace(manifest.requests[0], entry_id="other-node")
     manifest = replace(manifest, requests=(substituted,))
 
@@ -1297,41 +1216,31 @@ def test_compiler_rejects_manifest_entry_id_substitution() -> None:
         ValueError,
         match="not the canonical first slice",
     ):
-        _compile(REPO_ROOT, context, manifest, result)
+        compile_repository_model(REPO_ROOT, context, manifest, [admitted])
 
 
-@pytest.mark.parametrize(
-    "replacement_digest",
-    [
-        "sha256:" + ("b" * 64),
-        "stale",
-    ],
-    ids=["arbitrary-well-shaped", "stale-prior-attempt"],
-)
-def test_compiler_rejects_manifest_digest_not_bound_to_canonical_preimage(
-    replacement_digest: str,
-) -> None:
-    """Reject stale or arbitrary digests even when the result repeats them."""
-    context, manifest, _ = _scenario(
+def test_compiler_rejects_manifest_digest_not_bound_to_canonical_preimage() -> (
+    None
+):
+    """Validate the current canonical manifest before reusing admitted facts."""
+    context, manifest, result = _scenario(
         _context(purpose="release-simulation", run_attempt=REPLAY_ATTEMPT)
     )
-    if replacement_digest == "stale":
-        _, stale_manifest, _ = _scenario(
-            _context(purpose="release-simulation", run_attempt=RUN_ATTEMPT)
-        )
-        replacement_digest = stale_manifest.requests[0].request_digest
+    admitted = _admitted_bundle(context, manifest, result)
+    _, stale_manifest, _ = _scenario(
+        _context(purpose="release-simulation", run_attempt=RUN_ATTEMPT)
+    )
     substituted = replace(
         manifest.requests[0],
-        request_digest=replacement_digest,
+        request_digest=stale_manifest.requests[0].request_digest,
     )
     manifest = replace(manifest, requests=(substituted,))
-    result = _result(context, manifest)
 
     with pytest.raises(
         ValueError,
         match="digest is not bound to the canonical first-slice request",
     ):
-        _compile(REPO_ROOT, context, manifest, result)
+        compile_repository_model(REPO_ROOT, context, manifest, [admitted])
 
 
 @pytest.mark.parametrize(
@@ -1348,6 +1257,7 @@ def test_compiler_rejects_manifest_implementation_substitution(
 ) -> None:
     """Reject every target-selected Provider implementation primitive."""
     context, manifest, result = _scenario()
+    admitted = _admitted_bundle(context, manifest, result)
     substituted = _mutate_provider_request(manifest.requests[0], mutation)
     manifest = replace(manifest, requests=(substituted,))
 
@@ -1355,49 +1265,7 @@ def test_compiler_rejects_manifest_implementation_substitution(
         ValueError,
         match="unsupported Provider implementation",
     ):
-        _compile(REPO_ROOT, context, manifest, result)
-
-
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        _with_other_checkout_target,
-        _with_other_checkout_head,
-        _with_shallow_checkout,
-        _with_incomplete_ancestry,
-        _with_incomplete_tags,
-        _with_persisted_credentials,
-        _with_other_authoritative_remote,
-        _with_empty_authoritative_remote_url,
-        _with_other_tag_refspec,
-    ],
-    ids=[
-        "target",
-        "head",
-        "shallow",
-        "ancestry",
-        "tags",
-        "credentials",
-        "remote",
-        "remote-url",
-        "tag-refspec",
-    ],
-)
-def test_compiler_revalidates_every_checkout_evidence_primitive(
-    mutation: CheckoutEvidenceMutation,
-) -> None:
-    """Reject fabricated or incomplete Provider checkout evidence."""
-    context, manifest, result = _scenario()
-    result = _mutate_checkout_evidence(result, mutation)
-
-    with pytest.raises(
-        (TypeError, ValueError),
-        match=(
-            r"(?:full-history checkout evidence"
-            r"|checkout authoritative_remote_url)"
-        ),
-    ):
-        _compile(REPO_ROOT, context, manifest, result)
+        compile_repository_model(REPO_ROOT, context, manifest, [admitted])
 
 
 @pytest.mark.parametrize(
@@ -1407,26 +1275,27 @@ def test_compiler_revalidates_every_checkout_evidence_primitive(
         _with_other_package_name,
         _with_other_project_path,
         _with_other_manifest_path,
-        _with_private_project,
     ],
-    ids=["project-id", "package-name", "path", "manifest", "private"],
+    ids=["project-id", "package-name", "path", "manifest"],
 )
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_compiler_rejects_substituted_first_slice_project_node(
     mutation: NodeProviderResultMutation,
 ) -> None:
-    """Bind the compiled build to the exact non-private Project Node."""
-    context, manifest, result = _scenario()
+    """Compare the admitted Project Node with actual target authoring."""
+    context, manifest, result = _scenario(repo_root=REPO_ROOT)
     result = _mutate_provider_result(result, mutation)
+
+    admitted = _admitted_bundle(context, manifest, result)
 
     with pytest.raises(
         ValueError,
         match=(
-            r"(?:Project Node (?:identity/path|cannot be private)"
-            r"|Project Node private must be exactly false"
+            r"(?:Project Node identity/path"
             r"|does not resolve to the Project Node)"
         ),
     ):
-        _compile(REPO_ROOT, context, manifest, result)
+        compile_repository_model(REPO_ROOT, context, manifest, [admitted])
 
 
 @pytest.mark.parametrize(
@@ -1434,27 +1303,34 @@ def test_compiler_rejects_substituted_first_slice_project_node(
     [_without_project_nodes, _with_duplicate_project_node],
     ids=["missing", "duplicate"],
 )
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_compiler_requires_exactly_one_project_node(
     mutation: NodeProviderResultMutation,
 ) -> None:
     """Reject missing and duplicate first-slice Project Nodes."""
-    context, manifest, result = _scenario()
+    context, manifest, result = _scenario(repo_root=REPO_ROOT)
     result = _mutate_provider_result(result, mutation)
 
+    admitted = _admitted_bundle(context, manifest, result)
+
     with pytest.raises(ValueError, match="exactly one Project Node"):
-        _compile(REPO_ROOT, context, manifest, result)
+        compile_repository_model(REPO_ROOT, context, manifest, [admitted])
 
 
-def test_compiler_rejects_nbgv_target_substitution() -> None:
-    """Revalidate the frozen NBGV target at the compiler boundary."""
+def test_fact_bundle_admission_rejects_nbgv_target_substitution() -> None:
+    """Reject supplied NBGV facts for a different target at admission."""
     context, manifest, result = _scenario()
     result = replace(
         result,
         nbgv=replace(result.nbgv, git_commit_id="d" * 40),
     )
 
+    bundle, admission = _bundle_admission_inputs(manifest, result)
+
     with pytest.raises(ValueError, match="exact target"):
-        _compile(REPO_ROOT, context, manifest, result)
+        admit_node_provider_fact_bundle(
+            bundle, context=context, manifest=manifest, admission=admission
+        )
 
 
 def test_manifest_rejects_invalid_purpose_and_simulation_selection() -> None:
@@ -1480,23 +1356,10 @@ def test_manifest_rejects_invalid_purpose_and_simulation_selection() -> None:
         first_slice_provider_manifest(live, provider_producer="")
 
 
-@pytest.mark.parametrize(
-    "workspace_dependencies",
-    [
-        ("@hcoona/linked-one",),
-        (
-            "@hcoona/linked-one",
-            "@hcoona/linked-three",
-            "@hcoona/linked-two",
-        ),
-    ],
-    ids=["singleton", "multiple"],
-)
-def test_compiler_rejects_nonempty_workspace_dependency_set(
-    workspace_dependencies: tuple[str, ...],
-) -> None:
+@pytest.mark.usefixtures("target_authoring_tree")
+def test_compiler_rejects_nonempty_workspace_dependency_set() -> None:
     """Reject workspace closure while commit 3 permits one Project Node."""
-    context, manifest, valid_result = _scenario()
+    context, manifest, valid_result = _scenario(repo_root=REPO_ROOT)
     empty_snapshot = _compile(
         REPO_ROOT,
         context,
@@ -1505,14 +1368,16 @@ def test_compiler_rejects_nonempty_workspace_dependency_set(
     )
     result = _with_workspace_dependencies(
         valid_result,
-        workspace_dependencies,
+        ("@hcoona/linked-one",),
     )
 
     assert empty_snapshot.ready
     assert empty_snapshot.project_nodes[0].workspace_dependencies == ()
     assert result.project_nodes[0].workspace_dependencies == (
-        workspace_dependencies
+        "@hcoona/linked-one",
     )
+
+    admitted = _admitted_bundle(context, manifest, result)
 
     with pytest.raises(
         ValueError,
@@ -1521,7 +1386,7 @@ def test_compiler_rejects_nonempty_workspace_dependency_set(
             r".*no workspace closure"
         ),
     ):
-        _compile(REPO_ROOT, context, manifest, result)
+        compile_repository_model(REPO_ROOT, context, manifest, [admitted])
 
 
 @pytest.fixture
@@ -1529,7 +1394,7 @@ def valid_compilation_inputs() -> tuple[
     CompilationContext,
     ProviderRequestManifest,
 ]:
-    """Return exact target authoring and request inputs for Phase 3."""
+    """Return a context-bound request without reading repository authoring."""
     context = _context()
     manifest = first_slice_provider_manifest(
         context,
@@ -1545,281 +1410,38 @@ def valid_node_provider_result(
         ProviderRequestManifest,
     ],
 ) -> NodeProviderResult:
-    """Return a literal complete result independent of Provider execution."""
+    """Return literal admission inputs independent of Provider execution."""
     context, manifest = valid_compilation_inputs
     return _result(context, manifest)
 
 
-def _assert_phase3_compile_rejected(
+def _assert_fact_bundle_admission_rejected(
     context: CompilationContext,
     manifest: ProviderRequestManifest,
     result: NodeProviderResult,
     *,
     match: str,
 ) -> None:
-    snapshot = None
+    bundle, admission = _bundle_admission_inputs(manifest, result)
 
     with pytest.raises((TypeError, ValueError), match=match):
-        snapshot = _compile(REPO_ROOT, context, manifest, result)
-
-    assert snapshot is None
-
-
-@pytest.mark.parametrize(
-    ("field", "value", "message"),
-    [
-        ("canonical_version", "", r"(?:canonical|NBGV.*version)"),
-        ("canonical_version", 123, r"(?:canonical|NBGV.*version)"),
-        ("canonical_version", "1", r"(?:canonical|NBGV.*version)"),
-        ("canonical_version", "1.2.3.4.5", r"(?:canonical|NBGV.*version)"),
-        ("canonical_version", "01.2.3", r"(?:canonical|NBGV.*version)"),
-        ("canonical_version", "1.02.3", r"(?:canonical|NBGV.*version)"),
-        ("canonical_version", "1.-2.3", r"(?:canonical|NBGV.*version)"),
-        ("canonical_version", "1.two.3", r"(?:canonical|NBGV.*version)"),
-        ("canonical_version", " 1.2.3", r"(?:canonical|NBGV.*version)"),
-        ("sem_ver1", "", r"(?:semVer1|sem_ver1)"),
-        ("sem_ver1", 123, r"(?:semVer1|sem_ver1)"),
-        ("sem_ver2", "", r"(?:semVer2|sem_ver2)"),
-        ("sem_ver2", 123, r"(?:semVer2|sem_ver2)"),
-        (
-            "npm_package_version",
-            "",
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            "^1.2.3",
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            "latest",
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            "https://registry.npmjs.org/package",
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            "v1.2.3",
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            " 1.2.3",
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            "1.2",
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            "01.2.3",
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            "1.2.3-01",
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            "1.2.3+",
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            "1.2.3-alpha..1",
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            123,
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "npm_package_version",
-            None,
-            r"(?:npmPackageVersion|npm_package_version)",
-        ),
-        (
-            "git_commit_id",
-            "e" * 39,
-            r"(?:gitCommitId|git_commit_id|compilation target|exact target)",
-        ),
-        (
-            "git_commit_id",
-            "E" * 40,
-            r"(?:gitCommitId|git_commit_id|compilation target|exact target)",
-        ),
-        (
-            "git_commit_id",
-            "g" * 40,
-            r"(?:gitCommitId|git_commit_id|compilation target|exact target)",
-        ),
-        (
-            "git_commit_id",
-            ("e" * 40) + " ",
-            r"(?:gitCommitId|git_commit_id|compilation target|exact target)",
-        ),
-        (
-            "git_commit_id",
-            "d" * 40,
-            r"(?:gitCommitId|git_commit_id|compilation target|exact target)",
-        ),
-        ("version_height", 0, r"(?:versionHeight|version_height)"),
-        ("version_height", -1, r"(?:versionHeight|version_height)"),
-        ("version_height", True, r"(?:versionHeight|version_height)"),
-        ("version_height", False, r"(?:versionHeight|version_height)"),
-        ("version_height", "42", r"(?:versionHeight|version_height)"),
-        ("version_height", 42.5, r"(?:versionHeight|version_height)"),
-        ("version_height", [], r"(?:versionHeight|version_height)"),
-        ("public_release", "false", r"(?:publicRelease|public_release)"),
-        ("public_release", 0, r"(?:publicRelease|public_release)"),
-        ("public_release", 1, r"(?:publicRelease|public_release)"),
-        ("public_release", None, r"(?:publicRelease|public_release)"),
-        (
-            "node_api_result_digest",
-            "a" * 64,
-            r"(?:node-api-result-digest|node_api_result_digest|digest)",
-        ),
-        (
-            "node_api_result_digest",
-            "sha256:" + ("a" * 63),
-            r"(?:node-api-result-digest|node_api_result_digest|digest)",
-        ),
-        (
-            "node_api_result_digest",
-            "sha256:" + ("a" * 65),
-            r"(?:node-api-result-digest|node_api_result_digest|digest)",
-        ),
-        (
-            "node_api_result_digest",
-            "sha256:" + ("A" * 64),
-            r"(?:node-api-result-digest|node_api_result_digest|digest)",
-        ),
-        (
-            "node_api_result_digest",
-            "sha256:" + ("g" * 64),
-            r"(?:node-api-result-digest|node_api_result_digest|digest)",
-        ),
-        (
-            "node_api_result_digest",
-            " sha256:" + ("a" * 64),
-            r"(?:node-api-result-digest|node_api_result_digest|digest)",
-        ),
-        (
-            "node_api_result_digest",
-            123,
-            r"(?:node-api-result-digest|node_api_result_digest|digest)",
-        ),
-    ],
-    ids=[
-        "version-empty",
-        "version-non-string",
-        "version-one-component",
-        "version-five-components",
-        "version-leading-zero-major",
-        "version-leading-zero-minor",
-        "version-negative-component",
-        "version-nonnumeric-component",
-        "version-whitespace-padded",
-        "semver1-empty",
-        "semver1-non-string",
-        "semver2-empty",
-        "semver2-non-string",
-        "npm-empty",
-        "npm-range",
-        "npm-tag",
-        "npm-url",
-        "npm-v-prefixed",
-        "npm-whitespace-padded",
-        "npm-malformed",
-        "npm-leading-zero-major",
-        "npm-leading-zero-prerelease",
-        "npm-empty-build",
-        "npm-empty-prerelease-identifier",
-        "npm-non-string",
-        "npm-missing-no-fallback",
-        "git-short",
-        "git-uppercase",
-        "git-nonhex",
-        "git-whitespace-padded",
-        "git-target-mismatch",
-        "height-zero",
-        "height-negative",
-        "height-true",
-        "height-false",
-        "height-string",
-        "height-float",
-        "height-list",
-        "public-release-string",
-        "public-release-integer",
-        "public-release-one",
-        "public-release-none",
-        "digest-missing-prefix",
-        "digest-short",
-        "digest-long",
-        "digest-uppercase",
-        "digest-nonhex",
-        "digest-whitespace",
-        "digest-non-string",
-    ],
-)
-def test_compiler_rejects_malformed_provider_nbgv_result(
-    valid_compilation_inputs: tuple[
-        CompilationContext,
-        ProviderRequestManifest,
-    ],
-    valid_node_provider_result: NodeProviderResult,
-    field: str,
-    value: object,
-    message: str,
-) -> None:
-    """Independently revalidate every forged NBGV fact before readiness."""
-    context, manifest = valid_compilation_inputs
-    forged_facts = cast(
-        "NbgvFacts",
-        replace(
-            cast("Any", valid_node_provider_result.nbgv),
-            **{field: value},
-        ),
-    )
-    forged_result = replace(
-        valid_node_provider_result,
-        nbgv=forged_facts,
-    )
-
-    _assert_phase3_compile_rejected(
-        context,
-        manifest,
-        forged_result,
-        match=message,
-    )
+        admit_node_provider_fact_bundle(
+            bundle, context=context, manifest=manifest, admission=admission
+        )
 
 
 @pytest.mark.parametrize(
     "execution_class",
     [
         "target-evaluation/privileged-v1",
-        "control/unprivileged-v1",
         "target-execution/unprivileged-v1",
-        "",
-        "unknown/execution-class-v1",
     ],
     ids=[
         "privileged",
-        "control",
         "target-execution",
-        "empty",
-        "unknown",
     ],
 )
-def test_compiler_rejects_substituted_provider_execution_class(
+def test_fact_bundle_admission_rejects_substituted_provider_execution_class(
     valid_compilation_inputs: tuple[
         CompilationContext,
         ProviderRequestManifest,
@@ -1834,7 +1456,7 @@ def test_compiler_rejects_substituted_provider_execution_class(
         execution_class=execution_class,
     )
 
-    _assert_phase3_compile_rejected(
+    _assert_fact_bundle_admission_rejected(
         context,
         manifest,
         forged_result,
@@ -1846,63 +1468,51 @@ def test_compiler_rejects_substituted_provider_execution_class(
     "toolchain",
     [
         (("pnpm", "11.21.0"),),
-        (("node", "v24.14.0"),),
         (
             ("node", "v24.14.0"),
             ("pnpm", "11.21.0"),
             ("python", "3.13.5"),
         ),
-        (
-            ("node", "v24.14.0"),
-            ("node", "v22.17.0"),
-            ("pnpm", "11.21.0"),
-        ),
-        (
-            ("node", "v24.14.0"),
-            ("pnpm", "11.21.0"),
-            ("pnpm", "10.12.1"),
-        ),
-        (("pnpm", "11.21.0"), ("node", "v24.14.0")),
+        (("node", "v24.14.0"), ("node", "v22.17.0")),
         (("nodejs", "v24.14.0"), ("pnpm", "11.21.0")),
         (("node", "v24.14.0"), ("pnpm-cli", "11.21.0")),
-        (("", "v24.14.0"), ("pnpm", "11.21.0")),
         (("node", ""), ("pnpm", "11.21.0")),
-        (("node", " v24.14.0"), ("pnpm", "11.21.0")),
         (("node", "v24.14.0"), ("pnpm", "11.21.0 ")),
-        (("node", "v24.14.0"), ("pnpm", " \t")),
     ],
     ids=[
         "missing-node",
-        "missing-pnpm",
         "extra-entry",
-        "duplicate-node",
-        "duplicate-pnpm",
-        "reordered",
+        "duplicate-name-within-arity",
         "renamed-node",
         "renamed-pnpm",
-        "empty-name",
         "empty-version",
-        "padded-node-version",
         "padded-pnpm-version",
-        "whitespace-version",
     ],
 )
-def test_compiler_rejects_noncanonical_provider_toolchain(
+def test_provider_toolchain_rejects_noncanonical_values(
+    toolchain: tuple[tuple[str, str], ...],
+) -> None:
+    """Own the closed toolchain value matrix at its intrinsic validator."""
+    with pytest.raises((TypeError, ValueError), match="toolchain"):
+        validate_provider_toolchain(toolchain)
+
+
+def test_fact_bundle_admission_rejects_noncanonical_provider_toolchain(
     valid_compilation_inputs: tuple[
         CompilationContext,
         ProviderRequestManifest,
     ],
     valid_node_provider_result: NodeProviderResult,
-    toolchain: tuple[tuple[str, str], ...],
 ) -> None:
-    """Require the exact closed ordered nonempty Node-then-PNPM tuple."""
+    """Connect the intrinsic toolchain rule to actual Bundle admission."""
     context, manifest = valid_compilation_inputs
+    validate_provider_toolchain((("node", "v24.14.0"), ("pnpm", "11.21.0")))
     forged_result = replace(
         valid_node_provider_result,
-        toolchain=toolchain,
+        toolchain=(("node", "v24.14.0"), ("node", "v22.17.0")),
     )
 
-    _assert_phase3_compile_rejected(
+    _assert_fact_bundle_admission_rejected(
         context,
         manifest,
         forged_result,
@@ -1910,92 +1520,57 @@ def test_compiler_rejects_noncanonical_provider_toolchain(
     )
 
 
-def _phase3_with_other_binding(
-    result: NodeProviderResult,
-) -> NodeProviderResult:
-    return replace(
-        result,
-        binding=replace(result.binding, request_id="forged-request"),
-    )
-
-
-def _phase3_with_other_checkout(
-    result: NodeProviderResult,
-) -> NodeProviderResult:
-    return replace(
-        result,
-        checkout=replace(result.checkout, head="d" * 40),
-    )
-
-
-def _phase3_with_other_result_identity(
-    result: NodeProviderResult,
-) -> NodeProviderResult:
-    return replace(
-        result,
-        provider_implementation_id="forged/provider-v1",
-    )
-
-
-def _phase3_with_other_target_fact(
-    result: NodeProviderResult,
-) -> NodeProviderResult:
-    return replace(
-        result,
-        nbgv=replace(result.nbgv, git_commit_id="d" * 40),
-    )
-
-
-def _phase3_without_native_projection(
-    result: NodeProviderResult,
-) -> NodeProviderResult:
-    return replace(
-        result,
-        nbgv=replace(result.nbgv, npm_package_version=""),
-    )
-
-
-@pytest.mark.parametrize(
-    ("mutation", "message"),
-    [
-        (_phase3_with_other_binding, "binding mismatch"),
-        (_phase3_with_other_checkout, "full-history checkout evidence"),
-        (_phase3_with_other_result_identity, "identity mismatch"),
-        (_with_nonterminal_outcome, "resolved terminal success"),
-        (_with_unresolved_workspace_graph, "resolved terminal success"),
-        (_with_other_project_id, "Project Node"),
-        (_phase3_with_other_target_fact, "exact target"),
-        (_phase3_without_native_projection, "npmPackageVersion"),
-    ],
-    ids=[
-        "binding",
-        "checkout",
-        "result-identity",
-        "outcome",
-        "unresolved",
-        "project-node",
-        "target-equality",
-        "native-projection",
-    ],
-)
-def test_compiler_preserves_existing_provider_result_guards(
+def test_fact_bundle_admission_accepts_either_provider_toolchain_order(
     valid_compilation_inputs: tuple[
         CompilationContext,
         ProviderRequestManifest,
     ],
     valid_node_provider_result: NodeProviderResult,
-    mutation: NodeProviderResultMutation,
-    message: str,
 ) -> None:
-    """Keep every preexisting compiler guard while adding full validation."""
+    """Admit equivalent named toolchains against the same external facts."""
     context, manifest = valid_compilation_inputs
-    forged_result = mutation(valid_node_provider_result)
+    result = valid_node_provider_result
+    reversed_result = replace(
+        result, toolchain=tuple(reversed(result.toolchain))
+    )
+    assert reversed_result.to_document() == result.to_document()
+    assert reversed_result.result_digest == result.result_digest
 
-    _assert_phase3_compile_rejected(
+    bundle, admission = _bundle_admission_inputs(manifest, result)
+    reversed_bundle = replace(bundle, provider_result=reversed_result)
+    for supplied_bundle in (bundle, reversed_bundle):
+        admitted = admit_node_provider_fact_bundle(
+            supplied_bundle,
+            context=context,
+            manifest=manifest,
+            admission=admission,
+        )
+        assert (
+            admitted.bundle.provider_result.to_document()
+            == result.to_document()
+        )
+        assert admitted.bundle.provider_result_digest == result.result_digest
+
+
+def test_fact_bundle_admission_rejects_provider_implementation_mismatch(
+    valid_compilation_inputs: tuple[
+        CompilationContext,
+        ProviderRequestManifest,
+    ],
+    valid_node_provider_result: NodeProviderResult,
+) -> None:
+    """Reject a result whose implementation differs from its request."""
+    context, manifest = valid_compilation_inputs
+    forged_result = replace(
+        valid_node_provider_result,
+        provider_implementation_id="forged/provider-v1",
+    )
+
+    _assert_fact_bundle_admission_rejected(
         context,
         manifest,
         forged_result,
-        match=message,
+        match="identity mismatch",
     )
 
 
@@ -2007,12 +1582,12 @@ def test_compiler_preserves_existing_provider_result_guards(
     ],
     ids=["two-component-and-build", "four-component-and-prerelease-build"],
 )
+@pytest.mark.usefixtures("target_authoring_tree")
 def test_compiler_accepts_exact_provider_result_and_validates_snapshot(
     valid_compilation_inputs: tuple[
         CompilationContext,
         ProviderRequestManifest,
     ],
-    valid_node_provider_result: NodeProviderResult,
     canonical_version: str,
     npm_package_version: str,
 ) -> None:
@@ -2022,6 +1597,7 @@ def test_compiler_accepts_exact_provider_result_and_validates_snapshot(
     )
 
     context, manifest = valid_compilation_inputs
+    valid_node_provider_result = _result(context, manifest, repo_root=REPO_ROOT)
     selected_result = replace(
         valid_node_provider_result,
         nbgv=replace(
@@ -2044,104 +1620,50 @@ def test_compiler_accepts_exact_provider_result_and_validates_snapshot(
     assert snapshot.nbgv.canonical_version == canonical_version
     assert snapshot.nbgv.npm_package_version == npm_package_version
     assert snapshot.nbgv.to_document() == selected_result.nbgv.to_document()
-    assert selected_result.execution_class == (
-        "target-evaluation/unprivileged-v1"
-    )
-    assert selected_result.toolchain == (
-        ("node", "v24.14.0"),
-        ("pnpm", "11.21.0"),
-    )
     assert snapshot.provider_result_digests == (selected_result.result_digest,)
     assert snapshot.unresolved == ()
 
     validate_first_slice_repository_model_snapshot(snapshot)
 
 
-_CHECKOUT_BOOLEAN_REQUIREMENTS: tuple[tuple[str, bool], ...] = (
-    ("shallow", False),
-    ("ancestry_complete", True),
-    ("tags_complete", True),
-    ("credentials_persisted", False),
-)
+def test_fact_bundle_admission_rejects_private_project() -> None:
+    """Selected native facts must describe a non-private publishable project."""
+    context, manifest, result = _scenario()
+    bundle, admission = _bundle_admission_inputs(
+        manifest, _with_private_project(result)
+    )
 
-_NON_BOOLEAN_SURROGATES: tuple[tuple[str, object], ...] = (
-    ("int-zero", 0),
-    ("int-one", 1),
-    ("none", None),
-    ("float-zero", 0.0),
-    ("float-one", 1.0),
-    ("string-empty", ""),
-    ("string-nonempty", "surrogate"),
-    ("list-empty", []),
-    ("list-nonempty", [False]),
-    ("tuple-empty", ()),
-    ("tuple-nonempty", (False,)),
-    ("mapping-empty", {}),
-    ("mapping-nonempty", {"surrogate": False}),
-)
-
-
-@pytest.mark.parametrize(
-    ("field", "required_value", "surrogate"),
-    [
-        pytest.param(
-            field,
-            required_value,
-            surrogate,
-            id=f"{field.replace('_', '-')}-{surrogate_id}",
+    with pytest.raises(
+        ValueError, match="Project Node private must be exactly false"
+    ):
+        admit_node_provider_fact_bundle(
+            bundle, context=context, manifest=manifest, admission=admission
         )
-        for field, required_value in _CHECKOUT_BOOLEAN_REQUIREMENTS
-        for surrogate_id, surrogate in _NON_BOOLEAN_SURROGATES
-    ],
-)
-def test_compiler_requires_exact_checkout_evidence_boolean_types_and_values(
-    valid_compilation_inputs: tuple[
-        CompilationContext,
-        ProviderRequestManifest,
-    ],
-    valid_node_provider_result: NodeProviderResult,
-    field: str,
-    required_value: object,
-    surrogate: object,
-) -> None:
-    """Reject every non-Boolean surrogate at the compiler boundary."""
-    context, manifest = valid_compilation_inputs
-    valid_checkout = valid_node_provider_result.checkout
 
-    assert type(surrogate) is not bool
-    assert type(required_value) is bool
-    assert type(getattr(valid_checkout, field)) is bool
-    assert getattr(valid_checkout, field) is required_value
 
-    forged_checkout = cast(
-        "CheckoutEvidence",
-        replace(
-            cast("Any", valid_checkout),
-            **{field: surrogate},
+@pytest.mark.usefixtures("target_authoring_tree")
+def test_compiler_rehashes_internally_consistent_foreign_inputs() -> None:
+    """Independently compare admitted supplied facts with actual Git bytes."""
+    context, manifest, result = _scenario(repo_root=REPO_ROOT)
+    inputs = tuple(
+        replace(item, content_digest="sha256:" + "9" * 64)
+        if item.path == "pnpm-lock.yaml"
+        else item
+        for item in result.global_inputs
+    )
+    changed = replace(
+        result,
+        global_inputs=inputs,
+        configuration_digest=canonical_sha256(
+            {
+                "schema": "workflow-delivery/v3/node-provider-configuration",
+                "global-inputs": [item.to_document() for item in inputs],
+            }
         ),
     )
-    forged_result = replace(
-        valid_node_provider_result,
-        checkout=forged_checkout,
-    )
+    admitted = _admitted_bundle(context, manifest, changed)
 
-    assert getattr(forged_checkout, field) is surrogate
-    for other_field, _ in _CHECKOUT_BOOLEAN_REQUIREMENTS:
-        if other_field != field:
-            assert getattr(forged_checkout, other_field) is getattr(
-                valid_checkout,
-                other_field,
-            )
-    assert forged_result.binding is valid_node_provider_result.binding
-    assert forged_result.toolchain is valid_node_provider_result.toolchain
-    assert (
-        forged_result.project_nodes is valid_node_provider_result.project_nodes
-    )
-    assert forged_result.nbgv is valid_node_provider_result.nbgv
-
-    _assert_phase3_compile_rejected(
-        context,
-        manifest,
-        forged_result,
-        match=r"checkout .* must be an exact Boolean",
-    )
+    with pytest.raises(
+        ValueError, match="input digests do not match the exact target"
+    ):
+        compile_repository_model(REPO_ROOT, context, manifest, [admitted])

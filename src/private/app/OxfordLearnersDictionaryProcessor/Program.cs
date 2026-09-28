@@ -159,22 +159,26 @@ await foreach (var wordMetadataJson in wordListManager
         document.OptionEmptyCollection = true;
 
         // TODO(shuaizhang): Cleanup the HTML content before feeding it to the model.
-        var divNode = document.DocumentNode.SelectSingleNode("//div[@id='entryContent']");
+        var divNode = document.DocumentNode.SelectSingleNode("//div[@id='entryContent']")
+            ?? throw new InvalidDataException("Cannot find dictionary entry content.");
 
         // Remove span[@unbox='mlt'].
-        foreach (var node in divNode.SelectNodes("//*[@unbox='mlt']"))
+        foreach (var node in divNode.SelectNodes("//*[@unbox='mlt']")
+            ?? Enumerable.Empty<HtmlNode>())
         {
             node.Remove();
         }
 
         // Remove span[@unbox='snippet'].
-        foreach (var node in divNode.SelectNodes("//*[@unbox='snippet']"))
+        foreach (var node in divNode.SelectNodes("//*[@unbox='snippet']")
+            ?? Enumerable.Empty<HtmlNode>())
         {
             node.Remove();
         }
 
         // Remove all attributes except for "sensenum", "class" and "id".
-        foreach (var node in divNode.SelectNodes(".//*"))
+        foreach (var node in divNode.SelectNodes(".//*")
+            ?? Enumerable.Empty<HtmlNode>())
         {
             foreach (var attribute in node.Attributes.ToList())
             {
@@ -188,23 +192,27 @@ await foreach (var wordMetadataJson in wordListManager
         }
 
         // Remove div[@class='idioms'] and div[@class='dictlink-g'] and div[@class='pron-link'].
-        foreach (var node in divNode.SelectNodes("//*[@class='idioms']"))
+        foreach (var node in divNode.SelectNodes("//*[@class='idioms']")
+            ?? Enumerable.Empty<HtmlNode>())
         {
             node.Remove();
         }
 
-        foreach (var node in divNode.SelectNodes("//*[@class='dictlink-g']"))
+        foreach (var node in divNode.SelectNodes("//*[@class='dictlink-g']")
+            ?? Enumerable.Empty<HtmlNode>())
         {
             node.Remove();
         }
 
-        foreach (var node in divNode.SelectNodes("//*[@class='pron-link']"))
+        foreach (var node in divNode.SelectNodes("//*[@class='pron-link']")
+            ?? Enumerable.Empty<HtmlNode>())
         {
             node.Remove();
         }
 
         // Remove div[@id='ring-links-box'].
-        foreach (var node in divNode.SelectNodes("//*[@id='ring-links-box']"))
+        foreach (var node in divNode.SelectNodes("//*[@id='ring-links-box']")
+            ?? Enumerable.Empty<HtmlNode>())
         {
             node.Remove();
         }

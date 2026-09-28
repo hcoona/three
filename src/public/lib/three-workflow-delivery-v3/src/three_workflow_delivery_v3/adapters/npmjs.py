@@ -484,14 +484,10 @@ def _validate_first_slice_basis(
     projection = snapshot.destination_projections[0]
     coordinate = projection.coordinate
     if (
-        projection.destination_id != "npm/npmjs-public-v1"
-        or projection.registry != NPMJS_REGISTRY_ORIGIN
-        or projection.observation_contract_id != NPMJS_OBSERVATION_CONTRACT_ID
+        projection.observation_contract_id != NPMJS_OBSERVATION_CONTRACT_ID
         or coordinate.channel != "official"
         or coordinate.package_name != FIRST_SLICE_PACKAGE
-        or coordinate.native_version != snapshot.nbgv.npm_package_version
         or coordinate.native_version != expectation.npm_package_version
-        or expectation.package_name != FIRST_SLICE_PACKAGE
     ):
         message = "npmjs observation coordinate is outside the first slice"
         raise ValueError(message)

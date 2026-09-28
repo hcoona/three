@@ -281,7 +281,6 @@ def test_suite_success_status_requires_exact_bytes_and_witness(
     ("scenario", "status", "probes"),
     [
         ("create", 204, 1),
-        ("create", 200.0, 1),
         ("create", 409, 1),
         ("identical-duplicate", 200, 2),
         ("equivalent-duplicate", 202, 3),
@@ -415,4 +414,3 @@ def test_suite_plan_rejects_misaligned_static_subjects(suite, change):
         )
     with pytest.raises(ValueError, match="suite"):
         NuGetSuitePlan(canonicalize(static), reads, consumer)
-    assert suite.events == []

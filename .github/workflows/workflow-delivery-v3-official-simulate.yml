@@ -34,13 +34,13 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Normalize fixed request
         id: request
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release normalize-simulation-request \
             --repository "${GITHUB_REPOSITORY}" \
             --selected-ref "${GITHUB_REF}" \
@@ -88,11 +88,11 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Install exact toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           experimental: true
           install: true
@@ -105,7 +105,7 @@ jobs:
           digest-mismatch: error
       - name: Admit current Release Intent
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release admit-intent \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -116,7 +116,7 @@ jobs:
             --intent-artifact-digest "${{ needs.request.outputs.intent-artifact-digest }}"
       - name: Run Node Provider once
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 repository provide-node \
             --request-id "${{ needs.request.outputs.request-id }}" \
             --purpose "${WDV3_PURPOSE}" \
@@ -177,9 +177,9 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Download Release Intent by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -197,7 +197,7 @@ jobs:
       - name: Compile without rerunning Provider
         id: compile
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release compile-simulation-model \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -253,9 +253,9 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Download Release Intent by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -273,7 +273,7 @@ jobs:
       - name: Derive Simulation Identity
         id: identity
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release create-simulation-identity \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -327,11 +327,11 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Install exact toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           experimental: true
           install: true
@@ -359,7 +359,7 @@ jobs:
       - name: Close exact qualification Plan
         id: plan
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release plan-qualification \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -444,11 +444,11 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Install exact toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           experimental: true
           install: true
@@ -471,7 +471,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ needs.plan-simulation.outputs.tarball-artifact-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-build \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -506,7 +506,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ needs.plan-simulation.outputs.tarball-artifact-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release form-uploaded-artifact \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -596,11 +596,11 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Install exact toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           experimental: true
           install: true
@@ -621,7 +621,7 @@ jobs:
       - name: Run project-test mechanics
         id: test
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-project-test \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -675,11 +675,11 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Install exact toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           experimental: true
           install: true
@@ -719,7 +719,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ needs.build-tarball.outputs.tarball-artifact-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-artifact-contents \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -743,7 +743,7 @@ jobs:
         id: incomplete-contents
         if: needs.build-tarball.outputs.release-artifact-artifact-id == '' || needs.build-tarball.outputs.tarball-artifact-id == ''
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release form-incomplete-evidence \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -762,7 +762,7 @@ jobs:
         env:
           TARBALL_NAME: ${{ needs.build-tarball.outputs.tarball-artifact-name }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-install-import \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -786,7 +786,7 @@ jobs:
         id: incomplete-install
         if: needs.build-tarball.outputs.release-artifact-artifact-id == '' || needs.build-tarball.outputs.tarball-artifact-id == ''
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release form-incomplete-evidence \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -866,9 +866,9 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Download Qualification Snapshot by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -962,7 +962,7 @@ jobs:
           add_record artifact-contents-evidence ".wdv3/input/${{ needs.npm-artifact-qualification.outputs.contents-evidence-artifact-name }}" "${CONTENTS_DIGEST}" "${CONTENTS_ID}" "${CONTENTS_UPLOAD}"
           add_record install-import-evidence ".wdv3/input/${{ needs.npm-artifact-qualification.outputs.install-evidence-artifact-name }}" "${INSTALL_DIGEST}" "${INSTALL_ID}" "${INSTALL_UPLOAD}"
           add_record release-artifact ".wdv3/input/${{ needs.build-tarball.outputs.release-artifact-artifact-name }}" "${ARTIFACT_DIGEST}" "${ARTIFACT_ID}" "${ARTIFACT_UPLOAD}"
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release finalize-qualification \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1025,9 +1025,9 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Download Qualification Snapshot by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -1074,7 +1074,7 @@ jobs:
               --release-artifact-artifact-digest "${RELEASE_ARTIFACT_UPLOAD}"
             )
           fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release observe-npmjs \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1144,9 +1144,9 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Download Qualification Snapshot by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -1193,7 +1193,7 @@ jobs:
               --release-artifact-artifact-digest "${RELEASE_ARTIFACT_UPLOAD}"
             )
           fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release materialize-hypothetical-actions \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -1243,9 +1243,9 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Download Qualification Snapshot by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -1301,7 +1301,7 @@ jobs:
             )
           fi
           set +e
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release finalize-simulation \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \

@@ -150,22 +150,22 @@ controls:
     failure_mode: Research conclusions overstate evidence or expose unsafe experimental detail.
   - id: repository-record-validation
     state: current
-    class: procedural-review
-    enforcement: review-required
-    producer: Record author and independent reviewer executing applicable validation
+    class: mechanical
+    enforcement: advisory
+    producer: Record author executing the maintained repository record checker
     maintainer: Repository owner
     consumers:
       - Record authors and reviewers checking discovered records and their consumers
     governing_rules:
       - docs/governance/record-system.md#enforcement
       - docs/governance/checker-contract.md
-    invariant: Independently discovered scope receives schema, reference, namespace, portal and applicable HK-plan
-      validation; each result identifies the actual snapshot and limitations.
-    runner: agent-skill
+    invariant: Independently discovered scope receives bounded schema, binding, reference and portal validation against
+      explicit snapshots. Reports retain classifications, file identities, results and limitations; independent semantic
+      review and applicable HK-plan validation remain separate obligations.
+    runner: local-tool
     implementation:
-      kind: review-procedure
-      value: Execute the applicable checks defined in docs/governance/checker-contract.md and retain commands, snapshots
-        and results in the PR; no general checker or automatic CI schema/coverage gate is claimed.
+      kind: repository-path
+      value: eng/scripts/check_repository_records.py
     execution_points:
       - local-validation
     failure_mode: Catalog omissions, broken consumers or unexecuted checks are mistaken for complete validated coverage.

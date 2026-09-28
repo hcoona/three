@@ -50,16 +50,16 @@ jobs:
           )"
           echo "started-at=${started_at}" >> "${GITHUB_OUTPUT}"
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
           github-token: ''
       - name: Form exact candidate and comparison
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci candidate \
             --event-kind "${GITHUB_EVENT_NAME}" \
             --repository "${GITHUB_REPOSITORY}" \
@@ -101,17 +101,17 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Install exact toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           experimental: true
           install: true
       - name: Produce exact Provider Result
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 repository provide-node \
             --request-id "${WDV3_REQUEST_ID}" \
             --purpose "${WDV3_PURPOSE}" \
@@ -162,11 +162,11 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Install exact toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           experimental: true
           install: true
@@ -186,7 +186,7 @@ jobs:
           digest-mismatch: error
       - name: Admit downloaded payloads
         run: |
-          cli="uv run --python 3.13 --package ${WDV3_PACKAGE} three-workflow-delivery-v3 ci admit-payload"
+          cli="uv run --package ${WDV3_PACKAGE} three-workflow-delivery-v3 ci admit-payload"
           ${cli} \
             --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-request.json" \
             --expected-digest "${{ needs.discover-node.outputs.request-artifact-digest }}"
@@ -196,7 +196,7 @@ jobs:
       - name: Compile model and close Plan
         id: plan
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci plan \
             --request ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-request.json" \
             --provider-result ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json" \
@@ -247,11 +247,11 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          version: '0.12.7'
+          version: '0.12.17'
       - name: Install exact toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           experimental: true
           install: true
@@ -271,11 +271,11 @@ jobs:
           digest-mismatch: error
       - name: Admit root-HK inputs
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci admit-payload \
             --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
             --expected-digest "${{ needs.plan.outputs.plan-artifact-digest }}"
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci admit-payload \
             --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json" \
             --expected-digest "${{ needs.plan.outputs.provider-artifact-digest }}"
@@ -285,7 +285,7 @@ jobs:
         continue-on-error: true
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           actual_node="$(node --version)"
           actual_pnpm="$(pnpm --version)"
@@ -310,7 +310,7 @@ jobs:
           pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site \
             install --frozen-lockfile --ignore-scripts
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            uv run --python 3.13 python eng/scripts/workflow_delivery_v3_hk.py \
+            uv run python eng/scripts/workflow_delivery_v3_hk.py \
               --repository . --from-ref "${BASE_SHA}" --to-ref "${HEAD_SHA}" --files0 \
               -- mise exec -- hk --no-progress check \
               --skip-step static-reference-authority-preparation
@@ -325,7 +325,7 @@ jobs:
           if [[ "${{ needs.plan.outputs.root-hk-selected }}" == "true" ]]; then
             args=(--outcome "${{ steps.execute.outcome }}")
           fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci lane-result \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
             --plan-digest "${{ needs.plan.outputs.plan-digest }}" \
@@ -356,10 +356,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {fetch-depth: 0, persist-credentials: false, ref: '${{ github.sha }}'}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with: {version: '0.12.7'}
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with: {version: '0.12.17'}
       - name: Install exact toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with: {experimental: true, install: true}
       - name: Download Plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -376,7 +376,7 @@ jobs:
           fi
           for item in "${items[@]}"; do
             IFS=: read -r role digest <<< "${item}"
-            uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            uv run --package "${WDV3_PACKAGE}" \
               three-workflow-delivery-v3 ci admit-payload \
               --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${role}.json" \
               --expected-digest "${digest}"
@@ -385,7 +385,7 @@ jobs:
         if: needs.plan.outputs.project-build-selected == 'true'
         continue-on-error: true
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci node-adapter \
             --lane-id project-build \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
@@ -399,7 +399,7 @@ jobs:
           if [[ "${{ needs.plan.outputs.project-build-selected }}" == "true" ]]; then
             args=(--mechanical-result .wdv3/project-build-adapter.json)
           fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci lane-result \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
             --plan-digest "${{ needs.plan.outputs.plan-digest }}" \
@@ -424,10 +424,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {fetch-depth: 0, persist-credentials: false, ref: '${{ github.sha }}'}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with: {version: '0.12.7'}
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with: {version: '0.12.17'}
       - name: Install exact toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with: {experimental: true, install: true}
       - name: Download Plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -444,14 +444,14 @@ jobs:
           fi
           for item in "${items[@]}"; do
             IFS=: read -r role digest <<< "${item}"
-            uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci admit-payload \
+            uv run --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci admit-payload \
               --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${role}.json" --expected-digest "${digest}"
           done
       - name: Run project test Adapter
         if: needs.plan.outputs.project-test-selected == 'true'
         continue-on-error: true
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci node-adapter \
             --lane-id project-test \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
@@ -463,7 +463,7 @@ jobs:
         run: |
           args=()
           if [[ "${{ needs.plan.outputs.project-test-selected }}" == "true" ]]; then args=(--mechanical-result .wdv3/project-test-adapter.json); fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci lane-result \
+          uv run --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci lane-result \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
             --plan-digest "${{ needs.plan.outputs.plan-digest }}" --lane-id project-test "${args[@]}" \
             --output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-project-test-result.json"
@@ -486,10 +486,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {fetch-depth: 0, persist-credentials: false, ref: '${{ github.sha }}'}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with: {version: '0.12.7'}
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with: {version: '0.12.17'}
       - name: Install exact toolchain
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with: {experimental: true, install: true}
       - name: Download Plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -506,14 +506,14 @@ jobs:
           fi
           for item in "${items[@]}"; do
             IFS=: read -r role digest <<< "${item}"
-            uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci admit-payload \
+            uv run --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci admit-payload \
               --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${role}.json" --expected-digest "${digest}"
           done
       - name: Run npm artifact build Adapter
         if: needs.plan.outputs.npm-artifact-build-selected == 'true'
         continue-on-error: true
         run: |
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+          uv run --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci node-adapter \
             --lane-id npm-artifact-build \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
@@ -547,7 +547,7 @@ jobs:
               )
             fi
           fi
-          uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci lane-result \
+          uv run --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci lane-result \
             --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
             --plan-digest "${{ needs.plan.outputs.plan-digest }}" --lane-id npm-artifact-build "${args[@]}" \
             --output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-npm-artifact-build-result.json"
@@ -568,8 +568,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {fetch-depth: 0, persist-credentials: false, ref: '${{ github.sha }}'}
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with: {version: '0.12.7'}
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with: {version: '0.12.17'}
       - name: Download Plan
         if: always() && needs.plan.outputs.plan-artifact-id != ''
         continue-on-error: true
@@ -610,7 +610,7 @@ jobs:
           plan=".wdv3/final/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json"
           decision=".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-ci-slice-decision.json"
           summary=".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-ci-slice-summary.json"
-          cli=(uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3)
+          cli=(uv run --package "${WDV3_PACKAGE}" three-workflow-delivery-v3)
           "${cli[@]}" ci admit-payload --input "${plan}" --expected-digest "${PLAN_ARTIFACT_DIGEST}"
           args=()
           for item in "root-hk:${ROOT_DIGEST}" "project-build:${BUILD_DIGEST}" "project-test:${TEST_DIGEST}" "npm-artifact-build:${NPM_DIGEST}"; do

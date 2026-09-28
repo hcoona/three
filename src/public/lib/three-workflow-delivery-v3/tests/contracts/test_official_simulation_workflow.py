@@ -12,11 +12,11 @@ REPO_ROOT = Path(__file__).resolve().parents[6]
 WORKFLOW = (
     REPO_ROOT / ".github/workflows/workflow-delivery-v3-official-simulate.yml"
 )
-CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-UV = "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
-MISE = "jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518"
-UPLOAD = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
-DOWNLOAD = "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+CHECKOUT = "actions/checkout"
+UV = "astral-sh/setup-uv"
+MISE = "jdx/mise-action"
+UPLOAD = "actions/upload-artifact"
+DOWNLOAD = "actions/download-artifact"
 RETENTION_DAYS = 45
 EVIDENCE_COUNT = 4
 OPTIONAL_QUALIFICATION_DOWNLOADS = (
@@ -26,23 +26,24 @@ OPTIONAL_QUALIFICATION_DOWNLOADS = (
     "Download install-import Evidence by artifact ID",
     "Download Release Artifact record by artifact ID",
 )
-EXPECTED_NEEDS: dict[str, str | list[str] | None] = {
-    "request": None,
-    "discover-node": "request",
-    "compile-simulation-model": "discover-node",
-    "create-simulation-identity": "compile-simulation-model",
-    "plan-simulation": "create-simulation-identity",
-    "build-tarball": "plan-simulation",
-    "project-test": "plan-simulation",
-    "npm-artifact-qualification": "build-tarball",
-    "qualification-finalizer": [
+# These are immutable-input producers, not a complete job graph. GitHub's
+# needs context requires a direct dependency to consume their outputs.
+REQUIRED_INPUT_PRODUCERS: dict[str, tuple[str, ...]] = {
+    "discover-node": ("request",),
+    "compile-simulation-model": ("discover-node",),
+    "create-simulation-identity": ("compile-simulation-model",),
+    "plan-simulation": ("create-simulation-identity",),
+    "build-tarball": ("plan-simulation",),
+    "project-test": ("plan-simulation",),
+    "npm-artifact-qualification": ("build-tarball",),
+    "qualification-finalizer": (
         "build-tarball",
         "project-test",
         "npm-artifact-qualification",
-    ],
-    "observe-npmjs": "qualification-finalizer",
-    "materialize-hypothetical-actions": "observe-npmjs",
-    "simulation-finalizer": "materialize-hypothetical-actions",
+    ),
+    "observe-npmjs": ("qualification-finalizer",),
+    "materialize-hypothetical-actions": ("observe-npmjs",),
+    "simulation-finalizer": ("materialize-hypothetical-actions",),
 }
 EXPECTED_TIMEOUTS = {
     "request": 10,
@@ -117,14 +118,6 @@ def _uses_steps(document: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _raw_artifact_name(settings: dict[str, Any]) -> str:
-    """Model upload-artifact v7 archive:false physical naming."""
-    assert settings["archive"] is False
-    path = settings["path"]
-    assert isinstance(path, str)
-    return PurePosixPath(path).name
-
-
 def test_official_simulation_event_permissions_and_concurrency_are_exact() -> (
     None
 ):
@@ -148,22 +141,22 @@ def test_official_simulation_event_permissions_and_concurrency_are_exact() -> (
     assert "github.ref ==" not in raw
 
 
-def test_official_simulation_dag_runner_and_deadlines_are_exact() -> None:
-    """Pin the approved 12-job topology and LLD deadlines."""
+def test_simulation_preserves_input_dependencies_and_execution_limits() -> None:
+    """Keep input availability and the existing runner/resource constraints."""
     jobs = _document()["jobs"]
 
-    assert set(jobs) == set(EXPECTED_NEEDS)
-    for name, expected_needs in EXPECTED_NEEDS.items():
-        if expected_needs is None:
-            assert "needs" not in jobs[name]
-        else:
-            assert jobs[name]["needs"] == expected_needs
+    for name, producers in REQUIRED_INPUT_PRODUCERS.items():
+        needs = jobs[name].get("needs", [])
+        dependencies = {needs} if isinstance(needs, str) else set(needs)
+        assert set(producers) <= dependencies
+        assert set(producers) <= jobs.keys()
+    for name, timeout in EXPECTED_TIMEOUTS.items():
         assert jobs[name]["runs-on"] == "ubuntu-24.04"
-        assert jobs[name]["timeout-minutes"] == EXPECTED_TIMEOUTS[name]
+        assert jobs[name]["timeout-minutes"] == timeout
 
 
 def test_official_simulation_actions_and_checkouts_are_immutable() -> None:
-    """Use commit-5 full-SHA pins and exact selected-target checkouts."""
+    """Require full-SHA pins and exact selected-target checkouts."""
     document = _document()
     uses_steps = _uses_steps(document)
     uses_lines = [
@@ -177,15 +170,39 @@ def test_official_simulation_actions_and_checkouts_are_immutable() -> None:
 
     assert uses_lines
     assert all(pin.fullmatch(line) for line in uses_lines)
-    assert {step["uses"] for step in uses_steps} == {
+    assert {step["uses"].partition("@")[0] for step in uses_steps} == {
         CHECKOUT,
         UV,
         MISE,
         UPLOAD,
         DOWNLOAD,
     }
-    checkout_steps = [step for step in uses_steps if step["uses"] == CHECKOUT]
-    assert len(checkout_steps) == len(EXPECTED_NEEDS)
+    checkout_steps = [
+        step
+        for step in uses_steps
+        if step["uses"].partition("@")[0] == CHECKOUT
+    ]
+    # Each existing control/build consumer needs selected-revision code.
+    # Additional jobs need no checkout merely because they exist, but every
+    # checkout they do use must obey the same target/credential contract.
+    for name in (
+        "request",
+        "discover-node",
+        "compile-simulation-model",
+        "create-simulation-identity",
+        "plan-simulation",
+        "build-tarball",
+        "project-test",
+        "npm-artifact-qualification",
+        "qualification-finalizer",
+        "observe-npmjs",
+        "materialize-hypothetical-actions",
+        "simulation-finalizer",
+    ):
+        assert any(
+            step.get("uses", "").partition("@")[0] == CHECKOUT
+            for step in _steps(document["jobs"][name])
+        ), f"{name} requires the selected target"
     assert all(
         step["with"]
         == {
@@ -203,10 +220,14 @@ def test_official_simulation_uses_only_raw_id_bound_artifact_transport() -> (
     """Require exact immutable stock artifact settings in every job."""
     document = _document()
     upload_steps = [
-        step for step in _uses_steps(document) if step["uses"] == UPLOAD
+        step
+        for step in _uses_steps(document)
+        if step["uses"].partition("@")[0] == UPLOAD
     ]
     download_steps = [
-        step for step in _uses_steps(document) if step["uses"] == DOWNLOAD
+        step
+        for step in _uses_steps(document)
+        if step["uses"].partition("@")[0] == DOWNLOAD
     ]
     raw = WORKFLOW.read_text(encoding="utf-8")
 
@@ -221,7 +242,7 @@ def test_official_simulation_uses_only_raw_id_bound_artifact_transport() -> (
             if isinstance(step.get("id"), str)
         }
         for step in _steps(job):
-            if step.get("uses") != UPLOAD:
+            if step.get("uses", "").partition("@")[0] != UPLOAD:
                 continue
             settings = step["with"]
             assert settings["retention-days"] == RETENTION_DAYS
@@ -230,7 +251,9 @@ def test_official_simulation_uses_only_raw_id_bound_artifact_transport() -> (
             assert settings["include-hidden-files"] is True
             assert settings["if-no-files-found"] == "error"
             name = settings["name"]
-            assert _raw_artifact_name(settings) == name
+            path = settings["path"]
+            assert isinstance(path, str)
+            assert PurePosixPath(path).name == name
             tarball_name = (
                 "${{ needs.plan-simulation.outputs.tarball-artifact-name }}"
             )
@@ -251,9 +274,6 @@ def test_official_simulation_uses_only_raw_id_bound_artifact_transport() -> (
             assert "ra${GITHUB_RUN_ATTEMPT}" in command
             assert "digest" in command.lower()
             assert any(extension in command for extension in (".json", ".md"))
-    for step in upload_steps:
-        settings = step["with"]
-        assert _raw_artifact_name(settings) == settings["name"]
     assert download_steps
     for step in download_steps:
         settings = step["with"]
@@ -293,18 +313,6 @@ def test_official_simulation_uses_only_raw_id_bound_artifact_transport() -> (
         assert f".wdv3/input/{stale_basename}" not in raw
 
 
-def test_upload_artifact_v7_raw_mode_ignores_configured_name() -> None:
-    """Regress the v7 behavior that made fixed input basenames unsafe."""
-    settings = {
-        "name": "wdv3-release-simulation-request-r1-ra2-digest.json",
-        "path": ".wdv3/release-intent.json",
-        "archive": False,
-    }
-
-    assert _raw_artifact_name(settings) == "release-intent.json"
-    assert _raw_artifact_name(settings) != settings["name"]
-
-
 def test_build_is_uploaded_before_artifact_and_evidence_are_formed() -> None:
     """Run mechanics once, upload bytes, then bind upload metadata."""
     jobs = _document()["jobs"]
@@ -341,7 +349,6 @@ def test_build_is_uploaded_before_artifact_and_evidence_are_formed() -> None:
         'add_record release-artifact ".wdv3/input/'
         "${{ needs.build-tarball.outputs.release-artifact-artifact-name }}"
     ) in qualification_run
-    assert jobs["npm-artifact-qualification"]["needs"] == "build-tarball"
 
 
 def test_qualification_finalizer_optional_downloads_fail_closed() -> None:
@@ -353,7 +360,7 @@ def test_qualification_finalizer_optional_downloads_fail_closed() -> None:
 
     for name in OPTIONAL_QUALIFICATION_DOWNLOADS:
         step = _step(finalizer, name)
-        assert step["uses"] == DOWNLOAD
+        assert step["uses"].partition("@")[0] == DOWNLOAD
         assert step["if"].endswith(" != ''")
         assert "continue-on-error" not in step
         assert step["with"]["digest-mismatch"] == "error"

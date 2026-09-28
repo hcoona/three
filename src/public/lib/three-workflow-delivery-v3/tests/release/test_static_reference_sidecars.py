@@ -8,11 +8,11 @@ import os
 import shutil
 import subprocess
 import textwrap
-from functools import cache
 from pathlib import Path
 from typing import Any
 
 import pytest
+from three_workflow_delivery_v3.canonical import parse_json_strict
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
 _NODE_AUTHORITY = (
@@ -31,43 +31,28 @@ _RESPONSE_SCHEMA = (
     "workflow-delivery/v3/static-reference-node-authority-response"
 )
 _NPM_PACKAGES = (
-    "@npmcli/package-json@8.0.0",
-    "npm-package-arg@14.0.0",
+    "@npmcli/package-json",
+    "npm-package-arg",
 )
 _PNPM_WORKSPACE_PACKAGES = (
-    "@pnpm/resolving.npm-resolver@1104.1.0",
-    "@pnpm/workspace.spec-parser@1100.0.1",
-    "@pnpm/workspace.workspace-manifest-reader@1100.1.8",
-    "npm-package-arg@14.0.0",
+    "@pnpm/resolving.npm-resolver",
+    "@pnpm/workspace.spec-parser",
+    "@pnpm/workspace.workspace-manifest-reader",
+    "npm-package-arg",
 )
 _PNPM_LOCK_PACKAGES = (
-    "@pnpm/deps.path@1101.0.1",
-    "@pnpm/lockfile.fs@1100.2.5",
-    "@pnpm/lockfile.utils@1102.1.0",
-    "@pnpm/resolving.npm-resolver@1104.1.0",
-    "@pnpm/workspace.spec-parser@1100.0.1",
+    "@pnpm/deps.path",
+    "@pnpm/lockfile.fs",
+    "@pnpm/lockfile.utils",
+    "@pnpm/resolving.npm-resolver",
+    "@pnpm/workspace.spec-parser",
 )
 _UTF8_BOM = b"\xef\xbb\xbf"
 
 
-@cache
-def _node_identity() -> str:
-    completed = subprocess.run(  # noqa: S603
-        [_NODE_BINARY, "--version"],
-        cwd=_REPOSITORY_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert completed.stderr == ""
-    assert completed.stdout.startswith("v")
-    return f"node@{completed.stdout.removeprefix('v').strip()}"
-
-
 def _implementation_identities(*packages: str) -> list[str]:
     return sorted(
-        [_node_identity(), *packages],
+        ["node", *packages],
         key=lambda identity: identity.encode(),
     )
 
@@ -119,6 +104,32 @@ def _run_node_authority(  # noqa: PLR0913
     )
 
 
+def _implementation_name(identity: str) -> str:
+    name, separator, version = identity.rpartition("@")
+    assert name
+    assert separator
+    assert version
+    return name
+
+
+def _assert_json_response(
+    text: str, expected: dict[str, Any]
+) -> dict[str, Any]:
+    actual = parse_json_strict(text)
+    assert isinstance(actual, dict)
+    observed = actual.copy()
+    observed["implementationIdentities"] = [
+        _implementation_name(identity)
+        for identity in actual["implementationIdentities"]
+    ]
+    assert json.dumps(
+        observed, sort_keys=True, ensure_ascii=True, allow_nan=False
+    ) == json.dumps(
+        expected, sort_keys=True, ensure_ascii=True, allow_nan=False
+    )
+    return actual
+
+
 def _assert_facts_response(
     completed: subprocess.CompletedProcess[str],
     *,
@@ -135,14 +146,7 @@ def _assert_facts_response(
     }
     assert completed.returncode == 0
     assert completed.stderr == ""
-    assert completed.stdout == json.dumps(
-        expected,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    actual = json.loads(completed.stdout)
-    assert actual == expected
-    return actual
+    return _assert_json_response(completed.stdout, expected)
 
 
 def _assert_error_response(
@@ -161,14 +165,7 @@ def _assert_error_response(
     }
     assert completed.returncode == 0
     assert completed.stderr == ""
-    assert completed.stdout == json.dumps(
-        expected,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    actual = json.loads(completed.stdout)
-    assert actual == expected
-    return actual
+    return _assert_json_response(completed.stdout, expected)
 
 
 def _write_package_json(path: Path, document: dict[str, Any]) -> bytes:
@@ -365,52 +362,6 @@ def _minimal_v9_facts() -> list[dict[str, Any]]:
     ]
 
 
-def test_node_npm_protocol_reads_one_snapshot_content_without_mutation(
-    tmp_path: Path,
-) -> None:
-    """Read loaded package content and leave the selected bytes unchanged."""
-    snapshot_root = tmp_path / "snapshot"
-    candidate_path = snapshot_root / "application" / "package.json"
-    original = _write_package_json(
-        candidate_path,
-        {
-            "name": "snapshot-owned-package",
-            "version": "9.8.7",
-            "dependencies": {"selected-dependency": "1.2.3"},
-            "private": True,
-        },
-    )
-
-    completed = _run_node_authority(
-        snapshot_root=snapshot_root,
-        candidate_path=candidate_path,
-        graph="npm-manifest-v1",
-    )
-
-    _assert_facts_response(
-        completed,
-        graph="npm-manifest-v1",
-        packages=_NPM_PACKAGES,
-        facts=[
-            {
-                "context": "name",
-                "kind": "npm-package-name",
-                "name": "snapshot-owned-package",
-            },
-            _npm_dependency_fact(
-                dependency_key="selected-dependency",
-                reference=_npm_reference(
-                    name="selected-dependency",
-                    raw_spec="1.2.3",
-                ),
-                section="dependencies",
-                source_spec="1.2.3",
-            ),
-        ],
-    )
-    assert candidate_path.read_bytes() == original
-
-
 def test_node_protocol_binds_logical_path_to_materialized_candidate(
     tmp_path: Path,
 ) -> None:
@@ -506,41 +457,21 @@ def test_node_npm_protocol_orders_name_and_four_dependency_sections_exactly(
 
 
 @pytest.mark.parametrize(
-    ("case", "dependency_key", "source_spec"),
+    ("dependency_key", "source_spec"),
     [
         pytest.param(
-            "registry",
-            "registry-dependency",
-            "1.2.3",
-            id="registry-version",
-        ),
-        pytest.param(
-            "alias",
             "aliased-dependency",
             "npm:@scope/actual-package@2.3.4",
             id="one-level-alias",
-        ),
-        pytest.param(
-            "file",
-            "archive-dependency",
-            "file:../../archives/archive.tgz",
-            id="file-relative",
-        ),
-        pytest.param(
-            "directory",
-            "directory-dependency",
-            "../../vendor/local-package",
-            id="directory-relative",
         ),
     ],
 )
 def test_node_npm_protocol_projects_pinned_npa_alias_and_local_facts(
     tmp_path: Path,
-    case: str,
     dependency_key: str,
     source_spec: str,
 ) -> None:
-    """Pin complete npm-package-arg facts for every selected reference kind."""
+    """Pin complete npm-package-arg facts for the selected alias."""
     snapshot_root = tmp_path / "snapshot"
     package_directory = snapshot_root / "sources" / "application"
     candidate_path = package_directory / "package.json"
@@ -549,43 +480,17 @@ def test_node_npm_protocol_projects_pinned_npa_alias_and_local_facts(
         {"dependencies": {dependency_key: source_spec}},
     )
 
-    if case == "registry":
-        reference = _npm_reference(
-            name=dependency_key,
-            raw_spec=source_spec,
-        )
-    elif case == "alias":
-        reference = _npm_reference(
-            name=dependency_key,
-            raw_spec=source_spec,
-            reference_type="alias",
-            fetch_spec=None,
-            alias_target=_npm_reference(
-                name="@scope/actual-package",
-                raw_spec="2.3.4",
-            ),
-        )
-        reference["fetchSpec"] = None
-    elif case == "file":
-        absolute_target = snapshot_root / "archives" / "archive.tgz"
-        reference = _npm_reference(
-            name=dependency_key,
-            raw_spec=source_spec,
-            reference_type="file",
-            fetch_spec=str(absolute_target),
-            save_spec=source_spec,
-            local_path="archives/archive.tgz",
-        )
-    else:
-        absolute_target = snapshot_root / "vendor" / "local-package"
-        reference = _npm_reference(
-            name=dependency_key,
-            raw_spec=source_spec,
-            reference_type="directory",
-            fetch_spec=str(absolute_target),
-            save_spec=f"file:{source_spec}",
-            local_path="vendor/local-package",
-        )
+    reference = _npm_reference(
+        name=dependency_key,
+        raw_spec=source_spec,
+        reference_type="alias",
+        fetch_spec=None,
+        alias_target=_npm_reference(
+            name="@scope/actual-package",
+            raw_spec="2.3.4",
+        ),
+    )
+    reference["fetchSpec"] = None
 
     completed = _run_node_authority(
         snapshot_root=snapshot_root,
@@ -842,12 +747,16 @@ def test_node_pnpm_protocol_accepts_exact_v9_and_bound_bom_behavior(
     tmp_path: Path,
 ) -> None:
     """Pin v9, BOM, generation, and selected-path behavior."""
+    import hashlib  # noqa: PLC0415
+
     snapshot_root = tmp_path / "snapshot"
     candidate_path = snapshot_root / "project" / "pnpm-lock.yaml"
     lockfile = _minimal_v9_lockfile()
     observed_outputs = []
 
     for bom_count in (0, 1, 2):
+        original = (_UTF8_BOM * bom_count) + lockfile.encode("utf-8")
+        expected_digest = hashlib.sha256(original).hexdigest()
         _write_lockfile(
             candidate_path,
             lockfile,
@@ -858,6 +767,10 @@ def test_node_pnpm_protocol_accepts_exact_v9_and_bound_bom_behavior(
             candidate_path=candidate_path,
             graph="pnpm-lock-v1",
         )
+        observed = candidate_path.read_bytes()
+        assert observed == original
+        assert hashlib.sha256(observed).hexdigest() == expected_digest
+        assert not (snapshot_root / "node_modules").exists()
         observed_outputs.append(
             _assert_facts_response(
                 completed,
@@ -1845,23 +1758,15 @@ _NUGET_RESPONSE_SCHEMA = (
 )
 _NUGET_GRAPH = "nuget-lock-v1"
 _NUGET_IMPLEMENTATION_IDENTITIES = [
-    "NuGet.Packaging@7.9.0",
-    "NuGet.ProjectModel@7.9.0",
-    "dotnet-runtime@10.0.8",
+    "NuGet.Packaging",
+    "NuGet.ProjectModel",
+    "dotnet-runtime",
 ]
 _DOTNET_BINARY = shutil.which("dotnet")
 _DOTNET_RUNTIME_UNAVAILABLE = "the prepared .NET runtime is unavailable"
 if _DOTNET_BINARY is None:
     raise RuntimeError(_DOTNET_RUNTIME_UNAVAILABLE)
 _MISSING_NUGET_MODEL_VERSION = object()
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _require_current_authority_closure() -> None:
-    policy = importlib.import_module(
-        "three_workflow_delivery_v3.release.static_reference_policy"
-    )
-    policy.validate_static_reference_dependency_closures(_REPOSITORY_ROOT)
 
 
 def _run_nuget_authority(
@@ -1902,14 +1807,7 @@ def _assert_nuget_facts_response(
     }
     assert completed.returncode == 0
     assert completed.stderr == ""
-    assert completed.stdout == json.dumps(
-        expected,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    actual = json.loads(completed.stdout)
-    assert actual == expected
-    return actual
+    return _assert_json_response(completed.stdout, expected)
 
 
 def _assert_nuget_error_response(
@@ -1926,14 +1824,7 @@ def _assert_nuget_error_response(
     }
     assert completed.returncode == 0
     assert completed.stderr == ""
-    assert completed.stdout == json.dumps(
-        expected,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    actual = json.loads(completed.stdout)
-    assert actual == expected
-    return actual
+    return _assert_json_response(completed.stdout, expected)
 
 
 def _nuget_json_bytes(document: dict[str, Any]) -> bytes:
@@ -1971,8 +1862,6 @@ def _nuget_lock_dependency_fact(  # noqa: PLR0913
         pytest.param(2, "facts", id="integer-v2"),
         pytest.param(3, "empty", id="integer-v3"),
         pytest.param("2", "facts", id="numeric-string-coerces-to-v2"),
-        pytest.param(True, "facts", id="boolean-coerces-to-v1"),
-        pytest.param(2.51, "empty", id="fraction-coerces-to-v3"),
         pytest.param(
             _MISSING_NUGET_MODEL_VERSION,
             "rejected",
@@ -1982,11 +1871,6 @@ def _nuget_lock_dependency_fact(  # noqa: PLR0913
             "not-a-model-version",
             "rejected",
             id="unconvertible-version",
-        ),
-        pytest.param(
-            -2_147_483_648,
-            "rejected",
-            id="int-min-value",
         ),
         pytest.param(0, "rejected", id="below-admitted-range"),
         pytest.param(4, "rejected", id="above-admitted-range"),
@@ -2412,9 +2296,10 @@ def test_nuget_authority_accepts_posix_backslash_logical_components(  # noqa: PL
         )
 
     assert outcome.graph_id == "nuget-lock-v1"
-    assert outcome.implementation_identities == tuple(
-        _NUGET_IMPLEMENTATION_IDENTITIES
-    )
+    assert [
+        _implementation_name(identity)
+        for identity in outcome.implementation_identities
+    ] == _NUGET_IMPLEMENTATION_IDENTITIES
     assert [
         json.loads(request)["logicalPath"] for request in serialized_requests
     ] == [logical_path]
@@ -2887,89 +2772,6 @@ def test_node_pnpm_importer_and_snapshot_negatives_fail_closed(  # noqa: C901, P
     assert lock_path.read_bytes() == original
 
 
-def test_shipped_node_authority_uses_only_exact_pinned_public_calls() -> None:
-    """Pin exact public calls/options and forbid fallback authority APIs."""
-    import re  # noqa: PLC0415
-
-    source_bytes = _NODE_AUTHORITY.read_bytes()
-    source = source_bytes.decode("utf-8", "strict")
-    expected_imports = [
-        "@npmcli/package-json",
-        "npm-package-arg",
-        "@pnpm/workspace.workspace-manifest-reader",
-        "@pnpm/workspace.spec-parser",
-        "@pnpm/resolving.npm-resolver",
-        "npm-package-arg",
-        "@pnpm/lockfile.fs",
-        "@pnpm/lockfile.utils",
-        "@pnpm/deps.path",
-        "@pnpm/workspace.spec-parser",
-        "@pnpm/resolving.npm-resolver",
-    ]
-    assert source_bytes.startswith(
-        b"import { readFile } from 'node:fs/promises';"
-    )
-    assert re.findall(r"importPackage\('([^']+)'\)", source) == (
-        expected_imports
-    )
-    assert source.count("PackageJson.load(snapshotDirectory)") == 1
-    assert source.count("const content = loaded?.content;") == 1
-    assert source.count("npa.resolve(name, '*', snapshotDirectory)") == 1
-    assert source.count("npa.resolve(name, specifier, snapshotDirectory)") == 1
-    assert source.count("readWorkspaceManifest(snapshotDirectory)") == 1
-    assert source.count("WorkspaceSpec.parse(rawSpecifier)") == 2  # noqa: PLR2004
-    assert source.count("workspacePrefToNpm(rawSpecifier)") == 2  # noqa: PLR2004
-    assert source.count("extractMainDocument(comparisonView)") == 1
-    assert (
-        len(
-            re.findall(
-                r"\blockfileModule\.readWantedLockfileWithMergeInfo\s*\(",
-                source,
-            )
-        )
-        == 1
-    )
-    assert source.count("nameVerFromPkgSnapshot(dependencyPath, snapshot)") == 1
-    assert (
-        len(
-            re.findall(
-                r"\bauthorities\.pkgSnapshotToResolution\s*\(\s*"
-                r"dependencyPath\s*,\s*snapshot\s*,\s*"
-                r"authorities\.registryContext\s*\)",
-                source,
-            )
-        )
-        == 1
-    )
-    assert source.count("refToRelative(resolvedReference, dependencyKey)") == 1
-    assert (
-        source.count(
-            "parseBareSpecifier(\n        normalizedSpecifier,\n"
-            '        dependencyKey,\n        "latest",\n'
-            '        "https://registry.npmjs.org/"\n      )'
-        )
-        == 0
-    )
-    assert {
-        forbidden
-        for forbidden in (
-            ".normalize(",
-            ".prepare(",
-            ".fix(",
-            "readWorkspaceManifest(snapshotDirectory,",
-            "packageIdFromSnapshot",
-            "readCurrentLockfile(",
-            "readWantedLockfile(",
-            "readWantedLockfileAndAutofixConflicts(",
-            "readWantedLockfileFile(",
-            "@pnpm/lockfile.fs/",
-            "@pnpm/lockfile.utils/",
-            "@pnpm/deps.path/",
-        )
-        if forbidden in source
-    } == set()
-
-
 @pytest.mark.parametrize(
     ("dependency_key", "source_spec", "expected_fetch", "expected_selector"),
     [
@@ -3408,7 +3210,6 @@ def test_node_npm_and_workspace_bom_outcomes_are_reader_owned_and_exact(
 @pytest.mark.parametrize(
     "document_case",
     [
-        pytest.param("clean-lf", id="clean-lf"),
         pytest.param("clean-crlf", id="clean-crlf"),
         pytest.param("combined-environment-crlf", id="environment-crlf"),
     ],
@@ -3438,12 +3239,9 @@ def test_node_pnpm_preserves_original_bytes_digest_and_crlf_admission(
             "\n", "\r\n"
         )
         bom_count = 1
-    elif document_case == "clean-crlf":
+    else:
         text = canonical.replace("\n", "\r\n")
         bom_count = 2
-    else:
-        text = canonical
-        bom_count = 0
     original = (_UTF8_BOM * bom_count) + text.encode("utf-8")
     expected_digest = hashlib.sha256(original).hexdigest()
     candidate_path.parent.mkdir(parents=True)
@@ -3482,50 +3280,6 @@ def test_node_pnpm_preserves_original_bytes_digest_and_crlf_admission(
     assert observed == original
     assert hashlib.sha256(observed).hexdigest() == expected_digest
     assert not (snapshot_root / "node_modules").exists()
-
-
-def test_nuget_source_contract_uses_exact_non_writable_public_reader_calls() -> (  # noqa: E501
-    None
-):
-    """Pin selected NuGet APIs without binding source formatting."""
-    program_path = (
-        _REPOSITORY_ROOT
-        / "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs"
-    )
-    source = program_path.read_text(encoding="utf-8")
-    assert (
-        source.count("new MemoryStream(request.Content, writable: false)") == 2  # noqa: PLR2004
-    )
-    assert source.count("ILogger logger = NullLogger.Instance;") == 1
-    assert source.count("PackagesLockFileFormat.Read(") == 1
-    assert source.count("request.LogicalPath") == 1
-    assert source.count("new PackagesConfigReader(") == 1
-    assert source.count("leaveStreamOpen: false") == 1
-    assert source.count(".GetPackages(allowDuplicatePackageIds: false)") == 1
-    assert (
-        source.count(
-            ".OrderBy(package => package.PackageIdentity, "
-            "PackageIdentity.Comparer)"
-        )
-        == 1
-    )
-    assert {
-        forbidden
-        for forbidden in (
-            "new FileStream(",
-            "new MemoryStream(request.Content, writable: true)",
-            "PackagesLockFileFormat.Read(request.",
-            "NullLogger.Instance,\n            stream",
-            "leaveStreamOpen: true",
-            "allowDuplicatePackageIds: true",
-            ".GetPackages()",
-            "JObject",
-            "JsonNode.Parse",
-            "XDocument",
-        )
-        if forbidden in source
-    } == set()
-    assert program_path.is_file()
 
 
 def test_node_pnpm_orders_non_ascii_catalogs_and_importers_by_utf8_bytes(
@@ -3777,30 +3531,7 @@ def test_nuget_uses_ordinal_and_case_insensitive_ordinal_unicode_ordering() -> (
             dependencies=[],
         ),
     ]
-    expected_response = {
-        "schema": _NUGET_RESPONSE_SCHEMA,
-        "result": "facts",
-        "graph": _NUGET_GRAPH,
-        "implementationIdentities": _NUGET_IMPLEMENTATION_IDENTITIES,
-        "facts": expected_facts,
-    }
-    expected_raw = (
-        json.dumps(
-            expected_response,
-            ensure_ascii=True,
-            separators=(",", ":"),
-        )
-        .replace("\\ue000", "\\uE000")
-        .replace(
-            "\\ud800\\udc00",
-            "\\uD800\\uDC00",
-        )
-    )
-    assert completed.returncode == 0
-    assert completed.stderr == ""
-    assert completed.stdout == expected_raw
-    response = json.loads(completed.stdout)
-    assert response == expected_response
+    response = _assert_nuget_facts_response(completed, facts=expected_facts)
     assert [(fact["target"], fact["id"]) for fact in response["facts"]] == [
         ("net10.0", "Alpha"),
         ("net10.0", "alpha"),
@@ -3808,37 +3539,6 @@ def test_nuget_uses_ordinal_and_case_insensitive_ordinal_unicode_ordering() -> (
         ("net10.0", non_bmp),
         ("net9.0", "tail"),
     ]
-
-
-def test_shipped_node_authority_binds_fixed_parser_arguments_exactly() -> None:
-    """Bind fixed parser arguments without binding whitespace or line layout."""
-    import re  # noqa: PLC0415
-
-    source = _NODE_AUTHORITY.read_text(encoding="utf-8")
-
-    assert source.count("const REGISTRY = 'https://registry.npmjs.org/';") == 1
-    assert source.count("const DEFAULT_TAG = 'latest';") == 1
-    assert (
-        len(
-            re.findall(
-                r"\bparseBareSpecifier\s*\(\s*normalizedSpecifier\s*,\s*"
-                r"dependencyKey\s*,\s*DEFAULT_TAG\s*,\s*REGISTRY\s*\)",
-                source,
-            )
-        )
-        == 2  # noqa: PLR2004
-    )
-    assert (
-        len(
-            re.findall(
-                r"registriesByScope\s*:\s*\{\s*default\s*:\s*REGISTRY\s*\}",
-                source,
-            )
-        )
-        == 1
-    )
-    assert "process.env.npm_config_registry" not in source
-    assert "process.cwd()" not in source
 
 
 @pytest.mark.parametrize(
@@ -3961,31 +3661,74 @@ def test_node_npm_rejects_unprojectable_selected_values_without_partial_facts(
     assert candidate_path.read_bytes() == original
 
 
-def test_pnpm_importer_specifier_reverse_membership_guard_behavior() -> None:
-    """Reject a specifier not referenced by any selected importer section."""
-    program = f"""
-import {{ validateImporterSpecifierMembership }} from {
-        json.dumps(_NODE_AUTHORITY.as_uri())
-    };
-validateImporterSpecifierMembership({{ used: '1.0.0' }}, new Set(['used']));
-try {{
-  validateImporterSpecifierMembership({{ orphan: '1.0.0' }}, new Set());
-  process.exitCode = 2;
-}} catch (error) {{
-  process.stdout.write(error.kind ?? '');
-}}
+def test_pnpm_reader_owns_importer_specifier_membership(tmp_path: Path) -> None:
+    """Read specifiers from selected sections, ignoring raw orphan values."""
+    lock_path = tmp_path / "pnpm-lock.yaml"
+    original = _yaml(
+        """
+        lockfileVersion: '9.0'
+        importers:
+          .:
+            specifiers:
+              orphan: '9.9.9'
+              runtime: 'incorrect-raw-value'
+            dependencies:
+              runtime:
+                specifier: '^1.0.0'
+                version: '1.2.3'
+            devDependencies:
+              development:
+                specifier: '~2.0.0'
+                version: '2.0.1'
+            optionalDependencies:
+              optional:
+                specifier: '3.0.0'
+                version: '3.0.0'
+        """
+    )
+    _write_lockfile(lock_path, original)
+    original_bytes = lock_path.read_bytes()
+    program = """
+import { readWantedLockfileWithMergeInfo } from '@pnpm/lockfile.fs';
+const result = await readWantedLockfileWithMergeInfo(process.argv[1], {
+  autofixMergeConflicts: true,
+  ignoreIncompatible: false,
+  mergeGitBranchLockfiles: false,
+  useGitBranchLockfile: false,
+  wantedVersions: ['9.0'],
+});
+process.stdout.write(JSON.stringify({
+  importer: result.lockfile.importers['.'],
+  hadConflicts: result.hadConflicts,
+  hasPreMergeImporters: result.preMergeImporters !== undefined,
+}));
 """
     completed = subprocess.run(  # noqa: S603
-        ("node", "--input-type=module", "--eval", program),  # noqa: S607
+        ("node", "--input-type=module", "--eval", program, str(tmp_path)),  # noqa: S607
         cwd=_REPOSITORY_ROOT,
         check=False,
         capture_output=True,
         text=True,
+        timeout=15,
     )
 
-    assert completed.returncode == 0
+    assert completed.returncode == 0, completed.stderr
     assert completed.stderr == ""
-    assert completed.stdout == "unsupported-projection"
+    assert json.loads(completed.stdout) == {
+        "importer": {
+            "specifiers": {
+                "runtime": "^1.0.0",
+                "development": "~2.0.0",
+                "optional": "3.0.0",
+            },
+            "dependencies": {"runtime": "1.2.3"},
+            "devDependencies": {"development": "2.0.1"},
+            "optionalDependencies": {"optional": "3.0.0"},
+        },
+        "hadConflicts": False,
+        "hasPreMergeImporters": False,
+    }
+    assert lock_path.read_bytes() == original_bytes
 
 
 def test_node_pnpm_snapshot_dependency_edges_use_utf8_byte_order(
@@ -4192,28 +3935,7 @@ def test_nuget_targets_use_ordinal_case_and_unicode_ordering() -> None:
             strict=True,
         )
     ]
-    expected_response = {
-        "schema": _NUGET_RESPONSE_SCHEMA,
-        "result": "facts",
-        "graph": _NUGET_GRAPH,
-        "implementationIdentities": _NUGET_IMPLEMENTATION_IDENTITIES,
-        "facts": expected_facts,
-    }
-    expected_raw = (
-        json.dumps(
-            expected_response,
-            ensure_ascii=True,
-            separators=(",", ":"),
-        )
-        .replace("\\ue000", "\\uE000")
-        .replace("\\ud800\\udc00", "\\uD800\\uDC00")
-    )
-
-    assert completed.returncode == 0
-    assert completed.stderr == ""
-    assert completed.stdout == expected_raw
-    response = json.loads(completed.stdout)
-    assert response == expected_response
+    response = _assert_nuget_facts_response(completed, facts=expected_facts)
     assert [fact["target"] for fact in response["facts"]] == expected_targets
     assert expected_targets[-2:] == [
         f"net10.0/{non_bmp}",

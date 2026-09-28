@@ -16,9 +16,6 @@ from pathlib import Path
 import pytest
 import yaml
 from three_workflow_delivery_v3 import cli
-from three_workflow_delivery_v3.adapters.nuget_github_packages import (
-    NUGET_PYTHON_VERSION,
-)
 
 ROOT = Path(__file__).resolve().parents[6]
 CALLER_PATH = ".github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml"
@@ -26,8 +23,7 @@ CALLEE_PATH = ".github/workflows/workflow-delivery-v3-nuget-live-attempt.yml"
 SHA = "a" * 40
 RETENTION_DAYS = 45
 INVOCATION = (
-    "uv run --python 3.13.12 --package $env:WDV3_PACKAGE "
-    "three-workflow-delivery-v3 @arguments"
+    "uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments"
 )
 
 
@@ -177,7 +173,7 @@ def test_nuget_workflow_uses_pinned_native_python(workflows):
             source = step.get("run", "")
             if "three-workflow-delivery-v3 @arguments" in source:
                 invocations.append(source)
-                assert f"--python {NUGET_PYTHON_VERSION} " in source
+                assert "--python" not in source
                 assert INVOCATION in source
     assert invocations
 

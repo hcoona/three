@@ -27,7 +27,7 @@ jobs:
       - name: Install pinned uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          version: 0.12.7
+          version: 0.12.17
       - name: Normalize native live request
         id: normalize
         run: |
@@ -52,7 +52,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind intent payload identity
@@ -105,7 +105,7 @@ jobs:
       - name: Install pinned uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          version: 0.12.7
+          version: 0.12.17
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -164,7 +164,7 @@ jobs:
       - name: Install pinned uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          version: 0.12.7
+          version: 0.12.17
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -224,7 +224,7 @@ jobs:
             '--purpose',
             'live-release'
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Restore pinned NBGV tooling
@@ -265,7 +265,7 @@ jobs:
             '0',
             '--no-persist-credentials'
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind provider payload identity
@@ -316,7 +316,7 @@ jobs:
       - name: Install pinned uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          version: 0.12.7
+          version: 0.12.17
       - name: Download immutable inputs by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -365,7 +365,7 @@ jobs:
             '--github-output',
             $env:GITHUB_OUTPUT
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -ne 0) { exit $commandStatus }
       - name: Bind repository-model payload identity
@@ -420,7 +420,7 @@ jobs:
       - name: Install pinned uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          version: 0.12.7
+          version: 0.12.17
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
@@ -501,7 +501,7 @@ jobs:
             '--github-token',
             $env:GITHUB_TOKEN
           )
-          uv run --python 3.13.12 --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
+          uv run --package $env:WDV3_PACKAGE three-workflow-delivery-v3 @arguments
           $commandStatus = $LASTEXITCODE
           if ($commandStatus -notin @(0, 1)) { exit $commandStatus }
           $decision = Get-Content -LiteralPath '.wdv3/eligibility.json' -Raw | ConvertFrom-Json

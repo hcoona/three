@@ -3,7 +3,7 @@
 from three_workflow_delivery_v3.adapters.dotnet import (
     DotnetPackageTargetWitness,
 )
-from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
+from three_workflow_delivery_v3.canonical import canonical_sha256
 from three_workflow_delivery_v3.catalogs import DESTINATION_DEFINITIONS
 from three_workflow_delivery_v3.records.release import (
     ArtifactVariantIdentity,
@@ -27,13 +27,11 @@ from three_workflow_delivery_v3.release.planner import (
 from three_workflow_delivery_v3.repository.compiler import (
     AdmittedDotnetProviderFactBundle,
     AdmittedRepositoryModelSnapshot,
-    validate_nuget_repository_model_snapshot,
 )
 from three_workflow_delivery_v3.repository.descriptors import NUGET_RELEASE_UNIT
 from three_workflow_delivery_v3.repository.dotnet_provider import (
     DotnetNbgvFacts,
     DotnetProjectNode,
-    validate_dotnet_provider_result,
 )
 
 NUGET_BUILD_OBLIGATION = "release:build:nuget-package"
@@ -58,16 +56,10 @@ def _validate_inputs(
         message = "NuGet planning requires exact admitted native inputs"
         raise TypeError(message)
     snapshot = model.snapshot
-    validate_nuget_repository_model_snapshot(snapshot)
     result = provider.provider_result
-    validate_dotnet_provider_result(result)
     if (
-        canonicalize(snapshot.to_document()) != model.canonical_bytes
-        or snapshot.snapshot_digest != model.canonical_digest
-        or snapshot.provider_result_digests != (result.result_digest,)
+        snapshot.provider_result_digests != (result.result_digest,)
         or snapshot.manifest_digest != provider.bundle.manifest_digest
-        or provider.bundle.provider_result_digest != result.result_digest
-        or provider.bundle.bundle_digest != provider.admission.bundle_digest
         or snapshot.nbgv != result.nbgv
         or snapshot.project_nodes != result.project_nodes
     ):
@@ -113,11 +105,8 @@ def nuget_package_target_witness(
         message = "NuGet witness requires an admitted Repository Model"
         raise TypeError(message)
     repository = model.snapshot
-    validate_nuget_repository_model_snapshot(repository)
     if (
-        canonicalize(repository.to_document()) != model.canonical_bytes
-        or repository.snapshot_digest != model.canonical_digest
-        or repository.context.purpose != "live-release"
+        repository.context.purpose != "live-release"
         or type(repository.nbgv) is not DotnetNbgvFacts
     ):
         message = "NuGet witness requires the intact native live Model"

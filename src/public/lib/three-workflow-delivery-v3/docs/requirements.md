@@ -52,7 +52,7 @@ claims, and destination API contracts. Workflow Delivery must validate bindings
 that it creates, but it must not reimplement a lower layer merely to prove the
 lower layer's own contract.
 
-For destinations other than NuGet, live registry publication may rely on a
+For destinations other than the NuGet and Python slices below, live registry publication may rely on a
 documented destination contract that version creation is atomic and
 non-overwriting and that exact package state is
 sufficiently durable and observable. Destination Adapter acceptance tests must
@@ -65,6 +65,10 @@ NuGet follows the dependency and evidence basis in
 [`WD-NUGET-006` and `WD-NUGET-007`](#nuget-second-slice), including bounded
 native acceptance without a separate provider-statement prerequisite. Missing
 or conflicting evidence required by those requirements keeps NuGet blocked.
+
+Python follows the separately owner-confirmed file-level dependency and
+evidence basis in [`WD-PY-006`](#python-smoke-slice). It does not assume atomic
+creation of a complete two-file release or inherit NuGet's service evidence.
 
 If a required guarantee is unavailable at the layer that must own it, the
 affected capability is unsupported or blocked. Application logic must not
@@ -141,14 +145,17 @@ isolation are separate authority boundaries and remain unchanged.
   active Project Node, Release Unit, and repository obligation.
 - **WD-CI-010:** Whenever root HK SourceTreeConformance runs, its lightweight
   static-reference policy must run in the caller-selected `index` or `worktree`
-  feedback mode. Separately, the expensive v3 control package pytest suite is
-  path-selected for changes to the v3 control package/catalogs/tests,
-  first-slice descriptors, exact first-slice Release policy, any v3 workflow
-  consumer, direct Python workspace/lock input, or HK configuration/helpers.
-  Manual `slice-validation` runs that suite unconditionally. Unrelated
-  product-source changes alone must not select the pytest step. Both remain
-  internal root-HK steps, not separate CI obligations, Evidence records, or
-  jobs.
+  feedback mode. Under the accepted
+  [execution migration](./migration-strategy.md#ci-execution-ownership-cutover),
+  HK owns source/configuration conformance; project unit, scenario and
+  integration tests belong to CI. The v3 control-package suite has one owner
+  in ordinary PR/push CI and is selected by its changed implementation, tests,
+  consumed definitions and actual dependencies. Unrelated product changes and
+  unconsumed documentation must not select it. Explicit local and complete
+  control-package validation remain available. A failed or missing selection,
+  or a missing required test result, cannot become successful non-applicability.
+  Control-package self-tests do not constitute Project Node qualification or
+  Release Evidence; the static-reference policy remains internal to root HK.
 
 ### Release Delivery
 
@@ -264,7 +271,8 @@ isolation are separate authority boundaries and remain unchanged.
   must obtain short-lived, destination-specific Publication Capability only in
   the action-bearing publisher after Qualification, Observation, Approval
   Bundle admission, Environment approval, and durable Publication
-  Authorization. The Approval job has no publication capability and references
+  Authorization. For the npm and NuGet GitHub Packages slices, the Approval
+  job has no publication capability and references
   the one literal Approval Environment
   `workflow-delivery-v3-buddy-approval`. The publisher has an ordinary success
   dependency on that job. It is the only step-running job with effective
@@ -290,6 +298,25 @@ isolation are separate authority boundaries and remain unchanged.
   result bundle. A package-administration change after the publisher's final
   supported readback remains inside the declared sole-writer/publisher TCB; the
   design does not claim a package-administration lock.
+
+    Python `WD-PY-007` uses a destination-bound Environment-gated publisher
+    instead of that separate Approval job and GitHub Packages permission
+    layout. A credential-free preparation job persists the complete Bundle
+    before the wait. After Environment approval, the trusted publisher verifies
+    native current-run Approval and fresh Governance, validates the Bundle and
+    profile, and durably emits Authorization before requesting any OIDC
+    assertion or registry token. Only this publisher job has `id-token: write`;
+    that platform permission becomes available after Environment approval,
+    while reviewed control enforces the later Authorization-before-token order.
+    It is not cryptographic platform enforcement of artifact authorization.
+    No `packages: write` or static-token fallback is required or admitted for
+    Python. Supported registry configuration checks and protected attestations
+    replace GitHub Packages-specific association/access fields; unexposed
+    registration scope is an explicit attestation limitation. Final fresh
+    Governance, actual-profile verification and durable marker still precede
+    the isolated mutation step. Other execution zones obtain no OIDC or
+    publication authority. The npm/NuGet layout remains unchanged.
+
 - **WD-REL-009:** Immediately before the first mutating destination operation,
   the publisher must durably persist a mutation-may-have-started marker.
   The marker must directly bind the Publication Authorization, the final
@@ -319,6 +346,11 @@ isolation are separate authority boundaries and remain unchanged.
     misbound, or other-kind reference fails admission. A Result reference must
     resolve its marker through Result lineage. Empty or missing output from a
     running publisher is not null and fails admission.
+
+    For Python, one set action uses this same scalar marker/Result transport.
+    Its destination-specific Result records each of the two file operations;
+    `published` requires both definitive successes and exact whole-set readback.
+    Any missing Result after the set marker remains unknown and possibly mutated.
 
     The Result must directly bind the durable marker, which reaches the
     Publication Authorization, plus command classification, post-action
@@ -404,10 +436,18 @@ isolation are separate authority boundaries and remain unchanged.
     Source Authority supplies exact bytes directly or materializes only the
     declared files into a Session-owned isolated snapshot when an official
     library or CLI requires paths. The graph binds authoritative source
-    artifact schemas, ecosystem standards, exact package, CLI, runtime, tool,
-    module, or assembly identities; exact versions and lock/integrity
-    provenance; public APIs or commands; input modes; admitted format
+    artifact schemas, ecosystem standards, required packages and public APIs
+    or commands; input modes; admitted format
     generations; required normalized facts; and explicitly unsupported cases.
+    Tool versions, dependency resolution and integrity belong to the selected
+    revision's package manifests, native lockfiles and managed initialization.
+    Preparation must complete native locked installation before scanning;
+    failed preparation prevents execution. The scanner must not duplicate
+    lockfile hashes, dependency version allowlists, generated dependency
+    admission manifests or per-package runtime verification. Actual loaded
+    versions may be retained as diagnostics, not admission authority. This
+    tooling boundary does not change publication-profile qualification or
+    approved-artifact identity requirements.
     File-oriented authorities may read only that snapshot. No graph may fall
     back to the real worktree, resolve an undeclared import or preset, expand
     ambient environment, access a registry or network, evaluate GitHub
@@ -451,11 +491,13 @@ isolation are separate authority boundaries and remain unchanged.
     forbidden. Strict byte-to-text behavior, BOM handling, snapshot inputs,
     loaded authority identities, normalized fact contracts, and distinct
     `source-acquisition-failed`, `encoding-rejected`, `authority-rejected`,
-    `authority-execution-failed`, `unsupported-projection`,
-    `authority-mismatch`, and `cleanup-failed` failures are part of the policy
-    contract. Changing any source schema, standard, authority identity, version,
-    API or command, input mode, format generation, or fact contract changes the
-    policy digest. Source candidates and graph-owned projections must follow
+    `authority-execution-failed`, `unsupported-projection`, and
+    `cleanup-failed` failures are part of the policy contract. Changing a
+    source schema, standard, selected API or command, input mode, format
+    generation, or fact contract changes the policy digest. Tooling versions
+    and lockfile bytes do not independently change policy identity; affected
+    behavior and native integration checks establish upgrade compatibility.
+    Source candidates and graph-owned projections must follow
     one deterministic declared traversal. The first typed non-cleanup failure
     is the canonical error; required-root cleanup failure overrides it and
     retains the earlier sanitized cause only as diagnostic.
@@ -838,6 +880,116 @@ establish native platform acceptance.
   and permits read-only investigation, not a blind retry. Existing npm
   operation, evidence, permissions, and spent authorizations remain unchanged.
 
+### Python Smoke Slice
+
+These requirements realize the owner's [confirmed packet](https://github.com/hcoona/three/issues/843#issuecomment-5822043601).
+They define a new Python scope, not implemented support or an operation grant.
+
+- **WD-PY-001:** The smoke distribution is `hcoona-release-smoke-python`, with
+  import `hcoona_release_smoke_python` and `project_id()` returning
+  `hcoona-release-smoke-python`. It is pure Python with no runtime dependencies,
+  native extensions or production consumers. The complete output set is one
+  universal wheel and one sdist. Repository-pinned CPython 3.14 on Ubuntu is the
+  initial build and consumer lane; no broader support matrix is promised.
+- **WD-PY-002:** The target-bound, full-history Provider obtains canonical NBGV
+  facts and uses `nbgv-python` to project the selected field into PEP 440. The
+  Model and Build Request freeze both the original facts and exact projection.
+  Build and publication must not recompute NBGV, switch fields, strip local
+  metadata or add run-derived suffixes. Invalid or registry-inadmissible
+  versions block Live admission before mutation. Valid normalized local
+  versions remain admissible technical facts for non-publishing CI and
+  qualification; registry policy must not rewrite their frozen value.
+  Wheel, sdist and installed metadata must
+  agree with the frozen version under native Python identity rules.
+- **WD-PY-003:** Both distributions must retain a byte-bound source witness.
+  Qualification separately proves contents, clean wheel installation and clean
+  sdist rebuild/installation outside Git. The sdist declares sufficient build
+  prerequisites without workspace source substitution, ambient version input,
+  or a hidden consumer NBGV/.NET requirement. Release builds and qualifies its
+  own complete set; CI and prior Attempts supply no Release Evidence.
+- **WD-PY-004:** TestPyPI Buddy proving precedes an independently qualified
+  production PyPI Official Attempt. Each Attempt selects exactly one registry
+  and one complete wheel/sdist set. No artifact, Approval or Evidence promotion
+  is allowed. Final Python completion requires independently audited actual
+  publication, fresh exact bytes and clean consumption of both formats at both
+  destinations. Ruby follows that completion audit.
+- **WD-PY-005:** Approval must cover the entire two-file set before its first
+  upload. Uploads are separate and may expose a partial release. Only complete
+  fresh exact state may take the zero-action exact-satisfied path. Partial,
+  conflicting or unknown pre-existing state blocks normal Live. Failure or
+  ambiguity stops further mutation and cannot become same-Attempt success even
+  if later readback is exact. After definitive upload success only, an admitted
+  finite observation phase may keep eligible missing-addition states pending
+  before a terminal verdict: at most six index reads, at least ten seconds
+  after each pending response before another request, and a 60-second admission
+  window from upload-response completion, within unchanged outer deadlines.
+  Conflicting state, exhausted observation, transport/download failure and
+  failed or ambiguous upload remain terminal. Preserve all original responses,
+  timing and ordering for deterministic audit; no already failed Attempt is
+  reopened. An HTTP-200 acknowledgement, including identical-file replay,
+  is a definitive upload success, not proof that this request inserted a new
+  file. Exact original bytes/witnesses and the complete set remain mandatory.
+  A duplicate rejection or ambiguous response remains failed; later exactness
+  cannot turn it into skip-existing success. No rollback, deletion, upload/token/file retry,
+  skip-existing success or automatic partial completion is allowed. Recovery
+  requires a separate request. A missing durable Result after the mutation
+  marker remains unknown and possibly mutated under `WD-REL-009`.
+- **WD-PY-006:** Rely on PyPI filename non-reuse and TestPyPI live-file
+  non-replacement as platform dependencies under the owner's
+  [platform-reliance decision](https://github.com/hcoona/three/issues/843#issuecomment-5860732497).
+  Accept successful identical-file replay; do not require duplicate rejection
+  for identical bytes or claim that HTTP 200 establishes unique insertion.
+  The [source findings](./research/python-smoke-evidence.md) explain the
+  dependency and its limits, not a proof of deployed or universal behavior.
+  No duplicate-upload or competing-creation probes, native acceptance generation,
+  or provider-authored concurrency statement is a prerequisite for Python Live.
+  Validate V3's own request, authority, failure and evidence handling, and each
+  destination's actual publication, fresh exact readback and clean consumption
+  under `WD-PY-004`. Trust does not establish configuration or grant publication.
+  No cross-file atomicity or global read linearizability is assumed.
+  Availability is claimed only at the fresh verification event: TestPyPI can
+  prune and PyPI files can be removed. Retain audit evidence outside the
+  registry; loss or change of remote state cannot yield success or authorize
+  restoration. Preserve earlier failed generations without reclassification.
+- **WD-PY-007:** `hcoona` is the sole accepted writer/operator and explicit
+  Approval reviewer. Self-approval confirms intent, not independent security
+  review. Live uses protected-main targets and same-revision reviewed control.
+  Separate project-bound OIDC publishers and protected Environments bind
+  TestPyPI and PyPI; no static-token fallback is admitted. Provider, Build,
+  Quality, Observation and Finalization receive no publication capability.
+  The trusted publisher consumes immutable artifacts and runs no target build
+  or product code. The threat model does not claim isolation from a malicious
+  accepted writer. Relevant actor, reviewer, ownership or access changes
+  require renewed trust review.
+- **WD-PY-008:** Requirements confirmation precedes HLD, all five MLDs and a
+  brief LLD. Implementation needs a later accepted Wave. Python platform-proving
+  probes are retired under `WD-PY-006`; configuration/admission and each real
+  publication remain separately gated. Each publication needs a concrete grant
+  with coordinates, finite requests/budgets, stop conditions and retained
+  evidence, plus current-Attempt Approval.
+  Design acceptance does not authorize builds, probes, provisioning,
+  authentication/access changes or dispatch. npm/NuGet remain complete and
+  their spent operation grants remain spent.
+
+- **WD-PY-009:** TestPyPI first-project bootstrap is a separate, explicitly
+  authorized prerequisite using one project-name-bound pending OIDC publisher,
+  one original qualified wheel/sdist pair and current-run owner approval.
+  A pending publisher does not establish ownership or reserve the project name.
+  Bootstrap requires its own accepted finite protocol, immutable authority and
+  mutation evidence, conservative initial-state gate and independently reviewed
+  postcreation ownership/configuration and clean consumption. Partial or
+  ambiguous outcomes stop without retry or compensation. Bootstrap evidence is
+  not normal-Live publication evidence; both destinations remain disabled until
+  their independent configuration/admission gates pass. Independently audited
+  actual ownership/configuration established by a partial bootstrap may satisfy
+  only the existing-project resource prerequisite for normal admission. It does
+  not establish bootstrap completion, which still requires the complete pair
+  and clean consumers. Preserve the failed partial version without refill or
+  deletion; it may remain partial indefinitely. A separately authorized normal
+  Attempt must build and qualify its own pair at an eligible version, preserve
+  pre-existing files and complete actual publication and clean-consumer audit.
+  Preparation supplies no configuration, dispatch, token or upload permission.
+
 ### Evidence, Decisions, and Explanation
 
 - **WD-EVD-001:** Evidence Admission must verify exact ownership, target,
@@ -902,7 +1054,9 @@ establish native platform acceptance.
   absence with no retained operational lineage is a legitimate action candidate
   and is not inherently unprovable, but it does not prove the coordinate was
   never published, is not retained as deleted/restorable state, or will accept
-  creation. The authoritative package-version effect must use atomic
+  creation. For Python, `WD-PY-005` and `WD-PY-006` govern the two-file set
+  and file-level non-replacement; no atomic version-set creation is assumed.
+  For the other supported slices, the authoritative package-version effect must use atomic
   non-overwriting creation against the active version namespace. Pre-observed
   exact active state produces no action. At mutation linearization, the
   admitted primitive must not replace or alter an active version; competing
@@ -1071,7 +1225,9 @@ establish native platform acceptance.
 - **WD-OPS-006:** Multi-action or multi-destination publication is outside the
   first slice and requires a concrete scenario and a new reviewed design. The
   first slice has one action and defines no generic transaction, compensation,
-  rollback, or Saga protocol.
+  rollback, or Saga protocol. Python `WD-PY-005` adds one bounded set action
+  containing two sequential file uploads at one destination, without changing
+  the npm/NuGet single-file action or scalar terminal-reference contracts.
 - **WD-OPS-007:** Reconciliation must be exceptional handling for destination
   state that cannot safely proceed through normal observation and a new
   dispatch. It is a separate process, not an Attempt Outcome field. A new

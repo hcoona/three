@@ -331,6 +331,45 @@ def test_operator_source_admission_checks_actual_python_and_helper_inputs(
         state[key] = original
 
 
+def test_operator_request_rejects_boolean_capture_container_id(inputs):
+    document = inputs[0].to_document()
+    document["captures"][0]["containerId"] = True
+
+    with pytest.raises(ValueError, match="exact integer"):
+        operator.read_request(canonicalize(document))
+
+
+@pytest.mark.parametrize(
+    ("path", "message"),
+    [
+        pytest.param(
+            ("captures", 0, "limits", "versionPages"),
+            "exact integer",
+            id="capture-version-pages",
+        ),
+        pytest.param(
+            ("captures", 0, "limits", "socketTimeoutSeconds"),
+            "requires a number",
+            id="capture-socket-timeout",
+        ),
+        pytest.param(
+            ("helper", "outputBytesPerCall"),
+            "exact integer",
+            id="helper-output-bytes",
+        ),
+    ],
+)
+def test_operator_request_rejects_boolean_budget_fields(inputs, path, message):
+    document = inputs[0].to_document()
+    parent = document
+    for key in path[:-1]:
+        parent = parent[key]
+    parent[path[-1]] = True
+
+    with pytest.raises(ValueError, match=message):
+        operator.read_request(canonicalize(document))
+
+
 def test_operator_request_roundtrip_rejects_scope_and_budget_changes(inputs):
     request, _kwargs, _files = inputs
     assert (
@@ -348,7 +387,6 @@ def test_operator_request_roundtrip_rejects_scope_and_budget_changes(inputs):
             operator.read_request(canonicalize(document))
     for changes in (
         {"helper_calls_per_capture": 0},
-        {"helper_output_bytes_per_call": True},
         {"generation_timeout_seconds": float("inf")},
         {"helper_timeout_seconds": 0},
         {
@@ -499,6 +537,14 @@ def test_worker_admits_local_runtime_before_any_destination_read(
     }
 
 
+def _process_has_terminated(status: Path) -> bool:
+    try:
+        state = status.read_text().split()[2]
+    except (FileNotFoundError, ProcessLookupError):
+        return True
+    return state == "Z"
+
+
 @pytest.mark.skipif(
     sys.platform != "linux", reason="Linux process-group integration evidence"
 )
@@ -538,12 +584,11 @@ def test_supervisor_terminates_owned_process_group(tmp_path, monkeypatch, kind):
             status = Path(f"/proc/{pid}/stat")
             deadline = time.monotonic() + 3
             while (
-                status.exists()
-                and status.read_text().split()[2] != "Z"
+                not _process_has_terminated(status)
                 and time.monotonic() < deadline
             ):
                 time.sleep(0.01)
-            assert not status.exists() or status.read_text().split()[2] == "Z"
+            assert _process_has_terminated(status)
     finally:
         sys.modules.pop(module_name, None)
 

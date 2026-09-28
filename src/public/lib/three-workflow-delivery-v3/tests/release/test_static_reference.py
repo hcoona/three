@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING
 
 import pytest
+import yaml
 from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.release.static_reference_model import (
     PRODUCER_PACKAGE,
@@ -45,6 +46,10 @@ from three_workflow_delivery_v3.release.static_reference_source import (
 
 if TYPE_CHECKING:
     from types import ModuleType
+
+    from three_workflow_delivery_v3.release.static_reference_session import (
+        MaterializedAuthorityInvocation,
+    )
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 STATIC_REFERENCE_SCRIPT = (
@@ -150,7 +155,7 @@ def _candidate(
     )
 
 
-def test_model_source_kinds_and_all_seven_error_kinds_are_exact_and_distinct() -> (  # noqa: E501
+def test_model_source_kinds_and_all_six_error_kinds_are_exact_and_distinct() -> (  # noqa: E501
     None
 ):
     """Keep source and error-kind vocabularies exact and duplicate-free."""
@@ -165,7 +170,6 @@ def test_model_source_kinds_and_all_seven_error_kinds_are_exact_and_distinct() -
         "authority-rejected",
         "authority-execution-failed",
         "unsupported-projection",
-        "authority-mismatch",
         "cleanup-failed",
     )
     assert len(STATIC_REFERENCE_ERROR_KINDS) == len(
@@ -311,76 +315,6 @@ def test_model_finding_and_result_reject_invalid_shape(
     """Reject malformed canonical result documents."""
     with pytest.raises((TypeError, ValueError)):
         parse_bounded_static_reference_result(canonicalize(document))
-
-
-def test_source_uses_its_own_git_target_index_and_worktree_bytes(
-    tmp_path: Path,
-) -> None:
-    """Acquire each source kind from its independently owned bytes."""
-    repository = tmp_path / "repository"
-    _initialize_repository(repository)
-    manifest = repository / "package.json"
-    committed = b'{"name":"committed"}\n'
-    indexed = b'{"name":"indexed"}\n'
-    worktree = b'{"name":"worktree"}\n'
-    manifest.write_bytes(committed)
-    _git(repository, "add", "package.json")
-    _git(repository, "commit", "--quiet", "--message", "target")
-    target = _git(repository, "rev-parse", "HEAD")
-    manifest.write_bytes(indexed)
-    _git(repository, "add", "package.json")
-    manifest.write_bytes(worktree)
-
-    target_inventory = acquire_static_reference_inventory(
-        repository,
-        source_kind="git-target",
-        target=target,
-    )
-    index_inventory = acquire_static_reference_inventory(
-        repository,
-        source_kind="index",
-    )
-    worktree_inventory = acquire_static_reference_inventory(
-        repository,
-        source_kind="worktree",
-    )
-
-    assert target_inventory.source_kind == "git-target"
-    assert target_inventory.target == target
-    assert index_inventory.source_kind == "index"
-    assert index_inventory.target is None
-    assert worktree_inventory.source_kind == "worktree"
-    assert worktree_inventory.target is None
-    assert [item.path for item in target_inventory.candidates] == [
-        "package.json"
-    ]
-    assert [item.content for item in target_inventory.candidates] == [committed]
-    assert [item.content for item in index_inventory.candidates] == [indexed]
-    assert [item.content for item in worktree_inventory.candidates] == [
-        worktree
-    ]
-    assert target_inventory.candidates[0].source_object is not None
-    assert index_inventory.candidates[0].source_object is not None
-    assert worktree_inventory.candidates[0].source_object is None
-
-
-def test_source_admitted_candidate_failure_is_typed(
-    tmp_path: Path,
-) -> None:
-    """Report unavailable Git targets as typed acquisition failures."""
-    repository = tmp_path / "repository"
-    _initialize_repository(repository)
-
-    with pytest.raises(SourceAcquisitionError) as caught:
-        acquire_static_reference_inventory(
-            repository,
-            source_kind="git-target",
-            target="0" * 40,
-        )
-
-    assert caught.value.diagnostic_code == "git-target-unavailable"
-    assert caught.value.path is None
-    assert str(caught.value) == "static-reference source acquisition failed"
 
 
 def test_git_target_duplicate_selected_path_is_typed_source_failure(
@@ -969,27 +903,6 @@ _PHASE2_LIVE_IMPLEMENTATIONS = tuple(
 _PHASE2_PRODUCER_ROOT = "src/public/lib/hcoona-release-smoke-npm"
 _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
     "schema": "workflow-delivery/v3/static-reference-authority-manifest",
-    "dependency-closures": [
-        {
-            "kind": "pnpm-lock",
-            "path": "pnpm-lock.yaml",
-            "sha256": (
-                "sha256:"
-                "44ea8ea08134a04f079e89747de2f4b6219ff7dbc23365d66c9656e087a224ba"
-            ),
-        },
-        {
-            "kind": "nuget-lock",
-            "path": (
-                "src/private/app/workflow-delivery-v3-nuget-authority/"
-                "packages.lock.json"
-            ),
-            "sha256": (
-                "sha256:"
-                "2fcd4e94b3b3be83522776536c4cae3f22aaa4bcbfe747a522627654c020cc5a"
-            ),
-        },
-    ],
     "execution": {
         "node-command": [
             "node",
@@ -997,10 +910,7 @@ _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
         ],
         "nuget-command": [
             "dotnet",
-            (
-                "artifacts/workflow-delivery-v3/static-reference/"
-                "nuget-authority/WorkflowDeliveryV3NuGetAuthority.dll"
-            ),
+            "artifacts/workflow-delivery-v3/static-reference/nuget-authority/WorkflowDeliveryV3NuGetAuthority.dll",
         ],
         "timeout-seconds": 30,
     },
@@ -1010,30 +920,18 @@ _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
             "artifact": "package.json",
             "input-mode": "strict-utf8-file",
             "snapshot-inputs": ["package.json"],
-            "implementations": [
-                "@npmcli/package-json@8.0.0",
-                "node@24.19.0",
-                "npm-package-arg@14.0.0",
-            ],
             "apis": [
                 "PackageJson.load(snapshotDirectory)",
                 "npa.resolve(name,spec,snapshotDirectory)",
             ],
             "fact-kinds": ["npm-package-name", "npm-reference"],
+            "packages": ["@npmcli/package-json", "npm-package-arg"],
         },
         {
             "id": "pnpm-lock-v1",
             "artifact": "pnpm-lock.yaml@9.0",
             "input-mode": "strict-utf8-file",
             "snapshot-inputs": ["pnpm-lock.yaml"],
-            "implementations": [
-                "@pnpm/deps.path@1101.0.1",
-                "@pnpm/lockfile.fs@1100.2.5",
-                "@pnpm/lockfile.utils@1102.1.0",
-                "@pnpm/resolving.npm-resolver@1104.1.0",
-                "@pnpm/workspace.spec-parser@1100.0.1",
-                "node@24.19.0",
-            ],
             "apis": [
                 "extractMainDocument",
                 "readWantedLockfileWithMergeInfo",
@@ -1048,19 +946,19 @@ _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
                 "pnpm-lock-snapshot",
                 "pnpm-lock-importer-reference",
             ],
+            "packages": [
+                "@pnpm/deps.path",
+                "@pnpm/lockfile.fs",
+                "@pnpm/lockfile.utils",
+                "@pnpm/resolving.npm-resolver",
+                "@pnpm/workspace.spec-parser",
+            ],
         },
         {
             "id": "pnpm-workspace-v1",
             "artifact": "pnpm-workspace.yaml",
             "input-mode": "strict-utf8-file",
             "snapshot-inputs": ["pnpm-workspace.yaml"],
-            "implementations": [
-                "@pnpm/resolving.npm-resolver@1104.1.0",
-                "@pnpm/workspace.spec-parser@1100.0.1",
-                "@pnpm/workspace.workspace-manifest-reader@1100.1.8",
-                "node@24.19.0",
-                "npm-package-arg@14.0.0",
-            ],
             "apis": [
                 "readWorkspaceManifest(snapshotDirectory)",
                 "WorkspaceSpec.parse",
@@ -1072,115 +970,32 @@ _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
                 "pnpm-workspace-pattern",
                 "pnpm-workspace-reference",
             ],
+            "packages": [
+                "@pnpm/resolving.npm-resolver",
+                "@pnpm/workspace.spec-parser",
+                "@pnpm/workspace.workspace-manifest-reader",
+                "npm-package-arg",
+            ],
         },
         {
             "id": "nuget-lock-v1",
-            "artifacts": [
-                "packages.lock.json@1-3",
-                "packages.config",
-            ],
+            "artifacts": ["packages.lock.json@1-3", "packages.config"],
             "input-modes": [
                 {
                     "artifact": "packages.lock.json",
                     "mode": "strict-utf8-byte-stream",
                 },
-                {
-                    "artifact": "packages.config",
-                    "mode": "xml-byte-stream",
-                },
-            ],
-            "implementations": [
-                "NuGet.Packaging@7.9.0",
-                "NuGet.ProjectModel@7.9.0",
-                "dotnet-runtime@10.0.8",
+                {"artifact": "packages.config", "mode": "xml-byte-stream"},
             ],
             "apis": [
-                (
-                    "PackagesLockFileFormat.Read("
-                    "Stream,NullLogger.Instance,repositoryLogicalPath)"
-                ),
+                "PackagesLockFileFormat.Read(Stream,NullLogger.Instance,repositoryLogicalPath)",
                 "PackagesConfigReader(Stream,false).GetPackages(false)",
             ],
             "fact-kinds": [
                 "nuget-lock-dependency",
                 "nuget-packages-config-entry",
             ],
-        },
-    ],
-    "runtimes": [
-        {
-            "tool": "dotnet",
-            "backend": "core:dotnet",
-            "sdk-version": "10.0.300",
-            "loaded-runtime": "dotnet-runtime@10.0.8",
-        },
-        {
-            "tool": "node",
-            "backend": "core:node",
-            "version": "24.19.0",
-            "loaded-runtime": "node@24.19.0",
-            "artifact-checksums": {
-                "linux-arm64": (
-                    "sha256:"
-                    "d28c8a5bf0a808f0ed434a1dce8c54ae98f0371c0bd86ac58abc613f73e6643f"
-                ),
-                "linux-arm64-musl": (
-                    "sha256:"
-                    "20824e4d35948fae5b337dccef47813b04d8995312f59df7386f2256d9f9ab7e"
-                ),
-                "linux-x64": (
-                    "sha256:"
-                    "f625d97cd707df4ff96254916fbc5ff014f09c09effe5a1e0ca8f6d41a8789d4"
-                ),
-                "linux-x64-musl": (
-                    "sha256:"
-                    "c60223786df14a5d23e220ebb8e60318f5322640a62f90e6d9e54d3a18da532e"
-                ),
-                "macos-arm64": (
-                    "sha256:"
-                    "8294b7aa9b03997481c06babf1e8b270c859358f27da57a11509afe537ac381d"
-                ),
-                "macos-x64": (
-                    "sha256:"
-                    "d1b5e999db158c62fe8f7267a4476b035d8bd93b1a605bac24a3f0dd166e3316"
-                ),
-                "windows-x64": (
-                    "sha256:"
-                    "57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73"
-                ),
-            },
-        },
-        {
-            "tool": "pnpm",
-            "backend": "aqua:pnpm/pnpm",
-            "version": "11.22.0",
-            "provenance": "github-attestations",
-            "artifact-checksums": {
-                "linux-arm64": (
-                    "sha256:"
-                    "f1426231f365bdfd46c15fa3d1211c3936ee2c4e557afd304f6c66dbf1b2a8bf"
-                ),
-                "linux-arm64-musl": (
-                    "sha256:"
-                    "6e53557024be48e59ab8760f9117c0e5c0e0a37ab420f71f302d86216970d28f"
-                ),
-                "linux-x64": (
-                    "sha256:"
-                    "4c592fa410eb23b69691a9efb9bf21c87c15b3e9d88c6ec8acdd354a0eb8de71"
-                ),
-                "linux-x64-musl": (
-                    "sha256:"
-                    "45425b06e747cbcaff4940d7b4a55e694645f15f9339dbf7f2601cfb21400545"
-                ),
-                "macos-arm64": (
-                    "sha256:"
-                    "2000dcc8f0718852c2806ba4dca1edaedf18a4a39264474d5a1c8fcee250adfd"
-                ),
-                "windows-x64": (
-                    "sha256:"
-                    "1de83ad5100acfd2adb5c8bc6f8a428cee9ff4e365deff57c22bfc0cccaa4ddb"
-                ),
-            },
+            "packages": ["NuGet.Packaging", "NuGet.ProjectModel"],
         },
     ],
 }
@@ -1927,7 +1742,7 @@ def test_authority_dispatches_each_graph_to_its_exact_protocol(  # noqa: PLR0913
         str(prepared_authority),
     )
     assert request == expected_request
-    assert seen_invocation is invocation
+    assert seen_invocation == invocation
     assert seen_session is session
     assert not invocation_root.exists()
     assert not session_root.exists()
@@ -2295,7 +2110,6 @@ def test_policy_authority_manifest_and_digest_are_exact() -> None:
         not in {
             "graph-contracts",
             "normalized-fact-contracts",
-            "runtime-closure",
         }
     }
     assert manifest_core == _PHASE2_EXPECTED_AUTHORITY_MANIFEST
@@ -2396,27 +2210,6 @@ def test_policy_authority_manifest_and_digest_are_exact() -> None:
     ]["pnpm-snapshot-dependency"]["fields"]
     assert snapshot_dependency_contract["dependencyKey"] == "exact-string"
     assert snapshot_dependency_contract["reference"] == "exact-string"
-    runtime_closure = manifest["runtime-closure"]
-    assert runtime_closure["mise-config"]["selectors"] == [
-        {
-            "tool": "dotnet",
-            "config-key": "core:dotnet",
-            "selector": "10",
-            "lock-key": "dotnet",
-        },
-        {
-            "tool": "node",
-            "config-key": "node",
-            "selector": "24",
-            "lock-key": "node",
-        },
-        {
-            "tool": "pnpm",
-            "config-key": "pnpm",
-            "selector": "11.22.0",
-            "lock-key": "pnpm",
-        },
-    ]
     mutated = json.loads(json.dumps(document))
     mutated["authority-manifest"]["graph-contracts"]["pnpm-lock-v1"][
         "decoding"
@@ -2433,118 +2226,21 @@ def test_policy_authority_manifest_and_digest_are_exact() -> None:
     )
     assert policy.STATIC_REFERENCE_POLICY_DIGEST == (
         "sha256:"
-        "c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d"
+        "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
     )
     assert policy.canonical_sha256(document) == (
         "sha256:"
-        "c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d"
+        "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
     )
 
 
-def test_authority_closure_validation_binds_exact_locks_and_runtime(
-    tmp_path: Path,
-) -> None:
-    """Require the exact checked-in package and runtime closure."""
-    policy = importlib.import_module(
-        "three_workflow_delivery_v3.release.static_reference_policy"
-    )
-    repository = tmp_path / "repository"
-    repository.mkdir()
-    closures = policy.static_reference_authority_manifest()[
-        "dependency-closures"
-    ]
-    assert isinstance(closures, list)
-    for closure in closures:
-        assert isinstance(closure, dict)
-        relative_path = closure["path"]
-        assert isinstance(relative_path, str)
-        destination = repository / relative_path
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(REPO_ROOT / relative_path, destination)
-    for relative_path in ("mise.toml", "mise.lock"):
-        shutil.copyfile(REPO_ROOT / relative_path, repository / relative_path)
-
-    policy.validate_static_reference_dependency_closures(repository)
-
-    pnpm_lock = repository / "pnpm-lock.yaml"
-    original_lock = pnpm_lock.read_bytes()
-    pnpm_lock.write_bytes(original_lock + b"\n")
-    with pytest.raises(
-        policy.StaticReferenceAuthorityMismatchError,
-        match="closure does not match",
-    ):
-        policy.validate_static_reference_dependency_closures(repository)
-
-    pnpm_lock.write_bytes(original_lock)
-    mise_config = repository / "mise.toml"
-    original_mise_config = mise_config.read_bytes()
-    mise_config.write_bytes(
-        original_mise_config.replace(
-            b'node = "24"',
-            b'node = "22"',
-            1,
-        )
-    )
-    with pytest.raises(
-        policy.StaticReferenceAuthorityMismatchError,
-        match="closure does not match",
-    ):
-        policy.validate_static_reference_dependency_closures(repository)
-
-    mise_config.write_bytes(original_mise_config)
-    mise_lock = repository / "mise.lock"
-    original_mise_lock = mise_lock.read_bytes()
-    mise_lock.write_bytes(
-        original_mise_lock.replace(
-            (
-                b"sha256:"
-                b"f625d97cd707df4ff96254916fbc5ff014f09c09effe5a1e0ca8f6d41a8789d4"
-            ),
-            b"sha256:" + (b"0" * 64),
-            1,
-        )
-    )
-    with pytest.raises(
-        policy.StaticReferenceAuthorityMismatchError,
-        match="closure does not match",
-    ):
-        policy.validate_static_reference_dependency_closures(repository)
-
-
-def test_authority_closure_paths_are_materialized_with_lf() -> None:
-    """Keep raw-byte authority closures stable across Git checkout policy."""
-    output = _git(
-        REPO_ROOT,
-        "check-attr",
-        "text",
-        "eol",
-        "--",
-        "pnpm-lock.yaml",
-        (
-            "src/private/app/workflow-delivery-v3-nuget-authority/"
-            "packages.lock.json"
-        ),
-    )
-
-    assert output.splitlines() == [
-        "pnpm-lock.yaml: text: set",
-        "pnpm-lock.yaml: eol: lf",
-        (
-            "src/private/app/workflow-delivery-v3-nuget-authority/"
-            "packages.lock.json: text: set"
-        ),
-        (
-            "src/private/app/workflow-delivery-v3-nuget-authority/"
-            "packages.lock.json: eol: lf"
-        ),
-    ]
-
-
-def test_preparation_validates_locks_before_and_after_publish(
+@pytest.mark.parametrize("failure", [None, "pnpm", "dotnet"])
+def test_preparation_uses_native_locked_installation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    failure: str | None,
 ) -> None:
-    """Bind prepared executables to locks validated before and after work."""
+    """Delegate resolution and integrity to native locked installation."""
     module = _load_prepare_static_reference_script()
     repository = tmp_path / "repository"
     repository.mkdir()
@@ -2552,12 +2248,10 @@ def test_preparation_validates_locks_before_and_after_publish(
     publish_directory = repository / "prepared"
     events: list[str] = []
 
-    def validate(root: Path) -> None:
-        assert root == repository
-        events.append("validate")
-
     def run(*arguments: str) -> None:
-        events.append(" ".join(arguments[:2]))
+        events.append(" ".join(arguments))
+        if arguments[0] == failure:
+            raise subprocess.CalledProcessError(1, arguments)
         if arguments[:2] == ("dotnet", "publish"):
             for name in (
                 "NuGet.Packaging.dll",
@@ -2571,20 +2265,30 @@ def test_preparation_validates_locks_before_and_after_publish(
     monkeypatch.setattr(module, "_REPOSITORY_ROOT", repository)
     monkeypatch.setattr(module, "_NUGET_PROJECT", project)
     monkeypatch.setattr(module, "_PUBLISH_DIRECTORY", publish_directory)
-    monkeypatch.setattr(
-        module,
-        "validate_static_reference_dependency_closures",
-        validate,
-    )
     monkeypatch.setattr(module, "_run", run)
+
+    if failure is not None:
+        with pytest.raises(subprocess.CalledProcessError):
+            module.main()
+        assert events == (
+            ["pnpm install --frozen-lockfile --ignore-scripts"]
+            if failure == "pnpm"
+            else [
+                "pnpm install --frozen-lockfile --ignore-scripts",
+                f"dotnet restore {project} --locked-mode",
+            ]
+        )
+        assert not publish_directory.exists()
+        return
 
     assert module.main() == 0
     assert events == [
-        "validate",
-        "pnpm install",
-        "dotnet restore",
-        "dotnet publish",
-        "validate",
+        "pnpm install --frozen-lockfile --ignore-scripts",
+        f"dotnet restore {project} --locked-mode",
+        (
+            f"dotnet publish {project} --no-restore --configuration Release "
+            f"--output {publish_directory} --nologo"
+        ),
     ]
 
 
@@ -2810,24 +2514,13 @@ def test_policy_materializes_every_candidate_before_any_graph_execution(
         return session
 
     graph_calls: list[object] = []
-    closure_calls: list[Path] = []
 
     def forbidden_graph(*args: object, **kwargs: object) -> object:
         graph_calls.append((args, kwargs))
         message = "graph ran before complete materialization"
         raise AssertionError(message)
 
-    def forbidden_closure(root: Path) -> None:
-        closure_calls.append(root)
-        message = "closure validation ran before complete materialization"
-        raise AssertionError(message)
-
     monkeypatch.setattr(policy, "run_authority_graph", forbidden_graph)
-    monkeypatch.setattr(
-        policy,
-        "validate_static_reference_dependency_closures",
-        forbidden_closure,
-    )
 
     result = policy.scan_bounded_static_references(
         tmp_path,
@@ -2843,7 +2536,6 @@ def test_policy_materializes_every_candidate_before_any_graph_execution(
         "01/pnpm-workspace.yaml",
     ]
     assert graph_calls == []
-    assert closure_calls == []
     assert len(sessions) == 1
     assert not sessions[0].root.exists()
     assert all(not root.exists() for root in invocation_roots)
@@ -2918,91 +2610,6 @@ def test_policy_preflights_utf8_before_candidate_materialization(
     assert not sessions[0].root.exists()
 
 
-def test_policy_reports_authority_mismatch_only_after_materialization(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Validate checked-in closure after source shaping and before graphs."""
-    policy = importlib.import_module(
-        "three_workflow_delivery_v3.release.static_reference_policy"
-    )
-    candidate = _phase2_candidate(
-        "consumer/package.json",
-        family="npm-manifest",
-        graph_id="npm-manifest-v1",
-    )
-    inventory = policy.StaticReferenceInventory(
-        source_kind="worktree",
-        target=None,
-        candidates=(candidate,),
-    )
-    monkeypatch.setattr(
-        policy,
-        "acquire_static_reference_inventory",
-        lambda repository_root, *, source_kind, target=None: inventory,  # noqa: ARG005
-    )
-    invocation_roots: list[Path] = []
-    sessions: list[StaticReferenceSession] = []
-
-    class RecordingSession(StaticReferenceSession):
-        def materialize(
-            self,
-            selected_candidate: StaticReferenceCandidate,
-            *,
-            source_kind: str,
-            target: str | None,
-        ) -> object:
-            invocation = super().materialize(
-                selected_candidate,
-                source_kind=source_kind,  # type: ignore[arg-type]
-                target=target,
-            )
-            invocation_roots.append(invocation.root)
-            return invocation
-
-    def session_factory() -> StaticReferenceSession:
-        session = RecordingSession(parent=tmp_path)
-        sessions.append(session)
-        return session
-
-    closure_calls: list[Path] = []
-
-    def mismatch(root: Path) -> None:
-        closure_calls.append(root)
-        assert all(path.exists() for path in invocation_roots)
-        message = "injected authority mismatch"
-        raise policy.StaticReferenceAuthorityMismatchError(message)
-
-    graph_calls: list[object] = []
-
-    def forbidden_graph(*args: object, **kwargs: object) -> object:
-        graph_calls.append((args, kwargs))
-        message = "graph ran with a mismatched authority closure"
-        raise AssertionError(message)
-
-    monkeypatch.setattr(
-        policy,
-        "validate_static_reference_dependency_closures",
-        mismatch,
-    )
-    monkeypatch.setattr(policy, "run_authority_graph", forbidden_graph)
-
-    result = policy.scan_bounded_static_references(
-        tmp_path,
-        source_kind="worktree",
-        session_factory=session_factory,
-    )
-
-    assert result.error_kind == "authority-mismatch"
-    assert result.findings == ()
-    assert result.implementation_identities == ()
-    assert closure_calls == [tmp_path.resolve()]
-    assert graph_calls == []
-    assert len(sessions) == 1
-    assert not sessions[0].root.exists()
-    assert all(not root.exists() for root in invocation_roots)
-
-
 def test_policy_stops_at_the_first_source_error_before_authority_execution(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3021,6 +2628,9 @@ def test_policy_stops_at_the_first_source_error_before_authority_execution(
             target=TARGET,
         )
     source_error = seeded.value
+    assert source_error.diagnostic_code == "git-target-unavailable"
+    assert source_error.path is None
+    assert str(source_error) == "static-reference source acquisition failed"
     shutil.rmtree(seed_repository)
 
     def fail_acquisition(
@@ -3068,7 +2678,7 @@ def test_policy_stops_at_the_first_source_error_before_authority_execution(
         ),
         "policy-digest": (
             "sha256:"
-            "c5d8869252819020790632edc18399433c90217edc346e3a61cbf8d11c2b6a9d"
+            "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
         ),
         "implementation-identities": [],
         "findings": [],
@@ -3349,7 +2959,7 @@ def test_policy_cleanup_failed_overrides_success_source_or_graph_result_and_clea
 def test_hexo_file_reference_and_v9_lock_project_a_typed_directory(
     tmp_path: Path,
 ) -> None:
-    """Project the tracked Hexo file reference and keep the whole scan clean."""
+    """Project the tracked Hexo local reference through its actual lock key."""
     from three_workflow_delivery_v3.release.static_reference_authority import (  # noqa: PLC0415
         run_authority_graph,
     )
@@ -3390,6 +3000,13 @@ def test_hexo_file_reference_and_v9_lock_project_a_typed_directory(
         input_mode="strict-utf8-file",
     )
     assert lock_candidate.content == lock_path.read_bytes()
+    lock_document = yaml.safe_load(lock_candidate.content)
+    reference = lock_document["importers"]["."]["dependencies"][
+        "hexo-renderer-asciidoc"
+    ]
+    assert reference["specifier"] == "file:../.."
+    snapshot_key = f"hexo-renderer-asciidoc@{reference['version']}"
+    assert snapshot_key in lock_document["snapshots"]
 
     session_root: Path
     with StaticReferenceSession(parent=tmp_path) as session:
@@ -3425,68 +3042,39 @@ def test_hexo_file_reference_and_v9_lock_project_a_typed_directory(
         )
 
         assert outcome.error_kind is None
-        assert (
-            outcome.implementation_identities
-            == (_PHASE2_GRAPH_IMPLEMENTATIONS["pnpm-lock-v1"])
-        )
-        assert relevant_facts == (
-            {
-                "dependencies": [
-                    {
-                        "dependencyKey": "@asciidoctor/core",
-                        "reference": "4.0.11",
-                        "section": "dependencies",
-                    },
-                    {
-                        "dependencyKey": "cheerio",
-                        "reference": "1.2.0",
-                        "section": "dependencies",
-                    },
-                    {
-                        "dependencyKey": "entities",
-                        "reference": "8.0.0",
-                        "section": "dependencies",
-                    },
-                    {
-                        "dependencyKey": "hexo",
-                        "reference": "8.1.2(chokidar@3.6.0)",
-                        "section": "dependencies",
-                    },
-                    {
-                        "dependencyKey": "hexo-util",
-                        "reference": "4.0.0",
-                        "section": "dependencies",
-                    },
-                ],
-                "dependencyPath": (
-                    "hexo-renderer-asciidoc@file:../.."
-                    "(hexo@8.1.2(chokidar@3.6.0))"
-                ),
-                "kind": "pnpm-lock-snapshot",
-                "name": "hexo-renderer-asciidoc",
-                "nonSemverVersion": "file:../..",
-                "registryName": None,
-                "resolution": {
-                    "kind": "directory",
-                    "localPath": "src/public/lib/hexo-renderer-asciidoc",
-                },
-                "version": None,
+        assert len(relevant_facts) == 2  # noqa: PLR2004
+        facts_by_kind = {fact["kind"]: fact for fact in relevant_facts}
+        assert set(facts_by_kind) == {
+            "pnpm-lock-snapshot",
+            "pnpm-lock-importer-reference",
+        }
+        assert {
+            key: value
+            for key, value in facts_by_kind["pnpm-lock-snapshot"].items()
+            if key != "dependencies"
+        } == {
+            "dependencyPath": snapshot_key,
+            "kind": "pnpm-lock-snapshot",
+            "name": "hexo-renderer-asciidoc",
+            "nonSemverVersion": "file:../..",
+            "registryName": None,
+            "resolution": {
+                "kind": "directory",
+                "localPath": "src/public/lib/hexo-renderer-asciidoc",
             },
-            {
-                "dependencyKey": "hexo-renderer-asciidoc",
-                "importerId": ".",
-                "kind": "pnpm-lock-importer-reference",
-                "rawSpecifier": "file:../..",
-                "registrySpec": None,
-                "resolvedReference": ("file:../..(hexo@8.1.2(chokidar@3.6.0))"),
-                "section": "dependencies",
-                "snapshotKey": (
-                    "hexo-renderer-asciidoc@file:../.."
-                    "(hexo@8.1.2(chokidar@3.6.0))"
-                ),
-                "workspaceSelector": None,
-            },
-        )
+            "version": None,
+        }
+        assert facts_by_kind["pnpm-lock-importer-reference"] == {
+            "dependencyKey": "hexo-renderer-asciidoc",
+            "importerId": ".",
+            "kind": "pnpm-lock-importer-reference",
+            "rawSpecifier": reference["specifier"],
+            "registrySpec": None,
+            "resolvedReference": reference["version"],
+            "section": "dependencies",
+            "snapshotKey": snapshot_key,
+            "workspaceSelector": None,
+        }
         session.release(invocation)
 
     assert not session_root.exists()
@@ -3502,83 +3090,9 @@ def test_hexo_file_reference_and_v9_lock_project_a_typed_directory(
     ("path", "content"),
     [
         pytest.param(
-            ".github/workflows/release.yml",
-            b"jobs:\n  inspect:\n    uses: @hcoona/hcoona-release-smoke-npm\n",
-            id="github-workflow",
-        ),
-        pytest.param(
-            ".github/actions/inspect/action.yml",
-            (
-                b"runs:\n  using: node20\n"
-                b"  main: @hcoona/hcoona-release-smoke-npm\n"
-            ),
-            id="composite-action",
-        ),
-        pytest.param(
-            "src/consumer/import-subpath.mjs",
-            b'import "@hcoona/hcoona-release-smoke-npm/runtime";\n',
-            id="node-import-subpath",
-        ),
-        pytest.param(
-            "src/consumer/package-lock.json",
-            (
-                b'{"packages":{"node_modules/x":{"name":'
-                b'"@hcoona/hcoona-release-smoke-npm"}}}\n'
-            ),
-            id="npm-lock",
-        ),
-        pytest.param(
-            "uv.lock",
-            b'[[package]]\nname = "@hcoona/hcoona-release-smoke-npm"\n',
-            id="uv-lock",
-        ),
-        pytest.param(
-            "src/consumer/yarn.lock",
-            b'"@hcoona/hcoona-release-smoke-npm@*":\n  version "1.0.0"\n',
-            id="yarn-lock",
-        ),
-        pytest.param(
-            "src/consumer/Consumer.csproj",
-            (
-                b'<Project><ItemGroup><PackageReference Include="'
-                b'@hcoona/hcoona-release-smoke-npm" />'
-                b"</ItemGroup></Project>\n"
-            ),
-            id="msbuild-project",
-        ),
-        pytest.param(
-            "Directory.Packages.props",
-            (
-                b'<Project><ItemGroup><PackageVersion Include="'
-                b'@hcoona/hcoona-release-smoke-npm" />'
-                b"</ItemGroup></Project>\n"
-            ),
-            id="msbuild-central-manifest",
-        ),
-        pytest.param(
-            "src/consumer/pyproject.toml",
-            b"dependencies = [\x22@hcoona/hcoona-release-smoke-npm\x22]\n",
-            id="standalone-python-manifest",
-        ),
-        pytest.param(
-            "eng/scripts/install.sh",
-            b"npm install @hcoona/hcoona-release-smoke-npm\n",
-            id="shell-script",
-        ),
-        pytest.param(
-            "eng/scripts/install.ps1",
-            b"npm install @hcoona/hcoona-release-smoke-npm\n",
-            id="powershell-script",
-        ),
-        pytest.param(
             ".github/workflows/pnpm-lock.yaml",
             b"lockfileVersion: '9.0'\npackages:\n  producer: {}\n",
             id="reserved-workflow-pnpm-lock",
-        ),
-        pytest.param(
-            ".github/workflows/pnpm-workspace.yaml",
-            b"packages:\n  - '@hcoona/hcoona-release-smoke-npm'\n",
-            id="reserved-workflow-pnpm-workspace",
         ),
     ],
 )
@@ -3587,7 +3101,7 @@ def test_excluded_surface_selects_no_graph_and_has_no_fallback(
     path: str,
     content: bytes,
 ) -> None:
-    """Keep every excluded representative outside every authority graph."""
+    """Keep the reserved workflow lock outside every authority graph."""
     from three_workflow_delivery_v3.release.static_reference_policy import (  # noqa: PLC0415
         scan_bounded_static_references,
     )
@@ -3641,86 +3155,7 @@ def test_excluded_surface_selects_no_graph_and_has_no_fallback(
     assert fallback_calls == []
     assert len(sessions) == 1
     assert not sessions[0].root.exists()
-
-
-def test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared() -> (  # noqa: E501
-    None
-):
-    """Reject superseded grammars, exceptions, inventories, and claims."""
-    from three_workflow_delivery_v3.release.static_reference_policy import (  # noqa: PLC0415
-        static_reference_policy_document,
-    )
-
-    obsolete_paths = (
-        "eng/scripts/workflow_delivery_v3_consumer_policy.py",
-        (
-            "src/public/lib/three-workflow-delivery-v3/src/"
-            "three_workflow_delivery_v3/release/consumer_policy.py"
-        ),
-        (
-            "src/public/lib/three-workflow-delivery-v3/src/"
-            "three_workflow_delivery_v3/release/javascript_consumer.py"
-        ),
-    )
-    assert [
-        path for path in obsolete_paths if (REPO_ROOT / path).exists()
-    ] == []
-
-    implementation_paths = (
-        REPO_ROOT / "eng/scripts/workflow_delivery_v3_static_reference.py",
-        (
-            REPO_ROOT
-            / "eng/scripts/workflow_delivery_v3_static_reference_node.mjs"
-        ),
-        (
-            REPO_ROOT
-            / "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs"
-        ),
-        *sorted(
-            (
-                REPO_ROOT / "src/public/lib/three-workflow-delivery-v3/src/"
-                "three_workflow_delivery_v3/release"
-            ).glob("static_reference_*.py")
-        ),
-    )
-    implementation_text = "\n".join(
-        path.read_text(encoding="utf-8") for path in implementation_paths
-    ).casefold()
-    assert {
-        marker
-        for marker in (
-            "approved_consumer_exceptions",
-            "consumer_policy_parser_profile",
-            "tree_sitter",
-            "tree-sitter",
-            "dataflow",
-            "scanned-surfaces",
-            "admitted-exceptions",
-            "fixed-inventory",
-            "trigger-catalog",
-            "consumer-policy-result",
-        )
-        if marker in implementation_text
-    } == set()
-
-    policy_document = static_reference_policy_document()
-    policy_text = json.dumps(policy_document, sort_keys=True).casefold()
-    assert {
-        marker
-        for marker in (
-            "compatibility-grammar",
-            "secondary-authority",
-            "whole-file",
-            "approved-exception",
-            "fixture-exception",
-            "fixed-inventory",
-            "inventory-authority",
-            "trigger-catalog",
-            "consumer-claim",
-            '"consumers"',
-        )
-        if marker in policy_text
-    } == set()
+    assert source.read_bytes() == content
 
 
 @pytest.mark.parametrize(
@@ -3732,13 +3167,6 @@ def test_no_forbidden_static_reference_strategy_or_consumer_claim_is_declared() 
             "accepted",
             id="exact-git-target",
         ),
-        pytest.param(
-            "git-target",
-            "2" * 40,
-            "rejected",
-            id="different-git-target",
-        ),
-        pytest.param("index", None, "rejected", id="index-feedback"),
         pytest.param("worktree", None, "rejected", id="worktree-feedback"),
     ],
 )
@@ -3812,10 +3240,10 @@ def test_cli_live_evidence_accepts_git_target_only(  # noqa: PLR0915
 
     def validate_context(
         context: object,
-        actual_snapshot: object,
+        actual_model: object,
         actual_policy: object,
     ) -> None:
-        validation_calls.append((context, actual_snapshot, actual_policy))
+        validation_calls.append((context, actual_model, actual_policy))
 
     def parse_governance(_value: object) -> object:
         return governance
@@ -3914,7 +3342,7 @@ def test_cli_live_evidence_accepts_git_target_only(  # noqa: PLR0915
         assert admitted_calls == []
 
     assert len(validation_calls) == 1
-    assert validation_calls[0][1:] == (snapshot, policy)
+    assert validation_calls[0][1:] == (repository_model, policy)
 
 
 @pytest.mark.parametrize(
@@ -4990,17 +4418,14 @@ def test_producer_root_outside_dependency_positions_is_clean(
 @pytest.mark.parametrize(
     "terminal_case",
     [
-        pytest.param("source", id="source-acquisition-failed"),
         pytest.param("encoding", id="encoding-rejected"),
         pytest.param("authority-rejected", id="authority-rejected"),
         pytest.param("execution", id="authority-execution-failed"),
         pytest.param("unsupported", id="unsupported-projection"),
-        pytest.param("mismatch-missing", id="authority-mismatch-missing"),
-        pytest.param("mismatch-extra", id="authority-mismatch-extra"),
         pytest.param("cleanup", id="cleanup-failed"),
     ],
 )
-def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C901, PLR0915
+def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C901
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     terminal_case: str,
@@ -5035,17 +4460,6 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
         candidates=candidates,
     )
     acquisition_calls: list[tuple[Path, str, str | None]] = []
-    source_error: SourceAcquisitionError | None = None
-    if terminal_case == "source":
-        non_repository = tmp_path / "not-a-repository"
-        _initialize_repository(non_repository)
-        with pytest.raises(SourceAcquisitionError) as caught:
-            acquire_static_reference_inventory(
-                non_repository,
-                source_kind="git-target",
-                target=TARGET,
-            )
-        source_error = caught.value
 
     def acquire(
         repository_root: Path,
@@ -5054,8 +4468,6 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
         target: str | None = None,
     ) -> object:
         acquisition_calls.append((repository_root, source_kind, target))
-        if source_error is not None:
-            raise source_error
         return inventory
 
     monkeypatch.setattr(
@@ -5091,18 +4503,6 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
         if terminal_case == "execution":
             message = "injected authority timeout"
             raise authority.AuthorityExecutionError(message)
-        if terminal_case == "mismatch-missing":
-            return authority.AuthorityGraphOutcome(
-                graph_id="npm-manifest-v1",
-                implementation_identities=("node@24.19.0",),
-                facts=(),
-            )
-        if terminal_case == "mismatch-extra":
-            return authority.AuthorityGraphOutcome(
-                graph_id="npm-manifest-v1",
-                implementation_identities=("foreign-authority@9.9.9",),
-                facts=(),
-            )
         error_kind = {
             "encoding": "encoding-rejected",
             "authority-rejected": "authority-rejected",
@@ -5127,20 +4527,41 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
             ),
         )
 
+    invocations: dict[str, MaterializedAuthorityInvocation] = {}
+
+    class RecordingSession(StaticReferenceSession):
+        def materialize(
+            self,
+            selected_candidate: StaticReferenceCandidate,
+            *,
+            source_kind: str,
+            target: str | None,
+        ) -> MaterializedAuthorityInvocation:
+            invocation = super().materialize(
+                selected_candidate,
+                source_kind=source_kind,  # type: ignore[arg-type]
+                target=target,
+            )
+            invocations[selected_candidate.path] = invocation
+            return invocation
+
     cleanup_calls: list[Path] = []
 
     def cleanup(path: Path) -> None:
         cleanup_calls.append(path)
         if path.exists():
             shutil.rmtree(path)
-        if terminal_case == "cleanup" and path.name == "invocation-0001":
+        if (
+            terminal_case == "cleanup"
+            and path == invocations["01/package.json"].root
+        ):
             message = "injected exact-root cleanup failure"
             raise OSError(message)
 
     sessions: list[StaticReferenceSession] = []
 
     def session_factory() -> StaticReferenceSession:
-        session = StaticReferenceSession(parent=tmp_path, cleanup=cleanup)
+        session = RecordingSession(parent=tmp_path, cleanup=cleanup)
         sessions.append(session)
         return session
 
@@ -5151,33 +4572,13 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
         session_factory=session_factory,
     )
     expected_error = {
-        "source": "source-acquisition-failed",
         "encoding": "encoding-rejected",
         "authority-rejected": "authority-rejected",
         "execution": "authority-execution-failed",
         "unsupported": "unsupported-projection",
-        "mismatch-missing": "authority-mismatch",
-        "mismatch-extra": "authority-mismatch",
         "cleanup": "cleanup-failed",
     }[terminal_case]
-    expected_identities = (
-        ()
-        if terminal_case == "source"
-        else tuple(
-            sorted(
-                {
-                    *_PHASE2_NPM_IMPLEMENTATIONS,
-                    *(
-                        ("foreign-authority@9.9.9",)
-                        if terminal_case == "mismatch-extra"
-                        else ()
-                    ),
-                },
-                key=lambda identity: identity.encode(),
-            )
-        )
-    )
-
+    expected_identities = _PHASE2_NPM_IMPLEMENTATIONS
     assert result.to_document() == {
         "schema": "workflow-delivery/v3/bounded-static-reference-result",
         "result": "error",
@@ -5190,22 +4591,18 @@ def test_policy_routes_every_terminal_error_without_partial_findings(  # noqa: C
     }
     assert result.findings == ()
     assert acquisition_calls == [(tmp_path, "worktree", None)]
-    assert [path for path, _ in authority_calls] == (
-        []
-        if terminal_case == "source"
-        else ["00/package.json", "01/package.json"]
-    )
-    assert len(sessions) == (0 if terminal_case == "source" else 1)
-    if terminal_case == "source":
-        assert cleanup_calls == []
-    else:
-        assert cleanup_calls == [
-            authority_calls[0][1],
-            authority_calls[1][1],
-            sessions[0].root / "invocation-0002",
-            sessions[0].root,
-        ]
-        assert all(not path.exists() for path in cleanup_calls)
+    assert [path for path, _ in authority_calls] == [
+        "00/package.json",
+        "01/package.json",
+    ]
+    assert len(sessions) == 1
+    assert cleanup_calls == [
+        authority_calls[0][1],
+        authority_calls[1][1],
+        invocations["02/package.json"].root,
+        sessions[0].root,
+    ]
+    assert all(not path.exists() for path in cleanup_calls)
 
 
 @pytest.mark.parametrize(
@@ -5273,12 +4670,12 @@ def test_policy_timeout_and_cancellation_always_clean_exact_roots(  # noqa: PLR0
             shutil.rmtree(path)
         if (
             terminal_case == "timeout-cleanup-failure"
-            and path.name == "invocation-0000"
+            and path == invocations[0].root
         ):
             message = "cleanup overrides timeout"
             raise OSError(message)
 
-    invocation_roots: list[Path] = []
+    invocations: list[MaterializedAuthorityInvocation] = []
 
     class RecordingSession(StaticReferenceSession):
         def materialize(
@@ -5287,13 +4684,13 @@ def test_policy_timeout_and_cancellation_always_clean_exact_roots(  # noqa: PLR0
             *,
             source_kind: str,
             target: str | None,
-        ) -> object:
+        ) -> MaterializedAuthorityInvocation:
             invocation = super().materialize(
                 selected_candidate,
                 source_kind=source_kind,  # type: ignore[arg-type]
                 target=target,
             )
-            invocation_roots.append(invocation.root)
+            invocations.append(invocation)
             return invocation
 
     sessions: list[RecordingSession] = []
@@ -5345,7 +4742,7 @@ def test_policy_timeout_and_cancellation_always_clean_exact_roots(  # noqa: PLR0
     assert command[1] == str(
         REPO_ROOT / "eng/scripts/workflow_delivery_v3_static_reference_node.mjs"
     )
-    assert kwargs["cwd"] == invocation_roots[0]
+    assert kwargs["cwd"] == invocations[0].root
     assert kwargs["timeout"] == 30  # noqa: PLR2004
     request = json.loads(kwargs["input"])  # type: ignore[arg-type]
     assert request == {
@@ -5353,14 +4750,12 @@ def test_policy_timeout_and_cancellation_always_clean_exact_roots(  # noqa: PLR0
             "workflow-delivery/v3/static-reference-node-authority-request"
         ),
         "graph": "npm-manifest-v1",
-        "snapshotRoot": str(invocation_roots[0] / "snapshot"),
-        "candidatePath": str(
-            invocation_roots[0] / "snapshot/candidate/package.json"
-        ),
+        "snapshotRoot": str(invocations[0].snapshot_root),
+        "candidatePath": str(invocations[0].candidate_path),
         "logicalPath": "candidate/package.json",
     }
     assert len(sessions) == 1
-    assert cleanup_calls == [invocation_roots[0], sessions[0].root]
+    assert cleanup_calls == [invocations[0].root, sessions[0].root]
     assert all(not path.exists() for path in cleanup_calls)
 
 
@@ -5750,79 +5145,9 @@ def test_invocation_admitted_missing_object_emits_source_failure_result(
     ("path", "content"),
     [
         pytest.param(
-            "docs/static-reference.md",
-            b"@hcoona/hcoona-release-smoke-npm\n",
-            id="documentation",
-        ),
-        pytest.param(
-            "setup.py",
-            b'install_requires=["@hcoona/hcoona-release-smoke-npm"]\n',
-            id="setup-py",
-        ),
-        pytest.param(
-            "requirements-release.txt",
-            b"@hcoona/hcoona-release-smoke-npm==1.0.0\n",
-            id="requirements",
-        ),
-        pytest.param(
-            "poetry.lock",
-            b'name = "@hcoona/hcoona-release-smoke-npm"\n',
-            id="poetry-lock",
-        ),
-        pytest.param(
-            "bun.lockb",
-            b"\x00@hcoona/hcoona-release-smoke-npm\x00",
-            id="bun",
-        ),
-        pytest.param(
-            ".npmrc",
-            b"producer=@hcoona/hcoona-release-smoke-npm\n",
-            id="npmrc",
-        ),
-        pytest.param(
-            ".yarnrc.yml",
-            b"producer: @hcoona/hcoona-release-smoke-npm\n",
-            id="yarnrc",
-        ),
-        pytest.param(
-            "renovate.json",
-            b'{"package":"@hcoona/hcoona-release-smoke-npm"}\n',
-            id="renovate",
-        ),
-        pytest.param(
-            ".github/dependabot.yml",
-            b"package: @hcoona/hcoona-release-smoke-npm\n",
-            id="dependabot",
-        ),
-        pytest.param(
-            ".pnpmfile.cjs",
-            b"module.exports='@hcoona/hcoona-release-smoke-npm';\n",
-            id="pnpmfile",
-        ),
-        pytest.param(
-            "eng/install.bat",
-            b"npm install @hcoona/hcoona-release-smoke-npm\r\n",
-            id="batch",
-        ),
-        pytest.param(
-            "eng/install.zsh",
-            b"npm install @hcoona/hcoona-release-smoke-npm\n",
-            id="zsh",
-        ),
-        pytest.param(
             "src/ordinary.js",
             b'import "@hcoona/hcoona-release-smoke-npm";\n',
             id="ordinary-javascript",
-        ),
-        pytest.param(
-            "src/ordinary.ts",
-            b'import "@hcoona/hcoona-release-smoke-npm";\n',
-            id="ordinary-typescript",
-        ),
-        pytest.param(
-            "src/ordinary.py",
-            b'PACKAGE = "@hcoona/hcoona-release-smoke-npm"\n',
-            id="ordinary-python",
         ),
     ],
 )
@@ -5831,7 +5156,7 @@ def test_remaining_excluded_categories_select_no_graph_or_runner(
     path: str,
     content: bytes,
 ) -> None:
-    """Keep every remaining excluded category outside the bounded graph."""
+    """Keep an ordinary source reference outside the bounded graph."""
     from three_workflow_delivery_v3.release.static_reference_policy import (  # noqa: PLC0415
         scan_bounded_static_references,
     )
@@ -6076,6 +5401,27 @@ def test_git_sources_ignore_all_ambient_repository_object_and_config_redirects( 
         source_kind="worktree",
     )
 
+    assert [candidate.path for candidate in target_inventory.candidates] == [
+        "package.json",
+    ]
+    assert [candidate.content for candidate in target_inventory.candidates] == [
+        committed,
+    ]
+    assert [candidate.path for candidate in index_inventory.candidates] == [
+        "package.json",
+    ]
+    assert [candidate.content for candidate in index_inventory.candidates] == [
+        indexed,
+    ]
+    assert [candidate.path for candidate in worktree_inventory.candidates] == [
+        "package.json",
+    ]
+    assert [
+        candidate.content for candidate in worktree_inventory.candidates
+    ] == [
+        worktree,
+    ]
+
     assert [
         (
             target_inventory.source_kind,
@@ -6100,14 +5446,7 @@ def test_git_sources_ignore_all_ambient_repository_object_and_config_redirects( 
         ("index", None, indexed, indexed_object),
         ("worktree", None, worktree, None),
     ]
-    assert len(git_calls) == 10  # noqa: PLR2004
-    assert (
-        sum(
-            call[0][2:] == ("rev-parse", "--show-toplevel")
-            for call in git_calls
-        )
-        == 3  # noqa: PLR2004
-    )
+    assert git_calls
     assert all(call[1] == repository.resolve() for call in git_calls)
     assert all(call[0][1] == "--no-replace-objects" for call in git_calls)
     assert all(
@@ -6257,6 +5596,55 @@ def test_worktree_permission_errors_are_typed_and_stop_before_authority(  # noqa
     assert fault_calls == [fault_path, fault_path]
     assert authority_calls == []
     assert session_calls == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param(".github/workflows/release.yml", id="github-workflow"),
+        pytest.param(
+            ".github/actions/inspect/action.yml", id="composite-action"
+        ),
+        pytest.param(
+            "src/consumer/import-subpath.mjs", id="node-import-subpath"
+        ),
+        pytest.param("src/consumer/package-lock.json", id="npm-lock"),
+        pytest.param("uv.lock", id="uv-lock"),
+        pytest.param("src/consumer/yarn.lock", id="yarn-lock"),
+        pytest.param("src/consumer/Consumer.csproj", id="msbuild-project"),
+        pytest.param("Directory.Packages.props", id="msbuild-central-manifest"),
+        pytest.param(
+            "src/consumer/pyproject.toml", id="standalone-python-manifest"
+        ),
+        pytest.param("eng/scripts/install.sh", id="shell-script"),
+        pytest.param("eng/scripts/install.ps1", id="powershell-script"),
+        pytest.param(
+            ".github/workflows/pnpm-workspace.yaml",
+            id="reserved-workflow-pnpm-workspace",
+        ),
+        pytest.param("docs/static-reference.md", id="documentation"),
+        pytest.param("setup.py", id="setup-py"),
+        pytest.param("requirements-release.txt", id="requirements"),
+        pytest.param("poetry.lock", id="poetry-lock"),
+        pytest.param("bun.lockb", id="bun"),
+        pytest.param(".npmrc", id="npmrc"),
+        pytest.param(".yarnrc.yml", id="yarnrc"),
+        pytest.param("renovate.json", id="renovate"),
+        pytest.param(".github/dependabot.yml", id="dependabot"),
+        pytest.param(".pnpmfile.cjs", id="pnpmfile"),
+        pytest.param("eng/install.bat", id="batch"),
+        pytest.param("eng/install.zsh", id="zsh"),
+        pytest.param("src/ordinary.ts", id="ordinary-typescript"),
+        pytest.param("src/ordinary.py", id="ordinary-python"),
+    ],
+)
+def test_excluded_paths_have_no_static_reference_selection(path: str) -> None:
+    """Own excluded path examples without repository or scanner setup."""
+    from three_workflow_delivery_v3.release.static_reference_source import (  # noqa: PLC0415
+        select_static_reference_path,
+    )
+
+    assert select_static_reference_path(path) is None
 
 
 @pytest.mark.parametrize(

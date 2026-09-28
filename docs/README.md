@@ -46,6 +46,7 @@ Neither this portal nor an old plan adds work to the accepted Wave.
 | Workflow Delivery v3                      | [Domain records](../src/public/lib/three-workflow-delivery-v3/docs/README.md), [library interface](../src/public/lib/three-workflow-delivery-v3/README.md), [NuGet helper routing](../src/private/app/workflow-delivery-v3-nuget-authority/README.md)                                                                 |
 | Separate npm smoke product                | [Frozen package interface](../src/public/lib/hcoona-release-smoke-npm/README.md)                                                                                                                                                                                                                                      |
 | Separate NuGet smoke product              | [Marker library](../src/public/lib/hcoona-release-smoke-github-packages/README.md); the [v3 project](../src/public/lib/three-workflow-delivery-v3/README.md) owns delivery and native helper contracts                                                                                                                |
+| Separate Python smoke product             | [Installed marker API](../src/public/lib/hcoona-release-smoke-python/README.md); [V3 slice design](../src/public/lib/three-workflow-delivery-v3/docs/hcoona-release-smoke-python-lld.md)                                                                                                                              |
 | Asciidoctor LaTeX rendering               | [Package](../src/public/lib/asciidoctor-latexmath/README.md), [contracts, research and evidence](../src/public/lib/asciidoctor-latexmath/docs/README.md)                                                                                                                                                              |
 | Hexo AsciiDoc rendering                   | [Contributor interface](../src/public/lib/hexo-renderer-asciidoc/README.md), [package interface](../src/public/lib/hexo-renderer-asciidoc/README.npm.md), [change history](../src/public/lib/hexo-renderer-asciidoc/CHANGELOG.md), [example](../src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md)   |
 | Steam account history export              | [Developer interface](../src/public/lib/steam-account-history-to-csv/README.md), [user interface](../src/public/lib/steam-account-history-to-csv/README.user.md), [privacy](../src/public/lib/steam-account-history-to-csv/PRIVACY.md), [change history](../src/public/lib/steam-account-history-to-csv/CHANGELOG.md) |
@@ -101,3 +102,8 @@ product requirements. Workspace membership remains in the manifests linked
 from [shared setup](engineering/workspaces.md); this portal is not a second
 project registry. Fixtures, examples, licenses, captures and runtime skill assets
 retain their actual consumers and provenance even when they are not policy.
+
+## Test Migration Guidance
+
+The [xUnit-to-MSTest skill](../.apm/skills/migrate-xunit-to-mstest/SKILL.md)
+preserves fixture and scheduling semantics during requested framework migrations.

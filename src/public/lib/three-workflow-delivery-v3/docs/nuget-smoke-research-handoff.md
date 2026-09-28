@@ -22,7 +22,7 @@ publication work in the confirmed scope. It does not adopt historical policy
 or waive technical admission, protected delivery, independent review and
 audit, current-run Approval, or ambiguity stop conditions.
 
-Check the accepted [Workflow v3 Wave entry](../../../../../docs/delivery-wave.md#advance-workflow-delivery-v3)
+Check the accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
 before continuing. [Issue #676](https://github.com/hcoona/three/issues/676)
 coordinates the NuGet delivery units and their evidence under that grant;
 domain-specific external-effect bounds remain separate.

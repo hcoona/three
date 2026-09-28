@@ -62,6 +62,7 @@ def _modeled_profile_document(resources=RESOURCES):
             "tlsLibrary": "modeled TLS library",
             "adapterSha256": "d" * 64,
         },
+        "3.13.12",
     )
 
 

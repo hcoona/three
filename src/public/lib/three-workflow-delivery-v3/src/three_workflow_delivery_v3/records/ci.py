@@ -12,7 +12,7 @@ from three_workflow_delivery_v3.canonical import (
     canonical_sha256,
     parse_canonical_json,
 )
-from three_workflow_delivery_v3.catalogs import QUALITY_DEFINITIONS
+from three_workflow_delivery_v3.ci import rules
 from three_workflow_delivery_v3.ci.path_admission import (
     is_repository_only_path,
     is_static_reference_control_path,
@@ -20,8 +20,6 @@ from three_workflow_delivery_v3.ci.path_admission import (
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-    from three_workflow_delivery_v3.catalogs import QualityDefinition
 
 CI_CANDIDATE_SCHEMA = "workflow-delivery/v3/ci-candidate"
 CI_OBLIGATION_SCHEMA = "workflow-delivery/v3/ci-obligation"
@@ -38,29 +36,12 @@ CI_SLICE_SUMMARY_SCHEMA = "workflow-delivery/v3/ci-slice-summary"
 CI_SLICE_DECISION_SCHEMA = "workflow-delivery/v3/ci-slice-decision"
 
 CI_WORKFLOW_PATH = ".github/workflows/workflow-delivery-v3-ci.yml"
-CI_LANE_IDS = (
-    "root-hk",
-    "project-build",
-    "project-test",
-    "npm-artifact-build",
-)
-CI_ROOT_HK_DEFINITION = "repository/source-tree-conformance-v1"
+CI_LANE_IDS = rules.CI_LANE_IDS
+CI_ROOT_HK_DEFINITION = rules.CI_ROOT_HK_DEFINITION
 
 type CiOutputIdentity = tuple[str, str, str]
 
 _CI_LANE_ID_SET = frozenset(CI_LANE_IDS)
-_CI_LANE_DEFINITIONS = {
-    "root-hk": CI_ROOT_HK_DEFINITION,
-    "project-build": "node/project-build-v1",
-    "project-test": "node/project-test-v1",
-    "npm-artifact-build": "node/npm-artifact-v1",
-}
-_CI_LANE_PREREQUISITES = {
-    "root-hk": (),
-    "project-build": (),
-    "project-test": (),
-    "npm-artifact-build": (),
-}
 _EVENT_PURPOSES = {
     "pull_request": "ci-pr-slice-shadow",
     "workflow_dispatch": "slice-validation",
@@ -69,14 +50,7 @@ _EVENT_SCOPE_MODES = {
     "pull_request": "incremental",
     "workflow_dispatch": "slice-validation",
 }
-_RAW_TO_NORMALIZED_OUTCOME = {
-    "success": "satisfied",
-    "failure": "failed",
-    "skipped": "skipped",
-    "timed-out": "timed-out",
-    "unknown": "unknown",
-}
-_EVIDENCE_OUTCOMES = frozenset(_RAW_TO_NORMALIZED_OUTCOME.values())
+_EVIDENCE_OUTCOMES = rules.EVIDENCE_OUTCOMES
 _LANE_RESULT_OUTCOMES = _EVIDENCE_OUTCOMES | frozenset({"empty"})
 _FINAL_DISPOSITION_OUTCOMES = _EVIDENCE_OUTCOMES | frozenset(
     {"empty", "incomplete"}
@@ -92,15 +66,7 @@ _PR_SLO_REASONS = frozenset(
         "not-pull-request",
     }
 )
-_SUPERSESSION_STATES = frozenset(
-    {"not-superseded", "superseded", "unsupported", "not-applicable"}
-)
-_SUPERSESSION_REASONS = {
-    "not-superseded": "trusted-current-candidate",
-    "superseded": "trusted-superseded-candidate",
-    "unsupported": "platform-proof-unavailable",
-    "not-applicable": "not-pull-request",
-}
+_SUPERSESSION_STATES = rules.SUPERSESSION_STATES
 _PR_SLO_SECONDS = 12 * 60
 _PAIR_FIELD_COUNT = 2
 _FAILURE_CLASSES = frozenset(
@@ -163,6 +129,7 @@ _SLO_BROAD_CONTROL_PATHS = frozenset(
 )
 _SLO_ROOT_TOOLCHAIN_PATHS = frozenset(
     {
+        ".python-version",
         "Directory.Build.props",
         "Directory.Build.targets",
         "global.json",
@@ -953,30 +920,6 @@ def _validate_obligation_dag(  # noqa: C901
         visit(obligation_id)
 
 
-def _quality_definition_document(
-    definition: QualityDefinition,
-) -> dict[str, JsonValue]:
-    capability_requirements = cast(
-        "list[JsonValue]",
-        list(definition.capability_requirements),
-    )
-    return {
-        "schema": "workflow-delivery/v3/quality-definition",
-        "logical-id": definition.logical_id,
-        "subject": definition.subject,
-        "operation": definition.operation,
-        "implementation-id": definition.implementation_id,
-        "execution-class": definition.execution_class,
-        "capability-requirements": capability_requirements,
-    }
-
-
-def _fixed_definition_digest(definition_id: str) -> str:
-    return canonical_sha256(
-        _quality_definition_document(QUALITY_DEFINITIONS[definition_id]),
-    )
-
-
 def _expected_obligation_request_digest(  # noqa: PLR0913
     snapshot: CiQualificationSnapshot,
     *,
@@ -986,27 +929,20 @@ def _expected_obligation_request_digest(  # noqa: PLR0913
     prerequisites: tuple[str, ...],
     selected: bool,
 ) -> str:
-    return canonical_sha256(
-        {
-            "schema": "workflow-delivery/v3/ci-obligation-request",
-            "candidate-digest": ci_candidate_digest(snapshot.candidate),
-            "repository-model-digest": snapshot.repository_model_digest,
-            "lane-id": lane_id,
-            "definition-id": definition_id,
-            "definition-digest": definition_digest,
-            "prerequisites": list(prerequisites),
-            "selected": selected,
-            "required": selected,
-            "scope-mode": snapshot.scope_mode,
-            "changed-paths": list(snapshot.changed_paths),
-            "selected-project-nodes": list(snapshot.selected_project_nodes),
-            "selected-release-units": list(snapshot.selected_release_units),
-            "selected-variants": list(snapshot.selected_variants),
-            "selected-outputs": [
-                _output_identity_document(output)
-                for output in snapshot.selected_outputs
-            ],
-        }
+    return rules.ci_obligation_request_digest(
+        candidate_digest=ci_candidate_digest(snapshot.candidate),
+        repository_model_digest=snapshot.repository_model_digest,
+        lane_id=lane_id,
+        definition_id=definition_id,
+        definition_digest=definition_digest,
+        prerequisites=prerequisites,
+        selected=selected,
+        scope_mode=snapshot.scope_mode,
+        changed_paths=snapshot.changed_paths,
+        selected_project_nodes=snapshot.selected_project_nodes,
+        selected_release_units=snapshot.selected_release_units,
+        selected_variants=snapshot.selected_variants,
+        selected_outputs=snapshot.selected_outputs,
     )
 
 
@@ -1021,9 +957,8 @@ def _validate_fixed_plan_obligations(
         snapshot.obligations,
         strict=True,
     ):
-        definition_id = _CI_LANE_DEFINITIONS[lane_id]
-        definition_digest = _fixed_definition_digest(definition_id)
-        prerequisites = _CI_LANE_PREREQUISITES[lane_id]
+        definition_id, prerequisites = rules.CI_LANES[lane_id]
+        definition_digest = rules.ci_definition_digest(definition_id)
         request_digest = _expected_obligation_request_digest(
             snapshot,
             lane_id=lane_id,
@@ -1184,7 +1119,7 @@ def _validate_ci_qualification_snapshot(  # noqa: C901, PLR0915
     if (
         snapshot.root_hk_definition != CI_ROOT_HK_DEFINITION
         or snapshot.root_hk_definition_digest
-        != _fixed_definition_digest(CI_ROOT_HK_DEFINITION)
+        != rules.ci_definition_digest(CI_ROOT_HK_DEFINITION)
     ):
         message = "Qualification Snapshot root-HK definition is not current"
         raise ValueError(message)
@@ -1430,7 +1365,7 @@ def _validate_ci_evidence(  # noqa: C901, PLR0912, PLR0915
     _require_nonempty_string(evidence.runner, field="evidence.runner")
     _require_choice(
         evidence.raw_outcome,
-        _RAW_TO_NORMALIZED_OUTCOME,
+        rules.RAW_OUTCOMES,
         field="evidence.raw_outcome",
     )
     _require_choice(
@@ -1438,7 +1373,7 @@ def _validate_ci_evidence(  # noqa: C901, PLR0912, PLR0915
         _EVIDENCE_OUTCOMES,
         field="evidence.normalized_outcome",
     )
-    expected_outcome = _RAW_TO_NORMALIZED_OUTCOME[evidence.raw_outcome]
+    expected_outcome = rules.normalize_required_outcome(evidence.raw_outcome)
     if evidence.normalized_outcome != expected_outcome:
         message = "Evidence normalized outcome does not match raw mechanics"
         raise ValueError(message)
@@ -1551,63 +1486,6 @@ def _validate_ci_lane_result(result: CiLaneResult) -> None:
         raise ValueError(message)
 
 
-def _disposition_explanation(
-    obligation: CiObligation,
-    outcome: str,
-) -> str:
-    if not obligation.selected:
-        return f"{obligation.lane_id} was not selected"
-    if outcome == "incomplete":
-        return f"{obligation.lane_id} selected work did not emit Evidence"
-    return f"{obligation.lane_id} {outcome}"
-
-
-def _terminal_result(
-    dispositions: tuple[CiObligationDisposition, ...],
-) -> str:
-    selected_outcomes = tuple(
-        disposition.outcome
-        for disposition in dispositions
-        if disposition.obligation.selected
-    )
-    if "incomplete" in selected_outcomes:
-        return "incomplete"
-    if selected_outcomes and all(
-        outcome == "satisfied" for outcome in selected_outcomes
-    ):
-        return "success"
-    return "failure"
-
-
-def _decision_explanation(
-    dispositions: tuple[CiObligationDisposition, ...],
-    terminal_result: str,
-) -> str:
-    if terminal_result == "success":
-        return "all selected CI slice obligations were satisfied"
-    incomplete = tuple(
-        disposition.obligation.lane_id
-        for disposition in dispositions
-        if disposition.obligation.selected
-        and disposition.outcome == "incomplete"
-    )
-    if incomplete:
-        return "selected CI slice obligations are incomplete: " + ", ".join(
-            incomplete
-        )
-    failed = tuple(
-        f"{disposition.obligation.lane_id}={disposition.outcome}"
-        for disposition in dispositions
-        if disposition.obligation.selected
-        and disposition.outcome != "satisfied"
-    )
-    if failed:
-        return "selected CI slice obligations were not satisfied: " + ", ".join(
-            failed
-        )
-    return "CI slice Plan was not ready for required work"
-
-
 def _is_broad_pr_slo_change(path: str) -> bool:
     return (
         path in _SLO_BROAD_CONTROL_PATHS
@@ -1654,15 +1532,7 @@ def derive_ci_failure(
     selected = tuple(
         item.outcome for item in dispositions if item.obligation.selected
     )
-    if not selected:
-        return "incomplete-model-plan", "fix-model-plan-and-rerun"
-    if "incomplete" in selected or any(
-        outcome in {"skipped", "timed-out", "unknown"} for outcome in selected
-    ):
-        return "incomplete-qualification", "rerun-candidate"
-    if "failed" in selected:
-        return "quality-failure", "fix-quality-failure-and-rerun"
-    return "none", "none"
+    return rules.failure_action(selected)
 
 
 def ci_slice_summary_text(  # noqa: PLR0913
@@ -1770,9 +1640,10 @@ def _validate_ci_obligation_disposition(
     elif disposition.outcome != "empty":
         message = "unselected obligation must have empty disposition"
         raise ValueError(message)
-    expected_explanation = _disposition_explanation(
-        disposition.obligation,
-        disposition.outcome,
+    expected_explanation = rules.disposition_explanation(
+        disposition.obligation.lane_id,
+        selected=disposition.obligation.selected,
+        outcome=disposition.outcome,
     )
     if disposition.explanation != expected_explanation:
         message = "obligation disposition explanation is not deterministic"
@@ -1971,12 +1842,19 @@ def _validate_ci_slice_decision(  # noqa: C901, PLR0912, PLR0915
         _TERMINAL_RESULTS,
         field="slice_decision.terminal_result",
     )
-    expected_terminal = _terminal_result(decision.obligation_dispositions)
+    selected_lane_outcomes = tuple(
+        (item.obligation.lane_id, item.outcome)
+        for item in decision.obligation_dispositions
+        if item.obligation.selected
+    )
+    expected_terminal = rules.terminal_result(
+        tuple(outcome for _, outcome in selected_lane_outcomes)
+    )
     if decision.terminal_result != expected_terminal:
         message = "Slice Decision terminal result contradicts dispositions"
         raise ValueError(message)
-    expected_explanation = _decision_explanation(
-        decision.obligation_dispositions,
+    expected_explanation = rules.decision_explanation(
+        selected_lane_outcomes,
         expected_terminal,
     )
     if decision.explanation != expected_explanation:
@@ -2020,12 +1898,12 @@ def _validate_ci_slice_decision(  # noqa: C901, PLR0912, PLR0915
     )
     _require_choice(
         decision.supersession_reason,
-        set(_SUPERSESSION_REASONS.values()),
+        rules.SUPERSESSION_REASONS,
         field="slice_decision.supersession_reason",
     )
-    expected_supersession_reason = _SUPERSESSION_REASONS[
+    expected_supersession_reason = rules.supersession_reason(
         decision.supersession_state
-    ]
+    )
     if decision.supersession_reason != expected_supersession_reason:
         message = "CI Slice Decision supersession reason is not deterministic"
         raise ValueError(message)
@@ -2969,36 +2847,14 @@ def _require_expected_candidate(
         raise ValueError(message)
 
 
-def admit_ci_candidate_json(
+def admit_ci_qualification_snapshot_json(
     document: bytes | bytearray,
     *,
-    expected_candidate: CiCandidate,
-) -> CiCandidate:
-    """Admit one canonical UTF-8 CI Candidate document."""
-    parsed = parse_canonical_json(document)
-    candidate = _ci_candidate_from_document(parsed, context="CI Candidate")
-    _require_expected_candidate(
-        candidate,
-        expected_candidate,
-        context="CI Candidate",
-    )
-    return candidate
-
-
-def admit_ci_qualification_snapshot_json(  # noqa: PLR0913
-    document: bytes | bytearray,
-    *,
-    expected_candidate: CiCandidate,
-    expected_repository_model_digest: str,
     expected_root_hk_definition: str,
     expected_root_hk_definition_digest: str,
     expected_plan_digest: str,
 ) -> CiQualificationSnapshot:
     """Admit one canonical UTF-8 CI Qualification Snapshot document."""
-    _require_digest(
-        expected_repository_model_digest,
-        field="expected_repository_model_digest",
-    )
     _require_nonempty_string(
         expected_root_hk_definition,
         field="expected_root_hk_definition",
@@ -3010,7 +2866,7 @@ def admit_ci_qualification_snapshot_json(  # noqa: PLR0913
     if (
         expected_root_hk_definition != CI_ROOT_HK_DEFINITION
         or expected_root_hk_definition_digest
-        != _fixed_definition_digest(CI_ROOT_HK_DEFINITION)
+        != rules.ci_definition_digest(CI_ROOT_HK_DEFINITION)
     ):
         message = "trusted root-HK definition inputs are not current"
         raise ValueError(message)
@@ -3020,17 +2876,6 @@ def admit_ci_qualification_snapshot_json(  # noqa: PLR0913
         parsed,
         context="CI Qualification Snapshot",
     )
-    _require_expected_candidate(
-        snapshot.candidate,
-        expected_candidate,
-        context="CI Qualification Snapshot",
-    )
-    if snapshot.repository_model_digest != expected_repository_model_digest:
-        message = (
-            "CI Qualification Snapshot does not match the trusted "
-            "Repository Model digest"
-        )
-        raise ValueError(message)
     if (
         snapshot.root_hk_definition != expected_root_hk_definition
         or snapshot.root_hk_definition_digest
@@ -3047,102 +2892,14 @@ def admit_ci_qualification_snapshot_json(  # noqa: PLR0913
     return snapshot
 
 
-def admit_ci_evidence_json(
-    document: bytes | bytearray,
-    *,
-    expected_candidate: CiCandidate,
-    expected_plan_digest: str,
-    expected_obligation: CiObligation,
-) -> CiEvidence:
-    """Admit one canonical UTF-8 CI Evidence document."""
-    _require_digest(expected_plan_digest, field="expected_plan_digest")
-    _validate_ci_obligation(expected_obligation)
-    parsed = parse_canonical_json(document)
-    evidence = _ci_evidence_from_document(parsed, context="CI Evidence")
-    _require_expected_candidate(
-        evidence.candidate,
-        expected_candidate,
-        context="CI Evidence",
-    )
-    if evidence.plan_digest != expected_plan_digest:
-        message = "CI Evidence does not match the trusted Plan digest"
-        raise ValueError(message)
-    if evidence.obligation != expected_obligation:
-        message = "CI Evidence does not match the trusted obligation"
-        raise ValueError(message)
-    return evidence
-
-
-def admit_ci_artifact_json(  # noqa: PLR0913
-    document: bytes | bytearray,
-    *,
-    expected_candidate: CiCandidate,
-    expected_artifact_id: int,
-    expected_artifact_name: str,
-    expected_artifact_url: str,
-    expected_transport_digest: str,
-    expected_output_id: str,
-    expected_logical_role: str,
-    expected_media_kind: str,
-) -> CiArtifact:
-    """Admit one canonical current-candidate CI npm artifact record."""
-    _require_positive_integer(
-        expected_artifact_id,
-        field="expected_artifact_id",
-    )
-    _require_nonempty_string(
-        expected_artifact_name,
-        field="expected_artifact_name",
-    )
-    _require_nonempty_string(
-        expected_artifact_url,
-        field="expected_artifact_url",
-    )
-    _require_digest(
-        expected_transport_digest,
-        field="expected_transport_digest",
-    )
-    _require_nonempty_string(expected_output_id, field="expected_output_id")
-    _require_nonempty_string(
-        expected_logical_role,
-        field="expected_logical_role",
-    )
-    _require_nonempty_string(expected_media_kind, field="expected_media_kind")
-    parsed = parse_canonical_json(document)
-    artifact = _ci_artifact_from_document(parsed, context="CI Artifact")
-    _require_expected_candidate(
-        artifact.candidate,
-        expected_candidate,
-        context="CI Artifact",
-    )
-    if (
-        artifact.artifact_id != expected_artifact_id
-        or artifact.artifact_name != expected_artifact_name
-        or artifact.artifact_url != expected_artifact_url
-        or artifact.transport_digest != expected_transport_digest
-        or artifact.output_id != expected_output_id
-        or artifact.logical_role != expected_logical_role
-        or artifact.media_kind != expected_media_kind
-    ):
-        message = "CI Artifact does not match trusted platform metadata"
-        raise ValueError(message)
-    return artifact
-
-
 def admit_ci_lane_result_json(
     document: bytes | bytearray,
     *,
     expected_candidate: CiCandidate,
     expected_plan_digest: str,
-    expected_lane_id: str,
 ) -> CiLaneResult:
     """Admit one canonical UTF-8 CI Lane Result document."""
     _require_digest(expected_plan_digest, field="expected_plan_digest")
-    _require_choice(
-        expected_lane_id,
-        _CI_LANE_ID_SET,
-        field="expected_lane_id",
-    )
     parsed = parse_canonical_json(document)
     result = _ci_lane_result_from_document(parsed, context="CI Lane Result")
     _require_expected_candidate(
@@ -3153,63 +2910,17 @@ def admit_ci_lane_result_json(
     if result.plan_digest != expected_plan_digest:
         message = "CI Lane Result does not match the trusted Plan digest"
         raise ValueError(message)
-    if result.lane_id != expected_lane_id:
-        message = "CI Lane Result does not match the trusted static lane"
-        raise ValueError(message)
     return result
 
 
-def admit_ci_slice_decision_json(  # noqa: C901
+def admit_ci_bootstrap_projection_decision_json(
     document: bytes | bytearray,
     *,
     expected_plan: CiQualificationSnapshot,
-    expected_evidence: tuple[CiEvidence, ...],
-    expected_elapsed_seconds: int,
-    expected_supersession_state: str,
 ) -> CiSliceDecision:
-    """Admit one canonical UTF-8 non-authoritative CI Slice Decision."""
+    """Admit a canonical empty-Evidence Decision for bootstrap projection."""
     _validate_ci_qualification_snapshot(expected_plan)
-    _require_nonnegative_integer(
-        expected_elapsed_seconds,
-        field="expected_elapsed_seconds",
-    )
-    _require_choice(
-        expected_supersession_state,
-        _SUPERSESSION_STATES,
-        field="expected_supersession_state",
-    )
     expected_plan_digest = ci_qualification_snapshot_digest(expected_plan)
-    _require_exact_type(
-        expected_evidence,
-        tuple,
-        field="expected_evidence",
-    )
-    expected_evidence_by_obligation: dict[str, CiEvidence] = {}
-    for evidence in expected_evidence:
-        _validate_ci_evidence(evidence)
-        obligation_id = evidence.obligation.obligation_id
-        if obligation_id in expected_evidence_by_obligation:
-            message = "trusted Plan Evidence contains duplicate obligations"
-            raise ValueError(message)
-        expected_obligation = next(
-            (
-                obligation
-                for obligation in expected_plan.obligations
-                if obligation.obligation_id == obligation_id
-            ),
-            None,
-        )
-        if (
-            expected_obligation is None
-            or evidence.obligation != expected_obligation
-            or evidence.plan_digest != expected_plan_digest
-            or evidence.candidate != expected_plan.candidate
-            or evidence.workflow_run_id != expected_plan.workflow_run_id
-            or evidence.run_attempt != expected_plan.run_attempt
-        ):
-            message = "trusted Evidence does not match the trusted Plan"
-            raise ValueError(message)
-        expected_evidence_by_obligation[obligation_id] = evidence
     parsed = parse_canonical_json(document)
     decision = _ci_slice_decision_from_document(
         parsed,
@@ -3238,12 +2949,6 @@ def admit_ci_slice_decision_json(  # noqa: C901
     ):
         message = "CI Slice Decision does not match trusted Plan scope"
         raise ValueError(message)
-    if decision.elapsed_seconds != expected_elapsed_seconds:
-        message = "CI Slice Decision does not match trusted elapsed time"
-        raise ValueError(message)
-    if decision.supersession_state != expected_supersession_state:
-        message = "CI Slice Decision does not match trusted supersession state"
-        raise ValueError(message)
     if (
         tuple(
             disposition.obligation
@@ -3253,42 +2958,15 @@ def admit_ci_slice_decision_json(  # noqa: C901
     ):
         message = "CI Slice Decision dispositions do not match the trusted Plan"
         raise ValueError(message)
-    for disposition in decision.obligation_dispositions:
-        evidence = expected_evidence_by_obligation.get(
-            disposition.obligation.obligation_id,
-        )
-        expected_digests = (
-            () if evidence is None else (ci_evidence_digest(evidence),)
-        )
-        if disposition.evidence_digests != expected_digests:
-            message = (
-                "CI Slice Decision Evidence does not match trusted admitted "
-                "Evidence"
-            )
-            raise ValueError(message)
-        if (
-            evidence is not None
-            and disposition.outcome != evidence.normalized_outcome
-        ):
-            message = (
-                "CI Slice Decision outcome does not match trusted admitted "
-                "Evidence"
-            )
-            raise ValueError(message)
-    expected_artifact_digests = tuple(
-        ci_artifact_digest(artifact)
-        for obligation in expected_plan.obligations
-        if (
-            evidence := expected_evidence_by_obligation.get(
-                obligation.obligation_id
-            )
-        )
-        is not None
-        for artifact in evidence.artifacts
-    )
-    if decision.admitted_artifact_digests != expected_artifact_digests:
+    if any(
+        disposition.evidence_digests
+        for disposition in decision.obligation_dispositions
+    ):
+        message = "bootstrap projection Decision must have no admitted Evidence"
+        raise ValueError(message)
+    if decision.admitted_artifact_digests:
         message = (
-            "CI Slice Decision artifacts do not match trusted admitted Evidence"
+            "bootstrap projection Decision must have no admitted artifacts"
         )
         raise ValueError(message)
     return decision
@@ -3354,12 +3032,9 @@ __all__ = [
     "CiQualificationSnapshot",
     "CiSliceDecision",
     "CiSliceSummary",
-    "admit_ci_artifact_json",
-    "admit_ci_candidate_json",
-    "admit_ci_evidence_json",
+    "admit_ci_bootstrap_projection_decision_json",
     "admit_ci_lane_result_json",
     "admit_ci_qualification_snapshot_json",
-    "admit_ci_slice_decision_json",
     "ci_artifact_digest",
     "ci_candidate_digest",
     "ci_evidence_digest",

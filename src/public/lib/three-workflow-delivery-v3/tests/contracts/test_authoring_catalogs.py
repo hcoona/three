@@ -354,10 +354,11 @@ def test_first_slice_authoring_accepts_exact_approved_one_output(
 
 
 def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
-    """Register only the two confirmed slices' logical contract inventory."""
+    """Register the approved npm, NuGet and Python contract inventory."""
     assert set(BUILD_DEFINITIONS) == {
         "node/npm-package-v1",
         "dotnet/nuget-package-v1",
+        "python/distribution-set-v1",
     }
     assert set(QUALITY_DEFINITIONS) == {
         "node/project-build-v1",
@@ -368,15 +369,21 @@ def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
         "node/npm-install-import-v1",
         "dotnet/nuget-artifact-contents-v1",
         "dotnet/nuget-restore-build-invoke-v1",
+        "python/distribution-contents-v1",
+        "python/wheel-install-import-v1",
+        "python/sdist-build-install-import-v1",
     }
     assert set(QUALITY_PRESETS) == {
         "node/hcoona-release-smoke-npm-v1",
         "dotnet/hcoona-release-smoke-github-packages-v1",
+        "python/hcoona-release-smoke-python-v1",
     }
     assert set(DESTINATION_DEFINITIONS) == {
         "npm/github-packages-hcoona-three-v1",
         "npm/npmjs-public-v1",
         "nuget/github-packages-hcoona-three-v1",
+        "python/testpypi-v1",
+        "python/pypi-v1",
     }
     assert set(EXECUTION_CLASSES) == {
         "control/read-only-v1",
@@ -390,10 +397,12 @@ def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
         "github/packages-read-v1",
         "github/packages-write-v1",
         "npmjs/trusted-publishing-oidc-v1",
+        "python/trusted-publishing-oidc-v1",
     }
     assert set(RELEASE_POLICIES) == {
         "hcoona-release-smoke-npm",
         "hcoona-release-smoke-github-packages",
+        "hcoona-release-smoke-python",
     }
     assert RELEASE_POLICIES["hcoona-release-smoke-npm"].path == (
         FIRST_SLICE_POLICY_PATH
@@ -420,7 +429,7 @@ def test_catalog_definitions_are_data_only_and_canonically_stable() -> None:
 
     assert second == first
     assert catalog_digest() == (
-        "sha256:98fec8147b0bb59f9cfd6f0051bd1a55817a4f74c00272fe02ad236ec2030990"
+        "sha256:3fcb84ca3ebd0e5fc02a98037bb2f71318b9d991edfd6cd0244b0aadbd9030b9"
     )
     definition_sections = (
         "build-definitions",
@@ -459,17 +468,20 @@ def test_release_policy_keeps_channel_policy_separate_from_quality_selection() -
         "node/npm-artifact-contents-v1",
         "node/npm-install-import-v1",
     )
-    assert policy.channel("buddy").projections[0].destination == (
-        "npm/github-packages-hcoona-three-v1"
+    assert (
+        tuple(
+            asdict(projection)
+            for projection in policy.channel("buddy").projections
+        )
+        == _APPROVED_RELEASE_PROJECTIONS["buddy"]
     )
-    assert policy.channel("official").projections[0].destination == (
-        "npm/npmjs-public-v1"
+    assert (
+        tuple(
+            asdict(projection)
+            for projection in policy.channel("official").projections
+        )
+        == _APPROVED_RELEASE_PROJECTIONS["official"]
     )
-    assert {
-        projection.package
-        for _, channel in policy.channels
-        for projection in channel.projections
-    } == {FIRST_SLICE_PACKAGE}
 
 
 def test_descriptor_discovery_uses_sorted_target_git_tree(
@@ -837,7 +849,7 @@ def test_first_slice_authoring_rejects_nonapproved_output_closure(
 
 @pytest.mark.parametrize(
     "mutation",
-    ["missing", "extra", "renamed", "duplicate", "substituted"],
+    ["extra", "renamed", "duplicate", "substituted"],
 )
 def test_first_slice_authoring_rejects_non_exact_build_selection(
     tmp_path: Path,
@@ -847,11 +859,17 @@ def test_first_slice_authoring_rejects_non_exact_build_selection(
     document = _yaml_document(RELEASE_UNIT_YAML)
     builds = _release_unit_builds(document)
     build = dict(_first_release_unit_build(document))
-    if mutation == "missing":
-        document["builds"] = []
-    elif mutation == "extra":
+    if mutation == "extra":
         extra = dict(build)
         extra["id"] = "extra-package"
+        output = dict(
+            _object(
+                _first_release_unit_outputs(document)[0],
+                context="builds[0].outputs[0]",
+            )
+        )
+        output["id"] = "extra-tarball"
+        extra["outputs"] = [output]
         builds.append(extra)
     elif mutation == "renamed":
         build["id"] = "renamed-package"
@@ -871,13 +889,19 @@ def test_first_slice_authoring_rejects_non_exact_build_selection(
     )
     target = _commit_all(repo)
 
-    with pytest.raises((TypeError, ValueError)):
+    message = {
+        "duplicate": "duplicate build identity: npm-package",
+    }.get(
+        mutation,
+        "first-slice build selection must be exactly singleton npm-package",
+    )
+    with pytest.raises(ValueError, match=f"^{message}$"):
         load_first_slice_authoring(repo, target)
 
 
 @pytest.mark.parametrize(
     "mutation",
-    ["missing", "extra", "renamed", "duplicate", "substituted"],
+    ["extra", "renamed", "duplicate"],
 )
 def test_first_slice_authoring_rejects_non_exact_quality_selection(
     tmp_path: Path,
@@ -890,9 +914,7 @@ def test_first_slice_authoring_rejects_non_exact_quality_selection(
         )
     )
     ecosystems = _quality_ecosystems(document)
-    if mutation == "missing":
-        document["ecosystems"] = {}
-    elif mutation == "extra":
+    if mutation == "extra":
         ecosystems["javascript"] = {
             "preset": "node/hcoona-release-smoke-npm-v1"
         }
@@ -900,8 +922,6 @@ def test_first_slice_authoring_rejects_non_exact_quality_selection(
         document["ecosystems"] = {
             "javascript": ecosystems["node"],
         }
-    elif mutation == "substituted":
-        _node_quality_selection(document)["preset"] = "node/substituted-v1"
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -920,7 +940,14 @@ def test_first_slice_authoring_rejects_non_exact_quality_selection(
     _write_first_slice_authoring(repo, quality=quality)
     target = _commit_all(repo)
 
-    with pytest.raises((TypeError, ValueError)):
+    message = {
+        "duplicate": "duplicate YAML mapping key: 'node'",
+    }.get(
+        mutation,
+        "first-slice Quality selection must be exactly singleton "
+        "node/hcoona-release-smoke-npm-v1",
+    )
+    with pytest.raises(ValueError, match=f"^{message}$"):
         load_first_slice_authoring(repo, target)
 
 
@@ -1080,13 +1107,6 @@ def test_authoring_lookup_rejects_unselected_names(tmp_path: Path) -> None:
         policy.channel("preview")
 
 
-type ReleaseChannelCase = tuple[
-    str,
-    tuple[str, str, str],
-    tuple[dict[str, str], ...],
-]
-type QualityMutationCase = tuple[str, tuple[str, ...]]
-
 _APPROVED_RELEASE_QUALITY = (
     "node/project-test-v1",
     "node/npm-artifact-contents-v1",
@@ -1110,250 +1130,9 @@ _APPROVED_RELEASE_PROJECTIONS = {
 }
 
 
-@pytest.fixture(
-    params=(
-        pytest.param(
-            (
-                "buddy",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-                (
-                    {
-                        "destination": ("npm/github-packages-hcoona-three-v1"),
-                        "artifact": "npm-tarball",
-                        "package": "@hcoona/hcoona-release-smoke-npm",
-                    },
-                ),
-            ),
-            id="buddy",
-        ),
-        pytest.param(
-            (
-                "official",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-                (
-                    {
-                        "destination": "npm/npmjs-public-v1",
-                        "artifact": "npm-tarball",
-                        "package": "@hcoona/hcoona-release-smoke-npm",
-                    },
-                ),
-            ),
-            id="official",
-        ),
-    )
-)
-def accepted_release_channel_cases(
-    request: pytest.FixtureRequest,
-) -> ReleaseChannelCase:
-    """Provide literal accepted Buddy and Official channel contracts."""
-    return request.param
-
-
-@pytest.fixture(
-    params=(
-        pytest.param(
-            (
-                "omit-node-project-test-v1",
-                (
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="omit-node-project-test-v1",
-        ),
-        pytest.param(
-            (
-                "omit-node-npm-artifact-contents-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="omit-node-npm-artifact-contents-v1",
-        ),
-        pytest.param(
-            (
-                "omit-node-npm-install-import-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                ),
-            ),
-            id="omit-node-npm-install-import-v1",
-        ),
-        pytest.param(
-            (
-                "duplicate-node-project-test-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                    "node/project-test-v1",
-                ),
-            ),
-            id="duplicate-node-project-test-v1",
-        ),
-        pytest.param(
-            (
-                "duplicate-node-npm-artifact-contents-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                    "node/npm-artifact-contents-v1",
-                ),
-            ),
-            id="duplicate-node-npm-artifact-contents-v1",
-        ),
-        pytest.param(
-            (
-                "duplicate-node-npm-install-import-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="duplicate-node-npm-install-import-v1",
-        ),
-        pytest.param(("empty", ()), id="empty"),
-        pytest.param(
-            (
-                "extra-node-project-build-v1",
-                (
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                    "node/project-build-v1",
-                ),
-            ),
-            id="extra-node-project-build-v1",
-        ),
-        pytest.param(
-            (
-                "substitute-node-project-build-v1",
-                (
-                    "node/project-build-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="substitute-node-project-build-v1",
-        ),
-        pytest.param(
-            (
-                "substitute-repository-source-tree-conformance-v1",
-                (
-                    "repository/source-tree-conformance-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="substitute-repository-source-tree-conformance-v1",
-        ),
-        pytest.param(
-            (
-                "substitute-node-npm-artifact-v1",
-                (
-                    "node/npm-artifact-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="substitute-node-npm-artifact-v1",
-        ),
-        pytest.param(
-            (
-                "order-artifact-contents-project-test-install-import",
-                (
-                    "node/npm-artifact-contents-v1",
-                    "node/project-test-v1",
-                    "node/npm-install-import-v1",
-                ),
-            ),
-            id="order-artifact-contents-project-test-install-import",
-        ),
-        pytest.param(
-            (
-                "order-project-test-install-import-artifact-contents",
-                (
-                    "node/project-test-v1",
-                    "node/npm-install-import-v1",
-                    "node/npm-artifact-contents-v1",
-                ),
-            ),
-            id="order-project-test-install-import-artifact-contents",
-        ),
-        pytest.param(
-            (
-                "order-artifact-contents-install-import-project-test",
-                (
-                    "node/npm-artifact-contents-v1",
-                    "node/npm-install-import-v1",
-                    "node/project-test-v1",
-                ),
-            ),
-            id="order-artifact-contents-install-import-project-test",
-        ),
-        pytest.param(
-            (
-                "order-install-import-project-test-artifact-contents",
-                (
-                    "node/npm-install-import-v1",
-                    "node/project-test-v1",
-                    "node/npm-artifact-contents-v1",
-                ),
-            ),
-            id="order-install-import-project-test-artifact-contents",
-        ),
-        pytest.param(
-            (
-                "order-install-import-artifact-contents-project-test",
-                (
-                    "node/npm-install-import-v1",
-                    "node/npm-artifact-contents-v1",
-                    "node/project-test-v1",
-                ),
-            ),
-            id="order-install-import-artifact-contents-project-test",
-        ),
-    )
-)
-def quality_mutation_cases(
-    request: pytest.FixtureRequest,
-) -> QualityMutationCase:
-    """Provide the exact quality-list rejection matrix."""
-    return request.param
-
-
-@pytest.fixture(
-    params=(
-        pytest.param("missing-projections", id="missing-projections"),
-        pytest.param("empty", id="empty"),
-        pytest.param("omit-destination", id="omit-destination"),
-        pytest.param("omit-artifact", id="omit-artifact"),
-        pytest.param("omit-package", id="omit-package"),
-        pytest.param("duplicate-approved", id="duplicate-approved"),
-        pytest.param("extra", id="extra"),
-        pytest.param(
-            "substitute-destination",
-            id="substitute-destination",
-        ),
-        pytest.param("substitute-artifact", id="substitute-artifact"),
-        pytest.param("substitute-package", id="substitute-package"),
-    )
-)
-def projection_mutation_cases(request: pytest.FixtureRequest) -> str:
-    """Provide the exact projection-list rejection matrix."""
+@pytest.fixture(params=("buddy", "official"))
+def accepted_release_channel_cases(request: pytest.FixtureRequest) -> str:
+    """Exercise each channel's rejection boundary."""
     return request.param
 
 
@@ -1367,24 +1146,6 @@ def write_release_policy_case(
     path = tmp_path / f"{name}.yml"
     _write_yaml(path, document)
     return path
-
-
-def _assert_accepted_channel_contract(
-    policy_path: Path,
-    channel: str,
-    expected_quality: tuple[str, str, str],
-    expected_projections: tuple[dict[str, str], ...],
-) -> None:
-    policy = load_release_policy(policy_path)
-    channel_policy = policy.channel(channel)
-
-    assert channel_policy.quality == expected_quality
-    assert (
-        tuple(asdict(projection) for projection in channel_policy.projections)
-        == expected_projections
-    )
-    assert len(channel_policy.quality) == len(_APPROVED_RELEASE_QUALITY)
-    assert len(channel_policy.projections) == 1
 
 
 def _assert_opposite_channel_unchanged(
@@ -1448,29 +1209,65 @@ def _mutate_projection_case(
         raise AssertionError(message)
 
 
+@pytest.mark.parametrize(
+    ("channel", "mutated_quality"),
+    [
+        pytest.param(
+            "buddy",
+            ("node/npm-artifact-contents-v1", "node/npm-install-import-v1"),
+            id="buddy-omit-node-project-test-v1",
+        ),
+        pytest.param(
+            "buddy",
+            (
+                "node/project-test-v1",
+                "node/npm-artifact-contents-v1",
+                "node/npm-install-import-v1",
+                "node/project-test-v1",
+            ),
+            id="buddy-duplicate-node-project-test-v1",
+        ),
+        pytest.param(
+            "buddy",
+            (
+                "node/project-test-v1",
+                "node/npm-artifact-contents-v1",
+                "node/npm-install-import-v1",
+                "node/project-build-v1",
+            ),
+            id="buddy-extra-node-project-build-v1",
+        ),
+        pytest.param(
+            "buddy",
+            (
+                "node/project-build-v1",
+                "node/npm-artifact-contents-v1",
+                "node/npm-install-import-v1",
+            ),
+            id="buddy-substitute-node-project-build-v1",
+        ),
+        pytest.param(
+            "buddy",
+            (
+                "node/npm-artifact-contents-v1",
+                "node/project-test-v1",
+                "node/npm-install-import-v1",
+            ),
+            id="buddy-order-artifact-contents-project-test-install-import",
+        ),
+        pytest.param(
+            "official",
+            ("node/npm-artifact-contents-v1", "node/npm-install-import-v1"),
+            id="official-omission",
+        ),
+    ],
+)
 def test_release_policy_requires_exact_ordered_channel_quality(
     tmp_path: Path,
-    accepted_release_channel_cases: ReleaseChannelCase,
-    quality_mutation_cases: QualityMutationCase,
+    channel: str,
+    mutated_quality: tuple[str, ...],
 ) -> None:
     """Require the exact closed, ordered quality tuple for both channels."""
-    channel, expected_quality, expected_projections = (
-        accepted_release_channel_cases
-    )
-    mutation, mutated_quality = quality_mutation_cases
-    accepted_document = _yaml_document(POLICY_PATH.read_text(encoding="utf-8"))
-    accepted_path = write_release_policy_case(
-        tmp_path,
-        accepted_document,
-        name=f"accepted-{channel}-{mutation}",
-    )
-    _assert_accepted_channel_contract(
-        accepted_path,
-        channel,
-        expected_quality,
-        expected_projections,
-    )
-
     mutated_document = _yaml_document(POLICY_PATH.read_text(encoding="utf-8"))
     mutated_quality_document: list[JsonValue] = list(mutated_quality)
     _channel_policy(mutated_document, channel)["quality"] = (
@@ -1480,7 +1277,7 @@ def test_release_policy_requires_exact_ordered_channel_quality(
     mutated_path = write_release_policy_case(
         tmp_path,
         mutated_document,
-        name=f"{channel}-{mutation}",
+        name=f"{channel}-quality",
     )
 
     with pytest.raises(
@@ -1490,39 +1287,33 @@ def test_release_policy_requires_exact_ordered_channel_quality(
         load_release_policy(mutated_path)
 
 
-def test_release_policy_requires_exact_channel_projection(
+@pytest.mark.parametrize(
+    ("channel", "mutation"),
+    [
+        ("buddy", "missing-projections"),
+        ("buddy", "empty"),
+        ("buddy", "omit-destination"),
+        ("buddy", "omit-artifact"),
+        ("buddy", "omit-package"),
+        ("buddy", "duplicate-approved"),
+        ("buddy", "extra"),
+        ("buddy", "substitute-artifact"),
+        ("buddy", "substitute-package"),
+        ("buddy", "substitute-destination"),
+        ("official", "substitute-destination"),
+    ],
+)
+def test_release_policy_enforces_shared_projection_rules_and_destinations(
     tmp_path: Path,
-    accepted_release_channel_cases: ReleaseChannelCase,
-    projection_mutation_cases: str,
+    channel: str,
+    mutation: str,
 ) -> None:
-    """Require each channel's exact one-element projection tuple."""
-    channel, expected_quality, expected_projections = (
-        accepted_release_channel_cases
-    )
-    accepted_document = _yaml_document(POLICY_PATH.read_text(encoding="utf-8"))
-    accepted_path = write_release_policy_case(
-        tmp_path,
-        accepted_document,
-        name=f"accepted-{channel}-{projection_mutation_cases}",
-    )
-    _assert_accepted_channel_contract(
-        accepted_path,
-        channel,
-        expected_quality,
-        expected_projections,
-    )
-
+    """Check shared projection rules and both channel-specific destinations."""
     mutated_document = _yaml_document(POLICY_PATH.read_text(encoding="utf-8"))
-    _mutate_projection_case(
-        mutated_document,
-        channel,
-        projection_mutation_cases,
-    )
+    _mutate_projection_case(mutated_document, channel, mutation)
     _assert_opposite_channel_unchanged(mutated_document, channel)
     mutated_path = write_release_policy_case(
-        tmp_path,
-        mutated_document,
-        name=f"{channel}-{projection_mutation_cases}",
+        tmp_path, mutated_document, name=f"{channel}-{mutation}"
     )
 
     with pytest.raises(
@@ -1540,7 +1331,7 @@ def test_npmjs_destination_uses_hypothetical_trusted_publishing_oidc() -> None:
         context="catalog capabilities",
     )
 
-    assert tuple(document) == (
+    assert set(document) == {
         "schema",
         "build-definitions",
         "quality-definitions",
@@ -1549,16 +1340,17 @@ def test_npmjs_destination_uses_hypothetical_trusted_publishing_oidc() -> None:
         "execution-classes",
         "capabilities",
         "release-policies",
-    )
-    assert tuple(capabilities_document) == (
+    }
+    assert set(capabilities_document) == {
         "github/actions-read-v1",
         "github/contents-read-v1",
         "github/packages-read-v1",
         "github/packages-write-v1",
         "npmjs/trusted-publishing-oidc-v1",
-    )
+        "python/trusted-publishing-oidc-v1",
+    }
     assert catalog_digest() == (
-        "sha256:98fec8147b0bb59f9cfd6f0051bd1a55817a4f74c00272fe02ad236ec2030990"
+        "sha256:3fcb84ca3ebd0e5fc02a98037bb2f71318b9d991edfd6cd0244b0aadbd9030b9"
     )
 
     npmjs_capability = CAPABILITIES["npmjs/trusted-publishing-oidc-v1"]
@@ -1594,3 +1386,84 @@ def test_npmjs_destination_uses_hypothetical_trusted_publishing_oidc() -> None:
 
     buddy = DESTINATION_DEFINITIONS["npm/github-packages-hcoona-three-v1"]
     assert buddy.capability_requirements == ("github/packages-write-v1",)
+
+
+def test_python_catalog_build_binds_two_outputs_and_three_required_checks() -> (
+    None
+):
+    """One Python build yields two originals with separate consumers."""
+    build = BUILD_DEFINITIONS["python/distribution-set-v1"]
+    assert build.operation == "python-distribution-set"
+    assert build.output_kinds == ("python-wheel", "python-sdist")
+    assert build.required_native_projections == ("pep440Version",)
+    assert build.execution_class == "target-execution/unprivileged-v1"
+    assert build.capability_requirements == ()
+    preset = QUALITY_PRESETS["python/hcoona-release-smoke-python-v1"]
+    assert preset.required == (
+        "python/distribution-contents-v1",
+        "python/wheel-install-import-v1",
+        "python/sdist-build-install-import-v1",
+    )
+    assert preset.advisory == ()
+    assert tuple(
+        QUALITY_DEFINITIONS[key].subject for key in preset.required
+    ) == (
+        "python-distribution-set",
+        "python-wheel",
+        "python-sdist",
+    )
+    descriptor = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "src/public/lib/hcoona-release-smoke-python"
+            / "workflow-delivery.release-unit.yml"
+        ).read_text(encoding="utf-8")
+    )
+    assert len(descriptor["builds"]) == 1
+    bound = descriptor["builds"][0]
+    assert bound["definition"] == build.logical_id
+    assert [(o["id"], o["role"], o["kind"]) for o in bound["outputs"]] == [
+        ("wheel", "primary-package", "python-wheel"),
+        ("sdist", "source-package", "python-sdist"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("destination", "channel", "registry"),
+    [
+        ("python/testpypi-v1", "buddy", "https://test.pypi.org/legacy/"),
+        ("python/pypi-v1", "official", "https://upload.pypi.org/legacy/"),
+    ],
+)
+def test_python_catalog_destinations_bind_independent_no_tag_profiles(
+    destination: str,
+    channel: str,
+    registry: str,
+) -> None:
+    """Each registry needs native acceptance and has no tag authority."""
+    definition = DESTINATION_DEFINITIONS[destination]
+    assert definition.ecosystem == "python"
+    assert definition.registry == registry
+    assert definition.supported_channels == (channel,)
+    assert (
+        definition.live_mutation_status == "requires-python-native-acceptance"
+    )
+    assert definition.capability_requirements == (
+        "python/trusted-publishing-oidc-v1",
+    )
+    capability = CAPABILITIES["python/trusted-publishing-oidc-v1"]
+    assert capability.github_permissions == (
+        ("contents", "read"),
+        ("id-token", "write"),
+    )
+    policy_path = (
+        REPO_ROOT / RELEASE_POLICIES["hcoona-release-smoke-python"].path
+    )
+    policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+    selected = policy["channels"][channel]
+    assert set(selected) == {"destination", "governance"}
+    assert selected["destination"] == destination
+    registry_name = "testpypi" if channel == "buddy" else "pypi"
+    assert selected["governance"].endswith(
+        f"hcoona-release-smoke-python-{registry_name}.json"
+    )

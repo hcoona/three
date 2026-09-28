@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 from urllib.parse import quote, unquote, urlsplit
 
+from three_workflow_delivery_v3._python_runtime import PYTHON_VERSION
 from three_workflow_delivery_v3.canonical import (
     canonical_sha256,
     canonicalize,
@@ -39,10 +40,18 @@ NUGET_PACKAGE_ID = "Hcoona.ReleaseSmoke.GithubPackages"
 NUGET_SERVICE_INDEX = "https://nuget.pkg.github.com/hcoona/index.json"
 NUGET_ORIGIN = "https://nuget.pkg.github.com"
 NUGET_REPOSITORY = "hcoona/three"
-NUGET_PYTHON_VERSION = "3.13.12"
-NUGET_HTTP_CLIENT_SHA256 = (
-    "9a1c011d11aaea22df4b5e837274a25ac16f7d2f91759244feafdecce3ad22a1"
-)
+NUGET_PYTHON_VERSION = PYTHON_VERSION
+# Source review is separate from runtime selection and native admission.
+# Historical profiles retain their source identity for evidence inspection.
+_REVIEWED_HTTP_CLIENT_SOURCES = {
+    "3.13.12": (
+        "9a1c011d11aaea22df4b5e837274a25ac16f7d2f91759244feafdecce3ad22a1"
+    ),
+    "3.14.3": (
+        "a5cd9edd48e0bc67c2ea0b13ea45749d28cd8d6313bb103b17c13509f60a3e33"
+    ),
+}
+NUGET_HTTP_CLIENT_SHA256 = _REVIEWED_HTTP_CLIENT_SOURCES.get(PYTHON_VERSION, "")
 _API_ORIGIN = "https://api.github.com"
 _TIMEOUT_SECONDS = 60
 _METADATA_LIMIT = 8 * 1024 * 1024
@@ -579,11 +588,12 @@ def nuget_operation_profile(
             "tlsLibrary": ssl.OPENSSL_VERSION,
             "adapterSha256": _sha256(Path(__file__).read_bytes()),
         },
+        runtime,
     )
 
 
 def _nuget_profile_document(
-    package_publish: str, runtime_facts: dict[str, str]
+    package_publish: str, runtime_facts: dict[str, str], python_version: str
 ) -> dict[str, JsonValue]:
     _safe_url(package_publish, origin=NUGET_ORIGIN)
     return {
@@ -593,13 +603,13 @@ def _nuget_profile_document(
         "serviceIndex": NUGET_SERVICE_INDEX,
         "packagePublish": package_publish,
         "resourceType": "PackagePublish/2.0.0",
-        "runtime": "CPython@" + NUGET_PYTHON_VERSION,
+        "runtime": "CPython@" + python_version,
         "executableSha256": runtime_facts["executableSha256"],
         "runtimeBuild": runtime_facts["runtimeBuild"],
         "sslSourceSha256": runtime_facts["sslSourceSha256"],
         "platform": runtime_facts["platform"],
         "tlsLibrary": runtime_facts["tlsLibrary"],
-        "httpClientSha256": NUGET_HTTP_CLIENT_SHA256,
+        "httpClientSha256": _REVIEWED_HTTP_CLIENT_SOURCES[python_version],
         "adapterSha256": runtime_facts["adapterSha256"],
         "method": "PUT",
         "authentication": {
@@ -635,7 +645,9 @@ def _nuget_profile_document(
         "duplicateSkipping": False,
         "successStatuses": cast("list[JsonValue]", list(_SUCCESS_STATUSES)),
         "failureReadback": "diagnostic-only-never-success",
-        "sourceBasis": "https://github.com/python/cpython/blob/v3.13.12/Lib/http/client.py",
+        "sourceBasis": (
+            f"https://github.com/python/cpython/blob/v{python_version}/Lib/http/client.py"
+        ),
     }
 
 
@@ -672,7 +684,17 @@ def validate_nuget_operation_profile(document: JsonValue) -> None:
     if type(endpoint) is not str:
         msg = "NuGet operation profile endpoint is missing."
         raise NuGetAdapterError(msg)
-    expected = _nuget_profile_document(endpoint, runtime_facts)
+    runtime = document.get("runtime")
+    if (
+        type(runtime) is not str
+        or not runtime.startswith("CPython@")
+        or runtime.removeprefix("CPython@") not in _REVIEWED_HTTP_CLIENT_SOURCES
+    ):
+        msg = "NuGet operation profile runtime source has not been reviewed."
+        raise NuGetAdapterError(msg)
+    expected = _nuget_profile_document(
+        endpoint, runtime_facts, runtime.removeprefix("CPython@")
+    )
     if canonicalize(document) != canonicalize(expected):
         msg = "NuGet operation profile is outside the closed HTTP contract."
         raise NuGetAdapterError(msg)

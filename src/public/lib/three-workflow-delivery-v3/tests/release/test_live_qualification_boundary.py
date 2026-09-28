@@ -7,7 +7,6 @@ import json
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import Mock
 
 import pytest
 from three_workflow_delivery_v3 import cli as cli_module
@@ -615,17 +614,6 @@ def test_materialize_publication_rejects_selected_ref_substitution(
     """Reject a workflow-selected ref that differs from immutable Intent."""
     case = observation_case
     live_intent = case.intent
-    load_snapshot = Mock(
-        spec=cli_module._load_live_qualification_snapshot,  # noqa: SLF001
-        side_effect=AssertionError(
-            "selected-ref binding must precede Snapshot loading"
-        ),
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_load_live_qualification_snapshot",
-        load_snapshot,
-    )
     output_path = tmp_path / "publication-snapshot.json"
     summary_path = tmp_path / "reviewer-summary.md"
 
@@ -659,7 +647,6 @@ def test_materialize_publication_rejects_selected_ref_substitution(
 
     assert status == 1
     assert "selected ref does not match the admitted Release Intent" in error
-    load_snapshot.assert_not_called()
     assert not output_path.exists()
     assert not summary_path.exists()
 

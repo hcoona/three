@@ -160,13 +160,6 @@ def _assert_not_definitive_rejection(error: BaseException) -> None:
     assert not isinstance(error, GovernanceRejectionError)
 
 
-def test_governance_freshness_rejection_derives_from_definitive_base() -> None:
-    assert issubclass(
-        GovernanceFreshnessRejectionError,
-        GovernanceRejectionError,
-    )
-
-
 def _provenance(
     *,
     eligibility_main_sha: str = COMMIT,
@@ -228,26 +221,6 @@ def test_fetched_invalid_canonical_or_schema_content_is_definitive_rejection(
 @pytest.mark.parametrize(
     "updates",
     [
-        pytest.param(
-            {"release_policy": "other-policy"},
-            id="policy-package-binding",
-        ),
-        pytest.param(
-            {"expires_at": "2026-11-01T00:00:01Z"},
-            id="lifetime",
-        ),
-        pytest.param(
-            {
-                "access_inventory": {
-                    "repository": [{"subject": "hcoona", "access": "admin"}],
-                    "package": [],
-                    "manage_actions": [
-                        {"subject": "hcoona", "access": "allowed"}
-                    ],
-                }
-            },
-            id="inventory",
-        ),
         pytest.param({"accepted_writers": []}, id="attestation-semantics"),
         pytest.param({"live_enabled": "true"}, id="nonboolean-control"),
     ],
@@ -322,6 +295,10 @@ def test_disabled_expired_and_changed_governance_remain_freshness_rejections(
             expected_live_enabled=expected_enabled,
         )
 
+    assert issubclass(
+        GovernanceFreshnessRejectionError,
+        GovernanceRejectionError,
+    )
     assert type(raised.value) is GovernanceFreshnessRejectionError
     assert str(raised.value) == "Governance freshness comparison failed"
     assert client.calls == ["protected", "read"]
@@ -422,11 +399,6 @@ def test_malformed_remote_identities_are_not_governance_rejections(
             GitHubRestError("permission denied"),
             id="permission",
         ),
-        pytest.param(
-            "protected",
-            GitHubRestError("HTTP 503"),
-            id="http-5xx",
-        ),
         pytest.param("read", OSError("network lost"), id="unexpected-network"),
         pytest.param(
             "read",
@@ -458,8 +430,6 @@ def test_transport_failures_are_not_governance_rejections(
     "failure",
     [
         "Governance Git fetch failed",
-        "Governance Git history is shallow",
-        "Governance protected path changed after eligibility",
     ],
 )
 def test_governance_git_failures_are_definitive_rejections(

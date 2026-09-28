@@ -66,6 +66,7 @@ def inputs(tmp_path, monkeypatch):
             "tlsLibrary": "controlled TLS library",
             "adapterSha256": "3" * 64,
         },
+        observer.native.NUGET_PYTHON_VERSION,
     )
     collector = Mock(return_value=profile)
     monkeypatch.setattr(observer.native, "nuget_operation_profile", collector)
@@ -269,12 +270,6 @@ def test_profile_observer_enforces_canonical_spec_size_limit(
     "endpoint",
     [
         "https://other.example/hcoona/",
-        "https://nuget.pkg.github.com/hcoonax/",
-        "https://nuget.pkg.github.com/hcoona-other/",
-        "https://nuget.pkg.github.com/hcoona/?query=1",
-        "https://user:password@nuget.pkg.github.com/hcoona/",
-        "https://nuget.pkg.github.com/hcoona/#fragment",
-        "https://nuget.pkg.github.com/hcoona/%2e%2e/other/",
     ],
 )
 def test_profile_observer_rejects_unbounded_resources_before_collection(

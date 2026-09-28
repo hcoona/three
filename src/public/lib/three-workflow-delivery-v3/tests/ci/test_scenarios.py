@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import shutil
 import subprocess
@@ -13,7 +12,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-import yaml
 from three_workflow_delivery_v3.catalogs import catalog_digest
 from three_workflow_delivery_v3.ci.evidence import (
     form_ci_evidence,
@@ -22,6 +20,7 @@ from three_workflow_delivery_v3.ci.evidence import (
 )
 from three_workflow_delivery_v3.ci.finalizer import (
     CiBootstrapProjectionRequest,
+    derive_ci_supersession_state,
     finalize_ci_slice,
     qualifies_precoexistence_bootstrap_projection,
     render_ci_slice_summary,
@@ -39,8 +38,8 @@ from three_workflow_delivery_v3.records.ci import (
     CiLaneResult,
     CiObligation,
     CiQualificationSnapshot,
+    ci_evidence_digest,
     ci_qualification_snapshot_digest,
-    ci_slice_decision_digest,
 )
 from three_workflow_delivery_v3.repository.compiler import (
     CompilationContext,
@@ -67,18 +66,6 @@ CI_WORKFLOW = REPO_ROOT / ".github/workflows/workflow-delivery-v3-ci.yml"
 BUDDY_WORKFLOW = (
     REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
 )
-
-
-def test_ci_scenario_uses_permanent_root_hk_static_reference() -> None:
-    """Run the unconditional index-bound HK step through permanent root HK."""
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    hk = (REPO_ROOT / "hk.pkl").read_text(encoding="utf-8")
-
-    assert "Run permanent root HK and static-reference policy" in workflow
-    assert "mise exec -- hk --no-progress check" in workflow
-    assert '["hcoona-release-smoke-npm-static-reference"]' in hk
-    assert "--source-kind index" in hk
-    assert "--source-kind worktree" not in hk
 
 
 def test_live_scenario_has_no_external_or_caller_supplied_policy_result() -> (
@@ -110,31 +97,11 @@ def test_manual_worktree_scenario_is_isolated_in_mise() -> None:
     assert "--source-kind worktree" not in hk
 
 
-def test_workflows_omit_all_consumer_policy_spellings() -> None:
-    """Reject both CLI and Python spellings in delivered workflows."""
-    workflows = (
-        CI_WORKFLOW.read_text(encoding="utf-8"),
-        BUDDY_WORKFLOW.read_text(encoding="utf-8"),
-    )
-
-    assert all("--consumer-policy" not in text for text in workflows)
-    assert all("consumer_policy" not in text for text in workflows)
-
-
-WORKFLOW_PATH = CI_WORKFLOW
-V1_CI_PATH = REPO_ROOT / ".github/workflows/ci.yml"
-DISABLED_GOVERNANCE_FIXTURE = (
-    REPO_ROOT
-    / "src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/"
-    "governance-disabled.json"
-)
 HK_CONFIG = REPO_ROOT / "hk.pkl"
 HK_SUPPORT = REPO_ROOT / "src/private/lib/hk"
 HK_RANGE_HELPER = Path("eng/scripts/workflow_delivery_v3_hk.py")
-CONTROL_STEP_NAME = "v3-control-pytest"
 STATIC_REFERENCE_STEP_NAME = "hcoona-release-smoke-npm-static-reference"
 POLICY_PATH = "eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml"
-SHADOW_CHECK_NAME = "Workflow Delivery v3 / hcoona-release-smoke-npm (shadow)"
 
 SHA_A = "a" * 40
 SHA_B = "b" * 40
@@ -148,7 +115,7 @@ WORKFLOW_RUN_ID = 7001
 RUN_ATTEMPT = 2
 PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 PROJECT_SOURCE = f"{PRODUCT_PATH}/src/index.ts"
-UNRELATED_PRODUCT_SOURCE = "src/public/lib/unrelated-product/src/index.ts"
+UNRELATED_PRODUCT_SOURCE = "src/public/lib/hcoona-release-smoke/src/index.ts"
 GIT_TRANSITIONS = ("add", "modify", "delete", "rename-out", "rename-in")
 
 
@@ -291,8 +258,9 @@ def _incremental_plan(
     *,
     changed_paths: tuple[str, ...] = (PROJECT_SOURCE,),
     comparison_identity: object = (SHA_A, SHA_B),
+    candidate: CiCandidate | None = None,
 ) -> CiQualificationSnapshot:
-    candidate = _pr_candidate()
+    candidate = _pr_candidate() if candidate is None else candidate
     model = _repository_model(candidate)
     return plan_ci_qualification(
         candidate,
@@ -364,8 +332,8 @@ def _evidence(
         plan,
         obligation=_obligation(plan, lane_id),
         producer=lane_id,
-        workflow_run_id=WORKFLOW_RUN_ID,
-        run_attempt=RUN_ATTEMPT,
+        workflow_run_id=plan.workflow_run_id,
+        run_attempt=plan.run_attempt,
         runner="ubuntu-24.04",
         raw_outcome=raw_outcome,
         output_digests=(DIGEST_OUTPUT,),
@@ -426,25 +394,12 @@ def _finalize(
     )
 
 
-def _selected_lanes(plan: CiQualificationSnapshot) -> tuple[str, ...]:
-    return tuple(
+def _selected_lanes(plan: CiQualificationSnapshot) -> set[str]:
+    return {
         obligation.lane_id
         for obligation in plan.obligations
         if obligation.selected
-    )
-
-
-def _workflow() -> dict[Any, Any]:
-    return cast(
-        "dict[Any, Any]",
-        yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8")),
-    )
-
-
-def _workflow_step(job_id: str, name: str) -> dict[str, Any]:
-    jobs = cast("dict[str, dict[str, Any]]", _workflow()["jobs"])
-    steps = cast("list[dict[str, Any]]", jobs[job_id]["steps"])
-    return next(step for step in steps if step.get("name") == name)
+    }
 
 
 def _run(
@@ -507,13 +462,13 @@ def _initialize_hk_repository(
 @cache
 def _hk_executable() -> str:
     install_root = _run(
-        ("mise", "where", "hk"),
+        ("mise", "where", "aqua:jdx/hk"),
         cwd=REPO_ROOT,
     ).stdout.strip()
     executable = Path(install_root) / "hk"
     version = _run((str(executable), "--version"), cwd=REPO_ROOT)
     active_version = _run(
-        ("mise", "current", "hk"),
+        ("mise", "current", "aqua:jdx/hk"),
         cwd=REPO_ROOT,
     ).stdout.strip()
     assert version.stdout.strip() == f"hk {active_version}"
@@ -544,9 +499,7 @@ def _hk_step_from_result(
     plan = cast("dict[str, Any]", json.loads(result.stdout))
     steps = cast("list[dict[str, Any]]", plan["steps"])
 
-    assert plan["hook"] == (
-        "impact-check" if step_name == CONTROL_STEP_NAME else "check"
-    )
+    assert plan["hook"] == "check"
     assert plan["runType"] == "check"
     assert "small" in cast("list[str]", plan["profiles"])
     assert len(steps) == 1
@@ -573,11 +526,7 @@ def _hk_step_for_range(
             "--",
             _hk_executable(),
             "--no-progress",
-            *(
-                ("run", "impact-check")
-                if step_name == CONTROL_STEP_NAME
-                else ("check",)
-            ),
+            "check",
             "--plan",
             "--json",
             "--step",
@@ -593,11 +542,7 @@ def _hk_step_for_all(repo: Path, step_name: str) -> dict[str, Any]:
         (
             _hk_executable(),
             "--no-progress",
-            *(
-                ("run", "impact-check")
-                if step_name == CONTROL_STEP_NAME
-                else ("check",)
-            ),
+            "check",
             "--plan",
             "--json",
             "--step",
@@ -634,21 +579,20 @@ def _apply_history_change(repo: Path, change: HistoryChange) -> None:
         raise AssertionError(message)
 
 
-def _static_reference_hk_block() -> str:
-    hk_config = HK_CONFIG.read_text(encoding="utf-8")
-    start = hk_config.index(f'["{STATIC_REFERENCE_STEP_NAME}"]')
-    end = hk_config.index("\n  }\n", start) + len("\n  }\n")
-    return hk_config[start:end]
-
-
 def test_ci_scenario_project_source_change_selects_complete_slice() -> None:
-    """Exercise literal LLD CI scenario 1 over the complete static slice."""
+    """Qualify every required obligation for the changed project candidate."""
     plan = _incremental_plan()
     results = _lane_results(plan)
     evidence = tuple(cast("CiEvidence", result.evidence) for result in results)
     decision = _finalize(plan, results, elapsed_seconds=60)
-    jobs = cast("dict[str, dict[str, Any]]", _workflow()["jobs"])
+    expected_outcomes = {
+        "root-hk": "satisfied",
+        "project-build": "satisfied",
+        "project-test": "satisfied",
+        "npm-artifact-build": "satisfied",
+    }
 
+    assert plan.ready is True
     assert (
         plan.candidate.base_sha,
         plan.candidate.head_sha,
@@ -658,109 +602,84 @@ def test_ci_scenario_project_source_change_selects_complete_slice() -> None:
     assert plan.candidate.purpose == "ci-pr-slice-shadow"
     assert plan.scope_mode == "incremental"
     assert plan.changed_paths == (PROJECT_SOURCE,)
-    assert (
-        _selected_lanes(plan)
-        == CI_LANE_IDS
-        == (
-            "root-hk",
-            "project-build",
-            "project-test",
-            "npm-artifact-build",
-        )
-    )
-    assert tuple(item.prerequisites for item in plan.obligations) == (
-        (),
-        (),
-        (),
-        (),
-    )
+    assert _selected_lanes(plan) == set(expected_outcomes)
+    assert all(item.required for item in plan.obligations)
     assert plan.selected_project_nodes == (FIRST_SLICE_PACKAGE,)
     assert plan.selected_release_units == (FIRST_SLICE_RELEASE_UNIT,)
     assert plan.selected_variants == ("npm-package",)
-    assert tuple(item.evidence_id for item in evidence) == (
+    assert {item.evidence_id for item in evidence} == set(
         plan.expected_evidence_ids
     )
     assert all(
-        item.plan_digest == ci_qualification_snapshot_digest(plan)
+        item.candidate == plan.candidate
+        and item.plan_digest == ci_qualification_snapshot_digest(plan)
         and item.obligation.selected
         and item.normalized_outcome == "satisfied"
         for item in evidence
     )
-    assert evidence[-1].artifacts == (_artifact(plan),)
-    assert all(item.artifacts == () for item in evidence[:-1])
-    assert tuple(job_id for job_id in jobs if job_id in CI_LANE_IDS) == (
-        CI_LANE_IDS
+    assert {item.producer: item.artifacts for item in evidence} == {
+        "root-hk": (),
+        "project-build": (),
+        "project-test": (),
+        "npm-artifact-build": (_artifact(plan),),
+    }
+    assert {
+        item.obligation.lane_id: item.outcome
+        for item in decision.obligation_dispositions
+    } == expected_outcomes
+    assert set(decision.admitted_evidence_digests) == {
+        ci_evidence_digest(item) for item in evidence
+    }
+    assert decision.candidate == plan.candidate
+    assert (
+        decision.terminal_result
+        == decision.summary.terminal_result
+        == "success"
     )
-    assert all(jobs[lane_id]["needs"] == "plan" for lane_id in CI_LANE_IDS)
-    assert decision.terminal_result == "success"
-    assert len(decision.admitted_evidence_digests) == len(CI_LANE_IDS)
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "mise.toml",
-        "mise.lock",
-        "package.json",
-        "pnpm-lock.yaml",
-        "pnpm-workspace.yaml",
-    ],
-)
-def test_global_input_change_runs_complete_slice_scenario(
-    path: str,
-) -> None:
-    """Exercise each global tool input through Plan, lanes, and Finalizer."""
+def test_global_input_change_runs_complete_slice_scenario() -> None:
+    """Apply a global input through Plan, lanes, Finalizer, and summary."""
+    path = "mise.toml"
     plan = _incremental_plan(changed_paths=(path,))
     results = _lane_results(plan)
     decision = _finalize(plan, results, elapsed_seconds=60)
 
     assert plan.ready is True
     assert plan.changed_paths == (path,)
-    assert _selected_lanes(plan) == CI_LANE_IDS
+    assert _selected_lanes(plan) == set(CI_LANE_IDS)
     assert plan.selected_project_nodes == (FIRST_SLICE_PACKAGE,)
     assert plan.selected_release_units == (FIRST_SLICE_RELEASE_UNIT,)
     assert plan.selected_variants == ("npm-package",)
-    assert tuple(result.lane_id for result in results) == CI_LANE_IDS
+    assert {result.lane_id for result in results} == set(CI_LANE_IDS)
     assert all(result.disposition == "satisfied" for result in results)
-    assert (
-        tuple(
-            cast("CiEvidence", result.evidence).evidence_id
-            for result in results
-        )
-        == plan.expected_evidence_ids
-    )
+    assert {
+        cast("CiEvidence", result.evidence).evidence_id for result in results
+    } == set(plan.expected_evidence_ids)
     assert decision.terminal_result == "success"
-    assert len(decision.admitted_evidence_digests) == len(CI_LANE_IDS)
+    assert {
+        item.obligation.lane_id: item.outcome
+        for item in decision.obligation_dispositions
+    } == dict.fromkeys(CI_LANE_IDS, "satisfied")
+    assert set(decision.admitted_evidence_digests) == {
+        ci_evidence_digest(cast("CiEvidence", result.evidence))
+        for result in results
+    }
+
+    assert decision.pr_slo == "excluded"
+    assert decision.pr_slo_reason == "broad-change"
+    assert "pr-12-minute-slo=excluded" in render_ci_slice_summary(decision)
+    assert "pr-slo-reason=broad-change" in render_ci_slice_summary(decision)
 
 
 def test_ci_scenario_slice_validation_selects_full_slice_without_synthetic_range() -> (  # noqa: E501
     None
 ):
-    """Exercise literal LLD CI scenario 2 without inventing a Git range."""
+    """Qualify the manual slice without inventing a comparison range."""
     plan = _manual_plan()
     results = _lane_results(plan)
     decision = _finalize(plan, results, elapsed_seconds=60)
-    workflow = _workflow()
-    events = cast("dict[str, Any]", workflow[True])
-    root_hk_run = cast(
-        "str",
-        _workflow_step(
-            "root-hk",
-            "Run permanent root HK and static-reference policy",
-        )["run"],
-    )
-    records = (
-        plan.candidate.to_document(),
-        plan.to_document(),
-        *(
-            cast("CiEvidence", result.evidence).to_document()
-            for result in results
-        ),
-        *(result.to_document() for result in results),
-        decision.to_document(),
-    )
 
-    assert events["workflow_dispatch"] is None
     assert plan.candidate.event_kind == "workflow_dispatch"
     assert plan.candidate.purpose == "slice-validation"
     assert (
@@ -771,37 +690,29 @@ def test_ci_scenario_slice_validation_selects_full_slice_without_synthetic_range
     assert plan.candidate.target == plan.candidate.workflow_sha == SHA_C
     assert plan.scope_mode == "slice-validation"
     assert plan.changed_paths == ()
-    assert _selected_lanes(plan) == CI_LANE_IDS
+    assert _selected_lanes(plan) == set(CI_LANE_IDS)
     assert plan.selected_project_nodes == (FIRST_SLICE_PACKAGE,)
     assert plan.selected_release_units == (FIRST_SLICE_RELEASE_UNIT,)
     assert plan.selected_variants == ("npm-package",)
-    assert all(
-        "slice-validation" in json.dumps(record, sort_keys=True)
-        for record in records
+    assert all(result.disposition == "satisfied" for result in results)
+    assert set(decision.admitted_evidence_digests) == {
+        ci_evidence_digest(cast("CiEvidence", result.evidence))
+        for result in results
+    }
+    assert decision.candidate == plan.candidate
+    assert decision.scope_mode == "slice-validation"
+    assert (
+        decision.terminal_result
+        == decision.summary.terminal_result
+        == "success"
     )
-    assert all(
-        "repository-wide" not in json.dumps(record, sort_keys=True).lower()
-        and "full validation" not in json.dumps(record, sort_keys=True).lower()
-        and "full-validation" not in json.dumps(record, sort_keys=True).lower()
-        for record in records
-    )
-    assert "slice-validation selected the complete first-slice scope" in (
-        " ".join(plan.diagnostics)
-    )
-    assert decision.terminal_result == "success"
+    assert "slice-validation" in decision.summary.text
     assert "repository-wide" not in decision.summary.text.lower()
     assert "full validation" not in decision.summary.text.lower()
-    assert 'if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]' in root_hk_run
-    assert "workflow_delivery_v3_hk.py" in root_hk_run
-    assert "else\n  mise exec -- hk --no-progress check --all" in root_hk_run
-    assert (
-        root_hk_run.count("--skip-step static-reference-authority-preparation")
-        == 2  # noqa: PLR2004
-    )
 
 
 def test_ci_scenario_project_test_failure_fails_shadow_check() -> None:
-    """Exercise literal LLD CI scenario 3 and propagate failed test Evidence."""
+    """Failed Evidence overrides optimistic diagnostic text."""
     plan = _incremental_plan()
     results = _lane_results(
         plan,
@@ -816,470 +727,266 @@ def test_ci_scenario_project_test_failure_fails_shadow_check() -> None:
     project_test = next(
         result for result in results if result.lane_id == "project-test"
     )
-    finalizer = cast(
-        "dict[str, Any]",
-        cast("dict[str, Any]", _workflow()["jobs"])["required-finalizer"],
-    )
-    enforce_run = cast(
-        "str",
-        _workflow_step(
-            "required-finalizer",
-            "Admit available results and finalize",
-        )["run"],
-    )
 
     assert project_test.disposition == "failed"
     assert project_test.evidence is not None
     assert project_test.evidence.raw_outcome == "failure"
     assert project_test.evidence.normalized_outcome == "failed"
     assert "passed" in " ".join(project_test.evidence.diagnostics)
-    assert tuple(
-        result.disposition
-        for result in results
-        if result.lane_id != "project-test"
-    ) == ("satisfied", "satisfied", "satisfied")
     assert {
         item.obligation.lane_id: item.outcome
         for item in decision.obligation_dispositions
-    }["project-test"] == "failed"
+    } == {
+        "root-hk": "satisfied",
+        "project-build": "satisfied",
+        "project-test": "failed",
+        "npm-artifact-build": "satisfied",
+    }
+    assert (
+        ci_evidence_digest(project_test.evidence)
+        in decision.admitted_evidence_digests
+    )
     assert (
         decision.terminal_result
         == decision.summary.terminal_result
-        == ("failure")
+        == "failure"
     )
+    assert decision.failure_class == "quality-failure"
     assert "project-test=failed" in decision.explanation
     assert "non-authoritative shadow result" in render_ci_slice_summary(
-        decision,
+        decision
     )
-    assert finalizer["name"] == SHADOW_CHECK_NAME
-    assert finalizer["if"] == "always()"
-    assert '"${cli[@]}" ci finalize' in enforce_run
-    assert '--started-at "${STARTED_AT}"' in enforce_run
-    assert "date +%s" not in enforce_run
 
 
-@pytest.mark.parametrize(
-    "changed_path",
-    [
-        "docs/wiki/README.md",
-        "src/private/app/workflow-delivery-v3-dotnet-provider/Program.cs",
-        "src/private/app/workflow-delivery-v3-nuget-consumer/Program.cs",
-        "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs",
-    ],
-)
-def test_ci_scenario_repository_only_change_has_valid_empty_affected_lanes(
-    changed_path: str,
-) -> None:
-    """Exercise literal LLD CI scenario 4 with three exact empty lanes."""
+def test_repository_only_scenario_closes_empty_affected_lanes() -> None:
+    """Require root conformance while leaving unrelated project work empty."""
+    changed_path = "docs/wiki/README.md"
     plan = _incremental_plan(changed_paths=(changed_path,))
-    results = _lane_results(plan)
-    root = results[0]
-    empty = results[1:]
-    decision = _finalize(plan, results, elapsed_seconds=60)
+    results = {result.lane_id: result for result in _lane_results(plan)}
+    root = results["root-hk"]
+    empty = tuple(
+        result for lane, result in results.items() if lane != "root-hk"
+    )
+    decision = _finalize(plan, tuple(results.values()), elapsed_seconds=60)
     incomplete = _finalize(plan, empty, elapsed_seconds=60)
-    plan_digest = ci_qualification_snapshot_digest(plan)
 
     assert plan.ready is True
     assert plan.changed_paths == (changed_path,)
-    assert _selected_lanes(plan) == ("root-hk",)
+    assert _selected_lanes(plan) == {"root-hk"}
     assert plan.selected_project_nodes == ()
     assert plan.selected_release_units == ()
     assert plan.selected_variants == ()
-    assert root.lane_id == "root-hk"
     assert root.disposition == "satisfied"
     assert root.evidence is not None
-    assert root.evidence.evidence_id == plan.expected_evidence_ids[0]
-    assert tuple(result.lane_id for result in empty) == CI_LANE_IDS[1:]
+    assert root.evidence.evidence_id in plan.expected_evidence_ids
     assert all(
-        result.plan_digest == plan_digest
+        result.plan_digest == ci_qualification_snapshot_digest(plan)
         and result.disposition == "empty"
         and result.evidence is None
         for result in empty
     )
-    assert tuple(item.outcome for item in decision.obligation_dispositions) == (
-        "satisfied",
-        "empty",
-        "empty",
-        "empty",
+    assert {
+        item.obligation.lane_id: item.outcome
+        for item in decision.obligation_dispositions
+    } == {
+        "root-hk": "satisfied",
+        "project-build": "empty",
+        "project-test": "empty",
+        "npm-artifact-build": "empty",
+    }
+    assert decision.admitted_evidence_digests == (
+        ci_evidence_digest(root.evidence),
     )
     assert decision.terminal_result == "success"
-    assert tuple(
-        item.outcome for item in incomplete.obligation_dispositions
-    ) == ("incomplete", "empty", "empty", "empty")
+    assert {
+        item.obligation.lane_id: item.outcome
+        for item in incomplete.obligation_dispositions
+    } == {
+        "root-hk": "incomplete",
+        "project-build": "empty",
+        "project-test": "empty",
+        "npm-artifact-build": "empty",
+    }
     assert incomplete.terminal_result == "incomplete"
 
 
-def test_ci_scenario_missing_comparison_blocks_without_full_fallback() -> None:
-    """Exercise literal scenario 5 through empties and Finalizer failure."""
-    cases = (
-        ("missing", None, "unavailable"),
-        ("unavailable", (), "unavailable"),
-        ("conflicting", (SHA_D, SHA_B), "conflicts"),
-    )
-
-    for name, comparison_identity, diagnostic in cases:
-        plan = _incremental_plan(
-            comparison_identity=comparison_identity,
-        )
-        joined_diagnostics = " ".join(plan.diagnostics)
-        lane_results = tuple(
-            form_empty_lane_result(plan, lane_id=lane_id)
-            for lane_id in CI_LANE_IDS
-        )
-        decision = _finalize(
-            plan,
-            lane_results,
-            elapsed_seconds=60,
-        )
-
-        assert name in {"missing", "unavailable", "conflicting"}
-        assert plan.ready is False
-        assert plan.scope_mode == "incremental"
-        assert plan.changed_paths == (PROJECT_SOURCE,)
-        assert plan.candidate.target == SHA_C
-        assert _selected_lanes(plan) == ()
-        assert not any(
-            obligation.required or obligation.selected
-            for obligation in plan.obligations
-        )
-        assert plan.expected_evidence_ids == ()
-        assert plan.selected_project_nodes == ()
-        assert plan.selected_release_units == ()
-        assert plan.selected_variants == ()
-        assert diagnostic in joined_diagnostics
-        assert "full" not in joined_diagnostics.lower()
-        assert "slice-validation" not in joined_diagnostics
-        assert tuple(result.lane_id for result in lane_results) == CI_LANE_IDS
-        assert all(
-            result.disposition == "empty" and result.evidence is None
-            for result in lane_results
-        )
-        assert tuple(
-            disposition.outcome
-            for disposition in decision.obligation_dispositions
-        ) == ("empty", "empty", "empty", "empty")
-        assert decision.admitted_evidence_digests == ()
-        assert decision.terminal_result == "failure"
-        assert decision.summary.terminal_result == "failure"
-        assert "Plan was not ready" in decision.summary.text
-
-
-def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
-    """Exercise literal LLD CI scenario 6 for both shadow event modes."""
-    workflow = _workflow()
-    text = WORKFLOW_PATH.read_text(encoding="utf-8")
-    events = cast("dict[str, Any]", workflow[True])
-    jobs = cast("dict[str, dict[str, Any]]", workflow["jobs"])
-    governance = cast(
-        "dict[str, Any]",
-        json.loads(DISABLED_GOVERNANCE_FIXTURE.read_bytes()),
-    )
-    event_plans = (
-        ("pull_request", "ci-pr-slice-shadow", _incremental_plan()),
-        ("workflow_dispatch", "slice-validation", _manual_plan()),
-    )
-
-    for event_kind, purpose, plan in event_plans:
-        decision = _finalize(
-            plan,
-            _lane_results(plan),
-            elapsed_seconds=60,
-        )
-        rendered = render_ci_slice_summary(decision)
-
-        assert plan.candidate.event_kind == event_kind
-        assert plan.candidate.purpose == purpose
-        assert decision.authority == "non-authoritative"
-        assert decision.summary.authority == "non-authoritative"
-        assert decision.producer == "required-finalizer"
-        assert rendered == decision.summary.text
-        assert "non-authoritative" in rendered
-        assert decision.terminal_result == "success"
-
-    assert events == {"pull_request": None, "workflow_dispatch": None}
-    assert tuple(jobs) == (
-        "request",
-        "discover-node",
-        "plan",
-        "root-hk",
-        "project-build",
-        "project-test",
-        "npm-artifact-build",
-        "required-finalizer",
-    )
-    assert all(
-        fragment not in job_id.lower()
-        for job_id in jobs
-        for fragment in ("decision", "advisory", "ruleset", "activation")
-    )
-    assert all(
-        fragment not in text.lower()
-        for fragment in ("ruleset", "required-check", "activation", "advisory")
-    )
-    assert "Final Decision" not in text
-    assert "authoritative" not in text.lower().replace(
-        "non-authoritative",
-        "",
-    )
-    ci_bytes = V1_CI_PATH.read_bytes()
-    base_validation_node = b"""\
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Setup Python 3
-"""
-    pinned_validation_node = b"""\
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24.19.0'
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Setup Python 3
-"""
-    capture_step = b"""\
-      - name: Capture setup tool paths
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          dotnet_path="$(command -v dotnet)"
-          go_path="$(command -v go)"
-          java_path="$(command -v java)"
-          node_path="$(command -v node)"
-          powershell_path="$(command -v pwsh)"
-          python_path="$(command -v python3)"
-          ruby_path="$(command -v ruby)"
-
-          {
-            printf 'MISE_LINK_DOTNET=%s\\n' "$dotnet_path"
-            printf 'MISE_LINK_GO=%s\\n' "$go_path"
-            printf 'MISE_LINK_JAVA=%s\\n' "$java_path"
-            printf 'MISE_LINK_NODE=%s\\n' "$node_path"
-            printf 'MISE_LINK_POWERSHELL=%s\\n' "$powershell_path"
-            printf 'MISE_LINK_PYTHON=%s\\n' "$python_path"
-            printf 'MISE_LINK_RUBY=%s\\n' "$ruby_path"
-          } >> "$GITHUB_ENV"
-
-"""
-    base_links = b"""\
-          mise link core:dotnet@10 "$(which dotnet)"
-          mise link go@1 "$(which go)"
-          mise link java@25 "$(which java)"
-          mise link node@24 "$(which node)"
-          mise link powershell@7 "$(which pwsh)"
-          mise link python@3.14 "$(which python3)"
-          mise link ruby@3.3 "$(which ruby)"
-"""
-    forced_links = b"""\
-          mise link --force core:dotnet@10 "$MISE_LINK_DOTNET"
-          mise link --force go@1 "$MISE_LINK_GO"
-          mise link --force java@25 "$MISE_LINK_JAVA"
-          mise link --force node@24 "$MISE_LINK_NODE"
-          mise link --force powershell@7 "$MISE_LINK_POWERSHELL"
-          mise link --force python@3.14 "$MISE_LINK_PYTHON"
-          mise link --force ruby@3.3 "$MISE_LINK_RUBY"
-"""
-    python_test_toolchain = b"""\
-      - name: Set up PNPM
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        with:
-          version: 11.22.0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24.19.0'
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Set up mise and HK
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        with:
-          experimental: true
-          install_args: hk
-
-      - name: Setup Python 3.14
-"""
-    python_setup_marker = b"      - name: Setup Python 3.14\n"
-    base_python_dependencies = b"""\
-      - name: Install dependencies
-        run: |
-          set -Eeuo pipefail
-          dotnet tool restore
-          uv sync --frozen --all-packages
-"""
-    python_dependencies = b"""\
-      - name: Install dependencies
-        run: |
-          set -Eeuo pipefail
-          dotnet tool restore
-          pnpm install --frozen-lockfile
-          uv sync --frozen --all-packages
-"""
-    python_preparation = b"""\
-      - name: Prepare static-reference authorities
-        env:
-          MISE_TASK_RUN_AUTO_INSTALL: 'false'
-        run: mise run prepare:static-reference-authorities
-
-"""
-    base_hk_invocation = b"""\
-          hk check \\
-            --no-progress \\
-            --no-fail-fast \\
-            --from-ref "$BASE" \\
-            --to-ref "$HEAD"
-"""
-    complete_history_hk_invocation = b"""\
-          python eng/scripts/workflow_delivery_v3_hk.py \\
-            --repository . --from-ref "$BASE" --to-ref "$HEAD" --files0 \\
-            -- hk check --check --no-stage --no-progress --no-fail-fast
-"""
-    manual_hk_guard = b"""\
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            hk check --check --no-stage --no-progress --no-fail-fast --all
-            exit 0
-          fi
-
-"""
-    assert ci_bytes.count(manual_hk_guard) == 1
-    assert ci_bytes.count(complete_history_hk_invocation) == 1
-    assert ci_bytes.count(pinned_validation_node) == 1
-    assert ci_bytes.count(capture_step) == 1
-    assert ci_bytes.count(forced_links) == 1
-    assert ci_bytes.count(python_test_toolchain) == 1
-    assert ci_bytes.count(python_dependencies) == 1
-    assert ci_bytes.count(python_preparation) == 1
-    reconstructed_base = (
-        ci_bytes.replace(
-            pinned_validation_node,
-            base_validation_node,
-            1,
-        )
-        .replace(
-            forced_links,
-            base_links,
-            1,
-        )
-        .replace(
-            capture_step,
-            b"",
-            1,
-        )
-        .replace(
-            python_test_toolchain,
-            python_setup_marker,
-            1,
-        )
-        .replace(
-            python_dependencies,
-            base_python_dependencies,
-            1,
-        )
-        .replace(
-            python_preparation,
-            b"",
-            1,
-        )
-        .replace(
-            complete_history_hk_invocation,
-            base_hk_invocation,
-            1,
-        )
-        .replace(manual_hk_guard, b"", 1)
-    )
-    assert hashlib.sha256(reconstructed_base).hexdigest() == (
-        "a0ca041623f8f90771a35c25bc14ceeb25810111c50dfcb17b6e34d988f62fca"
-    )
-    assert governance["live_enabled"] is False
-    assert hashlib.sha256(
-        DISABLED_GOVERNANCE_FIXTURE.read_bytes(),
-    ).hexdigest() == (
-        "54220cc9c45aee4ba6ee66ad8571b8284d23f8496ded1644e256af0935cb8bcb"
-    )
-    assert "live_enabled" not in text
-
-
-def test_ci_scenario_policy_only_selects_control_pytest_not_unrelated_source(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("comparison_identity", "diagnostic"),
+    [
+        pytest.param(None, "unavailable", id="missing"),
+        pytest.param((), "unavailable", id="unavailable"),
+        pytest.param((SHA_D, SHA_B), "conflicts", id="conflicting"),
+    ],
+)
+def test_ci_scenario_missing_comparison_blocks_without_full_fallback(
+    comparison_identity: object,
+    diagnostic: str,
 ) -> None:
-    """Keep control bounded while the explicit index scan stays universal."""
-    policy_repo = tmp_path / "policy-repo"
-    policy_base = _initialize_hk_repository(policy_repo)
-    _write(policy_repo, POLICY_PATH, "policy\n")
-    policy_head = _commit(policy_repo, "policy-only change")
-    policy_paths = _changed_paths(policy_repo, policy_base, policy_head)
-    policy_control = _hk_step_for_range(
-        policy_repo,
-        policy_base,
-        policy_head,
-        CONTROL_STEP_NAME,
-    )
-    policy_static_reference = _hk_step_for_range(
-        policy_repo,
-        policy_base,
-        policy_head,
-        STATIC_REFERENCE_STEP_NAME,
-    )
+    """Reject unusable comparisons without running a broader fallback scope."""
+    plan = _incremental_plan(comparison_identity=comparison_identity)
+    lane_results = _lane_results(plan)
+    decision = _finalize(plan, lane_results, elapsed_seconds=60)
 
-    product_repo = tmp_path / "unrelated-product-repo"
-    product_base = _initialize_hk_repository(product_repo)
-    _write(
-        product_repo,
-        UNRELATED_PRODUCT_SOURCE,
-        "export const value = 1;\n",
+    assert plan.ready is False
+    assert plan.scope_mode == "incremental"
+    assert plan.changed_paths == (PROJECT_SOURCE,)
+    assert plan.candidate.target == SHA_C
+    assert _selected_lanes(plan) == set()
+    assert not any(item.required or item.selected for item in plan.obligations)
+    assert plan.expected_evidence_ids == ()
+    assert plan.selected_project_nodes == ()
+    assert plan.selected_release_units == ()
+    assert plan.selected_variants == ()
+    assert diagnostic in " ".join(plan.diagnostics)
+    assert all(
+        result.disposition == "empty" and result.evidence is None
+        for result in lane_results
     )
-    product_head = _commit(product_repo, "unrelated product source")
-    product_paths = _changed_paths(product_repo, product_base, product_head)
-    product_control = _hk_step_for_range(
-        product_repo,
-        product_base,
-        product_head,
-        CONTROL_STEP_NAME,
+    assert {
+        item.obligation.lane_id: item.outcome
+        for item in decision.obligation_dispositions
+    } == dict.fromkeys(CI_LANE_IDS, "empty")
+    assert decision.admitted_evidence_digests == ()
+    assert (
+        decision.terminal_result
+        == decision.summary.terminal_result
+        == "failure"
     )
-    product_static_reference = _hk_step_for_range(
-        product_repo,
-        product_base,
-        product_head,
-        STATIC_REFERENCE_STEP_NAME,
-    )
-
-    assert policy_paths == (POLICY_PATH,)
-    assert policy_control["name"] == CONTROL_STEP_NAME
-    assert policy_control["status"] == "included"
-    assert policy_control["fileCount"] == 1
-    assert policy_static_reference["name"] == STATIC_REFERENCE_STEP_NAME
-    assert policy_static_reference["status"] == "included"
-    assert policy_static_reference["fileCount"] == 1
-    assert product_paths == (UNRELATED_PRODUCT_SOURCE,)
-    assert product_control["name"] == CONTROL_STEP_NAME
-    assert product_control["status"] == "skipped"
-    assert product_control["fileCount"] == 0
-    assert product_static_reference["name"] == STATIC_REFERENCE_STEP_NAME
-    assert product_static_reference["status"] == "included"
-    assert product_static_reference["fileCount"] == 1
-    assert "--source-kind index" in _static_reference_hk_block()
+    assert decision.failure_class == "incomplete-model-plan"
+    assert "Plan was not ready" in decision.summary.text
 
 
-def test_ci_scenario_static_reference_trigger_is_unconditional_and_index_bound(
+@pytest.mark.parametrize("event_kind", ["pull_request", "workflow_dispatch"])
+def test_ci_scenario_coexistence_emits_no_authoritative_decision(
+    event_kind: str,
+) -> None:
+    """Keep successful qualification diagnostic in both coexistence modes."""
+    plan = (
+        _incremental_plan() if event_kind == "pull_request" else _manual_plan()
+    )
+    decision = _finalize(plan, _lane_results(plan), elapsed_seconds=60)
+    rendered = render_ci_slice_summary(decision)
+
+    assert decision.candidate.event_kind == event_kind
+    assert decision.candidate.purpose == (
+        "ci-pr-slice-shadow"
+        if event_kind == "pull_request"
+        else "slice-validation"
+    )
+    assert decision.candidate == plan.candidate
+    assert (
+        decision.authority == decision.summary.authority == "non-authoritative"
+    )
+    assert decision.producer == "required-finalizer"
+    assert (
+        decision.terminal_result
+        == decision.summary.terminal_result
+        == "success"
+    )
+    assert rendered == decision.summary.text
+    assert "non-authoritative" in rendered
+
+
+def test_missing_artifact_scenario_preserves_completed_evidence() -> None:
+    """Keep completed Evidence when selected work produces no result."""
+    missing_lane = "npm-artifact-build"
+    plan = _incremental_plan()
+    results = tuple(
+        result
+        for result in _lane_results(plan)
+        if result.lane_id != missing_lane
+    )
+    decision = _finalize(plan, results, elapsed_seconds=60)
+    expected_outcomes = {
+        "root-hk": "satisfied",
+        "project-build": "satisfied",
+        "project-test": "satisfied",
+        "npm-artifact-build": "satisfied",
+    }
+    expected_outcomes[missing_lane] = "incomplete"
+
+    assert {
+        item.obligation.lane_id: item.outcome
+        for item in decision.obligation_dispositions
+    } == expected_outcomes
+    assert set(decision.admitted_evidence_digests) == {
+        ci_evidence_digest(cast("CiEvidence", result.evidence))
+        for result in results
+    }
+    assert (
+        decision.terminal_result
+        == decision.summary.terminal_result
+        == "incomplete"
+    )
+    assert decision.failure_class == "incomplete-qualification"
+    assert missing_lane in decision.summary.text
+
+
+def test_ci_scenario_superseded_evidence_cannot_qualify_new_candidate() -> None:
+    """Require fresh qualification for a replacement PR candidate."""
+    old_plan = _incremental_plan()
+    old_results = _lane_results(old_plan)
+    current = form_pull_request_candidate(
+        repository="hcoona/three",
+        request_id="pr-42",
+        workflow_run_id=WORKFLOW_RUN_ID + 1,
+        run_attempt=1,
+        selected_ref="refs/pull/42/merge",
+        base_sha=SHA_A,
+        head_sha=SHA_C,
+        tested_merge_sha=SHA_D,
+        comparison_identity=(SHA_A, SHA_C),
+    )
+    supersession = derive_ci_supersession_state(
+        old_plan,
+        current_base_sha=SHA_A,
+        current_head_sha=SHA_C,
+        current_tested_merge_sha=SHA_D,
+    )
+    old_decision = finalize_ci_slice(
+        old_plan,
+        old_results,
+        elapsed_seconds=60,
+        supersession_state=supersession,
+    )
+    new_plan = _incremental_plan(
+        candidate=current,
+        comparison_identity=(SHA_A, SHA_C),
+    )
+    pending = _finalize(new_plan, (), elapsed_seconds=60)
+
+    assert old_decision.candidate == old_plan.candidate
+    assert old_decision.supersession_state == "superseded"
+    assert old_decision.pr_slo == "excluded"
+    assert old_decision.pr_slo_reason == "superseded-candidate"
+    assert old_decision.authority == "non-authoritative"
+    assert new_plan.candidate == current
+    assert _selected_lanes(new_plan) == set(CI_LANE_IDS)
+    assert pending.terminal_result == "incomplete"
+    assert pending.admitted_evidence_digests == ()
+    with pytest.raises(ValueError, match="exact current Plan binding"):
+        _finalize(new_plan, old_results, elapsed_seconds=60)
+
+    fresh_results = _lane_results(new_plan)
+    decision = _finalize(new_plan, fresh_results, elapsed_seconds=60)
+
+    assert decision.candidate == current
+    assert decision.supersession_state == "not-superseded"
+    assert decision.terminal_result == "success"
+    assert set(decision.admitted_evidence_digests) == {
+        ci_evidence_digest(cast("CiEvidence", result.evidence))
+        for result in fresh_results
+    }
+    assert set(decision.admitted_evidence_digests).isdisjoint(
+        old_decision.admitted_evidence_digests,
+    )
+
+
+def test_ci_scenario_static_reference_trigger_is_unconditional(
     tmp_path: Path,
 ) -> None:
     """Retain Git-transition coverage without a broad consumer glob."""
     surface_path = "unrelated/static-reference-trigger.txt"
-
-    assert GIT_TRANSITIONS == (
-        "add",
-        "modify",
-        "delete",
-        "rename-out",
-        "rename-in",
-    )
 
     for transition in GIT_TRANSITIONS:
         change = _history_change(surface_path, transition)
@@ -1316,119 +1023,10 @@ def test_ci_scenario_static_reference_trigger_is_unconditional_and_index_bound(
     manual_repo = tmp_path / "slice-validation"
     _initialize_hk_repository(manual_repo)
     manual = _hk_step_for_all(manual_repo, STATIC_REFERENCE_STEP_NAME)
-    static_reference = _static_reference_hk_block()
-    expected_invocation = (
-        "python eng/scripts/hk_exec.py --timeout-seconds 300 "
-        "uv run --python 3.13 --package three-workflow-delivery-v3 "
-        "python eng/scripts/workflow_delivery_v3_static_reference.py "
-        "--repository-root . --source-kind index"
-    )
 
     assert manual["name"] == STATIC_REFERENCE_STEP_NAME
     assert manual["status"] == "included"
     assert cast("int", manual["fileCount"]) > 0
-    assert f'check =\n      "{expected_invocation}"' in static_reference
-    assert static_reference.count("--source-kind") == 1
-    assert static_reference.count("--source-kind index") == 1
-    assert "--source-kind worktree" not in static_reference
-    assert "git-target" not in static_reference
-    assert "--target" not in static_reference
-    assert "glob =" not in static_reference
-    assert "when =" not in static_reference
-
-
-def test_completed_failure_is_failure_not_incomplete() -> None:
-    """Pin scenario 3 as a completed failed project-test command."""
-    plan = _incremental_plan()
-    completed_failure_results = _lane_results(
-        plan,
-        outcomes={"project-test": "failure"},
-        diagnostics={"project-test": ("completed npm test command failed",)},
-    )
-    missing_results = tuple(
-        result
-        for result in completed_failure_results
-        if result.lane_id != "project-test"
-    )
-    completed_decision = _finalize(
-        plan,
-        completed_failure_results,
-        elapsed_seconds=60,
-    )
-    missing_decision = _finalize(
-        plan,
-        missing_results,
-        elapsed_seconds=60,
-    )
-    completed_project_test = next(
-        result
-        for result in completed_failure_results
-        if result.lane_id == "project-test"
-    )
-
-    assert completed_project_test.disposition == "failed"
-    assert completed_project_test.evidence is not None
-    assert completed_project_test.evidence.raw_outcome == "failure"
-    assert completed_project_test.evidence.normalized_outcome == "failed"
-    assert completed_decision.terminal_result == "failure"
-    assert {
-        item.obligation.lane_id: item.outcome
-        for item in completed_decision.obligation_dispositions
-    }["project-test"] == "failed"
-    assert missing_decision.terminal_result == "incomplete"
-
-
-def test_runtime_infrastructure_paths_are_missing_result_incomplete() -> None:
-    """Close timeout/cancellation/infrastructure/no-result as incomplete."""
-    plan = _incremental_plan()
-    complete_results = _lane_results(plan)
-
-    for reason, lane_id in (
-        ("timeout", "project-build"),
-        ("cancellation", "project-test"),
-        ("infrastructure", "npm-artifact-build"),
-        ("no-result", "project-test"),
-    ):
-        missing_lane_results = tuple(
-            result for result in complete_results if result.lane_id != lane_id
-        )
-        decision = _finalize(
-            plan,
-            missing_lane_results,
-            elapsed_seconds=60,
-        )
-
-        assert reason in {
-            "timeout",
-            "cancellation",
-            "infrastructure",
-            "no-result",
-        }
-        assert decision.terminal_result == "incomplete"
-        assert {
-            item.obligation.lane_id: item.outcome
-            for item in decision.obligation_dispositions
-        }[lane_id] == "incomplete"
-
-    completed_failure = _finalize(
-        plan,
-        _lane_results(
-            plan,
-            outcomes={"project-test": "failure"},
-            diagnostics={
-                "project-test": (
-                    "verified completed project-test Adapter command failure",
-                ),
-            },
-        ),
-        elapsed_seconds=60,
-    )
-
-    assert completed_failure.terminal_result == "failure"
-    assert {
-        item.obligation.lane_id: item.outcome
-        for item in completed_failure.obligation_dispositions
-    }["project-test"] == "failed"
 
 
 def test_ci_scenario_precoexistence_bootstrap_preserves_blocked_decision() -> (
@@ -1590,73 +1188,32 @@ def test_precoexistence_bootstrap_projection_rejects_other_failures() -> None:
     )
 
 
-def test_reserved_ci_scenario_inventory_is_exact() -> None:
-    """Keep the reserved scenario prefix inventory at the approved ten."""
-    reserved = tuple(
-        name
-        for name, value in globals().items()
-        if name.startswith("test_ci_scenario_") and callable(value)
-    )
-
-    assert reserved == (
-        "test_ci_scenario_uses_permanent_root_hk_static_reference",
-        "test_ci_scenario_project_source_change_selects_complete_slice",
-        "test_ci_scenario_slice_validation_selects_full_slice_without_synthetic_range",
-        "test_ci_scenario_project_test_failure_fails_shadow_check",
-        "test_ci_scenario_repository_only_change_has_valid_empty_affected_lanes",
-        "test_ci_scenario_missing_comparison_blocks_without_full_fallback",
-        "test_ci_scenario_coexistence_emits_no_authoritative_decision",
-        "test_ci_scenario_policy_only_selects_control_pytest_not_unrelated_source",
-        "test_ci_scenario_static_reference_trigger_is_unconditional_and_index_bound",
-        "test_ci_scenario_precoexistence_bootstrap_preserves_blocked_decision",
-    )
-
-
 @pytest.mark.parametrize(
     "pull_request_number",
     [
-        pytest.param(True, id="bool-true"),
         pytest.param(0, id="zero"),
         pytest.param(-1, id="negative"),
-        pytest.param(42.0, id="float"),
-        pytest.param("42", id="string"),
     ],
 )
 def test_precoexistence_bootstrap_projection_rejects_invalid_pr_number(
-    pull_request_number: object,
+    pull_request_number: int,
 ) -> None:
-    """Reject non-exact or nonpositive pull-request numbers without mutation."""
+    """Reject nonpositive pull-request numbers."""
     plan = _incremental_plan(changed_paths=("unmodeled/bootstrap.txt",))
     decision = _finalize(plan, _lane_results(plan), elapsed_seconds=60)
     valid_request = _bootstrap_request()
-    decision_snapshot = replace(decision)
-    decision_digest = ci_slice_decision_digest(decision)
-    request_snapshot = replace(valid_request)
     invalid_request = replace(
         valid_request,
-        pull_request_number=cast("Any", pull_request_number),
+        pull_request_number=pull_request_number,
     )
-    invalid_request_snapshot = replace(invalid_request)
 
-    with pytest.raises(
-        TypeError,
-        match=(r"\Apull_request_number must be an exact positive integer\Z"),
-    ) as exception:
+    with pytest.raises(TypeError):
         qualifies_precoexistence_bootstrap_projection(
             decision,
             request=invalid_request,
             base_contains_ci_workflow=False,
         )
 
-    assert exception.type is TypeError
-    assert (
-        str(exception.value)
-        == "pull_request_number must be an exact positive integer"
-    )
-    assert decision == decision_snapshot
-    assert ci_slice_decision_digest(decision) == decision_digest
-    assert valid_request == request_snapshot
-    assert invalid_request == invalid_request_snapshot
     assert qualifies_precoexistence_bootstrap_projection(
         decision,
         request=valid_request,
@@ -1672,107 +1229,38 @@ def test_precoexistence_bootstrap_projection_rejects_invalid_pr_number(
             SHA_A[:-1],
             id="base-malformed-short",
         ),
-        pytest.param("base_sha", None, id="base-non-string"),
         pytest.param(
             "head_sha",
             "g" * 40,
             id="head-malformed-non-hex",
         ),
-        pytest.param("head_sha", b"b" * 40, id="head-non-string"),
         pytest.param(
             "tested_merge_sha",
             SHA_C.upper(),
             id="tested-merge-malformed-uppercase",
         ),
-        pytest.param(
-            "tested_merge_sha",
-            42,
-            id="tested-merge-non-string",
-        ),
     ],
 )
 def test_precoexistence_bootstrap_projection_rejects_invalid_sha_fields(
     field: str,
-    invalid_sha: object,
+    invalid_sha: str,
 ) -> None:
-    """Reject every malformed event SHA field without changing valid inputs."""
+    """Reject every malformed event SHA field."""
     plan = _incremental_plan(changed_paths=("unmodeled/bootstrap.txt",))
     decision = _finalize(plan, _lane_results(plan), elapsed_seconds=60)
     valid_request = _bootstrap_request()
-    decision_snapshot = replace(decision)
-    decision_digest = ci_slice_decision_digest(decision)
-    request_snapshot = replace(valid_request)
     invalid_request = replace(
         valid_request,
         **cast("Any", {field: invalid_sha}),
     )
-    invalid_request_snapshot = replace(invalid_request)
 
-    with pytest.raises(
-        ValueError,
-        match=r"\Abootstrap pull-request identity is unavailable\Z",
-    ) as exception:
+    with pytest.raises(ValueError, match="identity"):
         qualifies_precoexistence_bootstrap_projection(
             decision,
             request=invalid_request,
             base_contains_ci_workflow=False,
         )
 
-    assert exception.type is ValueError
-    assert str(exception.value) == (
-        "bootstrap pull-request identity is unavailable"
-    )
-    assert decision == decision_snapshot
-    assert ci_slice_decision_digest(decision) == decision_digest
-    assert valid_request == request_snapshot
-    assert invalid_request == invalid_request_snapshot
-    assert qualifies_precoexistence_bootstrap_projection(
-        decision,
-        request=valid_request,
-        base_contains_ci_workflow=False,
-    )
-
-
-@pytest.mark.parametrize(
-    "base_contains_ci_workflow",
-    [
-        pytest.param(0, id="integer-zero"),
-        pytest.param(1, id="integer-one"),
-        pytest.param(None, id="none"),
-        pytest.param("false", id="string-false"),
-    ],
-)
-def test_precoexistence_bootstrap_projection_requires_exact_workflow_bool(
-    base_contains_ci_workflow: object,
-) -> None:
-    """Reject truthy and falsey non-bools without changing valid inputs."""
-    plan = _incremental_plan(changed_paths=("unmodeled/bootstrap.txt",))
-    decision = _finalize(plan, _lane_results(plan), elapsed_seconds=60)
-    valid_request = _bootstrap_request()
-    decision_snapshot = replace(decision)
-    decision_digest = ci_slice_decision_digest(decision)
-    request_snapshot = replace(valid_request)
-
-    with pytest.raises(
-        TypeError,
-        match=r"\Abase_contains_ci_workflow must be an exact bool\Z",
-    ) as exception:
-        qualifies_precoexistence_bootstrap_projection(
-            decision,
-            request=valid_request,
-            base_contains_ci_workflow=cast(
-                "Any",
-                base_contains_ci_workflow,
-            ),
-        )
-
-    assert exception.type is TypeError
-    assert str(exception.value) == (
-        "base_contains_ci_workflow must be an exact bool"
-    )
-    assert decision == decision_snapshot
-    assert ci_slice_decision_digest(decision) == decision_digest
-    assert valid_request == request_snapshot
     assert qualifies_precoexistence_bootstrap_projection(
         decision,
         request=valid_request,

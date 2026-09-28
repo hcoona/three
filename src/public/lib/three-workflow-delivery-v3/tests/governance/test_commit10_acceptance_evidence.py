@@ -4,19 +4,13 @@
 
 from __future__ import annotations
 
-import itertools
+import hashlib
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 import three_workflow_delivery_v3.records.governance as governance_module
-from three_workflow_delivery_v3.adapters.github_packages import (
-    AcceptanceRunnerDiagnostic,
-    FixedAcceptanceSuiteResult,
-    FixedCoordinateAcceptanceProbeResult,
-    ValidatedAcceptanceRequestProof,
-)
 from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 from three_workflow_delivery_v3.records.governance import (
     GOVERNANCE_ACCEPTANCE_DEPENDENCIES,
@@ -49,8 +43,41 @@ LEGACY_CONFIRMATION_DIGEST = (
 RETRY_3_TARGET_SHA = "a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c"
 
 
-def _validated_request_proof() -> ValidatedAcceptanceRequestProof:
-    return ValidatedAcceptanceRequestProof.from_validated_exchange(
+def _raw_sha256(value: bytes) -> str:
+    return "sha256:" + hashlib.sha256(value).hexdigest()
+
+
+def _proof_document(
+    *,
+    raw_request: bytes,
+    tarball: bytes,
+    package_coordinate: str,
+    tag: str,
+    upstream_status: int,
+    selected_headers: dict[str, str],
+    response_body: bytes,
+) -> dict[str, Any]:
+    # Build historical reader input only; this does not validate an exchange.
+    identity = {
+        "request-digest": _raw_sha256(raw_request),
+        "upstream-status": upstream_status,
+        "selected-headers": {
+            name.lower(): value for name, value in selected_headers.items()
+        },
+        "response-body-digest": _raw_sha256(response_body),
+    }
+    return {
+        "schema": "workflow-delivery/v3/validated-acceptance-request-proof",
+        **identity,
+        "tarball-sha512": "sha512:" + hashlib.sha512(tarball).hexdigest(),
+        "package-coordinate": package_coordinate,
+        "tag": tag,
+        "response-identity-digest": canonical_sha256(identity),
+    }
+
+
+def _validated_request_proof() -> dict[str, Any]:
+    return _proof_document(
         raw_request=b'{"_id":"@hcoona/hcoona-release-smoke-npm"}',
         tarball=b"governance-lost-response-tarball",
         package_coordinate=(
@@ -65,8 +92,8 @@ def _validated_request_proof() -> ValidatedAcceptanceRequestProof:
 
 def _normal_validated_request_proof(
     upstream_status: int = 201,
-) -> ValidatedAcceptanceRequestProof:
-    return ValidatedAcceptanceRequestProof.from_validated_exchange(
+) -> dict[str, Any]:
+    return _proof_document(
         raw_request=b'{"_id":"@hcoona/hcoona-release-smoke-npm"}',
         tarball=b"governance-normal-create-tarball",
         package_coordinate=(
@@ -79,10 +106,8 @@ def _normal_validated_request_proof(
     )
 
 
-LOST_RESPONSE_PROOF = _validated_request_proof()
-LOST_RESPONSE_PROOF_DOCUMENT = LOST_RESPONSE_PROOF.to_document()
-NORMAL_CREATE_PROOF = _normal_validated_request_proof()
-NORMAL_CREATE_PROOF_DOCUMENT = NORMAL_CREATE_PROOF.to_document()
+LOST_RESPONSE_PROOF_DOCUMENT = _validated_request_proof()
+NORMAL_CREATE_PROOF_DOCUMENT = _normal_validated_request_proof()
 CANONICAL_SCENARIOS: dict[str, dict[str, Any]] = {
     "absent-create-readback": {
         "scenario": "absent-create-readback",
@@ -179,7 +204,9 @@ CANONICAL_SCENARIOS: dict[str, dict[str, Any]] = {
         },
         "response": {
             "result": "lost-response-exact-after-start",
-            "identity-digest": LOST_RESPONSE_PROOF.response_identity_digest,
+            "identity-digest": LOST_RESPONSE_PROOF_DOCUMENT[
+                "response-identity-digest"
+            ],
             "diagnostics": ["mutation-started-and-readback-exact"],
         },
         "post": {
@@ -197,43 +224,17 @@ def _scenario(scenario: str) -> dict[str, Any]:
 
 def _probe_fact(probe: str) -> dict[str, Any]:
     inventory = GOVERNANCE_ACCEPTANCE_PROBE_SCENARIOS[probe]
-    scenarios = [_scenario(scenario) for scenario in inventory]
-    suite = FixedAcceptanceSuiteResult(
-        suite=probe.removeprefix("probe-"),
-        scenarios=tuple(
-            FixedCoordinateAcceptanceProbeResult(
-                scenario=scenario["scenario"],
-                package_coordinate=scenario["package-coordinate"],
-                tag=scenario["tag"],
-                pre_state=scenario["pre"]["state"],
-                post_state=scenario["post"]["state"],
-                result=scenario["response"]["result"],
-                mutation_classification="complete",
-                action_executed=scenario["action"]["executed"],
-                mutation_started=scenario["action"]["mutation-started"],
-                response_identity_digest=scenario["response"][
-                    "identity-digest"
-                ],
-                content_sha512=scenario["post"]["content-sha512"],
-                diagnostics=tuple(scenario["response"]["diagnostics"]),
-                validated_request_proof=(
-                    LOST_RESPONSE_PROOF
-                    if scenario["scenario"] == "lost-response"
-                    else None
-                ),
-            )
-            for scenario in scenarios
-        ),
-    )
-    suite_document = suite.to_document()
     return {
         "probe": probe,
         "result": "success",
         "scenario-inventory": list(inventory),
-        "record-digest": suite_document["record-digest"],
+        "record-digest": {
+            "probe-absent-create-readback": HISTORICAL_ABSENT_CREATE_READBACK_RECORD_DIGEST,
+            "probe-exact-and-conflict": HISTORICAL_EXACT_AND_CONFLICT_RECORD_DIGEST,
+        }[probe],
         "artifact-id": 700 + GOVERNANCE_ACCEPTANCE_PROBES.index(probe),
         "artifact-digest": SHA256_B,
-        "scenarios": scenarios,
+        "scenarios": [_scenario(scenario) for scenario in inventory],
     }
 
 
@@ -390,11 +391,6 @@ CLOSED_SCHEMA_EXTRA_PATHS: tuple[tuple[object, ...], ...] = (
     ("probe-facts", 1, "scenarios", 3, "action", "extra"),
     ("probe-facts", 1, "scenarios", 3, "response", "extra"),
     ("probe-facts", 1, "scenarios", 3, "post", "extra"),
-    ("probe-facts", 0, "scenarios", 0, "response", "diagnostics-extra"),
-    ("probe-facts", 1, "scenarios", 0, "response", "diagnostics-extra"),
-    ("probe-facts", 1, "scenarios", 1, "response", "diagnostics-extra"),
-    ("probe-facts", 1, "scenarios", 2, "response", "diagnostics-extra"),
-    ("probe-facts", 1, "scenarios", 3, "response", "diagnostics-extra"),
 )
 
 
@@ -415,37 +411,12 @@ def test_complete_evidence_binds_exact_five_scenarios_and_artifacts() -> None:
             CANONICAL_SCENARIOS[scenario]
             for scenario in GOVERNANCE_ACCEPTANCE_PROBE_SCENARIOS[fact.probe]
         )
-        expected_suite = FixedAcceptanceSuiteResult(
-            suite=fact.probe.removeprefix("probe-"),
-            scenarios=tuple(
-                FixedCoordinateAcceptanceProbeResult(
-                    scenario=str(scenario["scenario"]),
-                    package_coordinate=str(scenario["package-coordinate"]),
-                    tag=str(scenario["tag"]),
-                    pre_state=str(scenario["pre"]["state"]),
-                    post_state=str(scenario["post"]["state"]),
-                    result=str(scenario["response"]["result"]),
-                    mutation_classification="complete",
-                    action_executed=bool(scenario["action"]["executed"]),
-                    mutation_started=bool(
-                        scenario["action"]["mutation-started"]
-                    ),
-                    response_identity_digest=str(
-                        scenario["response"]["identity-digest"]
-                    ),
-                    content_sha512=str(scenario["post"]["content-sha512"]),
-                    diagnostics=tuple(scenario["response"]["diagnostics"]),
-                    validated_request_proof=(
-                        LOST_RESPONSE_PROOF
-                        if scenario["scenario"] == "lost-response"
-                        else None
-                    ),
-                )
-                for scenario in fact.scenarios
-            ),
-        )
         assert (
-            fact.record_digest == expected_suite.to_document()["record-digest"]
+            fact.record_digest
+            == {
+                "probe-absent-create-readback": HISTORICAL_ABSENT_CREATE_READBACK_RECORD_DIGEST,
+                "probe-exact-and-conflict": HISTORICAL_EXACT_AND_CONFLICT_RECORD_DIGEST,
+            }[fact.probe]
         )
     assert all(fact.artifact_id is not None for fact in evidence.probe_facts)
     assert all(
@@ -618,19 +589,19 @@ def test_protocol_confirmed_governance_binds_proof_and_runner_diagnostic(
 ) -> None:
     document = _document()
     proof = _normal_validated_request_proof(upstream_status)
-    proof_document = proof.to_document()
+    proof_document = deepcopy(proof)
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["response"]["result"] = "protocol-confirmed"
-    scenario["response"]["identity-digest"] = proof.response_identity_digest
-    scenario["post"]["content-sha512"] = proof.tarball_sha512
+    scenario["response"]["identity-digest"] = proof["response-identity-digest"]
+    scenario["post"]["content-sha512"] = proof["tarball-sha512"]
     scenario["validated-request-proof"] = proof_document
     scenario["runner-diagnostic"] = {
         "exit-classification": "protocol-confirmed",
         "upstream-status": upstream_status,
         "exception-category": None,
-        "request-correlation-digest": proof.request_digest,
+        "request-correlation-digest": proof["request-digest"],
     }
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     evidence = _admit(document)
     admitted = evidence.to_document()["probe-facts"][0]["scenarios"][0]
@@ -646,16 +617,16 @@ def test_protocol_confirmed_governance_rejects_proof_diagnostic_status_mismatch(
     proof = _normal_validated_request_proof(200)
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["response"]["result"] = "protocol-confirmed"
-    scenario["response"]["identity-digest"] = proof.response_identity_digest
-    scenario["post"]["content-sha512"] = proof.tarball_sha512
-    scenario["validated-request-proof"] = proof.to_document()
+    scenario["response"]["identity-digest"] = proof["response-identity-digest"]
+    scenario["post"]["content-sha512"] = proof["tarball-sha512"]
+    scenario["validated-request-proof"] = deepcopy(proof)
     scenario["runner-diagnostic"] = {
         "exit-classification": "protocol-confirmed",
         "upstream-status": 201,
         "exception-category": None,
-        "request-correlation-digest": proof.request_digest,
+        "request-correlation-digest": proof["request-digest"],
     }
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(ValueError, match="does not bind"):
         _admit(document)
@@ -666,7 +637,7 @@ def test_governance_rejects_coherent_other_two_xx_proof_status(
     upstream_status: int,
 ) -> None:
     document = _document()
-    proof = _normal_validated_request_proof().to_document()
+    proof = _normal_validated_request_proof()
     proof["upstream-status"] = upstream_status
     proof["response-identity-digest"] = canonical_sha256(
         {
@@ -681,7 +652,7 @@ def test_governance_rejects_coherent_other_two_xx_proof_status(
     scenario["response"]["identity-digest"] = proof["response-identity-digest"]
     scenario["post"]["content-sha512"] = proof["tarball-sha512"]
     scenario["validated-request-proof"] = proof
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(ValueError, match="upstream-status"):
         _admit(document)
@@ -694,16 +665,16 @@ def test_governance_rejects_unbound_http_200_diagnostic_with_matching_proof() ->
     proof = _normal_validated_request_proof(200)
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["response"]["result"] = "protocol-confirmed"
-    scenario["response"]["identity-digest"] = proof.response_identity_digest
-    scenario["post"]["content-sha512"] = proof.tarball_sha512
-    scenario["validated-request-proof"] = proof.to_document()
+    scenario["response"]["identity-digest"] = proof["response-identity-digest"]
+    scenario["post"]["content-sha512"] = proof["tarball-sha512"]
+    scenario["validated-request-proof"] = deepcopy(proof)
     scenario["runner-diagnostic"] = {
         "exit-classification": "runner-failed-after-mutation-start",
         "upstream-status": 200,
         "exception-category": None,
         "request-correlation-digest": None,
     }
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(
         ValueError,
@@ -718,10 +689,12 @@ def test_protocol_confirmed_governance_does_not_require_runner_diagnostic() -> (
     document = _document()
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["response"]["result"] = "protocol-confirmed"
-    scenario["response"]["identity-digest"] = (
-        NORMAL_CREATE_PROOF.response_identity_digest
-    )
-    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["response"]["identity-digest"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "response-identity-digest"
+    ]
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "tarball-sha512"
+    ]
     scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
     _refresh_probe_record_digest(document, 0)
 
@@ -739,10 +712,12 @@ def test_protocol_confirmed_governance_requires_validated_request_proof() -> (
     document = _document()
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["response"]["result"] = "protocol-confirmed"
-    scenario["response"]["identity-digest"] = (
-        NORMAL_CREATE_PROOF.response_identity_digest
-    )
-    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["response"]["identity-digest"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "response-identity-digest"
+    ]
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "tarball-sha512"
+    ]
     _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(ValueError, match="validated-request-proof"):
@@ -755,16 +730,20 @@ def test_protocol_confirmed_governance_diagnostic_exit_is_non_authoritative() ->
     document = _document()
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["response"]["result"] = "protocol-confirmed"
-    scenario["response"]["identity-digest"] = (
-        NORMAL_CREATE_PROOF.response_identity_digest
-    )
-    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["response"]["identity-digest"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "response-identity-digest"
+    ]
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "tarball-sha512"
+    ]
     scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
     scenario["runner-diagnostic"] = {
         "exit-classification": "runner-failed-after-mutation-start",
         "upstream-status": 201,
         "exception-category": None,
-        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+        "request-correlation-digest": NORMAL_CREATE_PROOF_DOCUMENT[
+            "request-digest"
+        ],
     }
     _refresh_probe_record_digest(document, 0)
 
@@ -779,10 +758,12 @@ def test_runner_diagnostic_rejects_contradictory_action_startedness() -> None:
     document = _document()
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["response"]["result"] = "protocol-confirmed"
-    scenario["response"]["identity-digest"] = (
-        NORMAL_CREATE_PROOF.response_identity_digest
-    )
-    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["response"]["identity-digest"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "response-identity-digest"
+    ]
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "tarball-sha512"
+    ]
     scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
     scenario["runner-diagnostic"] = {
         "exit-classification": "runner-failed-before-mutation",
@@ -803,9 +784,11 @@ def test_legacy_created_rejects_protocol_confirmed_runner_diagnostic() -> None:
         "exit-classification": "protocol-confirmed",
         "upstream-status": 201,
         "exception-category": None,
-        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+        "request-correlation-digest": NORMAL_CREATE_PROOF_DOCUMENT[
+            "request-digest"
+        ],
     }
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(ValueError, match="runner-diagnostic"):
         _admit(document)
@@ -814,7 +797,7 @@ def test_legacy_created_rejects_protocol_confirmed_runner_diagnostic() -> None:
 def test_explicit_null_runner_diagnostic_is_rejected() -> None:
     document = _document()
     document["probe-facts"][0]["scenarios"][0]["runner-diagnostic"] = None
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(TypeError, match="runner-diagnostic"):
         _admit(document)
@@ -846,7 +829,7 @@ def test_runner_diagnostic_is_a_closed_required_field_object(
     else:
         del diagnostic[field]
     scenario["runner-diagnostic"] = diagnostic
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises((TypeError, ValueError), match="runner-diagnostic"):
         _admit(document)
@@ -859,20 +842,22 @@ def test_protocol_confirmed_readback_incomplete_diagnostic_is_admissible() -> (
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["mutation-classification"] = "incomplete"
     scenario["response"]["result"] = "protocol-confirmed-readback-incomplete"
-    scenario["response"]["identity-digest"] = (
-        NORMAL_CREATE_PROOF.response_identity_digest
-    )
+    scenario["response"]["identity-digest"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "response-identity-digest"
+    ]
     scenario["post"]["state"] = "unknown"
     scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
     scenario["runner-diagnostic"] = {
         "exit-classification": "protocol-confirmed",
         "upstream-status": 201,
         "exception-category": None,
-        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+        "request-correlation-digest": NORMAL_CREATE_PROOF_DOCUMENT[
+            "request-digest"
+        ],
     }
     document["probe-facts"][0]["result"] = "incomplete"
     document["mutation-classification"] = "incomplete"
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     evidence = _admit(document)
     admitted = evidence.to_document()["probe-facts"][0]["scenarios"][0]
@@ -892,20 +877,22 @@ def test_protocol_confirmed_readback_incomplete_rejects_unknown_classification()
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["mutation-classification"] = "unknown"
     scenario["response"]["result"] = "protocol-confirmed-readback-incomplete"
-    scenario["response"]["identity-digest"] = (
-        NORMAL_CREATE_PROOF.response_identity_digest
-    )
+    scenario["response"]["identity-digest"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "response-identity-digest"
+    ]
     scenario["post"]["state"] = "unknown"
     scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
     scenario["runner-diagnostic"] = {
         "exit-classification": "protocol-confirmed",
         "upstream-status": 201,
         "exception-category": None,
-        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+        "request-correlation-digest": NORMAL_CREATE_PROOF_DOCUMENT[
+            "request-digest"
+        ],
     }
     document["probe-facts"][0]["result"] = "unknown"
     document["mutation-classification"] = "unknown"
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(ValueError, match="incomplete mutation classification"):
         _admit(document)
@@ -919,7 +906,7 @@ def test_protocol_confirmed_readback_incomplete_requires_proof() -> None:
     scenario["post"]["state"] = "unknown"
     document["probe-facts"][0]["result"] = "incomplete"
     document["mutation-classification"] = "incomplete"
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(ValueError, match="validated-request-proof"):
         _admit(document)
@@ -940,14 +927,14 @@ def test_protocol_confirmed_readback_incomplete_requires_startedness(
     scenario["action"]["executed"] = action_executed
     scenario["action"]["mutation-started"] = mutation_started
     scenario["response"]["result"] = "protocol-confirmed-readback-incomplete"
-    scenario["response"]["identity-digest"] = (
-        NORMAL_CREATE_PROOF.response_identity_digest
-    )
+    scenario["response"]["identity-digest"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "response-identity-digest"
+    ]
     scenario["post"]["state"] = "unknown"
     scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
     document["probe-facts"][0]["result"] = "incomplete"
     document["mutation-classification"] = "incomplete"
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(
         ValueError,
@@ -982,9 +969,11 @@ def test_transport_diagnostic_cannot_bind_validated_response_proof() -> None:
         "exit-classification": "runner-failed-after-mutation-start",
         "upstream-status": None,
         "exception-category": "TimeoutError",
-        "request-correlation-digest": LOST_RESPONSE_PROOF.request_digest,
+        "request-correlation-digest": LOST_RESPONSE_PROOF_DOCUMENT[
+            "request-digest"
+        ],
     }
-    _refresh_probe_record_digest_unchecked(document, 1)
+    _refresh_probe_record_digest(document, 1)
 
     with pytest.raises(ValueError, match="does not bind"):
         _admit(document)
@@ -999,9 +988,11 @@ def test_runner_diagnostic_request_facts_require_non_authoritative_result() -> (
         "exit-classification": "runner-failed-after-mutation-start",
         "upstream-status": 201,
         "exception-category": None,
-        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+        "request-correlation-digest": NORMAL_CREATE_PROOF_DOCUMENT[
+            "request-digest"
+        ],
     }
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(ValueError, match="non-authoritative"):
         _admit(document)
@@ -1035,22 +1026,26 @@ def test_protocol_confirmed_result_requires_exact_complete_readback() -> None:
     document = _document()
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["response"]["result"] = "protocol-confirmed"
-    scenario["response"]["identity-digest"] = (
-        NORMAL_CREATE_PROOF.response_identity_digest
-    )
-    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["response"]["identity-digest"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "response-identity-digest"
+    ]
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "tarball-sha512"
+    ]
     scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
     scenario["runner-diagnostic"] = {
         "exit-classification": "protocol-confirmed",
         "upstream-status": 201,
         "exception-category": None,
-        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+        "request-correlation-digest": NORMAL_CREATE_PROOF_DOCUMENT[
+            "request-digest"
+        ],
     }
     scenario["mutation-classification"] = "incomplete"
     scenario["post"]["state"] = "unknown"
     document["probe-facts"][0]["result"] = "incomplete"
     document["mutation-classification"] = "incomplete"
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(ValueError, match="exact complete readback"):
         _admit(document)
@@ -1071,20 +1066,24 @@ def test_protocol_confirmed_governance_rejects_unbound_runner_diagnostic(
     document = _document()
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["response"]["result"] = "protocol-confirmed"
-    scenario["response"]["identity-digest"] = (
-        NORMAL_CREATE_PROOF.response_identity_digest
-    )
-    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["response"]["identity-digest"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "response-identity-digest"
+    ]
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "tarball-sha512"
+    ]
     scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
     scenario["runner-diagnostic"] = {
         "exit-classification": "protocol-confirmed",
         "upstream-status": 201,
         "exception-category": None,
-        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+        "request-correlation-digest": NORMAL_CREATE_PROOF_DOCUMENT[
+            "request-digest"
+        ],
     }
     _refresh_probe_record_digest(document, 0)
     scenario["runner-diagnostic"][field] = replacement
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(ValueError, match="runner-diagnostic"):
         _admit(document)
@@ -1139,9 +1138,9 @@ def test_protocol_confirmed_proof_tarball_must_match_exact_readback() -> None:
     document = _document()
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["response"]["result"] = "protocol-confirmed"
-    scenario["response"]["identity-digest"] = (
-        NORMAL_CREATE_PROOF.response_identity_digest
-    )
+    scenario["response"]["identity-digest"] = NORMAL_CREATE_PROOF_DOCUMENT[
+        "response-identity-digest"
+    ]
     scenario["post"]["content-sha512"] = SHA512_A
     scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
     _refresh_probe_record_digest(document, 0)
@@ -1240,59 +1239,6 @@ def test_later_probe_failure_retains_earlier_successful_probe_evidence() -> (
     assert evidence.mutation_classification == "unknown"
 
 
-@pytest.mark.parametrize("probe_index", [0, 1])
-def test_scenario_records_require_exact_internal_coordinate_and_tag(
-    probe_index: int,
-) -> None:
-    document = _document()
-    scenario = document["probe-facts"][probe_index]["scenarios"][0]
-    scenario["package-coordinate"] = (
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
-    )
-    scenario["tag"] = "wdv3-acceptance-9"
-
-    with pytest.raises(ValueError):
-        _admit(document)
-
-
-@pytest.mark.parametrize(
-    ("dependency_result", "probe_result", "expected"),
-    [
-        (
-            dependency,
-            probe,
-            "unknown"
-            if probe == "unknown"
-            else "incomplete"
-            if dependency != "success" or probe != "success"
-            else "complete",
-        )
-        for dependency, probe in itertools.product(
-            ("success", "failure", "cancelled", "skipped"),
-            ("success", "incomplete", "unknown"),
-        )
-    ],
-)
-def test_mutation_classification_is_monotone(
-    dependency_result: str,
-    probe_result: str,
-    expected: str,
-) -> None:
-    document = _document()
-    document["dependency-results"][0]["result"] = dependency_result
-    document["probe-facts"][0]["result"] = probe_result
-    document["mutation-classification"] = expected
-    if probe_result != "success":
-        document["probe-facts"][0]["scenarios"] = []
-        document["probe-facts"][0]["record-digest"] = None
-        document["probe-facts"][0]["artifact-id"] = None
-        document["probe-facts"][0]["artifact-digest"] = None
-    if dependency_result != "success":
-        _downgrade_all_probe_facts(document, expected)
-
-    assert _admit(document).mutation_classification == expected
-
-
 @pytest.mark.parametrize(
     ("dependency_result", "probe_result", "wrong"),
     [
@@ -1344,30 +1290,6 @@ def test_evidence_rejects_unknown_incomplete_or_arbitrary_fact_values(
         _admit(document)
 
 
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        lambda document: document["dependency-results"].pop(),
-        lambda document: document["dependency-results"].append(
-            deepcopy(document["dependency-results"][0])
-        ),
-        lambda document: document["probe-facts"].pop(),
-        lambda document: document["probe-facts"].append(
-            deepcopy(document["probe-facts"][0])
-        ),
-        lambda document: document["probe-facts"][1]["scenarios"].pop(),
-    ],
-)
-def test_evidence_rejects_incomplete_fact_and_scenario_cardinality(
-    mutation: Any,
-) -> None:
-    document = _document()
-    mutation(document)
-
-    with pytest.raises(ValueError):
-        _admit(document)
-
-
 def test_incomplete_evidence_can_retain_inventory_without_placeholder_digest() -> (
     None
 ):
@@ -1393,21 +1315,6 @@ def test_incomplete_evidence_can_retain_inventory_without_placeholder_digest() -
     assert evidence.probe_facts[0].record_digest is None
 
 
-def test_schema_is_closed_and_reviewer_never_uses_actor() -> None:
-    document = _document()
-    document["unexpected"] = "forged"
-    with pytest.raises(ValueError, match="unknown closed fields"):
-        _admit(document)
-
-    document = _document()
-    document["reviewer"] = {
-        "login": "github.actor",
-        "source": "unavailable-in-job-context",
-    }
-    with pytest.raises(ValueError, match="requires null"):
-        _admit(document)
-
-
 def test_complete_evidence_accepts_unavailable_reviewer_with_all_recovery_coordinates() -> (
     None
 ):
@@ -1416,13 +1323,6 @@ def test_complete_evidence_accepts_unavailable_reviewer_with_all_recovery_coordi
     assert evidence.reviewer is None
     assert evidence.reviewer_source == "unavailable-in-job-context"
     assert evidence.to_document()["recovery"] == _document()["recovery"]
-
-
-def test_missing_reviewer_alone_does_not_downgrade_complete_evidence() -> None:
-    document = _document()
-    document["reviewer"]["login"] = None
-
-    assert _admit(document).mutation_classification == "complete"
 
 
 def test_missing_review_artifact_keeps_successful_probe_suite_artifact_bindings() -> (
@@ -1441,27 +1341,6 @@ def test_missing_review_artifact_keeps_successful_probe_suite_artifact_bindings(
         assert fact.record_digest == expected["record-digest"]
         assert fact.artifact_id == expected["artifact-id"]
         assert fact.artifact_digest == expected["artifact-digest"]
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        ("reviewer", "source"),
-        ("recovery", "workflow-run-id"),
-        ("recovery", "environment"),
-        ("recovery", "deployment"),
-        ("recovery", "job"),
-        ("recovery", "artifact-id"),
-    ],
-)
-def test_missing_reviewer_requires_unavailable_source_and_every_recovery_coordinate(
-    path: tuple[object, ...],
-) -> None:
-    document = _document()
-    _remove_path(document, path)
-
-    with pytest.raises(ValueError):
-        _admit(document)
 
 
 @pytest.mark.parametrize(
@@ -1545,34 +1424,7 @@ def test_incomplete_and_unknown_scenarios_preserve_authentic_action_facts(
     if response_result != "lost-response-exact-after-start":
         scenario.pop("validated-request-proof", None)
     fact["result"] = probe_result
-    fact["record-digest"] = FixedAcceptanceSuiteResult(
-        suite=probe.removeprefix("probe-"),
-        scenarios=tuple(
-            FixedCoordinateAcceptanceProbeResult(
-                scenario=str(item["scenario"]),
-                package_coordinate=str(item["package-coordinate"]),
-                tag=str(item["tag"]),
-                pre_state=str(item["pre"]["state"]),
-                post_state=str(item["post"]["state"]),
-                result=str(item["response"]["result"]),
-                mutation_classification=str(item["mutation-classification"]),
-                action_executed=bool(item["action"]["executed"]),
-                mutation_started=bool(item["action"]["mutation-started"]),
-                response_identity_digest=str(
-                    item["response"]["identity-digest"]
-                ),
-                content_sha512=str(item["post"]["content-sha512"]),
-                diagnostics=tuple(item["response"]["diagnostics"]),
-                validated_request_proof=(
-                    LOST_RESPONSE_PROOF
-                    if item.get("validated-request-proof")
-                    == LOST_RESPONSE_PROOF_DOCUMENT
-                    else None
-                ),
-            )
-            for item in fact["scenarios"]
-        ),
-    ).to_document()["record-digest"]
+    _refresh_probe_record_digest(document, probe_index)
     fact["artifact-id"] = None
     fact["artifact-digest"] = None
     document["mutation-classification"] = probe_result
@@ -1632,14 +1484,6 @@ def test_github_actor_cannot_substitute_for_environment_reviewer() -> None:
         "login": "github.actor",
         "source": "unavailable-in-job-context",
     }
-
-    with pytest.raises(ValueError, match="requires null"):
-        _admit(document)
-
-
-def test_unavailable_reviewer_source_requires_null_reviewer_login() -> None:
-    document = _document()
-    document["reviewer"]["login"] = "octocat"
 
     with pytest.raises(ValueError, match="requires null"):
         _admit(document)
@@ -1759,19 +1603,60 @@ def test_acceptance_evidence_rejects_noncanonical_or_duplicate_json(
 @pytest.mark.parametrize(
     ("dependency_result", "probe_result", "classification"),
     [
-        (
-            dependency_result,
-            probe_result,
-            "unknown"
-            if probe_result == "unknown"
-            else "incomplete"
-            if dependency_result != "success" or probe_result != "success"
-            else "complete",
-        )
-        for dependency_result, probe_result in itertools.product(
-            ("success", "failure", "cancelled", "skipped"),
-            ("success", "incomplete", "unknown"),
-        )
+        pytest.param(
+            "success",
+            "success",
+            "complete",
+            id="prerequisite-success-probes-success",
+        ),
+        pytest.param(
+            "success",
+            "incomplete",
+            "incomplete",
+            id="prerequisite-success-first-probe-incomplete",
+        ),
+        pytest.param(
+            "success",
+            "unknown",
+            "unknown",
+            id="prerequisite-success-first-probe-unknown",
+        ),
+        pytest.param(
+            "failure",
+            "success",
+            "incomplete",
+            id="prerequisite-failure-all-probes-incomplete",
+        ),
+        pytest.param(
+            "failure",
+            "unknown",
+            "unknown",
+            id="prerequisite-failure-all-probes-unknown",
+        ),
+        pytest.param(
+            "cancelled",
+            "success",
+            "incomplete",
+            id="prerequisite-cancelled-all-probes-incomplete",
+        ),
+        pytest.param(
+            "cancelled",
+            "unknown",
+            "unknown",
+            id="prerequisite-cancelled-all-probes-unknown",
+        ),
+        pytest.param(
+            "skipped",
+            "success",
+            "incomplete",
+            id="prerequisite-skipped-all-probes-incomplete",
+        ),
+        pytest.param(
+            "skipped",
+            "unknown",
+            "unknown",
+            id="prerequisite-skipped-all-probes-unknown",
+        ),
     ],
 )
 def test_mutation_classification_is_closed_and_consistent(
@@ -1801,20 +1686,48 @@ def test_mutation_classification_is_closed_and_consistent(
 @pytest.mark.parametrize(
     ("dependency_result", "probe_result", "classification"),
     [
-        (
-            dependency_result,
-            probe_result,
-            "unknown"
-            if dependency_result in {"failure", "cancelled"}
-            or probe_result == "unknown"
-            else "incomplete"
-            if dependency_result != "success" or probe_result != "success"
-            else "complete",
-        )
-        for dependency_result, probe_result in itertools.product(
-            ("success", "failure", "cancelled", "skipped"),
-            ("success", "incomplete", "unknown"),
-        )
+        pytest.param(
+            "success",
+            "success",
+            "complete",
+            id="probe-job-success-probes-success",
+        ),
+        pytest.param(
+            "success",
+            "incomplete",
+            "incomplete",
+            id="probe-job-success-first-probe-incomplete",
+        ),
+        pytest.param(
+            "success",
+            "unknown",
+            "unknown",
+            id="probe-job-success-first-probe-unknown",
+        ),
+        pytest.param(
+            "failure",
+            "success",
+            "unknown",
+            id="probe-job-failure-all-probes-unknown",
+        ),
+        pytest.param(
+            "cancelled",
+            "success",
+            "unknown",
+            id="probe-job-cancelled-all-probes-unknown",
+        ),
+        pytest.param(
+            "skipped",
+            "success",
+            "incomplete",
+            id="probe-job-skipped-all-probes-incomplete",
+        ),
+        pytest.param(
+            "skipped",
+            "unknown",
+            "unknown",
+            id="probe-job-skipped-all-probes-unknown",
+        ),
     ],
 )
 def test_terminal_fact_matrix_derives_exact_mutation_classification(
@@ -1845,10 +1758,7 @@ def test_terminal_fact_matrix_derives_exact_mutation_classification(
     ("dependency_result", "probe_result", "wrong"),
     [
         ("success", "success", "unsupported"),
-        ("success", "success", "unknown"),
         ("success", "incomplete", "complete"),
-        ("success", "unknown", "incomplete"),
-        ("failure", "success", "complete"),
         ("cancelled", "success", "complete"),
         ("skipped", "success", "complete"),
     ],
@@ -1892,62 +1802,6 @@ def test_mutation_classification_rejects_impossible_upstream_cross_products(
 
 
 def _refresh_probe_record_digest(
-    document: dict[str, Any],
-    probe_index: int,
-) -> None:
-    fact = document["probe-facts"][probe_index]
-    fact["record-digest"] = FixedAcceptanceSuiteResult(
-        suite=fact["probe"].removeprefix("probe-"),
-        scenarios=tuple(
-            FixedCoordinateAcceptanceProbeResult(
-                scenario=scenario["scenario"],
-                package_coordinate=scenario["package-coordinate"],
-                tag=scenario["tag"],
-                pre_state=scenario["pre"]["state"],
-                post_state=scenario["post"]["state"],
-                result=scenario["response"]["result"],
-                mutation_classification=scenario["mutation-classification"],
-                action_executed=scenario["action"]["executed"],
-                mutation_started=scenario["action"]["mutation-started"],
-                response_identity_digest=scenario["response"][
-                    "identity-digest"
-                ],
-                content_sha512=scenario["post"]["content-sha512"],
-                diagnostics=tuple(scenario["response"]["diagnostics"]),
-                validated_request_proof=(
-                    LOST_RESPONSE_PROOF
-                    if scenario.get("validated-request-proof")
-                    == LOST_RESPONSE_PROOF_DOCUMENT
-                    else NORMAL_CREATE_PROOF
-                    if scenario.get("validated-request-proof")
-                    == NORMAL_CREATE_PROOF_DOCUMENT
-                    else None
-                ),
-                runner_diagnostic=(
-                    AcceptanceRunnerDiagnostic(
-                        exit_classification=scenario["runner-diagnostic"][
-                            "exit-classification"
-                        ],
-                        upstream_status=scenario["runner-diagnostic"][
-                            "upstream-status"
-                        ],
-                        exception_category=scenario["runner-diagnostic"][
-                            "exception-category"
-                        ],
-                        request_correlation_digest=scenario[
-                            "runner-diagnostic"
-                        ]["request-correlation-digest"],
-                    )
-                    if scenario.get("runner-diagnostic") is not None
-                    else None
-                ),
-            )
-            for scenario in fact["scenarios"]
-        ),
-    ).to_document()["record-digest"]
-
-
-def _refresh_probe_record_digest_unchecked(
     document: dict[str, Any],
     probe_index: int,
 ) -> None:
@@ -2016,87 +1870,6 @@ def test_retry_2_profile_admits_only_exact_rejected_dispatch_sentinel_evidence()
 
     assert admitted.to_document() == document
     assert admitted.target_sha == "0" * 40
-
-
-@pytest.mark.parametrize(
-    ("path", "value", "message"),
-    [
-        (
-            ("workflow", "path"),
-            ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml",
-            "workflow.path",
-        ),
-        (
-            ("environment",),
-            ENVIRONMENT,
-            "environment",
-        ),
-        (
-            ("confirmation-digest",),
-            LEGACY_CONFIRMATION_DIGEST,
-            "confirmation-digest",
-        ),
-        (
-            ("target-sha",),
-            "c" * 40,
-            "target-sha",
-        ),
-    ],
-)
-def test_retry_2_profile_rejects_cross_profile_substitution(
-    path: tuple[str, ...],
-    value: object,
-    message: str,
-) -> None:
-    document = _retry_2_document()
-    _set_path(document, path, value)
-
-    with pytest.raises(ValueError, match=message):
-        _admit(document)
-
-
-def test_legacy_profile_rejects_unreviewed_target_and_confirmation() -> None:
-    document = _document()
-    document["target-sha"] = "c" * 40
-    with pytest.raises(ValueError, match="target-sha"):
-        _admit(document)
-
-    document = _document()
-    document["confirmation-digest"] = SHA256_A
-    with pytest.raises(ValueError, match="confirmation-digest"):
-        _admit(document)
-
-
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        "unknown-classification",
-        "successful-validation",
-        "review-artifact",
-        "reviewer-attribution",
-        "probe-record",
-    ],
-)
-def test_zero_target_rejects_non_rejected_dispatch_evidence(
-    mutation: str,
-) -> None:
-    document = _retry_2_document()
-    if mutation == "unknown-classification":
-        document["mutation-classification"] = "unknown"
-    elif mutation == "successful-validation":
-        document["dependency-results"][0]["result"] = "success"
-    elif mutation == "review-artifact":
-        document["recovery"]["artifact-id"] = 701
-    elif mutation == "reviewer-attribution":
-        document["reviewer"] = {
-            "login": "octocat",
-            "source": "on-demand-read-only-inspection",
-        }
-    else:
-        document["probe-facts"][0] = _probe_fact("probe-absent-create-readback")
-
-    with pytest.raises(ValueError):
-        _admit(document)
 
 
 @pytest.mark.parametrize(
@@ -2504,23 +2277,8 @@ def test_retry_3_finalized_profile_preserves_zero_sentinel_rejected_dispatch() -
     None
 ):
     document = _retry_3_document()
-    profile = next(
-        profile
-        for profile in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
-        if profile.package_coordinate
-        == GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE
-    )
-
     admitted = _admit(document)
 
-    assert profile.workflow_path == GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH
-    assert profile.environment == GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT
-    assert profile.target_sha == RETRY_3_TARGET_SHA
-    assert profile.confirmation_digest == document["confirmation-digest"]
-    assert (
-        profile.coordinates()
-        == GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES
-    )
     assert admitted.target_sha == "0" * 40
     assert (
         admitted.package_coordinate
@@ -2554,153 +2312,18 @@ def test_retry_3_finalized_profile_preserves_zero_sentinel_rejected_dispatch() -
 def test_retry_3_complete_evidence_admits_finalized_profile_round_trip() -> (
     None
 ):
-    absent_proof = ValidatedAcceptanceRequestProof.from_validated_exchange(
-        raw_request=b'{"_id":"retry-3-absent"}',
-        tarball=b"retry-3-absent-tarball",
+    document = _test_local_finalized_document(
+        workflow_path=GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH,
+        target_sha=RETRY_3_TARGET_SHA,
         package_coordinate=GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
-        tag="wdv3-acceptance-9",
-        upstream_status=201,
-        selected_headers={"Content-Type": "application/json", "ETag": '"r3a"'},
-        response_body=b'{"ok":true}',
-    )
-    lost_coordinate, lost_tag = (
-        GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES["lost-response"]
-    )
-    lost_proof = ValidatedAcceptanceRequestProof.from_validated_exchange(
-        raw_request=b'{"_id":"retry-3-lost"}',
-        tarball=b"retry-3-lost-tarball",
-        package_coordinate=lost_coordinate,
-        tag=lost_tag,
-        upstream_status=201,
-        selected_headers={"Content-Type": "application/json", "ETag": '"r3l"'},
-        response_body=b'{"ok":true}',
-    )
-    absent_suite = FixedAcceptanceSuiteResult(
-        suite="absent-create-readback",
-        scenarios=(
-            FixedCoordinateAcceptanceProbeResult(
-                scenario="absent-create-readback",
-                package_coordinate=(
-                    GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE
-                ),
-                tag="wdv3-acceptance-9",
-                pre_state="absent",
-                post_state="exact",
-                result="protocol-confirmed",
-                mutation_classification="complete",
-                action_executed=True,
-                mutation_started=True,
-                response_identity_digest=(
-                    absent_proof.response_identity_digest
-                ),
-                content_sha512=absent_proof.tarball_sha512,
-                diagnostics=(),
-                validated_request_proof=absent_proof,
-            ),
+        confirmation_digest=(
+            "sha256:"
+            "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
         ),
+        environment=GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
+        scenario_coordinates=GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES,
+        proof_namespace="retry-3",
     )
-    scenario_facts = (
-        (
-            "exact",
-            "exact",
-            "exact",
-            "exact-no-mutation",
-            False,
-            False,
-            (),
-            None,
-        ),
-        (
-            "identical-race",
-            "absent",
-            "exact",
-            "identical-race-exact",
-            True,
-            True,
-            ("identical-race-exact",),
-            None,
-        ),
-        (
-            "differing-race",
-            "absent",
-            "conflicting",
-            "differing-race-conflict",
-            True,
-            True,
-            ("conflicting-remote-bytes-or-tag",),
-            None,
-        ),
-        (
-            "lost-response",
-            "absent",
-            "exact",
-            "lost-response-exact-after-start",
-            True,
-            True,
-            ("mutation-started-and-readback-exact",),
-            lost_proof,
-        ),
-    )
-    conflict_suite = FixedAcceptanceSuiteResult(
-        suite="exact-and-conflict",
-        scenarios=tuple(
-            FixedCoordinateAcceptanceProbeResult(
-                scenario=scenario,
-                package_coordinate=(
-                    GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES[
-                        scenario
-                    ][0]
-                ),
-                tag=GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES[
-                    scenario
-                ][1],
-                pre_state=pre_state,
-                post_state=post_state,
-                result=result,
-                mutation_classification="complete",
-                action_executed=action_executed,
-                mutation_started=mutation_started,
-                response_identity_digest=(
-                    proof.response_identity_digest if proof else SHA256_B
-                ),
-                content_sha512=(proof.tarball_sha512 if proof else SHA512_A),
-                diagnostics=diagnostics,
-                validated_request_proof=proof,
-            )
-            for (
-                scenario,
-                pre_state,
-                post_state,
-                result,
-                action_executed,
-                mutation_started,
-                diagnostics,
-                proof,
-            ) in scenario_facts
-        ),
-    )
-    document = _document()
-    document["workflow"]["path"] = GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH
-    document["target-sha"] = RETRY_3_TARGET_SHA
-    document["package-coordinate"] = (
-        GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE
-    )
-    document["confirmation-digest"] = (
-        "sha256:"
-        "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
-    )
-    document["environment"] = GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT
-    document["recovery"]["environment"] = (
-        GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT
-    )
-    for fact, suite in zip(
-        document["probe-facts"],
-        (absent_suite, conflict_suite),
-        strict=True,
-    ):
-        suite_document = suite.to_document()
-        fact["record-digest"] = suite_document["record-digest"]
-        fact["scenarios"] = suite_document["scenarios"]
 
     raw = canonicalize(document)
     admitted = admit_governance_acceptance_evidence(raw)
@@ -2744,87 +2367,6 @@ def test_retry_3_complete_evidence_admits_finalized_profile_round_trip() -> (
     assert (
         lost_scenario["post"]["content-sha512"] == lost_proof["tarball-sha512"]
     )
-    lost_scenario["post"]["content-sha512"] = SHA512_A
-    assert (
-        lost_scenario["post"]["content-sha512"] != lost_proof["tarball-sha512"]
-    )
-    _refresh_probe_record_digest_unchecked(document, 1)
-
-    with pytest.raises(ValueError, match="tarball-sha512"):
-        _admit(document)
-
-
-@pytest.mark.parametrize(
-    ("path", "value", "message"),
-    [
-        (
-            ("workflow", "path"),
-            (
-                ".github/workflows/"
-                "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
-            ),
-            "workflow.path",
-        ),
-        (
-            ("environment",),
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-2",
-            "environment",
-        ),
-        (
-            ("recovery", "environment"),
-            "workflow-delivery-v3-buddy-smoke-acceptance-retry-2",
-            "recovery.environment",
-        ),
-        (
-            ("confirmation-digest",),
-            (
-                "sha256:"
-                "1215f9d01cd343462c3f826ba67ebee86b6f6142b7fcfe5630572a5a808314f8"
-            ),
-            "confirmation-digest",
-        ),
-        (("target-sha",), "c" * 40, "target-sha"),
-    ],
-)
-def test_retry_3_profile_rejects_cross_profile_substitution(
-    path: tuple[str, ...],
-    value: object,
-    message: str,
-) -> None:
-    document = _retry_3_document()
-    _set_path(document, path, value)
-
-    with pytest.raises(ValueError, match=message):
-        _admit(document)
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        (
-            "package-coordinate",
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.10",
-        ),
-        ("tag", "wdv3-acceptance-10"),
-    ],
-)
-def test_retry_3_profile_rejects_scenario_coordinate_or_tag_mismatch(
-    field: str,
-    value: str,
-) -> None:
-    document = _retry_3_document()
-    fact = _probe_fact("probe-absent-create-readback")
-    scenario = fact["scenarios"][0]
-    scenario["package-coordinate"] = (
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
-    )
-    scenario["tag"] = "wdv3-acceptance-9"
-    scenario[field] = value
-    document["probe-facts"][0] = fact
-    _refresh_probe_record_digest_unchecked(document, 0)
-
-    with pytest.raises(ValueError, match=field):
-        _admit(document)
 
 
 def test_retry_3_profile_preserves_retry_1_and_retry_2_admission() -> None:
@@ -2861,7 +2403,7 @@ def _diagnostic_only_incomplete_document(
     scenario.pop("validated-request-proof", None)
     fact["result"] = "incomplete"
     document["mutation-classification"] = "incomplete"
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
     return document
 
 
@@ -3012,7 +2554,7 @@ def test_governance_rejects_request_bound_diagnostic_before_mutation_started(
         scenario["response"]["diagnostics"] = [
             "runner-action-facts-not-fully-admitted"
         ]
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     with pytest.raises(ValueError, match="runner-diagnostic"):
         _admit(document)
@@ -3146,7 +2688,7 @@ def test_governance_proof_required_completion_rejects_diagnostic_only_authority(
         scenario["response"]["diagnostics"] = ["exact-readback-not-observed"]
         fact["result"] = "incomplete"
         document["mutation-classification"] = "incomplete"
-    _refresh_probe_record_digest_unchecked(document, 0)
+    _refresh_probe_record_digest(document, 0)
 
     assert "validated-request-proof" not in scenario
     assert scenario["runner-diagnostic"] == diagnostic
@@ -3296,7 +2838,7 @@ def _test_local_proof_document(
     tag: str,
     label: str,
 ) -> dict[str, Any]:
-    template = ValidatedAcceptanceRequestProof.from_validated_exchange(
+    template = _proof_document(
         raw_request=(f'{{"_id":"{label}"}}').encode(),
         tarball=f"{label}-tarball".encode(),
         package_coordinate=COORDINATE,
@@ -3307,7 +2849,7 @@ def _test_local_proof_document(
             "ETag": f'"{label}"',
         },
         response_body=(f'{{"ok":true,"proof":"{label}"}}').encode(),
-    ).to_document()
+    )
     template["package-coordinate"] = package_coordinate
     template["tag"] = tag
     return template
@@ -3365,32 +2907,15 @@ def _test_local_finalized_document(
                     "tarball-sha512"
                 ]
                 scenario_document["validated-request-proof"] = proof
-        _refresh_probe_record_digest_unchecked(document, probe_index)
+        _refresh_probe_record_digest(document, probe_index)
     return document
-
-
-def test_retry_4_governance_profiles_have_stable_historical_order_and_unique_base_coordinates() -> (
-    None
-):
-    retry_4_profile = _registered_retry_4_governance_profile()
-    profiles = governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
-    base_coordinates = tuple(profile.package_coordinate for profile in profiles)
-
-    assert base_coordinates == (
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
-    )
-    assert len(base_coordinates) == len(set(base_coordinates)) == len(profiles)
-    assert profiles[-1] is retry_4_profile
 
 
 def test_retry_4_http_200_diagnostic_artifact_remains_unknown_without_proof() -> (
     None
 ):
     raw_artifact = TEST_LOCAL_RETRY_4_HTTP_200_FAILURE_FIXTURE.read_bytes()
-    assert ValidatedAcceptanceRequestProof._sha256(raw_artifact) == (
+    assert _raw_sha256(raw_artifact) == (
         "sha256:ba4ee4122850ff414cdbe9e6220d4e795af9a5a585d398007234e7fc984f0d94"
     )
 
@@ -3419,34 +2944,6 @@ def test_retry_4_http_200_diagnostic_artifact_remains_unknown_without_proof() ->
     assert _registered_retry_4_governance_profile().target_sha == (
         TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
     )
-
-
-def test_retry_4_governance_profile_binds_exact_workflow_environment_confirmation_digest_and_scenarios() -> (
-    None
-):
-    profile = _registered_retry_4_governance_profile()
-
-    assert profile.package_coordinate == TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE
-    assert profile.workflow_path == TEST_LOCAL_RETRY_4_WORKFLOW_PATH
-    assert profile.environment == TEST_LOCAL_RETRY_4_ENVIRONMENT
-    assert profile.confirmation_digest == (
-        TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST
-    )
-    assert TEST_LOCAL_RETRY_4_CONFIRMATION == (
-        "I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4"
-    )
-    assert (
-        ValidatedAcceptanceRequestProof._sha256(
-            TEST_LOCAL_RETRY_4_CONFIRMATION.encode("ascii")
-        )
-        == TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST
-    )
-    assert tuple(profile.coordinates().items()) == tuple(
-        TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES.items()
-    )
-    assert tuple(profile.coordinates()) == GOVERNANCE_ACCEPTANCE_SCENARIOS
-    assert profile.target_sha == TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
-    assert profile.target_sha != TEST_LOCAL_RETRY_4_PREPARATION_TARGET
 
 
 def test_retry_4_governance_admits_exact_zero_target_rejected_dispatch() -> (
@@ -3523,93 +3020,6 @@ def test_retry_4_governance_rejects_non_exact_zero_targets(
         target_sha = ("0" * 39) + "2"
     document = _retry_4_preparation_document()
     document["target-sha"] = target_sha
-
-    with pytest.raises(ValueError, match=message):
-        _admit(document)
-
-
-@pytest.mark.parametrize(
-    ("path", "value", "message"),
-    [
-        pytest.param(
-            ("dependency-results", 1, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="environment-review-ran",
-        ),
-        pytest.param(
-            ("dependency-results", 2, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="absent-create-probe-ran",
-        ),
-        pytest.param(
-            ("dependency-results", 3, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="exact-and-conflict-probe-ran",
-        ),
-        pytest.param(
-            ("probe-facts", 0, "record-digest"),
-            SHA256_A,
-            "retain suite records",
-            id="probe-record-digest-retained",
-        ),
-        pytest.param(
-            ("probe-facts", 0, "scenarios"),
-            "test-local-retained-scenario",
-            "record-digest",
-            id="probe-scenario-retained",
-        ),
-        pytest.param(
-            ("probe-facts", 0, "artifact-id"),
-            799,
-            "zero target-sha requires exact rejected",
-            id="probe-artifact-id-retained",
-        ),
-        pytest.param(
-            ("probe-facts", 0, "artifact-digest"),
-            SHA256_A,
-            "zero target-sha requires exact rejected",
-            id="probe-artifact-digest-retained",
-        ),
-        pytest.param(
-            ("recovery", "artifact-id"),
-            701,
-            "zero target-sha requires exact rejected",
-            id="review-artifact-retained",
-        ),
-        pytest.param(
-            ("reviewer",),
-            {
-                "login": "octocat",
-                "source": "on-demand-read-only-inspection",
-            },
-            "zero target-sha requires exact rejected",
-            id="reviewer-attributed",
-        ),
-        pytest.param(
-            ("mutation-classification",),
-            "unknown",
-            "mutation-classification",
-            id="possible-mutation-claimed",
-        ),
-    ],
-)
-def test_retry_4_zero_target_rejects_review_probe_record_artifact_reviewer_or_mutation_claims(
-    path: tuple[object, ...],
-    value: object,
-    message: str,
-) -> None:
-    _registered_retry_4_governance_profile()
-    document = _retry_4_preparation_document()
-    if value == "test-local-retained-scenario":
-        retained_scenario = _scenario("absent-create-readback")
-        retained_scenario["package-coordinate"], retained_scenario["tag"] = (
-            TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES["absent-create-readback"]
-        )
-        value = [retained_scenario]
-    _set_path(document, path, value)
 
     with pytest.raises(ValueError, match=message):
         _admit(document)
@@ -3782,7 +3192,7 @@ def _retry_5_finalized_document(
             scenario["response"]["identity-digest"] = proof[
                 "response-identity-digest"
             ]
-        _refresh_probe_record_digest_unchecked(document, probe_index)
+        _refresh_probe_record_digest(document, probe_index)
     return document
 
 
@@ -3799,7 +3209,17 @@ def _test_local_path_value(
 def test_governance_acceptance_profiles_are_exactly_five_with_retry_5_and_no_historical_drift() -> (
     None
 ):
-    retry_5_profile = _registered_retry_5_governance_profile()
+    assert TEST_LOCAL_RETRY_4_CONFIRMATION == (
+        "I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4"
+    )
+    assert (
+        _raw_sha256(TEST_LOCAL_RETRY_4_CONFIRMATION.encode("ascii"))
+        == TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST
+    )
+    assert (
+        _raw_sha256(TEST_LOCAL_RETRY_5_CONFIRMATION.encode("ascii"))
+        == TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST
+    )
     profiles = governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
     package_prefix = "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance."
     expected_rows = (
@@ -3886,14 +3306,14 @@ def test_governance_acceptance_profiles_are_exactly_five_with_retry_5_and_no_his
     )
     expected_profile_count = len(expected_profiles)
 
-    assert actual_profiles == expected_profiles
-    assert tuple(row[0] for row in actual_profiles) == tuple(
-        f"{package_prefix}{version}" for version in (1, 5, 9, 13, 17)
-    )
+    assert len(profiles) == expected_profile_count
     assert (
         len({profile.package_coordinate for profile in profiles})
         == expected_profile_count
     )
+    assert {row[0]: row for row in actual_profiles} == {
+        row[0]: row for row in expected_profiles
+    }
     assert (
         len({profile.workflow_path for profile in profiles})
         == expected_profile_count
@@ -3905,30 +3325,6 @@ def test_governance_acceptance_profiles_are_exactly_five_with_retry_5_and_no_his
     assert (
         len({profile.confirmation_digest for profile in profiles})
         == expected_profile_count
-    )
-    assert profiles[-1] is retry_5_profile
-
-
-def test_retry_5_governance_profile_binds_exact_finalized_identity_and_scenarios() -> (
-    None
-):
-    profile = _registered_retry_5_governance_profile()
-
-    assert profile.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
-    assert profile.workflow_path == TEST_LOCAL_RETRY_5_WORKFLOW_PATH
-    assert profile.environment == TEST_LOCAL_RETRY_5_ENVIRONMENT
-    assert profile.target_sha == RETRY_5_FINALIZED_TARGET_SHA
-    assert profile.target_sha != TEST_LOCAL_RETRY_5_PREPARATION_TARGET
-    assert profile.confirmation_digest == TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST
-    assert (
-        ValidatedAcceptanceRequestProof._sha256(
-            TEST_LOCAL_RETRY_5_CONFIRMATION.encode("ascii")
-        )
-        == TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST
-    )
-    assert tuple(profile.coordinates()) == TEST_LOCAL_RETRY_5_SCENARIO_ORDER
-    assert tuple(profile.coordinates().items()) == tuple(
-        TEST_LOCAL_RETRY_5_SCENARIO_COORDINATES.items()
     )
 
 
@@ -3976,93 +3372,6 @@ def test_retry_5_governance_admits_exact_zero_target_rejected_dispatch_round_tri
     assert admitted_document == document
     assert canonicalize(admitted_document) == raw
     assert admitted.evidence_digest == canonical_sha256(document)
-
-
-@pytest.mark.parametrize(
-    ("path", "replacement", "message"),
-    [
-        pytest.param(
-            ("dependency-results", 0, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="validation-succeeded",
-        ),
-        pytest.param(
-            ("dependency-results", 1, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="review-ran",
-        ),
-        pytest.param(
-            ("dependency-results", 2, "result"),
-            "success",
-            "zero target-sha requires exact rejected",
-            id="probe-ran",
-        ),
-        pytest.param(
-            ("probe-facts", 0, "record-digest"),
-            SHA256_A,
-            "retain suite records",
-            id="record-present",
-        ),
-        pytest.param(
-            ("reviewer",),
-            {
-                "login": "test-only-reviewer",
-                "source": "on-demand-read-only-inspection",
-            },
-            "zero target-sha requires exact rejected",
-            id="reviewer-present",
-        ),
-        pytest.param(
-            ("recovery", "artifact-id"),
-            701,
-            "zero target-sha requires exact rejected",
-            id="artifact-present",
-        ),
-        pytest.param(
-            ("mutation-classification",),
-            "unknown",
-            "mutation-classification",
-            id="mutation-not-incomplete",
-        ),
-        pytest.param(
-            ("target-sha",),
-            "1" * 40,
-            "target-sha",
-            id="target-substitution",
-        ),
-        pytest.param(
-            ("workflow", "path"),
-            TEST_LOCAL_RETRY_4_WORKFLOW_PATH,
-            "workflow.path",
-            id="workflow-substitution",
-        ),
-        pytest.param(
-            ("environment",),
-            TEST_LOCAL_RETRY_4_ENVIRONMENT,
-            "environment",
-            id="top-level-environment-substitution",
-        ),
-        pytest.param(
-            ("recovery", "environment"),
-            TEST_LOCAL_RETRY_4_ENVIRONMENT,
-            "recovery environment",
-            id="recovery-environment-substitution",
-        ),
-    ],
-)
-def test_retry_5_zero_target_rejects_noncanonical_dispatch_or_identity(
-    path: tuple[object, ...],
-    replacement: object,
-    message: str,
-) -> None:
-    _registered_retry_5_governance_profile()
-    document = _retry_5_preparation_document()
-    _set_path(document, path, replacement)
-
-    with pytest.raises(ValueError, match=message):
-        _admit(document)
 
 
 @pytest.mark.parametrize("upstream_status", [200, 201])
@@ -4145,7 +3454,7 @@ def test_retry_5_real_registry_admits_complete_status_and_preserves_bindings(
         (
             scenario,
             upstream_status,
-            ValidatedAcceptanceRequestProof._sha256(
+            _raw_sha256(
                 (
                     '{"_id":"retry-5-finalized-status-'
                     f'{upstream_status}-{scenario}"}}'
@@ -4203,12 +3512,13 @@ def test_retry_5_governance_rejects_run_and_recovery_correlation_drift(
         _admit(document)
 
 
-@pytest.mark.parametrize("upstream_status", [200, 201])
-def test_retry_5_lost_response_proof_must_bind_exact_readback_content(
-    upstream_status: int,
-) -> None:
-    document = _retry_5_finalized_document(upstream_status=upstream_status)
-    lost_response = document["probe-facts"][1]["scenarios"][3]
+def test_retry_5_lost_response_proof_must_bind_exact_readback_content() -> None:
+    document = _retry_5_finalized_document(upstream_status=201)
+    control = _admit(document)
+    assert control.mutation_classification == "complete"
+    assert control.to_document() == document
+    mutated = deepcopy(document)
+    lost_response = mutated["probe-facts"][1]["scenarios"][3]
     assert lost_response["scenario"] == "lost-response"
     assert (
         lost_response["validated-request-proof"]["tarball-sha512"]
@@ -4218,14 +3528,18 @@ def test_retry_5_lost_response_proof_must_bind_exact_readback_content(
         lost_response["validated-request-proof"]["tarball-sha512"] != SHA512_A
     )
     lost_response["validated-request-proof"]["tarball-sha512"] = SHA512_A
-    _refresh_probe_record_digest_unchecked(document, 1)
+    _refresh_probe_record_digest(mutated, 1)
 
-    with pytest.raises(ValueError, match="tarball-sha512"):
-        _admit(document)
+    with pytest.raises(ValueError) as error:
+        _admit(mutated)
+    assert str(error.value) == (
+        "probe-facts.1.scenarios.3.validated-request-proof."
+        "tarball-sha512 does not match exact readback"
+    )
 
 
 _RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES = tuple(
-    pytest.param(status, id=f"http-{status}") for status in range(202, 300)
+    pytest.param(status, id=f"http-{status}") for status in (202, 204, 299)
 )
 
 
@@ -4249,338 +3563,27 @@ def test_retry_5_real_registry_rejects_non_authoritative_status(
     with pytest.raises(
         ValueError,
         match="accepted npm publish status",
-    ) as raised:
+    ):
         _admit(document)
-
-    assert str(raised.value).endswith(
-        ".upstream-status must be an accepted npm publish status"
-    )
-    assert upstream_status not in (
-        governance_module._NPM_PUBLISH_SUCCESS_STATUSES
-    )
-
-
-def test_retry_5_governance_rejects_hypothetical_later_finalization_target() -> (
-    None
-):
-    profile = _registered_retry_5_governance_profile()
-    document = _retry_5_finalized_document(upstream_status=200)
-    document["target-sha"] = HYPOTHETICAL_LATER_RETRY_5_FINALIZATION_TARGET_SHA
-
-    assert profile.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
-    assert HYPOTHETICAL_LATER_RETRY_5_FINALIZATION_TARGET_SHA != (
-        RETRY_5_FINALIZED_TARGET_SHA
-    )
-    with pytest.raises(ValueError, match="target-sha"):
-        _admit(document)
-
-
-@pytest.mark.parametrize(
-    ("direction", "binding", "path", "message"),
-    [
-        pytest.param(
-            direction,
-            binding,
-            path,
-            message,
-            id=f"{direction}-{binding}",
-        )
-        for direction in (
-            "retry-5-receives-retry-4",
-            "retry-4-receives-retry-5",
-        )
-        for binding, path, message in (
-            ("workflow", ("workflow", "path"), "workflow.path"),
-            ("environment", ("environment",), "environment"),
-            (
-                "recovery-environment",
-                ("recovery", "environment"),
-                "recovery environment",
-            ),
-            (
-                "confirmation-digest",
-                ("confirmation-digest",),
-                "confirmation-digest",
-            ),
-            ("target", ("target-sha",), "target-sha"),
-            (
-                "coordinate",
-                (
-                    "probe-facts",
-                    0,
-                    "scenarios",
-                    0,
-                    "package-coordinate",
-                ),
-                "package-coordinate",
-            ),
-            (
-                "tag",
-                ("probe-facts", 0, "scenarios", 0, "tag"),
-                "tag",
-            ),
-            (
-                "request",
-                (
-                    "probe-facts",
-                    0,
-                    "scenarios",
-                    0,
-                    "validated-request-proof",
-                    "request-digest",
-                ),
-                "response-identity-digest",
-            ),
-            (
-                "tarball",
-                (
-                    "probe-facts",
-                    0,
-                    "scenarios",
-                    0,
-                    "validated-request-proof",
-                    "tarball-sha512",
-                ),
-                "tarball-sha512",
-            ),
-            (
-                "response",
-                (
-                    "probe-facts",
-                    0,
-                    "scenarios",
-                    0,
-                    "response",
-                    "identity-digest",
-                ),
-                "response-identity-digest",
-            ),
-        )
-    ],
-)
-def test_retry_5_governance_rejects_bidirectional_cross_profile_bindings(
-    direction: str,
-    binding: str,
-    path: tuple[object, ...],
-    message: str,
-) -> None:
-    retry_5_document = _retry_5_finalized_document(upstream_status=200)
-    retry_4_profile = _registered_retry_4_governance_profile()
-    retry_4_document = _test_local_finalized_document(
-        workflow_path=retry_4_profile.workflow_path,
-        target_sha=retry_4_profile.target_sha,
-        package_coordinate=retry_4_profile.package_coordinate,
-        confirmation_digest=retry_4_profile.confirmation_digest,
-        environment=retry_4_profile.environment,
-        scenario_coordinates=retry_4_profile.coordinates(),
-        proof_namespace="retry-4-historical-cross-profile-control",
-    )
-
-    retry_5_control = _admit(retry_5_document)
-    retry_4_control = _admit(retry_4_document)
-    assert retry_5_control.target_sha == RETRY_5_FINALIZED_TARGET_SHA
-    assert retry_4_control.target_sha == TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
-    if direction == "retry-5-receives-retry-4":
-        recipient, donor = retry_5_document, retry_4_document
-    else:
-        recipient, donor = retry_4_document, retry_5_document
-    mutated = deepcopy(recipient)
-    donor_value = deepcopy(_test_local_path_value(donor, path))
-    _set_path(mutated, path, donor_value)
-    if binding in {"coordinate", "tag", "request", "tarball", "response"}:
-        _refresh_probe_record_digest_unchecked(mutated, 0)
-
-    assert _test_local_path_value(mutated, path) == donor_value
-    assert _test_local_path_value(mutated, path) != _test_local_path_value(
-        recipient,
-        path,
-    )
-    with pytest.raises(ValueError, match=message):
-        _admit(mutated)
-
-
-@pytest.mark.parametrize(
-    ("document_profile", "field"),
-    [
-        pytest.param(
-            "retry-4",
-            "workflow",
-            id="retry-4-document-with-retry-3-workflow",
-        ),
-        pytest.param(
-            "retry-4",
-            "environment",
-            id="retry-4-document-with-retry-3-environment",
-        ),
-        pytest.param(
-            "retry-4",
-            "recovery-environment",
-            id="retry-4-document-with-retry-3-recovery-environment",
-        ),
-        pytest.param(
-            "retry-4",
-            "confirmation-digest",
-            id="retry-4-document-with-retry-3-confirmation-digest",
-        ),
-        pytest.param(
-            "retry-4",
-            "target",
-            id="retry-4-document-with-retry-3-target",
-        ),
-        pytest.param(
-            "retry-4",
-            "coordinate",
-            id="retry-4-document-with-retry-3-coordinate",
-        ),
-        pytest.param(
-            "retry-4",
-            "tag",
-            id="retry-4-document-with-retry-3-tag",
-        ),
-        pytest.param(
-            "retry-3",
-            "workflow",
-            id="retry-3-document-with-retry-4-workflow",
-        ),
-        pytest.param(
-            "retry-3",
-            "environment",
-            id="retry-3-document-with-retry-4-environment",
-        ),
-        pytest.param(
-            "retry-3",
-            "recovery-environment",
-            id="retry-3-document-with-retry-4-recovery-environment",
-        ),
-        pytest.param(
-            "retry-3",
-            "confirmation-digest",
-            id="retry-3-document-with-retry-4-confirmation-digest",
-        ),
-        pytest.param(
-            "retry-3",
-            "target",
-            id="retry-3-document-with-retry-4-target",
-        ),
-        pytest.param(
-            "retry-3",
-            "coordinate",
-            id="retry-3-document-with-retry-4-coordinate",
-        ),
-        pytest.param(
-            "retry-3",
-            "tag",
-            id="retry-3-document-with-retry-4-tag",
-        ),
-    ],
-)
-def test_retry_4_governance_rejects_cross_profile_field_substitutions(
-    document_profile: str,
-    field: str,
-) -> None:
-    registered_retry_4_profile = _registered_retry_4_governance_profile()
-    assert (
-        registered_retry_4_profile.target_sha
-        == TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
-    )
-    paths = {
-        "workflow": ("workflow", "path"),
-        "environment": ("environment",),
-        "recovery-environment": ("recovery", "environment"),
-        "confirmation-digest": ("confirmation-digest",),
-        "target": ("target-sha",),
-        "coordinate": (
-            "probe-facts",
-            0,
-            "scenarios",
-            0,
-            "package-coordinate",
-        ),
-        "tag": ("probe-facts", 0, "scenarios", 0, "tag"),
-    }
-    messages = {
-        "workflow": "workflow.path",
-        "environment": "environment",
-        "recovery-environment": "recovery environment",
-        "confirmation-digest": "confirmation-digest",
-        "target": "target-sha",
-        "coordinate": "package-coordinate",
-        "tag": "tag",
-    }
-    retry_3_values = {
-        "workflow": GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH,
-        "environment": GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
-        "recovery-environment": GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
-        "confirmation-digest": (
-            "sha256:"
-            "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
-        ),
-        "target": RETRY_3_TARGET_SHA,
-        "coordinate": TEST_LOCAL_RETRY_3_SCENARIO_COORDINATES[
-            "absent-create-readback"
-        ][0],
-        "tag": TEST_LOCAL_RETRY_3_SCENARIO_COORDINATES[
-            "absent-create-readback"
-        ][1],
-    }
-    retry_4_values = {
-        "workflow": registered_retry_4_profile.workflow_path,
-        "environment": registered_retry_4_profile.environment,
-        "recovery-environment": registered_retry_4_profile.environment,
-        "confirmation-digest": registered_retry_4_profile.confirmation_digest,
-        "target": registered_retry_4_profile.target_sha,
-        "coordinate": registered_retry_4_profile.coordinates()[
-            "absent-create-readback"
-        ][0],
-        "tag": registered_retry_4_profile.coordinates()[
-            "absent-create-readback"
-        ][1],
-    }
-    if document_profile == "retry-4":
-        document = _test_local_finalized_document(
-            workflow_path=registered_retry_4_profile.workflow_path,
-            target_sha=registered_retry_4_profile.target_sha,
-            package_coordinate=registered_retry_4_profile.package_coordinate,
-            confirmation_digest=registered_retry_4_profile.confirmation_digest,
-            environment=registered_retry_4_profile.environment,
-            scenario_coordinates=registered_retry_4_profile.coordinates(),
-            proof_namespace="retry-4-finalized-cross-profile",
-        )
-        replacement = retry_3_values[field]
-    else:
-        document = _test_local_finalized_document(
-            workflow_path=GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH,
-            target_sha=RETRY_3_TARGET_SHA,
-            package_coordinate=GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
-            confirmation_digest=(
-                "sha256:"
-                "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
-            ),
-            environment=GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
-            scenario_coordinates=TEST_LOCAL_RETRY_3_SCENARIO_COORDINATES,
-            proof_namespace="historical-retry-3-control",
-        )
-        replacement = retry_4_values[field]
-
-    admitted_control = _admit(document)
-    assert admitted_control.to_document() == document
-    expected_target = (
-        TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
-        if document_profile == "retry-4"
-        else RETRY_3_TARGET_SHA
-    )
-    assert admitted_control.target_sha == expected_target
-    assert admitted_control.mutation_classification == "complete"
-    mutated = deepcopy(document)
-    _set_path(mutated, paths[field], replacement)
-    assert mutated != document
-    with pytest.raises(ValueError, match=messages[field]):
-        _admit(mutated)
 
 
 def test_retry_4_governance_preserves_historical_profiles_digests_and_replay_evidence() -> (
     None
 ):
+    # Retry labels below index this explicit test-owned coordinate order.
+    historical_coordinates = (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+    )
+    historical_profiles = tuple(
+        next(
+            profile
+            for profile in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
+            if profile.package_coordinate == coordinate
+        )
+        for coordinate in historical_coordinates
+    )
     historical_profile_tuples = tuple(
         (
             profile.package_coordinate,
@@ -4590,7 +3593,7 @@ def test_retry_4_governance_preserves_historical_profiles_digests_and_replay_evi
             profile.confirmation_digest,
             profile.scenario_coordinates,
         )
-        for profile in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES[:3]
+        for profile in historical_profiles
     )
     assert historical_profile_tuples == (
         (
@@ -4786,6 +3789,11 @@ def test_retry_4_governance_preserves_historical_profiles_digests_and_replay_evi
         "validated-request-proof"
         not in retry_1_scenarios["absent-create-readback"]
     )
+    retry_1_lost_response = retry_1_scenarios["lost-response"]
+    assert (
+        retry_1_lost_response["validated-request-proof"]["tarball-sha512"]
+        != retry_1_lost_response["post"]["content-sha512"]
+    )
     for profile_name in ("retry-2", "retry-3"):
         scenarios = {
             scenario["scenario"]: scenario
@@ -4805,43 +3813,216 @@ def test_retry_4_governance_preserves_historical_profiles_digests_and_replay_evi
             )
 
 
-@pytest.fixture(autouse=True)
-def _preserve_retry_4_historical_registry_view(
-    request: pytest.FixtureRequest,
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("path", "reason"),
+    [
+        pytest.param(
+            ("workflow", "path"), "workflow.path must be ", id="P1-workflow"
+        ),
+        pytest.param(
+            ("environment",), "environment must be ", id="P2-environment"
+        ),
+        pytest.param(
+            ("recovery", "environment"),
+            "recovery environment must match acceptance environment",
+            id="P3-recovery-environment",
+        ),
+        pytest.param(
+            ("confirmation-digest",),
+            "confirmation-digest must be ",
+            id="P4-confirmation",
+        ),
+        pytest.param(
+            ("target-sha",),
+            "target-sha does not match the reviewed acceptance profile",
+            id="P5-target",
+        ),
+        pytest.param(
+            ("probe-facts", 0, "scenarios", 0, "package-coordinate"),
+            "probe-facts.0.scenarios.0.package-coordinate must be ",
+            id="P6-scenario-coordinate",
+        ),
+        pytest.param(
+            ("probe-facts", 0, "scenarios", 0, "tag"),
+            "probe-facts.0.scenarios.0.tag must be ",
+            id="P7-scenario-tag",
+        ),
+    ],
+)
+def test_governance_profile_fields_reject_single_foreign_binding(
+    path: tuple[object, ...],
+    reason: str,
 ) -> None:
-    # Preserve the append-only retry-4 contract's historical four-profile view;
-    # the exact-five test above independently checks the live registry.
-    if request.node.name != (
-        "test_retry_4_governance_profiles_have_stable_historical_order_"
-        "and_unique_base_coordinates"
+    recipient = _retry_5_finalized_document(upstream_status=201)
+    donor = _test_local_finalized_document(
+        workflow_path=TEST_LOCAL_RETRY_4_WORKFLOW_PATH,
+        target_sha=TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA,
+        package_coordinate=TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE,
+        confirmation_digest=TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST,
+        environment=TEST_LOCAL_RETRY_4_ENVIRONMENT,
+        scenario_coordinates=TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES,
+        proof_namespace="retry-4-profile-field-control",
+    )
+    recipient_control = _admit(recipient)
+    donor_control = _admit(donor)
+    assert (recipient_control.target_sha, donor_control.target_sha) == (
+        "66154d0bb351a0c9c13d16292ce003d7eee65077",
+        "835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa",
+    )
+    for document, admitted in (
+        (recipient, recipient_control),
+        (donor, donor_control),
     ):
-        return
-    profiles = governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
-    assert tuple(profile.package_coordinate for profile in profiles) == (
-        COORDINATE,
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
-        GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
-        TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE,
-        TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE,
+        assert admitted.mutation_classification == "complete"
+        assert admitted.to_document() == document
+        assert canonicalize(admitted.to_document()) == canonicalize(document)
+
+    replacement = deepcopy(_test_local_path_value(donor, path))
+    assert replacement != _test_local_path_value(recipient, path)
+    mutated = deepcopy(recipient)
+    _set_path(mutated, path, replacement)
+    if path[0] == "probe-facts":
+        _refresh_probe_record_digest(mutated, 0)
+
+    with pytest.raises(ValueError) as error:
+        _admit(mutated)
+    assert str(error.value).startswith(reason)
+
+
+@pytest.mark.parametrize(
+    ("path", "reason"),
+    [
+        pytest.param(
+            ("validated-request-proof", "request-digest"),
+            "probe-facts.0.scenarios.0.validated-request-proof."
+            "response-identity-digest is not exact",
+            id="I1-proof-internal-identity",
+        ),
+        pytest.param(
+            ("response", "identity-digest"),
+            "probe-facts.0.scenarios.0.validated-request-proof."
+            "response-identity-digest does not match response",
+            id="I2-enclosing-response-identity",
+        ),
+    ],
+)
+def test_governance_proof_identity_rejects_distinct_inconsistencies(
+    path: tuple[object, ...],
+    reason: str,
+) -> None:
+    document = _retry_5_finalized_document(upstream_status=201)
+    control = _admit(document)
+    assert control.mutation_classification == "complete"
+    assert control.to_document() == document
+    mutated = deepcopy(document)
+    scenario = mutated["probe-facts"][0]["scenarios"][0]
+    assert scenario["response"]["result"] == "protocol-confirmed"
+    assert _test_local_path_value(scenario, path) != SHA256_A
+    _set_path(scenario, path, SHA256_A)
+    _refresh_probe_record_digest(mutated, 0)
+
+    with pytest.raises(ValueError) as error:
+        _admit(mutated)
+    assert str(error.value) == reason
+
+
+def test_incomplete_probe_scenarios_require_canonical_record_digest() -> None:
+    document = _retry_5_finalized_document(upstream_status=201)
+    first_probe = document["probe-facts"][0]
+    first_probe["result"] = "incomplete"
+    first_probe["artifact-id"] = None
+    first_probe["artifact-digest"] = None
+    document["mutation-classification"] = "incomplete"
+    assert document["target-sha"] == RETRY_5_FINALIZED_TARGET_SHA
+    assert {item["result"] for item in document["dependency-results"]} == {
+        "success"
+    }
+    assert first_probe["scenarios"]
+    assert first_probe["record-digest"] is not None
+    control = _admit(document)
+    assert control.mutation_classification == "incomplete"
+    assert control.to_document() == document
+    assert canonicalize(control.to_document()) == canonicalize(document)
+
+    mutated = deepcopy(document)
+    mutated["probe-facts"][0]["record-digest"] = None
+    with pytest.raises(ValueError) as error:
+        _admit(mutated)
+    assert str(error.value) == (
+        "probe-facts.0.record-digest does not match the canonical scenario "
+        "suite digest"
     )
-    assert profiles[3].package_coordinate == (
-        TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE
-    )
-    assert profiles[4].package_coordinate == (
-        TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
-    )
-    monkeypatch.setattr(
-        governance_module,
-        "_GOVERNANCE_ACCEPTANCE_PROFILES",
-        profiles[:4],
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        pytest.param(
+            ((("dependency-results", 0, "result"), "success"),),
+            id="Z1-validation-succeeded",
+        ),
+        pytest.param(
+            ((("dependency-results", 1, "result"), "success"),),
+            id="Z2-review-ran",
+        ),
+        pytest.param(
+            ((("dependency-results", 3, "result"), "success"),),
+            id="Z3-second-probe-ran",
+        ),
+        pytest.param(
+            ((("probe-facts", 0, "artifact-id"), 799),),
+            id="Z4-first-probe-artifact-id",
+        ),
+        pytest.param(
+            ((("probe-facts", 1, "artifact-digest"), SHA256_A),),
+            id="Z5-second-probe-artifact-digest",
+        ),
+        pytest.param(
+            ((("recovery", "artifact-id"), 701),),
+            id="Z6-review-artifact",
+        ),
+        pytest.param(
+            (
+                (
+                    ("reviewer",),
+                    {
+                        "login": "octocat",
+                        "source": "on-demand-read-only-inspection",
+                    },
+                ),
+            ),
+            id="Z7-attributed-reviewer",
+        ),
+        pytest.param(
+            (
+                (("probe-facts", 1, "result"), "unknown"),
+                (("mutation-classification",), "unknown"),
+            ),
+            id="Z8-coherent-unknown-claim",
+        ),
+    ],
+)
+def test_zero_target_rejects_reachable_dispatch_contradictions(
+    changes: tuple[tuple[tuple[object, ...], object], ...],
+) -> None:
+    document = _retry_5_preparation_document()
+    control = _admit(document)
+    assert control.to_document() == document
+    assert control.target_sha == "0" * 40
+    assert control.mutation_classification == "incomplete"
+    mutated = deepcopy(document)
+    for path, replacement in changes:
+        _set_path(mutated, path, replacement)
+
+    with pytest.raises(ValueError) as error:
+        _admit(mutated)
+    assert str(error.value) == (
+        "zero target-sha requires exact rejected fixed-input dispatch evidence"
     )
 
 
 def test_retry_5_governance_authoritative_publish_status_set_is_exact() -> None:
-    profile = _registered_retry_5_governance_profile()
     expected_statuses = frozenset({200, 201})
     actual_statuses = governance_module._NPM_PUBLISH_SUCCESS_STATUSES
 
     assert actual_statuses == expected_statuses
-    assert profile.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE

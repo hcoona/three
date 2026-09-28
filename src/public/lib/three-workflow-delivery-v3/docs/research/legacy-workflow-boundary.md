@@ -11,13 +11,12 @@ The legacy validator still sends readers to
 [REFACTOR_PLAN.md](../../../../../../.github/workflows/REFACTOR_PLAN.md)
 for channel migration examples and the unimplemented spoke design context.
 That reader interface remains at the path embedded in runtime diagnostics.
-The legacy [design prompt](../../../../../../.github/workflows/docs/DESIGN.prompt.md),
-[v2 design](../../../../../../.github/workflows/docs/DESIGN.v2.md), and
-[memory](../../../../../../.github/workflows/docs/MEMORY.md) paths retain
-retirement notices because the
-[retirement contract](../../tests/contracts/test_commit11_legacy_buddy_retirement.py)
-reads them. Their replaced narrative remains in Git; those notices supply no
-new implementation plan.
+The original legacy
+[design prompt](https://github.com/hcoona/three/blob/b673ee27aab8553a4ee259bcaca87a197178463c/.github/workflows/docs/DESIGN.prompt.md),
+[v2 design](https://github.com/hcoona/three/blob/b673ee27aab8553a4ee259bcaca87a197178463c/.github/workflows/docs/DESIGN.v2.md), and
+[memory](https://github.com/hcoona/three/blob/b673ee27aab8553a4ee259bcaca87a197178463c/.github/workflows/docs/MEMORY.md)
+remain historical source material in immutable Git history. They are
+nonnormative and supply no new implementation authority.
 
 The four owner clarifications in the
 [February workflow review](https://github.com/hcoona/three/blob/b673ee27aab8553a4ee259bcaca87a197178463c/.github/workflows/REVIEW_20260217.md#review-baseline-and-clarifications)

@@ -1,0 +1,342 @@
+# Python Smoke Destination and Build Evidence
+
+This public-source research supports the Python requirements confirmation in
+[Issue #843](https://github.com/hcoona/three/issues/843), under the accepted
+[Python design Wave](https://github.com/hcoona/three/blob/53b0aaa75dad1aac238f59127a4c1fd63a6642cc/docs/delivery-wave.md#define-the-python-v3-smoke-scope-and-destination).
+The owner selected TestPyPI followed by production PyPI. This record does not
+confirm requirements, select an implementation, admit a destination, or grant
+publication. npm and NuGet remain complete under their existing authorities.
+
+Workflow-delivery maintainers produce and maintain this evidence. Requirements,
+design and independent evidence reviewers consume it to avoid treating Python
+as a copy of either single-archive GitHub Packages slice. The project research
+carrier preserves recoverable sources and their limits; the Issue owns owner disposition of
+scope, decisions and delivery progress.
+
+## Source Basis
+
+Official public pages below were retrieved on 2026-09-24. Statements in this
+section are documentation findings, not observations of this repository's
+accounts, packages, OIDC configuration or publishing behavior. The code finding
+uses the repository baseline `12d45fdd3c8cae6b69df0e6cff520e5c7e478505`.
+
+### Separate Destinations and Retention
+
+[PyPA Using TestPyPI](https://packaging.python.org/en/latest/guides/using-testpypi/),
+introduction and Registering your account, identifies a separate index and
+database. Its explicit limitation is: "The database for TestPyPI may be
+periodically pruned, so it is not unusual for user accounts to be deleted."
+Successful TestPyPI installation therefore cannot promise lasting availability
+or establish production PyPI configuration.
+
+[PyPA .pypirc, Common configurations](https://packaging.python.org/en/latest/specifications/pypirc/#common-configurations)
+lists the upload repositories `https://test.pypi.org/legacy/` and
+`https://upload.pypi.org/legacy/`. The TestPyPI guide's installation section
+identifies `https://test.pypi.org/simple/` and `https://pypi.org/simple/`.
+These endpoints do not establish package-name availability, ownership or grants.
+
+[PyPI Help, Why am I getting a filename has already been used error?](https://pypi.org/help/#file-name-reuse)
+states: "PyPI does not allow for a filename to be reused, even once a project
+has been deleted and recreated." It explains that a distribution will resolve
+to the same file and "it can only be removed". Its project-deletion guidance
+also states that deleted files cannot be re-uploaded and that administrators
+cannot restore deleted projects, releases or files. This is a documented PyPI
+file immutability contract, not indefinite availability or a promise about
+TestPyPI after database pruning.
+
+### Publication Granularity and Observation
+
+[PyPI Upload API, Upload a file](https://docs.pypi.org/api/upload/#upload-a-file)
+states: "Releases on PyPI are created by uploading one file at a time. The
+first file uploaded of a new version creates a release for that version, and
+populates its metadata." The request is a multipart POST with one content file
+and its filename. A wheel and sdist therefore require two uploads; a release
+may already exist after just one succeeds. The documentation does not promise
+an atomic two-file transaction, rollback or a single snapshot across reads.
+
+[PyPI Index API, Project detail](https://docs.pypi.org/api/index-api/)
+documents project file listings with filename, URL, hashes, Python constraint
+and yanked status. Such metadata can locate and describe distribution files;
+it does not itself prove equality with the qualified bytes. V3's consumer and
+publication checks still need fresh actual file bytes and the agreed witness.
+
+[UV Building and publishing](https://docs.astral.sh/uv/guides/package/),
+publishing section, describes checking existing files and handling raced
+parallel uploads. This convenience behavior must not be assumed to implement
+V3's current rule that a conflicting or ambiguous mutation response remains
+failed in that Attempt. A concrete publisher profile needs a review of actual
+retry, skip, reconciliation and attestation behavior before selection.
+
+### Retained Immediate-Readback Failure and Observation Limits
+
+The [original operation audit](https://github.com/hcoona/three/issues/843#issuecomment-5837752058)
+and [independent custody review](https://github.com/hcoona/three/issues/843#issuecomment-5837789337)
+retain run `36174486595`, attempt 1. Its result ZIP has SHA-256
+`764ba65f7228c5ddca1b83e9dc9024692b2a35005762293236ee1b82a5c42fb9`.
+Original `execution/http/7.json` records wheel HTTP 200 finishing at
+`1790361675.077622`; `execution/http/8.json` records index admission at
+`1790361675.0781198` and HTTP 404 completion at `1790361675.0907018`.
+The approximately 0.5 ms interval is a client observation, not server commit or
+cache timing. The publisher stopped before sdist upload, file download or clean
+consumer audit. The failed partial bootstrap remains failed; cause is unknown.
+
+The [diagnosis and independent review](https://github.com/hcoona/three/issues/843#issuecomment-5838645186)
+verify original response-body digests and distinguish later reviewed owner
+attestation from agent observations. Cache/propagation delay remains a
+hypothesis. Existing code followed the then-accepted immediate single-read
+contract; this observation does not prove an implementation defect.
+
+The five sources named in the first-project source recheck were freshly
+retrieved on 2026-09-25 for the observation-policy design and remain byte-identical
+to the accepted originals. The upload and index documentation supplies no
+immediate-visibility guarantee or explanation for this 404. The design PR
+retains these bodies, retrieval instants and hashes. No smoke registry,
+configuration or OIDC endpoint was queried. The owner
+[accepted](https://github.com/hcoona/three/issues/843#issuecomment-5839240843)
+finite pending observation and resource-only continuation after partial bootstrap.
+These are product/risk decisions, not proof that waiting will succeed or that
+the original bootstrap completed. The requirements and LLD own that behavior;
+the later owner platform-reliance decision below retires prerequisite native
+probes while preserving actual publication/readback/consumer evidence.
+
+### Version and Build Inputs
+
+[Python version specifiers, Local version identifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/#local-version-identifiers)
+states that PyPI "MUST NOT allow the use of local version identifiers".
+A PEP 440 parseable version is therefore not automatically a publishable PyPI
+version. NBGV-derived local components must not be silently stripped, and a
+workflow-run number must not become a replacement version authority.
+
+At the pinned repository baseline,
+[`NbgvVersionSource.get_version_data()`](https://github.com/hcoona/three/blob/12d45fdd3c8cae6b69df0e6cff520e5c7e478505/src/public/lib/nbgv-python/src/nbgv_python/hatch_plugin.py)
+constructs `NbgvRunner`, queries the configured working directory, selects the
+configured field and normalizes it. It has no direct frozen-version input in
+that method. The reusable
+[`normalize_version_field()`](https://github.com/hcoona/three/blob/12d45fdd3c8cae6b69df0e6cff520e5c7e478505/src/public/lib/nbgv-python/src/nbgv_python/versioning.py)
+preserves local metadata and may create it for unrecognized prerelease labels.
+The existing [adapter authority](../../../nbgv-python/docs/architecture/hatch-integration.md)
+records those limits. These are code-inspection findings; they do not prove
+that every Hatch sdist build invokes the plugin or that source installation
+necessarily fails.
+
+[Hatch project metadata, Version](https://hatch.pypa.io/latest/config/metadata/#version)
+documents static and dynamic version configuration. Its
+[environment version source](https://hatch.pypa.io/latest/plugins/version-source/env/)
+reads a named environment variable. Those are available backend mechanisms, not empirical evidence of V3
+consumer behavior. The [Python Model](../repository-model-release-unit-mld.md#python-smoke-model)
+selects isolated static metadata materialization; the later build and clean
+sdist consumer must validate that choice without re-resolving NBGV, ambient
+overrides or an undeclared Git requirement.
+
+The UV build guide says `uv build` respects `tool.uv.sources` for build
+dependencies by default and recommends `--no-sources` when checking publication
+compatibility with other build tools. A workspace build alone therefore does
+not establish that declared sdist build requirements suffice outside the repo.
+The dependency-free runtime package still has separately declared build inputs.
+
+### Trusted Publishing Boundary
+
+[PyPI Adding a trusted publisher, GitHub Actions](https://docs.pypi.org/trusted-publishers/adding-a-publisher/)
+requires repository owner, repository name and workflow filename; an Environment
+is optional in the service but strongly recommended. The
+[using-a-publisher manual section](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
+distinguishes OIDC audience `pypi` from `testpypi` and requires the appropriate
+workflow permission to obtain a GitHub token.
+
+[Trusted publishing security model](https://docs.pypi.org/trusted-publishers/security-model/)
+states that minted API tokens expire no more than 15 minutes after the OIDC
+flow, that both token forms are sensitive, and that trusted publishing does not
+establish safe code, trustworthy authors or unchanged build contents. Publishers
+are registered to projects. Repository writers who can change publishing
+workflows remain part of the trust decision; short token lifetime does not
+remove that authority.
+
+The sources support proposing separate destination-bound publishers and
+protected Environments, credential-free build/quality, and a build-free publisher.
+They establish no existing registration or permission in this repository. No
+account, Environment, trusted-publisher registration or token was inspected or
+changed by this research.
+
+### Hosted Runtime Permission Boundary
+
+The implementation source recheck on 2026-09-24 includes GitHub's
+[App permission matrix](https://docs.github.com/en/rest/authentication/permissions-required-for-github-apps)
+and [workflow token permissions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions).
+Repository invitations/teams require Administration read, Environment
+variables/secrets require Environments read, and repository Actions variables
+require Variables read. Those categories are not available workflow
+`GITHUB_TOKEN` permission keys. Collaborator inventory is Metadata read;
+workflow review history and Environment identity use Actions read. These are
+source findings, not observed successful or denied calls in this slice.
+
+The implementation therefore preserves the accepted protected configuration
+attestation/runtime freshness split. A normal job does not enumerate the
+administrative configuration or substitute an empty inventory on failure.
+The [Python LLD](../hcoona-release-smoke-python-lld.md#hosted-integration)
+states the remaining runtime and attestation responsibilities. The later
+separately authorized normal publication must exercise the actual endpoints
+and native approval/deployment binding with the normal job token.
+
+GitHub's [hosted-runner communication requirements](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#communication-requirements-for-github-hosted-runners)
+list `*.actions.githubusercontent.com` for retrieving OIDC tokens. The
+[OIDC environment-variable contract](https://docs.github.com/en/actions/reference/security/oidc#requesting-the-jwt-using-environment-variables)
+provides `ACTIONS_ID_TOKEN_REQUEST_URL` and its request token. These sources
+support using that supplied HTTPS URL with the documented hosted-runner host
+family and selected audience. The JWT issuer is a separate concept. No OIDC
+request was made to establish this source finding.
+
+### Native Preparation Interface Recheck
+
+On 2026-09-25 the native-preparation author re-read the cited upload API,
+JSON Simple Index API, manual trusted-publisher flow, trusted-publisher security
+model and GitHub OIDC/workflow-permissions pages, plus
+[Hatch build reproducibility](https://hatch.pypa.io/latest/config/build/#reproducible-builds).
+They continue to describe one-file uploads, JSON file inventories, separate
+OIDC audiences and a short-lived minted credential. Hatch documents reproducible
+build controls; it does not establish this suite's comparison-fixture validity.
+The preparation PR retains the retrieved bodies, retrieval times and hashes.
+
+The then-proposed native suite reused these unchanged APIs and the protected pinned
+transport. Its finite request counts, race intervals and filename-error
+recognizer are conservative application choices, not additional documented
+service guarantees. Actual matching native responses and independent audit
+were required by that now-retired protocol. No OIDC, account, project or native registry endpoint was
+queried for this recheck; only public documentation was retrieved.
+
+### First-Project Bootstrap Source Recheck
+
+On 2026-09-25, bootstrap preparation rechecked the official
+[pending-publisher guide](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/),
+[registration guide](https://docs.pypi.org/trusted-publishers/adding-a-publisher/),
+[manual OIDC flow](https://docs.pypi.org/trusted-publishers/using-a-publisher/),
+[upload API](https://docs.pypi.org/api/upload/) and
+[JSON Simple Index API](https://docs.pypi.org/api/index-api/).
+The pending-publisher guide states that first publication creates the project
+and converts the publisher; registration does not reserve the name and a
+competing registration invalidates it. The manual flow applies to pending as
+well as existing publishers. These are source findings, not observations of the
+operator's account or project, atomic two-file creation, or ownership proof.
+
+The bootstrap protocol's initial HTTP-404 requirement is a conservative
+application gate. It does not prove global name availability or historical
+filename availability; failures and HTTP 200 block that entry. The now-retired native protocol retained its complete HTTP-200
+existing-project prerequisite. The delivery PR
+retains dated original source bodies, sanitized headers and hashes in a
+recoverable archive ([part 1](https://github.com/hcoona/three/pull/860#issuecomment-5827525997),
+[part 2](https://github.com/hcoona/three/pull/860#issuecomment-5827526279)).
+All Set-Cookie values are redacted; the archive distinguishes original and
+sanitized header hashes. Recheck when the
+bootstrap publisher/transport profile changes or contrary behavior is observed;
+the next Wave merge is the fallback review event. No private account, registry,
+configuration or OIDC endpoint was queried for this source research.
+
+### Retained Identical-Duplicate Counterexample
+
+The [independent native audit](https://github.com/hcoona/three/issues/843#issuecomment-5859869282)
+and [independent finding disposition](https://github.com/hcoona/three/issues/843#issuecomment-5859867456)
+retain the failed TestPyPI generation. After the original wheel and sdist were
+created and read back with matching bytes, the identical active wheel upload
+returned HTTP 200. The contract accepted for that run required duplicate rejection,
+so the suite stopped before the next capture. This is a contrary response
+observation, not proof of overwrite, idempotent preservation or native success.
+The later duplicate and race scenarios and fresh registry consumers remain
+unproved. The last complete capture preserved the pre-existing bootstrap entry;
+it does not establish current availability or post-duplicate state.
+
+The contrary observation triggered a fresh public-documentation recheck on
+2026-09-27 of the upload API, filename/help, TestPyPI retention, Simple Index,
+OIDC and publisher-registration sources. The upload API still describes one-file
+uploads without definitive identical-duplicate response semantics. The Help
+page lists filename/content reuse errors and prohibits filename reuse, but does
+not specify the exact same-filename/same-bytes response observed on TestPyPI.
+Neither source proves mandatory HTTP-400 rejection for that tuple. The Issue
+retains original source bodies, retrieval metadata and independent review.
+
+That generation remains failed and cannot be reinterpreted as passing. The
+source diagnosis and subsequent owner decision below change the future design
+basis; they supply none of the missing runtime evidence or normal admission.
+
+### Warehouse Identical-File Handling and Owner Reliance
+
+The public-source diagnosis selected Warehouse commit
+[`02dae5a1510bf9ba3fc5ff9ec0d94440055d92ec`](https://github.com/pypi/warehouse/commit/02dae5a1510bf9ba3fc5ff9ec0d94440055d92ec)
+on 2026-09-27. These are pinned source findings, not assertions about the
+revision deployed by either registry:
+
+- [`_is_duplicate_file`, lines 354–383](https://github.com/pypi/warehouse/blob/02dae5a1510bf9ba3fc5ff9ec0d94440055d92ec/warehouse/forklift/legacy.py#L354)
+  matches the filename and SHA-256/BLAKE2 digests; it does not perform a full
+  byte comparison.
+- [The upload branch, lines 1075–1096](https://github.com/pypi/warehouse/blob/02dae5a1510bf9ba3fc5ff9ec0d94440055d92ec/warehouse/forklift/legacy.py#L1075)
+  dooms the request transaction and returns HTTP 200 for an identical match
+  before file creation/storage. A conflicting existing file returns HTTP 400.
+  Deleted-filename rejection is a separate branch at lines 1098–1111.
+- [The corresponding tests, lines 2291–2397](https://github.com/pypi/warehouse/blob/02dae5a1510bf9ba3fc5ff9ec0d94440055d92ec/tests/unit/forklift/test_legacy.py#L2291)
+  encode successful identical-file no-op and different-content rejection.
+  These tests were read, not executed by this research.
+
+The source provides an explanation consistent with the observed HTTP 200 and
+contradicts the assumption that every identical upload must be rejected. It
+does not fill C3, prove the run's post-duplicate state or establish concurrency
+response guarantees. Database uniqueness, retry configuration and nontransactional
+file storage are not promoted into a universal atomicity claim.
+
+The [diagnosis and independent review](https://github.com/hcoona/three/issues/843#issuecomment-5860775965)
+retain the selected revision, original files and exact source locations. The
+[seven-part original packet](https://github.com/hcoona/three/issues/843#issuecomment-5860766427)
+is 275164 bytes, SHA-256
+`8ba485fc7792665627c3c9d3bec7d23a4624ed71b34f5fbd45def0114bbe0788`.
+It includes Warehouse's Apache-2.0 license and retrieval/hash manifests. Source
+bodies are unchanged; cookie response-header values are redacted with an
+explicit original/retained hash mapping. Independent remote recovery verified
+all 39 members. Six official mutable documentation pages re-fetched for the
+diagnosis were byte-identical to retained originals; no smoke registry,
+configuration or OIDC endpoint was queried.
+
+The owner then [directed reliance on platform behavior without further verification](https://github.com/hcoona/three/issues/843#issuecomment-5860732497).
+This is an accepted product/risk decision, distinct from both the pinned source
+and the failed runtime observation. The revised `WD-PY-006` relies on live-file
+non-replacement and successful identical replay without duplicate/race probes.
+It preserves V3 request/authority/evidence tests and each destination's actual
+publication, exact original-byte readback and clean consumption. No platform
+experiment follows from this decision; original failures remain failed.
+
+## Decision Impact and Limits
+
+The owner [confirmed the requirements packet](https://github.com/hcoona/three/issues/843#issuecomment-5822043601)
+on 2026-09-24. [`WD-PY-*`](../requirements.md#python-smoke-slice) owns the
+resulting product/trust/evidence decisions; the HLD and MLDs own their
+realization. The material choices are partial two-file failure, an explicit
+Python per-file dependency/evidence basis and bounded availability, plus the
+sole-writer/operator Approval boundary. Acceptance is an owner decision, not a
+new service finding. The subsequent owner reliance decision above removes
+prerequisite duplicate/race proving; it does not turn the TestPyPI dependency
+into a documented guarantee or promote source inspection into empirical proof.
+
+The design and implementation source rechecks re-read the cited service/build
+sources on 2026-09-24 when selecting the design and concrete profile. They still support one-file upload, PyPI filename
+non-reuse, TestPyPI pruning, distinct OIDC audiences and static Hatch metadata;
+no source establishes cross-file atomicity or implemented V3 compatibility.
+The [Python LLD](../hcoona-release-smoke-python-lld.md) selects a bounded
+one-set/two-operation action and static staged metadata. Those are design
+choices whose disabled implementation is protected-delivered through
+[PR #849](https://github.com/hcoona/three/pull/849). The successor design removes
+native-generation admission; its implementation and separately authorized
+configuration/admission and normal publication remain outstanding. Both
+destinations remain disabled.
+
+The initial public-source study performed no runtime experiment, package build,
+native probe, workflow dispatch, registry mutation or account inspection. The
+separately authorized runtime observations above retain their own evidence.
+Design readiness and end-to-end smoke completion remain distinct.
+
+The design author rechecks the mutable service upload, filename, retention,
+index and OIDC sources when confirming the destination or selecting its
+publisher profile, and whenever contrary behavior is reported. The independent
+evidence reviewer evaluates the outcome. The Wave review selecting
+implementation is the fallback event; its source recheck completed on
+2026-09-24 as described above. Future selection changes and contrary observations
+retain these recheck triggers. Material changes update this record and
+dependent decisions before execution; uncertainty blocks only the affected
+capability. Recheck backend/build documentation when selecting or changing its
+version. The pinned repository-code finding instead requires reevaluation when
+the selected adapter source changes.

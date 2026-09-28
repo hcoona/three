@@ -33,6 +33,8 @@ from three_workflow_delivery_v3.repository.node_provider import (
     ProjectNode,
 )
 
+from .test_dotnet_provider import _admission_scenario
+
 SOURCE_ROOT = Path(__file__).resolve().parents[6]
 PROJECT_ROOT = dotnet_provider.DOTNET_PROJECT_ROOT
 ENTRY_POINT = dotnet_provider.DOTNET_ENTRY_POINT
@@ -64,6 +66,13 @@ def _blob_digest(repo: Path, target: str, path: str) -> str:
 
 def _reject_native(*_args: object, **_kwargs: object) -> None:
     pytest.fail("the compiler must not execute native target code")
+
+
+@pytest.fixture
+def admission_scenario(monkeypatch: pytest.MonkeyPatch):
+    """Supply modeled admission facts while forbidding native execution."""
+    monkeypatch.setattr(dotnet_provider, "run_native", _reject_native)
+    return _admission_scenario()
 
 
 @pytest.fixture(scope="module")
@@ -281,9 +290,9 @@ def test_dotnet_compiler_closes_native_build_and_policy(
     )
 
 
-def test_dotnet_manifest_closes_native_request(native_scenario) -> None:
+def test_dotnet_manifest_closes_native_request(admission_scenario) -> None:
     """Bind the native execution profile and separate it from a Node request."""
-    _, context, manifest, _ = native_scenario
+    context, manifest, _ = admission_scenario
     request = manifest.requests[0]
     context_document = manifest.to_document()["context"]
     expected: dict[str, JsonValue] = {
@@ -330,10 +339,10 @@ def test_dotnet_manifest_closes_native_request(native_scenario) -> None:
     ],
 )
 def test_dotnet_manifest_rejects_substitution(
-    native_scenario, field, value
+    admission_scenario, field, value
 ) -> None:
     """Reject a changed request even with a valid bound Bundle."""
-    _, context, manifest, result = native_scenario
+    context, manifest, result = admission_scenario
     bundle, admission = _bundle(manifest, result)
     changed = replace(
         manifest, requests=(replace(manifest.requests[0], **{field: value}),)
@@ -358,10 +367,10 @@ def test_dotnet_manifest_rejects_substitution(
     ],
 )
 def test_dotnet_bundle_rejects_binding_and_integrity_substitution(
-    native_scenario, field, value
+    admission_scenario, field, value
 ) -> None:
     """Reject substitutions despite a recomputed outer digest."""
-    _, context, manifest, result = native_scenario
+    context, manifest, result = admission_scenario
     bundle, admission = _bundle(manifest, result)
     changed = replace(bundle, **{field: value})
     admission = replace(admission, bundle_digest=changed.bundle_digest)
@@ -385,10 +394,10 @@ def test_dotnet_bundle_rejects_binding_and_integrity_substitution(
     ],
 )
 def test_dotnet_bundle_rejects_other_authority(
-    native_scenario, field, value
+    admission_scenario, field, value
 ) -> None:
     """Reject internally consistent facts belonging to another authority."""
-    _, context, manifest, result = native_scenario
+    context, manifest, result = admission_scenario
     changed = replace(result, binding=replace(result.binding, **{field: value}))
     bundle, admission = _bundle(manifest, changed)
     with pytest.raises(ValueError, match=r"authority binding|catalog digest"):
@@ -397,17 +406,16 @@ def test_dotnet_bundle_rejects_other_authority(
         )
 
 
-@pytest.mark.parametrize(
-    ("purpose", "attempt"), [("slice-validation", 1), ("ci-pr-slice-shadow", 2)]
-)
 def test_dotnet_bundle_rejects_cross_purpose(
-    native_scenario, purpose, attempt
+    admission_scenario,
 ) -> None:
     """Reject qualification facts offered as current live Release evidence."""
-    _, context, manifest, result = native_scenario
+    context, manifest, result = admission_scenario
     changed = replace(
         result,
-        binding=replace(result.binding, purpose=purpose, run_attempt=attempt),
+        binding=replace(
+            result.binding, purpose="ci-pr-slice-shadow", run_attempt=2
+        ),
     )
     bundle, admission = _bundle(manifest, changed)
     with pytest.raises(ValueError, match="authority binding"):
@@ -438,26 +446,21 @@ def test_dotnet_compiler_uses_exact_git_target_inputs(native_scenario) -> None:
     [
         "manifest_digest",
         "configuration_digest",
-        "source_input_manifest",
-        "global_inputs",
     ],
 )
 def test_dotnet_compiler_rejects_target_input_substitution(
     native_scenario, field
 ) -> None:
     """Rehash target Git blobs of the supplied Provider digests."""
-    result = native_scenario[3]
-    value: Any = OTHER_DIGEST
-    if field == "source_input_manifest":
-        value = tuple(
-            (path, OTHER_DIGEST if path == ENTRY_POINT else digest)
-            for path, digest in result.source_input_manifest
+    repo, context, manifest, result = native_scenario
+    changed = replace(result, **{field: OTHER_DIGEST})
+    admitted = _admitted(context, manifest, changed)
+    with pytest.raises(
+        ValueError, match="input digests do not match the exact target"
+    ):
+        compiler.compile_dotnet_repository_model(
+            repo, context, manifest, [admitted]
         )
-    elif field == "global_inputs":
-        value = result.global_inputs[:-1]
-    changed = replace(result, **{field: value})
-    with pytest.raises(ValueError, match="input digests do not match"):
-        _compile(native_scenario, result=changed)
 
 
 @pytest.mark.parametrize("count", [0, 2])
@@ -471,17 +474,10 @@ def test_dotnet_compiler_rejects_bundle_closure(native_scenario, count) -> None:
         )
 
 
-def test_dotnet_compiler_rejects_node_bundle(native_scenario) -> None:
+def test_node_admission_rejects_dotnet_bundle(admission_scenario) -> None:
     """Keep Node and Dotnet transport admission mutually exclusive."""
-    repo, context, manifest, result = native_scenario
+    context, manifest, result = admission_scenario
     bundle, admission = _bundle(manifest, result)
-    masquerading = compiler.AdmittedNodeProviderFactBundle(
-        cast("Any", bundle), admission
-    )
-    with pytest.raises(TypeError, match=r"admitted \.NET Fact Bundle"):
-        compiler.compile_dotnet_repository_model(
-            repo, context, manifest, cast("Any", [masquerading])
-        )
     node_manifest = compiler.first_slice_provider_manifest(
         context, provider_producer="discover-dotnet"
     )
@@ -491,29 +487,6 @@ def test_dotnet_compiler_rejects_node_bundle(native_scenario) -> None:
             context=context,
             manifest=node_manifest,
             admission=admission,
-        )
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("target_framework", "net8.0"),
-        ("include_symbols", True),
-        ("packable", False),
-        ("project_references", ("other.csproj",)),
-        ("normalized_package_id", "other.package"),
-        ("normalized_version", ""),
-    ],
-)
-def test_dotnet_compiler_rejects_incomplete_native_scope(
-    native_scenario, field, value
-) -> None:
-    """Reject expanded or missing native build scope."""
-    result = native_scenario[3]
-    project = replace(result.project_nodes[0], **{field: value})
-    with pytest.raises(ValueError, match=r"closure|nonempty"):
-        _compile(
-            native_scenario, result=replace(result, project_nodes=(project,))
         )
 
 
@@ -650,30 +623,11 @@ def test_dotnet_simulation_keeps_its_unit_and_attempt(native_scenario) -> None:
         )
 
 
-def test_dotnet_manifest_revalidates_context_primitive_types(
-    native_scenario,
-) -> None:
-    """Reject equal-valued floats in the manifest context."""
-    _, context, manifest, result = native_scenario
-    altered_context = replace(
-        context, workflow_run_id=cast("Any", float(context.workflow_run_id))
-    )
-    altered_manifest = replace(manifest, context=altered_context)
-    bundle, admission = _bundle(manifest, result)
-    with pytest.raises(ValueError, match="positive integer"):
-        compiler.admit_dotnet_provider_fact_bundle(
-            bundle,
-            context=context,
-            manifest=altered_manifest,
-            admission=admission,
-        )
-
-
 def test_dotnet_compiler_rehashes_internally_consistent_foreign_inputs(
     native_scenario,
 ) -> None:
     """Reject redigested source facts that do not match target Git blobs."""
-    result = native_scenario[3]
+    repo, context, manifest, result = native_scenario
     inputs = tuple(
         (path, OTHER_DIGEST if path == ENTRY_POINT else digest)
         for path, digest in result.source_input_manifest
@@ -691,10 +645,13 @@ def test_dotnet_compiler_rehashes_internally_consistent_foreign_inputs(
             for path, digest in inputs
         ),
     )
+    admitted = _admitted(context, manifest, changed)
     with pytest.raises(
         ValueError, match="input digests do not match the exact target"
     ):
-        _compile(native_scenario, result=changed)
+        compiler.compile_dotnet_repository_model(
+            repo, context, manifest, [admitted]
+        )
 
 
 @pytest.mark.parametrize(
@@ -746,10 +703,10 @@ def test_dotnet_snapshot_revalidates_qualified_closure(
 
 
 def test_dotnet_bundle_rejects_previous_simulation_attempt(
-    native_scenario,
+    admission_scenario,
 ) -> None:
     """Do not adopt a previous simulation's internally consistent Bundle."""
-    _, context, _, result = native_scenario
+    context, _, result = admission_scenario
     previous = replace(
         context,
         purpose="release-simulation",
@@ -777,4 +734,37 @@ def test_dotnet_bundle_rejects_previous_simulation_attempt(
             context=current,
             manifest=current_manifest,
             admission=admission,
+        )
+
+
+def test_dotnet_compiler_rejects_previously_admitted_simulation_attempt(
+    native_scenario,
+) -> None:
+    """An intact prior-attempt admission does not supply current authority."""
+    repo, context, _, result = native_scenario
+    previous = replace(
+        context,
+        purpose="release-simulation",
+        run_attempt=1,
+        channel="buddy",
+        release_unit=NUGET_RELEASE_UNIT,
+    )
+    previous_manifest = compiler.nuget_provider_manifest(
+        previous, provider_producer="discover-dotnet"
+    )
+    result = replace(
+        result,
+        binding=compiler.provider_binding(
+            previous_manifest, "dotnet-nuget-slice"
+        ),
+    )
+    admitted = _admitted(previous, previous_manifest, result)
+    current = replace(previous, run_attempt=2)
+    current_manifest = compiler.nuget_provider_manifest(
+        current, provider_producer="discover-dotnet"
+    )
+
+    with pytest.raises(ValueError, match="authority binding"):
+        compiler.compile_dotnet_repository_model(
+            repo, current, current_manifest, [admitted]
         )

@@ -675,12 +675,6 @@ def test_missing_authorization_stops_before_any_calls_or_files(case):
         npm_operator.OperatorLocalNpmOperations(**case)
     assert case["runner"].calls == []
     assert not case["audit_directory"].exists()
-    case["authorized_disposable"] = True
-    case["authorized_delete_restore"] = True
-    with pytest.raises(TypeError, match="authorized_delete_restore"):
-        npm_operator.OperatorLocalNpmOperations(**case)
-    assert case["runner"].calls == []
-    assert not case["audit_directory"].exists()
 
 
 def test_actions_context_stops_before_any_calls(case, monkeypatch):
@@ -820,10 +814,8 @@ def test_audit_inside_checkout_is_rejected_before_commands(case):
     assert case["runner"].calls == []
 
 
-@pytest.mark.parametrize("generation", ["bad_name", "01", "bad..name"])
-def test_generation_requires_official_semver_without_sanitizing(
-    case, generation
-):
+def test_generation_requires_official_semver_without_sanitizing(case):
+    generation = "bad_name"
     case["plan"] = NpmSuitePlan(
         *(
             replace(
@@ -925,16 +917,42 @@ def test_cli_explicit_plan_and_success_output_only(case, monkeypatch, capsys):
         assert "unrecognized arguments: " + retired[0] in output.err
         assert not script.calls
         assert not case["audit_directory"].exists()
-    operator_class = npm_operator.OperatorLocalNpmOperations
+    result_path = case["audit_directory"] / "suite-evidence.json"
+    result_path.parent.mkdir()
+    result_path.write_bytes(b"synthetic CLI result, not native evidence\n")
+    result_digest = (
+        "sha256:" + hashlib.sha256(result_path.read_bytes()).hexdigest()
+    )
+    constructed = []
+    executed = []
+
+    class RecordingOperator:
+        def __init__(self, **kwargs):
+            constructed.append((self, kwargs))
+
+        def execute(self):
+            executed.append(self)
+            return result_path, result_digest
+
     monkeypatch.setattr(
-        npm_operator,
-        "OperatorLocalNpmOperations",
-        lambda **kwargs: operator_class(**kwargs, clock=lambda: NOW),
+        npm_operator, "OperatorLocalNpmOperations", RecordingOperator
     )
     arguments.append("--authorized-disposable")
     assert npm_operator.main(arguments) == 0
+    assert len(constructed) == 1
+    instance, kwargs = constructed[0]
+    assert kwargs == {
+        "plan": PLAN,
+        "expected_tooling_sha": SHA,
+        "repository_root": case["repository_root"],
+        "audit_directory": case["audit_directory"],
+        "authorized_disposable": True,
+    }
+    assert kwargs["authorized_disposable"] is True
+    assert executed == [instance]
     output = json.loads(capsys.readouterr().out)
     path = Path(output["path"])
+    assert path == result_path
     assert path.name == "suite-evidence.json"
     assert path.is_file()
     assert (

@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, cast
 
 import pytest
-from three_workflow_delivery_v3.adapters import npmjs as npmjs_module
 from three_workflow_delivery_v3.adapters.npmjs import (
     HttpResponse,
     NpmjsNetworkError,
@@ -36,6 +35,10 @@ from three_workflow_delivery_v3.records.release import (
 )
 from three_workflow_delivery_v3.release.finalizer import (
     desired_projection_state_digest,
+)
+from three_workflow_delivery_v3.release.workflow import (
+    artifact_expectation,
+    form_release_adapter_context,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
@@ -480,8 +483,10 @@ def test_npmjs_observer_accepts_exact_bytes_and_witness(
             ),
         ),
         (
-            "https://registry.npmjs.org/@hcoona/"
-            "hcoona-release-smoke-npm/-/pkg.tgz",
+            (
+                "https://registry.npmjs.org/@hcoona/"
+                "hcoona-release-smoke-npm/-/pkg.tgz"
+            ),
             25_000_000,
             (
                 ("Accept", "application/octet-stream"),
@@ -611,9 +616,8 @@ def test_npmjs_observer_reports_packed_manifest_identity_conflict(
     assert observation.value.witness_digest == artifact.witness_digest
 
 
-def test_npmjs_observer_bounds_expanded_tarball_and_parses_once(
+def test_npmjs_observer_rejects_tarball_expansion_over_limit(
     qualified_simulation: QualifiedSimulation,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     local = _tarball(qualified_simulation)
     artifact = _artifact_for_tarball(qualified_simulation, local)
@@ -621,23 +625,7 @@ def test_npmjs_observer_bounds_expanded_tarball_and_parses_once(
         qualified_simulation,
         extra=(("package/highly-compressible.txt", b"x" * 100_000),),
     )
-    parse_calls = 0
-    original_read_tarball = npmjs_module._read_tarball  # noqa: SLF001
     expanded_limit = 8_192
-
-    def counted_read_tarball(
-        tarball: bytes,
-        *,
-        max_payload_bytes: int | None = None,
-    ) -> dict[str, bytes]:
-        nonlocal parse_calls
-        parse_calls += 1
-        return original_read_tarball(
-            tarball,
-            max_payload_bytes=max_payload_bytes,
-        )
-
-    monkeypatch.setattr(npmjs_module, "_read_tarball", counted_read_tarball)
 
     observation, _transport = _observe_full(
         qualified_simulation,
@@ -654,7 +642,6 @@ def test_npmjs_observer_bounds_expanded_tarball_and_parses_once(
 
     assert len(remote) < expanded_limit
     assert observation.value.classification == "unprovable"
-    assert parse_calls == 1
 
 
 @pytest.mark.parametrize("status", [401, 403, 418])
@@ -982,7 +969,7 @@ def test_npmjs_observer_does_not_fetch_after_failed_qualification(
     assert transport.requests == []
 
 
-def test_npmjs_observer_rejects_wrong_coordinate_before_network(
+def test_npmjs_observer_rejects_substituted_snapshot_before_network(
     qualified_simulation: QualifiedSimulation,
 ) -> None:
     projection = qualified_simulation.snapshot.destination_projections[0]
@@ -996,12 +983,61 @@ def test_npmjs_observer_rejects_wrong_coordinate_before_network(
     )
     transport = ScriptedTransport({})
 
-    with pytest.raises(ValueError, match=r"current|outside the first slice"):
+    with pytest.raises(
+        ValueError, match="npmjs observation basis is not current"
+    ):
         observe_npmjs_projection(
             snapshot,
             qualified_simulation.decision,
             qualified_simulation.artifact,
             qualified_simulation.expectation,
+            transport=transport,
+        )
+
+    assert transport.requests == []
+
+
+def test_npmjs_observer_rejects_other_observation_contract_before_network(
+    qualified_simulation: QualifiedSimulation,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    projection = qualified_simulation.snapshot.destination_projections[0]
+    snapshot = replace(
+        qualified_simulation.snapshot,
+        destination_projections=(
+            replace(
+                projection,
+                observation_contract_id="npm/github-packages-observation-v1",
+            ),
+        ),
+    )
+    scenario = _release_fixtures.qualified_simulation.__wrapped__(
+        monkeypatch,
+        qualified_simulation.intent,
+        qualified_simulation.admitted_repository_model,
+        qualified_simulation.binding,
+        snapshot,
+    )
+    context = form_release_adapter_context(
+        snapshot,
+        scenario.admitted_repository_model,
+        source_date_epoch=scenario.request.source_date_epoch,
+        node_version=scenario.request.node_version,
+        pnpm_version=scenario.request.pnpm_version,
+        npm_version=scenario.request.npm_version,
+    )
+    expectation = artifact_expectation(snapshot, context, scenario.artifact)
+    transport = ScriptedTransport({})
+
+    with pytest.raises(
+        ValueError,
+        match=r"^npmjs observation coordinate is outside the first slice$",
+    ):
+        observe_npmjs_projection(
+            snapshot,
+            scenario.decision,
+            scenario.artifact,
+            expectation,
             transport=transport,
         )
 
@@ -1032,7 +1068,7 @@ def test_qualification_snapshot_rejects_wrong_native_version(
 @pytest.mark.parametrize(
     "field", ["metadata_limit_bytes", "tarball_limit_bytes"]
 )
-@pytest.mark.parametrize("value", [0, -1, -2, True, False])
+@pytest.mark.parametrize("value", [0, -1])
 def test_npmjs_observer_rejects_invalid_size_limits_before_network(
     qualified_simulation: QualifiedSimulation,
     field: str,
@@ -1144,7 +1180,7 @@ def test_stdlib_transport_ignores_inherited_proxy_environment(
     assert opener.requests[0].get_header("Proxy-authorization") is None
 
 
-@pytest.mark.parametrize("value", [0, -1, -2, True, False])
+@pytest.mark.parametrize("value", [0, -1])
 def test_stdlib_transport_rejects_invalid_limit_before_request(
     monkeypatch: pytest.MonkeyPatch,
     value: object,

@@ -52,10 +52,12 @@ _REPOSITORY_ONLY_PREFIXES = (
     "src/private/lib/hk/",
     "src/private/lib/scholarly-publication/",
     "src/public/lib/hcoona-release-smoke-github-packages/",
+    "src/public/lib/hcoona-release-smoke-python/",
     "tests/",
 )
 _REPOSITORY_ONLY_PATHS = frozenset(
     {
+        ".python-version",
         ".typos.toml",
         "AGENTS.md",
         "CONTRIBUTING.md",

@@ -283,36 +283,6 @@ def _assert_build_free(case):
     case.consumer.assert_not_called()
 
 
-def test_nuget_publication_cli_proves_fresh_exact_state(
-    publication_case, monkeypatch
-):
-    case = publication_case
-    _basis(case, exact=True)
-    _clock(monkeypatch, NOW + timedelta(minutes=1))
-    assert cli.main(_args(case, COMMANDS[0])) == 0
-    proof = _record(case.proof, ExactSatisfiedFinalizationProof)
-    assert proof.attempt == case.qualified.binding.attempt
-    assert proof.proved_at == (NOW + timedelta(minutes=1)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
-    assert (
-        proof.exact_version_readback.content_sha256
-        == case.artifact_record.content.content_sha256
-    )
-    assert (
-        proof.exact_version_readback.witness_digest
-        == case.artifact_record.witness_digest
-    )
-    assert (
-        f"exact-satisfied-finalization-proof-digest={proof.proof_digest}"
-        in case.github_output.read_text()
-    )
-    assert case.feed.events
-    case.client.read_source.assert_called_once()
-    case.publish.assert_not_called()
-    _assert_build_free(case)
-
-
 @pytest.mark.parametrize("change", ["archive", "governance", "publisher"])
 def test_nuget_publication_cli_rejects_changed_exact_state(
     publication_case, change, capsys
@@ -399,37 +369,6 @@ def test_nuget_publication_cli_cleans_failed_marker_output(
         assert not case.runtime.exists()
     case.publish.assert_not_called()
     _assert_build_free(case)
-
-
-@pytest.mark.parametrize("invocation", ["created", "conflict", "lost-response"])
-def test_nuget_publication_cli_executes_durable_marker_once(
-    publication_case, invocation, capsys
-):
-    case = publication_case
-    _prepared(case)
-    _invocation(case, invocation)
-    arguments = _args(case, COMMANDS[2])
-    assert cli.main(arguments) == (0 if invocation == "created" else 1)
-    result = _record(case.result, PublicationResult)
-    assert result.result == (
-        "published" if invocation == "created" else "failed"
-    )
-    assert result.post_action_readback.classification == "exact-satisfied"
-    assert result.mutation_marker_reference.to_document() == json.loads(
-        case.marker_wire
-    )
-    assert (
-        f"publication-result-digest={result.result_digest}"
-        in case.github_output.read_text()
-    )
-    case.publish.assert_called_once()
-    assert not case.runtime.exists()
-    _assert_build_free(case)
-    result_bytes = case.result.read_bytes()
-    assert cli.main(arguments) == 1
-    assert capsys.readouterr().err
-    case.publish.assert_called_once()
-    assert case.result.read_bytes() == result_bytes
 
 
 @pytest.mark.parametrize("failure", ["http-status", "transport", "resources"])
@@ -833,17 +772,36 @@ def _final_args(
         ("missing-terminal", "unknown", True, "publication-authorization"),
     ],
 )
-def test_nuget_publication_cli_finalizes_current_terminal(
-    publication_case, scenario, expected, mutated, predecessor
+def test_nuget_publication_cli_finalizes_current_terminal(  # noqa: PLR0913, PLR0917
+    publication_case, scenario, expected, mutated, predecessor, capsys
 ):
     case = publication_case
     _prepared(case)
     terminal, publisher, step = "null", "cancelled", "skipped"
     if scenario in {"created", "conflict", "lost-response"}:
         _invocation(case, scenario)
-        assert cli.main(_args(case, COMMANDS[2])) == (
-            0 if scenario == "created" else 1
+        arguments = _args(case, COMMANDS[2])
+        assert cli.main(arguments) == (0 if scenario == "created" else 1)
+        result = _record(case.result, PublicationResult)
+        assert result.result == (
+            "published" if scenario == "created" else "failed"
         )
+        assert result.post_action_readback.classification == "exact-satisfied"
+        assert result.mutation_marker_reference.to_document() == json.loads(
+            case.marker_wire
+        )
+        assert (
+            f"publication-result-digest={result.result_digest}"
+            in case.github_output.read_text()
+        )
+        case.publish.assert_called_once()
+        assert not case.runtime.exists()
+        _assert_build_free(case)
+        result_bytes = case.result.read_bytes()
+        assert cli.main(arguments) == 1
+        assert capsys.readouterr().err
+        case.publish.assert_called_once()
+        assert case.result.read_bytes() == result_bytes
         terminal = _admit_terminal(case, case.result, 607)
         publisher = step = "success" if scenario == "created" else "failure"
     elif scenario == "cancelled-marker":
@@ -888,6 +846,27 @@ def test_nuget_publication_cli_finalizes_only_fresh_exact_proof(
     assert before.direct_predecessor.kind == "zero-action-publication-snapshot"
     _clock(monkeypatch, NOW + timedelta(minutes=1))
     assert cli.main(_args(case, COMMANDS[0])) == 0
+    proof = _record(case.proof, ExactSatisfiedFinalizationProof)
+    assert proof.attempt == case.qualified.binding.attempt
+    assert proof.proved_at == (NOW + timedelta(minutes=1)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    assert (
+        proof.exact_version_readback.content_sha256
+        == case.artifact_record.content.content_sha256
+    )
+    assert (
+        proof.exact_version_readback.witness_digest
+        == case.artifact_record.witness_digest
+    )
+    assert (
+        f"exact-satisfied-finalization-proof-digest={proof.proof_digest}"
+        in case.github_output.read_text()
+    )
+    assert case.feed.events
+    case.client.read_source.assert_called_once()
+    case.publish.assert_not_called()
+    _assert_build_free(case)
     arguments += _reference_args(
         case, "exact_satisfied_finalization_proof", case.proof, 608
     )

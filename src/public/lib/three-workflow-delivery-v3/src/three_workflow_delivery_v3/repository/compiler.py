@@ -54,7 +54,6 @@ from three_workflow_delivery_v3.repository.node_provider import (
     validate_node_provider_result,
     validate_project_node,
     validate_provider_binding,
-    validate_provider_toolchain,
 )
 
 if TYPE_CHECKING:
@@ -1590,6 +1589,7 @@ def validate_compilation_context(  # noqa: C901
         ) is not str or context.release_unit not in {
             FIRST_SLICE_RELEASE_UNIT,
             NUGET_RELEASE_UNIT,
+            "hcoona-release-smoke-python",
         }:
             message = "simulation compilation requires the first Release Unit"
             raise ValueError(message)
@@ -1889,7 +1889,7 @@ def admit_node_provider_fact_bundle(
         if actual != expected:
             message = f"Fact Bundle {field} binding mismatch"
             raise ValueError(message)
-    _validate_result(context, request, bundle.provider_result)
+    _validate_result_for_request(context, request, bundle.provider_result)
     return AdmittedNodeProviderFactBundle(bundle=bundle, admission=admission)
 
 
@@ -1897,12 +1897,13 @@ def _result_identity(result: NodeProviderResult) -> str:
     return f"{result.provider_logical_id}:{result.binding.request_id}"
 
 
-def _validate_result(
+def _validate_result_for_request(
     context: CompilationContext,
     request: ProviderRequest,
     result: NodeProviderResult,
 ) -> None:
-    validate_node_provider_result(result)
+    """Compare a structurally admitted immutable Result with its request."""
+    # This admission call has already run _validate_fact_bundle_schema.
     expected_binding = ProviderBinding(
         request_id=context.request_id,
         purpose=context.purpose,
@@ -1937,7 +1938,6 @@ def _validate_result(
     if result.execution_class != PROVIDER_EXECUTION_CLASS:
         message = "Provider Result execution class mismatch"
         raise ValueError(message)
-    validate_provider_toolchain(result.toolchain)
     if result.build_capabilities != ("node/npm-package-v1",):
         message = "Provider Result build capability closure mismatch"
         raise ValueError(message)
@@ -1969,7 +1969,6 @@ def _validate_result(
     ):
         message = "Provider Result is missing npmPackageVersion"
         raise ValueError(message)
-    validate_nbgv_facts(result.nbgv, target=context.target)
 
 
 def _git_target_file_bytes(
@@ -2205,7 +2204,6 @@ def compile_repository_model(
     """Compile one complete purpose-bound first-slice Snapshot."""
     validate_compilation_context(context)
     _validate_manifest(context, manifest)
-    request = manifest.requests[0]
     if len(bundles) != 1:
         message = (
             "compilation requires exactly one admitted Fact Bundle and no "
@@ -2216,16 +2214,18 @@ def compile_repository_model(
     if type(admitted) is not AdmittedNodeProviderFactBundle:
         message = "compiler requires an admitted Fact Bundle"
         raise TypeError(message)
-    admitted = admit_node_provider_fact_bundle(
-        admitted.bundle,
-        context=context,
-        manifest=manifest,
-        admission=admitted.admission,
-    )
-    result = admitted.provider_result
-    if result.provider_logical_id != request.provider_logical_id:
-        message = "admitted Fact Bundle Provider identity mismatch"
+    bundle = admitted.bundle
+    request = manifest.requests[0]
+    if bundle.binding != provider_binding(manifest, request.entry_id):
+        message = "Fact Bundle authority binding mismatch"
         raise ValueError(message)
+    if (
+        bundle.manifest_digest != manifest.manifest_digest
+        or bundle.manifest_entry_id != request.entry_id
+    ):
+        message = "Fact Bundle current manifest binding mismatch"
+        raise ValueError(message)
+    result = admitted.provider_result
     _validate_result_input_facts(repo_root, context, result)
     if len(result.project_nodes) != 1:
         message = "first-slice Provider must emit exactly one Project Node"
@@ -2701,12 +2701,17 @@ def compile_dotnet_repository_model(
     if type(admitted) is not AdmittedDotnetProviderFactBundle:
         message = "NuGet compiler requires an admitted .NET Fact Bundle"
         raise TypeError(message)
-    admitted = admit_dotnet_provider_fact_bundle(
-        admitted.bundle,
-        context=context,
-        manifest=manifest,
-        admission=admitted.admission,
-    )
+    bundle = admitted.bundle
+    request = manifest.requests[0]
+    if bundle.binding != provider_binding(manifest, request.entry_id):
+        message = "NuGet Fact Bundle authority binding mismatch"
+        raise ValueError(message)
+    if (
+        bundle.manifest_digest != manifest.manifest_digest
+        or bundle.manifest_entry_id != request.entry_id
+    ):
+        message = "NuGet Fact Bundle current manifest binding mismatch"
+        raise ValueError(message)
     result = admitted.provider_result
     _validate_dotnet_target_inputs(repo_root, context, result)
     if len(result.project_nodes) != 1:

@@ -11,7 +11,8 @@ This is an operating handoff, not a second specification. The current
 [glossary](./architecture-glossary.md), five MLDs,
 [migration policy](./migration-strategy.md), and applicable slice LLD
 ([npm](./hcoona-release-smoke-npm-lld.md) or
-[NuGet](./hcoona-release-smoke-github-packages-lld.md)) are authoritative.
+[NuGet](./hcoona-release-smoke-github-packages-lld.md), or
+[Python](./hcoona-release-smoke-python-lld.md)) are authoritative.
 
 v3 is the only normative line. Use v1 or v2 only when a v3 document explicitly
 requests mechanism extraction and revalidation. Git and delivery PRs carry
@@ -31,6 +32,11 @@ The npm and NuGet GitHub Packages smoke objectives are complete. Use the
 the current checkpoints below; earlier delivery history does not create a
 new task or revive spent operations.
 
+The [retired fixed-coordinate producer boundary](../README.md) preserves
+historical admission and reviewer inspection. Use the current native commands
+for newly authorized acceptance work; the removed producer APIs are not
+compatibility aliases for them.
+
 For the owner's next Workflow Delivery v3 task:
 
 1. Inspect the actual checkout and read the accepted repository instructions,
@@ -40,9 +46,37 @@ For the owner's next Workflow Delivery v3 task:
    to reuse the completed integration and avoid its diagnosed failure modes.
 3. Identify the selected next project, user-visible result and remaining
    requirements from the owner's instruction and current work carrier.
-   No next smoke or real project is selected by this handoff. Apply the
-   existing domain gates to that scope; previous smoke permissions do not
-   automatically authorize its publication.
+   [Issue #843](https://github.com/hcoona/three/issues/843) tracks Python:
+   TestPyPI first, then production PyPI; Ruby follows Python completion.
+   Start with the confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),
+   HLD/five MLDs and [Python LLD](./hcoona-release-smoke-python-lld.md), with
+   the [source evidence](./research/python-smoke-evidence.md) for claim limits.
+   The revised design adopts the owner's
+   [platform-reliance decision](https://github.com/hcoona/three/issues/843#issuecomment-5860732497):
+   no duplicate-upload or competing-creation probes and no native-generation
+   prerequisite. HTTP-200 identical replay may succeed only with required exact
+   file/set readback; a rejected or ambiguous upload remains failed.
+   The [LLD migration](./hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
+   specifies v2 admission without a fake passing native record. Existing runtime
+   and both blocked v1 Governance files remain unchanged pending separately
+   authorized implementation. Then independently review the normal-workflow
+   configuration/admission and actual TestPyPI publication, followed by PyPI.
+   The [migration order](./migration-strategy.md#python-smoke-delivery) owns
+   these stages; design acceptance grants no configuration, OIDC or dispatch.
+   Carry forward Backspace7980's confirmed Sole Owner status and both configured
+   TestPyPI publisher tuples (bootstrap and native workflows, repository
+   `hcoona/three`, Environment `workflow-delivery-v3-python-testpypi`) unless
+   changed or contradicted. Do not routinely ask the owner to recheck them.
+   They are not the normal workflow's publisher registration.
+   The [retired native interface](./validation/python-native-readiness.md)
+   preserves old evidence readers with both native request slots null.
+   The [failed TestPyPI audit](https://github.com/hcoona/three/issues/843#issuecomment-5859869282)
+   remains failed: `0.1.0b2` pair verified through C2, identical wheel HTTP 200,
+   stop before C3; `0.1.0b3` was not uploaded. The partial bootstrap `0.1.0b6`
+   also remains failed and untouched. Missing captures and consumers cannot be
+   inferred from source code or the owner's reliance decision. Neither failure
+   grants retry, refill, deletion or another generation. Normal publication
+   still needs its own complete pair, Approval, exact readback and clean consumers.
 
 Recovery uses repository records and linked GitHub carriers. A prior
 conversation, local operator directory or old Agent handle is not required.
@@ -134,7 +168,7 @@ The selected C# smoke project's verified go-live is complete. The
 its own Windows publication, current-run authority, fresh destination bytes and
 clean consumer. Its consumed operation allowances grant no further execution.
 
-The accepted [Delivery Wave](../../../../../docs/delivery-wave.md#advance-workflow-delivery-v3)
+The accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
 supplies repository work authorization. [Issue #676](https://github.com/hcoona/three/issues/676)
 coordinates the concrete NuGet advancement and retains delivery evidence;
 neither this handoff nor the Issue enlarges the Wave or domain effect bounds.
@@ -462,7 +496,8 @@ must be protected-delivered and its bounded five-probe execution confirmed.
 Retired v1 tooling is not an alternative path.
 
 Use a clean POSIX checkout of the exact protected tooling revision, with the
-repository's locked pnpm dependencies and Python 3.13 uv environment prepared.
+repository's locked pnpm dependencies and mise-selected Python uv environment
+prepared with `uv sync --frozen --package three-workflow-delivery-v3`.
 Windows operators need a configured POSIX environment such as WSL. Existing
 classic gh authentication must support package reads, dispatch, and
 `gh run watch`; the revised suite needs no delete/restore capability.
@@ -479,7 +514,7 @@ grant it. Use a fresh lowercase hexadecimal generation and two distinct
 target SHAs whose scenario tags are absent in that package.
 
 ```bash
-uv run --no-sync --python 3.13 --package three-workflow-delivery-v3 \
+uv run --no-sync --package three-workflow-delivery-v3 \
   python -m three_workflow_delivery_v3.acceptance suite \
   --package '@hcoona/<approved-disposable-name>' \
   --generation '<fresh-generation>' \
@@ -650,7 +685,9 @@ applicable documentation and repository gates but keeps the same validate-before
 - CI Qualification and Release Delivery remain peer contexts; Shared Foundation owns mechanisms, not business policy.
 - Rely on documented lower-layer guarantees. If one is absent, block the capability rather than simulate a weaker one.
   The NuGet-specific dependency and evidence basis follows `WD-NUGET-006`;
-  do not reintroduce its superseded service-statement prerequisite.
+  do not reintroduce its superseded service-statement prerequisite. Python
+  separately follows `WD-PY-006` for its per-file platform dependency and actual
+  publication evidence basis, without prerequisite duplicate/race probes; it assumes no atomic two-file release or unlimited registry retention.
 - Add an abstraction only when concrete scenarios prove independent identity, behavior, lifecycle, or policy.
 - Do not freeze non-authoritative topology, shell choreography, parser branches, or inventory counts as architecture.
 

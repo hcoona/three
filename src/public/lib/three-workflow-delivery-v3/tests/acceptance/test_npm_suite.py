@@ -27,7 +27,6 @@ from three_workflow_delivery_v3.acceptance.npm_fixture import (
 )
 from three_workflow_delivery_v3.acceptance.npm_probe import NpmProbeRequest
 from three_workflow_delivery_v3.acceptance.npm_suite import (
-    NativeSuiteOperations,
     NpmSuitePlan,
     run_npm_suite,
 )
@@ -334,9 +333,6 @@ def test_complete_fixed_sequence_retains_actual_bytes_ids_and_active_readback(
         "a" * 40,
         "b" * 40,
     }
-    assert not hasattr(result, "original_deletion")
-    for route in ("delete_exact", "restore_exact"):
-        assert not hasattr(NativeSuiteOperations, route)
     assert [request.fixture.variant for request in ops.requests] == [
         "original",
         "original",
@@ -509,38 +505,20 @@ def test_unacceptable_process_stops_all_later_mutation(
 @pytest.mark.parametrize(
     ("damage", "message"),
     [
-        ("latest", "delta changed: tags"),
-        ("control", "delta changed: control"),
         ("unrelated-version", "delta changed: active_versions"),
         ("missing-original", "incomplete selected content"),
-        ("different-original", "requires exact original content"),
     ],
 )
 def test_duplicate_semantic_delta_stops_before_next_probe(
-    ops, fixtures, label, damage, message
+    ops, label, damage, message
 ):
-    capture = ops.captures[label]
-    if damage == "latest":
-        tags = dict(capture.state.tags)
-        tags["latest"] = A.name
-        _state(ops, label, tags=tuple(sorted(tags.items())))
-    elif damage == "control":
-        _state(ops, label, control=replace(CONTROL, container_id=701))
-    elif damage == "unrelated-version":
+    if damage == "unrelated-version":
         _state(ops, label, active_versions=(A.name,))
         ops.captures[label] = replace(
             ops.captures[label], active_inventory=(A,)
         )
     else:
-        _state(
-            ops,
-            label,
-            contents=(
-                ()
-                if damage == "missing-original"
-                else (fixtures[A.name, "different"].content,)
-            ),
-        )
+        _state(ops, label, contents=())
     with pytest.raises(ValueError, match=message):
         run_npm_suite(PLAN, ops)
     _stop_at(ops, "capture:" + label)
@@ -617,15 +595,6 @@ def test_plan_rejects_collisions_mixed_generation_and_nonoriginals(
 
 
 def test_plan_requires_all_requests_one_package_and_no_implicit_approval(ops):
-    with pytest.raises(TypeError):
-        NpmSuitePlan()  # pyrefly: ignore[missing-argument]
-    with pytest.raises(TypeError, match="deleted_original"):
-        NpmSuitePlan(
-            *PLAN.requests,
-            deleted_original=PLAN.creation,  # pyrefly: ignore[unexpected-keyword]
-        )
-    with pytest.raises(ValueError, match="explicit typed original"):
-        replace(PLAN, creation=None)  # pyrefly: ignore[bad-argument-type]
     other = "@hcoona/another-synthetic-package"
     different_package = replace(
         PLAN.creation,

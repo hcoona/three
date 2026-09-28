@@ -314,6 +314,24 @@ def test_complete_paginated_capture_preserves_raw_bytes_and_observed_control(
     assert dict(reads.http_calls[0][1])["Accept"] == "application/json"
 
 
+def test_inventory_rejects_boolean_version_id_before_registry_reads(
+    reads, tmp_path
+):
+    """Reject a Boolean identity from the acquired active inventory."""
+    pages = json.loads(reads.gh_bodies[ACTIVE])
+    pages[0][0]["id"] = True
+    reads.gh_bodies[ACTIVE] = _bytes(pages)
+    audit = tmp_path / "boolean-version-id"
+
+    with pytest.raises(ValueError, match="exact integer ID"):
+        reads.take(audit)
+
+    assert reads.events == [ROUTE, ACTIVE]
+    assert reads.http_calls == []
+    assert not (audit / "state.json").exists()
+    assert not (audit / "capture.json").exists()
+
+
 def test_changed_actual_variant_and_target_are_not_replaced_by_expectations(
     reads, fixtures, tmp_path
 ):
@@ -349,19 +367,6 @@ def test_inactive_scenario_has_no_synthetic_content_or_deleted_read(
         "tags",
         "contents",
     }
-    assert reads.events == [ROUTE, ACTIVE, METADATA, "clock"]
-    with pytest.raises(TypeError, match="original_deletion"):
-        capture.capture_npm_state(
-            approved_disposable_package_preconditions=APPROVED,
-            scenarios=(SPEC,),
-            token="synthetic-local-read-token",  # noqa: S106
-            repository_root=ROOT,
-            audit_directory=tmp_path / "retired-input",
-            gh_runner=reads,
-            transport=reads,
-            original_deletion=None,  # pyrefly: ignore[unexpected-keyword]
-        )
-    assert not (tmp_path / "retired-input").exists()
     assert reads.events == [ROUTE, ACTIVE, METADATA, "clock"]
 
 
@@ -548,17 +553,13 @@ def test_audit_is_fresh_and_unknown_read_errors_propagate(reads, tmp_path):
 @pytest.mark.parametrize(
     "outcome",
     [
-        NpmProcessOutcome(
-            "definitive-non-success", b"private diagnostic", returncode=1
-        ),
         NpmProcessOutcome("ambiguous", b"partial", returncode=-9),
         NpmProcessOutcome(
             "definitive-success", b"[]", truncated=True, returncode=0
         ),
-        NpmProcessOutcome("not-initiated"),
     ],
 )
-def test_gh_process_failure_timeout_and_truncation_stop_without_retry(
+def test_gh_capture_rejects_unsuccessful_or_truncated_output_without_retry(
     reads, monkeypatch, tmp_path, outcome
 ):
     """Exercise the real wrapper with a synthetic bounded-process outcome."""

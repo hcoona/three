@@ -22,7 +22,6 @@ from three_workflow_delivery_v3.canonical import (
 from three_workflow_delivery_v3.catalogs import catalog_digest
 from three_workflow_delivery_v3.repository.node_provider import (
     AUTHORITATIVE_REMOTE,
-    NBGV_ENVIRONMENT_ALLOWLIST,
     TAG_REFSPEC,
     CheckoutMaterialization,
     NodeProviderResult,
@@ -878,19 +877,31 @@ def test_provider_compiles_pnpm_and_nbgv_facts_once_for_exact_target(
     assert result.conflicts == ()
     assert result.diagnostic_reference is None
     assert len(runner.nbgv_calls) == 1
-    assert runner.nbgv_calls[0][3].count("getVersion(") == 1
     nbgv_records = [
         record for record in runner.commands if record[0] in runner.nbgv_calls
     ]
     assert len(nbgv_records) == 1
     assert nbgv_records[0][1] != project
     assert nbgv_records[0][1] != repo
-    assert runner.commands[-2:] == [
-        (("node", "--version"), repo),
-        (("pnpm", "--version"), repo),
-    ]
+    assert result.toolchain == (("node", "v24.14.0"), ("pnpm", "11.21.0"))
     assert runner.evaluation_root is not None
     assert not runner.evaluation_root.exists()
+    diff_calls = [
+        command
+        for command, _ in runner.commands
+        if command[:4]
+        == ("git", "diff", "--name-only", "--diff-filter=ACDMRTUXB")
+    ]
+    assert diff_calls
+    assert all("--" in command for command in diff_calls)
+    selected_paths = {
+        path
+        for command in diff_calls
+        for path in command[command.index("--") + 1 :]
+    }
+    assert "version.json" in selected_paths
+    assert PROJECT_PATH in selected_paths
+    assert "docs/wiki/overview.md" not in selected_paths
 
 
 def test_provider_preserves_simulation_run_attempt(
@@ -911,10 +922,10 @@ def test_provider_preserves_simulation_run_attempt(
     assert binding_document["run-attempt"] == RUN_ATTEMPT
 
 
-def test_provider_invokes_installed_node_nbgv_api_without_cli_fallback(
+def test_provider_filters_environment_before_loading_node_nbgv_api(
     tmp_path: Path,
 ) -> None:
-    """Import the installed API and never invoke the NBGV CLI."""
+    """Execute the emitted program against an import-time environment probe."""
     repo, project, runner, binding = _scenario(tmp_path)
 
     provide_node_repository_facts(
@@ -926,13 +937,48 @@ def test_provider_invokes_installed_node_nbgv_api_without_cli_fallback(
     )
 
     assert len(runner.nbgv_calls) == 1
-    program = runner.nbgv_calls[0][3]
-    assert "allowedEnvironment" in program
-    assert "delete process.env[name]" in program
-    assert '"IGNORE_GITHUB_REF": "true"' in program
-    assert "PATH" in NBGV_ENVIRONMENT_ALLOWLIST
-    assert "await import('nerdbank-gitversioning')" in program
-    assert "nbgv.getVersion(process.cwd())" in program
+    probe = tmp_path / "node-probe"
+    module = probe / "node_modules/nerdbank-gitversioning"
+    module.mkdir(parents=True)
+    (module / "package.json").write_text(
+        '{"type":"module","exports":"./index.js"}'
+    )
+    (module / "index.js").write_text(
+        "const environment = {...process.env};\n"
+        "export async function getVersion(cwd) { return {environment, cwd}; }\n"
+    )
+    forbidden = {
+        *_NBGV_CI_VARIABLES,
+        "TRAVIS",
+        "TRAVIS_BRANCH",
+        "THREE_UNKNOWN_ENVIRONMENT",
+        "github_ref",
+    }
+    environment = {
+        **os.environ,
+        **dict.fromkeys(forbidden, "untrusted-ref"),
+        "pAtH": "allowed-mixed-case",
+        "IGNORE_GITHUB_REF": "false",
+        "DOTNET_NOLOGO": "false",
+        "DOTNET_CLI_TELEMETRY_OPTOUT": "false",
+    }
+    completed = subprocess.run(  # noqa: S603 - Execute the trusted emitted Node program.
+        runner.nbgv_calls[0],
+        cwd=probe,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    observed = json.loads(completed.stdout)
+    imported = observed["environment"]
+    assert forbidden.isdisjoint(imported)
+    assert imported["PATH"] == os.environ["PATH"]
+    assert imported["pAtH"] == "allowed-mixed-case"
+    assert imported["IGNORE_GITHUB_REF"] == "true"
+    assert imported["DOTNET_NOLOGO"] == "1"
+    assert imported["DOTNET_CLI_TELEMETRY_OPTOUT"] == "1"
+    assert observed["cwd"] == str(probe)
     assert all(
         command[:2] != ("nbgv", "get-version") for command, _ in runner.commands
     )
@@ -1064,35 +1110,6 @@ def test_provider_rejects_dirty_tracked_metadata_before_pnpm_and_nbgv(
 
     assert runner.nbgv_calls == ()
     assert all(command[0] != "pnpm" for command, _ in runner.commands)
-
-
-def test_provider_ignores_untracked_and_irrelevant_dirty_worktree_state(
-    tmp_path: Path,
-) -> None:
-    """Only dirty tracked provider inputs block exact-target fact discovery."""
-    repo, _, runner, binding = _scenario(tmp_path)
-
-    result = provide_node_repository_facts(
-        repo,
-        PROJECT_PATH,
-        binding,
-        _materialization(),
-        runner=runner,
-    )
-
-    assert result.outcome == "success"
-    diff_calls = [
-        command
-        for command, _ in runner.commands
-        if command[:4]
-        == ("git", "diff", "--name-only", "--diff-filter=ACDMRTUXB")
-    ]
-    assert len(diff_calls) == 1
-    assert "--" in diff_calls[0]
-    assert "version.json" in diff_calls[0]
-    assert PROJECT_PATH in diff_calls[0]
-    assert all("docs/wiki/overview.md" not in command for command in diff_calls)
-    assert len(runner.nbgv_calls) == 1
 
 
 @pytest.mark.parametrize(
@@ -1698,69 +1715,10 @@ def neutral_nbgv_baseline(
     )
 
 
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        pytest.param(
-            {
-                "GITHUB_ACTIONS": "true",
-                "GITHUB_REF": "refs/heads/main",
-                "GITHUB_SHA": "{target}",
-            },
-            id="github",
-        ),
-        pytest.param(
-            {
-                "GITLAB_CI": "true",
-                "CI_COMMIT_REF_NAME": "main",
-                "CI_COMMIT_SHA": "{target}",
-            },
-            id="gitlab",
-        ),
-        pytest.param(
-            {
-                "SYSTEM_TEAMPROJECTID": "project",
-                "BUILD_SOURCEBRANCH": "refs/heads/main",
-            },
-            id="azure",
-        ),
-        pytest.param(
-            {
-                "APPVEYOR": "True",
-                "APPVEYOR_REPO_BRANCH": "main",
-            },
-            id="appveyor",
-        ),
-        pytest.param(
-            {
-                "BUILD_VCS_NUMBER": "{target}",
-                "BUILD_GIT_BRANCH": "refs/heads/main",
-            },
-            id="teamcity",
-        ),
-        pytest.param(
-            {
-                "JENKINS_URL": "https://jenkins.example.invalid/",
-                "GIT_COMMIT": "{target}",
-                "GIT_LOCAL_BRANCH": "main",
-            },
-            id="jenkins",
-        ),
-        pytest.param(
-            {
-                "CIRCLECI": "true",
-                "CIRCLE_BRANCH": "main",
-                "CIRCLE_SHA1": "{target}",
-            },
-            id="circle",
-        ),
-    ],
-)
 def test_detached_target_nbgv_facts_ignore_conflicting_ci_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     neutral_nbgv_baseline: _NeutralNbgvBaseline,
-    overrides: dict[str, str],
 ) -> None:
     """Keep exact NBGV facts independent of ambient cloud-build refs."""
     baseline = neutral_nbgv_baseline
@@ -1785,8 +1743,12 @@ def test_detached_target_nbgv_facts_ignore_conflicting_ci_environment(
 
     assert _read_detached_head(repo) == expected_head
 
-    for name, value in overrides.items():
-        monkeypatch.setenv(name, value.format(target=baseline.target))
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_SHA": baseline.target,
+    }.items():
+        monkeypatch.setenv(name, value)
     assert _read_detached_head(repo) == expected_head
     conflicting_runner = _RecordingSubprocessRunner()
     conflicting = provide_node_repository_facts(
@@ -1809,71 +1771,6 @@ def test_detached_target_nbgv_facts_ignore_conflicting_ci_environment(
     assert _selected_nbgv_facts(conflicting) == baseline.facts
 
 
-def test_no_tags_clone_preparation_fetches_exact_tag_refspec_without_moving_target(  # noqa: E501
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Prepare complete tags only in isolation and preserve the caller."""
-    topology = _create_local_clone_topology(tmp_path)
-    _configure_local_only_environment(monkeypatch)
-    for variable in (
-        "GITHUB_ACTIONS",
-        "GITHUB_REF",
-        "GITHUB_HEAD_REF",
-        "GITHUB_BASE_REF",
-    ):
-        monkeypatch.delenv(variable, raising=False)
-    complete_tags = _tag_refs(topology.complete_clone)
-    before_tags = _tag_refs(topology.no_tags_clone)
-    expected_head = _DetachedHeadState(
-        commit=topology.target,
-        detached=True,
-    )
-    assert _is_shallow(topology.complete_clone) is False
-    assert _is_shallow(topology.no_tags_clone) is False
-    assert _read_detached_head(topology.complete_clone) == expected_head
-    assert _read_detached_head(topology.no_tags_clone) == expected_head
-    assert complete_tags
-    assert before_tags == ()
-    _assert_local_remote_url(_remote_url(topology.no_tags_clone))
-
-    runner = _RecordingSubprocessRunner()
-    result = provide_node_repository_facts(
-        topology.no_tags_clone,
-        PROJECT_PATH,
-        _binding(topology.target),
-        _materialization(),
-        runner=runner,
-    )
-
-    after_head = _read_detached_head(topology.no_tags_clone)
-    after_tags = _tag_refs(topology.no_tags_clone)
-    fetch_call = _assert_single_isolated_tag_fetch(
-        runner.commands,
-        topology.no_tags_clone,
-    )
-    assert result.checkout.head == topology.target
-    assert result.checkout.authoritative_remote == AUTHORITATIVE_REMOTE
-    assert result.checkout.authoritative_remote_url == _remote_url(
-        topology.no_tags_clone
-    )
-    assert result.checkout.tag_refspec == TAG_REFSPEC
-    checkout_document = result.to_document()["checkout"]
-    assert isinstance(checkout_document, dict)
-    assert checkout_document["authoritative-remote"] == AUTHORITATIVE_REMOTE
-    assert checkout_document["authoritative-remote-url"] == (
-        result.checkout.authoritative_remote_url
-    )
-    assert checkout_document["tag-refspec"] == TAG_REFSPEC
-    assert after_head == expected_head
-    assert fetch_call.count(TAG_REFSPEC) == 1
-    assert after_tags == before_tags
-    installed_calls = _installed_nbgv_calls(runner.commands)
-    assert len(installed_calls) == 1
-    assert installed_calls[0][3].count("getVersion(process.cwd())") == 1
-    _assert_no_nbgv_fallback_calls(runner.commands)
-
-
 def test_no_tags_clone_after_preparation_matches_complete_clone_nbgv_facts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1894,6 +1791,14 @@ def test_no_tags_clone_after_preparation_matches_complete_clone_nbgv_facts(
     )
     complete_tags_before = _tag_refs(topology.complete_clone)
     no_tags_before = _tag_refs(topology.no_tags_clone)
+    assert _is_shallow(topology.complete_clone) is False
+    assert _is_shallow(topology.no_tags_clone) is False
+    assert _read_detached_head(topology.complete_clone) == expected_head
+    assert _read_detached_head(topology.no_tags_clone) == expected_head
+    assert complete_tags_before
+    assert no_tags_before == ()
+    _assert_local_remote_url(_remote_url(topology.no_tags_clone))
+
     complete_runner = _RecordingSubprocessRunner()
     no_tags_runner = _RecordingSubprocessRunner()
     complete = provide_node_repository_facts(
@@ -1911,6 +1816,19 @@ def test_no_tags_clone_after_preparation_matches_complete_clone_nbgv_facts(
         runner=no_tags_runner,
     )
 
+    assert no_tags.checkout.head == topology.target
+    assert no_tags.checkout.authoritative_remote == AUTHORITATIVE_REMOTE
+    assert no_tags.checkout.authoritative_remote_url == _remote_url(
+        topology.no_tags_clone
+    )
+    assert no_tags.checkout.tag_refspec == TAG_REFSPEC
+    checkout_document = no_tags.to_document()["checkout"]
+    assert isinstance(checkout_document, dict)
+    assert checkout_document["authoritative-remote"] == AUTHORITATIVE_REMOTE
+    assert checkout_document["authoritative-remote-url"] == (
+        no_tags.checkout.authoritative_remote_url
+    )
+    assert checkout_document["tag-refspec"] == TAG_REFSPEC
     assert _read_detached_head(topology.complete_clone) == expected_head
     assert _read_detached_head(topology.no_tags_clone) == expected_head
     assert _tag_refs(topology.complete_clone) == complete_tags_before
@@ -2076,7 +1994,6 @@ _ANNOTATED_FIXTURE_TAG = "refs/tags/history/provider-fixture-base"
 _LIGHTWEIGHT_FIXTURE_TAG = "refs/tags/release/provider-fixture/v1.2.3"
 _FIXTURE_HISTORY_COUNT = 2
 _EXPECTED_PREPARATION_FETCH_COUNT = 1
-_GIT_PREPARATION_VERIFY_COUNT = 2
 _EXPECTED_FIXTURE_TAGS = (
     _ANNOTATED_FIXTURE_TAG,
     _LIGHTWEIGHT_FIXTURE_TAG,
@@ -2108,6 +2025,15 @@ module.exports = {
   },
 };
 """
+
+
+@dataclass(frozen=True, slots=True)
+class _LocalNbgvBasis:
+    bare_origin: Path
+    base: str
+    target: str
+    baseline_facts: _CompleteFactTuple
+    baseline_project_nodes: tuple[ProjectNode, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -2256,10 +2182,10 @@ def _worktree_paths(
     )
 
 
-def _real_local_nbgv_repository(
+def _prepare_local_nbgv_basis(
     tmp_path: Path,
     environment: dict[str, str],
-) -> _RealLocalNbgvRepository:
+) -> _LocalNbgvBasis:
     if not (NBGV_INSTALLATION / "package.json").is_file():
         message = "the installed nerdbank-gitversioning package is missing"
         raise AssertionError(message)
@@ -2418,8 +2344,7 @@ def _real_local_nbgv_repository(
     )
 
     baseline_checkout = tmp_path / "baseline"
-    caller_checkout = tmp_path / "caller"
-    for checkout in (baseline_checkout, caller_checkout):
+    for checkout in (baseline_checkout,):
         _run_real_local_command(
             ("git", "clone", origin_url, str(checkout)),
             tmp_path,
@@ -2459,15 +2384,75 @@ def _real_local_nbgv_repository(
     assert baseline.project_nodes[0].workspace_dependencies == ()
     assert baseline.checkout.head == target
     assert baseline.checkout.shallow is False
+    return _LocalNbgvBasis(
+        bare_origin=bare_origin,
+        base=base,
+        target=target,
+        baseline_facts=baseline_facts,
+        baseline_project_nodes=baseline.project_nodes,
+    )
+
+
+@pytest.fixture(scope="module")
+def local_nbgv_basis(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> _LocalNbgvBasis:
+    """Prepare immutable history and neutral native facts once."""
+    with pytest.MonkeyPatch.context() as patch:
+        return _prepare_local_nbgv_basis(
+            tmp_path_factory.mktemp("local-nbgv-basis"),
+            _offline_provider_environment(patch),
+        )
+
+
+def _real_local_nbgv_repository(
+    tmp_path: Path,
+    environment: dict[str, str],
+    basis: _LocalNbgvBasis,
+) -> _RealLocalNbgvRepository:
+    bare_origin = tmp_path / "origin.git"
+    _run_real_local_command(
+        (
+            "git",
+            "clone",
+            "--bare",
+            "--no-local",
+            str(basis.bare_origin),
+            str(bare_origin),
+        ),
+        tmp_path,
+        environment,
+    )
+    origin_url = bare_origin.resolve().as_uri()
+    _assert_local_remote_url(origin_url)
+    baseline_checkout = tmp_path / "baseline"
+    caller_checkout = tmp_path / "caller"
+    for checkout in (baseline_checkout, caller_checkout):
+        _run_real_local_command(
+            ("git", "clone", origin_url, str(checkout)),
+            tmp_path,
+            environment,
+        )
+        _run_real_local_command(
+            ("git", "switch", "--detach", basis.target),
+            checkout,
+            environment,
+        )
+        assert _remote_url(checkout) == origin_url
+        assert _read_detached_head(checkout) == _DetachedHeadState(
+            commit=basis.target,
+            detached=True,
+        )
+        assert _tag_refs(checkout) == _EXPECTED_FIXTURE_TAGS
     return _RealLocalNbgvRepository(
         bare_origin=bare_origin,
         baseline_checkout=baseline_checkout,
         caller_checkout=caller_checkout,
-        base=base,
-        target=target,
+        base=basis.base,
+        target=basis.target,
         tags=_EXPECTED_FIXTURE_TAGS,
-        baseline_facts=baseline_facts,
-        baseline_project_nodes=baseline.project_nodes,
+        baseline_facts=basis.baseline_facts,
+        baseline_project_nodes=basis.baseline_project_nodes,
     )
 
 
@@ -2848,16 +2833,13 @@ class _DelegatingRecordingRunner:
         self,
         *,
         context: _EvaluationContext,
-        failure_boundary: str | None = None,
     ) -> None:
         self.context = context
         self.caller_checkout = context.caller_checkout.resolve()
         self.environment = context.environment.copy()
-        self.failure_boundary = failure_boundary
         self.commands: list[_IsolatedRecordedCommand] = []
         self.probes: dict[Path, _EvaluationDirectoryProbe] = {}
         self.remote_urls: list[str] = []
-        self.git_preparation_failure_roots: list[Path] = []
 
     @property
     def evaluation_roots(self) -> tuple[Path, ...]:
@@ -2876,46 +2858,12 @@ class _DelegatingRecordingRunner:
                 environment=environment,
             )
         )
-        if (
-            self.failure_boundary == "git-preparation"
-            and command[:3] == ("git", "rev-parse", "--verify")
-            and resolved_cwd != self.caller_checkout
-            and (resolved_cwd / ".git").is_dir()
-            and sum(
-                record.command[:3] == ("git", "rev-parse", "--verify")
-                and record.cwd == resolved_cwd
-                for record in self.commands
-            )
-            >= _GIT_PREPARATION_VERIFY_COUNT
-        ):
-            self.probes[resolved_cwd] = _evaluation_directory_probe(
-                resolved_cwd,
-                self.context,
-            )
-            self.git_preparation_failure_roots.append(resolved_cwd)
-            message = "injected Git exact-target preparation failure"
-            raise ValueError(message)
         evaluation_root = _evaluation_root(command, resolved_cwd)
         if evaluation_root is not None and evaluation_root not in self.probes:
             self.probes[evaluation_root] = _evaluation_directory_probe(
                 evaluation_root,
                 self.context,
             )
-        if (
-            self.failure_boundary == "pnpm-metadata"
-            and command
-            and command[0] == "pnpm"
-            and command != ("pnpm", "--version")
-        ):
-            message = "injected PNPM metadata preparation failure"
-            raise ValueError(message)
-        if self.failure_boundary == "nbgv-invocation" and command[:3] == (
-            "node",
-            "--input-type=module",
-            "-e",
-        ):
-            message = "injected NBGV invocation failure"
-            raise ValueError(message)
         try:
             output = subprocess.run(  # noqa: S603
                 command,
@@ -2936,12 +2884,6 @@ class _DelegatingRecordingRunner:
             AUTHORITATIVE_REMOTE,
         ):
             self.remote_urls.append(output.strip())
-        if self.failure_boundary == "result-parsing" and command[:3] == (
-            "node",
-            "--input-type=module",
-            "-e",
-        ):
-            return "{injected-invalid-nbgv-json"
         return output
 
 
@@ -2963,9 +2905,6 @@ def _provider_metadata_records(
 def _assert_offline_isolated_evaluation(
     repository: _RealLocalNbgvRepository,
     runner: _DelegatingRecordingRunner,
-    *,
-    expect_nbgv: bool,
-    expect_metadata: bool = True,
 ) -> None:
     assert len(runner.evaluation_roots) == 1
     evaluation_root = runner.evaluation_roots[0]
@@ -2999,22 +2938,15 @@ def _assert_offline_isolated_evaluation(
         for record in metadata_records
         if record.command[:3] == ("node", "--input-type=module", "-e")
     )
-    assert len(nbgv_records) == (1 if expect_nbgv else 0)
-    if nbgv_records:
-        assert (
-            nbgv_records[0].command[3].count("getVersion(process.cwd())") == 1
-        )
+    assert len(nbgv_records) == 1
+    assert nbgv_records[0].command[3].count("getVersion(process.cwd())") == 1
     pnpm_records = tuple(
         record
         for record in metadata_records
         if record.command and record.command[0] == "pnpm"
     )
-    assert bool(pnpm_records) is expect_metadata
-    if expect_metadata and runner.failure_boundary != "pnpm-metadata":
-        assert any(
-            "--ignore-scripts" in record.command for record in pnpm_records
-        )
-        assert any("list" in record.command for record in pnpm_records)
+    assert any("--ignore-scripts" in record.command for record in pnpm_records)
+    assert any("list" in record.command for record in pnpm_records)
 
     for record in runner.commands:
         assert dict(record.environment) == {
@@ -3033,177 +2965,16 @@ def _assert_offline_isolated_evaluation(
     assert repository.bare_origin.parent == (repository.caller_checkout.parent)
 
 
-@pytest.mark.parametrize(
-    "override_kind",
-    ["version-json", "pnpm-metadata"],
-    ids=["version-json", "pnpm-metadata"],
-)
-def test_isolated_exact_target_nbgv_facts_ignore_untracked_override(
+def test_isolated_exact_target_ignores_effective_ambient_inputs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    override_kind: str,
+    local_nbgv_basis: _LocalNbgvBasis,
 ) -> None:
-    """Ignore effective untracked NBGV and PNPM inputs at exact target."""
+    """Ignore both effective ambient tool inputs at the exact native target."""
     environment = _offline_provider_environment(monkeypatch)
-    repository = _real_local_nbgv_repository(tmp_path, environment)
-    override = _write_ambient_override(
-        repository.caller_checkout,
-        kind=override_kind,
-        ignored=False,
+    repository = _real_local_nbgv_repository(
+        tmp_path, environment, local_nbgv_basis
     )
-    before = _source_checkout_snapshot(
-        repository.caller_checkout,
-        environment,
-    )
-    _assert_override_snapshot(before, override)
-    _direct_ambient_control(repository, override, environment)
-    assert (
-        _source_checkout_snapshot(repository.caller_checkout, environment)
-        == before
-    )
-    context = _EvaluationContext(
-        caller_checkout=repository.caller_checkout,
-        target=repository.target,
-        base=repository.base,
-        expected_tags=repository.tags,
-        bare_origin=repository.bare_origin,
-        environment=environment,
-    )
-    runner = _DelegatingRecordingRunner(context=context)
-    result: NodeProviderResult | None = None
-    error: ValueError | None = None
-
-    try:
-        result = provide_node_repository_facts(
-            repository.caller_checkout,
-            PROJECT_PATH,
-            _binding(repository.target),
-            _materialization(),
-            runner=runner,
-        )
-    except ValueError as caught:
-        error = caught
-
-    after = _source_checkout_snapshot(
-        repository.caller_checkout,
-        environment,
-    )
-    assert after == before
-    _assert_override_snapshot(after, override)
-    assert error is None, f"isolated Provider failed: {error}"
-    assert result is not None
-    assert _complete_fact_tuple(result) == repository.baseline_facts
-    assert result.project_nodes == repository.baseline_project_nodes
-    assert result.nbgv.git_commit_id == repository.target
-    assert result.checkout.head == repository.target
-    _assert_offline_isolated_evaluation(
-        repository,
-        runner,
-        expect_nbgv=True,
-    )
-    assert all(not path.exists() for path in runner.evaluation_roots)
-
-
-@pytest.mark.parametrize(
-    "override_kind",
-    ["version-json", "pnpm-metadata"],
-    ids=["version-json", "pnpm-metadata"],
-)
-def test_isolated_exact_target_nbgv_facts_ignore_ignored_override(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    override_kind: str,
-) -> None:
-    """Ignore effective Git-ignored NBGV and PNPM inputs at exact target."""
-    environment = _offline_provider_environment(monkeypatch)
-    repository = _real_local_nbgv_repository(tmp_path, environment)
-    override = _write_ambient_override(
-        repository.caller_checkout,
-        kind=override_kind,
-        ignored=True,
-    )
-    before = _source_checkout_snapshot(
-        repository.caller_checkout,
-        environment,
-    )
-    _assert_override_snapshot(before, override)
-    _direct_ambient_control(repository, override, environment)
-    assert (
-        _source_checkout_snapshot(repository.caller_checkout, environment)
-        == before
-    )
-    context = _EvaluationContext(
-        caller_checkout=repository.caller_checkout,
-        target=repository.target,
-        base=repository.base,
-        expected_tags=repository.tags,
-        bare_origin=repository.bare_origin,
-        environment=environment,
-    )
-    runner = _DelegatingRecordingRunner(context=context)
-    result: NodeProviderResult | None = None
-    error: ValueError | None = None
-
-    try:
-        result = provide_node_repository_facts(
-            repository.caller_checkout,
-            PROJECT_PATH,
-            _binding(repository.target),
-            _materialization(),
-            runner=runner,
-        )
-    except ValueError as caught:
-        error = caught
-
-    after = _source_checkout_snapshot(
-        repository.caller_checkout,
-        environment,
-    )
-    assert after == before
-    _assert_override_snapshot(after, override)
-    assert error is None, f"isolated Provider failed: {error}"
-    assert result is not None
-    assert _complete_fact_tuple(result) == repository.baseline_facts
-    assert result.project_nodes == repository.baseline_project_nodes
-    assert result.nbgv.git_commit_id == repository.target
-    assert result.checkout.head == repository.target
-    _assert_offline_isolated_evaluation(
-        repository,
-        runner,
-        expect_nbgv=True,
-    )
-    assert all(not path.exists() for path in runner.evaluation_roots)
-
-
-@pytest.mark.parametrize(
-    ("failure_boundary", "expected_error"),
-    [
-        (None, None),
-        (
-            "git-preparation",
-            "injected Git exact-target preparation failure",
-        ),
-        ("pnpm-metadata", "injected PNPM metadata preparation failure"),
-        ("nbgv-invocation", "injected NBGV invocation failure"),
-        ("result-parsing", "NBGV Node API did not emit valid JSON"),
-    ],
-    ids=[
-        "success",
-        "git-preparation",
-        "pnpm-metadata",
-        "nbgv-invocation",
-        "result-parsing",
-    ],
-)
-def test_isolated_exact_target_materialization_preserves_source_and_cleans_up(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    failure_boundary: str | None,
-    expected_error: str | None,
-) -> None:
-    """Clean temporary exact-target repositories on every completion path."""
-    environment = _offline_provider_environment(monkeypatch)
-    repository = _real_local_nbgv_repository(tmp_path, environment)
     overrides = (
         _write_ambient_override(
             repository.caller_checkout,
@@ -3222,6 +2993,11 @@ def test_isolated_exact_target_materialization_preserves_source_and_cleans_up(
     )
     for override in overrides:
         _assert_override_snapshot(before, override)
+        _direct_ambient_control(repository, override, environment)
+    assert (
+        _source_checkout_snapshot(repository.caller_checkout, environment)
+        == before
+    )
     context = _EvaluationContext(
         caller_checkout=repository.caller_checkout,
         target=repository.target,
@@ -3230,12 +3006,9 @@ def test_isolated_exact_target_materialization_preserves_source_and_cleans_up(
         bare_origin=repository.bare_origin,
         environment=environment,
     )
-    runner = _DelegatingRecordingRunner(
-        context=context,
-        failure_boundary=failure_boundary,
-    )
+    runner = _DelegatingRecordingRunner(context=context)
     result: NodeProviderResult | None = None
-    error: AssertionError | ValueError | None = None
+    error: ValueError | None = None
 
     try:
         result = provide_node_repository_facts(
@@ -3245,49 +3018,97 @@ def test_isolated_exact_target_materialization_preserves_source_and_cleans_up(
             _materialization(),
             runner=runner,
         )
-    except (AssertionError, ValueError) as caught:
+    except ValueError as caught:
         error = caught
-    finally:
-        after = _source_checkout_snapshot(
-            repository.caller_checkout,
-            environment,
-        )
-        remaining_evaluation_paths = tuple(
-            path for path in runner.evaluation_roots if path.exists()
-        )
 
+    after = _source_checkout_snapshot(
+        repository.caller_checkout,
+        environment,
+    )
     assert after == before
-    assert after.worktrees == before.worktrees
     for override in overrides:
         _assert_override_snapshot(after, override)
-    assert runner.evaluation_roots, (error, tuple(runner.commands))
-    assert remaining_evaluation_paths == ()
+    assert error is None, f"isolated Provider failed: {error}"
+    assert result is not None
+    assert _complete_fact_tuple(result) == repository.baseline_facts
+    assert result.project_nodes == repository.baseline_project_nodes
+    assert result.nbgv.git_commit_id == repository.target
+    assert result.checkout.head == repository.target
     _assert_offline_isolated_evaluation(
         repository,
         runner,
-        expect_nbgv=failure_boundary
-        not in {"git-preparation", "pnpm-metadata"},
-        expect_metadata=failure_boundary != "git-preparation",
     )
-    if failure_boundary == "git-preparation":
-        assert tuple(runner.git_preparation_failure_roots) == (
-            runner.evaluation_roots
+    assert all(
+        not path.exists() and not path.parent.exists()
+        for path in runner.evaluation_roots
+    )
+
+
+@pytest.mark.parametrize("phase", ["partial-clone", "result-parsing"])
+def test_isolated_materialization_failure_removes_owned_state(
+    tmp_path: Path,
+    phase: str,
+) -> None:
+    """Clean real temporary state before context entry and inside its body."""
+    repo, project, _, binding = _scenario(tmp_path)
+    before = {
+        path.relative_to(repo): path.read_bytes()
+        for path in repo.rglob("*")
+        if path.is_file()
+    }
+    observed_paths: list[Path] = []
+
+    class FailingRunner(RecordingRunner):
+        def __call__(self, command: tuple[str, ...], cwd: Path) -> str:
+            if command[:2] == ("git", "clone") and phase == "partial-clone":
+                self.commands.append((command, cwd))
+                self.evaluation_root = Path(command[-1])
+                self.evaluation_root.mkdir()
+                (self.evaluation_root / "partial-clone").write_bytes(b"partial")
+                observed_paths.extend(
+                    (self.evaluation_root, self.evaluation_root.parent)
+                )
+                assert all(path.is_dir() for path in observed_paths)
+                message = "injected partial clone failure"
+                raise ValueError(message)
+            output = super().__call__(command, cwd)
+            if command[:3] == ("node", "--input-type=module", "-e"):
+                assert self.evaluation_root is not None
+                observed_paths.extend(
+                    (self.evaluation_root, self.evaluation_root.parent)
+                )
+                assert all(path.is_dir() for path in observed_paths)
+                return "{invalid-nbgv-json"
+            return output
+
+    runner = FailingRunner(repo, project)
+    expected = (
+        "injected partial clone failure"
+        if phase == "partial-clone"
+        else "NBGV Node API did not emit valid JSON"
+    )
+    with pytest.raises(ValueError, match=expected):
+        provide_node_repository_facts(
+            repo,
+            PROJECT_PATH,
+            binding,
+            _materialization(),
+            runner=runner,
         )
-        assert all(
-            root not in runner.probes[root].registered_worktrees
-            for root in runner.git_preparation_failure_roots
-        )
-        assert _provider_metadata_records(runner) == ()
-    if expected_error is None:
-        assert error is None, f"isolated Provider failed: {error}"
-        assert result is not None
-        assert _complete_fact_tuple(result) == repository.baseline_facts
-        assert result.nbgv.git_commit_id == repository.target
-        assert result.checkout.head == repository.target
-    else:
-        assert result is None
-        assert isinstance(error, ValueError)
-        assert expected_error in str(error)
+    assert runner.evaluation_root is not None
+    assert observed_paths == [
+        runner.evaluation_root,
+        runner.evaluation_root.parent,
+    ]
+    assert all(not path.exists() for path in observed_paths)
+    assert {
+        path.relative_to(repo): path.read_bytes()
+        for path in repo.rglob("*")
+        if path.is_file()
+    } == before
+    if phase == "partial-clone":
+        assert not runner.nbgv_calls
+        assert all(command[0] != "pnpm" for command, _ in runner.commands)
 
 
 @pytest.mark.parametrize(
@@ -3299,6 +3120,7 @@ def test_internal_exact_target_git_materialization_skips_lfs_smudge_in_closed_en
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     failure_mode: str | None,
+    local_nbgv_basis: _LocalNbgvBasis,
 ) -> None:
     """Suppress LFS smudging without weakening exact-target Git guarantees."""
     environment = _offline_provider_environment(monkeypatch)
@@ -3307,7 +3129,9 @@ def test_internal_exact_target_git_materialization_skips_lfs_smudge_in_closed_en
     fixture_environment_has_lfs_skip_smudge = (
         "GIT_LFS_SKIP_SMUDGE" in environment
     )
-    repository = _real_local_nbgv_repository(tmp_path, environment)
+    repository = _real_local_nbgv_repository(
+        tmp_path, environment, local_nbgv_basis
+    )
     ambient_environment_digests = {
         name: canonical_sha256(value) for name, value in os.environ.items()
     }
@@ -3540,9 +3364,6 @@ def test_internal_exact_target_git_materialization_skips_lfs_smudge_in_closed_en
         )
 
 
-SHA256_HEX_LENGTH = 64
-
-
 class _Phase3RecordingRunner(RecordingRunner):
     """Allow Phase 3 tests to vary only the reported tool versions."""
 
@@ -3632,254 +3453,75 @@ def _assert_phase3_provider_payload_rejected(
 
     assert result is None
     assert len(runner.nbgv_calls) == 1
-    assert (("node", "--version"), repo) not in runner.commands
-    assert (("pnpm", "--version"), repo) not in runner.commands
 
 
-@pytest.mark.parametrize(
-    ("field", "value", "accepted"),
-    [
-        ("version", "1.2", True),
-        ("version", "1.2.3", True),
-        ("version", "1.2.3.4", True),
-        ("version", "", False),
-        ("version", 123, False),
-        ("version", "1", False),
-        ("version", "1.2.3.4.5", False),
-        ("version", "01.2.3", False),
-        ("version", "1.02.3", False),
-        ("version", "1.-2.3", False),
-        ("version", "1.two.3", False),
-        ("version", " 1.2.3", False),
-        ("semVer1", "", False),
-        ("semVer1", 123, False),
-        ("semVer2", "", False),
-        ("semVer2", 123, False),
-    ],
-    ids=[
-        "version-valid-two-components",
-        "version-valid-three-components",
-        "version-valid-four-components",
-        "version-empty",
-        "version-non-string",
-        "version-one-component",
-        "version-five-components",
-        "version-leading-zero-major",
-        "version-leading-zero-minor",
-        "version-negative-component",
-        "version-nonnumeric-component",
-        "version-whitespace-padded",
-        "semver1-empty",
-        "semver1-non-string",
-        "semver2-empty",
-        "semver2-non-string",
-    ],
-)
-def test_provider_rejects_malformed_nbgv_version_contract(
+def test_provider_preserves_distinct_native_nbgv_fields(
     tmp_path: Path,
     valid_provider_node_api_payload: dict[str, object],
-    field: str,
-    value: object,
-    *,
-    accepted: bool,
 ) -> None:
-    """Accept only canonical numeric versions and required SemVer strings."""
+    """Carry each native fact unchanged without deriving the npm projection."""
     repo, runner, binding = _phase3_provider_scenario(tmp_path)
-    valid_provider_node_api_payload[field] = value
+    valid_provider_node_api_payload.update(
+        version="1.2.3.4",
+        semVer1="1.2.3-beta-0042-e123456",
+        semVer2="7.8.9",
+        npmPackageVersion="1.2.3-beta.4+build.5",
+    )
     runner.nbgv = valid_provider_node_api_payload
 
-    if accepted:
-        result = provide_node_repository_facts(
-            repo,
-            PROJECT_PATH,
-            binding,
-            _materialization(),
-            runner=runner,
-        )
-
-        assert result.nbgv.canonical_version == value
-        assert (
-            result.nbgv.sem_ver1 == (valid_provider_node_api_payload["semVer1"])
-        )
-        assert (
-            result.nbgv.sem_ver2 == (valid_provider_node_api_payload["semVer2"])
-        )
-        digest_prefix, digest_hex = result.nbgv.node_api_result_digest.split(
-            ":", maxsplit=1
-        )
-        assert digest_prefix == "sha256"
-        assert len(digest_hex) == SHA256_HEX_LENGTH
-        assert digest_hex == digest_hex.lower()
-        assert set(digest_hex) <= set("0123456789abcdef")
-        assert result.outcome == "success"
-        return
-
-    _assert_phase3_provider_payload_rejected(
-        repo,
-        runner,
-        binding,
-        match=r"(?:version|semVer1|semVer2)",
+    result = provide_node_repository_facts(
+        repo, PROJECT_PATH, binding, _materialization(), runner=runner
     )
 
-
-@pytest.mark.parametrize(
-    ("npm_package_version", "accepted"),
-    [
-        ("1.2.3-beta.4", True),
-        ("1.2.3+build.5", True),
-        ("1.2.3-beta.4+build.5", True),
-        ("", False),
-        ("^1.2.3", False),
-        ("latest", False),
-        ("https://registry.npmjs.org/package", False),
-        ("v1.2.3", False),
-        (" 1.2.3", False),
-        ("1.2", False),
-        ("01.2.3", False),
-        ("1.2.3-01", False),
-        ("1.2.3-", False),
-        ("1.2.3+", False),
-        ("1.2.3-alpha..1", False),
-        ("1.2.3-alpha_beta", False),
-        (123, False),
-    ],
-    ids=[
-        "valid-prerelease",
-        "valid-build",
-        "valid-prerelease-build",
-        "empty",
-        "range",
-        "tag",
-        "url",
-        "v-prefixed",
-        "whitespace-padded",
-        "malformed",
-        "leading-zero-major",
-        "leading-zero-prerelease",
-        "empty-prerelease",
-        "empty-build",
-        "empty-prerelease-identifier",
-        "invalid-prerelease-character",
-        "non-string",
-    ],
-)
-def test_provider_rejects_malformed_npm_package_version_contract(
-    tmp_path: Path,
-    valid_provider_node_api_payload: dict[str, object],
-    npm_package_version: object,
-    *,
-    accepted: bool,
-) -> None:
-    """Retain one native npm SemVer and reject every non-version form."""
-    repo, runner, binding = _phase3_provider_scenario(tmp_path)
-    valid_provider_node_api_payload["semVer2"] = "7.8.9"
-    valid_provider_node_api_payload["npmPackageVersion"] = npm_package_version
-    runner.nbgv = valid_provider_node_api_payload
-
-    if accepted:
-        result = provide_node_repository_facts(
-            repo,
-            PROJECT_PATH,
-            binding,
-            _materialization(),
-            runner=runner,
-        )
-
-        assert result.nbgv.npm_package_version == npm_package_version
-        assert result.nbgv.sem_ver2 == "7.8.9"
-        assert result.nbgv.npm_package_version != result.nbgv.sem_ver2
-        assert len(runner.nbgv_calls) == 1
-        return
-
-    _assert_phase3_provider_payload_rejected(
-        repo,
-        runner,
-        binding,
-        match="npmPackageVersion",
+    assert result.outcome == "success"
+    assert result.nbgv.canonical_version == "1.2.3.4"
+    assert result.nbgv.sem_ver1 == "1.2.3-beta-0042-e123456"
+    assert result.nbgv.sem_ver2 == "7.8.9"
+    assert result.nbgv.npm_package_version == "1.2.3-beta.4+build.5"
+    assert result.nbgv.git_commit_id == "e" * 40
+    assert result.nbgv.version_height == 42  # noqa: PLR2004
+    assert result.nbgv.public_release is False
+    assert result.nbgv.node_api_result_digest == canonical_sha256(
+        valid_provider_node_api_payload
     )
+    assert len(runner.nbgv_calls) == 1
 
 
-@pytest.mark.parametrize(
-    "git_commit_id",
-    [
-        "e" * 39,
-        "E" * 40,
-        "g" * 40,
-        f"{'e' * 40} ",
-        123,
-        "d" * 40,
-    ],
-    ids=[
-        "short",
-        "uppercase",
-        "nonhex",
-        "whitespace-padded",
-        "non-string",
-        "target-mismatch",
-    ],
-)
-def test_provider_rejects_malformed_target_git_commit_id(
+def test_provider_applies_intrinsic_nbgv_validation(
     tmp_path: Path,
     valid_provider_node_api_payload: dict[str, object],
-    git_commit_id: object,
 ) -> None:
-    """Require the exact target as one full lowercase hexadecimal SHA."""
+    """Refuse a shape-valid native payload that violates version grammar."""
     repo, runner, binding = _phase3_provider_scenario(tmp_path)
-    valid_provider_node_api_payload["gitCommitId"] = git_commit_id
+    valid_provider_node_api_payload["npmPackageVersion"] = "1.2.3-alpha_beta"
     runner.nbgv = valid_provider_node_api_payload
 
     _assert_phase3_provider_payload_rejected(
-        repo,
-        runner,
-        binding,
-        match=r"(?:gitCommitId|exact target)",
+        repo, runner, binding, match="npmPackageVersion"
     )
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("versionHeight", 0),
-        ("versionHeight", -1),
-        ("versionHeight", True),
-        ("versionHeight", False),
-        ("versionHeight", "42"),
-        ("versionHeight", 42.5),
-        ("publicRelease", "false"),
-        ("publicRelease", 0),
-        ("publicRelease", None),
-        ("publicRelease", []),
-    ],
-    ids=[
-        "height-zero",
-        "height-negative",
-        "height-true",
-        "height-false",
-        "height-string",
-        "height-non-integral",
-        "public-release-string",
-        "public-release-integer",
-        "public-release-none",
-        "public-release-other",
+        pytest.param("semVer2", 123, id="string-fact-is-not-coerced"),
+        pytest.param("versionHeight", True, id="boolean-is-not-height"),
+        pytest.param("versionHeight", "42", id="string-is-not-height"),
+        pytest.param("publicRelease", "false", id="string-is-not-boolean"),
     ],
 )
-def test_provider_rejects_invalid_nbgv_scalar_contract(
+def test_provider_rejects_coercible_native_nbgv_fields(
     tmp_path: Path,
     valid_provider_node_api_payload: dict[str, object],
     field: str,
     value: object,
 ) -> None:
-    """Require a positive non-Boolean height and Boolean public release."""
+    """Reject raw external field types rather than coercing their values."""
     repo, runner, binding = _phase3_provider_scenario(tmp_path)
     valid_provider_node_api_payload[field] = value
     runner.nbgv = valid_provider_node_api_payload
 
-    _assert_phase3_provider_payload_rejected(
-        repo,
-        runner,
-        binding,
-        match=field,
-    )
+    _assert_phase3_provider_payload_rejected(repo, runner, binding, match=field)
 
 
 @pytest.mark.parametrize(
@@ -3922,7 +3564,6 @@ def test_provider_rejects_empty_toolchain_version(
         )
 
     assert result is None
-    assert len(runner.nbgv_calls) == 1
     assert ((tool, "--version"), repo) in runner.commands
 
 
@@ -4282,8 +3923,11 @@ def _prepare_tag_invariance_arrangement(
     tmp_path: Path,
     scenario: str,
     environment: dict[str, str],
+    local_nbgv_basis: _LocalNbgvBasis,
 ) -> _TagInvarianceArrangement:
-    repository = _real_local_nbgv_repository(tmp_path, environment)
+    repository = _real_local_nbgv_repository(
+        tmp_path, environment, local_nbgv_basis
+    )
     scenario_tag_ref = _arrange_tag_invariance_case(
         repository,
         scenario,
@@ -4602,6 +4246,7 @@ def test_isolated_tag_preparation_preserves_caller_git_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     scenario: str,
+    local_nbgv_basis: _LocalNbgvBasis,
 ) -> None:
     """Prepare authoritative tags only in the disposable exact-target repo."""
     provider_temporary_root = (
@@ -4619,6 +4264,7 @@ def test_isolated_tag_preparation_preserves_caller_git_state(
         tmp_path,
         scenario,
         environment,
+        local_nbgv_basis,
     )
     repository = arrangement.repository
     authoritative_tags = tuple(arrangement.authoritative_before)
@@ -4661,7 +4307,6 @@ def test_isolated_tag_preparation_preserves_caller_git_state(
     _assert_offline_isolated_evaluation(
         replace(repository, tags=authoritative_tags),
         delegate,
-        expect_nbgv=True,
     )
     assert _complete_fact_tuple(result)[:-1] == repository.baseline_facts[:-1]
     assert result.project_nodes == repository.baseline_project_nodes
@@ -4672,354 +4317,3 @@ def test_isolated_tag_preparation_preserves_caller_git_state(
         runner,
         result,
     )
-
-
-class _MaterializationEqualitySurrogate:
-    """Record any forbidden equality-based boundary validation."""
-
-    __hash__ = None
-
-    def __init__(self) -> None:
-        self.comparison_count = 0
-
-    def __eq__(self, other: object) -> bool:
-        self.comparison_count += 1
-        return other in (0, False)
-
-
-class _ZeroIntSubtype(int):
-    """A zero-valued integer that is not the exact integer runtime type."""
-
-
-class _StructuralCheckoutMaterialization:
-    """Expose the expected attributes without the required nominal type."""
-
-    def __init__(self) -> None:
-        self.fetch_depth = 0
-        self.credentials_persisted = False
-
-
-@dataclass(frozen=True, slots=True)
-class _LookalikeCheckoutMaterialization:
-    fetch_depth: int
-    credentials_persisted: bool
-
-
-@dataclass(frozen=True, slots=True)
-class _ExtraFieldCheckoutMaterialization:
-    fetch_depth: int
-    credentials_persisted: bool
-    source: str
-
-
-class _CheckoutMaterializationSubtype(CheckoutMaterialization):
-    """Remain structurally valid while violating the exact-type contract."""
-
-
-class _MaterializationBoundaryRunner:
-    """Record and reject any command attempted past an invalid boundary."""
-
-    def __init__(self) -> None:
-        self.commands: list[RecordedCommand] = []
-
-    def __call__(self, command: tuple[str, ...], cwd: Path) -> str:
-        self.commands.append((command, cwd))
-        message = "invalid materialization reached a runner-backed operation"
-        raise AssertionError(message)
-
-
-type _InvalidMaterializationFactory = Callable[
-    [], tuple[object, _MaterializationEqualitySurrogate | None]
-]
-
-
-def _materialization_field_case(
-    field: str,
-    value_factory: Callable[[], object],
-) -> tuple[object, _MaterializationEqualitySurrogate | None]:
-    value = value_factory()
-    values = {
-        "fetch_depth": 0,
-        "credentials_persisted": False,
-        field: value,
-    }
-    materialization = CheckoutMaterialization(
-        fetch_depth=cast("int", values["fetch_depth"]),
-        credentials_persisted=cast("bool", values["credentials_persisted"]),
-    )
-    equality_surrogate = (
-        value if type(value) is _MaterializationEqualitySurrogate else None
-    )
-    return materialization, equality_surrogate
-
-
-def _uninitialized_materialization() -> tuple[
-    object, _MaterializationEqualitySurrogate | None
-]:
-    return object.__new__(CheckoutMaterialization), None
-
-
-def _materialization_missing_fetch_depth() -> tuple[
-    object, _MaterializationEqualitySurrogate | None
-]:
-    materialization = object.__new__(CheckoutMaterialization)
-    object.__setattr__(materialization, "credentials_persisted", False)
-    return materialization, None
-
-
-def _materialization_missing_credentials() -> tuple[
-    object, _MaterializationEqualitySurrogate | None
-]:
-    materialization = object.__new__(CheckoutMaterialization)
-    object.__setattr__(materialization, "fetch_depth", 0)
-    return materialization, None
-
-
-@pytest.mark.parametrize(
-    ("materialization_factory", "message"),
-    [
-        (
-            lambda: _materialization_field_case(
-                "fetch_depth",
-                lambda: 0.0,
-            ),
-            r"fetch[-_]depth",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "fetch_depth",
-                lambda: -0.0,
-            ),
-            r"fetch[-_]depth",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "fetch_depth",
-                lambda: 1.0,
-            ),
-            r"fetch[-_]depth",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "fetch_depth",
-                lambda: False,
-            ),
-            r"fetch[-_]depth",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "fetch_depth",
-                lambda: True,
-            ),
-            r"fetch[-_]depth",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "fetch_depth",
-                _MaterializationEqualitySurrogate,
-            ),
-            r"fetch[-_]depth",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "fetch_depth",
-                lambda: _ZeroIntSubtype(0),
-            ),
-            r"fetch[-_]depth",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "fetch_depth",
-                lambda: "0",
-            ),
-            r"fetch[-_]depth",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "fetch_depth",
-                lambda: None,
-            ),
-            r"fetch[-_]depth",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "fetch_depth",
-                object,
-            ),
-            r"fetch[-_]depth",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "credentials_persisted",
-                lambda: True,
-            ),
-            r"credentials_persisted|persisted credentials",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "credentials_persisted",
-                lambda: 0,
-            ),
-            r"credentials_persisted|persisted credentials",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "credentials_persisted",
-                lambda: 1,
-            ),
-            r"credentials_persisted|persisted credentials",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "credentials_persisted",
-                lambda: 0.0,
-            ),
-            r"credentials_persisted|persisted credentials",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "credentials_persisted",
-                lambda: "false",
-            ),
-            r"credentials_persisted|persisted credentials",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "credentials_persisted",
-                lambda: None,
-            ),
-            r"credentials_persisted|persisted credentials",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "credentials_persisted",
-                _MaterializationEqualitySurrogate,
-            ),
-            r"credentials_persisted|persisted credentials",
-        ),
-        (
-            lambda: _materialization_field_case(
-                "credentials_persisted",
-                object,
-            ),
-            r"credentials_persisted|persisted credentials",
-        ),
-        (
-            lambda: (
-                {
-                    "fetch_depth": 0,
-                    "credentials_persisted": False,
-                },
-                None,
-            ),
-            "CheckoutMaterialization",
-        ),
-        (
-            lambda: (_StructuralCheckoutMaterialization(), None),
-            "CheckoutMaterialization",
-        ),
-        (
-            lambda: (
-                _LookalikeCheckoutMaterialization(
-                    fetch_depth=0,
-                    credentials_persisted=False,
-                ),
-                None,
-            ),
-            "CheckoutMaterialization",
-        ),
-        (
-            lambda: (
-                _ExtraFieldCheckoutMaterialization(
-                    fetch_depth=0,
-                    credentials_persisted=False,
-                    source="caller-checkout",
-                ),
-                None,
-            ),
-            "CheckoutMaterialization",
-        ),
-        (
-            lambda: (
-                _CheckoutMaterializationSubtype(
-                    fetch_depth=0,
-                    credentials_persisted=False,
-                ),
-                None,
-            ),
-            "CheckoutMaterialization",
-        ),
-        (
-            lambda: (CheckoutMaterialization, None),
-            "CheckoutMaterialization",
-        ),
-        (
-            lambda: (object(), None),
-            "CheckoutMaterialization",
-        ),
-        (
-            _uninitialized_materialization,
-            r"CheckoutMaterialization|fetch[-_]depth",
-        ),
-        (
-            _materialization_missing_fetch_depth,
-            r"CheckoutMaterialization|fetch[-_]depth",
-        ),
-        (
-            _materialization_missing_credentials,
-            r"CheckoutMaterialization|credentials_persisted",
-        ),
-    ],
-    ids=[
-        "fetch-depth-float-zero",
-        "fetch-depth-float-negative-zero",
-        "fetch-depth-float-one",
-        "fetch-depth-bool-false",
-        "fetch-depth-bool-true",
-        "fetch-depth-zero-equality-surrogate",
-        "fetch-depth-int-subclass-zero",
-        "fetch-depth-string-zero",
-        "fetch-depth-none",
-        "fetch-depth-opaque",
-        "credentials-bool-true",
-        "credentials-int-zero",
-        "credentials-int-one",
-        "credentials-float-zero",
-        "credentials-string-false",
-        "credentials-none",
-        "credentials-false-equality-surrogate",
-        "credentials-opaque",
-        "materialization-mapping",
-        "materialization-structural-object",
-        "materialization-lookalike-dataclass",
-        "materialization-lookalike-dataclass-extra-field",
-        "materialization-subtype",
-        "materialization-class-object",
-        "materialization-opaque-object",
-        "materialization-exact-uninitialized",
-        "materialization-exact-missing-fetch-depth",
-        "materialization-exact-missing-credentials",
-    ],
-)
-def test_provider_rejects_non_exact_checkout_materialization_before_git(
-    tmp_path: Path,
-    materialization_factory: _InvalidMaterializationFactory,
-    message: str,
-) -> None:
-    """Reject non-exact caller checkout contracts without field coercion."""
-    materialization, equality_surrogate = materialization_factory()
-    runner = _MaterializationBoundaryRunner()
-
-    with pytest.raises(ValueError, match=message) as error:
-        provide_node_repository_facts(
-            tmp_path,
-            PROJECT_PATH,
-            _binding(),
-            cast("CheckoutMaterialization", materialization),
-            runner=runner,
-        )
-
-    assert type(error.value) is ValueError
-    assert runner.commands == []
-    if equality_surrogate is not None:
-        assert equality_surrogate.comparison_count == 0

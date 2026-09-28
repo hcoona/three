@@ -29,8 +29,10 @@ using (var fs = File.OpenText("oxford3000-5000.html"))
 
 var words = from node in document.DocumentNode.SelectNodes(
                 "//div[@id='wordlistsContentPanel']/ul/li")
+                ?? throw new InvalidDataException("Cannot find word list entries.")
             select new WordEntry(
-                WebUtility.HtmlDecode(node.GetDataAttribute("hw").Value),
+                WebUtility.HtmlDecode(node.GetDataAttribute("hw")?.Value
+                    ?? throw new InvalidDataException("Cannot find word list headword.")),
                 Enum.Parse<CefrLevel>(
                     node.GetDataAttribute("ox3000")?.Value ?? "Unspecified", true),
                 Enum.Parse<CefrLevel>(
@@ -70,8 +72,10 @@ using (var fs = File.OpenText("oxford-phrase-list.html"))
 
 var phases = from node in document.DocumentNode.SelectNodes(
                 "//div[@id='wordlistsContentPanel']/ul/li")
+                ?? throw new InvalidDataException("Cannot find word list entries.")
              select new PhaseEntry(
-                 WebUtility.HtmlDecode(node.GetDataAttribute("hw").Value),
+                 WebUtility.HtmlDecode(node.GetDataAttribute("hw")?.Value
+                    ?? throw new InvalidDataException("Cannot find word list headword.")),
                  Enum.Parse<CefrLevel>(
                      node.GetDataAttribute("oxford_phrase_list")?.Value ?? "Unspecified", true));
 

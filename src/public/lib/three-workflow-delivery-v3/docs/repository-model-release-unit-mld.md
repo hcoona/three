@@ -92,6 +92,54 @@ mechanisms. This MLD defines their repository and Release Unit semantics; the
 [Shared Foundation MLD](./shared-foundation-mld.md)
 defines their execution, trust, record, and extension boundaries.
 
+## Python Smoke Model
+
+`WD-PY-001` through `WD-PY-003` add one Project Node rooted at
+`src/public/lib/hcoona-release-smoke-python/pyproject.toml` and one Release Unit
+with exactly wheel and sdist variants. A single Build Definition produces the
+closed pair; the Model represents both outputs explicitly. Its source closure
+includes the smoke sources, manifest, NBGV lineage, workspace/lock/toolchain
+inputs, `nbgv-python` projection implementation and reviewed staging control.
+Changing any of those facts affects qualification. The compiler rejects an
+incomplete pair, duplicate variant, unresolved build prerequisite or conflicting
+version lineage; it does not guess from filenames or run a backend.
+
+The Python Provider reads exact-target `pyproject.toml` and UV workspace facts
+using TOML/native Python metadata standards, resolves declared build inputs,
+and obtains full-history NBGV facts once. It calls `nbgv-python`'s supported
+normalization function for the configured field, retains that field and raw
+facts, and records the exact adapter/tool versions. `packaging` supplies name,
+version and distribution-filename identity rules; a handwritten PEP 440 parser
+is not a second authority. The Model admits normalized parseable PEP 440
+versions, including local components for non-publishing CI/qualification.
+Release Live admission separately requires a public version without a local
+component and fails rather than rewriting an ineligible frozen projection. A project-local NBGV lineage must
+include the smoke's version-affecting inputs; unrelated root path filters must
+not silently determine its release height.
+
+Provider evaluation has no publication authority. It emits technical facts;
+Release decides destination admissibility and channel policy. The Model freezes
+the exact projection and both variants. Build Request selects that same value,
+backend/toolchain and staging definition. Materializing static `project.version`
+in isolated build input is application of the frozen value, not another
+version authority. `nbgv-python` itself gains no override or fallback API.
+
+The source manifest may use the existing dynamic NBGV hook for repository
+builds. The smoke's bounded Build Definition replaces only that version source
+in staging with static PEP 621 metadata, removes the dynamic-version declaration
+and NBGV hook/build dependency there, and includes the static manifest in the
+sdist. It must reject additional target build hooks or unresolved dynamic
+metadata outside the admitted smoke shape. No source-tree manifest or shared
+adapter is rewritten. The [Python LLD](./hcoona-release-smoke-python-lld.md)
+closes staging, metadata and witness validation before implementation.
+
+Bootstrap uses the same single Release Unit and frozen public version, with
+`destination-bootstrap` witness/Provider purpose. Its one original pair and
+source/Build/consumer evidence are separate from normal Release Evidence;
+this adds no version source or new project abstraction. Retired native fixtures
+cannot become normal Release artifacts. Platform reliance changes admission,
+not the Model, version source or original two-file Build contract.
+
 ## Technical Facts
 
 ### Project Node
@@ -491,6 +539,32 @@ Fact Bundle transport and payload identity and digest where applicable.
 Exactly one terminal Provider Result must exist for every request. Missing,
 duplicate, unexpected, or differently bound results block model compilation.
 
+Provider admission establishes intrinsic record validity, the selected terminal
+result and native facts, initial request authority, and canonical payload and
+transport integrity. Successful admission forms an immutable internal value for
+trusted same-revision consumers. Reusing that unchanged value does not require
+repeating its intrinsic validation or comparing its transport against the same
+already-admitted identities.
+
+Repository Model admission closes the supported Snapshot and its canonical
+bytes and digest, forming an immutable value with owned nested records.
+Same-revision consumers reuse those intrinsic guarantees while selecting the
+required ecosystem and purpose and checking current cross-input relationships.
+
+Each compiler invocation still validates the current canonical Request Manifest
+and compares its digest, selected entry and expected request authority with the
+admitted Fact Bundle. It independently verifies the required facts against the
+actual target Git bytes and resolves target authoring relationships. The NuGet
+Release planner separately checks agreement between admitted Model and Provider
+facts and the current Intent and Attempt. An earlier successful admission does
+not establish these current-context or cross-input relationships.
+
+Every new external acquisition, including a downloaded artifact or a document
+crossing a process boundary, receives complete schema, intrinsic, canonical,
+transport and independently expected current-authority admission. Internal
+admitted values are ordinary immutable composition values; they are not
+unforgeable security tokens or an arbitrary Python-object support interface.
+
 Run-attempt binding follows the owning execution contract:
 
 - **Normal Live:** the request-local Manifest, Fact Bundles, Snapshot, and
@@ -663,7 +737,9 @@ Adapter.
 
 - UV and build-backend metadata provide project and dependency facts.
 - One build operation may produce wheel and source-distribution outputs.
-- `nbgv-python` injects the canonical NBGV version.
+- The Provider uses `nbgv-python` for the canonical NBGV Python projection;
+  the Build Adapter applies its frozen value through the
+  [Python smoke model](#python-smoke-model).
 - The Python Build Request selects and freezes the required authoritative native
   projection from the Repository Model Snapshot; the Adapter applies and
   verifies that value without recomputing NBGV or falling back to another

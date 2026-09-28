@@ -4,10 +4,9 @@ from __future__ import annotations
 
 # ruff: noqa: D103, ISC004
 from copy import deepcopy
-from dataclasses import FrozenInstanceError, fields, replace
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
-from three_workflow_delivery_v3 import platform as platform_api
 from three_workflow_delivery_v3.adapters.github_packages import (
     github_packages_destination_operation_profile,
 )
@@ -15,14 +14,8 @@ from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
 )
-from three_workflow_delivery_v3.platform import github as github_platform
-from three_workflow_delivery_v3.records import release as release_records
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactReference,
-)
-from three_workflow_delivery_v3.records.bindings import (
-    CurrentAuthorityContext,
-    admit,
 )
 from three_workflow_delivery_v3.records.release import (
     CONDITIONAL_NPM_VERSION_AND_TAG_OPERATION,
@@ -62,8 +55,6 @@ from three_workflow_delivery_v3.release.live import (
 )
 
 TARGET = "a" * 40
-ARTIFACT_DIGEST = "sha256:" + ("b" * 64)
-CONTROL = f"workflow-delivery-v3:{TARGET}"
 COMPLETE_RESOURCE_KEY_COUNT = 2
 EXECUTION = BuddyExecutionIdentity(
     channel="buddy",
@@ -75,239 +66,26 @@ ATTEMPT = ReleaseAttemptIdentity(
     workflow_run_id=101,
 )
 
-COMMIT8_RECORD_TYPES = (
-    "ReleaseAttemptBinding",
-    "ApprovalBundle",
-    "PublicationAuthorization",
-    "ExactSatisfiedFinalizationProof",
-    "AttemptOutcome",
-)
-
-RETIRED_RECORD_TYPES = (
-    "ExactSatisfiedGovernanceProof",
-    "HistoricalExecutionRecord",
-    "ExecutionHistoryAdmissionSnapshot",
-    "ReceiptTransportReference",
-)
-
-RETIRED_PLATFORM_HISTORY_TYPES = (
-    "GitHubActionsHistoryClient",
-    "GitHubArtifact",
-    "GitHubArtifactArchiveShapeError",
-    "GitHubArtifactDownload",
-    "GitHubJob",
-    "GitHubJobStep",
-    "GitHubPage",
-    "GitHubRun",
-    "GitHubRunAttemptFact",
-    "admit_artifact_download",
-    "iter_all_artifacts",
-    "iter_all_attempt_jobs",
-    "iter_all_jobs",
-    "iter_all_runs",
-)
-
-
-def _current_payload() -> dict[str, JsonValue]:
-    return {
-        "release_execution": canonical_sha256(EXECUTION.to_document()),
-        "purpose": "live-release",
-        "request": "release-request:" + ("d" * 64),
-        "workflow_run_id": ATTEMPT.workflow_run_id,
-        "attempt": canonical_sha256(ATTEMPT.to_document()),
-        "target": TARGET,
-        "producer": "commit8-contract-producer",
-        "control": CONTROL,
-    }
-
-
-def _current_context(
-    payload: dict[str, JsonValue],
-) -> CurrentAuthorityContext:
-    return CurrentAuthorityContext(
-        release_execution=str(payload["release_execution"]),
-        purpose=str(payload["purpose"]),
-        request=str(payload["request"]),
-        workflow_run_id=ATTEMPT.workflow_run_id,
-        run_attempt=None,
-        attempt=str(payload["attempt"]),
-        target=str(payload["target"]),
-        producer=str(payload["producer"]),
-        control=str(payload["control"]),
-        artifact_id=701,
-        artifact_digest=ARTIFACT_DIGEST,
-        payload_digest=canonical_sha256(payload),
-    )
-
-
-def test_commit8_record_contract_api_is_available() -> None:
-    missing = tuple(
-        name
-        for name in COMMIT8_RECORD_TYPES
-        if not hasattr(release_records, name)
-    )
-
-    assert missing == (), f"missing commit-8 record contracts: {missing}"
-
 
 def test_live_eligibility_freshness_modes_are_closed() -> None:
-    assert tuple(mode.value for mode in LiveEligibilityAdmissionMode) == (
+    assert {mode.value for mode in LiveEligibilityAdmissionMode} == {
         "current-freshness",
         "authorization-replay",
-    )
+    }
     assert (
         LiveEligibilityAdmissionMode("authorization-replay")
         is LiveEligibilityAdmissionMode.AUTHORIZATION_REPLAY
     )
 
 
-def test_execution_history_platform_api_is_retired() -> None:
-    assert platform_api.__all__ == []
-    assert all(
-        not hasattr(platform_api, name) and not hasattr(github_platform, name)
-        for name in RETIRED_PLATFORM_HISTORY_TYPES
-    )
-
-
-def test_retired_record_contracts_are_not_available() -> None:
-    present = tuple(
-        name for name in RETIRED_RECORD_TYPES if hasattr(release_records, name)
-    )
-
-    assert present == (), (
-        f"retired record contracts remain available: {present}"
-    )
-
-
 def test_attempt_identity_is_exact_frozen_and_workflow_run_bound() -> None:
-    assert tuple(field.name for field in fields(ATTEMPT)) == (
-        "execution",
-        "workflow_run_id",
-    )
     assert ATTEMPT.to_document() == {
         "schema": "workflow-delivery/v3/release-attempt-identity",
         "execution": EXECUTION.to_document(),
         "workflow-run-id": 101,
     }
-    assert hasattr(ReleaseAttemptIdentity, "__slots__")
     with pytest.raises(FrozenInstanceError):
         ATTEMPT.workflow_run_id = 102  # type: ignore[misc]
-
-
-def test_exact_current_attempt_authority_preserves_every_trusted_binding() -> (
-    None
-):
-    payload = _current_payload()
-    context = _current_context(payload)
-
-    admitted = admit(
-        payload=payload,
-        artifact_id=context.artifact_id,
-        artifact_digest=context.artifact_digest,
-        current=context,
-    )
-
-    assert admitted.release_execution == context.release_execution
-    assert admitted.purpose == "live-release"
-    assert admitted.target == TARGET
-    assert admitted.control_identity == CONTROL
-    assert admitted.artifact_digest == ARTIFACT_DIGEST
-    assert admitted.payload_digest == canonical_sha256(payload)
-
-
-@pytest.mark.parametrize(
-    ("field", "replacement"),
-    [
-        ("release_execution", "sha256:" + ("e" * 64)),
-        ("request", "release-request:" + ("e" * 64)),
-        ("workflow_run_id", 102),
-        ("attempt", "sha256:" + ("e" * 64)),
-        ("target", "e" * 40),
-        ("producer", "substituted-producer"),
-        ("control", "control:" + ("e" * 64)),
-    ],
-)
-def test_current_attempt_authority_rejects_every_binding_substitution(
-    field: str,
-    replacement: str | int,
-) -> None:
-    payload = _current_payload()
-    context = _current_context(payload)
-    payload[field] = replacement
-
-    with pytest.raises(ValueError, match=rf"binding mismatch: {field}"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id,
-            artifact_digest=context.artifact_digest,
-            current=context,
-        )
-
-
-def test_live_current_authority_rejects_run_attempt_field() -> None:
-    payload = _current_payload()
-    context = _current_context(payload)
-    payload["run_attempt"] = 2
-
-    with pytest.raises(ValueError, match="unknown field: run_attempt"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id,
-            artifact_digest=context.artifact_digest,
-            current=context,
-        )
-
-
-def test_current_attempt_authority_rejects_transport_substitution() -> None:
-    payload = _current_payload()
-    context = _current_context(payload)
-
-    with pytest.raises(ValueError, match="artifact_id"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id + 1,
-            artifact_digest=context.artifact_digest,
-            current=context,
-        )
-    with pytest.raises(ValueError, match="artifact_digest"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id,
-            artifact_digest="sha256:" + ("f" * 64),
-            current=context,
-        )
-
-
-def test_current_attempt_authority_rejects_payload_digest_substitution() -> (
-    None
-):
-    payload = _current_payload()
-    context = replace(
-        _current_context(payload),
-        payload_digest="sha256:" + ("f" * 64),
-    )
-
-    with pytest.raises(ValueError, match="payload integrity mismatch"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id,
-            artifact_digest=context.artifact_digest,
-            current=context,
-        )
-
-
-def test_payload_cannot_select_or_weaken_current_authority() -> None:
-    payload = _current_payload()
-    context = _current_context(payload)
-    payload["admission_mode"] = "execution-history"
-
-    with pytest.raises(ValueError, match="unknown field: admission_mode"):
-        admit(
-            payload=payload,
-            artifact_id=context.artifact_id,
-            artifact_digest=context.artifact_digest,
-            current=context,
-        )
 
 
 def _governance_provenance() -> tuple[tuple[str, str], ...]:
@@ -1324,50 +1102,6 @@ def test_new_authority_records_round_trip_sha256_governance_provenance(
     assert provenance["git-object-format"] == "sha256"
     assert current_main_sha == "a" * 64
     assert provenance["blob-oid"] == "b" * 64
-
-
-@pytest.mark.parametrize(
-    ("record_name", "message"),
-    [
-        pytest.param(
-            "exact-satisfied-proof",
-            "requires Live enabled",
-            id="exact-satisfied-finalization-proof",
-        ),
-    ],
-)
-def test_new_authority_records_reject_disabled_governance(
-    qualified_simulation,
-    record_name: str,
-    message: str,
-) -> None:
-    record = _transport_records(qualified_simulation)[record_name]
-
-    with pytest.raises(ValueError, match=message):
-        replace(
-            record,
-            governance_proof=replace(
-                record.governance_proof, live_enabled=False
-            ),
-        )
-
-
-def test_publication_authorization_rejects_disabled_governance(
-    qualified_simulation,
-) -> None:
-    authorization = _transport_records(qualified_simulation)[
-        "publication-authorization"
-    ]
-    assert isinstance(authorization, PublicationAuthorization)
-
-    with pytest.raises(ValueError, match="requires Live enabled"):
-        replace(
-            authorization,
-            governance_proof=replace(
-                authorization.governance_proof,
-                live_enabled=False,
-            ),
-        )
 
 
 @pytest.mark.parametrize(

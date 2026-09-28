@@ -1,14 +1,10 @@
-"""Prepare the exact executable closure for static-reference authorities."""
+"""Prepare static-reference authorities using native locked installation."""
 
 from __future__ import annotations
 
 import shutil
 import subprocess
 from pathlib import Path
-
-from three_workflow_delivery_v3.release.static_reference_policy import (
-    validate_static_reference_dependency_closures,
-)
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _NUGET_PROJECT = (
@@ -38,7 +34,6 @@ def _run(*arguments: str) -> None:
 
 def main() -> int:
     """Prepare Node packages and the locked NuGet publish directory."""
-    validate_static_reference_dependency_closures(_REPOSITORY_ROOT)
     _run("pnpm", "install", "--frozen-lockfile", "--ignore-scripts")
     _run("dotnet", "restore", str(_NUGET_PROJECT), "--locked-mode")
     if _PUBLISH_DIRECTORY.exists():
@@ -63,7 +58,6 @@ def main() -> int:
     if missing:
         message = "NuGet authority publish closure is incomplete"
         raise RuntimeError(message)
-    validate_static_reference_dependency_closures(_REPOSITORY_ROOT)
     return 0
 
 

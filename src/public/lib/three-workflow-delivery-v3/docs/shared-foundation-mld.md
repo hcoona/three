@@ -240,8 +240,10 @@ for the approved static-reference source kinds:
 
 The mechanical result binds source kind, exact target when applicable, policy
 ID and digest, sorted exact ecosystem-authority implementation identities
-actually loaded, result, canonical error kind when result is error, and sorted
-findings.
+actually loaded for diagnostics, result, canonical error kind when result is
+error, and sorted findings. Dependency versions and lockfile integrity are
+owned by native package management and managed preparation; Foundation adds
+no dependency admission manifest, version allowlist or per-package comparison.
 Index and worktree bytes are never represented as `HEAD` or commit identity.
 
 The typed invocation boundary rejects an omitted or unknown source kind and
@@ -377,7 +379,7 @@ competing authority for cross-validation, reject an official normalized model
 because a local implementation disagrees, or add defensive checks for
 invariants guaranteed by the selected graph. `source-acquisition-failed`,
 `encoding-rejected`, `authority-rejected`, `authority-execution-failed`,
-`unsupported-projection`, and `authority-mismatch` remain distinct typed
+`unsupported-projection` remain distinct typed
 failures. Required Session-owned snapshot or scratch cleanup adds
 `cleanup-failed`.
 
@@ -512,6 +514,67 @@ It does not decide whether the Definition applies, whether it is required,
 which channel selects it, which Release Unit is delivered, whether a
 Publication Action is authorized, or how a failure affects the business
 verdict.
+
+## Python Mechanism Extension
+
+The Foundation provides Python Provider, frozen-input staging, native archive
+inspection and clean consumer mechanisms under the
+[Python Model](./repository-model-release-unit-mld.md#python-smoke-model).
+Use Python standards and maintained `packaging`/metadata readers for native
+name, version and filename semantics, Hatchling for the declared PEP 517 build,
+and UV for isolated build/consumer execution with workspace sources disabled.
+No custom resolver, NBGV version override, registry transaction service or
+universal publication aggregate is added.
+
+One Build Invocation closes a fixed two-artifact output set. Each original
+wheel/sdist has its own immutable logical digest and transport reference; its
+variant and target witness are validated before admission. Archive readers
+reject duplicate/path-traversing members, ambiguous metadata, unexpected output
+formats, conflicting names/versions and missing witnesses. Readers do not
+execute archive code. Mechanical strict tagged Python records cannot be
+admitted through npm or NuGet variants.
+
+Staging consumes the exact Build Request, copies only the admitted source
+closure, materializes static version metadata and the canonical witness, then
+builds with the declared backend. The sdist includes that same static manifest,
+source payload and witness; its build requirements resolve independently of
+workspace paths. The adapter retains transformation/input digests and actual
+backend output metadata. Build cannot use an environment-sourced version or
+invoke NBGV. Content inspection and clean consumer execution are distinct
+mechanisms; only the latter executes package/build code, without publication
+authority.
+
+HTTP clients expose supported Simple Index metadata, exact file downloads,
+OIDC exchange and one-file upload as bounded mechanical operations. Mutating
+uploads have no resend/retry, skip-existing or redirect-to-another-origin
+fallback. Python post-upload observation uses the fixed
+[LLD policy](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation).
+A shared mechanism provides same-process timing, finite admission, original
+response retention and deterministic sequence validation for bootstrap
+and normal consumers. Retired native evidence keeps its original replay contract. Each owning context supplies its previous/expected
+inventory, creation scope and existing outer deadline; it retains set success
+and mutation ordering. Single HTTP calls still have zero transport retries.
+The client reports
+success, definitive non-success or ambiguity plus sanitized observations; it
+does not decide set success, partial recovery or action planning. Release owns
+the fixed wheel-then-sdist policy and one Result for the set action.
+
+The profile records exact client/TLS/tool versions and behavior, not just a
+command name. `uv publish` is not selected: its reconciliation behavior is not
+assumed to satisfy the strict one-shot upload contract. Application tests
+exercise the selected HTTP implementation; separately authorized actual
+publication exercises its destination integration. Registry non-replacement
+is an accepted dependency, not a claim established by mocked uploads.
+HTTP 200 acknowledges success, including identical replay, without an insertion
+count. Non-success/ambiguity remains terminal; OIDC scope remains separately bound.
+
+Bootstrap reuses exact-target Provider/Build, archive inspection, clean consumers,
+profile-bound HTTP and immutable-artifact primitives with a distinct
+`destination-bootstrap` purpose. Shared mechanics may take an explicit closed
+workflow identity; bootstrap retains its own request type, initial-state rules,
+finite schedule and evidence verdict. Retired native readers preserve historical
+contracts without becoming an admission or alternate publication path. No
+generic publication policy is introduced.
 
 ## NuGet Mechanism Extension
 
@@ -1147,8 +1210,10 @@ from the selected revision and static catalog.
 Definitions and descriptors may select allowlisted IDs and parameters but
 cannot inject executable paths, packages, commands, or remote code.
 
-Static-reference authority implementations are exact-version dependencies or
-toolchain nodes selected by the static catalog, not target-selected plugins.
+Static-reference authority implementations are ordinary locked dependencies
+and managed toolchain nodes selected by the tooling revision, not plugins
+selected by the scanned data. Preparation owns their installation and helper
+build; the scanner owns its request, source and normalized-fact contracts.
 File-oriented libraries and CLIs see only a Session-owned isolated snapshot
 containing declared exact-source bytes and controlled environment. They receive
 no publication capability, registry credential, undeclared worktree input, or

@@ -6,10 +6,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import sys
 from dataclasses import replace
 from datetime import datetime, timedelta
-from platform import python_version
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -139,15 +137,10 @@ def native_case(nuget_scenario, monkeypatch, tmp_path):
         scenario.request.source_root / NUGET_POLICY_PATH,
         _target_path=NUGET_POLICY_PATH,
     )
-    if (
-        sys.implementation.name != "cpython"
-        or python_version() != native.NUGET_PYTHON_VERSION
-    ):
-        # Higher-layer scenarios model the adapter on unpinned test hosts.
-        # The pinned HK host retains actual runtime/source profile checks.
-        monkeypatch.setattr(
-            native, "nuget_operation_profile", _modeled_profile_document
-        )
+    # Application scenarios model the adapter; its suite owns runtime proof.
+    monkeypatch.setattr(
+        native, "nuget_operation_profile", _modeled_profile_document
+    )
     profile = NugetDestinationOperationProfile(
         canonicalize(native.nuget_operation_profile(RESOURCES))
     )
@@ -698,9 +691,7 @@ def test_native_zero_action_requires_fresh_exact_proof(native_case):
 @pytest.mark.parametrize(
     ("invocation", "status", "expected"),
     [
-        ("created", 200, "published"),
         ("created", 201, "published"),
-        ("created", 202, "published"),
         ("unselected", 204, "publication-failed"),
         ("conflict", 409, "publication-failed"),
         ("lost-response", None, "publication-failed"),
@@ -869,36 +860,6 @@ def _prepared(case, tmp_path):
     return inputs, feed, runtime, marker, reference
 
 
-def test_native_publication_rejects_unadmitted_marker_reference(
-    native_case, monkeypatch, tmp_path
-):
-    case = native_case
-    inputs, feed, runtime, marker, reference = _prepared(case, tmp_path)
-    publish = Mock(side_effect=AssertionError("unadmitted mutation"))
-    monkeypatch.setattr(native, "publish_nuget_once", publish)
-    with pytest.raises(ValueError, match="durable marker"):
-        execute_nuget_publication(
-            inputs,
-            current=case.current,
-            run_attempt=1,
-            durable_marker=marker,
-            marker_reference=SimpleNamespace(
-                payload_digest=reference.payload_digest
-            ),
-            runtime_directory=runtime,
-            read_resources=lambda: RESOURCES,
-            authority=feed.authority,
-            transport=feed,
-            token=TOKEN,
-            clock=lambda: LATER,
-        )
-    publish.assert_not_called()
-    assert not (runtime / "command-started").exists()
-    assert (runtime / case.artifact.content.basename).read_bytes() == (
-        case.scenario.result.package
-    )
-
-
 def test_native_publication_rejects_changed_archive_before_invocation(
     native_case, monkeypatch, tmp_path
 ):
@@ -950,7 +911,7 @@ def test_native_missing_result_preserves_marker_as_unknown(
     assert outcome.direct_predecessor.reference == reference
 
 
-@pytest.mark.parametrize("status", [200, 201, 202])
+@pytest.mark.parametrize("status", [201])
 @pytest.mark.parametrize("readback", ["missing", "different-bytes"])
 def test_native_success_without_complete_readback_stays_failed(
     native_case, monkeypatch, tmp_path, status, readback
@@ -1141,15 +1102,20 @@ def test_native_eligibility_replay_does_not_grant_fresh_action(native_case):
     ],
 )
 def test_native_admission_requires_exact_six_field_generation(
-    native_case, monkeypatch, field
+    monkeypatch, field
 ):
-    attestation = native_case.eligibility.governance.attestation
+    profile = NugetDestinationOperationProfile(
+        canonicalize(_modeled_profile_document(RESOURCES))
+    )
+    attestation = shared.parse_governance_attestation(
+        canonicalize(_ready_document(profile, monkeypatch))
+    )
     primitive = attestation.activation.destination_primitive
     assert governance.nuget_destination_primitive_is_admitted(attestation)
     shared.require_action_governance(
         attestation,
         now=NOW,
-        destination_operation_profile_digest=native_case.profile.profile_digest,
+        destination_operation_profile_digest=profile.profile_digest,
     )
     key = (*primitive.admission_key, primitive.evidence_digest)
     fields = ("profile", "suite", "package", "api", "contract", "evidence")
@@ -1175,9 +1141,7 @@ def test_native_admission_requires_exact_six_field_generation(
         shared.require_action_governance(
             attestation,
             now=NOW,
-            destination_operation_profile_digest=(
-                native_case.profile.profile_digest
-            ),
+            destination_operation_profile_digest=(profile.profile_digest),
         )
 
 

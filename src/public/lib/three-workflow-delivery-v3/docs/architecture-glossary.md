@@ -228,8 +228,9 @@ for one action-bearing Attempt.
 
 There is no first-slice Capability Environment. A generic Environment Profile
 is deferred until a concrete second policy demonstrates independent semantics.
-A future OIDC channel may introduce a channel-specific Environment only when
-external destination trust validates its OIDC claims.
+The Python OIDC slice supplies the concrete channel-specific Environment
+case under [Python Governance](./governance-integration-mld.md#python-smoke-governance);
+external destination trust validates that Environment in its OIDC tuple.
 
 ### Environment Configuration Sentinel
 
@@ -266,6 +267,16 @@ repository-token package-grant reach is explicitly accepted. It does not
 inherit the npm arbitrary-ref waiver, native evidence, routing tags, or
 administrative-lifecycle conclusions. Design, native admission, and a verified
 real publication are distinct evidence levels.
+
+### Python Distribution-Set Action
+
+The bounded Python publication action under `WD-PY-005`: exactly one wheel
+upload followed by one sdist upload at one registry, covered by one current
+Snapshot, Approval and Authorization. It is one business action with two
+non-atomic file operations, not a registry transaction. One marker precedes the
+set and one Result records its controlled terminal state, including partial
+failure; scalar terminal transport is unchanged. See the
+[Python delivery design](./release-delivery-mld.md#python-smoke-delivery).
 
 ### Official
 
@@ -310,19 +321,20 @@ internal dependency and output semantics.
 ### Source-Tree Conformance
 
 The repository-local assertion that an immutable checkout satisfies its
-formatting, linting, static source, lock, generated-file, configuration, and
-path-triggered scenario rules.
+formatting, linting, static source, lock, generated-file and configuration
+rules.
 
 The repository-root HK gate owns this assertion as one opaque composite Quality
 Definition. CI binds the candidate and definition identity but does not inspect
 HK profiles, steps, file applicability, batching, or internal planning.
 
 Whenever root HK runs, its lightweight static-reference policy runs in the
-caller-selected `index` or `worktree` feedback mode. Separately, the first-slice
-root HK implementation includes an expensive path-selected v3 control package
-pytest step and runs that suite unconditionally only for manual
-`slice-validation`. Both remain internal to Source-Tree Conformance and do not
-create separate CI obligations, Evidence records, or jobs.
+caller-selected `index` or `worktree` feedback mode. That policy remains
+internal to Source-Tree Conformance and creates no separate CI obligation or
+Evidence record. Project tests have the separate execution owner defined by
+the [CI MLD](./ci-qualification-mld.md#control-package-tests). The
+[execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
+records the replacement of the former HK test owner.
 
 ### Static-Reference Policy
 
@@ -332,9 +344,10 @@ catalog.
 
 Supported surfaces are disjoint selectors paired with an exact Ecosystem
 Authority Graph in the first-slice LLD. The graph binds authoritative artifact
-schemas and standards, official library/CLI/runtime identities and versions,
-provenance, public APIs or commands, input mode, admitted format generation,
+schemas and standards, required libraries, public APIs or commands, input mode, admitted format generation,
 required normalized facts, applicable prohibited forms, and unsupported cases.
+Native lockfiles and managed preparation own tooling versions and integrity;
+observed implementation versions are diagnostic, not policy admission.
 Adapters emit package identity, reference kind, local path, and source-location
 facts. The policy rejects only the coordinate and local-dependency forms
 assigned to each selector row. The producer path is not globally prohibited
@@ -387,11 +400,12 @@ layer. Repository code validates the normalized fact envelope and applies
 policy; it does not recreate lockfile schemas, descriptor or locator grammars,
 comment handling, case rules, or normalization owned by the graph.
 
-The graph identity includes source schema and standard versions; exact package,
-CLI, runtime, tool, module, or assembly versions; lock or checksum provenance;
-public APIs or commands; input and BOM behavior; admitted format generation;
-required facts; and unsupported cases. A change to any of these changes the
-bounded static-reference policy digest.
+The graph identity includes source schema and standard versions; required
+packages and public APIs or commands; input and BOM behavior; admitted format
+generation; required facts; and unsupported cases. Changes to this semantic
+contract change the bounded static-reference policy digest. Package managers
+and managed preparation own dependency versions and integrity; loaded versions
+are diagnostic and do not independently change policy identity.
 
 ### Affected-System Qualification
 
@@ -1254,8 +1268,9 @@ with an observed-absent target-derived tag may materialize one standard npm
 publish action only after bounded native acceptance proves active-version
 non-overwrite and the bounded tag race. Active absence
 does not claim the version was never published, is not retained as a tombstone,
-or will accept creation. Multiple ordered actions and projection-internal
-partial progression require a future explicit design.
+or will accept creation. Multiple independent ordered actions remain outside
+this first slice. The [Python set action](#python-distribution-set-action)
+defines its separately confirmed two-operation partial-failure behavior.
 
 ### Approval Bundle
 
@@ -1271,8 +1286,10 @@ is not authority.
 
 ### Approval Job
 
-The publication-credential-free authoritative job that references
-`workflow-delivery-v3-buddy-approval`.
+The npm/NuGet GitHub Packages publication-credential-free authoritative job
+that references `workflow-delivery-v3-buddy-approval`. Python instead performs
+logical Approval/Authorization admission in its destination Environment-gated
+publisher under `WD-REL-008`; it has no separate job with this definition.
 
 It validates the resolved exact Environment marker value as its first
 authority-critical executable check, has no publication capability, freshly

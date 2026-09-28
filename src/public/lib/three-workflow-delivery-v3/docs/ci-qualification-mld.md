@@ -63,12 +63,14 @@ CI Qualification proves two different classes of assertion:
 The root HK gate owns source-tree conformance. The CI Planner owns
 affected-system qualification.
 
-Tool names do not define this boundary. A formatter, linter, lock check,
-generated-file synchronization check, or repository scenario test may belong
-to HK when it proves checkout-local conformance. A compiler, type checker,
-analyzer, or test runner belongs to model-driven CI when its applicability or
-meaning depends on a Project Node, dependency graph, native workspace, runner
-matrix, or Release Unit.
+Under the [execution migration](./migration-strategy.md#ci-execution-ownership-cutover),
+HK owns formatting, lint, syntax, lock and generated/configuration consistency
+checks. Project unit, scenario and integration tests belong to CI, including
+the tests of Workflow Delivery v3 itself. A compiler, type checker or analyzer
+also belongs to model-driven CI when its applicability or meaning depends on
+a Project Node, dependency graph, native workspace, runner matrix or Release
+Unit. A fast test is still a project test; an HK profile does not change its
+responsibility.
 
 ## Flow
 
@@ -305,26 +307,31 @@ HK outputs remain internal to `SourceTreeConformance` and are never admissible
 as Live Eligibility authority. Release forms its own exact-target
 `git-target` result.
 
-### First-Slice v3 Control Tests
+### Control-Package Tests
 
-Root HK contains an expensive v3 control-package pytest step. It is
-path-selected when changes affect the v3 control package, catalogs, or tests;
-first-slice descriptors; the exact first-slice Release policy; a v3 workflow
-consumer; direct Python workspace or lock inputs; or HK configuration and
-helpers.
+The [execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
+moves the v3 pytest collection to the general Python CI check. Ordinary
+PR/push CI executes that selected collection once. The v3 shadow workflow
+continues consuming root HK for source conformance without running another
+copy of its own implementation suite.
 
-Selection follows consumed inputs, including packaged files and native build
-dependencies. Narrative documentation alone does not require the product test
-suite; machine-consumed Markdown remains a contract or fixture input. Root
-`hk.pkl` owns the concrete selectors shared by local hooks and CI. The
-[HK execution guide](../../../../../docs/engineering/hk-execution.md#selecting-checks-by-their-inputs)
-explains their maintenance and regression coverage.
+Selection includes the package's implementation, tests and catalogs; consumed
+workflows, descriptors, policies and helpers; shared Python inputs; and native
+Node/.NET dependencies used by integration scenarios. The three v3 .NET
+helpers, inherited build configuration and tool locks are dependencies even
+though their files live outside the Python package. A product merely using
+unchanged v3 does not select its self-tests. Unconsumed project documentation
+does not select them; consumed package metadata and fixtures remain inputs.
 
-Manual `slice-validation` forces the step to run regardless of changed paths.
-It remains part of the single `SourceTreeConformance` obligation and creates no
-separate CI obligation, Evidence record, or job. Unrelated product source alone
-does not select this control-test step. Other root HK invocations retain
-path-selected execution.
+An explicit local command runs the complete collection, and general CI's
+explicit full mode selects it regardless of changed paths. Manual v3
+`slice-validation` retains its first-slice qualification scope;
+it does not implicitly run control-package tests inside HK. These self-tests
+do not add a V3 Qualification obligation or produce Release Evidence.
+
+The repository [HK/CI execution guidance](../../../../../docs/engineering/hk-execution.md#ci-execution-contract)
+owns the general workflow's selection and completion rules. They do not claim
+the deferred canonical repository-wide v3 full-validation capability.
 
 ### Bounded Static-Reference Policy
 
@@ -345,10 +352,12 @@ The closed supported surface is the first-slice LLD's selector-to-fact matrix.
 Each retained disjoint selector has one exact Ecosystem Authority Graph. Git
 Source Authority supplies exact bytes directly or through a Session-owned
 isolated snapshot containing only declared files from one source kind. The
-graph binds authoritative artifact schemas and standards, exact
-library/CLI/runtime identities and versions, lock or checksum provenance,
+graph binds authoritative artifact schemas and standards, required libraries,
 public APIs or commands, input mode, admitted format generation, required
 facts, applicable prohibited forms, and unsupported cases.
+Native locked installation and managed preparation own tooling dependencies;
+CI does not add dependency version or lockfile-hash admission. Loaded versions
+are diagnostics. The first-slice LLD owns this shared preparation contract.
 
 Authoritative artifacts, official ecosystem libraries or CLIs, and published
 standards emit normalized manifest, lock, descriptor, locator, workspace, and
@@ -378,8 +387,8 @@ contract. The invocation schema rejects an omitted or unknown feedback mode and
 malformed required source parameters before Result construction; HK propagates
 that nonzero failure without synthesizing a Result.
 `source-acquisition-failed`, `encoding-rejected`, `authority-rejected`,
-`authority-execution-failed`, `unsupported-projection`,
-`authority-mismatch`, and `cleanup-failed` are distinct fail-closed errors. The
+`authority-execution-failed`, `unsupported-projection`, and `cleanup-failed`
+are distinct fail-closed errors. The
 policy requires no evaluator, dataflow model, Tree-sitter dependency, trigger
 catalog, whole-file digest exception, scanned-surface digest, or fixed inventory
 count. It also forbids handwritten ecosystem grammars or schemas,
@@ -406,9 +415,11 @@ project-owned command implementation.
 
 ### Execution Contract
 
-Incremental execution gives HK the authoritative comparison revisions. Full
-validation gives HK an explicit all-files mode. HK computes its own internal
-file and step selection.
+Incremental execution derives complete impact paths from the authoritative
+comparison revisions, retaining deletions and both sides of renames. HK receives
+those paths through NUL-delimited transport and computes its own internal file
+and step selection. File-reading steps omit absent operands only after selection.
+Full validation gives HK an explicit all-files mode.
 
 The executor uses read-only check behavior. Configuration load failure, panic,
 timeout, tool failure, or any failed internal step fails the composite
@@ -428,11 +439,13 @@ The root gate may include:
 - syntax and source-file static checks;
 - lock consistency;
 - generated or projected configuration synchronization; and
-- path-triggered repository scenario tests.
+- the bounded static-reference policy.
 
 It does not own affected Project Node builds, project or native-workspace type
-checking, graph-derived tests, runner matrices, Release Unit artifact builds,
-or publication-shaped validation.
+checking, project unit/scenario/integration tests, runner matrices, Release
+Unit artifact builds, or publication-shaped validation. The
+[execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
+records the former HK test owner's replacement.
 
 ## Project Quality Policy
 
@@ -624,6 +637,40 @@ proves destination creation, active duplicate behavior, or a real publication.
 The brief LLD identifies concrete definition and Evidence bindings, cache and
 source isolation, and the consumer invocation. This extension does not migrate
 the production CI line or require a general .NET policy framework.
+
+## Python Smoke Qualification
+
+The affected-system Plan closes both wheel and sdist for `WD-PY-001` through
+`WD-PY-003`, using admitted candidate-bound facts, the frozen Python projection
+and pinned Ubuntu/CPython 3.14 toolchain. Changes to the smoke, version lineage,
+projection adapter, workspace/lock/backend or staging/control inputs reach the
+unit. Unknown classification blocks scope closure. Build and all consumers
+receive no publication authority.
+
+Three required obligations remain separately decidable:
+
+| Obligation            | Evidence                                                                                                                                                                                                                           |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Distribution contents | Exactly the two declared original files; native names/version/tags; dependency-free metadata; matching canonical witness in both; static self-contained sdist build metadata and no undeclared hook or workspace substitution.     |
+| Clean wheel consumer  | Fresh environment outside the checkout with empty cache installs the exact qualified wheel, validates installed metadata/witness and calls `project_id()`.                                                                         |
+| Clean sdist consumer  | A separate fresh environment outside Git rebuilds and installs the original qualified sdist with declared backend prerequisites and no NBGV/.NET or ambient version variable; it verifies the same installed metadata/witness/API. |
+
+The sdist consumer's rebuilt wheel is evidence, never a replacement for the
+original wheel in the publication set. Native metadata and logical archive
+bytes, not GitHub transport basenames, determine identity. Missing or malformed
+Evidence cannot become a passing Decision. Adapters retain actual artifact
+references, target/version bindings and sanitized command results. Release
+reuses these definitions but builds its own set and forms its own Evidence.
+Destination readback and consumption remain Release completion obligations,
+not CI capabilities established by local success. `WD-PY-006` treats registry
+non-replacement as a platform dependency; CI validates V3 behavior without
+attempting to re-prove that service guarantee.
+
+Bootstrap independently builds/qualifies its original pair and later performs
+fresh destination consumers under `destination-bootstrap` provenance. It reuses
+the same adapter obligations without adopting CI or normal Release Evidence.
+Local coverage of the [bootstrap protocol](./validation/python-bootstrap.md)
+cannot establish account configuration or service behavior.
 
 ## CI Qualification Plan
 

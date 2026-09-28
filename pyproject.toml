@@ -5,13 +5,19 @@ description = "Root uv workspace manifest for the Three monorepo."
 authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
 dependencies = []
 readme = "README.md"
-requires-python = ">= 3.13"
+requires-python = ">= 3.14"
 license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
 classifiers = ["Private :: Do Not Upload"]
 
 [dependency-groups]
 # Preserve the validated lint baseline until the Ruff 0.16 migration.
-dev = ["hatchling>=1.25.0", "pyrefly>=1.0.0", "pytest>=8.3.4", "ruff==0.16.5"]
+dev = [
+  "hatchling>=1.25.0",
+  "pyrefly>=1.0.0",
+  "pytest>=8.3.4",
+  "PyYAML>=6.0.2",
+  "ruff==0.16.8",
+]
 
 [tool.uv.workspace]
 # The current Python workspace is rooted under src/; legacy OnePython paths are retired.
@@ -27,6 +33,7 @@ members = [
   "src/private/app/transcribe",
   "src/private/app/azureauth-credprovider/python",
   "src/public/app/markdown-hybrid-search-mcp",
+  "src/public/lib/hcoona-release-smoke-python",
   "src/public/lib/nbgv-python",
   "src/public/lib/three-workflow-delivery-v3",
   "src/sample/nbgv-hatch-demo",
@@ -49,6 +56,7 @@ project-includes = [
   "src/private/app/transcribe/**/*.py",
   "src/private/app/azureauth-credprovider/python",
   "src/public/app/markdown-hybrid-search-mcp/src/**/*.py",
+  "src/public/lib/hcoona-release-smoke-python/**/*.py",
   "src/public/lib/nbgv-python/**/*.py",
   "src/public/lib/three-workflow-delivery-v3/**/*.py",
   "src/sample/nbgv-hatch-demo/**/*.py",
@@ -190,7 +198,12 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
+tmp_path_retention_policy = "failed"
 testpaths = [
+  "tests/eng/test_ci_scope.py",
+  "tests/eng/test_python_runtime.py",
+  "tests/eng/test_legacy_release_contract.py",
+  "tests/eng/test_typos_config.py",
   "src/private/app/azureauth-credprovider/python/tests",
   "src/private/app/git-commit-heatmap/tests",
   "src/private/app/llm-text-splitter/tests",

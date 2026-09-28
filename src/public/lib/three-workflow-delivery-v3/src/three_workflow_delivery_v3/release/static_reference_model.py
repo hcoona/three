@@ -24,7 +24,6 @@ type StaticReferenceErrorKind = Literal[
     "authority-rejected",
     "authority-execution-failed",
     "unsupported-projection",
-    "authority-mismatch",
     "cleanup-failed",
 ]
 type StaticReferenceFamily = Literal[
@@ -58,7 +57,6 @@ STATIC_REFERENCE_ERROR_KINDS: tuple[StaticReferenceErrorKind, ...] = (
     "authority-rejected",
     "authority-execution-failed",
     "unsupported-projection",
-    "authority-mismatch",
     "cleanup-failed",
 )
 STATIC_REFERENCE_FAMILIES: tuple[StaticReferenceFamily, ...] = (

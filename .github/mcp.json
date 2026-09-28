@@ -1,0 +1,56 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "local",
+      "tools": [
+        "*"
+      ],
+      "id": "",
+      "command": "mise",
+      "args": [
+        "run",
+        "--raw",
+        "--quiet",
+        "playwright-mcp"
+      ]
+    },
+    "context7": {
+      "type": "local",
+      "tools": [
+        "*"
+      ],
+      "id": "",
+      "command": "mise",
+      "args": [
+        "run",
+        "--raw",
+        "--quiet",
+        "context7-mcp"
+      ]
+    },
+    "microsoft-learn": {
+      "type": "http",
+      "url": "https://learn.microsoft.com/api/mcp",
+      "tools": [
+        "*"
+      ],
+      "id": ""
+    },
+    "binlog": {
+      "type": "local",
+      "tools": [
+        "*"
+      ],
+      "id": "",
+      "command": "mise",
+      "args": [
+        "exec",
+        "--",
+        "dotnet",
+        "dnx",
+        "Microsoft.AITools.BinlogMcp",
+        "--yes"
+      ]
+    }
+  }
+}

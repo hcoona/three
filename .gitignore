@@ -9,6 +9,7 @@
 
 # User-specific files
 AGENTS.local.md
+/.playwright-mcp/
 *.rsuser
 *.suo
 *.user

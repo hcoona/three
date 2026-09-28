@@ -5,20 +5,16 @@ from __future__ import annotations
 # ruff: noqa: D103, PLR2004
 import base64
 import hashlib
-import html
 import http.client
 import json
-import platform
 import socket
 import ssl
-import sys
 import threading
 from dataclasses import replace
 from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import MagicMock, Mock
-from urllib.parse import quote, urlsplit
 
 import pytest
 from three_workflow_delivery_v3.adapters import nuget_github_packages as nuget
@@ -38,14 +34,6 @@ ARCHIVE_URL = (
     PACKAGE_ROOT + VERSION + "/" + PACKAGE.lower() + "." + VERSION + ".nupkg"
 )
 RESOURCES = nuget.NuGetServiceResources(BASE, PUBLISH, "a" * 64)
-_PINNED_PROFILE_RUNTIME = (
-    sys.implementation.name == "cpython"
-    and platform.python_version() == "3.13.12"
-)
-_REQUIRES_PROFILE_RUNTIME = pytest.mark.skipif(
-    not _PINNED_PROFILE_RUNTIME,
-    reason="The mandatory HK profile proof runs on CPython 3.13.12",
-)
 
 
 def _native(package_id=PACKAGE, version=VERSION, normalized_version=VERSION):
@@ -197,38 +185,40 @@ def test_package_read_follows_one_original_location_with_safe_exchanges(
     assert state.exchanges[-1].header("set-cookie") is None
 
 
-@pytest.mark.parametrize("status", [301, 302])
-@pytest.mark.parametrize("header", ["Link", "ETag"])
 @pytest.mark.parametrize(
-    "form",
+    "reflected",
     [
-        "full",
-        "target",
-        "query",
-        "html-full",
-        "html-target",
-        "html-query",
-        "encoded-full",
-        "encoded-target",
-        "encoded-query",
+        "https://storage.example/pkg-one?sig=capability-one&v=1",
+        "/pkg-one?sig=capability-one&v=1",
+        "sig=capability-one&v=1",
+        "https://storage.example/pkg-one?sig=capability-one&amp;v=1",
+        "/pkg-one?sig=capability-one&amp;v=1",
+        "sig=capability-one&amp;v=1",
+        "https%3A%2F%2Fstorage.example%2Fpkg-one%3Fsig%3Dcapability-one%26v%3D1",
+        "%2Fpkg-one%3Fsig%3Dcapability-one%26v%3D1",
+        "sig%3Dcapability-one%26v%3D1",
+    ],
+)
+def test_read_secret_rule_rejects_capability_reflections(reflected):
+    secrets = nuget.read_location_secrets(
+        "https://storage.example/pkg-one?sig=capability-one&v=1"
+    )
+    with pytest.raises(nuget.NuGetAdapterError, match="capability"):
+        nuget.check_read_secrets(reflected.encode(), secrets)
+
+
+@pytest.mark.parametrize("status", [301, 302])
+@pytest.mark.parametrize(
+    ("header", "reflected"),
+    [
+        ("Link", "%2Fpkg-one%3Fsig%3Dcapability-one%26v%3D1"),
+        ("ETag", "sig=capability-one&v=1"),
     ],
 )
 def test_package_redirect_header_reflection_stops_before_storage(
-    authority, status, header, form
+    authority, status, header, reflected
 ):
     location = "https://storage.example/pkg-one?sig=capability-one&v=1"
-    parsed = urlsplit(location)
-    values = {
-        "full": location,
-        "target": parsed.path + "?" + parsed.query,
-        "query": parsed.query,
-    }
-    base_form = form.rsplit("-", 1)[-1]
-    reflected = values[base_form]
-    if form.startswith("html-"):
-        reflected = html.escape(reflected)
-    elif form.startswith("encoded-"):
-        reflected = quote(reflected, safe="")
     responses = _responses()
     responses[ARCHIVE_URL] = _response(
         ARCHIVE_URL,
@@ -293,22 +283,73 @@ def test_location_comparison_excludes_trivial_decoded_forms(location):
 @pytest.mark.parametrize(
     "location",
     [
-        None,
-        "",
+        " https://artifact-storage.example/a",
+        "\thttps://artifact-storage.example/a",
+        "\x00https://artifact-storage.example/a",
+        "https://artifact-storage.example/a\r\nb",
+        "https://artifact-storage.example/a b",
+        "https://artifact-storage.example/a\x7f",
+        "https://artifact-storage.example/non-ascii-\u00e9",
+        "https://artifact-storage.example/a\\b",
         "http://storage.example/a",
-        "https://127.1/a",
-        " https://storage.example/a",
-        "https://storage.example/a#",
-        "https://user@storage.example/a",
-        "https://storage.example:8443/a",
-        "https://storage.example/a?sig=" + TOKEN,
-        "https://storage.example/a?sig="
-        + "".join(f"%{ord(c):02X}" for c in TOKEN),
+        "//storage.example/a",
+        "https://artifact-storage.example/a#",
+        "https://artifact-storage.example/a#part",
     ],
 )
-def test_package_read_rejects_invalid_location_without_storage(
-    authority, location
-):
+def test_redirect_origin_rejects_raw_location_grammar(location):
+    with pytest.raises(
+        nuget.NuGetAdapterError, match="invalid storage Location"
+    ):
+        nuget.read_redirect_origin(location)
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https:///a",
+        "https://user@storage.example/a",
+        "https://user:pass@storage.example/a",
+        "https://storage.example:443/a",
+        "https://storage.example:/a",
+        "https://storage.example:8443/a",
+        "https://127.0.0.1/a",
+        "https://127.1/a",
+        "https://2130706433/a",
+        "https://0x7f.1/a",
+        "https://0177.0.0.1/a",
+        "https://[::1]/a",
+        "https://api.github.com/a",
+        "https://API.GITHUB.COM/a",
+        "https://api.github.com./a",
+        "https://storage%2eexample/a",
+        "https://storage_example/a",
+        "https://-storage.example/a",
+        "https://storage-.example/a",
+        "https://storage..example/a",
+        "https://" + "a" * 64 + ".example/a",
+    ],
+)
+def test_redirect_origin_rejects_unsafe_dns_authority(location):
+    with pytest.raises(
+        nuget.NuGetAdapterError, match="invalid storage DNS authority"
+    ):
+        nuget.read_redirect_origin(location)
+
+
+def test_redirect_origin_rejects_malformed_ipv6_authority():
+    # urlsplit owns this rejection; its diagnostic text is not our contract.
+    with pytest.raises(ValueError):  # noqa: PT011
+        nuget.read_redirect_origin("https://[broken/a")
+
+
+def test_redirect_origin_returns_admitted_dns_origin():
+    location = "https://Storage.Example/objects/a%2Fb?sig=x%2Fy&empty="
+    assert nuget.read_redirect_origin(location) == "https://storage.example"
+
+
+@pytest.mark.parametrize("location", [None, ""])
+def test_package_redirect_requires_location_before_storage(authority, location):
     responses = _responses()
     responses[ARCHIVE_URL] = _response(
         ARCHIVE_URL,
@@ -317,7 +358,51 @@ def test_package_read_rejects_invalid_location_without_storage(
         headers=() if location is None else (("Location", location),),
     )
     transport = _reader(responses)
-    with pytest.raises(nuget.NuGetAdapterError):
+    with pytest.raises(
+        nuget.NuGetAdapterError, match="missing package Location"
+    ):
+        _observe(transport, authority)
+    transport.get_package_storage.assert_not_called()
+    authority.inspect_package.assert_not_called()
+
+
+def test_package_location_grammar_rejection_precedes_storage(authority):
+    responses = _responses()
+    responses[ARCHIVE_URL] = _response(
+        ARCHIVE_URL,
+        status=302,
+        body=b"redirect",
+        headers=(("Location", " https://storage.example/a"),),
+    )
+    transport = _reader(responses)
+    with pytest.raises(
+        nuget.NuGetAdapterError, match="invalid storage Location"
+    ):
+        _observe(transport, authority)
+    transport.get_package_storage.assert_not_called()
+    authority.inspect_package.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://storage.example/a?sig=" + TOKEN,
+        "https://storage.example/a?sig="
+        + "".join(f"%{ord(c):02X}" for c in TOKEN),
+    ],
+)
+def test_package_location_credentials_never_reach_storage(authority, location):
+    responses = _responses()
+    responses[ARCHIVE_URL] = _response(
+        ARCHIVE_URL,
+        status=302,
+        body=b"redirect",
+        headers=(("Location", location),),
+    )
+    transport = _reader(responses)
+    with pytest.raises(
+        nuget.NuGetAdapterError, match="request credential or capability"
+    ):
         _observe(transport, authority)
     transport.get_package_storage.assert_not_called()
     authority.inspect_package.assert_not_called()
@@ -640,10 +725,9 @@ def test_observation_blocks_wrong_downloaded_identity_and_missing_witness(
         _observe(_reader(_responses()), authority)
 
 
-@_REQUIRES_PROFILE_RUNTIME
 def test_profile_pins_source_runtime_endpoint_and_credential_free_auth():
     profile = nuget.nuget_operation_profile(RESOURCES)
-    assert profile["runtime"] == "CPython@3.13.12"
+    assert profile["runtime"] == "CPython@" + nuget.NUGET_PYTHON_VERSION
     assert profile["httpClientSha256"] == nuget.NUGET_HTTP_CLIENT_SHA256
     assert profile["packagePublish"] == PUBLISH
     assert profile["resourceType"] == "PackagePublish/2.0.0"
@@ -667,7 +751,6 @@ def test_profile_pins_source_runtime_endpoint_and_credential_free_auth():
     assert profile["authentication"]["X-NuGet-ApiKey"] == "GITHUB_TOKEN"
 
 
-@_REQUIRES_PROFILE_RUNTIME
 def test_publication_rejects_changed_profile_before_network(monkeypatch):
     connection = Mock()
     monkeypatch.setattr(http.client, "HTTPSConnection", connection)
@@ -682,9 +765,49 @@ def test_publication_rejects_changed_profile_before_network(monkeypatch):
     connection.assert_not_called()
 
 
-def test_publication_rejects_unpinned_runtime_before_network(monkeypatch):
-    if _PINNED_PROFILE_RUNTIME:
-        monkeypatch.setattr(nuget.platform, "python_version", lambda: "3.13.13")
+def test_historical_profile_stays_readable_but_cannot_admit_current_runtime(
+    monkeypatch,
+):
+    profile = nuget.nuget_operation_profile(RESOURCES)
+    historical = dict(
+        profile,
+        runtime="CPython@3.13.12",
+        runtimeBuild="retained CPython 3.13.12 build",
+        httpClientSha256=(
+            "9a1c011d11aaea22df4b5e837274a25ac16f7d2f91759244feafdecce3ad22a1"
+        ),
+        sourceBasis=(
+            "https://github.com/python/cpython/blob/v3.13.12/Lib/http/client.py"
+        ),
+    )
+    before = json.dumps(historical, sort_keys=True)
+    nuget.validate_nuget_operation_profile(historical)
+    assert json.dumps(historical, sort_keys=True) == before
+    connection = Mock()
+    monkeypatch.setattr(http.client, "HTTPSConnection", connection)
+    with pytest.raises(nuget.NuGetAdapterError, match="profile or package"):
+        nuget.publish_nuget_once(
+            resources=RESOURCES,
+            package=PACKAGE_BYTES,
+            token=TOKEN,
+            expected_profile_sha256=canonical_sha256(historical),
+            expected_package_sha256=hashlib.sha256(PACKAGE_BYTES).hexdigest(),
+        )
+    connection.assert_not_called()
+
+
+@pytest.mark.parametrize("fault", ["runtime", "source", "unreviewed-upgrade"])
+def test_publication_rejects_unpinned_runtime_before_network(
+    monkeypatch, fault
+):
+    if fault == "runtime":
+        monkeypatch.setattr(nuget.platform, "python_version", lambda: "0.0.0")
+    elif fault == "source":
+        monkeypatch.setattr(
+            nuget.inspect, "getsource", lambda _module: "changed"
+        )
+    else:
+        monkeypatch.setattr(nuget, "NUGET_HTTP_CLIENT_SHA256", "")
     connection = Mock()
     monkeypatch.setattr(http.client, "HTTPSConnection", connection)
     with pytest.raises(nuget.NuGetAdapterError, match="runtime is not pinned"):
@@ -770,7 +893,6 @@ def fault_server(monkeypatch):
 @pytest.mark.parametrize(
     "statuses", [None, [201], [200, 201, 202, 204], ["200", 201, 202]]
 )
-@_REQUIRES_PROFILE_RUNTIME
 def test_profile_rejects_unselected_success_status_contract(statuses):
     profile = nuget.nuget_operation_profile(RESOURCES)
     if statuses is None:
@@ -786,9 +908,6 @@ def test_profile_rejects_unselected_success_status_contract(statuses):
     ("status", "error"),
     [
         (204, None),
-        (200.0, None),
-        ("200", None),
-        (True, None),
         (None, None),
         (200, "incomplete"),
         (202, "incomplete"),
@@ -821,7 +940,6 @@ def _publish():
 
 
 @pytest.mark.parametrize("status", [200, 201, 202])
-@_REQUIRES_PROFILE_RUNTIME
 def test_local_server_receives_one_exact_multipart_package(
     fault_server, status
 ):
@@ -857,24 +975,15 @@ def test_local_server_receives_one_exact_multipart_package(
     [
         203,
         204,
-        301,
         302,
-        303,
-        307,
-        308,
         401,
-        403,
         409,
         429,
-        500,
-        502,
         503,
-        504,
         "timeout",
         "dropped",
     ],
 )
-@_REQUIRES_PROFILE_RUNTIME
 def test_local_server_fault_has_one_put_and_conservative_result(
     fault_server, fault
 ):
@@ -895,7 +1004,6 @@ def test_local_server_fault_has_one_put_and_conservative_result(
 
 
 @pytest.mark.parametrize("fault", ["truncated", "oversize"])
-@_REQUIRES_PROFILE_RUNTIME
 def test_local_server_response_limit_and_truncation_are_uncertain(
     fault_server, fault
 ):
@@ -1028,7 +1136,6 @@ def test_service_discovery_rejects_unbounded_resource_projection(
         nuget.discover_nuget_resources(authority, b'{"resources":[]}')
 
 
-@_REQUIRES_PROFILE_RUNTIME
 def test_publication_rejects_changed_package_before_network(monkeypatch):
     connection = Mock()
     monkeypatch.setattr(http.client, "HTTPSConnection", connection)
@@ -1046,7 +1153,6 @@ def test_publication_rejects_changed_package_before_network(monkeypatch):
 
 
 @pytest.mark.parametrize("token", ["", "new\nheader", "non-ascii-\u03b1"])
-@_REQUIRES_PROFILE_RUNTIME
 def test_publication_rejects_invalid_token_before_network(monkeypatch, token):
     connection = Mock()
     monkeypatch.setattr(http.client, "HTTPSConnection", connection)

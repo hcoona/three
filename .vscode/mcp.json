@@ -1,18 +1,24 @@
 {
   "servers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "mise",
+      "args": [
+        "run",
+        "--raw",
+        "--quiet",
+        "playwright-mcp"
+      ]
+    },
     "io.github.upstash/context7": {
       "type": "stdio",
       "command": "mise",
       "args": [
-        "exec",
-        "--",
-        "pnpm",
-        "dlx",
-        "@upstash/context7-mcp@1.0.30"
-      ],
-      "env": {
-        "CONTEXT7_API_KEY": "${input:CONTEXT7_API_KEY}"
-      }
+        "run",
+        "--raw",
+        "--quiet",
+        "context7-mcp"
+      ]
     },
     "microsoft-learn": {
       "type": "http",
@@ -32,12 +38,5 @@
       ]
     }
   },
-  "inputs": [
-    {
-      "id": "CONTEXT7_API_KEY",
-      "type": "promptString",
-      "description": "API key for authentication",
-      "password": true
-    }
-  ]
+  "inputs": []
 }

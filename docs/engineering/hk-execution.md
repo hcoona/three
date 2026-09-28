@@ -19,7 +19,7 @@ Root HK excludes generated APM interfaces and several specialized surfaces
 from general linters. Workflow YAML has its own actionlint step; general
 Markdown checks exclude `.github` paths. A skipped check is not a validation
 result for the excluded files. v3 static-reference feedback and its
-path-selected product suite have distinct responsibilities; a successful
+CI-selected product suite have distinct responsibilities; a successful
 lint run does not establish publication authority or destination acceptance.
 
 The pre-commit hook uses Git stash and index checking. Preserve its existing
@@ -27,91 +27,108 @@ source-tree semantics when diagnosing hooks; do not infer the checked tree
 from the editor buffer. Repository-wide checks and any manual file selection
 must report which files and execution mode they actually covered.
 
-## Selecting Checks by Their Inputs
+## CI Execution Contract
 
-Select a check from the files it consumes, including configuration, fixtures,
-and build dependencies. Project ownership alone is not a test dependency, and
-a file extension alone does not establish that a file is narrative prose.
-Keep the selectors in root `hk.pkl`. Normal hooks share file checks and an
-impact dispatcher; the internal `impact-check` hook owns product test selection.
-Both use HK's matcher against complete change paths. File-reading wrappers
-then select existing operands before invoking their tools.
+[Issue #817](https://github.com/hcoona/three/issues/817) separates source
+checks from project tests. The v3
+[migration contract](../../src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#ci-execution-ownership-cutover)
+owns its runtime and native-admission boundary.
 
-| Check responsibility     | Selection basis                                                            | Example                                                                                                                 |
-| ------------------------ | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| File formatting and lint | Supported file types and existing exclusions                               | Markdown prose receives the applicable Markdown checks.                                                                 |
-| Product regression tests | Implementation, executable contracts, fixtures, and execution dependencies | v3 source, smoke package inputs, descriptors, locks, and inherited .NET build configuration select `v3-control-pytest`. |
-| Repository invariants    | The invariant's accepted execution boundary                                | The bounded static-reference scan runs whenever root HK runs and requires prepared authorities.                         |
+HK checks source/configuration conformance, including file checks, lock and
+generated-file consistency, deployed-source parity and the existing bounded
+static-reference policy. Project unit, scenario and integration tests run in
+CI or through explicit local test commands. Moving a suite to HK's `large`
+profile does not establish this separation.
 
-The v3 selectors group implementation, contract, and execution inputs. Within
-the declared engineering roots, only the root `README.md` and Markdown under
-`docs/` are narrative exclusions from the expensive suite. Other files remain
-selected, including new extensions and non-Markdown files under `docs/`.
-The exclusions belong to that test step, not to general linting or static
-references. CODEOWNERS continues to cover the documentation it owns.
+General CI selects its test/build work from the actual comparison range and
+the checked-out candidate. Selection uses workspace/build manifests and known
+consumed helpers, configuration and test fixtures. It retains deleted paths
+and both sides of renames. A missing comparison cannot become an empty change.
+An explicitly requested full mode selects all applicable existing work.
+Ordinary unconsumed documentation selects source checks; package READMEs,
+licenses and other consumed metadata are not globally excluded by extension.
 
-Markdown in smoke packages, test fixtures, and executable source directories
-remains an input. The archived workflow retirement notices also remain explicit
-contract inputs because tests read their contents. The scholarly publication
-step retains its own skill/package inputs; executable skill instructions do
-not inherit v3's prose exclusions. v3's selector and path transport also accept
-binary fixtures and symbolic links. The Pkl schema matches the pinned HK 1.56.1
-runtime so the binary-input option is effective.
+Python selects the affected existing test roots and their workspace/build
+dependency consumers. Its job syncs the owning current workspace packages and
+root development tools using uv's frozen package selection, including each
+selected member's default development groups. Tests then use that prepared
+environment without another sync. Engineering tests declare their own root
+dependencies. Only selected V3 tests prepare Node, HK, Pkl and static-reference
+authorities; V3 and selected NBGV consumers also prepare .NET tools. Keep the
+static-reference preparation's isolated Python environment separate from the
+test environment. New test consumers must declare any additional native needs
+in the selector and workflow.
 
-When a consumer starts reading an excluded document, update its selector and
-regression coverage in the same change. Likewise, when a build or test gains
-an external input, register that dependency rather than widening the selector
-to an unrelated project. Keep unknown files within declared implementation
-roots selected until their role is established. HK configuration changes
-themselves select the full v3 suite so selector changes receive regression
-validation.
+Node and .NET may retain their existing workspace build
+units where dependency selection is conservative; that is workspace-level,
+not exact per-project execution. AzureAuth platform artifacts and Ruby or
+scholarly-publication suites have their own affected inputs. A changed .NET
+product does not by itself require AzureAuth artifacts or v3 self-tests.
 
-HK's native Git selection omits deleted paths and rename sources. The
-[changed-path helper](../../eng/scripts/workflow_delivery_v3_hk.py) retains
-both with Git name-status output. Its `--files0` mode passes the complete list
-to HK through a temporary NUL-delimited file, preserving empty lists and path
-boundaries without large shell arguments. Both CI callers use this mode with
-explicit refs; `--staged` provides the corresponding local entry. The file
-lasts until the child exits. The helper never guesses CI refs from the index.
-The general CI workflow's manual entry uses `--all` because it has no event
-baseline for a change range.
+The selector runs without repository package restore or full validation.
+Each existing required GitHub context remains present and fails if selection
+fails, is canceled, or omits required output. Successful explicit
+non-applicability may omit work; selected work must complete successfully.
+The stable required `Validate` context consumes both source-conformance and
+scholarly-test job results. Its short result guard rejects failed, skipped,
+missing or canceled results, including workflow cancellation. Both workers
+retain explicit successful non-applicability and run independently; this
+summary does not move project tests back into HK or precede language jobs.
+Worker jobs use `!cancelled()` so failed selection still reaches the scope
+guard and superseded runs remain cancelable. Job-level `always()` would keep
+running workers alive during cancellation; it is reserved for the short
+`Validate` summary. See GitHub's [workflow cancellation][cancellation] and
+[status-check expressions][status-checks] references. Cancellation relies on
+GitHub's job outcome, not on a final shell step completing.
+When job status conditions or the cited GitHub semantics change, or a hosted
+run contradicts this cancellation behavior, tooling maintainers recheck the
+references and relevant ordinary-run evidence with independent evidence
+review. Every merged Delivery Wave is the existing fallback review event.
+If the contract is uncertain, pause dependent changes and claims while
+preserving required checks; do not assume cancellation completed.
+Required work does not use `continue-on-error`. Jobs wait only for inputs
+they consume, so source checks, selected language tests and independently
+built platform artifacts can run concurrently. Existing supported runner and
+Node matrices remain applicable to selected work.
 
-The file-linter steps set `HK_SKIP_MISSING_FILES=1` only for their subprocesses.
-The existing execution, actionlint, and Pkl wrappers then omit absent file
-operands. If none remain, they return without invoking the file reader; they
-never turn a deletion-only check into an implicit whole-repository scan.
-Commands without explicit file operands retain their existing behavior.
-For helper-driven checks, scholarly tests, Node authority validation, lock checks,
-and generated-file checks retain the complete HK input list and their original
-profiles/fix/staging behavior. Product test subprocesses do not inherit the
-file-linter setting.
+The `Select affected validation` job retains `ci-scope.json` with the actual
+candidate, comparison, selected roots and reasons. The Python job retains
+JUnit durations as `python-test-results`. These use ordinary CI artifact
+retention; copy decision-relevant observations into the Issue or PR.
 
-During normal pre-commit, the dispatcher reads complete staged changes after
-HK's configured stash. Other direct calls use HK's explicit file list, including
-`--all`. Raw HK ref selection and default staged `hk check` do not preserve
-deleted paths; use the helper for complete change-impact checks. The dispatcher
-runs only once, after authority preparation, and passes complete paths to the
-internal hook. This staged-history augmentation is specific to v3; other native
-pre-commit steps retain HK's original file selection. The internal hook is for
-selection and dispatch, not a replacement for the root validation gate.
+Normal validation retains the candidate, selection reasons, actual interpreter,
+test result and skip reasons, command/commit elapsed time, CI job/step timing,
+and owned temporary-file/inode observations in the Issue or implementation PR.
+Use ordinary runs to collect JUnit durations; do not repeat complete suites
+solely for timing. Compare equivalent work, identify the critical path, and
+separate test execution from setup, cache handling and dependency/queue waits.
+Parallel job durations are not added as wall time. Integration optimization
+preserves required real-tool proof, immutable preparation reuse, isolated
+writable fixtures, bounded concurrency and owned temporary-file cleanup.
 
-Outer `--plan` previews file checks and the dispatcher without running it.
-For a staged product-selection preview, use the helper with `--staged --files0 -- hk run
-impact-check --plan --json`; for a CI preview substitute both refs for `--staged`.
-The [contribution guide](../../CONTRIBUTING.md#local-checks) gives complete local
-commands. The internal hook does not repeat preparation or static scanning.
+## Complete Git Paths and File Operands
 
-The pinned HK integration tests exercise staged pre-commit and the complete
-staged/CI helper entries using real Git and HK plans. They cover prose-only and
-mixed changes, machine-consumed Markdown, deletion and rename boundaries, and
-explicit all-files selection. Plans establish selection, not successful check
-execution. A selected suite still runs in full; this configuration does not
-attempt per-test dependency analysis or cache previous results.
+[The Git helper](../../eng/scripts/workflow_delivery_v3_hk.py) retains deleted
+paths and both sides of renames from an explicit commit range or `--staged`.
+Its `--files0` option passes a temporary NUL-delimited list to HK, preserving
+path boundaries and option-like names without command-line length limits.
+The temporary file is removed after the child finishes, including failure;
+the helper propagates the child's exit status. PR/push source checks use this
+transport. Explicit full/manual CI uses `--all` because it has no event baseline.
 
-The existing profile membership is preserved: `small` does not mean every
-selected step is cheap. Explicit `--all` continues to select the v3 suite.
-The [v3 CI contract](../../src/public/lib/three-workflow-delivery-v3/docs/ci-qualification-mld.md#source-tree-conformance-through-hk)
-owns the composite obligation and unconditional static-reference requirement.
+These are impact paths used for HK selection. Only opted-in file-reading steps
+set `HK_SKIP_MISSING_FILES=1`; their wrappers then omit absent operands.
+Deletion-only lists return successfully without invoking a tool's implicit
+full scan. Directory-to-file replacements count as absent old paths; permission
+errors and other filesystem failures remain errors. Unconditional checks,
+static-reference preparation/scanning and lock validation retain their own
+inputs and do not inherit this opt-in. HK still owns source conformance;
+product tests remain in their explicit local commands and selected CI jobs.
+
+The explicit staged helper does not stash unstaged changes. Normal pre-commit
+retains HK's native selection and configured stashing; it does not call this
+helper to augment its path list. Distinguish path selection from the content
+snapshot when reporting validation. See the [local check command](../../CONTRIBUTING.md#local-checks).
 
 ## Quoted Paths and Watchdogs
 
@@ -158,3 +175,6 @@ relying on that old mitigation for release hardening, the tooling maintainer
 must verify the actual command, installed tools, and result in the intended
 Windows environment. Any change to integration behavior remains separate
 from this record relocation.
+
+[cancellation]: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation
+[status-checks]: https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions

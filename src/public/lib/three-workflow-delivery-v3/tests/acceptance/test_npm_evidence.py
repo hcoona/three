@@ -60,15 +60,28 @@ class SyntheticServiceMetadata:
     artifact: dict
 
 
+@pytest.fixture(scope="module")
+def baseline_fixtures():
+    return tuple(
+        build_npm_fixture(
+            replace(REQUEST.fixture, variant=variant), repository_root=ROOT
+        )
+        for variant in ("original", "different")
+    )
+
+
 @pytest.fixture
-def evidence_case(tmp_path, request):
+def evidence_case(tmp_path, request, baseline_fixtures):
     requested = replace(
         REQUEST,
         fixture=replace(
             REQUEST.fixture, variant=getattr(request, "param", "original")
         ),
     )
-    fixture = build_npm_fixture(requested.fixture, repository_root=ROOT)
+    original, different = baseline_fixtures
+    fixture = {"original": original, "different": different}[
+        requested.fixture.variant
+    ]
     profile = github_packages_destination_operation_profile()
     tag = "buddy-sha-" + requested.fixture.target
     match = ProfileMatchEvidence(

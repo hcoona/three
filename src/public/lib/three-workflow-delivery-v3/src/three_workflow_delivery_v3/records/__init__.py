@@ -6,11 +6,6 @@ from three_workflow_delivery_v3.records.artifacts import (
     ArtifactTransportIdentity,
     artifact_reference_from_document,
 )
-from three_workflow_delivery_v3.records.bindings import (
-    Admission,
-    CurrentAuthorityContext,
-    admit,
-)
 from three_workflow_delivery_v3.records.governance import (
     GOVERNANCE_ACCEPTANCE_DEPENDENCIES,
     GOVERNANCE_ACCEPTANCE_ENVIRONMENT,
@@ -100,7 +95,6 @@ __all__ = [
     "GOVERNANCE_ACCEPTANCE_WORKFLOW_PATH",
     "OFFICIAL_SIMULATION_WORKFLOW_PATH",
     "REMOTE_STATE_OBSERVATION_SCHEMA",
-    "Admission",
     "ApprovalBoundary",
     "ApprovalBundle",
     "ArtifactContentIdentity",
@@ -109,7 +103,6 @@ __all__ = [
     "ArtifactVariantIdentity",
     "AttemptOutcome",
     "BuddyExecutionIdentity",
-    "CurrentAuthorityContext",
     "DestinationOperationProfile",
     "DestinationProjection",
     "DestinationReadback",
@@ -154,7 +147,6 @@ __all__ = [
     "SimulationBinding",
     "SimulationIdentity",
     "SimulationOutcome",
-    "admit",
     "admit_governance_acceptance_evidence",
     "admit_release_record",
     "artifact_reference_from_document",

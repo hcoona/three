@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import socket
 import subprocess
 import tomllib
 from argparse import Namespace
@@ -11,16 +13,24 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Self, cast
+from typing import Self, cast
 from urllib.request import Request
 
 import pytest
+import yaml
 from three_workflow_delivery_v3 import cli as cli_module
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
     canonicalize,
 )
+from three_workflow_delivery_v3.ci import planner as ci_planner
+from three_workflow_delivery_v3.ci.evidence import (
+    form_ci_evidence,
+    form_empty_lane_result,
+    form_evidence_lane_result,
+)
+from three_workflow_delivery_v3.ci.finalizer import finalize_ci_slice
 from three_workflow_delivery_v3.ci.planner import (
     form_pull_request_candidate,
     form_slice_validation_candidate,
@@ -28,18 +38,24 @@ from three_workflow_delivery_v3.ci.planner import (
 from three_workflow_delivery_v3.records.artifacts import ArtifactReference
 from three_workflow_delivery_v3.records.ci import (
     CI_WORKFLOW_PATH,
+    admit_ci_bootstrap_projection_decision_json,
+    ci_evidence_digest,
     ci_qualification_snapshot_digest,
+    ci_slice_summary_text,
 )
 from three_workflow_delivery_v3.records.release import (
     BuddyExecutionIdentity,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
+    ReleaseIntent,
 )
+from three_workflow_delivery_v3.release import eligibility
 from three_workflow_delivery_v3.release.identity import (
     OFFICIAL_SIMULATION_PRODUCER,
     normalize_official_simulation_intent,
 )
 from three_workflow_delivery_v3.repository import (
+    AdmittedRepositoryModelSnapshot,
     CompilationContext,
     admit_repository_model_snapshot,
     first_slice_provider_manifest,
@@ -47,6 +63,7 @@ from three_workflow_delivery_v3.repository import (
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_POLICY_PATH,
+    ReleasePolicy,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
     AUTHORITATIVE_REMOTE,
@@ -63,6 +80,7 @@ from three_workflow_delivery_v3.repository.node_provider import (
     ProviderBinding,
 )
 
+from .release import test_eligibility as eligibility_fixtures
 from .release.conftest import (
     live_admitted_repository_model as live_admitted_repository_model,  # noqa: PLC0414
 )
@@ -83,9 +101,6 @@ from .release.test_observation_admission import NOW
 from .release.test_observation_admission import (
     observation_case as observation_case,  # noqa: PLC0414
 )
-
-if TYPE_CHECKING:
-    import argparse
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 PACKAGE_ROOT = REPO_ROOT / "src/public/lib/three-workflow-delivery-v3"
@@ -146,6 +161,19 @@ def _write_canonical(path: Path, document: JsonValue) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(canonicalize(document))
     return path
+
+
+def _github_output_values(path: Path) -> dict[str, str]:
+    text = path.read_text(encoding="utf-8")
+    assert text.endswith("\n")
+    values: dict[str, str] = {}
+    for assignment in text[:-1].split("\n"):
+        name, separator, value = assignment.partition("=")
+        assert name
+        assert separator == "="
+        assert name not in values
+        values[name] = value
+    return values
 
 
 def _target_authoring_repo(
@@ -599,17 +627,70 @@ def test_catalog_command_emits_exact_static_catalog(
     assert set(output["build-definitions"]) == {
         "node/npm-package-v1",
         "dotnet/nuget-package-v1",
+        "python/distribution-set-v1",
     }
     assert set(output["quality-presets"]) == {
         "node/hcoona-release-smoke-npm-v1",
         "dotnet/hcoona-release-smoke-github-packages-v1",
+        "python/hcoona-release-smoke-python-v1",
     }
     assert set(output["destination-definitions"]) == {
         "npm/github-packages-hcoona-three-v1",
         "npm/npmjs-public-v1",
         "nuget/github-packages-hcoona-three-v1",
+        "python/testpypi-v1",
+        "python/pypi-v1",
     }
-    assert output["catalog-digest"].startswith("sha256:")
+    build = output["build-definitions"]["python/distribution-set-v1"]
+    assert build["operation"] == "python-distribution-set"
+    assert build["output_kinds"] == ["python-wheel", "python-sdist"]
+    assert build["required_native_projections"] == ["pep440Version"]
+    assert build["capability_requirements"] == []
+    required = output["quality-presets"][
+        "python/hcoona-release-smoke-python-v1"
+    ]["required"]
+    assert required == [
+        "python/distribution-contents-v1",
+        "python/wheel-install-import-v1",
+        "python/sdist-build-install-import-v1",
+    ]
+    assert [
+        output["quality-definitions"][key]["subject"] for key in required
+    ] == [
+        "python-distribution-set",
+        "python-wheel",
+        "python-sdist",
+    ]
+    policy_path = output["release-policies"]["hcoona-release-smoke-python"][
+        "path"
+    ]
+    policy = yaml.safe_load(
+        (REPO_ROOT / policy_path).read_text(encoding="utf-8")
+    )
+    assert policy["quality"] == required
+    assert set(policy["channels"]) == {"buddy", "official"}
+    for channel, destination, origin in (
+        ("buddy", "python/testpypi-v1", "https://test.pypi.org/legacy/"),
+        ("official", "python/pypi-v1", "https://upload.pypi.org/legacy/"),
+    ):
+        binding = policy["channels"][channel]
+        assert set(binding) == {"destination", "governance"}
+        assert binding["destination"] == destination
+        definition = output["destination-definitions"][destination]
+        assert definition["registry"] == origin
+        assert definition["supported_channels"] == [channel]
+        assert definition["capability_requirements"] == [
+            "python/trusted-publishing-oidc-v1"
+        ]
+        assert (
+            definition["live_mutation_status"]
+            == "requires-python-native-acceptance"
+        )
+    assert output["capabilities"]["python/trusted-publishing-oidc-v1"][
+        "github_permissions"
+    ] == [["contents", "read"], ["id-token", "write"]]
+    digest = output.pop("catalog-digest")
+    assert digest == canonical_sha256(output)
 
 
 def test_validate_authoring_command_reports_exact_first_slice(
@@ -946,6 +1027,124 @@ def test_cli_rejects_unapproved_commands(arguments: list[str]) -> None:
     assert error.value.code == ARGPARSE_ERROR
 
 
+def test_retired_acceptance_command_rejects_before_effects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reject before consuming credentials, running tools or writing output."""
+    output = tmp_path / "acceptance.json"
+    github_output = tmp_path / "github-output"
+    token = "unused-test-token"  # noqa: S105
+    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", token)
+
+    def unexpected_effect(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("retired command attempted an external operation")
+
+    monkeypatch.setattr(subprocess, "run", unexpected_effect)
+    monkeypatch.setattr(subprocess, "Popen", unexpected_effect)
+    monkeypatch.setattr(cli_module, "urlopen", unexpected_effect)
+
+    with pytest.raises(SystemExit) as error:
+        cli_module.main(
+            [
+                "governance",
+                "run-fixed-acceptance-probe",
+                "--suite",
+                "absent-create-readback",
+                "--package-coordinate",
+                "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+                "--target-sha",
+                "a" * 40,
+                "--output",
+                str(output),
+                "--github-output",
+                str(github_output),
+            ]
+        )
+
+    assert error.value.code == ARGPARSE_ERROR
+    assert (
+        "invalid choice: 'run-fixed-acceptance-probe'"
+        in capsys.readouterr().err
+    )
+    assert os.environ["WDV3_ACCEPTANCE_GITHUB_TOKEN"] == token
+    assert not output.exists()
+    assert not github_output.exists()
+
+
+@pytest.mark.parametrize(
+    "selected_ref",
+    [
+        "refs/heads/contributor/arbitrary-buddy-source",
+        "refs/tags/arbitrary-buddy-candidate",
+    ],
+    ids=["branch", "tag"],
+)
+def test_public_cli_normalizes_arbitrary_buddy_branch_and_tag_without_codeowners_gate(  # noqa: E501
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selected_ref: str,
+) -> None:
+    """Preserve arbitrary refs through the public offline CLI boundary."""
+
+    def unexpected_network(*_args: object, **_kwargs: object) -> None:
+        message = "normalization attempted network access"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(cli_module, "urlopen", unexpected_network)
+    monkeypatch.setattr(socket, "create_connection", unexpected_network)
+    output = tmp_path / "intent.json"
+    target = "1234567890abcdef1234567890abcdef12345678"
+
+    status = cli_module.main(
+        [
+            "release",
+            "normalize-live-request",
+            "--repository",
+            "hcoona/three",
+            "--selected-ref",
+            selected_ref,
+            "--target",
+            target,
+            "--actor",
+            "commit9-test",
+            "--workflow-run-id",
+            "9009",
+            "--run-attempt",
+            "2",
+            "--output",
+            str(output),
+        ]
+    )
+    intent = json.loads(output.read_bytes())
+
+    assert status == 0
+    assert {
+        field: intent[field]
+        for field in (
+            "workflow-ref",
+            "selected-ref",
+            "workflow-sha",
+            "target",
+            "event-kind",
+            "channel",
+            "mode",
+            "purpose",
+        )
+    } == {
+        "workflow-ref": selected_ref,
+        "selected-ref": selected_ref,
+        "workflow-sha": target,
+        "target": target,
+        "event-kind": "workflow_dispatch",
+        "channel": "buddy",
+        "mode": "live",
+        "purpose": "live-release",
+    }
+    assert selected_ref in output.read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize(
     "command",
     [
@@ -956,10 +1155,6 @@ def test_cli_rejects_unapproved_commands(arguments: list[str]) -> None:
         "plan-qualification",
         "run-build",
         "form-uploaded-artifact",
-        "run-project-test",
-        "run-artifact-contents",
-        "run-install-import",
-        "form-incomplete-evidence",
         "finalize-qualification",
         "observe-npmjs",
         "materialize-hypothetical-actions",
@@ -1188,10 +1383,6 @@ def test_project_registers_only_the_bounded_cli() -> None:
     assert pyproject["project"]["scripts"] == {
         "three-workflow-delivery-v3": "three_workflow_delivery_v3.cli:main"
     }
-    assert set(pyproject["project"]["dependencies"]) == {
-        "PyYAML>=6.0.2",
-        "rfc8785>=0.1.4",
-    }
 
 
 def test_ci_candidate_cli_binds_tested_merge_and_exact_range(
@@ -1389,19 +1580,18 @@ def test_ci_plan_cli_closes_repository_only_and_manual_scope(
     selected_by_lane = dict(
         zip(cli_module.CI_LANE_IDS, lane_selected, strict=True)
     )
-    assert (tmp_path / f"{event_kind}-github-output").read_text(
-        encoding="utf-8"
-    ) == (
-        f"plan-digest={canonical_sha256(plan)}\n"
-        "plan-ready=true\n"
-        f"root-hk-selected={str(selected_by_lane['root-hk']).lower()}\n"
-        "project-build-selected="
-        f"{str(selected_by_lane['project-build']).lower()}\n"
-        "project-test-selected="
-        f"{str(selected_by_lane['project-test']).lower()}\n"
-        "npm-artifact-build-selected="
-        f"{str(selected_by_lane['npm-artifact-build']).lower()}\n"
-    )
+    assert _github_output_values(tmp_path / f"{event_kind}-github-output") == {
+        "plan-digest": canonical_sha256(plan),
+        "plan-ready": "true",
+        "root-hk-selected": str(selected_by_lane["root-hk"]).lower(),
+        "project-build-selected": str(
+            selected_by_lane["project-build"]
+        ).lower(),
+        "project-test-selected": str(selected_by_lane["project-test"]).lower(),
+        "npm-artifact-build-selected": str(
+            selected_by_lane["npm-artifact-build"]
+        ).lower(),
+    }
     assert plan["candidate"]["purpose"] == (  # type: ignore[index]
         "ci-pr-slice-shadow"
         if event_kind == "pull_request"
@@ -1458,16 +1648,16 @@ def test_missing_target_authoring_closes_blocked_plan_and_decision(
     assert diagnostic in " ".join(
         cast("list[str]", plan["diagnostics"]),
     )
-    assert (tmp_path / "workflow_dispatch-github-output").read_text(
-        encoding="utf-8"
-    ) == (
-        f"plan-digest={plan_digest}\n"
-        "plan-ready=false\n"
-        "root-hk-selected=false\n"
-        "project-build-selected=false\n"
-        "project-test-selected=false\n"
-        "npm-artifact-build-selected=false\n"
-    )
+    assert _github_output_values(
+        tmp_path / "workflow_dispatch-github-output"
+    ) == {
+        "plan-digest": plan_digest,
+        "plan-ready": "false",
+        "root-hk-selected": "false",
+        "project-build-selected": "false",
+        "project-test-selected": "false",
+        "npm-artifact-build-selected": "false",
+    }
 
     results: list[str] = []
     for lane in cli_module.CI_LANE_IDS:
@@ -1666,6 +1856,209 @@ def test_ci_bootstrap_projection_rejects_inexact_inputs(
         "summary-mismatch": "Summary does not match",
     }[mutation]
     assert expected_error in capsys.readouterr().err
+
+
+def test_ci_bootstrap_projection_rejects_foreign_candidate_before_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reject a coherent other-run Decision before Git or summary effects."""
+    records = _blocked_pr_decision_fixture(tmp_path, monkeypatch)
+    plan = cli_module._load_ci_plan(str(records[0]), records[1])  # noqa: SLF001
+    candidate = replace(plan.candidate, workflow_run_id=WORKFLOW_RUN_ID + 1)
+    obligations = ci_planner._form_obligations(  # noqa: SLF001
+        candidate=candidate,
+        repository_model_digest=plan.repository_model_digest,
+        selected_lanes=(),
+        scope_mode=plan.scope_mode,
+        changed_paths=plan.changed_paths,
+        selected_project_nodes=plan.selected_project_nodes,
+        selected_release_units=plan.selected_release_units,
+        selected_variants=plan.selected_variants,
+        selected_outputs=plan.selected_outputs,
+    )
+    alternate_plan = replace(
+        plan,
+        candidate=candidate,
+        workflow_run_id=candidate.workflow_run_id,
+        obligations=obligations,
+    )
+    decision = finalize_ci_slice(
+        alternate_plan,
+        tuple(
+            form_empty_lane_result(alternate_plan, lane_id=lane)
+            for lane in cli_module.CI_LANE_IDS
+        ),
+        elapsed_seconds=EXPECTED_ELAPSED_SECONDS,
+        supersession_state="not-superseded",
+    )
+    encoded = canonicalize(decision.to_document())
+    assert (
+        admit_ci_bootstrap_projection_decision_json(
+            encoded, expected_plan=alternate_plan
+        )
+        == decision
+    )
+    records[2].write_bytes(encoded)
+    records[3].write_bytes(canonicalize(decision.summary.to_document()))
+    observed: list[tuple[object, ...]] = []
+
+    def contains_path(*arguments: object) -> bool:
+        observed.append(arguments)
+        return False
+
+    monkeypatch.setattr(cli_module, "_git_commit_contains_path", contains_path)
+    github_summary = tmp_path / "github-summary.md"
+    _write(github_summary, "existing note\n")
+    arguments = _bootstrap_projection_arguments(
+        records=records,
+        github_summary=github_summary,
+    )
+
+    assert cli_module.main(arguments) == 1
+    assert "trusted current candidate" in capsys.readouterr().err
+    assert observed == []
+    assert github_summary.read_text(encoding="utf-8") == "existing note\n"
+    assert records[2].read_bytes() == encoded
+
+
+def test_ci_bootstrap_projection_rejects_nonempty_evidence_before_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Keep a valid Finalizer Decision with Evidence outside bootstrap."""
+    plan_path, _, document = _plan_fixture(
+        tmp_path,
+        monkeypatch,
+        event_kind="pull_request",
+        changed_paths=("docs/wiki/README.md",),
+    )
+    plan_digest = canonical_sha256(document)
+    plan = cli_module._load_ci_plan(str(plan_path), plan_digest)  # noqa: SLF001
+    obligation = next(item for item in plan.obligations if item.selected)
+    assert obligation.lane_id == "root-hk"
+    evidence = form_ci_evidence(
+        plan,
+        obligation=obligation,
+        producer="root-hk",
+        workflow_run_id=plan.workflow_run_id,
+        run_attempt=plan.run_attempt,
+        runner="ubuntu-24.04",
+        raw_outcome="success",
+        output_digests=("sha256:" + ("9" * 64),),
+        diagnostics=("root-hk completed mechanically",),
+    )
+    decision = finalize_ci_slice(
+        plan,
+        tuple(
+            form_evidence_lane_result(plan, evidence)
+            if item.selected
+            else form_empty_lane_result(plan, lane_id=item.lane_id)
+            for item in plan.obligations
+        ),
+        elapsed_seconds=EXPECTED_ELAPSED_SECONDS,
+        supersession_state="not-superseded",
+    )
+    assert decision.terminal_result == "success"
+    assert decision.admitted_evidence_digests == (ci_evidence_digest(evidence),)
+    assert decision.admitted_artifact_digests == ()
+    decision_path = _write_canonical(
+        tmp_path / "ready-decision.json", decision.to_document()
+    )
+    summary_path = _write_canonical(
+        tmp_path / "ready-summary.json", decision.summary.to_document()
+    )
+    observed: list[tuple[object, ...]] = []
+
+    def contains_path(*arguments: object) -> bool:
+        observed.append(arguments)
+        return False
+
+    monkeypatch.setattr(cli_module, "_git_commit_contains_path", contains_path)
+    github_summary = tmp_path / "github-summary.md"
+    _write(github_summary, "existing note\n")
+    arguments = _bootstrap_projection_arguments(
+        records=(
+            plan_path,
+            plan_digest,
+            decision_path,
+            summary_path,
+            tmp_path / "repo",
+        ),
+        github_summary=github_summary,
+    )
+
+    assert cli_module.main(arguments) == 1
+    assert "must have no admitted Evidence" in capsys.readouterr().err
+    assert observed == []
+    assert github_summary.read_text(encoding="utf-8") == "existing note\n"
+
+
+def test_ci_bootstrap_projection_rejects_artifact_lineage_before_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reject artifact lineage independently of Evidence and summary rules."""
+    records = _blocked_pr_decision_fixture(tmp_path, monkeypatch)
+    plan = cli_module._load_ci_plan(str(records[0]), records[1])  # noqa: SLF001
+    decision = admit_ci_bootstrap_projection_decision_json(
+        records[2].read_bytes(), expected_plan=plan
+    )
+    artifact_digests = ("sha256:" + ("9" * 64),)
+    summary_text = ci_slice_summary_text(
+        candidate=decision.candidate,
+        repository_model_digest=decision.repository_model_digest,
+        plan_digest=decision.plan_digest,
+        scope_mode=decision.scope_mode,
+        changed_paths=decision.changed_paths,
+        selected_project_nodes=decision.selected_project_nodes,
+        selected_release_units=decision.selected_release_units,
+        selected_variants=decision.selected_variants,
+        selected_outputs=decision.selected_outputs,
+        plan_diagnostics=decision.plan_diagnostics,
+        dispositions=decision.obligation_dispositions,
+        evidence_digests=decision.admitted_evidence_digests,
+        artifact_digests=artifact_digests,
+        explanation=decision.explanation,
+        terminal_result=decision.terminal_result,
+        failure_class=decision.failure_class,
+        next_action=decision.next_action,
+        elapsed_seconds=decision.elapsed_seconds,
+        supersession_state=decision.supersession_state,
+        supersession_reason=decision.supersession_reason,
+        pr_slo=decision.pr_slo,
+        pr_slo_reason=decision.pr_slo_reason,
+    )
+    decision = replace(
+        decision,
+        admitted_artifact_digests=artifact_digests,
+        summary=replace(decision.summary, text=summary_text),
+    )
+    assert decision.admitted_evidence_digests == ()
+    assert decision.admitted_artifact_digests == artifact_digests
+    records[2].write_bytes(canonicalize(decision.to_document()))
+    records[3].write_bytes(canonicalize(decision.summary.to_document()))
+    observed: list[tuple[object, ...]] = []
+
+    def contains_path(*arguments: object) -> bool:
+        observed.append(arguments)
+        return False
+
+    monkeypatch.setattr(cli_module, "_git_commit_contains_path", contains_path)
+    github_summary = tmp_path / "github-summary.md"
+    _write(github_summary, "existing note\n")
+    arguments = _bootstrap_projection_arguments(
+        records=records,
+        github_summary=github_summary,
+    )
+
+    assert cli_module.main(arguments) == 1
+    assert "must have no admitted artifacts" in capsys.readouterr().err
+    assert observed == []
+    assert github_summary.read_text(encoding="utf-8") == "existing note\n"
 
 
 def test_git_commit_path_probe_uses_exact_base_tree(tmp_path: Path) -> None:
@@ -2181,7 +2574,7 @@ def test_public_pr_lookup_uses_exact_unauthenticated_github_endpoint(
 
     assert isinstance(request, Request)
     assert document == {"base": {"sha": "a"}, "head": {"sha": "b"}}
-    assert observed["timeout"] == GITHUB_API_TIMEOUT_SECONDS
+    assert 0 < cast("int", observed["timeout"]) <= GITHUB_API_TIMEOUT_SECONDS
     assert request.full_url == (
         "https://api.github.com/repos/hcoona/three/pulls/17"
     )
@@ -2356,10 +2749,12 @@ def test_form_approval_bundle_command_binds_current_loaded_records(
         "control": control,
     }
     assert json.loads(output.read_bytes()) == bundle_document
-    assert github_output.read_text(encoding="utf-8").splitlines() == [
-        f"approval-bundle-digest={bundle.bundle_digest}",
-        f"approval-bundle-digest-hex={bundle.bundle_digest.removeprefix('sha256:')}",
-    ]
+    assert _github_output_values(github_output) == {
+        "approval-bundle-digest": bundle.bundle_digest,
+        "approval-bundle-digest-hex": bundle.bundle_digest.removeprefix(
+            "sha256:"
+        ),
+    }
 
 
 @pytest.mark.parametrize(
@@ -2651,472 +3046,13 @@ def _publication_authority_references() -> tuple[
     )
 
 
-def test_acceptance_cli_persists_validated_request_proof(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Persist the admitted proof rather than reconstructed request data."""
-    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
-        FixedAcceptanceSuiteResult,
-        FixedCoordinateAcceptanceProbeResult,
-        ValidatedAcceptanceRequestProof,
-    )
-
-    proof = ValidatedAcceptanceRequestProof.from_validated_exchange(
-        raw_request=b'{"actual":"captured-couchdb-request"}',
-        tarball=b"acceptance-tarball",
-        package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-        tag="wdv3-acceptance-1",
-        upstream_status=201,
-        selected_headers={"ETag": '"created"'},
-        response_body=b'{"ok":true}',
-    )
-    result = FixedAcceptanceSuiteResult(
-        suite="absent-create-readback",
-        scenarios=(
-            FixedCoordinateAcceptanceProbeResult(
-                scenario="absent-create-readback",
-                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-                tag="wdv3-acceptance-1",
-                pre_state="absent",
-                post_state="exact",
-                result="created",
-                mutation_classification="complete",
-                action_executed=True,
-                mutation_started=True,
-                response_identity_digest=proof.response_identity_digest,
-                content_sha512=proof.tarball_sha512,
-                diagnostics=(),
-                validated_request_proof=proof,
-            ),
-        ),
-    )
-    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "upstream-secret")
-    monkeypatch.setattr(
-        cli_module,
-        "_build_acceptance_tarball",
-        lambda root, **_kwargs: root / "unused.tgz",
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "run_fixed_acceptance_suite",
-        lambda **_kwargs: result,
-    )
-    output = tmp_path / "acceptance.json"
-    arguments = cast(
-        "cli_module._AcceptanceProbeArguments",  # noqa: SLF001
-        SimpleNamespace(
-            package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-            suite="absent-create-readback",
-            target_sha="c" * 40,
-            timeout_seconds=7.0,
-            max_response_bytes=8192,
-            max_output_bytes=4096,
-            output=str(output),
-            github_output=None,
-        ),
-    )
-
-    assert (
-        cli_module._governance_run_fixed_acceptance_probe_command(  # noqa: SLF001
-            arguments
-        )
-        == 0
-    )
-
-    persisted = json.loads(output.read_bytes())
-    assert persisted["scenarios"][0]["validated-request-proof"] == (
-        proof.to_document()
-    )
-    assert persisted["scenarios"][0]["response"]["identity-digest"] == (
-        proof.response_identity_digest
-    )
-
-
-def test_acceptance_cli_output_contains_no_request_credentials(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Keep raw request credentials out of persisted acceptance output."""
-    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
-        FixedAcceptanceSuiteResult,
-        FixedCoordinateAcceptanceProbeResult,
-        ValidatedAcceptanceRequestProof,
-    )
-
-    proof = ValidatedAcceptanceRequestProof.from_validated_exchange(
-        raw_request=b'{"authorization":"not-retained"}',
-        tarball=b"acceptance-tarball",
-        package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-        tag="wdv3-acceptance-1",
-        upstream_status=201,
-        selected_headers={"Content-Type": "application/json"},
-        response_body=b'{"ok":true}',
-    )
-    result = FixedAcceptanceSuiteResult(
-        suite="absent-create-readback",
-        scenarios=(
-            FixedCoordinateAcceptanceProbeResult(
-                scenario="absent-create-readback",
-                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-                tag="wdv3-acceptance-1",
-                pre_state="absent",
-                post_state="exact",
-                result="created",
-                mutation_classification="complete",
-                action_executed=True,
-                mutation_started=True,
-                response_identity_digest=proof.response_identity_digest,
-                content_sha512=proof.tarball_sha512,
-                diagnostics=(),
-                validated_request_proof=proof,
-            ),
-        ),
-    )
-    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "upstream-secret")
-    monkeypatch.setattr(
-        cli_module,
-        "_build_acceptance_tarball",
-        lambda root, **_kwargs: root / "unused.tgz",
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "run_fixed_acceptance_suite",
-        lambda **_kwargs: result,
-    )
-    output = tmp_path / "acceptance.json"
-
-    cli_module._governance_run_fixed_acceptance_probe_command(  # noqa: SLF001
-        cast(
-            "cli_module._AcceptanceProbeArguments",  # noqa: SLF001
-            SimpleNamespace(
-                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-                suite="absent-create-readback",
-                target_sha="c" * 40,
-                timeout_seconds=7.0,
-                max_response_bytes=8192,
-                max_output_bytes=4096,
-                output=str(output),
-                github_output=None,
-            ),
-        )
-    )
-
-    retained = output.read_bytes()
-    assert b"upstream-secret" not in retained
-    assert b"not-retained" not in retained
-    assert b"authorization" not in retained.lower()
-
-
-def test_acceptance_cli_threads_single_deadline_through_observe_publish_and_cleanup(  # noqa: E501
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Thread one absolute deadline into the acceptance suite."""
-    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
-        FixedAcceptanceSuiteResult,
-        FixedCoordinateAcceptanceProbeResult,
-    )
-
-    captured: dict[str, object] = {}
-    tarball = tmp_path / "acceptance.tgz"
-    tarball.write_bytes(b"acceptance")
-    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "local-test-token")
-    monkeypatch.setattr(cli_module, "monotonic", lambda: 100.0)
-    monkeypatch.setattr(
-        cli_module,
-        "_build_acceptance_tarball",
-        lambda *_args, **_kwargs: tarball,
-    )
-
-    def run_suite(**kwargs: object) -> FixedAcceptanceSuiteResult:
-        captured.update(kwargs)
-        return FixedAcceptanceSuiteResult(
-            suite="absent-create-readback",
-            scenarios=(
-                FixedCoordinateAcceptanceProbeResult(
-                    scenario="absent-create-readback",
-                    package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-                    tag="wdv3-acceptance-1",
-                    pre_state="exact",
-                    post_state="exact",
-                    result="exact-no-mutation",
-                    mutation_classification="complete",
-                    action_executed=False,
-                    mutation_started=False,
-                    response_identity_digest="sha256:" + ("a" * 64),
-                    content_sha512="sha512:" + ("b" * 128),
-                    diagnostics=(),
-                ),
-            ),
-        )
-
-    monkeypatch.setattr(cli_module, "run_fixed_acceptance_suite", run_suite)
-    output = tmp_path / "output.json"
-
-    status = cli_module._governance_run_fixed_acceptance_probe_command(  # noqa: SLF001
-        cast(
-            "cli_module._AcceptanceProbeArguments",  # noqa: SLF001
-            SimpleNamespace(
-                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-                suite="absent-create-readback",
-                target_sha="c" * 40,
-                timeout_seconds=7.0,
-                max_response_bytes=8192,
-                max_output_bytes=4096,
-                output=str(output),
-                github_output=None,
-            ),
-        )
-    )
-
-    assert status == 0
-    expected_timeout = 7.0
-    assert captured["deadline"] == 100.0 + expected_timeout
-    assert captured["timeout_seconds"] == expected_timeout
-    assert (
-        json.loads(output.read_bytes())["mutation-classification"] == "complete"
-    )
-
-
-def test_acceptance_cli_persists_incomplete_result_for_partial_runner_facts(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Persist fail-closed facts when the runner omits one required fact."""
-
-    class Transport:
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            self.calls = 0
-
-        def observe(
-            self, *_args: object, **_kwargs: object
-        ) -> dict[str, object]:
-            self.calls += 1
-            if self.calls == 1:
-                return {
-                    "state": "absent",
-                    "response-identity-digest": "sha256:" + ("a" * 64),
-                }
-            return {
-                "state": "exact",
-                "version": "0.0.0-wdv3-acceptance.1",
-                "tag": "wdv3-acceptance-1",
-                "content-sha512": (
-                    "sha512:" + hashlib.sha512(b"acceptance").hexdigest()
-                ),
-                "response-identity-digest": "sha256:" + ("b" * 64),
-            }
-
-    class Runner:
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            pass
-
-        def run(
-            self,
-            *_args: object,
-            **_kwargs: object,
-        ) -> dict[str, object]:
-            return {"outcome": "created", "action-executed": True}
-
-    tarball = tmp_path / "acceptance.tgz"
-    tarball.write_bytes(b"acceptance")
-    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "local-test-token")
-    monkeypatch.setattr(
-        cli_module,
-        "_build_acceptance_tarball",
-        lambda *_args, **_kwargs: tarball,
-    )
-    monkeypatch.setattr(cli_module, "_AcceptanceNpmTransport", Transport)
-    monkeypatch.setattr(cli_module, "_AcceptanceNpmRunner", Runner)
-    output = tmp_path / "incomplete.json"
-
-    status = cli_module._governance_run_fixed_acceptance_probe_command(  # noqa: SLF001
-        cast(
-            "cli_module._AcceptanceProbeArguments",  # noqa: SLF001
-            SimpleNamespace(
-                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-                suite="absent-create-readback",
-                target_sha="c" * 40,
-                timeout_seconds=7.0,
-                max_response_bytes=8192,
-                max_output_bytes=4096,
-                output=str(output),
-                github_output=None,
-            ),
-        )
-    )
-
-    document = json.loads(output.read_bytes())
-    scenario = document["scenarios"][0]
-    assert status == 0
-    assert scenario["mutation-classification"] == "incomplete"
-    assert scenario["action"]["executed"] is False
-    assert scenario["action"]["mutation-started"] is False
-    assert scenario["response"]["result"] == "runner-malformed-before-mutation"
-
-
-def _acceptance_parser_arguments(
-    suite: str,
-    *extra: str,
-) -> argparse.Namespace:
-    return cli_module._parser().parse_args(  # noqa: SLF001
-        [
-            "governance",
-            "run-fixed-acceptance-probe",
-            "--suite",
-            suite,
-            "--package-coordinate",
-            cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-            "--target-sha",
-            "c" * 40,
-            "--output",
-            "acceptance.json",
-            *extra,
-        ]
-    )
-
-
-def test_acceptance_absent_create_readback_default_timeout_is_120_seconds() -> (
-    None
-):
-    """Use the bounded default for the single-scenario acceptance suite."""
-    arguments = _acceptance_parser_arguments("absent-create-readback")
-    expected_timeout = 120.0
-
-    assert arguments.timeout_seconds == expected_timeout
-    assert type(arguments.timeout_seconds) is float
-
-
-def test_acceptance_exact_and_conflict_default_timeout_is_at_least_300_seconds() -> (  # noqa: E501
-    None
-):
-    """Reserve a realistic minimum budget for all four scenarios."""
-    arguments = _acceptance_parser_arguments("exact-and-conflict")
-    minimum_timeout = 300.0
-
-    assert arguments.timeout_seconds >= minimum_timeout
-    assert type(arguments.timeout_seconds) is float
-
-
-@pytest.mark.parametrize(
-    "suite",
-    ["absent-create-readback", "exact-and-conflict"],
-)
-def test_acceptance_explicit_timeout_overrides_suite_default(
-    suite: str,
-) -> None:
-    """Preserve an explicit operator-selected timeout for either suite."""
-    explicit_timeout = 43.25
-    arguments = _acceptance_parser_arguments(
-        suite,
-        "--timeout-seconds",
-        str(explicit_timeout),
-    )
-
-    assert arguments.timeout_seconds == explicit_timeout
-    assert type(arguments.timeout_seconds) is float
-
-
-@pytest.mark.parametrize("_timeout_contract", [None], ids=["timeout-budget"])
-def test_acceptance_cli_does_not_reset_deadline_between_scenarios(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    _timeout_contract: None,
-) -> None:
-    """Construct one deadline and spend it monotonically across scenarios."""
-    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
-        FixedAcceptanceSuiteResult,
-        FixedCoordinateAcceptanceProbeResult,
-    )
-
-    class Clock:
-        now = 200.0
-        calls = 0
-
-        def monotonic(self) -> float:
-            self.calls += 1
-            return self.now
-
-    clock = Clock()
-    budgets: list[float] = []
-    tarball = tmp_path / "acceptance.tgz"
-    tarball.write_bytes(b"acceptance")
-    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "local-test-token")
-    monkeypatch.setattr(cli_module, "monotonic", clock.monotonic)
-    monkeypatch.setattr(
-        cli_module,
-        "_build_acceptance_tarball",
-        lambda *_args, **_kwargs: tarball,
-    )
-
-    def run_suite(**kwargs: object) -> FixedAcceptanceSuiteResult:
-        deadline = cast("float", kwargs["deadline"])
-        timeout = cast("float", kwargs["timeout_seconds"])
-        assert deadline == 200.0 + timeout
-        scenarios = []
-        for index, scenario in enumerate(
-            ("exact", "identical-race", "differing-race", "lost-response")
-        ):
-            budgets.append(deadline - clock.now)
-            clock.now += 2.0
-            scenarios.append(
-                FixedCoordinateAcceptanceProbeResult(
-                    scenario=scenario,
-                    package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-                    tag=f"wdv3-acceptance-{index + 1}",
-                    pre_state="unknown",
-                    post_state="unknown",
-                    result="timeout",
-                    mutation_classification="unknown",
-                    action_executed=True,
-                    mutation_started=True,
-                    response_identity_digest="sha256:" + ("a" * 64),
-                    content_sha512=None,
-                    diagnostics=("acceptance-operation-timeout",),
-                )
-            )
-        return FixedAcceptanceSuiteResult(
-            suite="exact-and-conflict",
-            scenarios=tuple(scenarios),
-        )
-
-    monkeypatch.setattr(cli_module, "run_fixed_acceptance_suite", run_suite)
-    output = tmp_path / "acceptance.json"
-
-    status = cli_module._governance_run_fixed_acceptance_probe_command(  # noqa: SLF001
-        cast(
-            "cli_module._AcceptanceProbeArguments",  # noqa: SLF001
-            SimpleNamespace(
-                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
-                suite="exact-and-conflict",
-                target_sha="c" * 40,
-                timeout_seconds=300.0,
-                max_response_bytes=8192,
-                max_output_bytes=4096,
-                output=str(output),
-                github_output=None,
-            ),
-        )
-    )
-
-    assert status == 0
-    assert clock.calls == 1
-    assert budgets == [300.0, 298.0, 296.0, 294.0]
-    assert json.loads(output.read_bytes())["scenario-inventory"] == [
-        "exact",
-        "identical-race",
-        "differing-race",
-        "lost-response",
-    ]
-
-
 def _run_compile_live_model_scenario(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     *,
     target: str = "a" * 40,
     malformed_authoring: str | None = None,
+    provider_mutation: tuple[tuple[str, str], JsonValue] | None = None,
 ) -> tuple[int, Path, Path]:
     repo, actual_target = _target_authoring_repo(
         tmp_path,
@@ -3156,10 +3092,14 @@ def _run_compile_live_model_scenario(
         provider_binding(manifest, "node-first-slice")
     )
     provider_document = provider.to_document()
+    if provider_mutation is not None:
+        (section, field), value = provider_mutation
+        cast("dict[str, JsonValue]", provider_document[section])[field] = value
+    result_digest = canonical_sha256(provider_document)
     provider_document["provider-request-manifest-digest"] = (
         manifest.manifest_digest
     )
-    provider_document["result-digest"] = provider.result_digest
+    provider_document["result-digest"] = result_digest
     provider_path = _write_canonical(
         tmp_path / "live-provider-result.json",
         provider_document,
@@ -3243,25 +3183,22 @@ def test_compile_live_model_emits_canonical_buddy_execution_concurrency_key(
         ),
         expected_digest=canonical_sha256(model_document),
     )
-    output_lines = github_output.read_text(encoding="utf-8").splitlines()
+    output_values = _github_output_values(github_output)
 
     assert result == 0
     assert captured.out == ""
     assert captured.err == ""
     assert admitted.snapshot.ready is True
-    assert output_lines == [
-        f"repository-model-digest={admitted.canonical_digest}",
-        (
-            "repository-model-digest-hex="
-            f"{admitted.canonical_digest.removeprefix('sha256:')}"
+    assert output_values == {
+        "repository-model-digest": admitted.canonical_digest,
+        "repository-model-digest-hex": admitted.canonical_digest.removeprefix(
+            "sha256:"
         ),
-        (
-            "execution-concurrency-key="
-            "a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d"
-            "3254299d664534a6"
+        "execution-concurrency-key": (
+            "a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d3254299d664534a6"
         ),
-    ]
-    assert "sha256:" not in output_lines[2]
+    }
+    assert "sha256:" not in output_values["execution-concurrency-key"]
 
 
 def test_compile_live_model_does_not_emit_execution_concurrency_key_when_compilation_fails(  # noqa: E501
@@ -3284,6 +3221,43 @@ def test_compile_live_model_does_not_emit_execution_concurrency_key_when_compila
     assert not github_output.exists()
 
 
+@pytest.mark.parametrize(
+    ("path", "message"),
+    [
+        pytest.param(
+            ("checkout", "authoritative-remote-url"),
+            "remote URL must be a string",
+            id="boolean-remote-url",
+        ),
+        pytest.param(
+            ("binding", "workflow-run-id"),
+            "run must be an integer",
+            id="boolean-run",
+        ),
+    ],
+)
+def test_compile_live_model_rejects_malformed_provider_primitives(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    path: tuple[str, str],
+    message: str,
+) -> None:
+    """Reject malformed uploaded Provider fields before Model output."""
+    result, model_output, github_output = _run_compile_live_model_scenario(
+        tmp_path,
+        monkeypatch,
+        provider_mutation=(path, True),
+    )
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert captured.out == ""
+    assert message in captured.err
+    assert not model_output.exists()
+    assert not github_output.exists()
+
+
 def test_compile_live_model_execution_concurrency_key_changes_with_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3297,7 +3271,7 @@ def test_compile_live_model_execution_concurrency_key_changes_with_target(
     )
     results: list[int] = []
     model_documents: list[dict[str, JsonValue]] = []
-    output_lines_by_target: list[list[str]] = []
+    output_values_by_target: list[dict[str, str]] = []
 
     for index, target in enumerate(targets):
         scenario_root = tmp_path / f"target-{index}"
@@ -3315,24 +3289,21 @@ def test_compile_live_model_execution_concurrency_key_changes_with_target(
             json.loads(model_output.read_bytes()),
         )
         model_digest = canonical_sha256(model_document)
-        output_lines = github_output.read_text(encoding="utf-8").splitlines()
+        output_values = _github_output_values(github_output)
 
         results.append(result)
         model_documents.append(model_document)
-        output_lines_by_target.append(output_lines)
-        assert output_lines == [
-            f"repository-model-digest={model_digest}",
-            (
-                "repository-model-digest-hex="
-                f"{model_digest.removeprefix('sha256:')}"
-            ),
-            f"execution-concurrency-key={expected_keys[index]}",
-        ]
+        output_values_by_target.append(output_values)
+        assert output_values == {
+            "repository-model-digest": model_digest,
+            "repository-model-digest-hex": model_digest.removeprefix("sha256:"),
+            "execution-concurrency-key": expected_keys[index],
+        }
 
     captured = capsys.readouterr()
     actual_keys = tuple(
-        output_lines[2].removeprefix("execution-concurrency-key=")
-        for output_lines in output_lines_by_target
+        output_values["execution-concurrency-key"]
+        for output_values in output_values_by_target
     )
 
     assert results == [0, 0]
@@ -3389,10 +3360,6 @@ def test_live_eligibility_cli_omits_consumer_policy_input() -> None:
         _live_eligibility_cli_arguments()
     )
 
-    assert (
-        arguments.handler
-        is cli_module._release_evaluate_live_eligibility_command  # noqa: SLF001
-    )
     assert arguments.target == "e" * 40
     assert arguments.repo_root == "."
     assert not hasattr(arguments, "consumer_policy")
@@ -3414,177 +3381,123 @@ def test_live_eligibility_cli_rejects_consumer_policy_option(
     captured = capsys.readouterr()
     assert error.value.code == ARGPARSE_ERROR
     assert captured.out == ""
-    assert "unrecognized arguments: --consumer-policy obsolete.json" in (
-        captured.err
-    )
+    assert "--consumer-policy" in captured.err
 
 
-def test_live_eligibility_command_forwards_resolved_root_and_current_lineage(
+@pytest.mark.parametrize("enabled", [True, False], ids=["admitted", "blocked"])
+def test_live_eligibility_command_persists_current_decision(  # noqa: PLR0913
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+    *,
+    enabled: bool,
 ) -> None:
-    """Forward one resolved root and current lineage without policy input."""
-    target = "e" * 40
+    """Persist current input admission and both workflow-facing outcomes."""
+    model = live_admitted_repository_model
+    target = live_intent.target
     repository_argument = tmp_path / "alias" / ".." / "repository"
-    resolved_repository_root = repository_argument.resolve()
+    resolved_root = repository_argument.resolve()
     output_path = tmp_path / "live-eligibility.json"
-    github_output_path = tmp_path / "github-output.txt"
-    github_token = f"token-{target[:8]}"
-    arguments = Namespace(
-        repo_root=str(repository_argument),
-        github_token=github_token,
-        workflow_run_id=WORKFLOW_RUN_ID,
-        run_attempt=3,
-        target=target,
-        output=str(output_path),
-        github_output=str(github_output_path),
+    github_output = tmp_path / "github-output.txt"
+    observed_at = eligibility_fixtures.NOW
+    client = RecordingGovernanceClient(
+        eligibility_fixtures._attestation_content(live_enabled=enabled),  # noqa: SLF001
     )
-    intent = SimpleNamespace(
-        request_id="release-request-live-root-forwarding",
-        selected_ref="refs/heads/release",
+    static_result = eligibility_fixtures._static_reference(target=target)  # noqa: SLF001
+    authoring_reads: list[tuple[Path, str]] = []
+    scans: list[tuple[Path, str, str]] = []
+
+    def authoring(root: Path, selected_target: str):
+        authoring_reads.append((root, selected_target))
+        return None, None, policy
+
+    def scan(root: Path, *, source_kind: str, target: str):
+        scans.append((root, source_kind, target))
+        return static_result
+
+    def governance_client(*, repository: str, token: str):
+        assert repository == policy.governance.repository
+        assert token == "test-token"  # noqa: S105
+        return client
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return observed_at if tz is None else observed_at.astimezone(tz)
+
+    monkeypatch.setattr(cli_module, "datetime", Clock)
+    monkeypatch.setattr(cli_module, "load_first_slice_authoring", authoring)
+    monkeypatch.setattr(cli_module, "GitHubGovernanceClient", governance_client)
+    monkeypatch.setattr(eligibility, "scan_bounded_static_references", scan)
+    if enabled:
+        eligibility_fixtures._admit_test_destination_primitive(monkeypatch)  # noqa: SLF001
+
+    result = cli_module.main(
+        [
+            "release",
+            "evaluate-live-eligibility",
+            "--github-token",
+            "test-token",
+            "--workflow-run-id",
+            str(live_intent.workflow_run_id),
+            "--run-attempt",
+            "1",
+            "--target",
+            target,
+            "--repo-root",
+            str(repository_argument),
+            *uploaded_arguments(
+                tmp_path / "inputs", "intent", live_intent.to_document(), 101
+            ),
+            *uploaded_arguments(
+                tmp_path / "inputs",
+                "repository-model",
+                model.snapshot.to_document(),
+                202,
+            ),
+            "--output",
+            str(output_path),
+            "--github-output",
+            str(github_output),
+        ]
     )
-    control = f"workflow-delivery-v3:{target}"
-    snapshot = SimpleNamespace(context=SimpleNamespace(control=control))
-    model_digest = "sha256:" + ("3" * 64)
-    model = SimpleNamespace(
-        canonical_digest=model_digest,
-        snapshot=snapshot,
+
+    content = output_path.read_bytes()
+    document = json.loads(content)
+    assert content == canonicalize(document)
+    assert result == (0 if enabled else 1)
+    assert (
+        document["schema"] == "workflow-delivery/v3/live-eligibility-decision"
     )
-    policy = SimpleNamespace(
-        governance=SimpleNamespace(repository="owner/repository")
+    assert document["result"] == ("pass" if enabled else "blocked")
+    assert document["diagnostics"] == (
+        [] if enabled else ["governance-live-disabled"]
     )
-    client = object()
-    policy_digest = "sha256:" + ("5" * 64)
-    static_catalog_digest = "sha256:" + ("6" * 64)
-    decision_digest = "sha256:" + ("7" * 64)
-    observed_at = datetime(2026, 9, 1, 10, 24, 3, tzinfo=UTC)
-    decision_document: dict[str, JsonValue] = {
-        "schema": "workflow-delivery/v3/live-eligibility-decision",
-        "result": "pass",
-        "diagnostics": [],
+    assert document["context"] == {
+        "purpose": "live-release",
+        "request-id": live_intent.request_id,
+        "workflow-run-id": live_intent.workflow_run_id,
+        "selected-ref": live_intent.selected_ref,
+        "target": target,
+        "repository-model-digest": model.canonical_digest,
+        "producer": "evaluate-live-eligibility",
+        "control": model.snapshot.context.control,
+        "release-policy-digest": cli_module.release_policy_digest(policy),
+        "catalog-digest": cli_module.catalog_digest(),
     }
-    decision = SimpleNamespace(
-        result="pass",
-        decision_digest=decision_digest,
-        to_document=lambda: decision_document,
+    assert document["static-reference"] == static_result.to_document()
+    assert document["governance"]["observed-at"] == "2026-08-06T12:00:00Z"
+    assert (
+        document["governance"]["admitted-attestation"]["live_enabled"]
+        is enabled
     )
-    calls = SimpleNamespace(
-        intent=[],
-        model=[],
-        authoring=[],
-        client=[],
-        policy_digest=[],
-        catalog_digest=[],
-        timezone=[],
-        evaluation=[],
-        writes=[],
-        outputs=[],
-    )
-
-    def evaluate(  # noqa: PLR0913
-        context: object,
-        actual_snapshot: object,
-        actual_policy: object,
-        actual_client: object,
-        *,
-        repository_root: Path,
-        now: datetime,
-    ) -> object:
-        calls.evaluation.append(
-            (
-                context,
-                actual_snapshot,
-                actual_policy,
-                actual_client,
-                repository_root,
-                now,
-            )
-        )
-        return decision
-
-    patches = {
-        "_load_live_intent": lambda value: calls.intent.append(value) or intent,
-        "_load_live_model": lambda value, current_intent: (
-            calls.model.append((value, current_intent)) or model
-        ),
-        "load_first_slice_authoring": lambda root, requested_target: (
-            calls.authoring.append((root, requested_target))
-            or (object(), object(), policy)
-        ),
-        "GitHubGovernanceClient": lambda *, repository, token: (
-            calls.client.append((repository, token)) or client
-        ),
-        "release_policy_digest": lambda value: (
-            calls.policy_digest.append(value) or policy_digest
-        ),
-        "catalog_digest": lambda: (
-            calls.catalog_digest.append(None) or static_catalog_digest
-        ),
-        "evaluate_live_eligibility": evaluate,
-        "_write_output": lambda path, document: calls.writes.append(
-            (path, document)
-        ),
-        "_record_outputs": (
-            lambda path, *, role, digest, extra: calls.outputs.append(
-                (path, role, digest, extra)
-            )
-        ),
-    }
-    for name, replacement in patches.items():
-        monkeypatch.setattr(cli_module, name, replacement)
-    monkeypatch.setattr(
-        cli_module,
-        "datetime",
-        SimpleNamespace(
-            now=lambda timezone: calls.timezone.append(timezone) or observed_at
-        ),
-    )
-
-    result = cli_module._release_evaluate_live_eligibility_command(  # noqa: SLF001
-        arguments
-    )
-
-    expected_context = cli_module.LiveEligibilityContext(
-        purpose="live-release",
-        request_id="release-request-live-root-forwarding",
-        workflow_run_id=WORKFLOW_RUN_ID,
-        selected_ref="refs/heads/release",
-        target=target,
-        repository_model_digest=model_digest,
-        producer="evaluate-live-eligibility",
-        control=control,
-        release_policy_digest=policy_digest,
-        catalog_digest=static_catalog_digest,
-    )
-    assert result == 0
-    assert arguments.repo_root != "."
-    assert not hasattr(arguments, "consumer_policy")
-    assert calls.intent == [arguments]
-    assert calls.model == [(arguments, intent)]
-    assert calls.authoring == [(resolved_repository_root, target)]
-    assert calls.evaluation == [
-        (
-            expected_context,
-            snapshot,
-            policy,
-            client,
-            resolved_repository_root,
-            observed_at,
-        )
+    digest = hashlib.sha256(content).hexdigest()
+    assert github_output.read_text().splitlines() == [
+        f"live-eligibility-digest=sha256:{digest}",
+        f"live-eligibility-digest-hex={digest}",
+        f"live-result={'admitted' if enabled else 'blocked'}",
     ]
-    assert calls.evaluation[0][4] is calls.authoring[0][0]
-    assert calls.client == [("owner/repository", github_token)]
-    assert calls.policy_digest == [policy]
-    assert calls.catalog_digest == [None]
-    assert calls.timezone == [UTC]
-    assert calls.writes == [(str(output_path), decision_document)]
-    assert calls.outputs == [
-        (
-            str(github_output_path),
-            "live-eligibility",
-            decision_digest,
-            (("live-result", "admitted"),),
-        )
-    ]
-    assert not output_path.exists()
-    assert not github_output_path.exists()
+    assert authoring_reads == [(resolved_root, target)]
+    assert scans == [(resolved_root, "git-target", target)]

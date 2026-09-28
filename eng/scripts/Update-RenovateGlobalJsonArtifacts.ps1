@@ -22,8 +22,6 @@ param(
 
     [string]$MiseLockPath = "mise.lock",
 
-    [string]$DotNetInstallRoot = (Join-Path $HOME ".dotnet-renovate-sdk"),
-
     [string]$RestoreProject = "dirs.proj",
 
     [switch]$SkipRestore
@@ -32,10 +30,6 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
-
-$dotNetInstallScriptUri =
-[uri]"https://raw.githubusercontent.com/dotnet/install-scripts/5147e32300a8e908f5d737c8cff63a76b4b63531/src/dotnet-install.ps1"
-$dotNetInstallScriptSha256 = "BB1CE92F4397E24D4736A4658B9728FB8F9DB64A0D3F8E636BA408A866A6661D"
 
 function Test-RequiredCommand {
     param(
@@ -70,57 +64,6 @@ function Test-SensitiveRestoreEnvironmentName {
     return $false
 }
 
-function Test-FileSha256 {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path,
-
-        [Parameter(Mandatory = $true)]
-        [ValidatePattern('^[0-9a-fA-F]{64}$')]
-        [string]$ExpectedSha256
-    )
-
-    $actualSha256 = (Get-FileHash -Path $Path -Algorithm SHA256).Hash
-    if (-not [string]::Equals($actualSha256, $ExpectedSha256, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "SHA256 mismatch for '$Path'. Expected '$ExpectedSha256', but found '$actualSha256'."
-    }
-}
-
-function Save-VerifiedDotNetInstallScript {
-    param(
-        [Parameter(Mandatory = $true)]
-        [uri]$Uri,
-
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedSha256,
-
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
-
-    Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $Path
-
-    try {
-        Test-FileSha256 -Path $Path -ExpectedSha256 $ExpectedSha256
-    }
-    catch {
-        Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue
-        throw
-    }
-}
-
-function Get-DotNetInstallArchitecture {
-    switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
-        ([System.Runtime.InteropServices.Architecture]::X64) { return "x64" }
-        ([System.Runtime.InteropServices.Architecture]::X86) { return "x86" }
-        ([System.Runtime.InteropServices.Architecture]::Arm) { return "arm" }
-        ([System.Runtime.InteropServices.Architecture]::Arm64) { return "arm64" }
-        default {
-            throw "Unsupported OS architecture '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' for dotnet-install.ps1."
-        }
-    }
-}
-
 function Invoke-DotNetRestoreWithoutSensitiveEnvironment {
     param(
         [Parameter(Mandatory = $true)]
@@ -133,10 +76,7 @@ function Invoke-DotNetRestoreWithoutSensitiveEnvironment {
         [string]$MiseLockPath,
 
         [Parameter(Mandatory = $true)]
-        [string]$ExpectedMiseLockContent,
-
-        [Parameter(Mandatory = $true)]
-        [string]$DotNetInstallRoot
+        [string]$ExpectedMiseLockContent
     )
 
     $sensitiveNames = Get-ChildItem Env: |
@@ -147,20 +87,11 @@ function Invoke-DotNetRestoreWithoutSensitiveEnvironment {
         Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
     }
 
-    $dotNetInstallDir = Join-Path $DotNetInstallRoot $ExpectedSdkVersion
+    Test-RequiredCommand -Name "mise"
+    mise install --locked dotnet
+    $dotNetInstallDir = (& mise where dotnet).Trim()
     $dotNetExecutableName = if ($IsWindows) { "dotnet.exe" } else { "dotnet" }
     $dotNetExecutable = Join-Path $dotNetInstallDir $dotNetExecutableName
-
-    if (-not (Test-Path $dotNetExecutable)) {
-        New-Item -ItemType Directory -Path $dotNetInstallDir -Force | Out-Null
-        $dotNetInstallScript = Join-Path $DotNetInstallRoot "dotnet-install.ps1"
-        Save-VerifiedDotNetInstallScript `
-            -Uri $dotNetInstallScriptUri `
-            -ExpectedSha256 $dotNetInstallScriptSha256 `
-            -Path $dotNetInstallScript
-        $dotNetInstallArchitecture = Get-DotNetInstallArchitecture
-        & $dotNetInstallScript -Version $ExpectedSdkVersion -InstallDir $dotNetInstallDir -Architecture $dotNetInstallArchitecture -NoPath
-    }
 
     $miseLockContentAfterInstall = Get-Content -Path $MiseLockPath -Raw
     if ($miseLockContentAfterInstall -ne $ExpectedMiseLockContent) {
@@ -340,5 +271,5 @@ pkl eval -f json $GlobalPklPath -o $GlobalJsonPath
 
 if (-not $SkipRestore) {
     $expectedMiseLockContent = Get-Content -Path $MiseLockPath -Raw
-    Invoke-DotNetRestoreWithoutSensitiveEnvironment -Project $RestoreProject -ExpectedSdkVersion $dotNetSdkVersion -MiseLockPath $MiseLockPath -ExpectedMiseLockContent $expectedMiseLockContent -DotNetInstallRoot $DotNetInstallRoot
+    Invoke-DotNetRestoreWithoutSensitiveEnvironment -Project $RestoreProject -ExpectedSdkVersion $dotNetSdkVersion -MiseLockPath $MiseLockPath -ExpectedMiseLockContent $expectedMiseLockContent
 }
