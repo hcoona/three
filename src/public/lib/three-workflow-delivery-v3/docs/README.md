@@ -58,9 +58,11 @@ operating guidance, not a second normative specification.
 
 The [partial-publication recovery contract](./hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
 permits a fresh independently built/qualified Attempt to retain exact existing
-files and upload only missing files. Its implementation is pending separate
-protected delivery under the current recovery Wave; no hosted recovery has
-been executed or authorized by this design.
+files and upload only missing files. The runtime implements both single-file
+subsets with current-Attempt Approval, strict pre-state binding and complete
+Result/Finalizer replay. Joined real-build and controlled-transport tests cover
+fresh recovery while preserving the earlier failed Outcome. This is capability
+validation; no hosted recovery has been executed or authorized.
 
 [Issue #843](https://github.com/hcoona/three/issues/843) tracks TestPyPI first,
 then PyPI. The owner's confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),

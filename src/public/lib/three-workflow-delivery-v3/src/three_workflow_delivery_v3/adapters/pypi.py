@@ -288,9 +288,10 @@ def read_python_index(  # noqa: C901, PLR0912, PLR0915
 ) -> PythonIndexObservation:
     """Resolve the entire native-equivalent version and inspect actual bytes.
 
-    Partial is observable for wheel readback only; Release rejects it before
-    action formation. Unknown or extra entries fail closed rather than being
-    filtered into an apparently absent or complete version.
+    Partial is observable for either exact single-file subset; Release binds
+    missing-file completion to its current qualified originals. Unknown or extra
+    entries fail closed rather than being filtered into an apparently absent
+    or complete version.
     """
     version = witness.nbgv.pep440_version
     require_public_python_version(witness.nbgv)

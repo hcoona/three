@@ -113,13 +113,15 @@ def _live(monkeypatch):
 
 
 @pytest.fixture
-def publication_files(hosted, monkeypatch):
+def publication_files(hosted, monkeypatch, request):
     """Materialize a synthetic DAG with actual single-file transport digests."""
     _live(monkeypatch)
     monkeypatch.setenv("GITHUB_JOB", "publish-python")
     monkeypatch.setenv("GITHUB_ENV", str(hosted / "environment"))
     monkeypatch.setenv("WDV3_PYPI_TOKEN", "pypi-test-only-token")
-    marker, _, _, distributions = prepared_publication()
+    marker, _, _, distributions = prepared_publication(
+        retained=getattr(request, "param", ())
+    )
     authorization = marker.authorization
     bundle = authorization.bundle
     publication = bundle.snapshot
@@ -322,7 +324,7 @@ def test_python_cli_marker_rejects_fresh_drift_without_upload(
     del refs["marker"]
     transport = FakeHttp(
         *(
-            _readback(marker.absence.registry, distributions[:1])
+            _readback(marker.pre_state.registry, distributions[:1])
             if failure == "partial"
             else [PythonHttpResponse(503, b"unavailable", "text/plain")]
         )
@@ -473,7 +475,7 @@ def test_python_cli_admitted_publication_stage_reaches_only_its_native_boundary(
 ):
     """Real stages admit the full DAG before bounded fake native effects."""
     refs, marker, _, distributions = publication_files
-    registry = marker.absence.registry
+    registry = marker.pre_state.registry
     ok = PythonHttpResponse(200, b"created", "text/plain")
     token = "pypi-test-only-short-lived"  # noqa: S105
     responses = {
@@ -1185,3 +1187,82 @@ def test_python_cli_finalizer_replays_only_durable_exact_proof(
         document["direct-predecessor"]["reference"]
         == refs[predecessor].to_document()
     )
+
+
+@pytest.mark.parametrize(
+    "publication_files", [("wheel",), ("sdist",)], indirect=True
+)
+@pytest.mark.parametrize("command", ["marker", "execute"])
+def test_python_cli_partial_publication_preserves_current_plan(
+    hosted, publication_files, monkeypatch, command
+):
+    """Hosted stages retain the subset and upload only its missing member."""
+    refs, marker, _, distributions = publication_files
+    registry = marker.pre_state.registry
+    responses = (
+        _readback(registry, marker.pre_state.files)
+        if command == "marker"
+        else (
+            PythonHttpResponse(200, b"created", "text/plain"),
+            *_readback(registry, distributions),
+        )
+    )
+    transport = FakeHttp(*responses)
+    monkeypatch.setattr(python_cli, "PythonHttpsTransport", lambda: transport)
+    monkeypatch.setattr(
+        python_cli,
+        "_github",
+        lambda: SimpleNamespace(
+            governance=lambda *_args, **_kwargs: governance(
+                observed_at=NOW + timedelta(seconds=3)
+            )
+        ),
+    )
+    assert _run(hosted, command, refs, purpose="live-release") == 0
+    assert transport.responses == []
+    document = parse_canonical_json((hosted / "result.json").read_bytes())
+    if command == "marker":
+        assert document["pre-state"] == marker.pre_state.to_document()
+        assert [call[0] for call in transport.calls] == ["GET", "GET"]
+        assert "absence" not in document
+    else:
+        assert document["result"] == "published"
+        assert [call[0] for call in transport.calls] == [
+            "POST",
+            "GET",
+            "GET",
+            "GET",
+        ]
+        missing = next(
+            d
+            for d in distributions
+            if d.variant != marker.pre_state.files[0].variant
+        )
+        assert missing.content in transport.calls[0][3]
+        assert marker.pre_state.files[0].content not in transport.calls[0][3]
+        assert document["mutation-marker-reference"] == refs["marker"]
+
+
+@pytest.mark.parametrize(
+    "publication_files", [("wheel",), ("sdist",)], indirect=True
+)
+def test_python_cli_partial_marker_drift_stops_before_post(
+    hosted, publication_files, monkeypatch
+):
+    """A newly complete pair cannot silently replace the approved plan."""
+    refs, marker, _, distributions = publication_files
+    transport = FakeHttp(*_readback(marker.pre_state.registry, distributions))
+    monkeypatch.setattr(python_cli, "PythonHttpsTransport", lambda: transport)
+    monkeypatch.setattr(
+        python_cli,
+        "_github",
+        lambda: SimpleNamespace(
+            governance=lambda *_args, **_kwargs: governance(
+                observed_at=NOW + timedelta(seconds=3)
+            )
+        ),
+    )
+    assert _run(hosted, "marker", refs, purpose="live-release") == 1
+    assert all(call[0] == "GET" for call in transport.calls)
+    assert not (hosted / "result.json").exists()
+    assert not (hosted / "upload-started").exists()

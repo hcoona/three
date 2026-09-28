@@ -68,8 +68,8 @@ def _inputs(marker):
 
 
 def _result(marker, marker_ref, state="published"):
-    _, payloads, distributions = qualification(marker.absence.registry.name)
-    registry = marker.absence.registry
+    _, payloads, distributions = qualification(marker.pre_state.registry.name)
+    registry = marker.pre_state.registry
     ok = PythonHttpResponse(200, b"created", "text/plain")
     ending = (
         (TimeoutError("lost response"),)

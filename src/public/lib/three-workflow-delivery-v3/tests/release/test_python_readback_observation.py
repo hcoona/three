@@ -44,12 +44,12 @@ def deny_network(monkeypatch):
 
 def responses(marker, distributions, *, pending=(1, 1), unrelated=False):
     """Supply only external replies; production owns upload/read ordering."""
-    registry = marker.absence.registry
+    registry = marker.pre_state.registry
     wheel = _entry(registry, distributions[0])
     sdist = _entry(registry, distributions[1])
     extra = copy.deepcopy(wheel)
     extra["filename"] = extra["filename"].replace(
-        marker.absence.version, "9.9.9"
+        marker.pre_state.version, "9.9.9"
     )
     prior_files = [extra] if unrelated else []
     wheel_index = _index([*prior_files, wheel])
@@ -321,7 +321,7 @@ def test_normal_scope_ignores_other_version_without_downloading_it(tmp_path):
     )
     assert result.result == "published"
     file_urls = [call[1] for call in boundary.calls if "/packages/" in call[1]]
-    registry = marker.absence.registry
+    registry = marker.pre_state.registry
     assert file_urls == [
         _entry(registry, distributions[0])["url"],
         _entry(registry, distributions[0])["url"],
@@ -436,30 +436,16 @@ def test_normal_reflected_credentials_never_enter_result(tmp_path, encoding):
 
 def test_normal_marker_previous_index_is_verified_before_first_upload(tmp_path):
     """A foreign original absence response cannot be silently substituted."""
-    marker, _, payloads, distributions = prepared_publication()
-    marker = replace(
-        marker,
-        absence=replace(
-            marker.absence,
-            index_response=_index(
-                [_entry(marker.absence.registry, distributions[0])]
-            ),
+    marker, _, _, distributions = prepared_publication()
+    changed = replace(
+        marker.pre_state,
+        index_response=_index(
+            [_entry(marker.pre_state.registry, distributions[0])]
         ),
     )
-    marker_ref = reference(marker.to_document(), 507)
     boundary = Boundary(*responses(marker, distributions))
-    with pytest.raises(ValueError, match=r"previous|absence"):
-        execute_python_publication(
-            marker,
-            marker_ref,
-            payloads,
-            token=_TOKEN,
-            transport=boundary,
-            claim_path=tmp_path / "claim",
-            clock=lambda: NOW + timedelta(seconds=3),
-            monotonic=boundary.clock,
-            wait=boundary.wait,
-        )
+    with pytest.raises(ValueError, match="inventory"):
+        replace(marker, pre_state=changed)
     assert boundary.calls == []
     assert not (tmp_path / "claim").exists()
 
