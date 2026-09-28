@@ -65,12 +65,12 @@ findings, the retained failed runs and that owner decision.
 The [migration policy](./migration-strategy.md#python-smoke-delivery) routes the
 disabled implementation, configuration/admission and actual publication
 stages. Runtime and both protected files use strict Python Governance v2.
-TestPyPI has reviewed ready admission; PyPI remains blocked. The source-bound
-normal Attempt passed Build and Qualification, then failed before publication
-because publication preparation and publisher were skipped. Original-artifact
-replay confirms `failed-before-publication`, with no approval, OIDC or upload.
-Actual two-destination publication remains outstanding; the [handoff](./agent-handoff.md#starting-a-new-session)
-routes admission evidence and the next operation gate.
+TestPyPI normal publication and fresh clean wheel/sdist consumption are
+[independently complete](./validation/python-normal-live-evidence.md) for
+`0.1.0b26`. The completion campaign is stopped; earlier failed Attempts remain
+failed and untouched. Production PyPI remains blocked and needs its separate
+configuration/admission and actual publication journey. The
+[handoff](./agent-handoff.md#starting-a-new-session) routes current operation limits.
 The [retired native interface](./validation/python-native-readiness.md) retains
 historical evidence-reader consumers only.
 

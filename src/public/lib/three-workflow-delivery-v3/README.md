@@ -17,13 +17,12 @@ explains reusable integration lessons and the next-task guide.
 The Python slice is the separate `hcoona-release-smoke-python` package. Its
 [Python design entry](docs/README.md#python-smoke-design) routes the confirmed
 requirements, HLD/MLDs, brief LLD and source evidence for TestPyPI Buddy followed
-by PyPI Official. TestPyPI has reviewed ready Governance v2 admission; PyPI
-remains blocked. The source-bound normal TestPyPI Attempt passed Build and
-Qualification, then failed before publication; actual publication remains
-outstanding. The [handoff](docs/agent-handoff.md#starting-a-new-session) routes
-the audited outcome and current operation limits. The
-[delivery gates](docs/migration-strategy.md#python-smoke-delivery) keep
-implementation, configuration/admission and publication separately authorized.
+by PyPI Official. TestPyPI publication and fresh clean wheel/sdist consumption
+are [independently complete](docs/validation/python-normal-live-evidence.md)
+for `0.1.0b26`; production PyPI remains blocked. The
+[handoff](docs/agent-handoff.md#starting-a-new-session) routes current operation
+limits, and the [delivery gates](docs/migration-strategy.md#python-smoke-delivery)
+keep implementation, configuration/admission and publication separately authorized.
 The npm and NuGet smoke objectives remain complete.
 
 The old `governance run-fixed-acceptance-probe` command and fixed-coordinate
@@ -42,7 +41,7 @@ The revised
 [platform-reliance design](docs/hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
 is implemented as strict v2. Normal runtime rejects v1 and hybrid admission.
 The [handoff](docs/agent-handoff.md#starting-a-new-session) routes current
-admission evidence and the outstanding publication gate. The [retired native tooling boundary](docs/validation/python-native-readiness.md)
+admission evidence, completed TestPyPI audit and separate PyPI gate. The [retired native tooling boundary](docs/validation/python-native-readiness.md)
 retains failed-evidence consumers with both request slots null. No duplicate/race
 suite is a prerequisite. Configuration/admission and actual publication retain
 separate grants and each destination still needs exact readback and clean consumers.
