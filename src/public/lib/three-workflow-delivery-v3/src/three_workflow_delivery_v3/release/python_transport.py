@@ -253,7 +253,20 @@ def admit_python_publication_snapshot(
     reference: ArtifactReference,
 ) -> PythonPublicationSnapshot:
     """Replay zero-or-one action closure from one immutable observation."""
-    result = PythonPublicationSnapshot(observation, reference)
+    doc = python_object(
+        value,
+        {
+            "schema",
+            "attempt",
+            "observation-reference",
+            "proof-mode",
+            "action",
+            "producer",
+        },
+    )
+    result = PythonPublicationSnapshot(
+        observation, reference, python_text(doc["proof-mode"])
+    )
     _normalized(value, result.to_document())
     return result
 

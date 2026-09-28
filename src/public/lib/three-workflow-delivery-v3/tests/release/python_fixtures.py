@@ -34,24 +34,26 @@ def native_observation(decision, distributions=(), classification="absent"):
     )
 
 
-def publication_snapshot(decision, native):
+def publication_snapshot(decision, native, *, proof_mode="none"):
     """Bind one fresh observation into its immutable publication Snapshot."""
     observed = PythonRemoteObservation(
         decision, reference(decision.to_document()), native, NOW
     )
     return PythonPublicationSnapshot(
-        observed, reference(observed.to_document(), 502)
+        observed, reference(observed.to_document(), 502), proof_mode
     )
 
 
-def prepared_publication(name="testpypi", *, retained=(), qualified=None):
+def prepared_publication(
+    name="testpypi", *, retained=(), qualified=None, proof_mode="none"
+):
     """Construct a fully synthetic approved marker with exact record lineage."""
     decision, payloads, distributions = qualified or qualification(name)
     existing = tuple(d for d in distributions if d.variant in retained)
     pre_state = native_observation(
         decision, existing, "partial" if existing else "absent"
     )
-    snapshot = publication_snapshot(decision, pre_state)
+    snapshot = publication_snapshot(decision, pre_state, proof_mode=proof_mode)
     summary = render_python_approval_summary(snapshot)
     summary_reference = ArtifactReference(
         503,
