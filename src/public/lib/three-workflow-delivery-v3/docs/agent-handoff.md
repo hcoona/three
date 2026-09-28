@@ -60,8 +60,14 @@ For the owner's next Workflow Delivery v3 task:
    specifies v2 admission without a fake passing native record. Runtime and both
    protected Governance files now use strict v2. TestPyPI has reviewed ready
    admission; PyPI remains blocked. The duplicate/race producer and hosted
-   workflow are removed. Prepare the separately authorized concrete TestPyPI
-   publication Wave, then independently audit its actual publication before PyPI.
+   workflow are removed. The normal-publication operation stopped at its initial
+   GitHub read because local TLS certificate verification failed, before dispatch.
+   No normal Attempt, OIDC exchange or upload occurred; no retry was made.
+   The closed operation does not permit a replacement or fresh request budget.
+   A future concrete TestPyPI operation needs separate authorization and the
+   existing independent publication audit before PyPI. See the
+   [operation outcome](https://github.com/hcoona/three/issues/843#issuecomment-5862680211) for original
+   evidence and the local trust-store diagnosis; do not disable TLS validation.
    The [migration order](./migration-strategy.md#python-smoke-delivery) owns
    these stages; design acceptance grants no configuration, OIDC or dispatch.
    Carry forward Backspace7980's confirmed Sole Owner status and all three configured
