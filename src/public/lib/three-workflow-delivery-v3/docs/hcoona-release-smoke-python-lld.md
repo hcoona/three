@@ -389,6 +389,46 @@ atomically at the same revision. Historical evidence retains its original
 source revision; do not coerce old absence-only markers into recovery proofs.
 No workflow dispatch, OIDC or upload is authorized by implementation delivery.
 
+## Temporary Hosted Recovery Proof
+
+The separately authorized [hosted recovery protocol](./validation/python-hosted-recovery.md)
+proves wheel-present/sdist-missing recovery using the existing workflow and
+publisher. It adds only a temporary manual `recovery-proof` input with choices
+`none` (default) and `stop-after-wheel`. The protected workflow projects the
+actual GitHub input into `WDV3_PYTHON_PROOF`. The CLI rejects unknown values
+and rejects the stop mode outside TestPyPI Live on the existing current-run
+protected-main entry. PR CI cannot select it. This changes neither frozen
+build inputs nor distribution witness bytes.
+
+The publication Snapshot adds a required strict `proof-mode` field with those
+two values. Normal mode retains existing behavior. Stop mode requires whole
+absence and TestPyPI; exact subset/whole state cannot seed a new experiment.
+The deterministic Approval summary discloses intentional stopping after the
+wheel and a failed partial publication. Bundle, Authorization and marker bind
+this selection through their existing Snapshot references. Preparation takes
+the actual input; before authorization, token acquisition, marker creation and
+execution, the CLI requires the bound mode to equal that current input.
+All strict producers, readers and offline auditors move together. Historical
+records retain their original reader/revision; no old proof is coerced.
+
+After actual wheel HTTP success and exact native readback, the executor in
+stop mode returns the ordinary failed Result before calling sdist upload:
+wheel `succeeded` with original response/observation, sdist `not-attempted`,
+no final exact pair and retained mutation. Persist Result and expose its scalar
+terminal before Finalizer emits the failed Outcome. Do not raise an artificial
+HTTP failure, cancel the job, discard evidence or mark interruption successful.
+Earlier transport/readback/persistence failure retains ordinary conservative
+semantics. The normal mode of the next independent Attempt uses the existing
+recovery executor without a fault or old-artifact adoption.
+
+Validate input/domain rejection before credentials, immutable mode/summary
+binding and tamper rejection, actual first-file success with no second POST,
+truthful failed terminal replay, and a fresh normal recovery with one missing
+POST. Preserve normal absent, exact-subset and whole-exact paths. Remove the
+temporary input, mode field and stop branch after accepted proof; retained
+evidence remains replayable at its pinned source. This is validation tooling,
+not a new release destination, generic fault framework or retry contract.
+
 ## First-Project Bootstrap
 
 `WD-PY-009` has a distinct manual workflow and protected request, initially null.

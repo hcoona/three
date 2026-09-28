@@ -33,7 +33,12 @@ files and upload only missing files. The runtime implements both single-file
 subsets with current-Attempt Approval, strict pre-state binding and complete
 Result/Finalizer replay. Joined real-build and controlled-transport tests cover
 fresh recovery while preserving the earlier failed Outcome. This is capability
-validation; no hosted recovery has been executed or authorized.
+validation; no hosted recovery has been executed. The current Wave separately
+authorizes the [bounded hosted proof](./validation/python-hosted-recovery.md).
+Its temporary control design is in the Python LLD; implementation, tests,
+independent review, protected delivery and exact operation admission remain
+prerequisites before effects. Preserve the stable publisher/Environment and
+all historical failures. Do not reopen the completed normal campaign.
 
 The npm and NuGet GitHub Packages smoke objectives are complete. Use the
 [NuGet completion evidence](./validation/nuget-normal-live-evidence.md) and
