@@ -8,6 +8,47 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Prove Python partial-publication recovery on TestPyPI
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the owner's [complete bounded delegation](https://github.com/hcoona/three/issues/843#issuecomment-5878115110),
+  its [operation proposal](https://github.com/hcoona/three/issues/843#issuecomment-5878081917),
+  accepted Python recovery requirements/design/runtime, and the existing ready
+  TestPyPI admission. The owner accepts intentional wheel-only partial
+  publication and retained failed versions within this smoke-only boundary.
+- **Advancement and outcome:** accept the concrete hosted protocol and minimal
+  default-off interruption design; implement, test, independently review and
+  protected-deliver it; then prove one real wheel-only failed Attempt followed
+  by a fresh normal Attempt that rebuilds and qualifies the complete pair,
+  verifies the retained wheel and uploads only sdist. Independently audit
+  terminal lineage, fresh destination bytes and clean consumers. Remove the
+  temporary proof control and this entry after successful evidence delivery.
+- **Effects and continuation:** permit local dependency preparation, tests,
+  ordinary CI and Issue/PR delivery, independent delegated review/triage,
+  protected merges, and the approved protocol's bounded TestPyPI/GitHub reads,
+  fresh dispatches, current-run Environment approvals, OIDC/token exchange and
+  file uploads. Preserve the stable workflow, publisher and Environment.
+  Diagnose and correct in-scope failures without repeated owner approval;
+  each successor requires resolved terminal identity/effects, independently
+  verified exact state, compatible fresh inputs and remaining effect budgets.
+  No failed or ambiguous Attempt is rewritten or resent in place.
+- **Cumulative bounds:** at most five sequential new-version scenarios, each
+  with one fixed protected source, four fresh dispatches and four reached or
+  uncertain file-upload POSTs; at most 20 dispatches and 20 file POSTs overall.
+  Reserve effects before sends/approval; no reset, refill or overlapping
+  publisher lifetime. Retain the approved four-hour per-Attempt operator and
+  finite read/transfer budgets in the accepted protocol and tested callers.
+  Stop at first independently audited success, owner cancellation, exhaustion
+  or unchanged Governance expiry `2026-10-05T02:27:04.836609Z`.
+- **Prerequisites and exclusions:** accept affected design/protocol before
+  implementation and complete protected implementation, tests, independent
+  review and concrete source/admission checks before smoke effects. Preserve
+  current-run Approval and ambiguity stops. No production PyPI, old-version
+  recovery/retargeting, artifact or Approval adoption, GitHub rerun,
+  duplicate/race probe, deletion/rollback, publisher/access/Environment/host
+  trust/profile change or Governance renewal. Earlier versions, failed
+  Attempts and stopped campaigns remain untouched.
+
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
