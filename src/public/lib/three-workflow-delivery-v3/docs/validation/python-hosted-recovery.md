@@ -76,23 +76,41 @@ No slot, deadline, ledger or effect allowance may be reset or replenished.
 Only one operation/runner publication lifetime may be active at a time.
 
 The operator has a cumulative four-hour lifetime from original reservation,
-including construction, waiting and audit; expiration grants no new read budget.
-Enforce these per-Attempt ceilings in tested callers: at most 400 GitHub
-JSON GETs, 128 artifact-transfer HTTP requests/512 MiB, 16 log-transfer HTTP
-requests/128 MiB, and 32 artifact IDs per Attempt; each JSON body is at most 8 MiB, artifact body 16 MiB, log body 32 MiB.
-Use 30-second socket timeouts, at most five pages of 100 entries per inventory,
-and no request retries. Run discovery/state polls start at least 30 seconds
-apart; reserve 160 of the 400 JSON reads for required evidence and use at most
-240 for discovery/state polling. Only artifact/log service transfers may follow
-redirects, counting each hop and never forwarding administrative credentials.
-Control and registry requests do not redirect. A missed run listing never
-authorizes a second dispatch. Allow at most one fresh
-independent target-version index read and up to two file downloads per
-Attempt, in addition to the existing runtime observation/readback bounds.
-Every request, including failed requests and transfer redirects, is counted.
-Retained immutable evidence can be reprocessed offline without new reads.
-Ordinary locked dependency preparation, CI and local clean consumers retain
-their existing scope and are not smoke-registry observations.
+including construction, waiting and audit. No resume or tool correction resets
+that deadline or the unchanged Governance expiry. Ordinary scoped evidence reads
+use resource controls, not owner-replenished cumulative request allowances.
+Retain every request and response/error as diagnostic evidence. Dispatch,
+approval, credential acquisition/exchange and file POST reservations retain
+their separate one-shot and cumulative limits.
+
+Collect serially with 30-second socket timeouts, at most five pages of 100
+entries per inventory and at most 32 required artifact IDs. Keep per-response
+limits of 8 MiB for GitHub JSON, 16 MiB for an artifact and 32 MiB for a log,
+and cumulative transfer guards of 512 MiB for artifacts and 128 MiB for logs.
+Only artifact/log service transfers may follow admitted redirects; count each
+hop and never forward administrative credentials. Control and registry reads
+do not redirect. These local resource guards report incomplete evidence rather
+than request an owner quota top-up or automatically start another publisher.
+
+Run discovery/state polls start at least 30 seconds apart. Independent registry
+polls back off through 30, 60, 120 and 300 seconds, then remain at least five
+minutes apart. Honor any longer applicable service-directed Retry-After,
+GitHub rate-reset or poll-interval wait. Persist next eligible time and error
+state across invocations; a restart cannot shorten a wait. Do not start a wait
+or request beyond the remaining original lifetime. Five consecutive transient
+transport/service/rate-limit failures stop the read stage; a valid regressed
+index is a pending observation, not a transport error. Permission failures,
+invalid TLS, scope violations, malformed authoritative content and digest or
+file-set conflicts stop immediately. A 403 is not automatically a rate limit.
+
+Retry only idempotent evidence GETs for transient failures, respecting the
+same identity, origin and resource limits. Retain failed/truncated responses
+and validate a resumed transfer against the original artifact identity and
+digest. Reuse complete immutable captures; download only evidence needed by
+the current DAG or admitted native audit. A missing run listing never permits
+a second dispatch. Read recovery never retries a POST, reacquires credentials,
+or bypasses a cache. Ordinary locked dependency preparation, CI and local
+clean consumers retain their existing scope.
 
 The campaign ends at first independently audited success, owner cancellation,
 exhaustion of these bounds, or the existing Governance expiry
@@ -137,15 +155,16 @@ ref override, and checks current main immediately before dispatch and approval.
 Identify exactly one new manual attempt-1 run with the fixed target, workflow,
 actor and reserved time window. Bind selected proof mode to the recorded
 dispatch and current-run Snapshot. Reserve each possibly reached file before
-Environment approval; unknown effects remain spent. Immutable artifacts are
-fetched once by ID and retained for offline replay; no name-based reconstruction
-of runtime authority or extra artifact download budget is admitted.
+Environment approval; unknown effects remain spent. Complete verified immutable
+artifacts are retained by ID and reused for offline replay. Only failed or
+incomplete transfers may resume under the same identity and read-resource
+controls; no name-based reconstruction of runtime authority is admitted.
 
 Runtime registry calls retain the LLD's exact profile, HTTPS origins,
 30-second socket timeout, 2 MiB index/8 MiB file/64 KiB upload-response limits,
 single initial and pre-marker observations, and at most six post-upload index
 reads in each 60-second admission window with ten-second pending spacing.
-No transport retries, cache bypass or token refresh is added. Only missing
+No runtime transport retries, cache bypass or token refresh is added. Only missing
 files are sent, at most once per Attempt. Runtime protected-control reads stay
 at five logical Governance reads (at most ten 120-second Git subprocesses),
 five pages of 100 entries per GitHub inventory and 8 MiB per JSON body. The
@@ -163,10 +182,10 @@ retained evidence digests; an author-produced `passed` flag is insufficient.
 
 After terminal collection, an independent diagnostic-read gate first resolves
 the unique dispatch/run identity and proves no publisher can still send.
-Using the remaining original budget, this gate may admit that Attempt's single
-independent index observation and up to two downloads after failed or unknown
-terminal evidence, including a marker-only or missing Result. Retain raw
-sanitized responses and exact bytes. Missing logs/Result alone do not establish
+Within the original lifetime and read-resource controls, this gate may admit
+that Attempt's independent index observations and required file downloads
+after failed or unknown terminal evidence, including a marker-only or missing
+Result. Retain raw sanitized responses and exact bytes. Missing logs/Result alone do not establish
 identity, liveness or absence; unresolved dispatch/liveness blocks the read.
 This diagnostic admission neither accepts the proof nor changes a failed or
 unknown Outcome, and never releases spent uncertain effects. An independently
@@ -180,8 +199,61 @@ wheel success/readback, no sdist invocation and the fresh exact wheel-only
 destination audit. The recovery proof requires published, only the missing
 sdist POST, the fresh complete pair audit and clean consumers on those downloaded
 files. A diagnostic read after an ambiguous/failed upload cannot manufacture
-these success facts. Use the same single native audit allowance for diagnosis
-or proof; do not add another read when an audit's purpose changes.
+these success facts. Diagnosis and proof share one persistent audit history and original deadline;
+changing purpose does not discard responses, failures or resource usage.
+
+A native index demonstrably regressed relative to retained successful runtime
+readback leaves the independent audit pending. Preserve it and wait under the
+read pacing policy; it does not establish current absence, undo the earlier
+upload or authorize resending an existing file. Serial progression is only a
+consistency check, never proof of contents. Accept only the expected target
+inventory with exact freshly downloaded bytes. Unexpected/yanked/conflicting
+files, differing bytes or a non-regressed incompatible state stop the audit.
+A newer serial alone is insufficient. Deadline exhaustion leaves evidence
+incomplete and dependent mutation stopped; it is not a quota-refill request.
+
+### Read-only continuation across a protected operator correction
+
+A tested, independently admitted protected operator correction may continue a
+terminal Attempt's incomplete read-only audit within its original deadline.
+Keep its original source/version, execution binding, caller snapshot, ledgers,
+responses, failed Outcome and reservations immutable. Bind the correction's
+exact protected source, caller/protocol hashes and original evidence in a
+separate read-only continuation record and append-only audit history. Independent
+admission must reestablish dispatch identity and publisher quiescence and
+verify the original start/deadline and unchanged Governance/profile. The
+continuation cannot dispatch, approve, acquire credentials, upload or change
+source authority; historical artifact readers use their pinned contract.
+
+The narrow continuation has only registry GET capability; it does not inherit
+the normal operator's dispatch or approval methods. Its strict binding records
+original scenario/Attempt/run/source/tree/version/mode, original binding and
+ledger digests, original start/deadline, Governance/profile/frozen-input digests,
+new protected caller source/tree and complete imported caller hashes, accepted
+protocol digest, pinned historical reader checkout/source/tree, and inspected
+original evidence hashes. Paths remain inside the admitted roots. Require a
+clean exact reader checkout and verify the actually imported reader module;
+new caller source and old publication subject are distinct identities.
+
+Retain the binding, independent admission, accepted protocol, chronological
+read ledger, sanitized response bodies/headers and final completion separately
+under the original Attempt. The original failed read contributes to that
+history and pacing; do not reset it as unused. Persist next eligible request
+time, backoff position, consecutive-error count and completion/stop state under
+the existing campaign lock. A request interrupted after reservation remains
+recorded as uncertain; only a new idempotent read may follow. Completion needs
+the exact expected wheel-only inventory and bytes, not merely a serial value.
+No new GitHub or credential operation is needed for this terminal continuation.
+
+Independent closure binds both the original and supplementary evidence. It
+requires resolved current destination state; unknown-state abandonment is not
+granted. A changed protected main stops same-version recovery. Only after
+known-state closure may a new-version scenario use a newly admitted source and
+its remaining original campaign slots. History validates each Attempt against
+its own pinned protocol/callers, without rewriting prior admission or refilling
+any effect allowance. Preserve the original protocol bytes when upgrading the
+operator. A complete audit does not rewrite a failed publication Outcome or
+manufacture a successful two-Attempt proof.
 
 Native approval records retain response digests and structured platform facts,
 not every original administrative API body. Later readback corroborates
