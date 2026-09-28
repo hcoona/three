@@ -8,42 +8,58 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Establish normal TestPyPI configuration and admission
+### Execute one normal TestPyPI publication and audit
 
 - **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** the owner's approved
-  [TestPyPI proposal](https://github.com/hcoona/three/issues/843#issuecomment-5861383218),
-  the disabled Governance v2 implementation delivered by PR #880, and the
-  current Python requirements, design and source evidence under
-  `src/public/lib/three-workflow-delivery-v3/docs/`.
-- **Advancement and outcome:** register the normal-workflow publisher on the
-  existing TestPyPI project; inspect and independently review configuration;
-  protected-deliver TestPyPI-only ready Governance v2. Prepare and review the
-  concrete subsequent publication Wave under the same owner-approved scope,
-  preserving its separate accepted grant before execution. Carry forward the
-  confirmed Sole Owner and existing bootstrap/native registrations unless
-  changed or contradicted. The owner adds only `hcoona/three`, workflow
-  `workflow-delivery-v3-python-smoke.yml`, Environment
-  `workflow-delivery-v3-python-testpypi` on `hcoona-release-smoke-python`.
-- **Effects and delivery:** permit the named owner-side registration, bounded
-  GitHub configuration reads and TestPyPI project-registration attestation,
-  independently reviewed TestPyPI-only protected admission, locked dependencies
-  and isolated local validation, engineering/domain/record/research-evidence/OCR
-  reviews, ordinary CI and protected Issue/PR delivery. Bind actual configuration,
-  source-evidence revision and finite freshness before admission. Trust platform
-  non-replacement without duplicate/race proving; ready admission does not
-  establish publication or clean-consumer completion.
-- **Risk and stopping:** unexpected configuration drift or a failed prerequisite
-  stops dependent work without implicit repair. Preserve prior failed evidence
-  and existing service registrations. The later concrete publication Wave must
-  bind the actual target/tooling revision, unchanged NBGV version, finite
-  requests/budgets and stop conditions before its one normal Attempt.
-- **Exclusions:** no distribution-state/file reads, OIDC, dispatch, Environment
-  approval, uploads, new native generation or duplicate/race probes, retry/refill,
-  deletion/cleanup, other publisher/access/Environment changes, credential export,
-  production PyPI or Ruby operations, or promotion of prior failures. PyPI stays
-  blocked; native/bootstrap request slots stay null. This entry does not execute
-  the separately owner-approved publication stage.
+- **Accepted inputs:** the [owner-approved
+  proposal](https://github.com/hcoona/three/issues/843#issuecomment-5861383218) and
+  [approval](https://github.com/hcoona/three/issues/843#issuecomment-5861978161),
+  reviewed ready Governance v2 delivered by PR #885 at
+  `ebc97ca0551be0ce39e70f4da28ea7400bc7d33e`, and the current Python requirements,
+  LLD and publication profile. The independently reviewed concrete protocol is
+  [publication protocol](https://github.com/hcoona/three/issues/843#issuecomment-5862463902)
+  (SHA-256 `bf6624a3843ed8b853de54d9c084cf2eac2356ddf1423b333df63973d31d6360`); its
+  original bytes and digest are retained there.
+- **Advancement and outcome:** execute at most one new normal TestPyPI Attempt for
+  `hcoona-release-smoke-python` version 0.1.0b19, wheel
+  `hcoona_release_smoke_python-0.1.0b19-py3-none-any.whl` and sdist
+  `hcoona_release_smoke_python-0.1.0b19.tar.gz`. Independently review current-run
+  original qualified artifacts, Snapshot and Bundle before one Environment approval;
+  audit terminal lineage, actual destination downloads and separate clean
+  wheel/sdist consumers. Retain the truthful success, exact-satisfied, failure or
+  incomplete result, then close this grant.
+- **Revision and prerequisites:** target and same-revision tooling are the protected
+  merge of this Wave-only change atop `ebc97ca0551be0ce39e70f4da28ea7400bc7d33e`,
+  with the unchanged accepted runtime/profile/Governance. Before dispatch bind that
+  actual SHA and reviewed/merged tree in the Issue, require applicable post-merge
+  CI, confirm unchanged full-history NBGV public projection 0.1.0b19 and fresh ready
+  admission. Any intervening main change, mismatch, failed prerequisite or expired
+  evidence stops dependent execution without replacement.
+- **Effects and bounds:** permit exactly one owner/manual attempt 1 dispatch of
+  `workflow-delivery-v3-python-smoke.yml` on `main` with `registry=testpypi`; at
+  most one approval for Environment `22765954016` after independent original-byte
+  review; one GitHub OIDC assertion and one TestPyPI token exchange; at most one
+  wheel POST then one sdist POST with required exact readback. Runtime plus
+  independent audit has at most 15 index GETs and 6 file GETs, retaining the profile's
+  post-upload visibility, byte, origin, timing and authority bounds. Bound GitHub
+  control/transfer and operator evidence requests by the reviewed protocol. Permit
+  locked dependency preparation, isolated local consumers, ordinary CI, independent
+  engineering/domain/record/research-evidence/OCR reviews and protected Issue/PR
+  evidence delivery.
+- **Risk and stopping:** preserve sole-writer/owner and retained three-publisher
+  configuration unless contradicted; trust platform file non-replacement without
+  duplicate/race probes. No atomic pair or indefinite retention is promised. Exact
+  existing pair uses the zero-action path without approval/token/upload. Rejection,
+  partial upload, ambiguous mutation or incomplete evidence remains
+  failed/incomplete and consumes its reached slots; no automatic resend or
+  replacement Attempt. Do not promote old failed evidence or infer creation from
+  HTTP 200 alone.
+- **Exclusions:** no PyPI or Ruby operation, native/bootstrap generation,
+  duplicate/race probe, registry preflight outside the named flow,
+  rerun/retry/refill, cleanup/deletion/rollback, version rewrite,
+  access/publisher/Environment change, credential export or administrative
+  credential in Actions. PyPI remains blocked and native/bootstrap slots remain
+  null.
 
 ### Restore dependency updates and simplify V3 tooling ownership
 
