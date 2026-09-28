@@ -1,7 +1,7 @@
-"""Disabled destinations and strictly modeled future Governance admission."""
+"""Independent tracked admissions and fail-closed Governance scenarios."""
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -22,13 +22,10 @@ _ROOT = Path(__file__).resolve().parents[6]
 
 
 @pytest.mark.parametrize("name", ["testpypi", "pypi"])
-def test_python_tracked_destinations_remain_explicitly_disabled(name):
-    """Both tracked profiles fail before any registry access."""
+def test_python_blocked_destinations_reject_live(name):
+    """Either destination can be disabled independently of tracked admission."""
     registry = PythonRegistry(name)
-    doc = parse_canonical_json(
-        (_ROOT / python_governance_path(registry)).read_bytes()
-    )
-    assert doc == blocked_python_governance(registry)
+    doc = blocked_python_governance(registry)
     assert doc["schema"] == "workflow-delivery/v3/python-governance-v2"
     assert "native-acceptance" not in doc
     assert doc["live_enabled"] is False
@@ -36,6 +33,54 @@ def test_python_tracked_destinations_remain_explicitly_disabled(name):
     blocked = PythonGovernance(registry, canonicalize(doc), TARGET, NOW)
     with pytest.raises(ValueError, match="remains disabled"):
         blocked.require_live(NOW)
+
+
+def test_python_tracked_pypi_remains_explicitly_disabled():
+    """TestPyPI admission cannot enable the production destination."""
+    registry = PythonRegistry("pypi")
+    content = (_ROOT / python_governance_path(registry)).read_bytes()
+    assert parse_canonical_json(content) == blocked_python_governance(registry)
+    blocked = PythonGovernance(registry, content, TARGET, NOW)
+    with pytest.raises(ValueError, match="remains disabled"):
+        blocked.require_live(NOW)
+
+
+def test_python_tracked_testpypi_admission_has_freshness_and_isolation():
+    """Reviewed normal-workflow admission has finite declared-time validity."""
+    registry = PythonRegistry("testpypi")
+    content = (_ROOT / python_governance_path(registry)).read_bytes()
+    doc = parse_canonical_json(content)
+    assert doc["schema"] == "workflow-delivery/v3/python-governance-v2"
+    assert doc["state"] == "ready"
+    assert doc["live_enabled"] is True
+    assert "native-acceptance" not in doc
+    assert doc["publisher"] == {
+        "repository": "hcoona/three",
+        "owner-id": 712433,
+        "project": "hcoona-release-smoke-python",
+        "registry": "https://test.pypi.org",
+        "audience": "testpypi",
+        "workflow": "workflow-delivery-v3-python-smoke.yml",
+        "environment": "workflow-delivery-v3-python-testpypi",
+        "selected-ref": "refs/heads/main",
+    }
+    assert doc["configuration"]["publisher-registration"] == doc["publisher"]
+    assert doc["configuration"]["environment-id"] == 22765954016  # noqa: PLR2004 - reviewed Environment identity
+    inspected = datetime.fromisoformat(doc["inspected-at"])
+    expires = datetime.fromisoformat(doc["expires-at"])
+    # The synthetic source commit exercises parsing, not current-main proof.
+    admitted = PythonGovernance(registry, content, TARGET, inspected)
+    admitted.require_live(inspected)
+    admitted.require_live(expires - timedelta(microseconds=1))
+    before_inspection = inspected - timedelta(microseconds=1)
+    with pytest.raises(ValueError, match="stale or not current"):
+        replace(admitted, observed_at=before_inspection).require_live(
+            before_inspection
+        )
+    with pytest.raises(ValueError, match="stale or not current"):
+        admitted.require_live(expires)
+    with pytest.raises(ValueError, match="authority or profile mismatch"):
+        PythonGovernance(PythonRegistry("pypi"), content, TARGET, inspected)
 
 
 @pytest.mark.parametrize(
