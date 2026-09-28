@@ -935,7 +935,7 @@ They define a new Python scope, not implemented support or an operation grant.
   file. Exact original bytes/witnesses and the complete set remain mandatory.
   A duplicate rejection or ambiguous response remains failed; later exactness
   cannot turn it into skip-existing success. No rollback, deletion, upload/token/file retry,
-  skip-existing success or same-Attempt partial completion is allowed. Recovery
+  skip-existing success or reopening a terminal failure is allowed. Recovery
   uses a new authorized dispatch, fresh Build/Qualification, observation and
   Approval; it never reopens or relabels an earlier failed Attempt. No prior
   artifact, Approval or Evidence is promoted. Reproducibility requires the same

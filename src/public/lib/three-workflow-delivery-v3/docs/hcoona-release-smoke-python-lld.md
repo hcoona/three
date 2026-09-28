@@ -161,7 +161,7 @@ no SDK/CLI name or mocked response proves platform behavior.
 The disabled implementation realizes the owner-confirmed `WD-PY-005` reliability choice,
 not a service visibility guarantee. It applies only after a definitive HTTP-200
 upload, before its readback terminates. Bootstrap P2/P3 and normal publication's
-two post-upload readbacks share the mechanism. Initial checks, zero-action
+up to two post-upload readbacks share the mechanism. Initial checks, zero-action
 proofs and independent final audits remain single reads. The retired native
 reader retains its historical policy only for the original failed evidence. HTTP transport retries, cache-bypass headers, token
 refresh and file-download retries remain unavailable.
