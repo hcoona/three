@@ -1,15 +1,9 @@
-"""Valid native comparison archives, source identity and clean consumers."""
+"""Historical archive identity and provenance; shared bootstrap witnesses."""
 
-# Native integration uses fixed local Git commands without a shell.
-# ruff: noqa: S603, S607
-import io
-import subprocess
-import tarfile
 import zipfile
 from dataclasses import replace
 
 import pytest
-from three_workflow_delivery_v3.acceptance import python_native_fixture
 from three_workflow_delivery_v3.acceptance.python_native_contract import (
     FIXTURE_KEYS,
     NativeRequest,
@@ -18,14 +12,8 @@ from three_workflow_delivery_v3.acceptance.python_native_contract import (
 )
 from three_workflow_delivery_v3.acceptance.python_native_fixture import (
     NativeFixtures,
-    build_fixture_set,
-    comparison_distribution,
     fixture_witness,
     fixtures_from_files,
-    prepare_fixtures,
-)
-from three_workflow_delivery_v3.adapters.python import (
-    inspect_python_distribution,
 )
 from three_workflow_delivery_v3.canonical import (
     canonical_sha256,
@@ -33,30 +21,14 @@ from three_workflow_delivery_v3.canonical import (
     parse_canonical_json,
 )
 from three_workflow_delivery_v3.repository.python_provider import (
-    PYTHON_ROOT,
     PythonNbgvFacts,
-    python_digest,
 )
 
-from ..adapters.test_pypi import _distribution
-from ..repository import test_python_provider as provider_tests
 from ..repository.test_python_provider import _provider
+from .python_native_history import historical_catalog_digest, historical_files
 from .test_python_native_contract import request_document
 
-native_python_provider_repository = (
-    provider_tests.native_python_provider_repository
-)
 _BASE_RUN = 911
-
-
-def _members(distribution):
-    if distribution.variant == "wheel":
-        with zipfile.ZipFile(io.BytesIO(distribution.content)) as archive:
-            return {name: archive.read(name) for name in archive.namelist()}
-    with tarfile.open(
-        fileobj=io.BytesIO(distribution.content), mode="r:gz"
-    ) as archive:
-        return {item.name: archive.extractfile(item).read() for item in archive}
 
 
 def _synthetic_provider(label):
@@ -93,86 +65,18 @@ def _synthetic_provider(label):
     )
 
 
-def _synthetic_witness(label):
-    return fixture_witness(_synthetic_provider(label))
-
-
 @pytest.fixture
-def modeled_fixtures():
-    """Valid archives with explicitly synthetic consumer evidence."""
-    distributions = {}
-    evidence = {}
-    for label in ("a", "b"):
-        provider = _synthetic_provider(label)
-        witness = fixture_witness(provider)
-        evidence[f"provider/{label}.json"] = canonicalize(
-            provider.to_document()
-        )
-        for variant in ("wheel", "sdist"):
-            original = _distribution(variant, witness)
-            comparison = comparison_distribution(original)
-            for candidate, item in (
-                ("original", original),
-                ("comparison", comparison),
-            ):
-                key = f"{label}/{candidate}/{variant}"
-                distributions[key] = item
-                evidence[f"consumer/{key}.json"] = canonicalize(
-                    {
-                        "variant": variant,
-                        "original-digest": item.digest,
-                        "installed": {
-                            "version": witness.nbgv.pep440_version,
-                            "project-id": "hcoona-release-smoke-python",
-                            "witness": witness.to_document(),
-                            "module": "/synthetic/consumer/package/__init__.py",
-                        },
-                        "commands": [
-                            {
-                                "argv": ["synthetic-test-only"],
-                                "exit-code": 0,
-                                "stdout": "",
-                                "stderr": "",
-                            }
-                        ],
-                    }
-                )
-        staged = next(
-            content
-            for name, content in _members(
-                distributions[f"{label}/original/sdist"]
-            ).items()
-            if name.endswith("/pyproject.toml")
-        )
-        evidence[f"build/{label}.json"] = canonicalize(
-            {
-                "source-manifest": [
-                    list(pair) for pair in provider.source_input_manifest
-                ],
-                "staged-manifest-digest": python_digest(staged),
-                "versions": {
-                    "argv": [
-                        "uv",
-                        "pip",
-                        "freeze",
-                        "--python",
-                        "/synthetic/producer/bin/python",
-                    ],
-                    "exit-code": 0,
-                    "stdout": "hatchling==1.32.0\n",
-                    "stderr": "",
-                },
-                "commands": [
-                    {
-                        "argv": ["uv", "build", "--sdist", "--wheel"],
-                        "exit-code": 0,
-                        "stdout": "",
-                        "stderr": "",
-                    }
-                ],
-            }
-        )
-    return NativeFixtures(distributions, evidence)
+def modeled_fixtures(monkeypatch):
+    """Decode static synthetic originals; never generate a native suite."""
+    fixtures = fixtures_from_files(historical_files("prepared"))
+    original_catalog = historical_catalog_digest()
+    # Historical readers require their original revision's catalog dependency.
+    # Keep all archived bytes unchanged; this is not current runtime admission.
+    monkeypatch.setattr(
+        "three_workflow_delivery_v3.repository.node_provider.catalog_digest",
+        lambda: original_catalog,
+    )
+    return fixtures
 
 
 def fixture_request(fixtures):
@@ -193,29 +97,6 @@ def fixture_request(fixtures):
         for label in ("a", "b")
     }
     return NativeRequest(canonicalize(document))
-
-
-@pytest.mark.parametrize("variant", ["wheel", "sdist"])
-def test_python_native_different_bytes_remain_valid(modeled_fixtures, variant):
-    """Representation changes preserve every native member and exact witness."""
-    original = modeled_fixtures.distributions[f"a/original/{variant}"]
-    changed = comparison_distribution(original)
-    repeated = comparison_distribution(original)
-    assert changed.filename == original.filename
-    assert changed.digest != original.digest
-    assert changed.content == repeated.content
-    assert changed.witness == original.witness
-    assert _members(changed) == _members(original)
-    assert (
-        inspect_python_distribution(
-            changed.filename, changed.content, variant, original.witness
-        )
-        == changed
-    )
-    if variant == "sdist":
-        assert changed.content[:4] == original.content[:4]
-        assert changed.content[4:8] != original.content[4:8]
-        assert changed.content[8:] == original.content[8:]
 
 
 def test_python_native_fixture_witness_excludes_execution_identity():
@@ -441,171 +322,12 @@ def test_python_native_fixture_rejects_inconsistent_preparation_provenance(
         )
 
 
-@pytest.fixture(scope="module")
-def actual_native_fixtures(native_python_provider_repository):
-    """Build both targets and qualify all eight files with real tools."""
-    source, target_a = native_python_provider_repository
-    origin = source.parent / "origin"
-    readme = origin / PYTHON_ROOT / "README.md"
-    readme.write_text(
-        readme.read_text() + "\nSecond native acceptance target.\n"
-    )
-    subprocess.run(("git", "add", "."), cwd=origin, check=True)
-    subprocess.run(
-        (
-            "git",
-            "-c",
-            "user.name=Python Native Fixture Test",
-            "-c",
-            "user.email=python-native@example.invalid",
-            "-c",
-            "core.hooksPath=/dev/null",
-            "commit",
-            "--quiet",
-            "-m",
-            "Advance Python native acceptance source",
-        ),
-        cwd=origin,
-        check=True,
-    )
-    target_b = subprocess.check_output(
-        ("git", "rev-parse", "HEAD"), cwd=origin, text=True
-    ).strip()
-    subprocess.run(
-        ("git", "fetch", "--quiet", "origin"), cwd=source, check=True
-    )
-    subprocess.run(
-        ("git", "checkout", "--quiet", "--detach", target_b),
-        cwd=source,
-        check=True,
-    )
-    targets = {"a": target_a, "b": target_b}
-    return source, targets, build_fixture_set(source, targets, 911)
-
-
-def test_real_python_native_fixture_pair_is_valid_and_exact(
-    actual_native_fixtures,
-):
-    """All eight real builds/comparisons have successful isolated consumers."""
-    _, targets, fixtures = actual_native_fixtures
-    fixtures.match(fixture_request(fixtures))
-    assert set(fixtures.distributions) == set(FIXTURE_KEYS)
-    for key, item in fixtures.distributions.items():
-        label, _, variant = key.split("/")
-        proof = parse_canonical_json(fixtures.evidence[f"consumer/{key}.json"])
-        assert item.witness.target == targets[label]
-        assert item.witness.purpose == "destination-acceptance"
-        assert "+" not in item.witness.nbgv.pep440_version
-        assert proof["variant"] == variant
-        assert proof["original-digest"] == item.digest
-        assert proof["installed"]["version"] == item.witness.nbgv.pep440_version
-        assert proof["installed"]["project-id"] == "hcoona-release-smoke-python"
-        assert proof["installed"]["witness"] == item.witness.to_document()
-        assert all(command["exit-code"] == 0 for command in proof["commands"])
-        provider = parse_canonical_json(
-            fixtures.evidence[f"provider/{label}.json"]
-        )
-        assert provider["binding"]["workflow-run-id"] == _BASE_RUN
-
-
-def test_real_python_native_fixture_bytes_are_execution_independent(
-    actual_native_fixtures,
-):
-    """A different execution preserves all eight native byte identities."""
-    source, targets, first = actual_native_fixtures
-    second = build_fixture_set(source, targets, 912)
-    assert {
-        key: item.content for key, item in second.distributions.items()
-    } == {key: item.content for key, item in first.distributions.items()}
-    for label in ("a", "b"):
-        assert (
-            second.evidence[f"provider/{label}.json"]
-            != first.evidence[f"provider/{label}.json"]
-        )
-
-
-def test_python_native_prepared_binding_changes_without_changing_package_bytes(
-    modeled_fixtures, monkeypatch, tmp_path
-):
-    """Execution and request identity belong to the prepared envelope only."""
-    calls = []
-
-    def built(repo_root, targets, run_id):
-        calls.append((repo_root, targets, run_id))
-        evidence = dict(modeled_fixtures.evidence)
-        for label in ("a", "b"):
-            key = f"provider/{label}.json"
-            provider = parse_canonical_json(evidence[key])
-            provider["binding"]["workflow-run-id"] = run_id
-            evidence[key] = canonicalize(provider)
-        return NativeFixtures(modeled_fixtures.distributions, evidence)
-
-    monkeypatch.setattr(python_native_fixture, "build_fixture_set", built)
-    first_request = fixture_request(modeled_fixtures)
-    second_document = first_request.document
-    second_document["generation"] = "2" * 32
-    second_request = NativeRequest(canonicalize(second_document))
-    first = prepare_fixtures(tmp_path, first_request, 911, "c" * 40)
-    second = prepare_fixtures(tmp_path, second_request, 912, "d" * 40)
-    first_binding = parse_canonical_json(first["binding.json"])
-    second_binding = parse_canonical_json(second["binding.json"])
-    assert first_binding["request-digest"] == first_request.digest
-    assert second_binding == {
-        "request-digest": second_request.digest,
-        "run-id": 912,
-        "run-attempt": 1,
-        "tooling-sha": "d" * 40,
-        "producer": "prepare-python-native",
-    }
-    assert first["binding.json"] != second["binding.json"]
-    assert calls == [
-        (tmp_path, {"a": "a" * 40, "b": "b" * 40}, 911),
-        (tmp_path, {"a": "a" * 40, "b": "b" * 40}, 912),
-    ]
-    for name, content in modeled_fixtures.files().items():
-        if name.startswith("provider/"):
-            assert first[name] == content
-            assert first[name] != second[name]
-        else:
-            assert first[name] == second[name] == content
-
-
-def test_real_python_native_final_audit_freshly_consumes_downloaded_files(
-    actual_native_fixtures, tmp_path
-):
-    """Four captured actual originals pass independent clean audit consumers."""
-    from three_workflow_delivery_v3.acceptance.python_native_suite import (  # noqa: PLC0415
-        audit_suite,
-        run_suite,
-    )
-
-    from .test_python_native_suite import RegistryBoundary  # noqa: PLC0415
-
-    _, _, fixtures = actual_native_fixtures
-    request = fixture_request(fixtures)
-    boundary = RegistryBoundary(fixtures, winners=("comparison", "original"))
-    retained = run_suite(
-        request,
-        fixtures,
-        boundary,
-        "pypi-synthetic-audit-token",
-        tmp_path / "probe",
-    )
-    calls = tuple(boundary.reads), tuple(boundary.posts)
-    result = audit_suite(request, fixtures, retained)
-    proofs = [
-        parse_canonical_json(content)
-        for name, content in result.items()
-        if name.startswith("consumer/")
-    ]
-    assert len(proofs) == 4  # noqa: PLR2004 - protocol final files
-    assert {proof["original-digest"] for proof in proofs} == {
-        item.digest for item in boundary.stored.values()
-    }
-    for proof in proofs:
-        assert proof["installed"]["project-id"] == "hcoona-release-smoke-python"
-        assert all(command["exit-code"] == 0 for command in proof["commands"])
-    assert (tuple(boundary.reads), tuple(boundary.posts)) == calls
-    assert (
-        parse_canonical_json(result["audit.json"])["native-admission"] is False
-    )
+def test_python_native_old_provider_requires_original_catalog_revision():
+    """Current runtime cannot relabel an archived provider as current proof."""
+    files = historical_files("prepared")
+    fixtures = fixtures_from_files(files)
+    request = NativeRequest(files["request.json"])
+    with pytest.raises(
+        ValueError, match="catalog digest is not the current static catalog"
+    ):
+        fixtures.match(request)

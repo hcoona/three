@@ -196,5 +196,5 @@ def test_bootstrap_request_does_not_admit_native_or_live():
             ).read_bytes()
         )
         assert governance["live_enabled"] is False
-        assert governance["native-acceptance"] is None
+        assert "native-acceptance" not in governance
         assert governance["state"] == "blocked"

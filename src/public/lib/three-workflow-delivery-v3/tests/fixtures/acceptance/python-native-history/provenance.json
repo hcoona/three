@@ -1,0 +1,33 @@
+{
+  "kind": "synthetic historical-reader supplied facts; never native service evidence",
+  "source-revision": "6c4ae0c760a11eb520982b907e01a7b0ad1b70d3",
+  "generation": "Existing modeled_fixtures and run_suite/hosted_probe with RegistryBoundary/DelayedRegistry in-process HTTP substitutes; no network, build or registry calls. Existing generator retained only in Git history.",
+  "files": {
+    "delayed-suite.zip": {
+      "bytes": 135195,
+      "sha256": "22cb2473337364cd4fbc8f12a80d84c387ca0095db86392bab18109585e6d644"
+    },
+    "prepared.zip": {
+      "bytes": 45880,
+      "sha256": "e885dce7164b81297c330edef870cc0a71d5ce21183e744dd335dc1aaa64436c"
+    },
+    "hosted.zip": {
+      "bytes": 129775,
+      "sha256": "94d7dc797708ec0de332a0b7a1ab980d63cba22a0644ac914a677558b59e529a"
+    },
+    "reference.json": {
+      "bytes": 323,
+      "sha256": "caee373da5df902509ab993d8c2c58fb0753db2841584e202b7b06d1c3149976"
+    }
+  },
+  "retained-groups": [
+    "prepared",
+    "hosted",
+    "delayed-suite",
+    "reference.json"
+  ],
+  "archive-sha256": "6bb80da2af14eace6b0ee903949f242900236bddb305b6a86407b06459166a8f",
+  "archive": "synthetic.zip.gz",
+  "original-catalog-digest": "sha256:3fcb84ca3ebd0e5fc02a98037bb2f71318b9d991edfd6cd0244b0aadbd9030b9",
+  "reader-context": "Historical reader tests bind their catalog dependency to this original revision, without changing archive bytes. Current-catalog rejection is tested separately; no normal runtime admission is represented."
+}

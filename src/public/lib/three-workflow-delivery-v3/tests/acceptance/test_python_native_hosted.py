@@ -6,11 +6,9 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import pytest
-import yaml
 from three_workflow_delivery_v3.acceptance import python_native
 from three_workflow_delivery_v3.acceptance.python_native import (
     audit_native,
-    probe,
     read_artifact,
 )
 from three_workflow_delivery_v3.acceptance.python_native_contract import (
@@ -21,7 +19,6 @@ from three_workflow_delivery_v3.acceptance.python_native_contract import (
 )
 from three_workflow_delivery_v3.acceptance.python_native_github import (
     prove_native_approval,
-    validate_hosted,
 )
 from three_workflow_delivery_v3.acceptance.python_native_suite import (
     audit_suite,
@@ -35,20 +32,20 @@ from three_workflow_delivery_v3.canonical import (
 from three_workflow_delivery_v3.platform.python_github import (
     PythonGitHubRuntime,
 )
-from three_workflow_delivery_v3.records.artifacts import ArtifactReference
+from three_workflow_delivery_v3.records.artifacts import (
+    ArtifactReference,
+    artifact_reference_from_document,
+)
 from three_workflow_delivery_v3.repository.python_provider import python_digest
 
 from ..adapters.test_pypi import FakeHttp
-from ..repository import test_python_provider as provider_tests
 from . import test_python_native_fixture as fixture_tests
 from . import test_python_native_suite as suite_tests
+from .python_native_history import historical_files, historical_reference
 from .test_python_native_contract import request_document
-from .test_python_native_suite import _TOKEN, _consumer
+from .test_python_native_suite import _consumer
 
 modeled_fixtures = fixture_tests.modeled_fixtures
-native_python_provider_repository = (
-    provider_tests.native_python_provider_repository
-)
 deny_real_registry = suite_tests.deny_real_registry
 _ROOT = Path(__file__).resolve().parents[6]
 _RUN = 911
@@ -272,34 +269,6 @@ def test_python_native_approval_rejects_incomplete_or_foreign_authority(  # noqa
         assert http.calls == []
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("GITHUB_REPOSITORY", "other/three"),
-        ("GITHUB_ACTOR_ID", "1"),
-        ("GITHUB_EVENT_NAME", "push"),
-        ("GITHUB_REF", "refs/heads/topic"),
-        ("GITHUB_REF_PROTECTED", "false"),
-        ("GITHUB_RUN_ATTEMPT", "2"),
-        ("GITHUB_WORKFLOW_SHA", "d" * 40),
-        ("RUNNER_OS", "Windows"),
-    ],
-)
-def test_python_native_hosted_context_rejects_before_git_or_effects(
-    tmp_path, field, value
-):
-    """Foreign execution fails before even reading a nonexistent checkout."""
-    environment = hosted_environment()
-    environment[field] = value
-    with pytest.raises(ValueError, match="execution context"):
-        validate_hosted(
-            tmp_path,
-            environment,
-            _TOOLING,
-            NativeRequest(canonicalize(request_document())),
-        )
-
-
 def _artifact(files, tmp_path):
     content = pack_bundle(files)
     path = tmp_path / "prepared.zip"
@@ -349,106 +318,14 @@ def test_python_native_artifact_checks_both_digest_bindings(tmp_path, change):
             read_artifact(path, reference, _RUN)
 
 
-class HostedBoundary:
-    """Finite GitHub/OIDC outcomes plus the actual-adapter registry fake."""
-
-    def __init__(self, request, fixtures, output):
-        """Retain explicit calls and inspect durable proof before capability."""
-        self.request_spec = request
-        self.facts = github_facts(request)
-        self.registry = suite_tests.RegistryBoundary(fixtures)
-        self.output = output
-        self.calls = []
-
-    def request(self, method, url, headers, body, maximum_bytes):
-        """Forward scenario requests after the actual credential sequence."""
-        self.calls.append((method, url))
-        if url.startswith("https://api.github.com/"):
-            route, data = self.facts.pop(0)
-            assert url == "https://api.github.com" + route
-            return PythonHttpResponse(
-                200, canonicalize(data), "application/json"
-            )
-        if url == _OIDC_URL:
-            assert (self.output / "approval.json").is_file()
-            assert (self.output / "binding.json").is_file()
-            assert (self.output / "platform.json").is_file()
-            return PythonHttpResponse(
-                200, canonicalize({"value": _ASSERTION}), "application/json"
-            )
-        if url.endswith("/_/oidc/mint-token"):
-            assert parse_canonical_json(body) == {"token": _ASSERTION}
-            return PythonHttpResponse(
-                200,
-                canonicalize({"token": _TOKEN}),
-                "application/json",
-            )
-        return self.registry.request(method, url, headers, body, maximum_bytes)
-
-
 @pytest.fixture
-def hosted_probe(modeled_fixtures, tmp_path, monkeypatch):
-    """Execute actual probe orchestration with replaced external transport."""
-    request = fixture_tests.fixture_request(modeled_fixtures)
-    prepared = modeled_fixtures.files()
-    prepared["request.json"] = request.content
-    prepared["binding.json"] = canonicalize(
-        {
-            "request-digest": request.digest,
-            "tooling-sha": _TOOLING,
-            "run-id": _RUN,
-            "run-attempt": 1,
-            "producer": "prepare-python-native",
-        }
-    )
-    _, reference = _artifact(prepared, tmp_path)
-    output = tmp_path / "probe"
-    http = HostedBoundary(request, modeled_fixtures, output)
-    monkeypatch.setattr(python_native, "PythonHttpsTransport", lambda: http)
-
-    def denied(*_args, **_kwargs):
-        pytest.fail("Probe must not execute target or build subprocesses")
-
-    monkeypatch.setattr(subprocess, "run", denied)
-    probe(
-        request,
-        prepared,
-        reference,
-        _RUN,
-        _TOOLING,
-        output,
-        hosted_environment(),
-    )
-    files = {
-        path.relative_to(output).as_posix(): path.read_bytes()
-        for path in output.rglob("*")
-        if path.is_file()
-    }
-    return request, prepared, reference, files, http
-
-
-def test_python_native_probe_orders_authority_and_never_builds(
-    hosted_probe,
-):
-    """Actual hosted proof and token stages precede finite original uploads."""
-    _, _, _, files, http = hosted_probe
-    assert http.calls[:4] == [
-        ("GET", "https://api.github.com" + route)
-        for route, _ in github_facts(http.request_spec)
-    ]
-    assert http.calls[4] == ("GET", _OIDC_URL)
-    assert http.calls[5] == ("POST", "https://test.pypi.org/_/oidc/mint-token")
-    assert "suite/suite.json" in files
-    for content in files.values():
-        assert all(
-            secret.encode() not in content
-            for secret in (
-                _GITHUB_TOKEN,
-                _OIDC_TOKEN,
-                _ASSERTION,
-                _TOKEN,
-            )
-        )
+def historical_probe(modeled_fixtures):
+    """Load static synthetic hosted history without executing retired phases."""
+    prepared = historical_files("prepared")
+    request = NativeRequest(prepared["request.json"])
+    modeled_fixtures.match(request)
+    reference = artifact_reference_from_document(historical_reference())
+    return request, prepared, reference, historical_files("hosted")
 
 
 @pytest.mark.parametrize(
@@ -465,10 +342,10 @@ def test_python_native_probe_orders_authority_and_never_builds(
     ],
 )
 def test_python_native_audit_replays_original_hosted_proof(
-    hosted_probe, monkeypatch, change
+    historical_probe, monkeypatch, change
 ):
     """No stored approval summary substitutes for original current-run reads."""
-    request, prepared, reference, files, http = hosted_probe
+    request, prepared, reference, files = historical_probe
     if change == "raw-approval":
         reviews = parse_json_strict(files["github/1.body"])
         reviews[0]["state"] = "rejected"
@@ -491,6 +368,7 @@ def test_python_native_audit_replays_original_hosted_proof(
         files["credentials.json"] = canonicalize(
             {"oidc-requests": 1, "token-exchanges": 2}
         )
+    modeled = fixture_tests.fixtures_from_files(prepared)
     calls = []
 
     def audited(request, fixtures, retained):
@@ -499,7 +377,6 @@ def test_python_native_audit_replays_original_hosted_proof(
         )
 
     monkeypatch.setattr(python_native, "audit_suite", audited)
-    original_calls = tuple(http.calls)
     if change is None:
         result = audit_native(
             request, prepared, files, reference, _RUN, _TOOLING
@@ -510,13 +387,14 @@ def test_python_native_audit_replays_original_hosted_proof(
             is False
         )
         assert {item.digest for item in calls} == {
-            item.digest for item in http.registry.stored.values()
+            modeled.distributions[f"{label}/original/{variant}"].digest
+            for label in ("a", "b")
+            for variant in ("wheel", "sdist")
         }
     else:
         with pytest.raises((ValueError, KeyError)):
             audit_native(request, prepared, files, reference, _RUN, _TOOLING)
         assert calls == []
-    assert tuple(http.calls) == original_calls
 
 
 @pytest.mark.parametrize(
@@ -539,10 +417,10 @@ def test_python_native_audit_replays_original_hosted_proof(
     ],
 )
 def test_python_native_audit_requires_exact_original_platform(
-    hosted_probe, monkeypatch, field, value
+    historical_probe, monkeypatch, field, value
 ):
     """Raw hosted proof cannot replace contradictory platform facts."""
-    request, prepared, reference, files, http = hosted_probe
+    request, prepared, reference, files = historical_probe
     if field is None:
         files.pop("platform.json")
     else:
@@ -554,20 +432,18 @@ def test_python_native_audit_requires_exact_original_platform(
         pytest.fail("Invalid platform reached registry evidence audit")
 
     monkeypatch.setattr(python_native, "audit_suite", forbidden)
-    original_calls = tuple(http.calls)
     with pytest.raises((ValueError, KeyError)):
         audit_native(request, prepared, files, reference, _RUN, _TOOLING)
-    assert tuple(http.calls) == original_calls
 
 
 @pytest.mark.parametrize(
     "change", ["missing-provider", "foreign-run", "missing-build"]
 )
 def test_python_native_audit_requires_current_prepared_provenance(
-    hosted_probe, monkeypatch, change
+    historical_probe, monkeypatch, change
 ):
     """A prepared envelope cannot relabel missing or foreign provenance."""
-    request, prepared, reference, files, http = hosted_probe
+    request, prepared, reference, files = historical_probe
     if change == "missing-provider":
         prepared.pop("provider/a.json")
     elif change == "missing-build":
@@ -583,155 +459,15 @@ def test_python_native_audit_requires_current_prepared_provenance(
         pytest.fail("Invalid preparation reached registry evidence audit")
 
     monkeypatch.setattr(python_native, "audit_suite", forbidden)
-    original_calls = tuple(http.calls)
     with pytest.raises((ValueError, KeyError)):
         audit_native(request, prepared, files, reference, _RUN, _TOOLING)
-    assert tuple(http.calls) == original_calls
-
-
-def test_python_native_workflow_scopes_authority_and_retains_evidence():
-    """Actual YAML admits manual protected execution and isolated OIDC only."""
-    workflow = yaml.safe_load((_ROOT / WORKFLOW).read_text())
-    assert set(workflow["on"]) == {"workflow_dispatch"}
-    assert workflow["permissions"] == {}
-    jobs = workflow["jobs"]
-    assert {
-        name
-        for name, job in jobs.items()
-        if job["permissions"].get("id-token") == "write"
-    } == {"probe"}
-    assert {name for name, job in jobs.items() if "environment" in job} == {
-        "probe"
-    }
-    assert jobs["probe"]["timeout-minutes"] == 15  # noqa: PLR2004 - protocol ceiling
-    assert workflow["concurrency"]["cancel-in-progress"] is False
-    assert (
-        jobs["probe"]["environment"]
-        == "workflow-delivery-v3-python-${{ inputs.registry }}"
-    )
-    for job in jobs.values():
-        guard = job["if"]
-        for check in (
-            "github.run_attempt == 1",
-            "github.ref_protected",
-            "github.sha == inputs.tooling_sha",
-            "github.actor_id == '712433'",
-        ):
-            assert check in guard
-        for step in job["steps"]:
-            if step.get("uses", "").startswith("actions/checkout@"):
-                assert step["with"]["ref"] == "${{ github.sha }}"
-                assert step["with"]["fetch-depth"] == 0
-                assert step["with"]["persist-credentials"] is False
-            elif step.get("uses", "").startswith("actions/upload-artifact@"):
-                assert step["with"]["archive"] is False
-                assert step["with"]["overwrite"] is False
-                assert step["with"]["retention-days"] == 45  # noqa: PLR2004 - protocol retention
-            elif step.get("uses", "").startswith("actions/download-artifact@"):
-                assert "artifact-ids" in step["with"]
-                assert "name" not in step["with"]
-                assert step["with"]["digest-mismatch"] == "error"
-                assert step["with"]["skip-decompress"] is True
-    probe_steps = jobs["probe"]["steps"]
-    execute = next(
-        i
-        for i, step in enumerate(probe_steps)
-        if "python_native probe " in step.get("run", "")
-    )
-    assert all(step["if"] == "always()" for step in probe_steps[execute + 1 :])
-    assert all(
-        "build-fixtures" not in step.get("run", "")
-        and "prepare " not in step.get("run", "")
-        and "dotnet " not in step.get("run", "")
-        for step in probe_steps
-    )
-
-
-def test_python_native_hosted_binds_actual_main_and_ancestors(
-    native_python_provider_repository,
-):
-    """Real Git binds ancestors and rejects changed protected main."""
-    source, target_a = native_python_provider_repository
-    subprocess.run(
-        (  # noqa: S607 - fixed commands in a disposable fixture only
-            "git",
-            "-c",
-            "user.name=Native Hosted Test",
-            "-c",
-            "user.email=native-hosted@example.invalid",
-            "-c",
-            "core.hooksPath=/dev/null",
-            "commit",
-            "--allow-empty",
-            "--quiet",
-            "-m",
-            "Advance disposable hosted tooling",
-        ),
-        cwd=source,
-        check=True,
-    )
-    tooling = subprocess.check_output(
-        ("git", "rev-parse", "HEAD"),  # noqa: S607
-        cwd=source,
-        text=True,
-    ).strip()
-    subprocess.run(  # noqa: S603
-        ("git", "update-ref", "refs/remotes/origin/main", tooling),  # noqa: S607
-        cwd=source,
-        check=True,
-    )
-    document = request_document()
-    document["targets"]["a"]["commit"] = target_a
-    document["targets"]["b"]["commit"] = tooling
-    request = NativeRequest(canonicalize(document))
-    assert (
-        validate_hosted(source, hosted_environment(tooling), tooling, request)
-        == _RUN
-    )
-    subprocess.run(  # noqa: S603
-        ("git", "update-ref", "refs/remotes/origin/main", target_a),  # noqa: S607
-        cwd=source,
-        check=True,
-    )
-    with pytest.raises(ValueError, match="protected main moved"):
-        validate_hosted(source, hosted_environment(tooling), tooling, request)
-
-
-@pytest.mark.parametrize("command", ["prepare", "probe", "audit"])
-def test_python_native_cli_disabled_slot_prevents_execution(
-    command, tmp_path, capsys
-):
-    """A valid-looking CLI request cannot cross either null protected slot."""
-    root = tmp_path / "repository"
-    slots = root / ".github/workflow-delivery/native/python-requests.json"
-    slots.parent.mkdir(parents=True)
-    slots.write_bytes(canonicalize({"testpypi": None, "pypi": None}))
-    output = tmp_path / "never-produced.zip"
-    result = python_native.main(
-        [
-            command,
-            "--root",
-            str(root),
-            "--registry",
-            "testpypi",
-            "--request-digest",
-            "sha256:" + "f" * 64,
-            "--tooling-sha",
-            _TOOLING,
-            "--output",
-            str(output),
-        ]
-    )
-    assert result == 1
-    assert not output.exists()
-    assert "grants no retry or native admission" in capsys.readouterr().err
 
 
 def test_python_native_local_replay_uses_original_lineage_without_authority(
-    hosted_probe, tmp_path, monkeypatch
+    historical_probe, tmp_path, monkeypatch
 ):
     """Local replay needs no slots, Git, OIDC or registry access."""
-    _, prepared, reference, files, http = hosted_probe
+    _, prepared, reference, files = historical_probe
     prepared_path = tmp_path / reference.payload_path
     prepared_path.write_bytes(pack_bundle(prepared))
     probe_path = tmp_path / "probe.zip"
@@ -754,6 +490,7 @@ def test_python_native_local_replay_uses_original_lineage_without_authority(
     )
     references = tmp_path / "references.json"
     references.write_bytes(lineage)
+    modeled = fixture_tests.fixtures_from_files(prepared)
     consumed = []
 
     def audited(request, fixtures, retained):
@@ -765,11 +502,9 @@ def test_python_native_local_replay_uses_original_lineage_without_authority(
         pytest.fail("Local replay attempted hosted authority or network access")
 
     monkeypatch.setattr(python_native, "audit_suite", audited)
-    for name in ("PythonHttpsTransport", "load_request", "validate_hosted"):
-        monkeypatch.setattr(python_native, name, forbidden)
+    monkeypatch.setattr("http.client.HTTPSConnection", forbidden)
     for name in hosted_environment():
         monkeypatch.delenv(name, raising=False)
-    original_calls = tuple(http.calls)
     output = tmp_path / "audit.zip"
     assert (
         python_native.main(
@@ -793,6 +528,67 @@ def test_python_native_local_replay_uses_original_lineage_without_authority(
     assert verdict["result"] == "supplied-facts-pass"
     assert verdict["native-admission"] is False
     assert {item.digest for item in consumed} == {
-        item.digest for item in http.registry.stored.values()
+        modeled.distributions[f"{label}/original/{variant}"].digest
+        for label in ("a", "b")
+        for variant in ("wheel", "sdist")
     }
-    assert tuple(http.calls) == original_calls
+
+
+@pytest.mark.parametrize(
+    "command", ["build-fixtures", "prepare", "probe", "audit"]
+)
+def test_python_native_retired_cli_commands_fail_before_effects(
+    command, tmp_path, monkeypatch, capsys
+):
+    """Retired entries cannot obtain authority or write output."""
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("Retired CLI attempted network, Git or build execution")
+
+    monkeypatch.setattr("http.client.HTTPSConnection", forbidden)
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    output = tmp_path / "never-produced.zip"
+    with pytest.raises(SystemExit) as stopped:
+        python_native.main([command, "--output", str(output)])
+    assert stopped.value.code == 2  # noqa: PLR2004 - argparse usage error
+    assert "invalid choice" in capsys.readouterr().err
+    assert not output.exists()
+
+
+def test_python_native_hosted_workflow_is_retired():
+    """The retired native workflow cannot remain a hosted dispatch entry."""
+    assert not (_ROOT / WORKFLOW).exists()
+
+
+def test_python_native_archive_and_digest_remain_local(tmp_path, monkeypatch):
+    """Surviving diagnostic files retain original bytes and exact digest."""
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("Local archive/digest attempted external execution")
+
+    monkeypatch.setattr("http.client.HTTPSConnection", forbidden)
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    directory = tmp_path / "surviving"
+    directory.mkdir()
+    (directory / "failure.json").write_bytes(
+        b'{"result":"spent-possibly-mutated"}'
+    )
+    (directory / "response.body").write_bytes(b"original failure diagnostic")
+    output = tmp_path / "partial.zip"
+    assert (
+        python_native.main(
+            ["archive", "--directory", str(directory), "--output", str(output)]
+        )
+        == 0
+    )
+    assert unpack_bundle(output.read_bytes()) == {
+        "failure.json": b'{"result":"spent-possibly-mutated"}',
+        "response.body": b"original failure diagnostic",
+    }
+    output_file = tmp_path / "output.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
+    assert python_native.main(["digest", "--output", str(output)]) == 0
+    assert (
+        output_file.read_text()
+        == "digest=" + python_digest(output.read_bytes()) + "\n"
+    )

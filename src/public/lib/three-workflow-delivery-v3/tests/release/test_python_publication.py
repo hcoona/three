@@ -124,13 +124,16 @@ def test_python_marker_rejects_fresh_state_or_authority_drift(change):
 
 
 @pytest.mark.parametrize("name", ["testpypi", "pypi"])
+@pytest.mark.parametrize(
+    "acknowledgement", [b"created", b"File already exists"]
+)
 def test_python_publication_success_requires_two_posts_and_exact_readback(
-    tmp_path, name
+    tmp_path, name, acknowledgement
 ):
-    """One set result follows ordered original uploads and both exact reads."""
+    """HTTP 200, including an identical replay, needs both exact reads."""
     marker, marker_ref, payloads, distributions = prepared_publication(name)
     registry = marker.absence.registry
-    ok = PythonHttpResponse(200, b"created", "text/plain")
+    ok = PythonHttpResponse(200, acknowledgement, "text/plain")
     transport = FakeHttp(
         ok,
         *_readback(registry, distributions[:1]),
@@ -180,6 +183,7 @@ def test_python_publication_success_requires_two_posts_and_exact_readback(
         "wheel-rejected",
         "wheel-timeout",
         "wheel-readback",
+        "wheel-replay-readback",
         "sdist-rejected",
         "sdist-timeout",
         "final-readback",
@@ -201,7 +205,9 @@ def test_python_publication_failure_stops_without_completion_or_retry(
             (TimeoutError("lost response"),),
             ("unknown", "not-attempted"),
         )
-    elif failure == "wheel-readback":
+    elif failure in {"wheel-readback", "wheel-replay-readback"}:
+        if failure == "wheel-replay-readback":
+            ok = PythonHttpResponse(200, b"File already exists", "text/plain")
         responses, statuses = (ok, missing), ("succeeded", "not-attempted")
     else:
         ending = (

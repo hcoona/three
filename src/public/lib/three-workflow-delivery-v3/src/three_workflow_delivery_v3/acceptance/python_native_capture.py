@@ -1,20 +1,14 @@
-"""Bounded actual-adapter capture and byte-preserving local replay."""
+"""Byte-preserving reconstruction of historical Python capture evidence."""
 
 from __future__ import annotations
 
-import base64
-import threading
-import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
-from urllib.parse import quote, urlsplit
 
 from three_workflow_delivery_v3.acceptance.python_native_contract import require
 from three_workflow_delivery_v3.adapters.pypi import (
-    MAX_FILE_BYTES,
     MAX_INDEX_BYTES,
-    MAX_RESPONSE_BYTES,
     PythonHttpResponse,
     PythonHttpTransport,
     PythonRegistry,
@@ -34,103 +28,6 @@ if TYPE_CHECKING:
         PythonDistribution,
         PythonPackageTargetWitness,
     )
-
-
-class NativeTransport:
-    """Enforce the suite's finite registry budget before each real request."""
-
-    def __init__(
-        self,
-        registry: PythonRegistry,
-        transport: PythonHttpTransport,
-        *,
-        secrets: tuple[str, ...] = (),
-        clock: Callable[[], float] = time.monotonic,
-        deadline: float | None = None,
-    ) -> None:
-        """Hold capabilities only in memory and share one locked counter."""
-        self.registry = registry
-        self.transport = transport
-        self.clock = clock
-        self.deadline = clock() + 600 if deadline is None else deadline
-        self.counts = {"upload": 0, "index": 0, "file": 0}
-        self.calls: list[dict[str, JsonValue]] = []
-        self._lock = threading.Lock()
-        self.local = threading.local()
-        self._forbidden = tuple(
-            part
-            for secret in secrets
-            for part in (
-                secret.encode(),
-                base64.b64encode(secret.encode()),
-                base64.b64encode(f"__token__:{secret}".encode()),
-                quote(secret, safe="").encode(),
-            )
-            if part
-        )
-
-    def request(
-        self,
-        method: str,
-        url: str,
-        headers: dict[str, str],
-        body: bytes | None,
-        maximum_bytes: int,
-    ) -> PythonHttpResponse:
-        """Admit one bounded request, without retries or retaining headers."""
-        if method == "POST" and url == self.registry.upload_url:
-            kind, limit, maximum = "upload", 10, MAX_RESPONSE_BYTES
-        elif method == "GET" and url == self.registry.index_url:
-            kind, limit, maximum = "index", 29, MAX_INDEX_BYTES
-        else:
-            parsed = urlsplit(url)
-            require(
-                method == "GET"
-                and parsed.scheme == "https"
-                and parsed.netloc == self.registry.file_host
-                and parsed.path.startswith("/packages/")
-                and not parsed.query
-                and not parsed.fragment,
-                "foreign acceptance request",
-            )
-            kind, limit, maximum = "file", 18, MAX_FILE_BYTES
-        require(maximum_bytes == maximum, "acceptance response bound differs")
-        with self._lock:
-            require(
-                self.clock() < self.deadline and self.counts[kind] < limit,
-                "acceptance budget exhausted",
-            )
-            self.counts[kind] += 1
-            record: dict[str, JsonValue] = {
-                "kind": kind,
-                "start": self.clock(),
-                "finish": None,
-            }
-            self.calls.append(record)
-            self.local.call = record
-        try:
-            response = self.transport.request(
-                method, url, headers, body, maximum_bytes
-            )
-        finally:
-            record["finish"] = self.clock()
-        require(
-            len(response.body) <= maximum_bytes,
-            "acceptance response exceeds budget",
-        )
-        require(
-            not any(
-                secret in response.body
-                or secret in response.content_type.encode()
-                for secret in self._forbidden
-            ),
-            "unsafe acceptance response",
-        )
-        return replace(
-            response,
-            started=cast("float", record["start"]),
-            finished=cast("float", record["finish"]),
-        )
 
 
 @dataclass(frozen=True)

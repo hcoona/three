@@ -429,7 +429,7 @@ def test_catalog_definitions_are_data_only_and_canonically_stable() -> None:
 
     assert second == first
     assert catalog_digest() == (
-        "sha256:3fcb84ca3ebd0e5fc02a98037bb2f71318b9d991edfd6cd0244b0aadbd9030b9"
+        "sha256:811f94bd780fa82cb4358d657271f7cec90a628cd4e10e75607955dd40f09aea"
     )
     definition_sections = (
         "build-definitions",
@@ -1350,7 +1350,7 @@ def test_npmjs_destination_uses_hypothetical_trusted_publishing_oidc() -> None:
         "python/trusted-publishing-oidc-v1",
     }
     assert catalog_digest() == (
-        "sha256:3fcb84ca3ebd0e5fc02a98037bb2f71318b9d991edfd6cd0244b0aadbd9030b9"
+        "sha256:811f94bd780fa82cb4358d657271f7cec90a628cd4e10e75607955dd40f09aea"
     )
 
     npmjs_capability = CAPABILITIES["npmjs/trusted-publishing-oidc-v1"]
@@ -1440,13 +1440,14 @@ def test_python_catalog_destinations_bind_independent_no_tag_profiles(
     channel: str,
     registry: str,
 ) -> None:
-    """Each registry needs native acceptance and has no tag authority."""
+    """Each registry needs independent admission and has no tag authority."""
     definition = DESTINATION_DEFINITIONS[destination]
     assert definition.ecosystem == "python"
     assert definition.registry == registry
     assert definition.supported_channels == (channel,)
     assert (
-        definition.live_mutation_status == "requires-python-native-acceptance"
+        definition.live_mutation_status
+        == "requires-python-governance-admission"
     )
     assert definition.capability_requirements == (
         "python/trusted-publishing-oidc-v1",
